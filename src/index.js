@@ -6,7 +6,7 @@ export default {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KingShot Data Platform</title>
+    <title>KingShot Data Platform — EagleEye</title>
   <style>
     body {
       margin: 0;
@@ -28,7 +28,14 @@ export default {
       font-size: 32px;
       margin-bottom: 12px;
     }
-
+.subtitle {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #f59e0b;
+  margin-bottom: 24px;
+  text-transform: uppercase;
+}
     p {
       color: #94a3b8;
       font-size: 16px;
@@ -48,6 +55,7 @@ export default {
 <body>
   <main class="container">
     <h1>KingShot Data Platform</h1>
+    <div class="subtitle">EagleEye</div>
     <p>KingShotのデータを集約・分析するプラットフォーム</p>
     <div class="status">● System Online</div>
   </main>
