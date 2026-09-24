@@ -251,9 +251,11 @@ async function handlePlayerApi(request, env) {
       player = await materializePlayer(env.DB, observation);
     }
 
+    const visiblePlayer = filterPlayerForRole(player, auth.role);
+
     return json({
       ok: true,
-      player,
+      player: visiblePlayer,
       freshness: {
         provider: "MIGHTPULSE",
         fresh: observation.payload?.fresh ?? null,
@@ -293,11 +295,22 @@ async function renderPlayerPage(request, env) {
       player = await materializePlayer(env.DB, observation);
     }
 
-    return renderPlayerShell("", governorId, player, observation.payload);
+    return renderPlayerShell("", governorId, filterPlayerForRole(player, auth.role), observation.payload);
   } catch (error) {
     console.error("Player page error:", error);
     return renderPlayerShell("プレイヤーデータの読み込みに失敗しました。", governorId);
   }
+}
+
+function filterPlayerForRole(player, role) {
+  if (!player) return player;
+  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return player;
+
+  const visible = { ...player };
+  delete visible.vip;
+  delete visible.x;
+  delete visible.y;
+  return visible;
 }
 
 function renderPlayerShell(message, governorId, player = null, payload = null) {
