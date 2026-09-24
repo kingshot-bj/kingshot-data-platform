@@ -3,6 +3,7 @@
   "main": "src/index.js",
   "compatibility_date": "2026-09-23",
   "vars": {
-    "DISCORD_CLIENT_ID": "1552660062063829093"
+    "DISCORD_CLIENT_ID": "1552660062063829093",
+    "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback"
   }
 }
