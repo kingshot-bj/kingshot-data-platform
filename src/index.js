@@ -321,12 +321,12 @@ function renderPlayerShell(message, governorId, player = null, payload = null) {
     <div class="hero"><div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">Governor ID ${esc(p.governor_id)}</div></div><div class="kid">K${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
-      ${card("役場", p.town_center_level ?? "-")}
+      ${card("役場", formatTownCenterLevel(p.town_center_level))}
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("オンライン", p.online ? "ONLINE" : "OFFLINE")}
-      ${card("最終活動", p.last_login || "-")}
+      ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
       ${card("同盟", p.alliance_name || "-")}
     </div>
     <div class="meta">
@@ -342,6 +342,40 @@ function renderPlayerShell(message, governorId, player = null, payload = null) {
 
 function card(label, value) {
   return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
+}
+
+function formatTownCenterLevel(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const level = Number(value);
+  if (!Number.isFinite(level)) return String(value);
+  if (level <= 30) return \`Lv.\${level}\`;
+  const goldLevel = Math.floor((level - 31) / 5) + 1;
+  const stage = ((level - 31) % 5) + 1;
+  return \`黄金\${goldLevel}（\${stage}/5）\`;
+}
+
+function formatRelativeActivity(lastActiveAt, fallback = null) {
+  if (lastActiveAt !== null && lastActiveAt !== undefined && lastActiveAt !== "") {
+    const timestamp = Number(lastActiveAt);
+    if (Number.isFinite(timestamp)) {
+      const diffSeconds = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
+      if (diffSeconds < 60) return "1分未満前";
+      if (diffSeconds < 3600) return \`\${Math.floor(diffSeconds / 60)}分前\`;
+      if (diffSeconds < 86400) return \`\${Math.floor(diffSeconds / 3600)}時間前\`;
+      if (diffSeconds < 86400 * 30) return \`\${Math.floor(diffSeconds / 86400)}日前\`;
+      if (diffSeconds < 86400 * 365) return \`\${Math.floor(diffSeconds / (86400 * 30))}か月前\`;
+      return \`\${Math.floor(diffSeconds / (86400 * 365))}年前\`;
+    }
+  }
+  return fallback ? translateLastLogin(fallback) : "-";
+}
+
+function translateLastLogin(value) {
+  return String(value)
+    .replace(/^Last active (\\d+)d ago$/i, "$1日前")
+    .replace(/^Last active (\\d+)h ago$/i, "$1時間前")
+    .replace(/^Last active (\\d+)m ago$/i, "$1分前")
+    .replace(/^Last active (just now)$/i, "直近");
 }
 
 function formatNumber(value) {
