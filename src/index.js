@@ -4,7 +4,6 @@ const DISCORD_ME_URL = "https://discord.com/api/users/@me";
 const CALLBACK_PATH = "/api/auth/callback";
 const DEFAULT_DISCORD_REDIRECT_URI = "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback";
 const SESSION_COOKIE = "eagleeye_session";
-const OAUTH_STATE_COOKIE = "eagleeye_oauth_state";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 export default {
@@ -51,9 +50,6 @@ async function startDiscordLogin(request, env) {
     "content-type": "text/html; charset=UTF-8",
     "cache-control": "no-store"
   });
-  responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
-    maxAge: 600, httpOnly: true, secure: true, sameSite: "None", path: "/"
-  }));
   return new Response(oauthRedirectPage(authorize.toString()), {
     status: 200,
     headers: responseHeaders
@@ -65,20 +61,11 @@ async function handleDiscordCallback(request, env) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  const cookies = parseCookie(request.headers.get("Cookie") || "");
-  const storedState = cookies[OAUTH_STATE_COOKIE];
-
   if (!config.clientId || !config.clientSecret || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
   if (!code || !state) {
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_callback_state" }, 400);
-  }
-  if (!storedState) {
-    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_state_cookie" }, 400);
-  }
-  if (state !== storedState) {
-    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "state_mismatch" }, 400);
   }
   if (!(await verifyStateToken(state, config.sessionSecret))) {
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "invalid_state_signature" }, 400);
@@ -130,9 +117,6 @@ async function handleDiscordCallback(request, env) {
   });
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
-  }));
-  responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, "", {
-    maxAge: 0, httpOnly: true, secure: true, sameSite: "None", path: "/"
   }));
   return new Response(oauthRedirectPage(new URL("/", request.url).toString()), {
     status: 200,
