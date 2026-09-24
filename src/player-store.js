@@ -36,6 +36,8 @@ export async function materializePlayer(db, observation) {
   const now = Math.floor(Date.now() / 1000);
   const governorId = String(player.governor_id ?? observation.payload.governor_id);
 
+  await savePlayerChangeEvents(db, existing, player, observation);
+
   await db.prepare(
     `INSERT INTO players (
       governor_id, uid, fid, nick_name, kid, power, town_center_level, vip,
@@ -106,4 +108,75 @@ export async function getPlayer(db, governorId) {
   return db.prepare(
     `SELECT * FROM players WHERE governor_id = ? LIMIT 1`
   ).bind(String(governorId)).first();
+}
+
+async function savePlayerChangeEvents(db, previous, current, observation) {
+  if (!previous) return;
+
+  const oldValues = {
+    power: previous.power ?? null,
+    town_center_level: previous.town_center_level ?? null,
+    vip: previous.vip ?? null,
+    x: previous.x ?? null,
+    y: previous.y ?? null,
+    kills: previous.kills ?? null,
+    online: previous.online ?? null,
+    last_active_at: previous.last_active_at ?? null,
+    alliance_aid: previous.alliance_aid ?? null,
+    alliance_name: previous.alliance_name ?? null,
+    alliance_rank: previous.alliance_rank ?? null,
+    alliance_power: previous.alliance_power ?? null,
+    alliance_count: previous.alliance_count ?? null
+  };
+
+  const alliance = current.alliance || {};
+  const newValues = {
+    power: current.power ?? null,
+    town_center_level: current.town_center_level ?? null,
+    vip: current.vip ?? null,
+    x: current.x ?? null,
+    y: current.y ?? null,
+    kills: current.kills ?? null,
+    online: current.online == null ? null : (current.online ? 1 : 0),
+    last_active_at: current.last_active_at ?? null,
+    alliance_aid: alliance.aid ?? null,
+    alliance_name: alliance.name ?? null,
+    alliance_rank: alliance.rank ?? null,
+    alliance_power: alliance.power ?? null,
+    alliance_count: alliance.count ?? null
+  };
+
+  for (const field of Object.keys(newValues)) {
+    if (Object.prototype.hasOwnProperty.call(current, field) === false &&
+        !field.startsWith("alliance_")) continue;
+
+    const oldValue = oldValues[field];
+    const newValue = newValues[field];
+    if (JSON.stringify(oldValue) === JSON.stringify(newValue)) continue;
+
+    let changeType = "PLAYER_FIELD_CHANGED";
+    if (field === "power") changeType = "POWER_CHANGED";
+    else if (field === "town_center_level") changeType = "TOWN_CENTER_CHANGED";
+    else if (field === "alliance_aid" || field === "alliance_name") changeType = "ALLIANCE_CHANGED";
+    else if (field === "x" || field === "y") changeType = "COORDINATES_CHANGED";
+    else if (field === "online" || field === "last_active_at") changeType = "ACTIVITY_CHANGED";
+    else if (field === "kills") changeType = "KILLS_CHANGED";
+
+    await db.prepare(
+      `INSERT INTO change_events (
+        event_id, target_type, target_id, change_type, field_name,
+        old_value_json, new_value_json, observation_id, detected_at, created_at
+      ) VALUES (?, 'PLAYER', ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      crypto.randomUUID(),
+      String(current.governor_id ?? observation.payload.governor_id),
+      changeType,
+      field,
+      JSON.stringify(oldValue),
+      JSON.stringify(newValue),
+      observation.observation_id,
+      observation.observed_at,
+      Math.floor(Date.now() / 1000)
+    ).run();
+  }
 }
