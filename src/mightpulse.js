@@ -76,6 +76,7 @@ export async function mightPulseFetch(env, path, {
       }
 
       await sleep(retryDelay(attempt, response.headers.get("Retry-After")));
+      continue;
     } catch (error) {
       if (error instanceof MightPulseError) {
         lastError = error;
