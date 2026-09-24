@@ -22,10 +22,14 @@ export default {
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
+      if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
       if (url.pathname === "/players") return new Response(await renderPlayerSearchPage(request, env), {
         headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
       });
       if (url.pathname === "/player/history") return new Response(await renderPlayerHistoryPage(request, env), {
+        headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+      });
+      if (url.pathname === "/player/changes") return new Response(await renderPlayerChangesPage(request, env), {
         headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
       });
       if (url.pathname === "/player") return new Response(await renderPlayerPage(request, env), {
@@ -349,6 +353,120 @@ async function handlePlayerHistoryApi(request, env) {
   }
 }
 
+
+async function handlePlayerChangesApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 100);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  try {
+    const result = await env.DB.prepare(
+      \`SELECT event_id, target_type, target_id, change_type, field_name,
+              old_value_json, new_value_json, observation_id, detected_at, created_at
+       FROM change_events
+       WHERE target_type = 'PLAYER' AND target_id = ?
+       ORDER BY detected_at DESC, created_at DESC
+       LIMIT ?\`
+    ).bind(governorId, limit).all();
+
+    const changes = (result.results || []).map(row => {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      return {
+        event_id: row.event_id, target_type: row.target_type, target_id: row.target_id,
+        change_type: row.change_type, field_name: row.field_name,
+        old_value: oldValue, new_value: newValue, observation_id: row.observation_id,
+        detected_at: row.detected_at, created_at: row.created_at
+      };
+    }).filter(change => isChangeVisibleForRole(change, auth.role));
+
+    return json({ ok: true, governor_id: governorId, changes });
+  } catch (error) {
+    console.error("Player changes API error:", error);
+    return json({ ok: false, error: "PLAYER_CHANGES_READ_FAILED" }, 500);
+  }
+}
+
+async function renderPlayerChangesPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+  }
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return renderChangesShell("Governor IDを指定してください。", "");
+  if (!env.DB) return renderChangesShell("データベースが設定されていません。", governorId);
+
+  try {
+    const result = await env.DB.prepare(
+      \`SELECT event_id, target_type, target_id, change_type, field_name,
+              old_value_json, new_value_json, observation_id, detected_at, created_at
+       FROM change_events
+       WHERE target_type = 'PLAYER' AND target_id = ?
+       ORDER BY detected_at DESC, created_at DESC
+       LIMIT 100\`
+    ).bind(governorId).all();
+
+    const changes = (result.results || []).map(row => {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      return { ...row, oldValue, newValue };
+    }).filter(change => isChangeVisibleForRole(change, auth.role));
+
+    if (!changes.length) return renderChangesShell("このプレイヤーの変更履歴はまだありません。", governorId);
+
+    const cards = changes.map(change => {
+      const label = changeFieldLabel(change.field_name);
+      const oldText = formatChangeValue(change.field_name, change.oldValue);
+      const newText = formatChangeValue(change.field_name, change.newValue);
+      return \`<article class="change"><div class="time">\${escapeHtml(formatUnix(change.detected_at))}</div><div class="headline"><strong>\${escapeHtml(label)}</strong><span>\${escapeHtml(changeTypeLabel(change.change_type))}</span></div><div class="transition"><span class="old">\${escapeHtml(oldText)}</span><span class="arrow">→</span><span class="new">\${escapeHtml(newText)}</span></div></article>\`;
+    }).join("");
+
+    return renderChangesShell("", governorId, cards);
+  } catch (error) {
+    console.error("Player changes page error:", error);
+    return renderChangesShell("変更履歴の読み込みに失敗しました。", governorId);
+  }
+}
+
+function renderChangesShell(message, governorId, cards = "") {
+  const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Change History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.change{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.headline strong{font-size:17px}.headline span{font-size:11px;color:#94a3b8;padding:4px 7px;border-radius:7px;background:#0b1220}.transition{display:flex;align-items:center;gap:10px;margin-top:12px;min-width:0}.old,.new{padding:9px 10px;border-radius:9px;overflow-wrap:anywhere;word-break:break-word}.old{background:#0b1220;color:#94a3b8}.new{background:#182f25;color:#bbf7d0;font-weight:800}.arrow{color:#f59e0b;font-weight:900}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}@media(max-width:520px){.transition{align-items:stretch}.old,.new{flex:1}.arrow{align-self:center}}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">CHANGE EVENTS</div><h1 class="title">変更履歴</h1><div class="sub">Governor ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+}
+
+function isChangeVisibleForRole(change, role) {
+  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return true;
+  return !["vip", "x", "y"].includes(String(change.field_name || ""));
+}
+
+function changeTypeLabel(value) {
+  const labels = { POWER_CHANGED:"戦力変更", TOWN_CENTER_CHANGED:"役場変更", ALLIANCE_CHANGED:"同盟変更", COORDINATES_CHANGED:"座標変更", ACTIVITY_CHANGED:"活動状況変更", KILLS_CHANGED:"撃破数変更", PLAYER_FIELD_CHANGED:"プレイヤー情報変更" };
+  return labels[value] || value || "変更";
+}
+
+function changeFieldLabel(field) {
+  const labels = { power:"戦力", town_center_level:"役場", vip:"VIP", x:"X座標", y:"Y座標", kills:"撃破数", online:"オンライン", last_active_at:"最終活動", alliance_aid:"同盟ID", alliance_name:"同盟", alliance_rank:"同盟ランク", alliance_power:"同盟戦力", alliance_count:"同盟人数" };
+  return labels[field] || field || "不明";
+}
+
+function formatChangeValue(field, value) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (["power","kills","alliance_power","alliance_count","alliance_aid"].includes(field)) return formatNumber(value);
+  if (field === "town_center_level") return formatTownCenterLevel(value);
+  if (field === "online") return Number(value) ? "オンライン" : "オフライン";
+  if (field === "last_active_at") return formatRelativeActivity(value);
+  if (field === "x" || field === "y") return formatNumber(value);
+  return String(value);
+}
+
 async function renderPlayerHistoryPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
@@ -439,6 +557,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null) {
       ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
       ${card("同盟", p.alliance_name || "-")}
     </div>
+    <div class="actions"><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
       <div><b>Fresh</b> ${freshness.fresh === true ? "YES" : "NO / cached"}</div>
