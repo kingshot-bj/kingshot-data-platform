@@ -72,9 +72,9 @@ export async function recordApiPoolSuccess(db, { keyId, leaseId, endpoint = null
   await releaseApiLease(db, leaseId);
 }
 
-export async function recordApiPoolFailure(db, { keyId, leaseId, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false } = {}) {
+export async function recordApiPoolFailure(db, { keyId, leaseId, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
   const now = Math.floor(Date.now() / 1000);
-  const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : "ERROR";
+  const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : keepAvailable ? "AVAILABLE" : "ERROR";
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
 
   await db.prepare(
