@@ -9,7 +9,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 import { getMightPulsePlayer } from "./mightpulse.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
-import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
+import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";\nimport { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 
 export default {
   async fetch(request, env) {
@@ -20,6 +20,12 @@ export default {
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
+      if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
+      if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
+      if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
+      if (url.pathname === "/admin/api-pool") return new Response(await renderApiPoolAdminPage(request, env), {
+        headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+      });
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
@@ -237,6 +243,129 @@ async function handleMightPulsePlayerTest(request, env) {
       }
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
   }
+}
+
+
+async function requireAdmin(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
+  if (auth.role !== "ADMIN" && auth.role !== "OWNER") return { error: json({ ok: false, error: "ADMIN_REQUIRED" }, 403) };
+  if (!env.DB) return { error: json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503) };
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  return { auth };
+}
+
+async function handleApiPoolKeys(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    const keys = await listApiPoolKeys(env.DB);
+    return json({ ok: true, keys: keys.map(k => ({
+      ...k,
+      key_fingerprint: k.key_fingerprint ? String(k.key_fingerprint).slice(0, 16) + "…" : null,
+      last_error_message: k.last_error_message || null
+    })), stats: await getPoolStats(env.DB) });
+  } catch (error) {
+    console.error("API pool list error:", error);
+    return json({ ok: false, error: "API_POOL_READ_FAILED" }, 500);
+  }
+}
+
+async function handleApiPoolAdd(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    const contentType = request.headers.get("content-type") || "";
+    let body = {};
+    if (contentType.includes("application/json")) {
+      body = await request.json();
+    } else {
+      const form = await request.formData();
+      body = Object.fromEntries(form.entries());
+    }
+    const poolType = String(body.pool_type || "SYSTEM_GENERAL");
+    const result = await addApiPoolKey(env.DB, {
+      poolType,
+      label: String(body.label || "").trim() || null,
+      apiKey: String(body.api_key || "").trim(),
+      contributedByUserId: poolType === "USER_CONTRIBUTED" ? guard.auth.user_id : null,
+      consentVersion: poolType === "USER_CONTRIBUTED" ? "v1" : null
+    });
+    if (contentType.includes("application/json")) return json({ ok: true, key: result }, 201);
+    return new Response(null, { status: 302, headers: { Location: "/admin/api-pool", "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("API pool add error:", error);
+    return json({ ok: false, error: error?.message || "API_POOL_ADD_FAILED" }, 400);
+  }
+}
+
+async function handleApiPoolTestPlayer(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  let lease = null;
+  try {
+    lease = await leaseApiKey(env.DB, {
+      poolType: "SYSTEM_GENERAL",
+      purpose: "ADMIN_TEST",
+      targetType: "PLAYER",
+      targetId: governorId
+    });
+    const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key });
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id,
+      leaseId: lease.lease_id,
+      endpoint: "/players/:governor_id",
+      targetType: "PLAYER",
+      targetId: governorId,
+      purpose: "ADMIN_TEST",
+      httpStatus: result.status,
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+    });
+    return json({ ok: true, provider: "MIGHTPULSE", target_type: "PLAYER", target_id: governorId, upstream_status: result.status, key_id: lease.key_id });
+  } catch (error) {
+    if (lease) {
+      const cooldown = error?.status === 429 ? 60 : error?.status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
+      const disable = error?.status === 401;
+      await recordApiPoolFailure(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        endpoint: "/players/:governor_id",
+        targetType: "PLAYER",
+        targetId: governorId,
+        purpose: "ADMIN_TEST",
+        httpStatus: error?.status || 0,
+        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        errorMessage: error?.message || null,
+        cooldownSeconds: cooldown,
+        disable
+      });
+    }
+    return json({
+      ok: false,
+      error: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+      status: error?.status || 0
+    }, error?.status >= 400 && error.status < 600 ? error.status : 502);
+  }
+}
+
+function parseHeaderNumber(headers, name) {
+  const value = headers?.get?.(name);
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function renderApiPoolAdminPage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
+  const keys = await listApiPoolKeys(env.DB);
+  const stats = await getPoolStats(env.DB);
+  const rows = keys.map(k => "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td>" + escapeHtml(k.status) + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td></tr>").join("");
+  const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap} .scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th></tr></thead><tbody>" + (rows || "<tr><td colspan='6'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form onsubmit='event.preventDefault();fetch("/api/admin/api-pool/test-player?governor_id="+encodeURIComponent(document.getElementById("gid").value)).then(r=>r.json()).then(x=>document.getElementById("out").textContent=JSON.stringify(x,null,2)).catch(e=>document.getElementById("out").textContent=e.message)'><label>Governor ID<input id='gid' placeholder='223636495' required></label><button>Pool経由で取得</button></form><pre id='out' class='hint'></pre></div></main></body></html>";
 }
 
 async function handlePlayerApi(request, env) {
