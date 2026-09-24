@@ -426,7 +426,7 @@ async function renderPlayerSearchPage(request, env) {
   let rows = [];
 
   if (q && env.DB) {
-    const like = `%\${q}%`;
+    const like = `%${q}%`;
     rows = await env.DB.prepare(
       `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, observed_at
        FROM players
@@ -440,13 +440,13 @@ async function renderPlayerSearchPage(request, env) {
   }
 
   const results = rows.map(row => `
-    <a class="result" href="/player?governor_id=\${encodeURIComponent(row.governor_id)}">
+    <a class="result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
       <div class="result-main">
-        <div class="name">\${escapeHtml(row.nick_name || "Unknown Player")}</div>
-        <div class="sub">Governor ID \${escapeHtml(row.governor_id)} · K\${escapeHtml(row.kid ?? "-")}</div>
-        <div class="sub">\${escapeHtml(row.alliance_name || "同盟なし")}</div>
+        <div class="name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
+        <div class="sub">Governor ID ${escapeHtml(row.governor_id)} · K${escapeHtml(row.kid ?? "-")}</div>
+        <div class="sub">${escapeHtml(row.alliance_name || "同盟なし")}</div>
       </div>
-      <div class="power">\${escapeHtml(formatNumber(row.power))}</div>
+      <div class="power">${escapeHtml(formatNumber(row.power))}</div>
     </a>`).join("");
 
   const body = q
@@ -455,7 +455,7 @@ async function renderPlayerSearchPage(request, env) {
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.desc{color:#94a3b8;margin:0 0 18px}.search{display:flex;gap:8px}.search input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:white;font-size:16px}.search button{padding:14px 17px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900}.results{margin-top:18px;display:grid;gap:10px}.result{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238;color:white;text-decoration:none}.result:active{transform:translateY(1px)}.name{font-size:17px;font-weight:800;overflow-wrap:anywhere}.sub{margin-top:4px;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.power{font-weight:900;color:#f59e0b;white-space:nowrap}.hint,.empty{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}.empty{color:#fca5a5}
-  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">名前・Governor ID・KID・同盟名から検索</p><form class="search" method="get" action="/players"><input name="q" value="\${escapeHtml(q)}" placeholder="プレイヤー名 / Governor ID / KID / 同盟"><button>検索</button></form><div class="results">\${body}</div></main></body></html>`;
+  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">名前・Governor ID・KID・同盟名から検索</p><form class="search" method="get" action="/players"><input name="q" value="${escapeHtml(q)}" placeholder="プレイヤー名 / Governor ID / KID / 同盟"><button>検索</button></form><div class="results">${body}</div></main></body></html>`;
 }
 
 
@@ -707,10 +707,10 @@ function formatTownCenterLevel(value) {
   if (value === null || value === undefined || value === "") return "-";
   const level = Number(value);
   if (!Number.isFinite(level)) return String(value);
-  if (level <= 30) return `Lv.\${level}`;
+  if (level <= 30) return `Lv.${level}`;
   const goldLevel = Math.floor((level - 31) / 5) + 1;
   const stage = ((level - 31) % 5) + 1;
-  return `黄金\${goldLevel}（\${stage}/5）`;
+  return `黄金${goldLevel}（${stage}/5）`;
 }
 
 function formatRelativeActivity(lastActiveAt, fallback = null) {
@@ -719,11 +719,11 @@ function formatRelativeActivity(lastActiveAt, fallback = null) {
     if (Number.isFinite(timestamp)) {
       const diffSeconds = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
       if (diffSeconds < 60) return "1分未満前";
-      if (diffSeconds < 3600) return `\${Math.floor(diffSeconds / 60)}分前`;
-      if (diffSeconds < 86400) return `\${Math.floor(diffSeconds / 3600)}時間前`;
-      if (diffSeconds < 86400 * 30) return `\${Math.floor(diffSeconds / 86400)}日前`;
-      if (diffSeconds < 86400 * 365) return `\${Math.floor(diffSeconds / (86400 * 30))}か月前`;
-      return `\${Math.floor(diffSeconds / (86400 * 365))}年前`;
+      if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}分前`;
+      if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}時間前`;
+      if (diffSeconds < 86400 * 30) return `${Math.floor(diffSeconds / 86400)}日前`;
+      if (diffSeconds < 86400 * 365) return `${Math.floor(diffSeconds / (86400 * 30))}か月前`;
+      return `${Math.floor(diffSeconds / (86400 * 365))}年前`;
     }
   }
   return fallback ? translateLastLogin(fallback) : "-";
