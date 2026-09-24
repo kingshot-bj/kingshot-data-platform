@@ -52,16 +52,24 @@ export async function mightPulseFetch(env, path, {
         signal: controller.signal
       });
 
+      const rawBody = await response.text();
+      const body = parseJsonOrNull(rawBody);
+
       if (response.ok) {
-        const data = await response.json();
+        if (body === null) {
+          throw new MightPulseError("MightPulse returned a non-JSON response.", {
+            status: response.status,
+            code: "MIGHTPULSE_INVALID_RESPONSE",
+            retryable: false,
+            details: { content_type: response.headers.get("content-type") || null }
+          });
+        }
         return {
-          data,
+          data: body,
           status: response.status,
           headers: response.headers
         };
       }
-
-      const body = await safeJson(response);
       const retryable = response.status === 429 || response.status >= 500;
 
       lastError = new MightPulseError("MightPulse API request failed.", {
@@ -177,9 +185,10 @@ function retryDelay(attempt, retryAfter) {
   return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
 }
 
-async function safeJson(response) {
+async function parseJsonOrNull(rawBody) {
+  if (!rawBody) return null;
   try {
-    return await response.json();
+    return JSON.parse(rawBody);
   } catch {
     return null;
   }
