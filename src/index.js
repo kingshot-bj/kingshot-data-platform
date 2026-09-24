@@ -47,20 +47,16 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify");
   authorize.searchParams.set("state", state);
 
-  const headers = new Headers({
-    Location: authorize.toString(),
-    "Cache-Control": "no-store"
+  const responseHeaders = new Headers({
+    "content-type": "text/html; charset=UTF-8",
+    "cache-control": "no-store"
   });
-  headers.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
+  responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
     maxAge: 600, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
   return new Response(oauthRedirectPage(authorize.toString()), {
     status: 200,
-    headers: {
-      "content-type": "text/html; charset=UTF-8",
-      "cache-control": "no-store",
-      "Set-Cookie": headers.get("Set-Cookie") || ""
-    }
+    headers: responseHeaders
   });
 }
 
@@ -128,23 +124,19 @@ async function handleDiscordCallback(request, env) {
   };
   const session = await signPayload(sessionPayload, config.sessionSecret);
 
-  const headers = new Headers({
-    Location: new URL("/", request.url).toString(),
-    "Cache-Control": "no-store"
+  const responseHeaders = new Headers({
+    "content-type": "text/html; charset=UTF-8",
+    "cache-control": "no-store"
   });
-  headers.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
+  responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
-  headers.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, "", {
+  responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, "", {
     maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
   return new Response(oauthRedirectPage(new URL("/", request.url).toString()), {
     status: 200,
-    headers: {
-      "content-type": "text/html; charset=UTF-8",
-      "cache-control": "no-store",
-      "Set-Cookie": headers.get("Set-Cookie") || ""
-    }
+    headers: responseHeaders
   });
 }
 
