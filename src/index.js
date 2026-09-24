@@ -6,6 +6,10 @@ const DEFAULT_DISCORD_REDIRECT_URI = "https://kingshot-data-platform.black-jack-
 const SESSION_COOKIE = "eagleeye_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
+import { getMightPulsePlayer } from "./mightpulse.js";
+import { observationEnvelope } from "./mightpulse-normalizer.js";
+import { saveApiObservation } from "./api-observations.js";
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -14,6 +18,7 @@ export default {
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
+      if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       return new Response(await renderHome(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
     } catch (error) {
       console.error("EagleEye request error:", error);
@@ -176,6 +181,58 @@ function logout(request) {
   return new Response(null, { status: 302, headers });
 }
 
+async function handleMightPulsePlayerTest(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (auth.status !== "ACTIVE") return json({ ok: false, error: "USER_DISABLED" }, 403);
+  if (auth.role !== "ADMIN") return json({ ok: false, error: "ADMIN_REQUIRED" }, 403);
+
+  const url = new URL(request.url);
+  const governorId = url.searchParams.get("governor_id");
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  try {
+    const result = await getMightPulsePlayer(env, governorId, { include: "base" });
+    if (env.DB) {
+      const observation = observationEnvelope({
+        endpoint: "/players/:governor_id",
+        httpStatus: result.status,
+        raw: result.data
+      });
+      await saveApiObservation(env.DB, observation);
+    }
+    return json({
+      ok: true,
+      provider: "MIGHTPULSE",
+      target_type: "PLAYER",
+      target_id: governorId,
+      upstream_status: result.status,
+      saved_observation: Boolean(env.DB)
+    });
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+      status: error?.status || 0
+    }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
+  }
+}
+
+async function getAuthenticatedUser(request, env) {
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  if (!token || !secret) return null;
+  const session = await verifyPayload(token, secret);
+  if (!session) return null;
+
+  if (!env.DB) return { discord_id: session.sub, status: "ACTIVE", role: "ADMIN" };
+
+  const user = await env.DB.prepare(
+    "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+  ).bind(session.sub).first();
+  return user || null;
+}
+
 async function handleMe(request, env) {
   const secret = env.EAGLEEYE_SESSION_SECRET;
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
@@ -184,6 +241,12 @@ async function handleMe(request, env) {
   const session = await verifyPayload(token, secret);
   if (!session) return json({ ok: true, authenticated: false });
 
+  const dbUser = env.DB
+    ? await env.DB.prepare(
+        "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+      ).bind(session.sub).first()
+    : null;
+
   return json({
     ok: true,
     authenticated: true,
@@ -191,7 +254,9 @@ async function handleMe(request, env) {
       discord_id: session.sub,
       username: session.username,
       global_name: session.global_name,
-      avatar: session.avatar
+      avatar: session.avatar,
+      role: dbUser?.role || "BASIC",
+      status: dbUser?.status || "ACTIVE"
     }
   });
 }
