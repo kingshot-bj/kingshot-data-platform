@@ -147,8 +147,9 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
   };
 
   for (const field of Object.keys(newValues)) {
-    if (Object.prototype.hasOwnProperty.call(current, field) === false &&
-        !field.startsWith("alliance_")) continue;
+    const sourceObject = field.startsWith("alliance_") ? alliance : current;
+    const sourceKey = field.startsWith("alliance_") ? field.slice("alliance_".length) : field;
+    if (!Object.prototype.hasOwnProperty.call(sourceObject, sourceKey)) continue;
 
     const oldValue = oldValues[field];
     const newValue = newValues[field];
