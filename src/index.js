@@ -33,7 +33,11 @@ function getConfig(env) {
 async function startDiscordLogin(request, env) {
   const config = getConfig(env);
   if (!config.clientId || !config.sessionSecret) {
-    return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
+    const missing = [];
+    if (!config.clientId) missing.push("DISCORD_CLIENT_ID");
+    if (!config.sessionSecret) missing.push("EAGLEEYE_SESSION_SECRET");
+    console.error("Discord auth configuration missing:", missing.join(","));
+    return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED", missing }, 503);
   }
 
   const redirectUri = new URL(CALLBACK_PATH, request.url).toString();
