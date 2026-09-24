@@ -52,7 +52,7 @@ async function startDiscordLogin(request, env) {
     "Cache-Control": "no-store"
   });
   headers.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
-    maxAge: 600, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+    maxAge: 600, httpOnly: true, secure: true, sameSite: "None", path: "/"
   }));
   return new Response(null, { status: 302, headers });
 }
@@ -68,11 +68,17 @@ async function handleDiscordCallback(request, env) {
   if (!config.clientId || !config.clientSecret || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
-  if (!code || !state || !storedState || state !== storedState) {
-    return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+  if (!code || !state) {
+    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_callback_state" }, 400);
+  }
+  if (!storedState) {
+    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_state_cookie" }, 400);
+  }
+  if (state !== storedState) {
+    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "state_mismatch" }, 400);
   }
   if (!(await verifyStateToken(state, config.sessionSecret))) {
-    return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+    return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "invalid_state_signature" }, 400);
   }
 
   const redirectUri = config.redirectUri;
