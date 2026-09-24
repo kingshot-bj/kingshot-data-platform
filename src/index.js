@@ -185,7 +185,7 @@ async function handleMightPulsePlayerTest(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (auth.status !== "ACTIVE") return json({ ok: false, error: "USER_DISABLED" }, 403);
-  if (auth.role !== "ADMIN") return json({ ok: false, error: "ADMIN_REQUIRED" }, 403);
+  if (auth.role !== "ADMIN" && auth.role !== "OWNER") return json({ ok: false, error: "ADMIN_REQUIRED" }, 403);
 
   const url = new URL(request.url);
   const governorId = url.searchParams.get("governor_id");
