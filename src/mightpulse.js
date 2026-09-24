@@ -185,7 +185,7 @@ function retryDelay(attempt, retryAfter) {
   return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
 }
 
-async function parseJsonOrNull(rawBody) {
+function parseJsonOrNull(rawBody) {
   if (!rawBody) return null;
   try {
     return JSON.parse(rawBody);
