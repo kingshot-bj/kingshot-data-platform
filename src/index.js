@@ -444,7 +444,11 @@ async function handleApiPoolTestPlayer(request, env) {
       httpStatus: result.status,
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
-    return json({ ok: true, provider: "MIGHTPULSE", target_type: "PLAYER", target_id: governorId, upstream_status: result.status, key_id: lease.key_id });
+    const payload = { ok: true, provider: "MIGHTPULSE", target_type: "PLAYER", target_id: governorId, upstream_status: result.status, key_id: lease.key_id };
+    if ((request.headers.get("accept") || "").includes("text/html")) {
+      return renderApiPoolTestResult(governorId, payload);
+    }
+    return json(payload);
   } catch (error) {
     if (lease) {
       const cooldown = error?.status === 429 ? 60 : error?.status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
