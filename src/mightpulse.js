@@ -29,7 +29,7 @@ export async function mightPulseFetch(env, path, {
   }
 
   const baseUrl = env.MIGHTPULSE_API_BASE_URL || DEFAULT_BASE_URL;
-  const url = new URL(path.replace(/^\\/+/, ""), baseUrl + "/");
+  const url = new URL(path.replace(/^\/+/, ""), baseUrl + "/");
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
