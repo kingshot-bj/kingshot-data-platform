@@ -46,13 +46,12 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify");
   authorize.searchParams.set("state", state);
 
-  const responseHeaders = new Headers({
-    "content-type": "text/html; charset=UTF-8",
-    "cache-control": "no-store"
-  });
-  return new Response(oauthRedirectPage(authorize.toString()), {
-    status: 200,
-    headers: responseHeaders
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "Location": authorize.toString(),
+      "Cache-Control": "no-store"
+    }
   });
 }
 
@@ -112,23 +111,17 @@ async function handleDiscordCallback(request, env) {
   const session = await signPayload(sessionPayload, config.sessionSecret);
 
   const responseHeaders = new Headers({
-    "content-type": "text/html; charset=UTF-8",
-    "cache-control": "no-store"
+    Location: new URL("/", request.url).toString(),
+    "Cache-Control": "no-store"
   });
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
-  return new Response(oauthRedirectPage(new URL("/", request.url).toString()), {
-    status: 200,
+  return new Response(null, {
+    status: 302,
     headers: responseHeaders
   });
 }
-
-function oauthRedirectPage(target) {
-  const safeTarget = escapeHtml(target);
-  return "<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"UTF-8\"><meta http-equiv=\"refresh\" content=\"0;url=" + safeTarget + "\"><title>EagleEye</title></head><body><p>移動しています…</p><p><a href=\"" + safeTarget + "\">続行</a></p><script>location.replace(" + JSON.stringify(target) + ");</script></body></html>";
-}
-
 function logout(request) {
   const headers = new Headers({
     Location: new URL("/", request.url).toString(),
