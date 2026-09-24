@@ -685,7 +685,7 @@ async function renderPlayerSearchPage(request, env) {
 
   if (q && env.DB) {
     const like = `%${q}%`;
-    rows = await env.DB.prepare(
+    const searchResult = await env.DB.prepare(
       `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, observed_at
        FROM players
        WHERE governor_id LIKE ?
@@ -695,6 +695,7 @@ async function renderPlayerSearchPage(request, env) {
        ORDER BY power DESC
        LIMIT 30`
     ).bind(like, like, like, like).all();
+    rows = searchResult.results || [];
   }
 
   const results = rows.map(row => `
