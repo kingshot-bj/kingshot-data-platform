@@ -28,6 +28,11 @@ export async function materializePlayer(db, observation) {
   }
 
   const alliance = player.alliance || {};
+  const existing = await getPlayer(db, String(player.governor_id ?? observation.payload.governor_id));
+  const value = (object, key, fallback = null) =>
+    Object.prototype.hasOwnProperty.call(object || {}, key) ? object[key] : fallback;
+  const allianceValue = (key, fallback = null) =>
+    Object.prototype.hasOwnProperty.call(alliance, key) ? alliance[key] : fallback;
   const now = Math.floor(Date.now() / 1000);
   const governorId = String(player.governor_id ?? observation.payload.governor_id);
 
@@ -55,15 +60,34 @@ export async function materializePlayer(db, observation) {
       observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id,
       updated_at=excluded.updated_at`
   ).bind(
-    governorId, player.uid ?? null, player.fid != null ? String(player.fid) : null,
-    player.nick_name ?? null, player.kid ?? null, player.power ?? null,
-    player.town_center_level ?? null, player.vip ?? null, player.x ?? null, player.y ?? null,
-    player.kills ?? null, player.office ?? null, player.online ? 1 : 0,
-    player.last_active_at ?? null, player.last_login ?? null, player.avatar_url ?? null,
-    player.language ?? null, player.shield_endtime ?? null, player.burn_endtime ?? null,
-    alliance.aid ?? null, alliance.abbr ?? null, alliance.name ?? null, alliance.rank ?? null,
-    alliance.rank_label ?? null, alliance.power ?? null, alliance.count ?? null,
-    alliance.leader_name ?? null, observation.observed_at, observation.observation_id, now
+    governorId,
+    value(player, "uid", existing?.uid),
+    value(player, "fid", existing?.fid) != null ? String(value(player, "fid", existing?.fid)) : null,
+    value(player, "nick_name", existing?.nick_name),
+    value(player, "kid", existing?.kid),
+    value(player, "power", existing?.power),
+    value(player, "town_center_level", existing?.town_center_level),
+    value(player, "vip", existing?.vip),
+    value(player, "x", existing?.x),
+    value(player, "y", existing?.y),
+    value(player, "kills", existing?.kills),
+    value(player, "office", existing?.office),
+    value(player, "online", existing?.online) ? 1 : 0,
+    value(player, "last_active_at", existing?.last_active_at),
+    value(player, "last_login", existing?.last_login),
+    value(player, "avatar_url", existing?.avatar_url),
+    value(player, "language", existing?.language),
+    value(player, "shield_endtime", existing?.shield_endtime),
+    value(player, "burn_endtime", existing?.burn_endtime),
+    allianceValue("aid", existing?.alliance_aid),
+    allianceValue("abbr", existing?.alliance_abbr),
+    allianceValue("name", existing?.alliance_name),
+    allianceValue("rank", existing?.alliance_rank),
+    allianceValue("rank_label", existing?.alliance_rank_label),
+    allianceValue("power", existing?.alliance_power),
+    allianceValue("count", existing?.alliance_count),
+    allianceValue("leader_name", existing?.alliance_leader_name),
+    observation.observed_at, observation.observation_id, now
   ).run();
 
   await db.prepare(
