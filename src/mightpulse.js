@@ -98,7 +98,15 @@ export async function mightPulseFetch(env, path, {
         error?.name === "AbortError" ? "MightPulse API request timed out." : "MightPulse API request failed.",
         {
           code: error?.name === "AbortError" ? "MIGHTPULSE_TIMEOUT" : "MIGHTPULSE_NETWORK_ERROR",
-          retryable: true
+          retryable: true,
+          details: {
+            attempt: attempt + 1,
+            max_attempts: maxRetries + 1,
+            error_name: error?.name || null,
+            error_message: error?.message || null,
+            host: url.host,
+            path: url.pathname
+          }
         }
       );
 
