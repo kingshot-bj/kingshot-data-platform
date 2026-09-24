@@ -448,7 +448,9 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
-    return renderApiPoolTestResult(governorId, payload);
+    return new Response(renderApiPoolTestResult(governorId, payload), {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+    });
   } catch (error) {
     if (lease) {
       const cooldown = error?.status === 429 ? 60 : error?.status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
@@ -478,7 +480,9 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload, responseStatus);
     }
-    return renderApiPoolTestResult(governorId, payload);
+    return new Response(renderApiPoolTestResult(governorId, payload), {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+    });
   }
 }
 
