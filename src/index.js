@@ -535,12 +535,16 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       apiKey: lease.api_key
     });
 
-    const observation = observationEnvelope({
+    const observationEnvelopeData = observationEnvelope({
       endpoint: "/players/:governor_id",
       httpStatus: result.status,
       raw: result.data
     });
-    await saveApiObservation(env.DB, observation);
+    const savedObservation = await saveApiObservation(env.DB, observationEnvelopeData);
+    const observation = {
+      ...observationEnvelopeData,
+      observation_id: savedObservation.observation_id
+    };
 
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
@@ -701,10 +705,10 @@ async function renderPlayerSearchPage(request, env) {
 
   const numericGovernorId = /^\d{7,12}$/.test(q);
   const body = q
-    ? (results || (numericGovernorId
+    ? (rows.length > 0 ? results : (numericGovernorId
       ? `<a class="lookup" href="/player?governor_id=${encodeURIComponent(q)}">領主ID ${escapeHtml(q)} をデータ取得して表示する →</a>`
-      : `<div class="empty">該当するプレイヤーが見つかりません。<br><span>名前・KID・同盟名は、EagleEyeに保存済みのデータから検索します。</span></div>`))
-    : `<div class="hint">プレイヤー名、Governor ID、KID、同盟名から検索できます。<br><span>Governor IDで検索したプレイヤーが未登録でも、EagleEyeが取得して詳細を表示します。</span></div>`;
+      : `<div class="empty">該当するプレイヤーが見つかりません。<br><span>領主名・領主ID・王国・同盟名は、EagleEyeに保存済みのデータから検索します。</span></div>`))
+    : `<div class="hint">領主名・領主ID・王国・同盟名から検索できます。<br><span>領主IDで検索した領主が未登録でも、EagleEyeが取得して詳細を表示します。</span></div>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.desc{color:#94a3b8;margin:0 0 18px}.search{display:flex;gap:8px}.search input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:white;font-size:16px}.search button{padding:14px 17px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900}.results{margin-top:18px;display:grid;gap:10px}.result{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238;color:white;text-decoration:none}.result:active{transform:translateY(1px)}.name{font-size:17px;font-weight:800;overflow-wrap:anywhere}.sub{margin-top:4px;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.power{font-weight:900;color:#f59e0b;white-space:nowrap}.hint,.empty,.lookup{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}.empty{color:#fca5a5}.lookup{display:block;color:#f59e0b;text-decoration:none;font-weight:800}.hint span,.empty span{font-size:12px}
