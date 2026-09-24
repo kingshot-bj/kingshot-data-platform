@@ -213,7 +213,12 @@ async function handleMightPulsePlayerTest(request, env) {
     return json({
       ok: false,
       error: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-      status: error?.status || 0
+      status: error?.status || 0,
+      diagnostic: {
+        name: error?.name || null,
+        message: error?.message || null,
+        details: error?.details || null
+      }
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
   }
 }
