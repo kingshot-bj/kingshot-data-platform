@@ -9,6 +9,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 import { getMightPulsePlayer } from "./mightpulse.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
+import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
 
 export default {
   async fetch(request, env) {
@@ -19,6 +20,10 @@ export default {
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
+      if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
+      if (url.pathname === "/player") return new Response(await renderPlayerPage(request, env), {
+        headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+      });
       return new Response(await renderHome(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
     } catch (error) {
       console.error("EagleEye request error:", error);
@@ -221,6 +226,122 @@ async function handleMightPulsePlayerTest(request, env) {
       }
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
   }
+}
+
+async function handlePlayerApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (auth.status !== "ACTIVE") return json({ ok: false, error: "USER_DISABLED" }, 403);
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  try {
+    let player = await getPlayer(env.DB, governorId);
+    let observation = await getLatestPlayerObservation(env.DB, governorId);
+
+    if (!observation) {
+      return json({ ok: false, error: "PLAYER_NOT_OBSERVED" }, 404);
+    }
+
+    if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
+      player = await materializePlayer(env.DB, observation);
+    }
+
+    return json({
+      ok: true,
+      player,
+      freshness: {
+        provider: "MIGHTPULSE",
+        fresh: observation.payload?.fresh ?? null,
+        cached_at: observation.payload?.cached_at ?? null,
+        age_seconds: observation.payload?.age_seconds ?? null,
+        eagleeye_observed_at: observation.observed_at
+      }
+    });
+  } catch (error) {
+    console.error("Player API error:", error);
+    return json({
+      ok: false,
+      error: "PLAYER_READ_FAILED",
+      diagnostic: { message: error?.message || null }
+    }, 500);
+  }
+}
+
+async function renderPlayerPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`;
+  }
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) {
+    return renderPlayerShell("Governor IDを指定してください。", "");
+  }
+
+  try {
+    let observation = await getLatestPlayerObservation(env.DB, governorId);
+    if (!observation) return renderPlayerShell("プレイヤーデータがまだありません。", governorId);
+
+    let player = await getPlayer(env.DB, governorId);
+    if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
+      player = await materializePlayer(env.DB, observation);
+    }
+
+    return renderPlayerShell("", governorId, player, observation.payload);
+  } catch (error) {
+    console.error("Player page error:", error);
+    return renderPlayerShell("プレイヤーデータの読み込みに失敗しました。", governorId);
+  }
+}
+
+function renderPlayerShell(message, governorId, player = null, payload = null) {
+  const p = player || {};
+  const freshness = payload || {};
+  const esc = escapeHtml;
+  const content = player ? `
+    <div class="hero"><div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">Governor ID ${esc(p.governor_id)}</div></div><div class="kid">K${esc(p.kid ?? "-")}</div></div>
+    <div class="grid">
+      ${card("戦力", formatNumber(p.power))}
+      ${card("役場", p.town_center_level ?? "-")}
+      ${card("VIP", p.vip ?? "-")}
+      ${card("撃破数", formatNumber(p.kills))}
+      ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
+      ${card("オンライン", p.online ? "ONLINE" : "OFFLINE")}
+      ${card("最終活動", p.last_login || "-")}
+      ${card("同盟", p.alliance_name || "-")}
+    </div>
+    <div class="meta">
+      <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
+      <div><b>Fresh</b> ${freshness.fresh === true ? "YES" : "NO / cached"}</div>
+      <div><b>観測時刻</b> ${formatUnix(p.observed_at)}</div>
+    </div>` : `<div class="message">${esc(message)}</div>`;
+
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.message{margin-top:24px;padding:22px;border:1px solid #334155;border-radius:16px;background:#111c31}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}}
+  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="Governor ID"><button>検索</button></form>${content}</main></body></html>`;
+}
+
+function card(label, value) {
+  return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("ja-JP") : String(value);
+}
+
+function formatUnix(value) {
+  if (!value) return "-";
+  const date = new Date(Number(value) * 1000);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 }
 
 async function getAuthenticatedUser(request, env) {
