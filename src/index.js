@@ -52,7 +52,7 @@ async function startDiscordLogin(request, env) {
     "cache-control": "no-store"
   });
   responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
-    maxAge: 600, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+    maxAge: 600, httpOnly: true, secure: true, sameSite: "None", path: "/"
   }));
   return new Response(oauthRedirectPage(authorize.toString()), {
     status: 200,
@@ -132,7 +132,7 @@ async function handleDiscordCallback(request, env) {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
   responseHeaders.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, "", {
-    maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+    maxAge: 0, httpOnly: true, secure: true, sameSite: "None", path: "/"
   }));
   return new Response(oauthRedirectPage(new URL("/", request.url).toString()), {
     status: 200,
