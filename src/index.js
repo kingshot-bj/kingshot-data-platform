@@ -463,12 +463,34 @@ async function handleApiPoolTestPlayer(request, env) {
         disable
       });
     }
-    return json({
+    const status = Number(error?.status || 0);
+    const responseStatus = status >= 400 && status < 600 ? status : 502;
+    const payload = {
       ok: false,
       error: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-      status: error?.status || 0
-    }, error?.status >= 400 && error.status < 600 ? error.status : 502);
+      status,
+      diagnostic: error?.details || null
+    };
+    if ((request.headers.get("accept") || "").includes("text/html")) {
+      return renderApiPoolTestResult(governorId, payload);
+    }
+    return json(payload, responseStatus);
   }
+}
+
+function renderApiPoolTestResult(governorId, result) {
+  const esc = escapeHtml;
+  const ok = result?.ok === true;
+  const title = ok ? "API Pool テスト成功" : "API Pool テスト失敗";
+  const status = result?.status ?? "-";
+  const diagnostic = result?.diagnostic || null;
+  const details = diagnostic
+    ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>"
+    : "";
+  const message = ok
+    ? "領主ID " + esc(governorId) + " の取得に成功しました。"
+    : "MightPulseへの接続またはAPIリクエストに失敗しました。";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:700px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.card{margin-top:20px;padding:20px;border:1px solid #334155;border-radius:16px;background:#162238}.status{font-size:20px;font-weight:900}.ok{color:#86efac}.ng{color:#fca5a5}.meta{margin-top:12px;color:#cbd5e1;line-height:1.8}.detail{margin-top:16px}.detail pre{white-space:pre-wrap;overflow:auto;padding:12px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px}.btn{display:inline-block;margin-top:16px;padding:11px 14px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}</style></head><body><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><div class='card'><div class='status " + (ok ? "ok" : "ng") + "'>" + title + "</div><div class='meta'>" + message + "<br>HTTP Status: " + esc(status) + "</div>" + details + "<a class='btn' href='/admin/api-pool'>管理画面へ戻る</a></div></main></body></html>";
 }
 
 function parseHeaderNumber(headers, name) {
