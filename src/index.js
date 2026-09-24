@@ -52,9 +52,16 @@ async function startDiscordLogin(request, env) {
     "Cache-Control": "no-store"
   });
   headers.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, state, {
-    maxAge: 600, httpOnly: true, secure: true, sameSite: "None", path: "/"
+    maxAge: 600, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
-  return new Response(null, { status: 302, headers });
+  return new Response(oauthRedirectPage(authorize.toString()), {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=UTF-8",
+      "cache-control": "no-store",
+      "Set-Cookie": headers.get("Set-Cookie") || ""
+    }
+  });
 }
 
 async function handleDiscordCallback(request, env) {
@@ -131,7 +138,19 @@ async function handleDiscordCallback(request, env) {
   headers.append("Set-Cookie", serializeCookie(OAUTH_STATE_COOKIE, "", {
     maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
-  return new Response(null, { status: 302, headers });
+  return new Response(oauthRedirectPage(new URL("/", request.url).toString()), {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=UTF-8",
+      "cache-control": "no-store",
+      "Set-Cookie": headers.get("Set-Cookie") || ""
+    }
+  });
+}
+
+function oauthRedirectPage(target) {
+  const safeTarget = escapeHtml(target);
+  return "<!DOCTYPE html><html lang=\"ja\"><head><meta charset=\"UTF-8\"><meta http-equiv=\"refresh\" content=\"0;url=" + safeTarget + "\"><title>EagleEye</title></head><body><p>移動しています…</p><p><a href=\"" + safeTarget + "\">続行</a></p><script>location.replace(" + JSON.stringify(target) + ");</script></body></html>";
 }
 
 function logout(request) {
