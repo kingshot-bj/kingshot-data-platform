@@ -365,12 +365,12 @@ async function handlePlayerChangesApi(request, env) {
 
   try {
     const result = await env.DB.prepare(
-      \`SELECT event_id, target_type, target_id, change_type, field_name,
+      `SELECT event_id, target_type, target_id, change_type, field_name,
               old_value_json, new_value_json, observation_id, detected_at, created_at
        FROM change_events
        WHERE target_type = 'PLAYER' AND target_id = ?
        ORDER BY detected_at DESC, created_at DESC
-       LIMIT ?\`
+       LIMIT ?`
     ).bind(governorId, limit).all();
 
     const changes = (result.results || []).map(row => {
@@ -405,12 +405,12 @@ async function renderPlayerChangesPage(request, env) {
 
   try {
     const result = await env.DB.prepare(
-      \`SELECT event_id, target_type, target_id, change_type, field_name,
+      `SELECT event_id, target_type, target_id, change_type, field_name,
               old_value_json, new_value_json, observation_id, detected_at, created_at
        FROM change_events
        WHERE target_type = 'PLAYER' AND target_id = ?
        ORDER BY detected_at DESC, created_at DESC
-       LIMIT 100\`
+       LIMIT 100`
     ).bind(governorId).all();
 
     const changes = (result.results || []).map(row => {
@@ -427,7 +427,7 @@ async function renderPlayerChangesPage(request, env) {
       const label = changeFieldLabel(change.field_name);
       const oldText = formatChangeValue(change.field_name, change.oldValue);
       const newText = formatChangeValue(change.field_name, change.newValue);
-      return \`<article class="change"><div class="time">\${escapeHtml(formatUnix(change.detected_at))}</div><div class="headline"><strong>\${escapeHtml(label)}</strong><span>\${escapeHtml(changeTypeLabel(change.change_type))}</span></div><div class="transition"><span class="old">\${escapeHtml(oldText)}</span><span class="arrow">→</span><span class="new">\${escapeHtml(newText)}</span></div></article>\`;
+      return `<article class="change"><div class="time">${escapeHtml(formatUnix(change.detected_at))}</div><div class="headline"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(changeTypeLabel(change.change_type))}</span></div><div class="transition"><span class="old">${escapeHtml(oldText)}</span><span class="arrow">→</span><span class="new">${escapeHtml(newText)}</span></div></article>`;
     }).join("");
 
     return renderChangesShell("", governorId, cards);
