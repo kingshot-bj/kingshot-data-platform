@@ -108,6 +108,10 @@ async function handleDiscordCallback(request, env) {
     iat: now,
     exp: now + SESSION_MAX_AGE
   };
+  if (env.DB) {
+    await upsertUser(env.DB, discordUser, now);
+  }
+
   const session = await signPayload(sessionPayload, config.sessionSecret);
 
   const responseHeaders = new Headers({
@@ -122,6 +126,33 @@ async function handleDiscordCallback(request, env) {
     headers: responseHeaders
   });
 }
+async function upsertUser(db, discordUser, now) {
+  const discordId = String(discordUser.id);
+  const userId = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO users (
+      user_id, discord_id, username, global_name, avatar, role, status,
+      created_at, updated_at, last_login_at
+    ) VALUES (?, ?, ?, ?, ?, 'BASIC', 'ACTIVE', ?, ?, ?)
+    ON CONFLICT(discord_id) DO UPDATE SET
+      username = excluded.username,
+      global_name = excluded.global_name,
+      avatar = excluded.avatar,
+      updated_at = excluded.updated_at,
+      last_login_at = excluded.last_login_at,
+      status = 'ACTIVE'`
+  ).bind(
+    userId,
+    discordId,
+    discordUser.username || null,
+    discordUser.global_name || null,
+    discordUser.avatar || null,
+    now,
+    now,
+    now
+  ).run();
+}
+
 function logout(request) {
   const headers = new Headers({
     Location: new URL("/", request.url).toString(),
