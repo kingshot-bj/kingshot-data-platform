@@ -109,7 +109,10 @@ async function handleDiscordCallback(request, env) {
     exp: now + SESSION_MAX_AGE
   };
   if (env.DB) {
-    await upsertUser(env.DB, discordUser, now);
+    const userResult = await upsertUser(env.DB, discordUser, now);
+    if (userResult?.status === "DISABLED") {
+      return json({ ok: false, error: "USER_DISABLED" }, 403);
+    }
   }
 
   const session = await signPayload(sessionPayload, config.sessionSecret);
@@ -128,7 +131,15 @@ async function handleDiscordCallback(request, env) {
 }
 async function upsertUser(db, discordUser, now) {
   const discordId = String(discordUser.id);
-  const userId = crypto.randomUUID();
+  const existing = await db.prepare(
+    `SELECT user_id, status FROM users WHERE discord_id = ? LIMIT 1`
+  ).bind(discordId).first();
+
+  if (existing?.status === "DISABLED") {
+    return { status: "DISABLED" };
+  }
+
+  const userId = existing?.user_id || crypto.randomUUID();
   await db.prepare(
     `INSERT INTO users (
       user_id, discord_id, username, global_name, avatar, role, status,
@@ -139,8 +150,7 @@ async function upsertUser(db, discordUser, now) {
       global_name = excluded.global_name,
       avatar = excluded.avatar,
       updated_at = excluded.updated_at,
-      last_login_at = excluded.last_login_at,
-      status = 'ACTIVE'`
+      last_login_at = excluded.last_login_at`
   ).bind(
     userId,
     discordId,
@@ -151,6 +161,8 @@ async function upsertUser(db, discordUser, now) {
     now,
     now
   ).run();
+
+  return { status: "ACTIVE", user_id: userId };
 }
 
 function logout(request) {
