@@ -444,7 +444,22 @@ async function handleApiPoolTestPlayer(request, env) {
       httpStatus: result.status,
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
-    const payload = { ok: true, provider: "MIGHTPULSE", target_type: "PLAYER", target_id: governorId, upstream_status: result.status, key_id: lease.key_id };
+    const sourcePlayer = result?.data?.player || {};
+    const sourceTownCenterLevel = sourcePlayer.town_center_level ?? null;
+    const sourceFresh = result?.data?.fresh ?? null;
+    const sourceAgeSeconds = result?.data?.age_seconds ?? null;
+    const payload = {
+      ok: true,
+      provider: "MIGHTPULSE",
+      target_type: "PLAYER",
+      target_id: governorId,
+      upstream_status: result.status,
+      key_id: lease.key_id,
+      source_town_center_level: sourceTownCenterLevel,
+      source_fresh: sourceFresh,
+      source_age_seconds: sourceAgeSeconds,
+      eagleeye_town_center_display: formatTownCenterLevel(sourceTownCenterLevel)
+    };
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
@@ -492,6 +507,9 @@ function renderApiPoolTestResult(governorId, result) {
   const title = ok ? "API Pool テスト成功" : "API Pool テスト失敗";
   const status = result?.status ?? result?.upstream_status ?? "-";
   const diagnostic = result?.diagnostic || null;
+  const sourceDiagnostics = ok
+    ? "<div class='detail'><b>元データ確認</b><div class='meta'>MightPulseの役場レベル: " + esc(result?.source_town_center_level ?? "-") + "<br>EagleEye表示: " + esc(result?.eagleeye_town_center_display ?? "-") + "<br>Provider Fresh: " + esc(result?.source_fresh === true ? "YES" : "NO / cached") + "<br>Provider Age: " + esc(result?.source_age_seconds != null ? Math.round(result.source_age_seconds / 3600) + "時間" : "-") + "</div></div>"
+    : "";
   const details = diagnostic
     ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>"
     : "";
