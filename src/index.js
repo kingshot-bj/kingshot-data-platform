@@ -2,6 +2,7 @@ const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
 const CALLBACK_PATH = "/api/auth/callback";
+const DEFAULT_DISCORD_REDIRECT_URI = "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback";
 const SESSION_COOKIE = "eagleeye_session";
 const OAUTH_STATE_COOKIE = "eagleeye_oauth_state";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -26,21 +27,18 @@ function getConfig(env) {
   return {
     clientId: env.DISCORD_CLIENT_ID,
     clientSecret: env.DISCORD_CLIENT_SECRET,
-    sessionSecret: env.EAGLEEYE_SESSION_SECRET
+    sessionSecret: env.EAGLEEYE_SESSION_SECRET,
+    redirectUri: env.DISCORD_REDIRECT_URI || DEFAULT_DISCORD_REDIRECT_URI
   };
 }
 
 async function startDiscordLogin(request, env) {
   const config = getConfig(env);
   if (!config.clientId || !config.sessionSecret) {
-    const missing = [];
-    if (!config.clientId) missing.push("DISCORD_CLIENT_ID");
-    if (!config.sessionSecret) missing.push("EAGLEEYE_SESSION_SECRET");
-    console.error("Discord auth configuration missing:", missing.join(","));
-    return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED", missing }, 503);
+    return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
 
-  const redirectUri = new URL(CALLBACK_PATH, request.url).toString();
+  const redirectUri = config.redirectUri;
   const state = await createStateToken(config.sessionSecret);
   const authorize = new URL(DISCORD_AUTHORIZE_URL);
   authorize.searchParams.set("client_id", config.clientId);
@@ -77,7 +75,7 @@ async function handleDiscordCallback(request, env) {
     return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
   }
 
-  const redirectUri = new URL(CALLBACK_PATH, request.url).toString();
+  const redirectUri = config.redirectUri;
   const tokenResponse = await fetch(DISCORD_TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
