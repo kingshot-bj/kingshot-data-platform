@@ -5,5 +5,12 @@
   "vars": {
     "DISCORD_CLIENT_ID": "1552660062063829093",
     "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "eagleeye-db",
+      "database_id": "0024b5df-4dcf-45f7-b9a7-6fa621cbb80a"
+    }
+  ]
 }
