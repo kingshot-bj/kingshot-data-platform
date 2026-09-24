@@ -18,9 +18,10 @@ export async function mightPulseFetch(env, path, {
   method = "GET",
   query = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  maxRetries = DEFAULT_MAX_RETRIES
+  maxRetries = DEFAULT_MAX_RETRIES,
+  apiKey: providedApiKey = null
 } = {}) {
-  const apiKey = env.MIGHTPULSE_API_KEY;
+  const apiKey = providedApiKey || env.MIGHTPULSE_API_KEY;
   if (!apiKey) {
     throw new MightPulseError("MightPulse API key is not configured.", {
       code: "MIGHTPULSE_NOT_CONFIGURED",
@@ -113,7 +114,8 @@ export async function mightPulseFetch(env, path, {
 
 export async function getMightPulsePlayer(env, governorId, {
   idType,
-  include = "base"
+  include = "base",
+  apiKey = null
 } = {}) {
   const id = String(governorId || "").trim();
   if (!id) {
@@ -127,7 +129,8 @@ export async function getMightPulsePlayer(env, governorId, {
   if (idType) params.id_type = idType;
 
   return mightPulseFetch(env, `/players/${encodeURIComponent(id)}`, {
-    query: params
+    query: params,
+    apiKey
   });
 }
 
