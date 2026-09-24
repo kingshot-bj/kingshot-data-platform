@@ -14,7 +14,7 @@ export default {
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
-      return new Response(renderHome(env), { headers: { "content-type": "text/html; charset=UTF-8" } });
+      return new Response(await renderHome(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
@@ -157,10 +157,40 @@ async function handleMe(request, env) {
   });
 }
 
-function renderHome(env) {
-  const configured = Boolean(env.DISCORD_CLIENT_ID && env.EAGLEEYE_SESSION_SECRET);
-  const note = configured ? "" : '<p class="note">Discord認証はCloudflare側のSecret設定後に有効になります。</p>';
-  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KingShot Data Platform — EagleEye</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:white;font-family:system-ui,-apple-system,sans-serif}.container{text-align:center;padding:32px;max-width:680px}h1{font-size:32px;margin-bottom:12px}.subtitle{font-size:18px;font-weight:700;letter-spacing:4px;color:#f59e0b;margin-bottom:24px;text-transform:uppercase}p{color:#94a3b8;font-size:16px;line-height:1.7}.status{display:inline-block;margin-top:20px;padding:10px 16px;border-radius:999px;background:#14532d;color:#86efac}.login{display:inline-block;margin-top:28px;padding:13px 22px;border-radius:10px;background:#5865f2;color:white;text-decoration:none;font-weight:700}.note{font-size:13px;margin-top:18px}</style></head><body><main class="container"><h1>KingShot Data Platform</h1><div class="subtitle">EagleEye</div><p>KingShotのデータを集約・分析するプラットフォーム</p><div class="status">● System Online</div><br><a class="login" href="/api/auth/discord">Discordでログイン</a>' + note + '</main></body></html>';
+async function renderHome(request, env) {
+  const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
+
+  const authUi = session
+    ? `
+      <section class="account">
+        <div class="account-avatar">${session.avatar ? `<img src="https://cdn.discordapp.com/avatars/${encodeURIComponent(session.sub)}/${encodeURIComponent(session.avatar)}.png?size=128" alt="">` : "<span>BJ</span>"}</div>
+        <div class="account-info">
+          <div class="account-label">DISCORD CONNECTED</div>
+          <div class="account-name">${escapeHtml(session.global_name || session.username || "Discord User")}</div>
+          <div class="account-tag">@${escapeHtml(session.username || "")}</div>
+        </div>
+        <a class="logout" href="/api/auth/logout">ログアウト</a>
+      </section>`
+    : `
+      <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
+
+  const note = configured ? "" : '<p class="note">Discord認証はCloudflare側の設定後に有効になります。</p>';
+
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KingShot Data Platform — EagleEye</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:white;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.container{text-align:center;padding:32px 24px;max-width:680px;width:100%}h1{font-size:clamp(28px,7vw,42px);line-height:1.15;margin:0 0 12px}.subtitle{font-size:18px;font-weight:800;letter-spacing:5px;color:#f59e0b;margin-bottom:24px;text-transform:uppercase}p{color:#94a3b8;font-size:16px;line-height:1.7}.status{display:inline-block;margin-top:20px;padding:10px 16px;border-radius:999px;background:#14532d;color:#86efac;font-weight:700}.login,.logout{display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:13px 22px;border-radius:10px;color:white;text-decoration:none;font-weight:800}.login{background:#5865f2}.login:active,.logout:active{transform:translateY(1px)}.account{margin:28px auto 0;max-width:460px;padding:18px;display:flex;align-items:center;gap:14px;text-align:left;background:rgba(30,41,59,.78);border:1px solid #334155;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.account-avatar{width:58px;height:58px;flex:0 0 58px;border-radius:50%;overflow:hidden;background:#1e293b;display:flex;align-items:center;justify-content:center;color:#f59e0b;font-weight:900}.account-avatar img{width:100%;height:100%;object-fit:cover}.account-info{min-width:0;flex:1}.account-label{font-size:11px;letter-spacing:1.5px;color:#86efac;font-weight:800}.account-name{font-size:17px;font-weight:800;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.account-tag{font-size:13px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.logout{margin:0;padding:10px 14px;background:#334155;border:1px solid #475569;font-size:13px;flex:0 0 auto}.logout:hover{background:#475569}.note{font-size:13px;margin-top:18px}
+  </style></head><body><main class="container"><h1>KingShot Data Platform</h1><div class="subtitle">EagleEye</div><p>KingShotのデータを集約・分析するプラットフォーム</p><div class="status">● System Online</div>${authUi}${note}</main></body></html>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
 }
 
 function json(data, status = 200) {
