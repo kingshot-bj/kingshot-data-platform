@@ -21,7 +21,11 @@ export default {
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
+      if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/players") return new Response(await renderPlayerSearchPage(request, env), {
+        headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+      });
+      if (url.pathname === "/player/history") return new Response(await renderPlayerHistoryPage(request, env), {
         headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
       });
       if (url.pathname === "/player") return new Response(await renderPlayerPage(request, env), {
@@ -318,6 +322,66 @@ async function renderPlayerSearchPage(request, env) {
   return \`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.desc{color:#94a3b8;margin:0 0 18px}.search{display:flex;gap:8px}.search input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:white;font-size:16px}.search button{padding:14px 17px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900}.results{margin-top:18px;display:grid;gap:10px}.result{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238;color:white;text-decoration:none}.result:active{transform:translateY(1px)}.name{font-size:17px;font-weight:800;overflow-wrap:anywhere}.sub{margin-top:4px;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.power{font-weight:900;color:#f59e0b;white-space:nowrap}.hint,.empty{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}.empty{color:#fca5a5}
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">名前・Governor ID・KID・同盟名から検索</p><form class="search" method="get" action="/players"><input name="q" value="\${escapeHtml(q)}" placeholder="プレイヤー名 / Governor ID / KID / 同盟"><button>検索</button></form><div class="results">\${body}</div></main></body></html>\`;
+}
+
+
+async function handlePlayerHistoryApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 30), 1), 100);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  try {
+    const result = await env.DB.prepare(
+      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
+    ).bind(governorId, limit).all();
+    const snapshots = (result.results || []).map(row => {
+      let payload = {};
+      try { payload = JSON.parse(row.payload_json); } catch {}
+      return { snapshot_id: row.snapshot_id, governor_id: row.governor_id, observation_id: row.observation_id, observed_at: row.observed_at, player: filterPlayerForRole(payload, auth.role) };
+    });
+    return json({ ok: true, governor_id: governorId, snapshots });
+  } catch (error) {
+    console.error("Player history API error:", error);
+    return json({ ok: false, error: "PLAYER_HISTORY_READ_FAILED" }, 500);
+  }
+}
+
+async function renderPlayerHistoryPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return renderHistoryShell("Governor IDを指定してください。", "");
+  if (!env.DB) return renderHistoryShell("データベースが設定されていません。", governorId);
+  try {
+    const result = await env.DB.prepare(
+      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT 100'
+    ).bind(governorId).all();
+    const rows = (result.results || []).map(row => {
+      let p = {};
+      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role); } catch {}
+      return { ...row, player: p };
+    });
+    if (!rows.length) return renderHistoryShell("このプレイヤーの履歴はまだありません。", governorId);
+    const cards = rows.map((row, index) => {
+      const p = row.player || {};
+      const previous = rows[index + 1]?.player || null;
+      const powerDiff = previous && p.power != null && previous.power != null ? Number(p.power) - Number(previous.power) : null;
+      return '<article class="snapshot"><div class="time">' + escapeHtml(formatUnix(row.observed_at)) + '</div><div class="headline"><span>戦力</span><strong>' + escapeHtml(formatNumber(p.power)) + '</strong>' + (powerDiff !== null ? '<em class="' + (powerDiff > 0 ? 'up' : powerDiff < 0 ? 'down' : '') + '">' + (powerDiff > 0 ? '+' : '') + escapeHtml(formatNumber(powerDiff)) + '</em>' : '') + '</div><div class="details"><span>役場 ' + escapeHtml(formatTownCenterLevel(p.town_center_level)) + '</span><span>撃破数 ' + escapeHtml(formatNumber(p.kills)) + '</span><span>同盟 ' + escapeHtml(p.alliance_name || '-') + '</span></div></article>';
+    }).join("");
+    return renderHistoryShell("", governorId, cards);
+  } catch (error) {
+    console.error("Player history page error:", error);
+    return renderHistoryShell("履歴の読み込みに失敗しました。", governorId);
+  }
+}
+
+function renderHistoryShell(message, governorId, cards = "") {
+  const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.snapshot{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:baseline;gap:10px;margin-top:8px}.headline span{color:#94a3b8;font-size:13px}.headline strong{font-size:21px}.headline em{font-style:normal;font-size:13px}.up{color:#86efac}.down{color:#fca5a5}.details{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#cbd5e1;font-size:12px}.details span{padding:5px 8px;border-radius:8px;background:#0b1220}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">PLAYER HISTORY</div><h1 class="title">プレイヤー履歴</h1><div class="sub">Governor ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
 }
 
 async function renderPlayerPage(request, env) {
