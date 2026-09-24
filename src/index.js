@@ -490,7 +490,7 @@ function renderApiPoolTestResult(governorId, result) {
   const esc = escapeHtml;
   const ok = result?.ok === true;
   const title = ok ? "API Pool テスト成功" : "API Pool テスト失敗";
-  const status = result?.status ?? "-";
+  const status = result?.status ?? result?.upstream_status ?? "-";
   const diagnostic = result?.diagnostic || null;
   const details = diagnostic
     ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>"
