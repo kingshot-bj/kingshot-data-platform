@@ -606,11 +606,39 @@ async function handleKingdomWatchlistDataApi(request, env) {
   let rankings;
   if (board) {
     rankings = await env.DB.prepare(
-      "WITH latest AS (SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?) SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM ranking_snapshots r WHERE r.kid = ? AND r.board = ? AND r.observed_at = (SELECT observed_at FROM latest) ORDER BY r.rank ASC LIMIT ?"
+      "WITH latest AS (SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?) SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(
+        r.abbr,
+        (SELECT a.abbr FROM ranking_snapshots a
+         WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE'
+           AND a.aid = r.aid
+         ORDER BY a.observed_at DESC LIMIT 1),
+        (SELECT a.abbr FROM ranking_snapshots a
+         WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE'
+           AND a.aid = r.aid
+         ORDER BY a.observed_at DESC LIMIT 1),
+        (SELECT p.alliance_abbr FROM players p
+         WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id
+            OR p.uid = r.uid OR p.uid = r.target_id
+         LIMIT 1)
+      ) AS abbr, r.name, r.observed_at FROM ranking_snapshots r WHERE r.kid = ? AND r.board = ? AND r.observed_at = (SELECT observed_at FROM latest) ORDER BY r.rank ASC LIMIT ?"
     ).bind(watch.kid, board, watch.kid, board, limit).all();
   } else {
     rankings = await env.DB.prepare(
-      "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? GROUP BY board), ranked AS (SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board, r.target_type ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ?) SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranked WHERE rn <= ? ORDER BY board ASC, rank ASC"
+      "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? GROUP BY board), ranked AS (SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(
+        r.abbr,
+        (SELECT a.abbr FROM ranking_snapshots a
+         WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE'
+           AND a.aid = r.aid
+         ORDER BY a.observed_at DESC LIMIT 1),
+        (SELECT a.abbr FROM ranking_snapshots a
+         WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE'
+           AND a.aid = r.aid
+         ORDER BY a.observed_at DESC LIMIT 1),
+        (SELECT p.alliance_abbr FROM players p
+         WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id
+            OR p.uid = r.uid OR p.uid = r.target_id
+         LIMIT 1)
+      ) AS abbr, r.name, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board, r.target_type ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ?) SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranked WHERE rn <= ? ORDER BY board ASC, rank ASC"
     ).bind(watch.kid, watch.kid, limit).all();
   }
 
