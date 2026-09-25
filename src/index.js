@@ -958,6 +958,7 @@ export default {
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
+      if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
@@ -2543,6 +2544,33 @@ async function getAuthenticatedUser(request, env) {
     "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
   ).bind(session.sub).first();
   return user || null;
+}
+
+async function handleDebugPlayerGear(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN","OWNER"].includes(auth.role)) {
+    return json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "governor_id_required" }, 400);
+
+  const fetched = await fetchPlayerThroughApiPool(env, governorId, "DEBUG_PLAYER_GEAR");
+  const data = fetched?.result?.data || {};
+  const gear = data.gov_gear || {};
+  return json({
+    ok: true,
+    governor_id: governorId,
+    hidden: gear.hidden ?? null,
+    items: Array.isArray(gear.items) ? gear.items.map(item => ({
+      slot: item?.slot ?? null,
+      name: item?.name ?? null,
+      equipid: item?.equipid ?? null,
+      icon: item?.icon ?? null,
+      tier: item?.tier ?? null,
+      star: item?.star ?? null
+    })) : []
+  });
 }
 
 async function handleMe(request, env) {
