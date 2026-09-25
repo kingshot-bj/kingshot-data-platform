@@ -2558,19 +2558,29 @@ async function handleDebugPlayerGear(request, env) {
   const fetched = await fetchPlayerThroughApiPool(env, governorId, "DEBUG_PLAYER_GEAR");
   const data = fetched?.result?.data || {};
   const gear = data.gov_gear || {};
-  return json({
-    ok: true,
-    governor_id: governorId,
-    hidden: gear.hidden ?? null,
-    items: Array.isArray(gear.items) ? gear.items.map(item => ({
-      slot: item?.slot ?? null,
-      name: item?.name ?? null,
-      equipid: item?.equipid ?? null,
-      icon: item?.icon ?? null,
-      tier: item?.tier ?? null,
-      star: item?.star ?? null
-    })) : []
-  });
+  const items = Array.isArray(gear.items) ? gear.items.map(item => ({
+    slot: item?.slot ?? null,
+    name: item?.name ?? null,
+    equipid: item?.equipid ?? null,
+    icon: item?.icon ?? null,
+    tier: item?.tier ?? null,
+    star: item?.star ?? null
+  })) : [];
+
+  if (url.searchParams.get("format") === "html") {
+    const cards = items.map(item => {
+      const iconUrl = item.icon ? "https://api.mightpulse.com" + item.icon : "";
+      return '<article><h2>' + escapeHtml(item.slot || "-") + '</h2>' +
+        '<p>icon: ' + escapeHtml(item.icon || "-") + '</p>' +
+        (iconUrl ? '<img src="' + escapeHtml(iconUrl) + '" alt="" style="max-width:180px;max-height:180px;background:#222">' : '<p>iconなし</p>') +
+        '</article>';
+    }).join("");
+    return new Response('<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title><body style="font-family:sans-serif;background:#111;color:#eee;padding:20px"><h1>領主装備アイコン確認</h1><p>Governor ID: ' + escapeHtml(governorId) + '</p>' + cards + '</body></html>', {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+    });
+  }
+
+  return json({ ok: true, governor_id: governorId, hidden: gear.hidden ?? null, items });
 }
 
 async function handleMe(request, env) {
