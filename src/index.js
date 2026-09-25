@@ -312,7 +312,7 @@ async function renderKingdomWatchlistPage(request, env) {
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
         if(w.job_status){
           var progress=document.createElement("p"); progress.className="muted";
-          progress.textContent="更新中: "+(w.job_status==="RANKINGS"?"ランキング "+esc(w.job_board_index||0)+"/26":"プレイヤー "+esc(w.job_player_cursor||0)+"/"+esc(w.top_n));
+          progress.textContent="更新中: "+(w.job_status==="RANKINGS"?"ランキング取得中…":"プレイヤー "+esc(w.job_player_cursor||0)+"/"+esc(w.top_n));
           card.appendChild(progress);
         }
         var row=document.createElement("div"); row.className="row";
@@ -359,6 +359,14 @@ async function renderKingdomWatchlistPage(request, env) {
         var n=Number(v);
         if(!Number.isFinite(n)) return String(v);
         if(b==="town_center") return "Lv."+n;
+        var abs=Math.abs(n), unit="", value=n;
+        if(abs>=1000000000){unit="B";value=n/1000000000;}
+        else if(abs>=1000000){unit="M";value=n/1000000;}
+        else if(abs>=1000){unit="K";value=n/1000;}
+        if(unit){
+          var digits=Math.abs(value)>=100?0:Math.abs(value)>=10?1:2;
+          return value.toFixed(digits).replace(/\\.?0+$/,"")+" "+unit;
+        }
         return new Intl.NumberFormat("ja-JP",{maximumFractionDigits:0}).format(n);
       }
       function nameFor(r){
@@ -471,7 +479,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   });
 }
 
-async function handleKingdomWatchlistApi(request, env) {
+async function handleKingdomWatchlistApi(request, env, ctx) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
@@ -543,13 +551,17 @@ async function handleKingdomWatchlistApi(request, env) {
       "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
     ).bind(jobId, watchlistId, Number(row.kid), Number(row.top_n), now, now, now).run();
 
-    // Do not execute upstream API work inside the HTTP request. The cron worker
-    // will pick up this active job on its next 5-minute invocation. This makes
-    // OWNER "今すぐ更新" a true immediate scheduling override without making
-    // the mobile request wait for MightPulse network calls.
     await env.DB.prepare(
       "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
     ).bind(now, watchlistId).run();
+
+    // OWNERの「今すぐ更新」はキュー投入だけで終わらせず、同じWorkerの
+    // waitUntilで即座に1ジョブ進める。HTTPレスポンスは待たせない。
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(runKingdomWatchlistJobs(env).catch(error => {
+        console.error("kingdom_watchlist_immediate_run_failed", watchlistId, error?.message || error);
+      }));
+    }
 
     return json({
       ok: true,
@@ -557,7 +569,7 @@ async function handleKingdomWatchlistApi(request, env) {
       immediate: true,
       queued: true,
       job_id: jobId,
-      message: "更新Jobを即時実行キューに追加しました。"
+      message: "更新Jobを即時実行しました。"
     });
   }
 
