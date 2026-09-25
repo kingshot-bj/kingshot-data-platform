@@ -1821,8 +1821,9 @@ async function handlePlayerApi(request, env) {
     let player = await getPlayer(env.DB, governorId);
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     let source = "D1";
+    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
 
-    if (!observation || refresh) {
+    if (!observation || refresh || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation);
@@ -1954,13 +1955,22 @@ async function handlePlayerHistoryApi(request, env) {
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 30), 1), 100);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   try {
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const result = await env.DB.prepare(
       'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
     ).bind(governorId, limit).all();
     const snapshots = (result.results || []).map(row => {
       let payload = {};
       try { payload = JSON.parse(row.payload_json); } catch {}
-      return { snapshot_id: row.snapshot_id, governor_id: row.governor_id, observation_id: row.observation_id, observed_at: row.observed_at, player: filterPlayerForRole(payload, auth.role) };
+      const player = payload.player && typeof payload.player === "object" ? payload.player : payload;
+      return {
+        snapshot_id: row.snapshot_id,
+        governor_id: row.governor_id,
+        observation_id: row.observation_id,
+        observed_at: row.observed_at,
+        player: filterPlayerForRole(player, auth.role, payload, visibilitySettings),
+        profile: filterPlayerProfileForRole(payload, auth.role, visibilitySettings)
+      };
     });
     return json({ ok: true, governor_id: governorId, snapshots });
   } catch (error) {
@@ -2000,9 +2010,11 @@ async function handlePlayerChangesApi(request, env) {
         old_value: oldValue, new_value: newValue, observation_id: row.observation_id,
         detected_at: row.detected_at, created_at: row.created_at
       };
-    }).filter(change => isChangeVisibleForRole(change, auth.role));
+    });
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const visibleChanges = changes.filter(change => isChangeVisibleForRole(change, auth.role, visibilitySettings));
 
-    return json({ ok: true, governor_id: governorId, changes });
+    return json({ ok: true, governor_id: governorId, changes: visibleChanges });
   } catch (error) {
     console.error("Player changes API error:", error);
     return json({ ok: false, error: "PLAYER_CHANGES_READ_FAILED" }, 500);
@@ -2035,11 +2047,13 @@ async function renderPlayerChangesPage(request, env) {
       try { oldValue = JSON.parse(row.old_value_json); } catch {}
       try { newValue = JSON.parse(row.new_value_json); } catch {}
       return { ...row, oldValue, newValue };
-    }).filter(change => isChangeVisibleForRole(change, auth.role));
+    });
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const visibleChanges = changes.filter(change => isChangeVisibleForRole(change, auth.role, visibilitySettings));
 
-    if (!changes.length) return renderChangesShell("このプレイヤーの変更履歴はまだありません。", governorId);
+    if (!visibleChanges.length) return renderChangesShell("このプレイヤーの変更履歴はまだありません。", governorId);
 
-    const cards = changes.map(change => {
+    const cards = visibleChanges.map(change => {
       const label = changeFieldLabel(change.field_name);
       const oldText = formatChangeValue(change.field_name, change.oldValue);
       const newText = formatChangeValue(change.field_name, change.newValue);
@@ -2058,9 +2072,20 @@ function renderChangesShell(message, governorId, cards = "") {
   return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Change History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.change{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.headline strong{font-size:17px}.headline span{font-size:11px;color:#94a3b8;padding:4px 7px;border-radius:7px;background:#0b1220}.transition{display:flex;align-items:center;gap:10px;margin-top:12px;min-width:0}.old,.new{padding:9px 10px;border-radius:9px;overflow-wrap:anywhere;word-break:break-word}.old{background:#0b1220;color:#94a3b8}.new{background:#182f25;color:#bbf7d0;font-weight:800}.arrow{color:#f59e0b;font-weight:900}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}@media(max-width:520px){.transition{align-items:stretch}.old,.new{flex:1}.arrow{align-self:center}}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">CHANGE EVENTS</div><h1 class="title">変更履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
 }
 
-function isChangeVisibleForRole(change, role) {
-  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return true;
-  return !["vip", "x", "y"].includes(String(change.field_name || ""));
+function isChangeVisibleForRole(change, role, settings = null) {
+  if (!settings) {
+    if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return true;
+    return !["vip", "x", "y"].includes(String(change.field_name || ""));
+  }
+  const field = String(change.field_name || "");
+  const key = field === "vip" ? "base_vip"
+    : field === "x" || field === "y" ? "base_coordinates"
+    : field === "power" || field === "town_center_level" ? "base_power"
+    : field === "kills" ? "base_kills"
+    : field === "online" || field === "last_active_at" ? "base_activity"
+    : field.startsWith("alliance_") ? (field === "alliance_rank" ? "alliance_rank" : field === "alliance_power" || field === "alliance_count" ? "alliance_stats" : "alliance_identity")
+    : "base_profile";
+  return visibilityEnabled(settings, key, role);
 }
 
 function changeTypeLabel(value) {
@@ -2133,8 +2158,9 @@ async function renderPlayerPage(request, env) {
   try {
     const refresh = url.searchParams.get("refresh") === "1";
     let observation = await getLatestPlayerObservation(env.DB, governorId);
+    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
 
-    if (!observation || refresh) {
+    if (!observation || refresh || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
     }
