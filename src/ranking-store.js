@@ -82,15 +82,27 @@ export async function getRankingHistory(db, { kid, board, targetId, limit = 50 }
 }
 
 export async function detectRankingChanges(db, { kid, board, observedAt, sourceObservationId = null }) {
-  const rows = await db.prepare(
+  const currentResult = await db.prepare(
     "SELECT target_id, rank, score, target_type FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = ? ORDER BY rank ASC"
   ).bind(Number(kid), String(board), Number(observedAt)).all();
-  const current = rows.results || [];
+  const current = currentResult.results || [];
+  if (!current.length) return [];
+
+  const ids = current.map(row => String(row.target_id));
+  const placeholders = ids.map(() => "?").join(",");
+  const previousResult = await db.prepare(
+    "SELECT target_id, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id IN (" + placeholders + ") AND observed_at < ? ORDER BY target_id ASC, observed_at DESC"
+  ).bind(Number(kid), String(board), ...ids, Number(observedAt)).all();
+
+  const previousByTarget = new Map();
+  for (const row of previousResult.results || []) {
+    const id = String(row.target_id);
+    if (!previousByTarget.has(id)) previousByTarget.set(id, row);
+  }
+
   const events = [];
   for (const row of current) {
-    const prev = await db.prepare(
-      "SELECT rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? AND observed_at < ? ORDER BY observed_at DESC LIMIT 1"
-    ).bind(Number(kid), String(board), String(row.target_id), Number(observedAt)).first();
+    const prev = previousByTarget.get(String(row.target_id));
     if (!prev) continue;
     if (Number(prev.rank) !== Number(row.rank)) {
       events.push({
