@@ -57,6 +57,27 @@ async function collectKingdomWatchlist(env, watchlist) {
       entries,
       observedAt
     });
+    const rankingChanges = await detectRankingChanges(env.DB, {
+      kid: watchlist.kid,
+      board,
+      observedAt
+    });
+    for (const change of rankingChanges) {
+      await env.DB.prepare(
+        "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        crypto.randomUUID(),
+        change.targetType,
+        change.targetId,
+        change.changeType,
+        "rank",
+        JSON.stringify(change.oldValue),
+        JSON.stringify(change.newValue),
+        change.sourceObservationId,
+        change.observedAt,
+        observedAt
+      ).run();
+    }
     for (const entry of entries) {
       const id = entry?.governor_id ?? entry?.governorId;
       if (id != null) governorIds.add(String(id));
