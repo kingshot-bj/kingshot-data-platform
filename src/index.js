@@ -412,6 +412,30 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 (function(){
   function el(id){return document.getElementById(id);}
   function esc(v){return String(v == null ? "" : v).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];});}
+  var RANKING_BOARD_LABELS = {
+    alliance_power:"同盟総力", alliance_kills:"同盟撃破", personal_power:"個人総力", kills:"個人撃破",
+    town_center:"役場Lv.", rebel_conquest:"反乱軍討伐ステージ", single_hero:"英雄総力", hero_total:"英雄全体総力",
+    troop_power:"部隊総力", building_power:"建物総力", research_power:"研究総力", hero_no_equip:"英雄総力（装備除外）",
+    hero_equip:"英雄総力（装備込み）", gov_gear:"領主装備", gov_charm:"領主宝石", pet_power:"ペット総合実力",
+    island_prosperity:"島の繁栄度", migrant_score:"移民スコア", mystic_trial:"秘境の試練", coliseum:"闘技場",
+    forest_of_life:"生命の森", crystal_cave:"水晶鉱山", knowledge_nexus:"知識の枢軸", molten_fort:"溶岩要塞",
+    radiant_spire:"輝光の塔", master_power:"マスター全体総力"
+  };
+  function formatCompactNumber(value){
+    if(value===null||value===undefined||value==="")return "-";
+    var n=Number(value);
+    if(!Number.isFinite(n))return String(value);
+    var abs=Math.abs(n);
+    if(abs>=1e9)return formatCompactUnit(n,1e9,"B");
+    if(abs>=1e6)return formatCompactUnit(n,1e6,"M");
+    if(abs>=1e3)return formatCompactUnit(n,1e3,"K");
+    return n.toLocaleString("ja-JP");
+  }
+  function formatCompactUnit(value,divisor,suffix){
+    var scaled=value/divisor;
+    var decimals=Math.abs(scaled)>=100?0:Math.abs(scaled)>=10?1:2;
+    return scaled.toFixed(decimals).replace(/\\.?0+$|\\.$/,"")+suffix;
+  }
   function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.message||d.error||("HTTP "+r.status));return d;});});}
   var running={};
   function isActiveJob(w){
