@@ -465,21 +465,14 @@ async function handleKingdomWatchlistApi(request, env) {
     if (!Number(row.enabled)) return json({ ok: false, error: "WATCHLIST_DISABLED" }, 409);
 
     const active = await env.DB.prepare(
-      "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+      "SELECT job_id, status, board_index, player_cursor, ranking_rows, player_rows FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
     ).bind(watchlistId).first();
     if (active) {
       return json({
         ok: true,
         started: false,
         already_running: true,
-        job: {
-          job_id: active.job_id,
-          status: active.status,
-          board_index: Number(active.board_index || 0),
-          player_cursor: Number(active.player_cursor || 0),
-          ranking_rows: Number(active.ranking_rows || 0),
-          player_rows: Number(active.player_rows || 0)
-        }
+        job: active
       });
     }
 
@@ -489,30 +482,22 @@ async function handleKingdomWatchlistApi(request, env) {
       "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
     ).bind(jobId, watchlistId, Number(row.kid), Number(row.top_n), now, now, now).run();
 
-    const job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
-    try {
-      const result = await processKingdomWatchlistJob(env, job);
-      if (result.completed) {
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, now, now, watchlistId).run();
-      } else {
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, watchlistId).run();
-      }
-      return json({ ok: true, started: true, immediate: true, result });
-    } catch (error) {
-      const currentJob = await env.DB.prepare("SELECT status FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
-      const safeStatus = currentJob?.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = ?, last_error = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(safeStatus, String(error?.message || error).slice(0, 1000), now, jobId).run();
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(String(error?.message || error).slice(0, 1000), now, watchlistId).run();
-      return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message: String(error?.message || error).slice(0, 500), job_id: jobId }, 502);
-    }
+    // Do not execute upstream API work inside the HTTP request. The cron worker
+    // will pick up this active job on its next 5-minute invocation. This makes
+    // OWNER "今すぐ更新" a true immediate scheduling override without making
+    // the mobile request wait for MightPulse network calls.
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+    ).bind(now, watchlistId).run();
+
+    return json({
+      ok: true,
+      started: true,
+      immediate: true,
+      queued: true,
+      job_id: jobId,
+      message: "更新Jobを即時実行キューに追加しました。"
+    });
   }
 
   if (request.method === "POST" && action === "toggle") {
