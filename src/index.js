@@ -316,7 +316,7 @@ async function renderKingdomWatchlistPage(request, env) {
 (function(){
   function el(id){return document.getElementById(id);}
   function esc(v){return String(v == null ? "" : v).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];});}
-  function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.error||("HTTP "+r.status));return d;});});}
+  function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.message||d.error||("HTTP "+r.status));return d;});});}
   function load(){
     return api("/api/kingdom-watchlist").then(function(d){
       el("list").innerHTML="";
@@ -325,7 +325,7 @@ async function renderKingdomWatchlistPage(request, env) {
         var card=document.createElement("div"); card.className="card";
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
         var row=document.createElement("div"); row.className="row";
-        var refresh=document.createElement("button"); refresh.textContent="今すぐ更新"; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
+        var refresh=document.createElement("button"); refresh.textContent="今すぐ更新"; refresh.onclick=function(){refreshWatch(w.watchlist_id,refresh);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
@@ -334,10 +334,25 @@ async function renderKingdomWatchlistPage(request, env) {
       el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
     }).catch(function(e){el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
   }
-  function refreshWatch(id){
+  function refreshWatch(id,button){
+    if(button && button.disabled)return;
+    if(button){
+      button.disabled=true;
+      button.textContent="更新中…";
+    }
     return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
-      .then(function(d){el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";return load();})
-      .catch(function(e){alert("更新開始に失敗しました: "+e.message);});
+      .then(function(d){el("msg").innerHTML="<span class='ok'>更新処理を1ステップ進めました。</span>";return load();})
+      .catch(function(e){
+        if(button){
+          button.disabled=false;
+          button.textContent="今すぐ更新";
+        }
+        if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
+          el("msg").innerHTML="<span class='error'>この監視対象は現在更新中です。処理完了を待ってください。</span>";
+          return;
+        }
+        alert("更新開始に失敗しました: "+e.message);
+      });
   }
   function toggleWatch(id,enabled){
     return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
