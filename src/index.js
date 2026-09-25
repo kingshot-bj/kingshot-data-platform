@@ -290,15 +290,19 @@ async function collectKingdomWatchlist(env, watchlist) {
     ).bind(observationId, normalized.provider, normalized.endpoint, normalized.target_type, normalized.target_id, normalized.observed_at, normalized.http_status, normalized.payload_json, normalized.created_at).run();
   }
 }
-\nexport default {
+
+export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(Promise.all([runKingdomWatchlistJobs(env), runDataRetentionJob(env)]));
   },
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
-      if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
