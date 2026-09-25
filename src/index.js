@@ -2627,7 +2627,7 @@ async function handleDebugPlayerIcons(request, env) {
       const normalizeAssetUrl = value => {
         if (!value) return null;
         const raw = String(value);
-        if (/^https?:\\/\\//i.test(raw)) return raw;
+        if (/^https?:\/\//i.test(raw)) return raw;
         return "https://api.mightpulse.com" + (raw.startsWith("/") ? raw : "/" + raw);
       };
       const image = (src, alt) => src
