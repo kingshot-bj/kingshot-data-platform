@@ -959,6 +959,7 @@ export default {
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
+      if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
@@ -2585,6 +2586,93 @@ async function handleDebugPlayerGear(request, env) {
   }
 
   return json({ ok: true, governor_id: governorId, items });
+}
+
+async function handleDebugPlayerIcons(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN","OWNER"].includes(auth.role)) {
+    return json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "governor_id_required" }, 400);
+
+  try {
+    const fetched = await fetchPlayerThroughApiPool(env, governorId, "DEBUG_PLAYER_ICONS");
+    const data = fetched?.result?.data || {};
+    const player = data.player || data;
+    const heroes = Array.isArray(data.heroes) ? data.heroes : [];
+    const alliance = player?.alliance && typeof player.alliance === "object" ? player.alliance : null;
+
+    const result = {
+      ok: true,
+      governor_id: governorId,
+      avatar_url: player?.avatar_url ?? null,
+      alliance_flag_url: alliance?.flag_url ?? null,
+      heroes: heroes.map(hero => ({
+        id: hero?.id ?? null,
+        name: hero?.name ?? null,
+        icon: hero?.icon ?? null,
+        exclusive_gear: hero?.exclusive_gear ?? null,
+        gear: Array.isArray(hero?.gear) ? hero.gear.map(item => ({
+          slot: item?.slot ?? null,
+          name: item?.name ?? null,
+          icon: item?.icon ?? null
+        })) : []
+      }))
+    };
+
+    if (url.searchParams.get("format") === "html") {
+      const normalizeAssetUrl = value => {
+        if (!value) return null;
+        const raw = String(value);
+        if (/^https?:\\/\\//i.test(raw)) return raw;
+        return "https://api.mightpulse.com" + (raw.startsWith("/") ? raw : "/" + raw);
+      };
+      const image = (src, alt) => src
+        ? '<img src="' + escapeHtml(normalizeAssetUrl(src)) + '" alt="' + escapeHtml(alt || "") + '">'
+        : '<div class="missing">iconなし</div>';
+
+      const heroCards = result.heroes.map(hero => {
+        const heroGear = hero.gear.length
+          ? '<div class="sub"><b>英雄通常装備</b>' + hero.gear.map(item =>
+              '<div class="row"><span>' + escapeHtml(item.slot || item.name || "-") + '</span>' +
+              (item.icon ? image(item.icon, item.name || item.slot) : '<span class="muted">iconなし</span>') +
+              '<code>' + escapeHtml(item.icon || "-") + '</code></div>'
+            ).join("") + '</div>'
+          : '<div class="sub"><b>英雄通常装備</b><div class="muted">データなし</div></div>';
+
+        const exclusive = hero.exclusive_gear && typeof hero.exclusive_gear === "object"
+          ? '<div class="sub"><b>専用装備</b><pre>' + escapeHtml(JSON.stringify(hero.exclusive_gear, null, 2)) + '</pre></div>'
+          : '<div class="sub"><b>専用装備</b><div class="muted">データなし</div></div>';
+
+        return '<article class="card"><div class="hero-title"><div>' + escapeHtml(hero.name || hero.id || "-") + '</div>' + image(hero.icon, hero.name || hero.id) + '</div>' +
+          '<div class="sub"><b>Hero icon</b><code>' + escapeHtml(hero.icon || "-") + '</code></div>' + exclusive + heroGear + '</article>';
+      }).join("");
+
+      const misc = '<section class="card"><h2>その他</h2>' +
+        '<div class="row"><span>プレイヤーアバター</span>' + image(result.avatar_url, "avatar") + '<code>' + escapeHtml(result.avatar_url || "-") + '</code></div>' +
+        '<div class="row"><span>同盟旗</span>' + image(result.alliance_flag_url, "alliance flag") + '<code>' + escapeHtml(result.alliance_flag_url || "-") + '</code></div>' +
+        '</section>';
+
+      return new Response(
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player Icon Debug</title>' +
+        '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1100px;margin:auto}.note,.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 12px}.hero-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:900}.hero-title img{width:64px;height:64px;object-fit:contain;border-radius:10px;background:#020617}.sub{margin-top:12px;padding-top:10px;border-top:1px solid #334155}.row{display:grid;grid-template-columns:110px 56px minmax(0,1fr);gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #334155}.row img{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#020617}.row code,.sub>code{display:block;margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.row code{grid-column:2 / 4}.missing{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:#0b1220;color:#64748b;font-size:10px}.sub pre{white-space:pre-wrap;overflow:auto;padding:10px;border-radius:8px;background:#0b1220;color:#cbd5e1;font-size:11px}</style>' +
+        '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>',
+        { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+      );
+    }
+
+    return json(result);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error?.code || "PLAYER_ICON_DEBUG_FAILED",
+      status: Number(error?.status || 0),
+      diagnostic: error?.details || error?.message || null
+    }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
+  }
 }
 
 async function handleMe(request, env) {
