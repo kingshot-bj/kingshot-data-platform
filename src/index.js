@@ -592,7 +592,21 @@ async function handleDataRetentionApi(request, env) {
       ? await request.json()
       : Object.fromEntries((await request.formData()).entries());
     const settings = await updateRetentionSettings(env.DB, body, guard.auth.user_id);
-    return json({ ok: true, settings });
+    if (contentType.includes("application/json")) {
+      return json({ ok: true, settings });
+    }
+    return new Response(`<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>保存しました - EagleEye</title>
+<style>
+:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.card{text-align:center;padding:32px 28px;border:1px solid #334155;border-radius:16px;background:#162238;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.ok{font-size:42px;margin-bottom:8px}.title{font-size:24px;font-weight:900}.sub{margin-top:8px;color:#94a3b8}
+</style>
+<meta http-equiv="refresh" content="1;url=/admin/data-retention">
+</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`, {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+    });
   } catch (error) {
     console.error("Data retention settings error:", error);
     return json({ ok: false, error: error?.message || "RETENTION_UPDATE_FAILED" }, 400);
