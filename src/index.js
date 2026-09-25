@@ -2461,7 +2461,14 @@ async function getLatestPlayerHeroRankings(db, kid, governorId) {
 function localizeGemLevel(gem) {
   const direct = gem?.level ?? gem?.lv ?? gem?.gem_level;
   if (direct !== null && direct !== undefined && direct !== "") return String(direct);
-  const raw = String(gem?.id ?? "").trim();
+
+  // MightPulseの宝石データがID文字列/数値として返るケースにも対応。
+  const raw = String(
+    gem && typeof gem === "object"
+      ? (gem.id ?? "")
+      : (gem ?? "")
+  ).trim();
+
   const match = raw.match(/^(\d)0\1$/);
   return match ? match[1] : "";
 }
