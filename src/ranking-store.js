@@ -64,3 +64,47 @@ function firstString(...values) {
 }
 
 export { PLAYER_RANK_FIELDS };
+
+export async function getLatestKingdomRankings(db, kid, board = null, limit = 100) {
+  const params = board ? [Number(kid), String(board), Number(limit)] : [Number(kid), Number(limit)];
+  const sql = board
+    ? "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
+    : "SELECT * FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?";
+  const result = await db.prepare(sql).bind(...params).all();
+  return result.results || [];
+}
+
+export async function getRankingHistory(db, { kid, board, targetId, limit = 50 }) {
+  const result = await db.prepare(
+    "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? ORDER BY observed_at DESC LIMIT ?"
+  ).bind(Number(kid), String(board), String(targetId), Number(limit)).all();
+  return result.results || [];
+}
+
+export async function detectRankingChanges(db, { kid, board, observedAt, sourceObservationId = null }) {
+  const rows = await db.prepare(
+    "SELECT target_id, rank, score, target_type FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = ? ORDER BY rank ASC"
+  ).bind(Number(kid), String(board), Number(observedAt)).all();
+  const current = rows.results || [];
+  const events = [];
+  for (const row of current) {
+    const prev = await db.prepare(
+      "SELECT rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? AND observed_at < ? ORDER BY observed_at DESC LIMIT 1"
+    ).bind(Number(kid), String(board), String(row.target_id), Number(observedAt)).first();
+    if (!prev) continue;
+    if (Number(prev.rank) !== Number(row.rank)) {
+      events.push({
+        targetType: row.target_type,
+        targetId: String(row.target_id),
+        changeType: "RANK_CHANGED",
+        oldValue: prev.rank,
+        newValue: row.rank,
+        oldScore: prev.score,
+        newScore: row.score,
+        observedAt,
+        sourceObservationId
+      });
+    }
+  }
+  return events;
+}
