@@ -85,7 +85,7 @@ export async function saveKingdomRankingBoard(db, { kid, board, entries, observe
 }
 
 function isAllianceEntry(board, entry) {
-  return board === "alliance_power" || board === "alliance_kills" || entry?.aid !== undefined || entry?.abbr !== undefined;
+  return board === "alliance_power" || board === "alliance_kills";
 }
 
 function firstString(...values) {
