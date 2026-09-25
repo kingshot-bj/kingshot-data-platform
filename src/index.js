@@ -502,7 +502,7 @@ async function handleKingdomWatchlistApi(request, env) {
         ).bind(message, now, watchlistId).run();
         console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
         return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
-  
+      }
     } catch (error) {
       const message = String(error?.message || error).slice(0, 1000);
       console.error("kingdom_watchlist_refresh_internal_error", message);
