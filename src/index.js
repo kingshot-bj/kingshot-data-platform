@@ -180,7 +180,7 @@ async function processKingdomWatchlistJob(env, job) {
     }
 
     const playerRows = await env.DB.prepare(
-      "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND target_type = 'PLAYER' AND rank <= ? AND governor_id IS NOT NULL ORDER BY governor_id"
+      "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND target_type = 'PLAYER' AND board = 'personal_power' AND rank <= ? AND governor_id IS NOT NULL ORDER BY rank ASC, governor_id"
     ).bind(Number(job.kid), Number(job.observed_at), Number(job.top_n)).all();
     const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
 
@@ -301,7 +301,7 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.progress{margin:12px 0;padding:12px;border:1px solid #475569;border-radius:12px;background:#0b1220;display:grid;gap:4px}.progress b{font-size:14px}.progress span{font-size:20px;font-weight:900;color:#f59e0b}.progress small{color:#94a3b8}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
 </style></head><body>
 <a class="back" href="/">← EagleEye</a>
 <h1>王国ウォッチリスト</h1>
@@ -317,42 +317,76 @@ async function renderKingdomWatchlistPage(request, env) {
   function el(id){return document.getElementById(id);}
   function esc(v){return String(v == null ? "" : v).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];});}
   function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.message||d.error||("HTTP "+r.status));return d;});});}
+  var running={};
+  function isActiveJob(w){
+    return w.job && (w.job.status==="RANKINGS" || w.job.status==="PLAYERS");
+  }
+  function jobProgressHtml(w){
+    var j=w.job;
+    if(!j)return "";
+    if(j.status==="COMPLETED"){
+      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span></div>";
+    }
+    if(j.status==="RANKINGS"){
+      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><small>ランキング取得 "+esc(j.ranking_rows)+"件</small></div>";
+    }
+    if(j.status==="PLAYERS"){
+      var count=j.player_count==null?"?":j.player_count;
+      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
+    }
+    return "";
+  }
   function load(){
     return api("/api/kingdom-watchlist").then(function(d){
       el("list").innerHTML="";
       var ws=d.watchlists||[];
       ws.forEach(function(w){
+        var active=isActiveJob(w);
         var card=document.createElement("div"); card.className="card";
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
         var row=document.createElement("div"); row.className="row";
-        var refresh=document.createElement("button"); refresh.textContent="今すぐ更新"; refresh.onclick=function(){refreshWatch(w.watchlist_id,refresh);};
+        var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
         row.appendChild(refresh);row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
+
+        if(active && sessionStorage.getItem("eagleeye_watchlist_running_"+w.watchlist_id)==="1" && !running[w.watchlist_id]){
+          continueWatch(w.watchlist_id);
+        }
       });
       el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
     }).catch(function(e){el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
   }
-  function refreshWatch(id,button){
-    if(button && button.disabled)return;
-    if(button){
-      button.disabled=true;
-      button.textContent="更新中…";
+  function continueWatch(id){
+    if(running[id])return;
+    running[id]=true;
+    function step(){
+      return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
+        .then(function(d){
+          if(d.result && d.result.completed){
+            sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
+            el("msg").innerHTML="<span class='ok'>更新が完了しました。</span>";
+            return load();
+          }
+          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,500);}); }).then(step);
+        })
+        .catch(function(e){
+          running[id]=false;
+          if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
+            return load();
+          }
+          sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
+          el("msg").innerHTML="<span class='error'>更新失敗: "+esc(e.message)+"</span>";
+        });
     }
-    return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
-      .then(function(d){el("msg").innerHTML="<span class='ok'>更新処理を1ステップ進めました。</span>";return load();})
-      .catch(function(e){
-        if(button){
-          button.disabled=false;
-          button.textContent="今すぐ更新";
-        }
-        if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
-          el("msg").innerHTML="<span class='error'>この監視対象は現在更新中です。処理完了を待ってください。</span>";
-          return;
-        }
-        alert("更新開始に失敗しました: "+e.message);
-      });
+    return step().finally(function(){if(!sessionStorage.getItem("eagleeye_watchlist_running_"+id))running[id]=false;});
+  }
+  function refreshWatch(id){
+    if(running[id])return;
+    sessionStorage.setItem("eagleeye_watchlist_running_"+id,"1");
+    el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
+    return continueWatch(id);
   }
   function toggleWatch(id,enabled){
     return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
@@ -458,7 +492,42 @@ async function handleKingdomWatchlistApi(request, env) {
     const rows = await env.DB.prepare(
       "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
     ).bind(auth.discord_id).all();
-    return json({ ok: true, watchlists: rows.results || [] });
+
+    const watchlists = [];
+    for (const watch of rows.results || []) {
+      const job = await env.DB.prepare(
+        "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
+      ).bind(watch.watchlist_id).first();
+
+      let playerCount = null;
+      if (job?.player_ids_json) {
+        try {
+          const ids = JSON.parse(job.player_ids_json);
+          if (Array.isArray(ids)) playerCount = ids.length;
+        } catch {}
+      }
+
+      watchlists.push({
+        ...watch,
+        job: job ? {
+          job_id: job.job_id,
+          status: job.status,
+          board_index: Number(job.board_index || 0),
+          total_boards: KINGDOM_RANKING_BOARDS.length,
+          player_cursor: Number(job.player_cursor || 0),
+          player_count: playerCount,
+          ranking_rows: Number(job.ranking_rows || 0),
+          player_rows: Number(job.player_rows || 0),
+          last_error: job.last_error || null,
+          observed_at: Number(job.observed_at || 0),
+          created_at: Number(job.created_at || 0),
+          updated_at: Number(job.updated_at || 0),
+          completed_at: job.completed_at ? Number(job.completed_at) : null
+        } : null
+      });
+    }
+
+    return json({ ok: true, watchlists });
   }
 
   if (request.method === "POST" && action === "create") {
