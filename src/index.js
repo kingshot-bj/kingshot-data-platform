@@ -111,6 +111,7 @@ const PLAYER_VISIBILITY_ITEMS = [
   { key: "heroes_skills", category: "英雄", label: "英雄スキル", description: "各英雄のスキルレベル" },
   { key: "heroes_exclusive_gear", category: "英雄", label: "英雄専用装備", description: "専用装備・補正・SLG属性" },
   { key: "heroes_gear", category: "英雄", label: "英雄通常装備", description: "兜・手袋・鎧・靴の装備情報" },
+  { key: "hero_rankings", category: "ランキング", label: "英雄ランキング", description: "単英雄・英雄全体・装備除外・装備込みの公式ランキングデータ" },
   { key: "ranks_core", category: "ランキング", label: "主要個人ランキング", description: "戦力・撃破・役場・移民・ミスティック順位" },
   { key: "ranks_leaderboards", category: "ランキング", label: "その他個人ランキング", description: "leaderboards配列" },
   { key: "gov_gear_list", category: "領主装備", label: "領主装備一覧", description: "領主装備のスロット・品質・ティア・星・強化・スコア・戦闘力" },
@@ -2173,6 +2174,10 @@ async function renderPlayerPage(request, env) {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
     const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
+    if (visibilityEnabled(visibilitySettings, "hero_rankings", auth.role)) {
+      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
+      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
+    }
     return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile);
   } catch (error) {
     console.error("Player page error:", error);
@@ -2247,7 +2252,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
 }
 
-const HERO_NAME_JA = { Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジャベル", Rosa: "ローザ" };
+const HERO_NAME_JA = { Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジュベル", Rosa: "ローザ" };
 const HERO_GEAR_SLOT_JA = { Helmet: "兜", Gloves: "手袋", Armor: "鎧", Boots: "靴" };
 const HERO_EXCLUSIVE_GEAR_JA = { "The Unrighteous": "不義", "Banner of Faith": "信仰の旗", Aeolian: "エオリアン" };
 const GOVERNOR_GEAR_NAME_JA = { "Pioneer's Wreath": "開拓者の冠", "Ranger's Caress": "レンジャーの愛撫", "Regal Leatherwear": "王家の革装備", "Regal Breeches": "王家のズボン", "Sunblossom Wreath": "サンブロッサムの冠", "Regal Hunter's Rod": "王家の狩人の杖" };
@@ -2256,15 +2261,49 @@ function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value 
 function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
 function localizeGovernorGearName(value) { return GOVERNOR_GEAR_NAME_JA[value] || value || "-"; }
 
+async function getLatestPlayerHeroRankings(db, kid, governorId) {
+  if (!db || kid === undefined || kid === null || !governorId) return [];
+  const result = await db.prepare(
+    `WITH ranked AS (
+      SELECT board, rank, score, observed_at,
+        ROW_NUMBER() OVER (PARTITION BY board ORDER BY observed_at DESC) AS rn
+      FROM ranking_snapshots
+      WHERE kid = ? AND target_type = 'PLAYER' AND governor_id = ?
+        AND board IN ('single_hero', 'hero_total', 'hero_no_equip', 'hero_equip')
+    )
+    SELECT board, rank, score, observed_at
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY CASE board
+      WHEN 'single_hero' THEN 1
+      WHEN 'hero_total' THEN 2
+      WHEN 'hero_no_equip' THEN 3
+      WHEN 'hero_equip' THEN 4
+      ELSE 99
+    END`
+  ).bind(Number(kid), String(governorId)).all();
+  return result.results || [];
+}
+
 function renderPlayerAdvancedSections(profile) {
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
   if (heroes.length) {
-    const numericHeroPowers = heroes.map(hero => Number(hero.power)).filter(Number.isFinite); const totalPower = numericHeroPowers.length ? numericHeroPowers.reduce((sum, value) => sum + value, 0) : null;
     const maxLevel = heroes.reduce((max, hero) => Math.max(max, Number(hero.level) || 0), 0);
-    html += '<section class="profile-section"><h2>英雄</h2><div class="mini-grid"><div class="mini-card"><span>英雄総戦力</span><b>' + esc(totalPower === null ? '-' : formatNumber(totalPower)) + '</b></div><div class="mini-card"><span>最高レベル</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
+    const heroRankings = Array.isArray(p.hero_rankings) ? p.hero_rankings : [];
+    const heroRankingLabels = {
+      single_hero: "英雄総力",
+      hero_total: "英雄全体総力",
+      hero_no_equip: "英雄総力（装備除外）",
+      hero_equip: "英雄総力（装備込み）"
+    };
+    html += '<section class="profile-section"><h2>英雄</h2><div class="mini-grid">';
+    for (const ranking of heroRankings) {
+      html += '<div class="mini-card"><span>' + esc(heroRankingLabels[ranking.board] || ranking.board) + '</span><b>' + esc(formatCompactNumber(ranking.score)) + ' / ' + esc(ranking.rank ?? "-") + '位</b></div>';
+    }
+    html += '<div class="mini-card"><span>最高レベル（取得データ内）</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
     heroes.forEach(hero => {
       const gear = Array.isArray(hero.gear) ? hero.gear : [];
       html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(localizeHeroName(hero.name || hero.id)) + '</strong><span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / 星' + esc(hero.star ?? hero.stars ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
