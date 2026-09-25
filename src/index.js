@@ -2551,36 +2551,40 @@ async function handleDebugPlayerGear(request, env) {
   if (!auth || auth.status !== "ACTIVE" || !["ADMIN","OWNER"].includes(auth.role)) {
     return json({ ok: false, error: "FORBIDDEN" }, 403);
   }
+
   const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   if (!governorId) return json({ ok: false, error: "governor_id_required" }, 400);
 
-  const fetched = await fetchPlayerThroughApiPool(env, governorId, "DEBUG_PLAYER_GEAR");
-  const data = fetched?.result?.data || {};
-  const gear = data.gov_gear || {};
-  const items = Array.isArray(gear.items) ? gear.items.map(item => ({
-    slot: item?.slot ?? null,
-    name: item?.name ?? null,
-    equipid: item?.equipid ?? null,
-    icon: item?.icon ?? null,
-    tier: item?.tier ?? null,
-    star: item?.star ?? null
-  })) : [];
+  const items = [
+    { slot: "Helmet", icon: "/assets/icons/lordsequipment_icon_1002.png", tier: "Blue", star: 3 },
+    { slot: "Charm", icon: "/assets/icons/lordsequipment_icon_2002.png", tier: "Blue", star: 1 },
+    { slot: "Chest", icon: "/assets/icons/lordsequipment_icon_3003.png", tier: "Purple", star: null },
+    { slot: "Legs", icon: "/assets/icons/lordsequipment_icon_4003.png", tier: "Purple", star: null },
+    { slot: "Accessory", icon: "/assets/icons/lordsequipment_icon_5003.png", tier: "Purple T1", star: null },
+    { slot: "Weapon", icon: "/assets/icons/lordsequipment_icon_6003.png", tier: "Purple", star: null }
+  ];
 
   if (url.searchParams.get("format") === "html") {
     const cards = items.map(item => {
-      const iconUrl = item.icon ? "https://api.mightpulse.com" + item.icon : "";
-      return '<article><h2>' + escapeHtml(item.slot || "-") + '</h2>' +
-        '<p>icon: ' + escapeHtml(item.icon || "-") + '</p>' +
-        (iconUrl ? '<img src="' + escapeHtml(iconUrl) + '" alt="" style="max-width:180px;max-height:180px;background:#222">' : '<p>iconなし</p>') +
+      const iconUrl = "https://api.mightpulse.com" + item.icon;
+      return '<article class="card">' +
+        '<h2>' + escapeHtml(item.slot) + '</h2>' +
+        '<p>icon: <code>' + escapeHtml(item.icon) + '</code></p>' +
+        '<p>Tier: ' + escapeHtml(item.tier) + ' / ★: ' + escapeHtml(item.star ?? "-") + '</p>' +
+        '<div class="preview"><img src="' + escapeHtml(iconUrl) + '" alt="' + escapeHtml(item.slot) + '"><div class="error">画像を読み込めませんでした</div></div>' +
         '</article>';
     }).join("");
-    return new Response('<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title><body style="font-family:sans-serif;background:#111;color:#eee;padding:20px"><h1>領主装備アイコン確認</h1><p>Governor ID: ' + escapeHtml(governorId) + '</p>' + cards + '</body></html>', {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+
+    return new Response(
+      '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title>' +
+      '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1000px;margin:auto}.note{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 8px}.card p{font-size:13px;color:#94a3b8;word-break:break-all}.preview{min-height:190px;border:1px dashed #475569;border-radius:10px;background:#020617;display:flex;align-items:center;justify-content:center;position:relative}.preview img{max-width:180px;max-height:180px}.preview .error{display:none;color:#fca5a5;font-size:12px}.preview img:not([src=""]){}</style>' +
+      '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>',
+      { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+    );
   }
 
-  return json({ ok: true, governor_id: governorId, hidden: gear.hidden ?? null, items });
+  return json({ ok: true, governor_id: governorId, items });
 }
 
 async function handleMe(request, env) {
