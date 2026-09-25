@@ -1594,7 +1594,7 @@ async function renderHome(request, env) {
         </div>
         <a class="logout" href="/api/auth/logout">ログアウト</a>
       </section>
-      <nav class="nav"><a href="/players">プレイヤー検索</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin/api-pool">API Pool管理</a>' : ""}</nav>`
+      <nav class="nav"><a href="/players">プレイヤー検索</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin/api-pool">API Pool管理</a>' : ""}</nav>`
     : `
       <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
 
