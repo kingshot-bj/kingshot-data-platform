@@ -13,7 +13,67 @@ import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 
-export default {
+async function runKingdomWatchlistJobs(env) {
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await env.DB.prepare(
+    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1"
+  ).all();
+  for (const row of rows.results || []) {
+    const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
+    if (!due) continue;
+    try {
+      await collectKingdomWatchlist(env, row);
+      await env.DB.prepare("UPDATE kingdom_watchlists SET last_run_at = ?, updated_at = ? WHERE watchlist_id = ?")
+        .bind(now, now, row.watchlist_id).run();
+    } catch (error) {
+      console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
+    }
+  }
+}
+
+async function collectKingdomWatchlist(env, watchlist) {
+  const observedAt = Math.floor(Date.now() / 1000);
+  const rankings = await getMightPulseKingdomAllRankings(env, watchlist.kid, { limit: watchlist.top_n });
+  const governorIds = new Set();
+
+  for (const [board, result] of Object.entries(rankings)) {
+    const payload = result?.data;
+    const entries = payload?.rankings || payload?.entries || payload?.data || [];
+    await saveKingdomRankingBoard(env.DB, {
+      kid: watchlist.kid,
+      board,
+      entries,
+      observedAt
+    });
+    for (const entry of entries) {
+      const id = entry?.governor_id ?? entry?.governorId;
+      if (id != null) governorIds.add(String(id));
+    }
+  }
+
+  for (const governorId of governorIds) {
+    const result = await getMightPulsePlayer(env, governorId, {
+      include: "base,heroes,ranks,gov_gear"
+    });
+    const raw = result?.data?.player || result?.data;
+    if (!raw) continue;
+    const observationId = crypto.randomUUID();
+    const normalized = {
+      provider: "MIGHTPULSE",
+      endpoint: `/players/${governorId}?include=base,heroes,ranks,gov_gear`,
+      target_type: "PLAYER",
+      target_id: String(governorId),
+      observed_at: observedAt,
+      http_status: result?.status ?? 200,
+      payload_json: JSON.stringify(raw),
+      created_at: observedAt
+    };
+    await env.DB.prepare(
+      "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(observationId, normalized.provider, normalized.endpoint, normalized.target_type, normalized.target_id, normalized.observed_at, normalized.http_status, normalized.payload_json, normalized.created_at).run();
+  }
+}
+\nexport default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
