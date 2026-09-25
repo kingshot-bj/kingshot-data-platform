@@ -2234,7 +2234,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
-      ${card("オンライン", p.online ? "ONLINE" : "OFFLINE")}
+      ${card("オンライン", p.online ? "オンライン" : "オフライン")}
       ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
       ${card("同盟", p.alliance_name || "-")}
     </div>
@@ -2243,7 +2243,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
-      <div><b>Fresh</b> ${freshness.fresh === true ? "YES" : "NO / cached"}</div>
+      <div><b>データ状態</b> ${freshness.fresh === true ? "最新" : "キャッシュ"}</div>
       <div><b>観測時刻</b> ${formatUnix(p.observed_at)}</div>
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
@@ -2254,7 +2254,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
 
 const HERO_NAME_JA = {
   Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジュベル", Rosa: "ローザ",
-  Amadeus: "アマデウス", Marlin: "マリン", Hilde: "ヒルデ", Petra: "ペーラ",
+  Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペトラ",
   Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
   Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
   Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
