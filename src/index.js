@@ -64,6 +64,9 @@ async function runKingdomWatchlistJobs(env) {
     try {
       const result = await processKingdomWatchlistJob(env, job);
       if (result.completed) {
+        if (Number(result.rankingRows || 0) <= 0 || Number(result.playerCount || 0) <= 0) {
+          throw new Error("WATCHLIST_COMPLETED_WITHOUT_DATA");
+        }
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
         ).bind(now, now, now, row.watchlist_id).run();
@@ -100,13 +103,24 @@ async function processKingdomWatchlistJob(env, job) {
         env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
       );
       const payload = fetched.result?.data;
-      const entries = Array.isArray(payload?.rankings)
-        ? payload.rankings
-        : Array.isArray(payload?.entries)
-          ? payload.entries
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : [];
+      const entries = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.rankings)
+          ? payload.rankings
+          : Array.isArray(payload?.entries)
+            ? payload.entries
+            : Array.isArray(payload?.data)
+              ? payload.data
+              : Array.isArray(payload?.data?.rankings)
+                ? payload.data.rankings
+                : [];
+
+      if (!entries.length) {
+        const error = new Error("EMPTY_RANKING_RESPONSE:" + board);
+        error.code = "EMPTY_RANKING_RESPONSE";
+        error.board = board;
+        throw error;
+      }
 
       rankingRows += await saveKingdomRankingBoard(env.DB, {
         kid: job.kid,
@@ -225,7 +239,15 @@ async function processKingdomWatchlistJob(env, job) {
       "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, updated_at = ? WHERE job_id = ?"
     ).bind(nextCursor, playerRows, completed ? "COMPLETED" : "PLAYERS", completed ? now : null, now, job.job_id).run();
 
-    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
+    return {
+      completed,
+      phase: completed ? "COMPLETED" : "PLAYERS",
+      playerCursor: nextCursor,
+      playerCount: ids.length,
+      playerRows,
+      rankingRows: Number(job.ranking_rows || 0),
+      concurrency
+    };
   }
 
   return { completed: true, phase: job.status };
@@ -418,7 +440,7 @@ async function handleKingdomWatchlistApi(request, env) {
 
   if (request.method === "GET" && action === "list") {
     const rows = await env.DB.prepare(
-      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, j.status AS job_status, j.board_index AS job_board_index, j.player_cursor AS job_player_cursor, j.ranking_rows AS job_ranking_rows, j.player_rows AS job_player_rows FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id AND j2.status IN ('RANKINGS','PLAYERS') ORDER BY j2.created_at DESC LIMIT 1) WHERE w.discord_id = ? ORDER BY w.created_at DESC"
+      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, j.status AS job_status, j.board_index AS job_board_index, j.player_cursor AS job_player_cursor, j.ranking_rows AS job_ranking_rows, j.player_rows AS job_player_rows FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id ORDER BY j2.created_at DESC LIMIT 1) WHERE w.discord_id = ? ORDER BY w.created_at DESC"
     ).bind(auth.discord_id).all();
     return json({ ok: true, watchlists: rows.results || [] });
   }
