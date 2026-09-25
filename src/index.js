@@ -7,13 +7,12 @@ const SESSION_COOKIE = "eagleeye_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { savePlayerRankSnapshot, saveKingdomRankingBoard, saveKingdomRankingBoards, getLatestKingdomRankings, getRankingHistory, detectRankingChanges, detectRankingChangesForBoards } from "./ranking-store.js";
+import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, detectRankingChanges } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
-import { getRankingLabel } from "./ranking-catalog.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -36,7 +35,7 @@ const KINGDOM_RANKING_BOARDS = [
 
 const WATCHLIST_RANKING_LIMIT = 100;
 const WATCHLIST_RANKING_BATCH = 8;
-const WATCHLIST_PLAYER_BATCH = 10;
+const WATCHLIST_PLAYER_BATCH = 8;
 
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
@@ -64,7 +63,8 @@ async function runKingdomWatchlistJobs(env) {
 
     try {
       let result = null;
-      // Immediate refresh advances through rankings and player details in one invocation.
+      // Advance ranking and player phases in the same immediate invocation.
+      // The existing batch limits still apply, so scheduled runs remain bounded.
       for (let phase = 0; phase < 2; phase++) {
         const phaseStartedAt = Date.now();
         console.log("kingdom_watchlist_phase_start", {
@@ -91,11 +91,7 @@ async function runKingdomWatchlistJobs(env) {
       }
 
       if (!result) throw new Error("WATCHLIST_JOB_NO_RESULT");
-
       if (result.completed) {
-        if (Number(result.rankingRows || 0) <= 0 || Number(result.playerCount || 0) <= 0) {
-          throw new Error("WATCHLIST_COMPLETED_WITHOUT_DATA");
-        }
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
         ).bind(now, now, now, row.watchlist_id).run();
@@ -117,57 +113,58 @@ async function runKingdomWatchlistJobs(env) {
     break;
   }
 }
+
 async function processKingdomWatchlistJob(env, job) {
   const now = Math.floor(Date.now() / 1000);
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
+    const endIndex = Math.min(startIndex + WATCHLIST_RANKING_BATCH, KINGDOM_RANKING_BOARDS.length);
+    let rankingRows = Number(job.ranking_rows || 0);
 
-    if (startIndex >= KINGDOM_RANKING_BOARDS.length) {
-      const playerRows = await env.DB.prepare(
-        "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND rank <= ? AND governor_id IS NOT NULL ORDER BY governor_id"
-      ).bind(Number(job.kid), Number(job.observed_at), Number(job.top_n)).all();
-      const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), now, job.job_id).run();
-      return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows: Number(job.ranking_rows || 0) };
-    }
+    for (let i = startIndex; i < endIndex; i++) {
+      const board = KINGDOM_RANKING_BOARDS[i];
+      const fetched = await fetchKingdomRankingThroughApiPool(
+        env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
+      );
+      const payload = fetched.result?.data;
+      const entries = Array.isArray(payload?.rankings)
+        ? payload.rankings
+        : Array.isArray(payload?.entries)
+          ? payload.entries
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
 
-    const fetched = await fetchKingdomRankingsBulkThroughApiPool(
-      env, job.kid, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING_BULK"
-    );
-    const boards = extractKingdomRankingBoards(fetched.result?.data);
-    const missingBoards = KINGDOM_RANKING_BOARDS.filter(board => !Array.isArray(boards[board]) || !boards[board].length);
-    if (missingBoards.length) {
-      const error = new Error("BULK_RANKING_PAYLOAD_INCOMPLETE:" + missingBoards.join(","));
-      error.code = "BULK_RANKING_PAYLOAD_INCOMPLETE";
-      throw error;
-    }
+      rankingRows += await saveKingdomRankingBoard(env.DB, {
+        kid: job.kid,
+        board,
+        entries,
+        observedAt: job.observed_at
+      });
 
-    const rankingRows = await saveKingdomRankingBoards(env.DB, {
-      kid: job.kid,
-      boards,
-      observedAt: job.observed_at
-    });
+      const rankingChanges = await detectRankingChanges(env.DB, {
+        kid: job.kid,
+        board,
+        observedAt: job.observed_at
+      });
 
-    const rankingChanges = await detectRankingChangesForBoards(env.DB, {
-      kid: job.kid,
-      observedAt: job.observed_at,
-      boards
-    });
-
-    if (rankingChanges.length) {
-      const changeStatements = rankingChanges.map(change => env.DB.prepare(
-        "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(
-        crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
-        JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
-        null, change.observedAt, now
-      ));
-      for (let i = 0; i < changeStatements.length; i += 500) {
-        await env.DB.batch(changeStatements.slice(i, i + 500));
+      if (rankingChanges.length) {
+        await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
+          "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(
+          crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
+          JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
+          change.sourceObservationId, change.observedAt, now
+        )));
       }
+    }
+
+    if (endIndex < KINGDOM_RANKING_BOARDS.length) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(endIndex, rankingRows, now, job.job_id).run();
+      return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows };
     }
 
     const playerRows = await env.DB.prepare(
@@ -179,14 +176,7 @@ async function processKingdomWatchlistJob(env, job) {
       "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
     ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, now, job.job_id).run();
 
-    return {
-      completed: false,
-      phase: "PLAYERS",
-      board_index: KINGDOM_RANKING_BOARDS.length,
-      rankingRows,
-      playerCount: playerIds.length,
-      bulk: true
-    };
+    return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows };
   }
 
   if (job.status === "PLAYERS") {
@@ -201,13 +191,7 @@ async function processKingdomWatchlistJob(env, job) {
       await env.DB.prepare(
         "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
       ).bind(now, now, job.job_id).run();
-      return {
-        completed: true,
-        phase: "COMPLETED",
-        playerCount: ids.length,
-        playerRows: Number(job.player_rows || 0),
-        rankingRows: Number(job.ranking_rows || 0)
-      };
+      return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
     const concurrency = await getWatchlistApiConcurrency(env);
@@ -269,15 +253,7 @@ async function processKingdomWatchlistJob(env, job) {
       "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, updated_at = ? WHERE job_id = ?"
     ).bind(nextCursor, playerRows, completed ? "COMPLETED" : "PLAYERS", completed ? now : null, now, job.job_id).run();
 
-    return {
-      completed,
-      phase: completed ? "COMPLETED" : "PLAYERS",
-      playerCursor: nextCursor,
-      playerCount: ids.length,
-      playerRows,
-      rankingRows: Number(job.ranking_rows || 0),
-      concurrency
-    };
+    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
   }
 
   return { completed: true, phase: job.status };
@@ -313,7 +289,7 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.rank{padding:0;border:1px solid #334155;border-radius:12px;background:#111b2d;overflow:hidden}.rank summary{list-style:none;cursor:pointer;padding:12px 13px}.rank summary::-webkit-details-marker{display:none}.rank-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.rank-title{font-weight:900;font-size:14px}.rank-meta{font-size:11px;color:#94a3b8;margin-top:3px}.rank-preview{font-size:11px;color:#cbd5e1;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rank-body{padding:0 10px 10px}.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:7px;padding:8px 3px;border-top:1px solid #26364f;font-size:12px}.rank-no{font-weight:900;color:#fbbf24;text-align:center}.rank-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rank-score{font-variant-numeric:tabular-nums;color:#e2e8f0;font-weight:800}.rank-tools{display:flex;gap:8px;align-items:center;margin:0 0 12px}.rank-tools select{flex:1;min-width:0}.rank-tools button{width:auto}.section-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px}.section-title small{color:#94a3b8;font-size:11px}.empty{padding:12px;color:#94a3b8}.error{color:#fca5a5}.ok{color:#86efac}.player-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.player-card{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.player-name{font-weight:900}.player-meta{margin-top:5px;font-size:12px;color:#cbd5e1;line-height:1.6}@media(max-width:650px){.grid,.player-grid{grid-template-columns:1fr}}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}.rank-tools button{width:auto}.card{padding:14px}.grid{gap:8px}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
 </style></head><body>
 <a class="back" href="/">← EagleEye</a>
 <h1>王国ウォッチリスト</h1>
@@ -345,25 +321,14 @@ async function renderKingdomWatchlistPage(request, env) {
     return api("/api/kingdom-watchlist").then(function(d){
       el("list").innerHTML="";
       var ws=d.watchlists||[];
-      window.EAGLEEYE_OWNER = ${auth.role === "OWNER"};
       ws.forEach(function(w){
         var card=document.createElement("div"); card.className="card";
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
-        if(w.job_status){
-          var progress=document.createElement("p"); progress.className="muted";
-          progress.textContent="更新中: "+(w.job_status==="RANKINGS"?"ランキング取得中…":"プレイヤー "+esc(w.job_player_cursor||0)+"/"+esc(w.top_n));
-          card.appendChild(progress);
-        }
         var row=document.createElement("div"); row.className="row";
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
-        row.appendChild(view);row.appendChild(toggle);row.appendChild(del);
-        if(window.EAGLEEYE_OWNER){
-          var refresh=document.createElement("button"); refresh.textContent="今すぐ更新"; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
-          row.appendChild(refresh);
-        }
-        card.appendChild(row);el("list").appendChild(card);
+        row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
       });
       el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
       syncProgressPolling(ws);
@@ -371,18 +336,6 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   function toggleWatch(id,enabled){
     return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
-  }
-  function refreshWatch(id){
-    if(!confirm("この王国を今すぐ更新しますか？"))return;
-    el("msg").innerHTML="<span class='muted'>即時更新を開始しています…</span>";
-    return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
-      .then(function(d){
-        el("msg").innerHTML=d.already_running
-          ? "<span class='muted'>すでに更新中です。</span>"
-          : "<span class='ok'>即時更新を開始しました。</span>";
-        return load();
-      })
-      .catch(function(e){el("msg").innerHTML="<span class='error'>即時更新失敗: "+esc(e.message)+"</span>";});
   }
   function deleteWatch(id){
     if(!confirm("この監視対象を削除しますか？"))return;
@@ -392,54 +345,11 @@ async function renderKingdomWatchlistPage(request, env) {
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
       var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
-      var order=["alliance_power","alliance_kills","personal_power","kills","town_center","rebel_conquest","single_hero","hero_total","troop_power","building_power","research_power","hero_no_equip","hero_equip","gov_gear","gov_charm","pet_power","island_prosperity","migrant_score","mystic_trial","coliseum","forest_of_life","crystal_cave","knowledge_nexus","molten_fort","radiant_spire","master_power"];
-      var labels={"alliance_power":"同盟戦力","alliance_kills":"同盟撃破数","personal_power":"戦力","kills":"撃破数","town_center":"役場レベル","rebel_conquest":"反乱軍討伐","single_hero":"単英雄戦力","hero_total":"英雄総戦力","troop_power":"兵士戦力","building_power":"建築戦力","research_power":"科学戦力","hero_no_equip":"英雄装備なし戦力","hero_equip":"英雄装備戦力","gov_gear":"領主装備戦力","gov_charm":"領主宝石戦力","pet_power":"ペット戦力","island_prosperity":"オアシス島繁栄度","migrant_score":"移民スコア","mystic_trial":"秘境の試練","coliseum":"コロシアム","forest_of_life":"生命の森","crystal_cave":"水晶鉱山","knowledge_nexus":"知識の枢軸","molten_fort":"溶岩要塞","radiant_spire":"輝光の塔","master_power":"マスターパワー"};
-      function score(v,b){
-        if(v===null||v===undefined||v==="") return "-";
-        var n=Number(v);
-        if(!Number.isFinite(n)) return String(v);
-        if(b==="town_center") return "Lv."+n;
-        var abs=Math.abs(n), unit="", value=n;
-        if(abs>=1000000000){unit="B";value=n/1000000000;}
-        else if(abs>=1000000){unit="M";value=n/1000000;}
-        else if(abs>=1000){unit="K";value=n/1000;}
-        if(unit){
-          var digits=Math.abs(value)>=100?0:Math.abs(value)>=10?1:2;
-          return value.toFixed(digits).replace(/\\.?0+$/,"")+" "+unit;
-        }
-        return new Intl.NumberFormat("ja-JP",{maximumFractionDigits:0}).format(n);
-      }
-      function nameFor(r){
-        return r.nick_name || r.name || r.abbr || (r.governor_id ? "領主 "+r.governor_id : r.aid ? "同盟 "+r.aid : "-");
-      }
-      var available=order.filter(function(b){return boards[b]&&boards[b].length;});
-      var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><small>'+available.length+'種 / TOP '+esc(d.watchlist.top_n)+'</small></div>';
-      h+='<div class="rank-tools"><select id="rankFilter"><option value="ALL">すべてのランキング</option><option value="PLAYER">プレイヤーランキング</option><option value="ALLIANCE">同盟ランキング</option></select><button id="expandRanks" type="button">全て展開</button></div>';
-      h+='<div class="grid" id="rankGrid">';
-      available.forEach(function(b){
-        var rows=boards[b].slice().sort(function(a,z){return Number(a.rank||999999)-Number(z.rank||999999)}).slice(0,d.watchlist.top_n);
-        var preview=rows.slice(0,3).map(function(r){return (r.rank||"-")+"位 "+nameFor(r);}).join(" / ");
-        var target=(rows[0]&&rows[0].target_type)||"PLAYER";
-        h+='<details class="rank" data-target="'+esc(target)+'" data-board="'+esc(b)+'"><summary><div class="rank-head"><span class="rank-title">'+esc(labels[b]||getRankingLabel(b)||b)+'</span><span class="rank-meta">'+(target==="ALLIANCE"?"同盟":"プレイヤー")+'</span></div><div class="rank-preview">'+esc(preview)+'</div></summary><div class="rank-body">';
-        rows.forEach(function(r){
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank||"-")+'</span><span class="rank-name">'+esc(nameFor(r))+'</span><span class="rank-score">'+esc(score(r.score,b))+'</span></div>';
-        });
-        h+='</div></details>';
-      });
-      h+='</div><p class="muted" style="font-size:11px;margin-top:12px">ランキング名はゲーム内表記に合わせて順次確定します。</p>';
-      h+='<div class="section-title" style="margin-top:22px"><h2>観測プレイヤー</h2><small>'+esc((d.players||[]).length)+'人</small></div><div class="player-grid">';
-      (d.players||[]).forEach(function(p){h+='<div class="player-card"><div class="player-name">'+esc(p.nick_name||p.governor_id)+'</div><div class="player-meta">戦力 '+esc(p.power==null?"-":new Intl.NumberFormat("ja-JP").format(p.power))+' / 役場 '+esc(p.town_center_level==null?"-":p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
-      if(!(d.players||[]).length) h+='<div class="empty">まだ観測プレイヤーがありません。</div>';
+      var h='<div class="card"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><div class="grid">';
+      Object.keys(boards).forEach(function(b){h+='<div class="rank"><b>'+esc(b)+'</b>';boards[b].slice(0,d.watchlist.top_n).forEach(function(r){h+='<div>'+esc(r.rank)+". "+esc(r.nick_name||r.governor_id||r.name||"-")+" — "+esc(r.score)+'</div>';});h+='</div>';});
+      h+='</div><h2>観測プレイヤー</h2><div class="grid">';
+      (d.players||[]).forEach(function(p){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div>';});
       h+='</div></div>';el("detail").innerHTML=h;
-      var filter=el("rankFilter"), grid=el("rankGrid"), expand=el("expandRanks");
-      filter.addEventListener("change",function(){
-        Array.from(grid.querySelectorAll(".rank")).forEach(function(card){card.style.display=(filter.value==="ALL"||card.dataset.target===filter.value)?"":"none";});
-      });
-      expand.addEventListener("click",function(){
-        var cards=Array.from(grid.querySelectorAll(".rank")).filter(function(card){return card.style.display!=="none";});
-        var shouldOpen=cards.some(function(card){return !card.open;});        cards.forEach(function(card){card.open=shouldOpen;});
-        expand.textContent=shouldOpen?"全て閉じる":"全て展開";
-      });
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
   el("create").addEventListener("click",function(){
@@ -518,7 +428,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   });
 }
 
-async function handleKingdomWatchlistApi(request, env, ctx) {
+async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
@@ -526,10 +436,9 @@ async function handleKingdomWatchlistApi(request, env, ctx) {
 
   if (request.method === "GET" && action === "list") {
     const rows = await env.DB.prepare(
-      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, j.status AS job_status, j.board_index AS job_board_index, j.player_cursor AS job_player_cursor, j.ranking_rows AS job_ranking_rows, j.player_rows AS job_player_rows FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id ORDER BY j2.created_at DESC LIMIT 1) WHERE w.discord_id = ? ORDER BY w.created_at DESC"
+      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
     ).bind(auth.discord_id).all();
-    return json({ ok: true, watchlists: rows.results || [] });
-  }
+    return json({ ok: true, watchlists: rows.results || [] });  }
 
   if (request.method === "POST" && action === "create") {
     const body = await request.json().catch(() => ({}));
@@ -560,58 +469,6 @@ async function handleKingdomWatchlistApi(request, env, ctx) {
     return json({ ok: true, watchlist_id: id });
   }
 
-  if (request.method === "POST" && action === "refresh") {
-    if (auth.role !== "OWNER") return json({ ok: false, error: "OWNER_ONLY" }, 403);
-    const body = await request.json().catch(() => ({}));
-    const watchlistId = String(body.watchlist_id || "").trim();
-    if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
-
-    const row = await env.DB.prepare(
-      "SELECT watchlist_id, kid, top_n, interval_hours, enabled FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(watchlistId, auth.discord_id).first();
-    if (!row) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
-    if (!Number(row.enabled)) return json({ ok: false, error: "WATCHLIST_DISABLED" }, 409);
-
-    const active = await env.DB.prepare(
-      "SELECT job_id, status, board_index, player_cursor, ranking_rows, player_rows FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-    ).bind(watchlistId).first();
-    if (active) {
-      return json({
-        ok: true,
-        started: false,
-        already_running: true,
-        job: active
-      });
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    const jobId = crypto.randomUUID();
-    await env.DB.prepare(
-      "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
-    ).bind(jobId, watchlistId, Number(row.kid), Number(row.top_n), now, now, now).run();
-
-    await env.DB.prepare(
-      "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-    ).bind(now, watchlistId).run();
-
-    // OWNERの「今すぐ更新」はキュー投入だけで終わらせず、同じWorkerの
-    // waitUntilで即座に1ジョブ進める。HTTPレスポンスは待たせない。
-    if (ctx && typeof ctx.waitUntil === "function") {
-      ctx.waitUntil(runKingdomWatchlistJobs(env).catch(error => {
-        console.error("kingdom_watchlist_immediate_run_failed", watchlistId, error?.message || error);
-      }));
-    }
-
-    return json({
-      ok: true,
-      started: true,
-      immediate: true,
-      queued: true,
-      job_id: jobId,
-      message: "更新Jobを即時実行しました。"
-    });
-  }
-
   if (request.method === "POST" && action === "toggle") {
     const body = await request.json().catch(() => ({}));
     const enabled = body.enabled ? 1 : 0;
@@ -636,12 +493,12 @@ export default {
     const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
     if (minute === 0) await runDataRetentionJob(env);
   },
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, ctx);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
       if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
@@ -836,7 +693,8 @@ async function handleRankingPlayerTest(request, env) {
   const governorId = url.searchParams.get("governor_id");
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
 
-  try {    const result = await getMightPulsePlayerRanks(env, governorId);
+  try {
+    const result = await getMightPulsePlayerRanks(env, governorId);
     const raw = result.data?.player || result.data;
     const ranks = raw?.ranks || result.data?.ranks;
     if (!ranks) return json({ ok: false, error: "PLAYER_RANKS_MISSING" }, 502);
@@ -979,8 +837,7 @@ async function handleApiPoolKeys(request, env) {
   try {
     const keys = await listApiPoolKeys(env.DB);
     return json({ ok: true, keys: keys.map(k => ({
-      ...k,
-      key_fingerprint: k.key_fingerprint ? String(k.key_fingerprint).slice(0, 16) + "…" : null,
+      ...k,      key_fingerprint: k.key_fingerprint ? String(k.key_fingerprint).slice(0, 16) + "…" : null,
       last_error_message: k.last_error_message || null
     })), stats: await getPoolStats(env.DB) });
   } catch (error) {
@@ -1235,7 +1092,8 @@ function renderApiPoolTestResult(governorId, result) {
 function parseHeaderNumber(headers, name) {
   const value = headers?.get?.(name);
   const n = Number(value);
-  return Number.isFinite(n) ? n : null;}
+  return Number.isFinite(n) ? n : null;
+}
 
 async function renderDataRetentionPage(request, env) {
   const guard = await requireAdmin(request, env);
@@ -1354,62 +1212,6 @@ async function fetchThroughWatchlistApiPool(env, {
   }
 }
 
-async function fetchKingdomRankingsBulkThroughApiPool(env, kid, limit, purpose = "KINGDOM_WATCHLIST_RANKING_BULK") {
-  return fetchThroughWatchlistApiPool(env, {
-    path: `/kingdoms/${encodeURIComponent(kid)}`,
-    endpoint: "/kingdoms/:kid?include=boards",
-    targetType: "KINGDOM",
-    targetId: String(kid),
-    purpose,
-    query: { include: "boards", limit }
-  });
-}
-
-function extractKingdomRankingBoards(payload) {
-  const expected = new Set(KINGDOM_RANKING_BOARDS);
-  const containers = [
-    payload?.boards,
-    payload?.kingdom?.boards,
-    payload?.data?.boards,
-    payload?.data?.kingdom?.boards,
-    payload?.result?.boards,
-    payload?.result?.data?.boards,
-    payload?.rankings,
-    payload?.data?.rankings
-  ];
-
-  const out = {};
-
-  function addBoard(board, value) {
-    if (!board || !expected.has(String(board))) return;
-    let entries = value;
-    if (entries && !Array.isArray(entries) && typeof entries === "object") {
-      entries = entries.rankings ?? entries.entries ?? entries.rows ?? entries.items ?? entries.data;
-    }
-    if (Array.isArray(entries) && entries.length) out[String(board)] = entries;
-  }
-
-  for (const container of containers) {
-    if (!container) continue;
-    if (Array.isArray(container)) {
-      for (const item of container) {
-        if (!item || typeof item !== "object") continue;
-        addBoard(item.board ?? item.key ?? item.type ?? item.name, item.rankings ?? item.entries ?? item.rows ?? item.items ?? item.data);
-      }
-    } else if (typeof container === "object") {
-      for (const [board, value] of Object.entries(container)) addBoard(board, value);
-    }
-  }
-
-  for (const board of expected) {
-    if (out[board]) continue;
-    const value = payload?.[board] ?? payload?.data?.[board] ?? payload?.kingdom?.[board];
-    addBoard(board, value);
-  }
-
-  return out;
-}
-
 async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING") {
   return fetchThroughWatchlistApiPool(env, {
     path: `/kingdoms/${encodeURIComponent(kid)}/ranks`,
@@ -1435,7 +1237,6 @@ async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGD
 async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP") {
   if (!env.DB) throw new Error("DB_NOT_CONFIGURED");
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
-
   const id = String(governorId || "").trim();
   if (!id) {
     const error = new Error("GOVERNOR_ID_REQUIRED");
@@ -1634,3 +1435,498 @@ async function renderPlayerSearchPage(request, env) {
       ? `<a class="lookup" href="/player?governor_id=${encodeURIComponent(q)}">領主ID ${escapeHtml(q)} をデータ取得して表示する →</a>`
       : `<div class="empty">該当するプレイヤーが見つかりません。<br><span>領主名・領主ID・王国・同盟名は、EagleEyeに保存済みのデータから検索します。</span></div>`))
     : `<div class="hint">領主名・領主ID・王国・同盟名から検索できます。<br><span>領主IDで検索した領主が未登録でも、EagleEyeが取得して詳細を表示します。</span></div>`;
+
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.desc{color:#94a3b8;margin:0 0 18px}.search{display:flex;gap:8px}.search input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:white;font-size:16px}.search button{padding:14px 17px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900}.results{margin-top:18px;display:grid;gap:10px}.result{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238;color:white;text-decoration:none}.result:active{transform:translateY(1px)}.name{font-size:17px;font-weight:800;overflow-wrap:anywhere}.sub{margin-top:4px;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.power{font-weight:900;color:#f59e0b;white-space:nowrap}.hint,.empty,.lookup{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}.empty{color:#fca5a5}.lookup{display:block;color:#f59e0b;text-decoration:none;font-weight:800}.hint span,.empty span{font-size:12px}
+  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">領主名・領主ID・王国・同盟名から検索</p><form class="search" method="get" action="/players" onsubmit="const v=this.q.value.trim();if(/^\d{7,12}$/.test(v)){this.action='/player';this.q.name='governor_id';}return true;"><input name="q" value="${escapeHtml(q)}" placeholder="領主名 / 領主ID / 王国 / 同盟"><button>検索</button></form><div class="results">${body}</div></main></body></html>`;
+}
+
+
+async function handlePlayerHistoryApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 30), 1), 100);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  try {
+    const result = await env.DB.prepare(
+      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
+    ).bind(governorId, limit).all();
+    const snapshots = (result.results || []).map(row => {
+      let payload = {};
+      try { payload = JSON.parse(row.payload_json); } catch {}
+      return { snapshot_id: row.snapshot_id, governor_id: row.governor_id, observation_id: row.observation_id, observed_at: row.observed_at, player: filterPlayerForRole(payload, auth.role) };
+    });
+    return json({ ok: true, governor_id: governorId, snapshots });
+  } catch (error) {
+    console.error("Player history API error:", error);
+    return json({ ok: false, error: "PLAYER_HISTORY_READ_FAILED" }, 500);
+  }
+}
+
+
+async function handlePlayerChangesApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 100);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT event_id, target_type, target_id, change_type, field_name,
+              old_value_json, new_value_json, observation_id, detected_at, created_at
+       FROM change_events
+       WHERE target_type = 'PLAYER' AND target_id = ?
+       ORDER BY detected_at DESC, created_at DESC
+       LIMIT ?`
+    ).bind(governorId, limit).all();
+
+    const changes = (result.results || []).map(row => {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      return {
+        event_id: row.event_id, target_type: row.target_type, target_id: row.target_id,
+        change_type: row.change_type, field_name: row.field_name,
+        old_value: oldValue, new_value: newValue, observation_id: row.observation_id,
+        detected_at: row.detected_at, created_at: row.created_at
+      };
+    }).filter(change => isChangeVisibleForRole(change, auth.role));
+
+    return json({ ok: true, governor_id: governorId, changes });
+  } catch (error) {
+    console.error("Player changes API error:", error);
+    return json({ ok: false, error: "PLAYER_CHANGES_READ_FAILED" }, 500);
+  }
+}
+
+async function renderPlayerChangesPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+  }
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return renderChangesShell("領主IDを指定してください。", "");
+  if (!env.DB) return renderChangesShell("データベースが設定されていません。", governorId);
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT event_id, target_type, target_id, change_type, field_name,
+              old_value_json, new_value_json, observation_id, detected_at, created_at
+       FROM change_events
+       WHERE target_type = 'PLAYER' AND target_id = ?
+       ORDER BY detected_at DESC, created_at DESC
+       LIMIT 100`
+    ).bind(governorId).all();
+
+    const changes = (result.results || []).map(row => {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      return { ...row, oldValue, newValue };
+    }).filter(change => isChangeVisibleForRole(change, auth.role));
+
+    if (!changes.length) return renderChangesShell("このプレイヤーの変更履歴はまだありません。", governorId);
+
+    const cards = changes.map(change => {
+      const label = changeFieldLabel(change.field_name);
+      const oldText = formatChangeValue(change.field_name, change.oldValue);
+      const newText = formatChangeValue(change.field_name, change.newValue);
+      return `<article class="change"><div class="time">${escapeHtml(formatUnix(change.detected_at))}</div><div class="headline"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(changeTypeLabel(change.change_type))}</span></div><div class="transition"><span class="old">${escapeHtml(oldText)}</span><span class="arrow">→</span><span class="new">${escapeHtml(newText)}</span></div></article>`;
+    }).join("");
+
+    return renderChangesShell("", governorId, cards);
+  } catch (error) {
+    console.error("Player changes page error:", error);
+    return renderChangesShell("変更履歴の読み込みに失敗しました。", governorId);
+  }
+}
+
+function renderChangesShell(message, governorId, cards = "") {
+  const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Change History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.change{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.headline strong{font-size:17px}.headline span{font-size:11px;color:#94a3b8;padding:4px 7px;border-radius:7px;background:#0b1220}.transition{display:flex;align-items:center;gap:10px;margin-top:12px;min-width:0}.old,.new{padding:9px 10px;border-radius:9px;overflow-wrap:anywhere;word-break:break-word}.old{background:#0b1220;color:#94a3b8}.new{background:#182f25;color:#bbf7d0;font-weight:800}.arrow{color:#f59e0b;font-weight:900}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}@media(max-width:520px){.transition{align-items:stretch}.old,.new{flex:1}.arrow{align-self:center}}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">CHANGE EVENTS</div><h1 class="title">変更履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+}
+
+function isChangeVisibleForRole(change, role) {
+  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return true;
+  return !["vip", "x", "y"].includes(String(change.field_name || ""));
+}
+
+function changeTypeLabel(value) {
+  const labels = { POWER_CHANGED:"戦力変更", TOWN_CENTER_CHANGED:"役場変更", ALLIANCE_CHANGED:"同盟変更", COORDINATES_CHANGED:"座標変更", ACTIVITY_CHANGED:"活動状況変更", KILLS_CHANGED:"撃破数変更", PLAYER_FIELD_CHANGED:"プレイヤー情報変更" };
+  return labels[value] || value || "変更";
+}
+
+function changeFieldLabel(field) {
+  const labels = { power:"戦力", town_center_level:"役場", vip:"VIP", x:"X座標", y:"Y座標", kills:"撃破数", online:"オンライン", last_active_at:"最終活動", alliance_aid:"同盟ID", alliance_name:"同盟", alliance_rank:"同盟ランク", alliance_power:"同盟戦力", alliance_count:"同盟人数" };
+  return labels[field] || field || "不明";
+}
+
+function formatChangeValue(field, value) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (["power","kills","alliance_power","alliance_count","alliance_aid"].includes(field)) return formatNumber(value);
+  if (field === "town_center_level") return formatTownCenterLevel(value);
+  if (field === "online") return Number(value) ? "オンライン" : "オフライン";
+  if (field === "last_active_at") return formatRelativeActivity(value);
+  if (field === "x" || field === "y") return formatNumber(value);
+  return String(value);
+}
+
+async function renderPlayerHistoryPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return renderHistoryShell("領主IDを指定してください。", "");
+  if (!env.DB) return renderHistoryShell("データベースが設定されていません。", governorId);
+  try {
+    const result = await env.DB.prepare(
+      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT 100'
+    ).bind(governorId).all();
+    const rows = (result.results || []).map(row => {
+      let p = {};
+      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role); } catch {}
+      return { ...row, player: p };
+    });
+    if (!rows.length) return renderHistoryShell("このプレイヤーの履歴はまだありません。", governorId);
+    const cards = rows.map((row, index) => {
+      const p = row.player || {};
+      const previous = rows[index + 1]?.player || null;
+      const powerDiff = previous && p.power != null && previous.power != null ? Number(p.power) - Number(previous.power) : null;
+      return '<article class="snapshot"><div class="time">' + escapeHtml(formatUnix(row.observed_at)) + '</div><div class="headline"><span>戦力</span><strong>' + escapeHtml(formatNumber(p.power)) + '</strong>' + (powerDiff !== null ? '<em class="' + (powerDiff > 0 ? 'up' : powerDiff < 0 ? 'down' : '') + '">' + (powerDiff > 0 ? '+' : '') + escapeHtml(formatNumber(powerDiff)) + '</em>' : '') + '</div><div class="details"><span>役場 ' + escapeHtml(formatTownCenterLevel(p.town_center_level)) + '</span><span>撃破数 ' + escapeHtml(formatNumber(p.kills)) + '</span><span>同盟 ' + escapeHtml(p.alliance_name || '-') + '</span></div></article>';
+    }).join("");
+    return renderHistoryShell("", governorId, cards);
+  } catch (error) {
+    console.error("Player history page error:", error);
+    return renderHistoryShell("履歴の読み込みに失敗しました。", governorId);
+  }
+}
+
+function renderHistoryShell(message, governorId, cards = "") {
+  const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.snapshot{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:baseline;gap:10px;margin-top:8px}.headline span{color:#94a3b8;font-size:13px}.headline strong{font-size:21px}.headline em{font-style:normal;font-size:13px}.up{color:#86efac}.down{color:#fca5a5}.details{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#cbd5e1;font-size:12px}.details span{padding:5px 8px;border-radius:8px;background:#0b1220}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">PLAYER HISTORY</div><h1 class="title">プレイヤー履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+}
+
+async function renderPlayerPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`;
+  }
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) {
+    return renderPlayerShell("領主IDを指定してください。", "");
+  }
+
+  try {
+    const refresh = url.searchParams.get("refresh") === "1";
+    let observation = await getLatestPlayerObservation(env.DB, governorId);
+
+    if (!observation || refresh) {
+      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
+      observation = fetched.observation;
+    }
+    let player = await getPlayer(env.DB, governorId);
+    if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
+      player = await materializePlayer(env.DB, observation);
+    }
+
+    return renderPlayerShell("", governorId, filterPlayerForRole(player, auth.role), observation.payload);
+  } catch (error) {
+    console.error("Player page error:", error);
+    const code = String(error?.code || error?.message || "PLAYER_READ_FAILED");
+    const status = Number(error?.status || 0);
+    if (error?.message === "NO_API_POOL_KEY_AVAILABLE") {
+      return renderPlayerShell("現在、プレイヤーデータを取得できません。API Poolに利用可能なキーがありません。", governorId);
+    }
+    if (status === 404) {
+      return renderPlayerShell("該当するプレイヤーが見つかりませんでした。", governorId);
+    }
+    return renderPlayerShell("プレイヤーデータの更新に失敗しました。", governorId, null, null, "エラーコード: " + code + (status ? " / HTTP " + status : ""));
+  }
+}
+
+function filterPlayerForRole(player, role) {
+  if (!player) return player;
+  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return player;
+
+  const visible = { ...player };
+  delete visible.vip;
+  delete visible.x;
+  delete visible.y;
+  return visible;
+}
+
+function renderPlayerShell(message, governorId, player = null, payload = null, notice = null) {
+  const p = player || {};
+  const freshness = payload || {};
+  const esc = escapeHtml;
+  const noticeHtml = notice ? '<div class="notice">' + esc(notice) + '</div>' : "";
+  const content = player ? `
+    <div class="hero"><div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
+    <div class="grid">
+      ${card("戦力", formatNumber(p.power))}
+      ${card("役場", formatTownCenterLevel(p.town_center_level))}
+      ${card("VIP", p.vip ?? "-")}
+      ${card("撃破数", formatNumber(p.kills))}
+      ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
+      ${card("オンライン", p.online ? "ONLINE" : "OFFLINE")}
+      ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
+      ${card("同盟", p.alliance_name || "-")}
+    </div>
+    ${noticeHtml}
+    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
+    <div class="meta">
+      <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
+      <div><b>Fresh</b> ${freshness.fresh === true ? "YES" : "NO / cached"}</div>
+      <div><b>観測時刻</b> ${formatUnix(p.observed_at)}</div>
+    </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
+
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.message{margin-top:24px;padding:22px;border:1px solid #334155;border-radius:16px;background:#111c31}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}}
+  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
+}
+
+function card(label, value) {
+  return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
+}
+
+function formatTownCenterLevel(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const level = Number(value);
+  if (!Number.isFinite(level)) return String(value);
+  if (level <= 30) return `Lv.${level}`;
+  // Lv.30の後は30-1〜30-4を経て黄金1に入り、以降は各黄金レベル5段階。
+  if (level <= 34) return `Lv.30-${level - 30}`;
+  const goldLevel = Math.floor((level - 35) / 5) + 1;
+  const stage = ((level - 35) % 5) + 1;
+  return `黄金${goldLevel}（${stage}/5）`;
+}
+
+function formatRelativeActivity(lastActiveAt, fallback = null) {
+  if (lastActiveAt !== null && lastActiveAt !== undefined && lastActiveAt !== "") {
+    const timestamp = Number(lastActiveAt);
+    if (Number.isFinite(timestamp)) {
+      const diffSeconds = Math.max(0, Math.floor(Date.now() / 1000) - timestamp);
+      if (diffSeconds < 60) return "1分未満前";
+      if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}分前`;
+      if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}時間前`;
+      if (diffSeconds < 86400 * 30) return `${Math.floor(diffSeconds / 86400)}日前`;
+      if (diffSeconds < 86400 * 365) return `${Math.floor(diffSeconds / (86400 * 30))}か月前`;
+      return `${Math.floor(diffSeconds / (86400 * 365))}年前`;
+    }
+  }
+  return fallback ? translateLastLogin(fallback) : "-";
+}
+
+function translateLastLogin(value) {
+  return String(value)
+    .replace(/^Last active (\\d+)d ago$/i, "$1日前")
+    .replace(/^Last active (\\d+)h ago$/i, "$1時間前")
+    .replace(/^Last active (\\d+)m ago$/i, "$1分前")
+    .replace(/^Last active (just now)$/i, "直近");
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("ja-JP") : String(value);
+}
+
+function formatUnix(value) {
+  if (!value) return "-";
+  const date = new Date(Number(value) * 1000);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+}
+
+async function getAuthenticatedUser(request, env) {
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  if (!token || !secret) return null;
+  const session = await verifyPayload(token, secret);
+  if (!session) return null;
+
+  if (!env.DB) return { discord_id: session.sub, status: "ACTIVE", role: "ADMIN" };
+
+  const user = await env.DB.prepare(
+    "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+  ).bind(session.sub).first();
+  return user || null;
+}
+
+async function handleMe(request, env) {
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  if (!token || !secret) return json({ ok: true, authenticated: false });
+
+  const session = await verifyPayload(token, secret);
+  if (!session) return json({ ok: true, authenticated: false });
+
+  const dbUser = env.DB
+    ? await env.DB.prepare(
+        "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+      ).bind(session.sub).first()
+    : null;
+
+  return json({
+    ok: true,
+    authenticated: true,
+    user: {
+      discord_id: session.sub,
+      username: session.username,
+      global_name: session.global_name,
+      avatar: session.avatar,
+      role: dbUser?.role || "BASIC",
+      status: dbUser?.status || "ACTIVE"
+    }
+  });
+}
+
+async function renderHome(request, env) {
+  const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
+
+  const auth = session ? await getAuthenticatedUser(request, env) : null;
+  const authUi = session
+    ? `
+      <section class="account">
+        <div class="account-avatar">${session.avatar ? `<img src="https://cdn.discordapp.com/avatars/${encodeURIComponent(session.sub)}/${encodeURIComponent(session.avatar)}.png?size=128" alt="">` : "<span>BJ</span>"}</div>
+        <div class="account-info">
+          <div class="account-label">DISCORD CONNECTED</div>
+          <div class="account-name">${escapeHtml(session.global_name || session.username || "Discord User")}</div>
+          <div class="account-tag">@${escapeHtml(session.username || "")}</div>
+        </div>
+        <a class="logout" href="/api/auth/logout">ログアウト</a>
+      </section>
+      <nav class="nav"><a href="/players">プレイヤー検索</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin/api-pool">API Pool管理</a>' : ""}</nav>`
+    : `
+      <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
+
+  const note = configured ? "" : '<p class="note">Discord認証はCloudflare側の設定後に有効になります。</p>';
+
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KingShot Data Platform — EagleEye</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:white;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.container{text-align:center;padding:32px 24px;max-width:680px;width:100%}h1{font-size:clamp(28px,7vw,42px);line-height:1.15;margin:0 0 12px}.subtitle{font-size:18px;font-weight:800;letter-spacing:5px;color:#f59e0b;margin-bottom:24px;text-transform:uppercase}p{color:#94a3b8;font-size:16px;line-height:1.7}.status{display:inline-block;margin-top:20px;padding:10px 16px;border-radius:999px;background:#14532d;color:#86efac;font-weight:700}.login,.logout{display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:13px 22px;border-radius:10px;color:white;text-decoration:none;font-weight:800}.login{background:#5865f2}.login:active,.logout:active{transform:translateY(1px)}.account{margin:28px auto 0;max-width:460px;padding:18px;display:flex;align-items:center;gap:14px;text-align:left;background:rgba(30,41,59,.78);border:1px solid #334155;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.account-avatar{width:58px;height:58px;flex:0 0 58px;border-radius:50%;overflow:hidden;background:#1e293b;display:flex;align-items:center;justify-content:center;color:#f59e0b;font-weight:900}.account-avatar img{width:100%;height:100%;object-fit:cover}.account-info{min-width:0;flex:1}.account-label{font-size:11px;letter-spacing:1.5px;color:#86efac;font-weight:800}.account-name{font-size:17px;font-weight:800;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.account-tag{font-size:13px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.logout{margin:0;padding:10px 14px;background:#334155;border:1px solid #475569;font-size:13px;flex:0 0 auto}.logout:hover{background:#475569}.nav{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}.nav a{padding:10px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.note{font-size:13px;margin-top:18px}
+  </style></head><body><main class="container"><h1>KingShot Data Platform</h1><div class="subtitle">EagleEye</div><p>KingShotのデータを集約・分析するプラットフォーム</p><div class="status">● System Online</div>${authUi}${note}</main></body></html>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" }
+  });
+}
+
+function serializeCookie(name, value, options = {}) {
+  const parts = [name + "=" + encodeURIComponent(value)];
+  if (options.maxAge !== undefined) parts.push("Max-Age=" + options.maxAge);
+  if (options.httpOnly) parts.push("HttpOnly");
+  if (options.secure) parts.push("Secure");
+  if (options.sameSite) parts.push("SameSite=" + options.sameSite);
+  if (options.path) parts.push("Path=" + options.path);
+  return parts.join("; ");
+}
+
+function parseCookie(header) {
+  const result = {};
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index === -1) continue;
+    result[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return result;
+}
+
+function base64url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64urlEncodeText(text) {
+  return base64url(new TextEncoder().encode(text));
+}
+
+function base64urlDecodeText(text) {
+  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (text.length % 4)) % 4);
+  return new TextDecoder().decode(Uint8Array.from(atob(padded), char => char.charCodeAt(0)));
+}
+
+async function hmac(input, secret) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input)));
+}
+
+async function signPayload(payload, secret) {
+  const body = base64urlEncodeText(JSON.stringify(payload));
+  return body + "." + base64url(await hmac(body, secret));
+}
+
+async function verifyPayload(token, secret) {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const body = parts[0];
+  const provided = decodeBase64Url(parts[1]);
+  const expected = await hmac(body, secret);
+  if (!constantTimeEqual(expected, provided)) return null;
+  try {
+    const payload = JSON.parse(base64urlDecodeText(body));
+    if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function createStateToken(secret) {
+  const body = Date.now() + "." + crypto.randomUUID();
+  return base64urlEncodeText(body) + "." + base64url(await hmac(body, secret));
+}
+
+async function verifyStateToken(token, secret) {
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+  let body;
+  try {
+    body = base64urlDecodeText(parts[0]);
+  } catch {
+    return false;
+  }
+  const provided = decodeBase64Url(parts[1]);
+  const expected = await hmac(body, secret);
+  if (!constantTimeEqual(expected, provided)) return false;
+  const timestamp = Number(body.split(".")[0]);
+  return Number.isFinite(timestamp) && Date.now() - timestamp < 10 * 60 * 1000;
+}
+
+function decodeBase64Url(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
+}
+
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
