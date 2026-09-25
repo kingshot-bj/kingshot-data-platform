@@ -446,27 +446,36 @@ async function handleKingdomWatchlistApi(request, env, ctx) {
   const action = url.searchParams.get("action") || "list";
 
   if (request.method === "GET" && action === "list") {
+    // Keep the watchlist list query independent from the job table.
+    // A malformed/old job row must never make the entire watchlist page fail.
     const rows = await env.DB.prepare(
-      `SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at,
-              j.status AS job_status,
-              j.board_index AS job_board_index,
-              j.player_cursor AS job_player_cursor,
-              j.ranking_rows AS job_ranking_rows,
-              j.player_rows AS job_player_rows,
-              j.updated_at AS job_updated_at
-       FROM kingdom_watchlists w
-       LEFT JOIN kingdom_watchlist_jobs j
-         ON j.job_id = (
-           SELECT j2.job_id
-           FROM kingdom_watchlist_jobs j2
-           WHERE j2.watchlist_id = w.watchlist_id
-           ORDER BY j2.created_at DESC
-           LIMIT 1
-         )
-       WHERE w.discord_id = ?
-       ORDER BY w.created_at DESC`
+      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
     ).bind(auth.discord_id).all();
-    return json({ ok: true, watchlists: rows.results || [] });  }
+
+    const watchlists = [];
+    for (const row of (rows.results || [])) {
+      let job = null;
+      try {
+        job = await env.DB.prepare(
+          "SELECT job_id, status, board_index, player_cursor, ranking_rows, player_rows, updated_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
+        ).bind(row.watchlist_id).first();
+      } catch (jobError) {
+        console.error("Watchlist job status read failed:", jobError);
+      }
+      watchlists.push({
+        ...row,
+        job_id: job?.job_id || null,
+        job_status: job?.status || null,
+        job_board_index: job?.board_index ?? 0,
+        job_player_cursor: job?.player_cursor ?? 0,
+        job_ranking_rows: job?.ranking_rows ?? 0,
+        job_player_rows: job?.player_rows ?? 0,
+        job_updated_at: job?.updated_at || null
+      });
+    }
+
+    return json({ ok: true, watchlists });
+  }
 
   if (request.method === "POST" && action === "create") {
     const body = await request.json().catch(() => ({}));
