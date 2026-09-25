@@ -281,7 +281,7 @@ async function renderKingdomWatchlistPage(request, env) {
     return api("/api/kingdom-watchlist").then(function(d){
       el("list").innerHTML="";
       var ws=d.watchlists||[];
-      window.EAGLEEYE_OWNER = true;
+      window.EAGLEEYE_OWNER = ${auth.role === "OWNER"};
       ws.forEach(function(w){
         var card=document.createElement("div"); card.className="card";
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
