@@ -2273,6 +2273,13 @@ const GOVERNOR_GEAR_SLOT_JA = {
   ring: "指輪",
   weapon: "杖", staff: "杖", rod: "杖"
 };
+const GOVERNOR_GEAR_TIER_JA = {
+  Green: "グッド",
+  Blue: "レア",
+  Purple: "エピック",
+  Gold: "レジェンド",
+  Red: "神話"
+};
 function localizeHeroName(value) { return HERO_NAME_JA[value] || value || "-"; }
 function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value || "-"; }
 function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
@@ -2280,6 +2287,14 @@ function localizeGovernorGearSlot(value) {
   const raw = String(value ?? "").trim();
   const key = raw.toLowerCase().replace(/[ _-]+/g, "_");
   return GOVERNOR_GEAR_SLOT_JA[key] || GOVERNOR_GEAR_SLOT_JA[raw.toLowerCase()] || raw || "-";
+}
+function localizeGovernorGearTier(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const match = raw.match(/^(Green|Blue|Purple|Gold|Red)(?:[ _-]?T(\\d+))?$/i);
+  if (!match) return raw;
+  const base = GOVERNOR_GEAR_TIER_JA[match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()] || match[1];
+  return match[2] ? base + " T" + match[2] : base;
 }
 
 const LEADERBOARD_NAME_JA = {
@@ -2430,7 +2445,7 @@ function renderPlayerAdvancedSections(profile) {
         return '<div class="gear-card"><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong><div class="gear-stats">' +
           '<div class="gear-stat">スロット<b>' + esc(localizeGovernorGearSlot(item.slot)) + '</b></div>' +
           '<div class="gear-stat">品質<b>' + esc(item.quality ?? "-") + '</b></div>' +
-          '<div class="gear-stat">Tier<b>' + esc(item.tier ?? "-") + '</b></div>' +
+          '<div class="gear-stat">Tier<b>' + esc(localizeGovernorGearTier(item.tier)) + '</b></div>' +
           '<div class="gear-stat">★<b>' + esc(item.star ?? "-") + '</b></div>' +
           '<div class="gear-stat">強化<b>' + esc(item.strength_level ?? "-") + '</b></div>' +
           '<div class="gear-stat">スコア<b>' + esc(formatCompactNumber(item.score)) + '</b></div>' +
