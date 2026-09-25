@@ -24,124 +24,234 @@ async function runDataRetentionJob(env) {
   }
 }
 
+const KINGDOM_RANKING_BOARDS = [
+  "alliance_power", "alliance_kills", "personal_power", "kills", "town_center",
+  "rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power",
+  "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm",
+  "pet_power", "island_prosperity", "migrant_score", "mystic_trial", "coliseum",
+  "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire",
+  "master_power"
+];
+
+const WATCHLIST_RANKING_LIMIT = 100;
+const WATCHLIST_RANKING_BATCH = 8;
+const WATCHLIST_PLAYER_BATCH = 8;
+
 async function runKingdomWatchlistJobs(env) {
+  if (!env.DB) return;
   const now = Math.floor(Date.now() / 1000);
   const rows = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1"
+    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
   ).all();
+
   for (const row of rows.results || []) {
+    const active = await env.DB.prepare(
+      "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+    ).bind(row.watchlist_id).first();
+
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
-    if (!due) continue;
-    try {
-      const result = await collectKingdomWatchlist(env, row);
+    if (!active && !due) continue;
+
+    let job = active;
+    if (!job) {
+      const jobId = crypto.randomUUID();
       await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(now, now, now, row.watchlist_id).run();
-      console.log("kingdom_watchlist_job_ok", row.watchlist_id, result);
+        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+      ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
+      job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+    }
+
+    try {
+      const result = await processKingdomWatchlistJob(env, job);
+      if (result.completed) {
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(now, now, now, row.watchlist_id).run();
+      } else {
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(now, row.watchlist_id).run();
+      }
+      console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
     } catch (error) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(String(error?.message || error).slice(0, 1000), now, job.job_id).run();
       await env.DB.prepare(
         "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
       ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
       console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
     }
+    break;
   }
 }
 
-async function collectKingdomWatchlist(env, watchlist) {
-  const observedAt = Math.floor(Date.now() / 1000);
-  const boards = [
-    "alliance_power", "alliance_kills", "personal_power", "kills", "town_center",
-    "rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power",
-    "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm",
-    "pet_power", "island_prosperity", "migrant_score", "mystic_trial", "coliseum",
-    "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire",
-    "master_power"
-  ];
-  const governorIds = new Set();
-  let rankingRows = 0;
+async function processKingdomWatchlistJob(env, job) {
+  const now = Math.floor(Date.now() / 1000);
 
-  for (const board of boards) {
-    const fetched = await fetchKingdomRankingThroughApiPool(env, watchlist.kid, board, watchlist.top_n);
-    const payload = fetched.result?.data;
-    const entries = Array.isArray(payload?.rankings)
-      ? payload.rankings
-      : Array.isArray(payload?.entries)
-        ? payload.entries
-        : Array.isArray(payload?.data)
-          ? payload.data
-          : [];
-    rankingRows += await saveKingdomRankingBoard(env.DB, {
-      kid: watchlist.kid,
-      board,
-      entries,
-      observedAt
-    });
-    const rankingChanges = await detectRankingChanges(env.DB, {
-      kid: watchlist.kid,
-      board,
-      observedAt
-    });
-    for (const change of rankingChanges) {
-      await env.DB.prepare(
-        "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(
-        crypto.randomUUID(),
-        change.targetType,
-        change.targetId,
-        change.changeType,
-        "rank",
-        JSON.stringify(change.oldValue),
-        JSON.stringify(change.newValue),
-        change.sourceObservationId,
-        change.observedAt,
-        observedAt
-      ).run();
-    }
-    for (const entry of entries) {
-      const id = entry?.governor_id ?? entry?.governorId;
-      if (id != null) governorIds.add(String(id));
-    }
-  }
+  if (job.status === "RANKINGS") {
+    const startIndex = Number(job.board_index || 0);
+    const endIndex = Math.min(startIndex + WATCHLIST_RANKING_BATCH, KINGDOM_RANKING_BOARDS.length);
+    let rankingRows = Number(job.ranking_rows || 0);
 
-  let playerRows = 0;
-  for (const governorId of governorIds) {
-    const fetched = await fetchPlayerDetailThroughApiPool(env, governorId);
-    const result = fetched.result;
-    const raw = result?.data?.player || result?.data;
-    if (!raw) continue;
-    const observationId = crypto.randomUUID();
-    const normalized = {
-      provider: "MIGHTPULSE",
-      endpoint: `/players/${governorId}?include=base,heroes,ranks,gov_gear`,
-      target_type: "PLAYER",
-      target_id: String(governorId),
-      observed_at: observedAt,
-      http_status: result?.status ?? 200,
-      payload_json: JSON.stringify(raw),
-      created_at: observedAt
-    };
-    await env.DB.prepare(
-      "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(observationId, normalized.provider, normalized.endpoint, normalized.target_type, normalized.target_id, normalized.observed_at, normalized.http_status, normalized.payload_json, normalized.created_at).run();
+    for (let i = startIndex; i < endIndex; i++) {
+      const board = KINGDOM_RANKING_BOARDS[i];
+      const fetched = await fetchKingdomRankingThroughApiPool(
+        env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
+      );
+      const payload = fetched.result?.data;
+      const entries = Array.isArray(payload?.rankings)
+        ? payload.rankings
+        : Array.isArray(payload?.entries)
+          ? payload.entries
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
 
-    const observation = { ...normalized, observation_id: observationId, payload: result.data };
-    await materializePlayer(env.DB, observation);
-
-    const ranks = result?.data?.ranks || raw?.ranks;
-    if (ranks && typeof ranks === "object") {
-      await savePlayerRankSnapshot(env.DB, {
-        governorId,
-        uid: raw.uid ?? null,
-        kid: raw.kid ?? watchlist.kid,
-        ranks,
-        observedAt,
-        sourceObservationId: observationId
+      rankingRows += await saveKingdomRankingBoard(env.DB, {
+        kid: job.kid,
+        board,
+        entries,
+        observedAt: job.observed_at
       });
+
+      const rankingChanges = await detectRankingChanges(env.DB, {
+        kid: job.kid,
+        board,
+        observedAt: job.observed_at
+      });
+
+      if (rankingChanges.length) {
+        await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
+          "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(
+          crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
+          JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
+          change.sourceObservationId, change.observedAt, now
+        )));
+      }
     }
-    playerRows++;
+
+    if (endIndex < KINGDOM_RANKING_BOARDS.length) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(endIndex, rankingRows, now, job.job_id).run();
+      return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows };
+    }
+
+    const playerRows = await env.DB.prepare(
+      "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND target_type = 'PLAYER' AND rank <= ? AND governor_id IS NOT NULL ORDER BY governor_id"
+    ).bind(Number(job.kid), Number(job.observed_at), Number(job.top_n)).all();
+    const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
+
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+    ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, now, job.job_id).run();
+
+    return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows };
   }
 
-  return { boards: boards.length, rankingRows, uniquePlayers: governorIds.size, playerRows };
+  if (job.status === "PLAYERS") {
+    let ids = [];
+    try { ids = JSON.parse(job.player_ids_json || "[]"); } catch {}
+    if (!Array.isArray(ids)) ids = [];
+
+    const cursor = Number(job.player_cursor || 0);
+    const batchIds = ids.slice(cursor, cursor + WATCHLIST_PLAYER_BATCH);
+
+    if (!batchIds.length) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(now, now, job.job_id).run();
+      return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
+    }
+
+    const concurrency = await getWatchlistApiConcurrency(env);
+    const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
+      try {
+        return { governorId, fetched: await fetchPlayerDetailThroughApiPool(env, governorId) };
+      } catch (error) {
+        console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
+        return { governorId, error };
+      }
+    });
+
+    let playerRows = Number(job.player_rows || 0);
+    for (const item of fetchedPlayers) {
+      if (item.error) continue;
+      const result = item.fetched.result;
+      const raw = result?.data?.player || result?.data;
+      if (!raw) continue;
+
+      const observationId = crypto.randomUUID();
+      const governorId = String(raw.governor_id ?? item.governorId);
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(
+          observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
+          "PLAYER", governorId, job.observed_at, result?.status ?? 200, JSON.stringify(raw), job.observed_at
+        ),
+        env.DB.prepare(
+          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
+        ).bind(
+          governorId, raw.uid ?? null, raw.fid != null ? String(raw.fid) : null, raw.nick_name ?? null,
+          raw.kid ?? job.kid, raw.power ?? null, raw.town_center_level ?? null, raw.vip ?? null,
+          raw.x ?? null, raw.y ?? null, raw.kills ?? null, raw.office ?? null, raw.online ? 1 : 0,
+          raw.last_active_at ?? null, raw.last_login ?? null, raw.avatar_url ?? null, raw.language ?? null,
+          raw.shield_endtime ?? null, raw.burn_endtime ?? null, raw.alliance?.aid ?? null,
+          raw.alliance?.abbr ?? null, raw.alliance?.name ?? null, raw.alliance?.rank ?? null,
+          raw.alliance?.rank_label ?? null, raw.alliance?.power ?? null, raw.alliance?.count ?? null,
+          raw.alliance?.leader_name ?? null, job.observed_at, observationId, now
+        ),
+        env.DB.prepare(
+          "INSERT INTO player_snapshots (snapshot_id, governor_id, observation_id, observed_at, payload_json) VALUES (?, ?, ?, ?, ?)"
+        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, JSON.stringify(raw))
+      ]);
+
+      const ranks = result?.data?.ranks || raw?.ranks;
+      if (ranks && typeof ranks === "object") {
+        await savePlayerRankSnapshot(env.DB, {
+          governorId, uid: raw.uid ?? null, kid: raw.kid ?? job.kid, ranks,
+          observedAt: job.observed_at, sourceObservationId: observationId
+        });
+      }
+      playerRows++;
+    }
+
+    const nextCursor = cursor + batchIds.length;
+    const completed = nextCursor >= ids.length;
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, updated_at = ? WHERE job_id = ?"
+    ).bind(nextCursor, playerRows, completed ? "COMPLETED" : "PLAYERS", completed ? now : null, now, job.job_id).run();
+
+    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
+  }
+
+  return { completed: true, phase: job.status };
+}
+
+async function getWatchlistApiConcurrency(env) {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL') AND status = 'AVAILABLE'"
+  ).first();
+  return Math.max(1, Math.min(4, Number(row?.count || 1)));
+}
+
+async function fetchWithConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  async function runWorker() {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  }
+  const workers = [];
+  for (let i = 0; i < Math.min(concurrency, items.length); i++) workers.push(runWorker());
+  await Promise.all(workers);
+  return results;
 }
 
 async function renderKingdomWatchlistPage(request, env) {
@@ -173,7 +283,7 @@ async function renderKingdomWatchlistPage(request, env) {
       var ws=d.watchlists||[];
       ws.forEach(function(w){
         var card=document.createElement("div"); card.className="card";
-        card.innerHTML="<h2>KID "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
         var row=document.createElement("div"); row.className="row";
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
@@ -316,7 +426,9 @@ async function handleKingdomWatchlistApi(request, env) {
 }
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(Promise.all([runKingdomWatchlistJobs(env), runDataRetentionJob(env)]));
+    await runKingdomWatchlistJobs(env);
+    const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
+    if (minute === 0) await runDataRetentionJob(env);
   },
   async fetch(request, env) {
     const url = new URL(request.url);
