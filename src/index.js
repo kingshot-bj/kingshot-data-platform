@@ -141,7 +141,7 @@ async function collectKingdomWatchlist(env, watchlist) {
     playerRows++;
   }
 
-  return { boards: Object.keys(rankings).length, rankingRows, uniquePlayers: governorIds.size, playerRows };
+  return { boards: boards.length, rankingRows, uniquePlayers: governorIds.size, playerRows };
 }
 
 async function renderKingdomWatchlistPage(request, env) {
