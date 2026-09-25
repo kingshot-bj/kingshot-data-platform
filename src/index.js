@@ -157,7 +157,7 @@ async function renderKingdomWatchlistPage(request, env) {
 <h1>王国ウォッチリスト</h1>
 <div id="msg" class="muted">読み込み中…</div>
 <section class="card"><h2>王国を監視対象に追加</h2><div class="row">
-<label>KID<input id="kid" type="number" min="1" placeholder="例: 581"></label>
+<label>王国番号<input id="kid" type="number" min="1" placeholder="例: 1524"></label>
 <label>ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
 <label>更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
 <button id="create">監視を登録</button></div></section>
@@ -194,7 +194,7 @@ async function renderKingdomWatchlistPage(request, env) {
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
       var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
-      var h='<div class="card"><h2>KID '+esc(d.watchlist.kid)+' ランキング</h2><div class="grid">';
+      var h='<div class="card"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><div class="grid">';
       Object.keys(boards).forEach(function(b){h+='<div class="rank"><b>'+esc(b)+'</b>';boards[b].slice(0,d.watchlist.top_n).forEach(function(r){h+='<div>'+esc(r.rank)+". "+esc(r.nick_name||r.governor_id||r.name||"-")+" — "+esc(r.score)+'</div>';});h+='</div>';});
       h+='</div><h2>観測プレイヤー</h2><div class="grid">';
       (d.players||[]).forEach(function(p){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div>';});
