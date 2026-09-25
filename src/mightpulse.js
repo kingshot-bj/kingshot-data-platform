@@ -191,44 +191,26 @@ export async function getMightPulseKingdomAllRankings(env, kid, {
   limit = 100,
   apiKey = null
 } = {}) {
-  const boards = [
-    "alliance_power",
-    "alliance_kills",
-    "personal_power",
-    "kills",
-    "town_center",
-    "rebel_conquest",
-    "single_hero",
-    "hero_total",
-    "troop_power",
-    "building_power",
-    "research_power",
-    "hero_no_equip",
-    "hero_equip",
-    "gov_gear",
-    "gov_charm",
-    "pet_power",
-    "island_prosperity",
-    "migrant_score",
-    "mystic_trial",
-    "coliseum",
-    "forest_of_life",
-    "crystal_cave",
-    "knowledge_nexus",
-    "molten_fort",
-    "radiant_spire",
-    "master_power"
-  ];
-
-  const results = {};
-  for (const board of boards) {
-    results[board] = await getMightPulseKingdomRanks(env, kid, {
-      board,
-      limit,
-      apiKey
+  const kingdomId = String(kid || "").trim();
+  if (!kingdomId) {
+    throw new MightPulseError("Kingdom ID is required.", {
+      status: 400,
+      code: "INVALID_KINGDOM_ID"
     });
   }
-  return results;
+
+  return getMightPulseKingdom(env, kingdomId, {
+    include: "boards",
+    limit
+  }).then(result => {
+    if (!result || !result.data) {
+      throw new MightPulseError("MightPulse returned no kingdom ranking payload.", {
+        status: result?.status || 502,
+        code: "MIGHTPULSE_EMPTY_RANKINGS"
+      });
+    }
+    return result;
+  });
 }
 
 export async function getMightPulseAlliance(env, kid, tag, {
