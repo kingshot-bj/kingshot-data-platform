@@ -1075,8 +1075,8 @@ const EAGLEEYE_THEME_SCRIPT = `
 
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
-  if (!html.includes("id="eagleeye-theme"")) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
-  if (!html.includes("id="eagleeye-theme-script"")) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
+  if (!html.includes('id="eagleeye-theme"')) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
+  if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   return html;
 }
 
