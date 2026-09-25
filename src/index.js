@@ -966,6 +966,7 @@ export default {
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
       if (url.pathname === "/api/admin/player-visibility") return await handlePlayerVisibilityApi(request, env);
+      if (url.pathname === "/api/admin/player-export") return await handlePlayerSectionExport(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -2245,6 +2246,155 @@ async function renderPlayerHistoryPage(request, env) {
 function renderHistoryShell(message, governorId, cards = "") {
   const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
   return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.snapshot{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:baseline;gap:10px;margin-top:8px}.headline span{color:#94a3b8;font-size:13px}.headline strong{font-size:21px}.headline em{font-style:normal;font-size:13px}.up{color:#86efac}.down{color:#fca5a5}.details{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#cbd5e1;font-size:12px}.details span{padding:5px 8px;border-radius:8px;background:#0b1220}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">PLAYER HISTORY</div><h1 class="title">プレイヤー履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+}
+
+function csvEscape(value) {
+  const raw = value === null || value === undefined ? "" : String(value);
+  return '"' + raw.replace(/"/g, '""') + '"';
+}
+
+function csvResponse(filename, headers, rows) {
+  const lines = [
+    headers.map(csvEscape).join(","),
+    ...rows.map(row => headers.map(header => csvEscape(row?.[header])).join(","))
+  ];
+  const body = "\uFEFF" + lines.join("\r\n") + "\r\n";
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": 'attachment; filename="' + filename.replace(/[^A-Za-z0-9._-]/g, "_") + '"',
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function flattenCsvValue(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value) || typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+async function handlePlayerSectionExport(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  const section = String(url.searchParams.get("section") || "").trim().toLowerCase();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  const allowedSections = ["profile", "alliance", "heroes", "rankings", "gov_gear"];
+  if (!allowedSections.includes(section)) return json({ ok: false, error: "INVALID_EXPORT_SECTION" }, 400);
+
+  try {
+    const observation = await getLatestPlayerObservation(env.DB, governorId);
+    if (!observation?.payload) return json({ ok: false, error: "PLAYER_DATA_NOT_FOUND" }, 404);
+
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const player = await getPlayer(env.DB, governorId);
+    const visiblePlayer = filterPlayerForRole(player, guard.auth.role, observation.payload, visibilitySettings);
+    const visibleProfile = filterPlayerProfileForRole(observation.payload, guard.auth.role, visibilitySettings);
+
+    if (visibilityEnabled(visibilitySettings, "hero_rankings", guard.auth.role)) {
+      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
+      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
+    }
+
+    const safeName = String(visiblePlayer?.nick_name || governorId).replace(/[^\p{L}\p{N}_-]/gu, "_");
+
+    if (section === "profile") {
+      const headers = ["領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","オンライン","最終活動","最終ログイン","言語","役職"];
+      const p = visiblePlayer || {};
+      const row = {
+        "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,
+        "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,
+        "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",
+        "最終活動": p.last_active_at, "最終ログイン": p.last_login,
+        "言語": p.language, "役職": p.office
+      };
+      return csvResponse("eagleeye_" + safeName + "_profile.csv", headers, [row]);
+    }
+
+    if (section === "alliance") {
+      const a = visiblePlayer?.alliance || {};
+      const headers = ["領主ID","同盟ID","同盟略称","同盟名","同盟内順位","順位ラベル","同盟戦力","同盟人数","盟主","旗URL"];
+      const row = {
+        "領主ID": governorId, "同盟ID": a.aid, "同盟略称": a.abbr, "同盟名": a.name,
+        "同盟内順位": a.rank, "順位ラベル": a.rank_label, "同盟戦力": a.power,
+        "同盟人数": a.count, "盟主": a.leader_name, "旗URL": a.flag_url
+      };
+      return csvResponse("eagleeye_" + safeName + "_alliance.csv", headers, [row]);
+    }
+
+    if (section === "heroes") {
+      const headers = ["領主ID","英雄ID","英雄名","レベル","星","星ラベル","品質","戦力","配置","スキル","専用装備Lv","専用装備","通常装備"];
+      const heroes = Array.isArray(visibleProfile.heroes) ? visibleProfile.heroes : [];
+      const rows = heroes.map(hero => ({
+        "領主ID": governorId,
+        "英雄ID": hero.id,
+        "英雄名": localizeHeroName(hero.name || hero.id),
+        "レベル": hero.level,
+        "星": hero.star ?? hero.stars,
+        "星ラベル": hero.star_label,
+        "品質": hero.quality,
+        "戦力": hero.power,
+        "配置": hero.position,
+        "スキル": flattenCsvValue(hero.skill_levels),
+        "専用装備Lv": hero.exclusive_gear_level,
+        "専用装備": flattenCsvValue(hero.exclusive_gear),
+        "通常装備": flattenCsvValue(hero.gear)
+      }));
+      return csvResponse("eagleeye_" + safeName + "_heroes.csv", headers, rows);
+    }
+
+    if (section === "rankings") {
+      const headers = ["領主ID","ランキング","順位","スコア","観測時刻"];
+      const rows = [];
+      const ranks = visibleProfile.ranks || {};
+      const core = [
+        ["戦力", ranks.power, ranks.power_rank],
+        ["撃破数", ranks.kills, ranks.kills_rank],
+        ["役場", ranks.town_center_level, ranks.town_center_rank],
+        ["移民スコア", ranks.migrant_score, ranks.migrant_rank],
+        ["秘境の試練", ranks.mystic_trial, ranks.mystic_rank]
+      ];
+      for (const [label, score, rank] of core) rows.push({"領主ID":governorId,"ランキング":label,"順位":rank,"スコア":score,"観測時刻":""});
+      for (const board of Array.isArray(ranks.leaderboards) ? ranks.leaderboards : []) {
+        const label = localizeLeaderboardLabel(board);
+        rows.push({"領主ID":governorId,"ランキング":label,"順位":board?.rank ?? board?.ranking,"スコア":board?.score ?? board?.value ?? board?.rank_value,"観測時刻":board?.observed_at ?? ""});
+      }
+      for (const board of Array.isArray(visibleProfile.hero_rankings) ? visibleProfile.hero_rankings : []) {
+        const label = RANKING_BOARD_LABELS[board.board] || board.board;
+        rows.push({"領主ID":governorId,"ランキング":label,"順位":board.rank,"スコア":board.score,"観測時刻":board.observed_at});
+      }
+      return csvResponse("eagleeye_" + safeName + "_rankings.csv", headers, rows);
+    }
+
+    const headers = ["領主ID","スロット","品質","Tier","星","強化","スコア","戦闘力","宝石"];
+    const items = Array.isArray(visibleProfile.gov_gear?.items) ? visibleProfile.gov_gear.items : [];
+    const rows = items.map(item => {
+      const gems = Array.isArray(item.gems) ? item.gems.map(gem => {
+        const level = localizeGemLevel(gem);
+        return level ? "Lv." + level : "宝石";
+      }).join(", ") : "";
+      return {
+        "領主ID": governorId,
+        "スロット": localizeGovernorGearSlot(item.slot),
+        "品質": localizeGovernorGearQuality(item.quality),
+        "Tier": localizeGovernorGearTier(item.tier),
+        "星": item.star,
+        "強化": item.strength_level,
+        "スコア": item.score,
+        "戦闘力": item.combat,
+        "宝石": gems
+      };
+    });
+    return csvResponse("eagleeye_" + safeName + "_gov_gear.csv", headers, rows);
+  } catch (error) {
+    console.error("Player section export error:", error);
+    return json({ ok: false, error: error?.message || "PLAYER_EXPORT_FAILED" }, 500);
+  }
 }
 
 async function renderPlayerPage(request, env) {
