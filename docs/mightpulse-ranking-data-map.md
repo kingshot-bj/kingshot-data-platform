@@ -15,7 +15,48 @@ EagleEye の Watchlist に登録されたプレイヤーについて、**ラン�
 
 これにより、Watchlist の対象者が上位100位外でも、そのプレイヤー自身の順位を取得できる。一方、王国内ランキングの上位一覧・他プレイヤーとの比較にはランキングボードを使用する。
 
-## 2. MightPulse ランキングAPI
+## 2. Watchlistは2階層にする
+
+### Player Watchlist
+
+特定プレイヤーを監視対象にする。
+
+- 基本情報
+- 戦力・役場・撃破等の変化
+- **全ランキングの本人順位**
+- ランキング順位/スコア変動
+- 同盟所属変化
+- 将来のHeroes / Governor Gear等
+
+### Kingdom Watchlist
+
+王国そのものを監視対象にする。
+
+王国Watchlistでは、その王国について次を重点監視する。
+
+- 王国基本統計
+- 王国総戦力・平均戦力
+- プレイヤー数/活動人口
+- 同盟数
+- 王国の各種順位
+- **全26ランキングボード**
+- 各ボード上位100件
+- ボード内の順位/スコア変動
+- Watchlist Playerがどのランキングに入っているか
+- 同盟ランキング
+- 将来的な王国状態/成長指標
+
+Player WatchlistとKingdom Watchlistは別物だが、関連付ける。
+
+例:
+
+`Kingdom K123` を監視 → K123内の全ランキングを取得  
+`Player 249629710` を監視 → 本人の全順位を取得  
+両方を監視 → Playerの所属王国ランキング内での位置を横断表示
+
+**王国Watchlistを追加してもランキング取得をプレイヤー単位で重複実行しない。**
+
+## 3. MightPulse ランキングAPI
 
 公式API仕様では、プレイヤーの `ranks` に以下が含まれる。
 
@@ -63,7 +104,7 @@ EagleEye の Watchlist に登録されたプレイヤーについて、**ラン�
 
 公式仕様ではランキング取得の `limit` は1〜100（既定100）。
 
-## 3. Watchlist に対する必須データ
+## 4. Watchlist に対する必須データ
 
 Watchlist Player A について最低限次を保持する。
 
@@ -89,7 +130,7 @@ Watchlist Player A について最低限次を保持する。
 
 さらに、Watchlist対象者については**上位100位に入っていないボードでも個人 `ranks` の順位を保持する**。
 
-## 4. データ取得戦略
+## 5. データ取得戦略
 
 MightPulse のfreshness判定は include/section 単位で行われるため、プレイヤー取得を常に全includeで叩く設計にはしない。
 
@@ -117,7 +158,7 @@ MightPulseは1キーあたり60 req/min、5,000 req/day。
 
 **王国×boardを共有データとして取得し、その結果をWatchlist全員で再利用する。**
 
-## 5. 履歴
+## 6. 履歴
 
 ランキングは現在値だけでなく時系列を保存する。
 
@@ -140,7 +181,7 @@ MightPulseは1キーあたり60 req/min、5,000 req/day。
 
 を実装できる。
 
-## 6. ランキング変動イベント
+## 7. ランキング変動イベント
 
 将来のChange Eventではランキングも対象にする。
 
@@ -155,7 +196,7 @@ MightPulseは1キーあたり60 req/min、5,000 req/day。
 
 ただし、順位変動判定は**同一board・同一王国・同一target**の時系列比較で行う。
 
-## 7. Freshness
+## 8. Freshness
 
 MightPulseのwrapper:
 
@@ -175,7 +216,7 @@ EagleEyeでは少なくとも:
 
 「取得要求を送った時刻」と「MightPulseが保持しているランキングの時点」は同じとは限らない。
 
-## 8. 実装優先順位
+## 9. 実装優先順位
 
 1. ランキングデータモデル
 2. MightPulseランキング取得クライアント
@@ -189,7 +230,7 @@ EagleEyeでは少なくとも:
 
 ランキングをUIだけ先に作らず、**取得→保存→履歴→Watchlist→表示**の順で実装する。
 
-## 9. 正式なデータ境界
+## 10. 正式なデータ境界
 
 - MightPulse raw response: source of truth for provider response
 - EagleEye normalized ranking snapshot: query/history source
@@ -199,7 +240,7 @@ EagleEyeでは少なくとも:
 
 この2系統を混同しない。
 
-## 10. 公式仕様
+## 11. 公式仕様
 
 MightPulse公式API:
 https://api.mightpulse.com/
