@@ -436,6 +436,27 @@ async function handleKingdomWatchlistApi(request, env) {
   }
 
   if (request.method === "POST" && action === "refresh") {
+    // The job schema is a D1 migration, but deploy does not automatically apply D1 migrations.
+    // Bootstrap it here so an existing production database cannot fail with a generic INTERNAL_ERROR.
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
+        job_id TEXT PRIMARY KEY,
+        watchlist_id TEXT NOT NULL,
+        kid INTEGER NOT NULL,
+        top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
+        status TEXT NOT NULL CHECK (status IN ('RANKINGS', 'PLAYERS', 'COMPLETED', 'FAILED')),
+        board_index INTEGER NOT NULL DEFAULT 0,
+        player_cursor INTEGER NOT NULL DEFAULT 0,
+        player_ids_json TEXT NOT NULL DEFAULT '[]',
+        observed_at INTEGER NOT NULL,
+        ranking_rows INTEGER NOT NULL DEFAULT 0,
+        player_rows INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      )
+    `).run();
     const body = await request.json().catch(() => ({}));
     const watchlistId = String(body.watchlist_id || "").trim();
     if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
