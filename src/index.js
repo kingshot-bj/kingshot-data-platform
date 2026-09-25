@@ -149,12 +149,11 @@ async function renderKingdomWatchlistPage(request, env) {
   if (!auth || auth.status !== "ACTIVE") {
     return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
   }
-  const roleLabel = auth.role === "OWNER" ? "OWNER" : "ADMIN";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
 </style></head><body>
-<a class="back" href="/">← EagleEye</a><span class="admin-badge">🔐 ADMIN MODE · ${roleLabel}</span>
+<a class="back" href="/">← EagleEye</a>
 <h1>王国ウォッチリスト</h1>
 <div id="msg" class="muted">読み込み中…</div>
 <section class="card"><h2>王国を監視対象に追加</h2><div class="row">
@@ -213,7 +212,7 @@ async function renderKingdomWatchlistPage(request, env) {
 }
 async function handleKingdomRankingHistoryApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const board = url.searchParams.get("board");
@@ -226,14 +225,14 @@ async function handleKingdomRankingHistoryApi(request, env) {
 
 async function handleKingdomWatchlistDataApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const watchlistId = url.searchParams.get("watchlist_id");
   if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
 
   const watch = await env.DB.prepare(
     "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-  ).bind(watchlistId, auth.user.discord_id).first();
+  ).bind(watchlistId, auth.discord_id).first();
   if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
   const board = url.searchParams.get("board");
@@ -268,14 +267,14 @@ async function handleKingdomWatchlistDataApi(request, env) {
 
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const action = url.searchParams.get("action") || "list";
 
   if (request.method === "GET" && action === "list") {
     const rows = await env.DB.prepare(
       "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
-    ).bind(auth.user.discord_id).all();
+    ).bind(auth.discord_id).all();
     return json({ ok: true, watchlists: rows.results || [] });
   }
 
@@ -293,7 +292,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const id = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ?)"
-    ).bind(id, auth.user.discord_id, kid, topN, intervalHours, now, now).run();
+    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now).run();
     return json({ ok: true, watchlist_id: id });
   }
 
@@ -302,14 +301,14 @@ async function handleKingdomWatchlistApi(request, env) {
     const enabled = body.enabled ? 1 : 0;
     await env.DB.prepare(
       "UPDATE kingdom_watchlists SET enabled = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(enabled, Math.floor(Date.now() / 1000), String(body.watchlist_id || ""), auth.user.discord_id).run();
+    ).bind(enabled, Math.floor(Date.now() / 1000), String(body.watchlist_id || ""), auth.discord_id).run();
     return json({ ok: true });
   }
 
   if (request.method === "DELETE") {
     await env.DB.prepare(
       "DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(url.searchParams.get("watchlist_id"), auth.user.discord_id).run();
+    ).bind(url.searchParams.get("watchlist_id"), auth.discord_id).run();
     return json({ ok: true });
   }
 
