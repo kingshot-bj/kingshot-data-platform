@@ -13,6 +13,7 @@ import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
+import { exportToGoogleSheet } from "./google-sheets.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -2275,128 +2276,7 @@ function flattenCsvValue(value) {
   return String(value);
 }
 
-async function handlePlayerSectionExport(request, env) {
-  const guard = await requireAdmin(request, env);
-  if (guard.error) return guard.error;
-
-  const url = new URL(request.url);
-  const governorId = String(url.searchParams.get("governor_id") || "").trim();
-  const section = String(url.searchParams.get("section") || "").trim().toLowerCase();
-  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
-
-  const allowedSections = ["profile", "alliance", "heroes", "rankings", "gov_gear"];
-  if (!allowedSections.includes(section)) return json({ ok: false, error: "INVALID_EXPORT_SECTION" }, 400);
-
-  try {
-    const observation = await getLatestPlayerObservation(env.DB, governorId);
-    if (!observation?.payload) return json({ ok: false, error: "PLAYER_DATA_NOT_FOUND" }, 404);
-
-    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
-    const player = await getPlayer(env.DB, governorId);
-    const visiblePlayer = filterPlayerForRole(player, guard.auth.role, observation.payload, visibilitySettings);
-    const visibleProfile = filterPlayerProfileForRole(observation.payload, guard.auth.role, visibilitySettings);
-
-    if (visibilityEnabled(visibilitySettings, "hero_rankings", guard.auth.role)) {
-      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
-    }
-
-    const safeName = String(visiblePlayer?.nick_name || governorId).replace(/[^\p{L}\p{N}_-]/gu, "_");
-
-    if (section === "profile") {
-      const headers = ["領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","オンライン","最終活動","最終ログイン","言語","役職"];
-      const p = visiblePlayer || {};
-      const row = {
-        "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,
-        "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,
-        "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",
-        "最終活動": p.last_active_at, "最終ログイン": p.last_login,
-        "言語": p.language, "役職": p.office
-      };
-      return csvResponse("eagleeye_" + safeName + "_profile.csv", headers, [row]);
-    }
-
-    if (section === "alliance") {
-      const a = visiblePlayer?.alliance || {};
-      const headers = ["領主ID","同盟ID","同盟略称","同盟名","同盟内順位","順位ラベル","同盟戦力","同盟人数","盟主","旗URL"];
-      const row = {
-        "領主ID": governorId, "同盟ID": a.aid, "同盟略称": a.abbr, "同盟名": a.name,
-        "同盟内順位": a.rank, "順位ラベル": a.rank_label, "同盟戦力": a.power,
-        "同盟人数": a.count, "盟主": a.leader_name, "旗URL": a.flag_url
-      };
-      return csvResponse("eagleeye_" + safeName + "_alliance.csv", headers, [row]);
-    }
-
-    if (section === "heroes") {
-      const headers = ["領主ID","英雄ID","英雄名","レベル","星","星ラベル","品質","戦力","配置","スキル","専用装備Lv","専用装備","通常装備"];
-      const heroes = Array.isArray(visibleProfile.heroes) ? visibleProfile.heroes : [];
-      const rows = heroes.map(hero => ({
-        "領主ID": governorId,
-        "英雄ID": hero.id,
-        "英雄名": localizeHeroName(hero.name || hero.id),
-        "レベル": hero.level,
-        "星": hero.star ?? hero.stars,
-        "星ラベル": hero.star_label,
-        "品質": hero.quality,
-        "戦力": hero.power,
-        "配置": hero.position,
-        "スキル": flattenCsvValue(hero.skill_levels),
-        "専用装備Lv": hero.exclusive_gear_level,
-        "専用装備": flattenCsvValue(hero.exclusive_gear),
-        "通常装備": flattenCsvValue(hero.gear)
-      }));
-      return csvResponse("eagleeye_" + safeName + "_heroes.csv", headers, rows);
-    }
-
-    if (section === "rankings") {
-      const headers = ["領主ID","ランキング","順位","スコア","観測時刻"];
-      const rows = [];
-      const ranks = visibleProfile.ranks || {};
-      const core = [
-        ["戦力", ranks.power, ranks.power_rank],
-        ["撃破数", ranks.kills, ranks.kills_rank],
-        ["役場", ranks.town_center_level, ranks.town_center_rank],
-        ["移民スコア", ranks.migrant_score, ranks.migrant_rank],
-        ["秘境の試練", ranks.mystic_trial, ranks.mystic_rank]
-      ];
-      for (const [label, score, rank] of core) rows.push({"領主ID":governorId,"ランキング":label,"順位":rank,"スコア":score,"観測時刻":""});
-      for (const board of Array.isArray(ranks.leaderboards) ? ranks.leaderboards : []) {
-        const label = localizeLeaderboardLabel(board);
-        rows.push({"領主ID":governorId,"ランキング":label,"順位":board?.rank ?? board?.ranking,"スコア":board?.score ?? board?.value ?? board?.rank_value,"観測時刻":board?.observed_at ?? ""});
-      }
-      for (const board of Array.isArray(visibleProfile.hero_rankings) ? visibleProfile.hero_rankings : []) {
-        const label = RANKING_BOARD_LABELS[board.board] || board.board;
-        rows.push({"領主ID":governorId,"ランキング":label,"順位":board.rank,"スコア":board.score,"観測時刻":board.observed_at});
-      }
-      return csvResponse("eagleeye_" + safeName + "_rankings.csv", headers, rows);
-    }
-
-    const headers = ["領主ID","スロット","品質","Tier","星","強化","スコア","戦闘力","宝石"];
-    const items = Array.isArray(visibleProfile.gov_gear?.items) ? visibleProfile.gov_gear.items : [];
-    const rows = items.map(item => {
-      const gems = Array.isArray(item.gems) ? item.gems.map(gem => {
-        const level = localizeGemLevel(gem);
-        return level ? "Lv." + level : "宝石";
-      }).join(", ") : "";
-      return {
-        "領主ID": governorId,
-        "スロット": localizeGovernorGearSlot(item.slot),
-        "品質": localizeGovernorGearQuality(item.quality),
-        "Tier": localizeGovernorGearTier(item.tier),
-        "星": item.star,
-        "強化": item.strength_level,
-        "スコア": item.score,
-        "戦闘力": item.combat,
-        "宝石": gems
-      };
-    });
-    return csvResponse("eagleeye_" + safeName + "_gov_gear.csv", headers, rows);
-  } catch (error) {
-    console.error("Player section export error:", error);
-    return json({ ok: false, error: error?.message || "PLAYER_EXPORT_FAILED" }, 500);
-  }
-}
-
+async function handlePlayerSectionExport(request, env) {\n  const guard = await requireAdmin(request, env);\n  if (guard.error) return guard.error;\n\n  const url = new URL(request.url);\n  const governorId = String(url.searchParams.get("governor_id") || "").trim();\n  const section = String(url.searchParams.get("section") || "").trim().toLowerCase();\n  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);\n\n  const allowedSections = ["profile", "alliance", "heroes", "rankings", "gov_gear"];\n  if (!allowedSections.includes(section)) return json({ ok: false, error: "INVALID_EXPORT_SECTION" }, 400);\n\n  try {\n    const observation = await getLatestPlayerObservation(env.DB, governorId);\n    if (!observation?.payload) return json({ ok: false, error: "PLAYER_DATA_NOT_FOUND" }, 404);\n\n    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);\n    const player = await getPlayer(env.DB, governorId);\n    const visiblePlayer = filterPlayerForRole(player, guard.auth.role, observation.payload, visibilitySettings);\n    const visibleProfile = filterPlayerProfileForRole(observation.payload, guard.auth.role, visibilitySettings);\n\n    if (visibilityEnabled(visibilitySettings, "hero_rankings", guard.auth.role)) {\n      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;\n      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);\n    }\n\n    let sheetTitle = "";\n    let headers = [];\n    let rows = [];\n\n    if (section === "profile") {\n      sheetTitle = "プロフィール";\n      headers = ["領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","オンライン","最終活動","最終ログイン","言語","役職","シールド終了","炎上終了"];\n      const p = visiblePlayer || {};\n      rows = [{\n        "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,\n        "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,\n        "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",\n        "最終活動": p.last_active_at, "最終ログイン": p.last_login, "言語": p.language, "役職": p.office,\n        "シールド終了": p.shield_endtime, "炎上終了": p.burn_endtime\n      }];\n    } else if (section === "alliance") {\n      sheetTitle = "同盟";\n      headers = ["領主ID","同盟ID","同盟略称","同盟名","同盟内順位","順位ラベル","同盟戦力","同盟人数","盟主","旗URL"];\n      const a = visiblePlayer?.alliance || {};\n      rows = [{\n        "領主ID": governorId, "同盟ID": a.aid, "同盟略称": a.abbr, "同盟名": a.name,\n        "同盟内順位": a.rank, "順位ラベル": a.rank_label, "同盟戦力": a.power,\n        "同盟人数": a.count, "盟主": a.leader_name, "旗URL": a.flag_url\n      }];\n    } else if (section === "heroes") {\n      sheetTitle = "英雄";\n      headers = ["領主ID","英雄ID","英雄名","レベル","星","星ラベル","品質","戦力","配置","スキル","専用装備Lv","専用装備","通常装備"];\n      const heroes = Array.isArray(visibleProfile.heroes) ? visibleProfile.heroes : [];\n      rows = heroes.map(hero => ({\n        "領主ID": governorId, "英雄ID": hero.id, "英雄名": localizeHeroName(hero.name || hero.id),\n        "レベル": hero.level, "星": hero.star ?? hero.stars, "星ラベル": hero.star_label,\n        "品質": hero.quality, "戦力": hero.power, "配置": hero.position,\n        "スキル": flattenCsvValue(hero.skill_levels), "専用装備Lv": hero.exclusive_gear_level,\n        "専用装備": flattenCsvValue(hero.exclusive_gear), "通常装備": flattenCsvValue(hero.gear)\n      }));\n    } else if (section === "rankings") {\n      sheetTitle = "ランキング";\n      headers = ["領主ID","ランキング","順位","スコア","観測時刻"];\n      const ranks = visibleProfile.ranks || {};\n      const core = [\n        ["戦力", ranks.power, ranks.power_rank], ["撃破数", ranks.kills, ranks.kills_rank],\n        ["役場", ranks.town_center_level, ranks.town_center_rank], ["移民スコア", ranks.migrant_score, ranks.migrant_rank],\n        ["秘境の試練", ranks.mystic_trial, ranks.mystic_rank]\n      ];\n      for (const [label, score, rank] of core) rows.push({"領主ID":governorId,"ランキング":label,"順位":rank,"スコア":score,"観測時刻":""});\n      for (const board of Array.isArray(ranks.leaderboards) ? ranks.leaderboards : []) rows.push({\n        "領主ID":governorId, "ランキング":localizeLeaderboardLabel(board),\n        "順位":board?.rank ?? board?.ranking, "スコア":board?.score ?? board?.value ?? board?.rank_value,\n        "観測時刻":board?.observed_at ?? ""\n      });\n      for (const board of Array.isArray(visibleProfile.hero_rankings) ? visibleProfile.hero_rankings : []) rows.push({\n        "領主ID":governorId, "ランキング":RANKING_BOARD_LABELS[board.board] || board.board,\n        "順位":board.rank, "スコア":board.score, "観測時刻":board.observed_at\n      });\n    } else {\n      sheetTitle = "領主装備";\n      headers = ["領主ID","スロット","品質","Tier","星","強化","スコア","戦闘力","宝石"];\n      const items = Array.isArray(visibleProfile.gov_gear?.items) ? visibleProfile.gov_gear.items : [];\n      rows = items.map(item => ({\n        "領主ID":governorId, "スロット":localizeGovernorGearSlot(item.slot),\n        "品質":localizeGovernorGearQuality(item.quality), "Tier":localizeGovernorGearTier(item.tier),\n        "星":item.star, "強化":item.strength_level, "スコア":item.score, "戦闘力":item.combat,\n        "宝石":Array.isArray(item.gems) ? item.gems.map(gem => {\n          const level = localizeGemLevel(gem);\n          return level ? "Lv." + level : "宝石";\n        }).join(", ") : ""\n      }));\n    }\n\n    const result = await exportToGoogleSheet(env, { sheetTitle, headers, rows });\n    return new Response(null, { status: 303, headers: { location: result.url, "cache-control": "no-store" } });\n  } catch (error) {\n    console.error("Player section Google Sheets export error:", error);\n    if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED") return json({\n      ok: false, error: "GOOGLE_SHEETS_NOT_CONFIGURED",\n      message: "Google Sheets連携が未設定です。GOOGLE_SHEETS_SPREADSHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY を設定してください。"\n    }, 503);\n    return json({ ok: false, error: error?.code || "PLAYER_EXPORT_FAILED", message: error?.message || "Google Sheetsへの出力に失敗しました。", status: error?.status || 0 }, 502);\n  }\n}
 async function renderPlayerPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
@@ -2480,7 +2360,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   const esc = escapeHtml;
   const noticeHtml = notice ? '<div class="notice">' + esc(notice) + '</div>' : "";
   const content = player ? `
-    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main" src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty">?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div>${p.language ? '<div class="profile-language">言語：' + esc(formatProfileValue(p.language)) + '</div>' : ""}${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
+    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main" src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty">?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta">${p.language ? '<span>言語：' + esc(formatProfileValue(p.language)) + '</span>' : ""}${p.office ? '<span>役職：' + esc(formatProfileValue(p.office)) + '</span>' : ""}${p.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(p.shield_endtime)) + '</span>' : ""}${p.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(p.burn_endtime)) + '</span>' : ""}</div>${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
       ${card("役場", formatTownCenterLevel(p.town_center_level))}
@@ -2645,15 +2525,6 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   const esc = escapeHtml;
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
-
-  if (p.office || p.shield_endtime || p.burn_endtime) {
-    html += '<section class="profile-section"><h2>プロフィール詳細</h2><div class="mini-grid">';
-
-    if (p.office) html += '<div class="mini-card"><span>役職</span><b>' + esc(formatProfileValue(p.office)) + '</b></div>';
-    if (p.shield_endtime) html += '<div class="mini-card"><span>シールド終了</span><b>' + esc(formatUnix(p.shield_endtime)) + '</b></div>';
-    if (p.burn_endtime) html += '<div class="mini-card"><span>炎上終了</span><b>' + esc(formatUnix(p.burn_endtime)) + '</b></div>';
-    html += '</div></section>';
-  }
 
   if (p.alliance && typeof p.alliance === "object") {
     const a = p.alliance;
