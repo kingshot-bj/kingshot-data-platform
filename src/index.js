@@ -845,6 +845,102 @@ async function renderApiPoolAdminPage(request, env) {
   return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap} .scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>Pool移動</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
 }
 
+async function fetchThroughWatchlistApiPool(env, {
+  path,
+  endpoint = path,
+  targetType,
+  targetId,
+  purpose,
+  include = null,
+  query = null
+}) {
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  let lease = null;
+  let poolType = "SYSTEM_WATCHLIST";
+  try {
+    try {
+      lease = await leaseApiKey(env.DB, {
+        poolType: "SYSTEM_WATCHLIST",
+        purpose,
+        targetType,
+        targetId
+      });
+    } catch (error) {
+      if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
+      poolType = "SYSTEM_GENERAL";
+      lease = await leaseApiKey(env.DB, {
+        poolType,
+        purpose,
+        targetType,
+        targetId
+      });
+    }
+
+    const result = await mightPulseFetch(env, path, {
+      query: query || (include ? { include } : undefined),
+      apiKey: lease.api_key
+    });
+
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id,
+      leaseId: lease.lease_id,
+      endpoint,
+      targetType,
+      targetId,
+      purpose,
+      httpStatus: result.status,
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    });
+
+    return { result, pool_type: poolType, key_id: lease.key_id };
+  } catch (error) {
+    if (lease) {
+      const status = Number(error?.status || 0);
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
+      const disable = status === 401;
+      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      await recordApiPoolFailure(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        endpoint,
+        targetType,
+        targetId,
+        purpose,
+        httpStatus: status,
+        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        errorMessage: error?.message || null,
+        cooldownSeconds: cooldown,
+        disable,
+        keepAvailable
+      });
+    }
+    throw error;
+  }
+}
+
+async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING") {
+  return fetchThroughWatchlistApiPool(env, {
+    path: `/kingdoms/${encodeURIComponent(kid)}/ranks`,
+    endpoint: "/kingdoms/:kid/ranks",
+    targetType: "KINGDOM",
+    targetId: String(kid),
+    purpose,
+    query: { board, limit }
+  });
+}
+
+async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGDOM_WATCHLIST_PLAYER") {
+  return fetchThroughWatchlistApiPool(env, {
+    path: `/players/${encodeURIComponent(governorId)}`,
+    endpoint: "/players/:governor_id",
+    targetType: "PLAYER",
+    targetId: String(governorId),
+    purpose,
+    query: { include: "base,heroes,ranks,gov_gear" }
+  });
+}
+
 async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP") {
   if (!env.DB) throw new Error("DB_NOT_CONFIGURED");
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
