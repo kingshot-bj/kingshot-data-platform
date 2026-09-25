@@ -22,6 +22,8 @@ export default {
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
+      if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
+      if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -207,6 +209,65 @@ function logout(request) {
     maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
   return new Response(null, { status: 302, headers });
+}
+
+async function handleRankingPlayerTest(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const governorId = url.searchParams.get("governor_id");
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  try {
+    const result = await getMightPulsePlayerRanks(env, governorId);
+    const raw = result.data?.player || result.data;
+    const ranks = raw?.ranks || result.data?.ranks;
+    if (!ranks) return json({ ok: false, error: "PLAYER_RANKS_MISSING" }, 502);
+
+    const saved = env.DB ? await savePlayerRankSnapshot(env.DB, {
+      governorId,
+      uid: raw?.uid ?? result.data?.uid ?? null,
+      kid: raw?.kid ?? result.data?.kid ?? null,
+      ranks,
+      observedAt: Math.floor(Date.now() / 1000)
+    }) : null;
+
+    return json({ ok: true, governor_id: governorId, saved_snapshot: Boolean(saved), ranks });
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+      status: error?.status || 0
+    }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
+  }
+}
+
+async function handleRankingBoardTest(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const kid = url.searchParams.get("kid");
+  const board = url.searchParams.get("board");
+  if (!kid || !board) return json({ ok: false, error: "KID_AND_BOARD_REQUIRED" }, 400);
+
+  try {
+    const result = await getMightPulseKingdomRanks(env, kid, { board, limit: 100 });
+    const payload = result.data;
+    const entries = payload?.rankings || payload?.entries || payload?.data || [];
+    const saved = env.DB ? await saveKingdomRankingBoard(env.DB, {
+      kid,
+      board,
+      entries,
+      observedAt: Math.floor(Date.now() / 1000)
+    }) : 0;
+    return json({ ok: true, kid, board, count: Array.isArray(entries) ? entries.length : 0, saved_rows: saved });
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+      status: error?.status || 0
+    }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
+  }
 }
 
 async function handleMightPulsePlayerTest(request, env) {
