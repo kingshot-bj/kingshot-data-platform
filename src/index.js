@@ -521,12 +521,14 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
       var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
+      var playerAllianceByGovernor={}; (d.players||[]).forEach(function(p){if(p.governor_id)playerAllianceByGovernor[String(p.governor_id)]=p.alliance_abbr||null;});
       var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
       Object.keys(boards).forEach(function(b){
         var label=RANKING_BOARD_LABELS[b]||b;
         h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
-          var displayName=(b==="alliance_power"||b==="alliance_kills")?(r.abbr?(("【"+r.abbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(r.abbr?("【"+r.abbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
+          var allianceAbbr=(r.abbr||playerAllianceByGovernor[String(r.governor_id)]||"");
+          var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
           h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(displayName)+'</span><span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
