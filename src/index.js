@@ -228,7 +228,7 @@ async function processKingdomWatchlistJob(env, job) {
           raw.x ?? null, raw.y ?? null, raw.kills ?? null, raw.office ?? null, raw.online ? 1 : 0,
           raw.last_active_at ?? null, raw.last_login ?? null, raw.avatar_url ?? null, raw.language ?? null,
           raw.shield_endtime ?? null, raw.burn_endtime ?? null, raw.alliance?.aid ?? null,
-          raw.alliance?.abbr ?? null, raw.alliance?.name ?? null, raw.alliance?.rank ?? null,
+          (raw.alliance?.abbr ?? raw.alliance?.tag ?? raw.alliance?.short_name ?? raw.alliance?.shortName ?? null), raw.alliance?.name ?? null, raw.alliance?.rank ?? null,
           raw.alliance?.rank_label ?? null, raw.alliance?.power ?? null, raw.alliance?.count ?? null,
           raw.alliance?.leader_name ?? null, job.observed_at, observationId, now
         ),
@@ -289,7 +289,7 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.alliance-tag{color:#fbbf24;font-weight:900}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
 </style></head><body>
 <a class="back" href="/">← EagleEye</a>
 <h1>王国ウォッチリスト</h1>
@@ -359,7 +359,7 @@ async function renderKingdomWatchlistPage(request, env) {
       var h='<div class="card"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><div class="grid">';
       Object.keys(boards).forEach(function(b){h+='<div class="rank"><b>'+esc(b)+'</b>';boards[b].slice(0,d.watchlist.top_n).forEach(function(r){h+='<div>'+esc(r.rank)+". "+esc(r.nick_name||r.governor_id||r.name||"-")+" — "+esc(r.score)+'</div>';});h+='</div>';});
       h+='</div><h2>観測プレイヤー</h2><div class="grid">';
-      (d.players||[]).forEach(function(p){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div>';});
+      (d.players||[]).forEach(function(p){var alliance=(p.alliance_abbr?'<span class="alliance-tag">['+esc(p.alliance_abbr)+']</span> ':'')+esc(p.alliance_name||"同盟なし");h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+alliance+'</div>';});
       h+='</div></div>';el("detail").innerHTML=h;
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
@@ -1766,7 +1766,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("オンライン", p.online ? "ONLINE" : "OFFLINE")}
       ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
-      ${card("同盟", p.alliance_name || "-")}
+      ${card("同盟", p.alliance_name ? ((p.alliance_abbr ? "[" + p.alliance_abbr + "] " : "") + p.alliance_name) : "-")}
     </div>
     ${noticeHtml}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
@@ -1938,6 +1938,3 @@ function parseCookie(header) {
     const index = part.indexOf("=");
     if (index === -1) continue;
     result[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return result;
-}
