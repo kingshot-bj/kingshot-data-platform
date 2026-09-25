@@ -293,7 +293,6 @@ async function renderKingdomWatchlistPage(request, env) {
         var row=document.createElement("div"); row.className="row";
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
-        if(true && w.__owner === true) {}
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
         row.appendChild(view);row.appendChild(toggle);row.appendChild(del);
         if(window.EAGLEEYE_OWNER){
@@ -504,9 +503,11 @@ async function handleKingdomWatchlistApi(request, env) {
       }
       return json({ ok: true, started: true, immediate: true, result });
     } catch (error) {
+      const currentJob = await env.DB.prepare("SELECT status FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+      const safeStatus = currentJob?.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
       await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'RANKINGS', last_error = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(String(error?.message || error).slice(0, 1000), now, jobId).run();
+        "UPDATE kingdom_watchlist_jobs SET status = ?, last_error = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(safeStatus, String(error?.message || error).slice(0, 1000), now, jobId).run();
       await env.DB.prepare(
         "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
       ).bind(String(error?.message || error).slice(0, 1000), now, watchlistId).run();
