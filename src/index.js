@@ -144,29 +144,36 @@ async function collectKingdomWatchlist(env, watchlist) {
   return { boards: boards.length, rankingRows, uniquePlayers: governorIds.size, playerRows };
 }
 
-async function renderKingdomWatchlistPage(request, env) {
+async async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return '<!doctype html><meta charset="utf-8"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>';
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title><style>
-body{font-family:system-ui,sans-serif;max-width:1100px;margin:auto;padding:20px;background:#f6f7f8;color:#171717}.card{background:white;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}button,select,input{padding:9px;border:1px solid #ccc;border-radius:8px}button{cursor:pointer}.muted{color:#666}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}.rank{padding:10px;border:1px solid #eee;border-radius:8px}.up{color:#087443}.down{color:#b00020}</style></head><body>
-<h1>王国ウォッチリスト</h1><div id="msg" class="muted">読み込み中…</div><div id="list"></div><div id="detail"></div>
+  if (!auth || auth.status !== "ACTIVE") {
+    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
+  }
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.up{color:#86efac}.down{color:#fca5a5}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
+</style></head><body>
+<a class="back" href="/">← EagleEye</a><span class="admin-badge">🔐 ADMIN MODE · ${auth.role === "OWNER" ? "OWNER" : "ADMIN"}</span>
+<h1>王国ウォッチリスト</h1>
+<div id="msg" class="muted">読み込み中…</div>
+<section class="card"><h2>王国を監視対象に追加</h2><div class="row">
+<label>KID<input id="kid" type="number" min="1" placeholder="例: 581"></label>
+<label>ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
+<label>更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
+<button id="create">監視を登録</button></div></section>
+<div id="list"></div><div id="detail"></div>
 <script>
 const $=id=>document.getElementById(id);
-async function api(u,o){const r=await fetch(u,o);return r.json()}
-async function load(){const d=await api('/api/kingdom-watchlist');$('list').innerHTML='';
-for(const w of d.watchlists||[]){const x=document.createElement('div');x.className='card';x.innerHTML='<h2>KID '+w.kid+'</h2><p>上位'+w.top_n+'人 / '+w.interval_hours+'時間ごと / '+(w.enabled?'稼働中':'停止中')+'</p><p class="muted">最終成功: '+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString('ja-JP'):'未実行')+'</p><button onclick="showData(\''+w.watchlist_id+'\')">ランキングを見る</button>'; $('list').appendChild(x)}}
-async function showData(id){$('detail').innerHTML='<div class="card">読み込み中…</div>';const d=await api('/api/kingdom-watchlist/data?watchlist_id='+encodeURIComponent(id));if(!d.ok){$('detail').innerHTML='<div class="card">'+d.error+'</div>';return}
-const boards={};for(const r of d.rankings||[]){(boards[r.board]??=[]).push(r)}
-let h='<div class="card"><h2>KID '+d.watchlist.kid+' ランキング</h2><div class="grid">';
-for(const [b,rows] of Object.entries(boards)){h+='<div class="rank"><b>'+esc(b)+'</b>'+rows.slice(0,d.watchlist.top_n).map(r=>'<div>'+r.rank+'. '+esc(r.nick_name||r.governor_id||r.name||'-')+' — '+fmt(r.score)+'</div>').join('')+'</div>'}
-h+='</div><h2>観測プレイヤー</h2><div class="grid">';
-for(const p of d.players||[]){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+fmt(p.power)+' / 役場 '+fmt(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||'-')+'</div>'}
-h+='</div></div>';$('detail').innerHTML=h}
-function fmt(v){return v==null?'-':Number(v).toLocaleString('ja-JP')}function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function api(u,o){const r=await fetch(u,o);const text=await r.text();let d;try{d=JSON.parse(text)}catch{throw new Error("API応答をJSONとして読み込めませんでした（HTTP "+r.status+"）")}if(!r.ok||d.ok===false)throw new Error(d.error||("HTTP "+r.status));return d}
+function fmt(v){return v==null?"-":Number(v).toLocaleString("ja-JP")}function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
+async function load(){try{const d=await api("/api/kingdom-watchlist");$("list").innerHTML="";for(const w of d.watchlists||[]){const x=document.createElement("div");x.className="card";x.innerHTML="<h2>KID "+w.kid+"</h2><p>上位"+w.top_n+"人 / "+w.interval_hours+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p><div class='row'><button onclick=\"showData('"+w.watchlist_id+"')\">ランキングを見る</button><button onclick=\"toggleWatch('"+w.watchlist_id+"',"+(!w.enabled)+")\">"+(w.enabled?"停止":"再開")+"</button><button class='danger' onclick=\"deleteWatch('"+w.watchlist_id+"')\">削除</button></div>";$("list").appendChild(x)}$("msg").innerHTML='<span class="ok">監視対象 '+(d.watchlists||[]).length+"件</span>"}catch(e){$("msg").innerHTML='<span class="error">読み込み失敗: '+esc(e.message)+"</span>"}}
+$("create").onclick=async()=>{try{const d=await api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kid:Number($("kid").value),top_n:Number($("top").value),interval_hours:Number($("interval").value)})});$("kid").value="";$("msg").innerHTML='<span class="ok">監視対象を登録しました。</span>';await load()}catch(e){$("msg").innerHTML='<span class="error">'+esc(e.message)+"</span>"}};
+async function toggleWatch(id,enabled){try{await api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled})});await load()}catch(e){alert(e.message)}}
+async function deleteWatch(id){if(!confirm("この監視対象を削除しますか？"))return;try{await api("/api/kingdom-watchlist?watchlist_id="+encodeURIComponent(id),{method:"DELETE"});await load();$("detail").innerHTML=""}catch(e){alert(e.message)}}
+async function showData(id){$("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';try{const d=await api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id));const boards={};for(const r of d.rankings||[])(boards[r.board]??=[]).push(r);let h='<div class="card"><h2>KID '+d.watchlist.kid+' ランキング</h2><div class="grid">';for(const [b,rows] of Object.entries(boards)){h+='<div class="rank"><b>'+esc(b)+'</b>'+rows.slice(0,d.watchlist.top_n).map(r=>'<div>'+r.rank+". "+esc(r.nick_name||r.governor_id||r.name||"-")+" — "+fmt(r.score)+"</div>").join("")+"</div>"}h+='</div><h2>観測プレイヤー</h2><div class="grid">';for(const p of d.players||[]){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+"</b><br>戦力 "+fmt(p.power)+" / 役場 "+fmt(p.town_center_level)+"<br>"+esc(p.alliance_abbr||p.alliance_name||"-")+"</div>"}h+="</div></div>";$("detail").innerHTML=h}catch(e){$("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+"</div>"}}
 load();
 </script></body></html>`;
 }
-
 async function handleKingdomRankingHistoryApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
