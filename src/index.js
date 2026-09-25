@@ -12,6 +12,17 @@ import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
+import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
+
+async function runDataRetentionJob(env) {
+  if (!env.DB) return;
+  try {
+    const result = await runRetentionCleanup(env.DB, { batchSize: 1000 });
+    console.log("data_retention_cleanup_ok", result.deleted);
+  } catch (error) {
+    console.error("data_retention_cleanup_failed", error?.message || error);
+  }
+}
 
 async function runKingdomWatchlistJobs(env) {
   const now = Math.floor(Date.now() / 1000);
@@ -281,7 +292,7 @@ async function collectKingdomWatchlist(env, watchlist) {
 }
 \nexport default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runKingdomWatchlistJobs(env));
+    ctx.waitUntil(Promise.all([runKingdomWatchlistJobs(env), runDataRetentionJob(env)]));
   },
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -294,12 +305,14 @@ async function collectKingdomWatchlist(env, watchlist) {
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
+      if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
       if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
+      if (url.pathname === "/admin/data-retention") return new Response(await renderDataRetentionPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/admin/api-pool") return new Response(await renderApiPoolAdminPage(request, env), {
         headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
       });
@@ -592,6 +605,26 @@ async function requireAdmin(request, env) {
   return { auth };
 }
 
+async function handleDataRetentionApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    if (request.method === "GET") {
+      return json({ ok: true, settings: await getRetentionSettings(env.DB) });
+    }
+    if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    const contentType = request.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+      ? await request.json()
+      : Object.fromEntries((await request.formData()).entries());
+    const settings = await updateRetentionSettings(env.DB, body, guard.auth.user_id);
+    return json({ ok: true, settings });
+  } catch (error) {
+    console.error("Data retention settings error:", error);
+    return json({ ok: false, error: error?.message || "RETENTION_UPDATE_FAILED" }, 400);
+  }
+}
+
 async function handleApiPoolKeys(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
@@ -857,6 +890,37 @@ function parseHeaderNumber(headers, name) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function renderDataRetentionPage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
+  const s = await getRetentionSettings(env.DB);
+  const esc = escapeHtml;
+  const options = (selected) => [
+    [0, "永久保存"],
+    [7, "7日"],
+    [14, "14日"],
+    [30, "30日"],
+    [60, "60日"],
+    [90, "90日"],
+    [180, "180日"],
+    [365, "1年"],
+    [730, "2年"],
+    [1095, "3年"],
+    [1825, "5年"],
+    [3650, "10年"]
+  ].map(([v,l]) => "<option value='" + v + "'" + (Number(selected) === v ? " selected" : "") + ">" + l + "</option>").join("");
+  const field = (name,label,hint) => "<label><span>" + esc(label) + "</span><select name='" + name + "'>" + options(s[name]) + "</select><small>" + esc(hint) + "</small></label>";
+  const updated = s.updated_at ? formatUnix(s.updated_at) : "-";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ保存期間</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:760px;margin:auto;padding:24px 16px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px}.card{padding:18px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}label{display:block;margin-top:14px}label span{display:block;font-weight:800;font-size:14px}select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}small{display:block;margin-top:5px;color:#94a3b8;line-height:1.5}button{margin-top:18px;padding:13px 17px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;width:100%}.danger{border-color:#7f1d1d}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}</style></head><body><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><h1 class='title'>データ保存期間</h1><div class='card'><b>自動クリーンアップ</b><div class='hint'>毎時の定期処理で古い履歴を少しずつ削除します。現在値・最新状態は維持します。「永久保存」を選ぶと、そのデータ種別は自動削除しません。</div><div class='mono' style='margin-top:10px'>最終設定更新: " + esc(updated) + "</div></div><form method='post' action='/api/admin/data-retention'><div class='card'>" +
+    field("api_observations_days","API観測データ","MightPulseの生レスポンス。容量が最も増えやすいデータです。最新の対象データは保持します。") +
+    field("player_snapshots_days","プレイヤースナップショット","プレイヤー状態の時系列履歴。") +
+    field("ranking_snapshots_days","ランキングスナップショット","王国ランキングの順位・スコア履歴。") +
+    field("player_rank_snapshots_days","プレイヤーランキング履歴","プレイヤー個人のランキング情報の履歴。") +
+    field("change_events_days","変更イベント","順位変動・戦力変動などEagleEyeが検出した変更履歴。") +
+    field("api_pool_usage_days","API Pool使用履歴","APIキーの利用・残量・結果の監査ログ。") +
+    "<button type='submit'>保存期間を更新</button></div></form><div class='card'><b>推奨初期値</b><div class='hint'>API観測14日 / プレイヤー90日 / ランキング180日 / プレイヤーランキング180日 / 変更イベント2年 / API Pool使用90日。必要になったら後から延長できます。</div></div></main></body></html>";
+}
+
 async function renderApiPoolAdminPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
@@ -864,7 +928,7 @@ async function renderApiPoolAdminPage(request, env) {
   const stats = await getPoolStats(env.DB);
   const rows = keys.map(k => "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td>" + escapeHtml(k.status) + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td><td>" + (k.status === "REVOKED" ? "-" : "<form method=\"post\" action=\"/api/admin/api-pool/move\" style=\"display:flex;gap:6px;align-items:center\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><select name=\"pool_type\" style=\"margin:0;padding:7px;width:auto\"><option value=\"SYSTEM_GENERAL\"" + (k.pool_type === "SYSTEM_GENERAL" ? " selected" : "") + ">GENERAL</option><option value=\"SYSTEM_WATCHLIST\"" + (k.pool_type === "SYSTEM_WATCHLIST" ? " selected" : "") + ">WATCHLIST</option></select><button type=\"submit\" style=\"margin:0;padding:7px 9px\">移動</button></form><form method=\"post\" action=\"/api/admin/api-pool/revoke\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#7f1d1d;color:#fff\">無効化</button></form><form method=\"post\" action=\"/api/admin/api-pool/delete\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#991b1b;color:#fff\">完全削除</button></form>") + "</td></tr>").join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap} .scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>Pool移動</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap} .scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><a href='/admin/data-retention' style='color:#f59e0b;font-weight:900;text-decoration:none'>データ保存期間を管理 →</a><div class='hint'>履歴・生APIデータの自動削除期間を設定できます。</div></div><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>Pool移動</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
 }
 
 async function fetchThroughWatchlistApiPool(env, {
