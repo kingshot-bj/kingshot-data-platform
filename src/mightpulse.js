@@ -142,6 +142,95 @@ export async function getMightPulsePlayer(env, governorId, {
   });
 }
 
+export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null } = {}) {
+  const id = String(governorId || "").trim();
+  if (!id) {
+    throw new MightPulseError("Governor ID is required.", {
+      status: 400,
+      code: "INVALID_PLAYER_ID"
+    });
+  }
+
+  return getMightPulsePlayer(env, id, {
+    include: "ranks",
+    apiKey
+  });
+}
+
+export async function getMightPulseKingdomRanks(env, kid, {
+  board = null,
+  limit = 100,
+  apiKey = null
+} = {}) {
+  const kingdomId = String(kid || "").trim();
+  if (!kingdomId) {
+    throw new MightPulseError("Kingdom ID is required.", {
+      status: 400,
+      code: "INVALID_KINGDOM_ID"
+    });
+  }
+
+  const numericLimit = Number(limit);
+  if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > 100) {
+    throw new MightPulseError("Ranking limit must be between 1 and 100.", {
+      status: 400,
+      code: "INVALID_RANKING_LIMIT"
+    });
+  }
+
+  const query = { limit: numericLimit };
+  if (board) query.board = String(board).trim();
+
+  return mightPulseFetch(env, `/kingdoms/${encodeURIComponent(kingdomId)}/ranks`, {
+    query,
+    apiKey
+  });
+}
+
+export async function getMightPulseKingdomAllRankings(env, kid, {
+  limit = 100,
+  apiKey = null
+} = {}) {
+  const boards = [
+    "alliance_power",
+    "alliance_kills",
+    "personal_power",
+    "kills",
+    "town_center",
+    "rebel_conquest",
+    "single_hero",
+    "hero_total",
+    "troop_power",
+    "building_power",
+    "research_power",
+    "hero_no_equip",
+    "hero_equip",
+    "gov_gear",
+    "gov_charm",
+    "pet_power",
+    "island_prosperity",
+    "migrant_score",
+    "mystic_trial",
+    "coliseum",
+    "forest_of_life",
+    "crystal_cave",
+    "knowledge_nexus",
+    "molten_fort",
+    "radiant_spire",
+    "master_power"
+  ];
+
+  const results = {};
+  for (const board of boards) {
+    results[board] = await getMightPulseKingdomRanks(env, kid, {
+      board,
+      limit,
+      apiKey
+    });
+  }
+  return results;
+}
+
 export async function getMightPulseAlliance(env, kid, tag, {
   include = "info"
 } = {}) {
