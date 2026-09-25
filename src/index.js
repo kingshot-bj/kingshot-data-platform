@@ -436,71 +436,77 @@ async function handleKingdomWatchlistApi(request, env) {
   }
 
   if (request.method === "POST" && action === "refresh") {
-    // The job schema is a D1 migration, but deploy does not automatically apply D1 migrations.
-    // Bootstrap it here so an existing production database cannot fail with a generic INTERNAL_ERROR.
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
-        job_id TEXT PRIMARY KEY,
-        watchlist_id TEXT NOT NULL,
-        kid INTEGER NOT NULL,
-        top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
-        status TEXT NOT NULL CHECK (status IN ('RANKINGS', 'PLAYERS', 'COMPLETED', 'FAILED')),
-        board_index INTEGER NOT NULL DEFAULT 0,
-        player_cursor INTEGER NOT NULL DEFAULT 0,
-        player_ids_json TEXT NOT NULL DEFAULT '[]',
-        observed_at INTEGER NOT NULL,
-        ranking_rows INTEGER NOT NULL DEFAULT 0,
-        player_rows INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        completed_at INTEGER
-      )
-    `).run();
-    const body = await request.json().catch(() => ({}));
-    const watchlistId = String(body.watchlist_id || "").trim();
-    if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
-
-    const watch = await env.DB.prepare(
-      "SELECT watchlist_id, kid, top_n FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(watchlistId, auth.discord_id).first();
-    if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
-
-    const now = Math.floor(Date.now() / 1000);
-    let job = await env.DB.prepare(
-      "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-    ).bind(watchlistId).first();
-
-    if (!job) {
-      const jobId = crypto.randomUUID();
-      await env.DB.prepare(
-        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
-      ).bind(jobId, watch.kid, watch.top_n, now, now, now).run();
-      job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
-    }
-
     try {
-      const result = await processKingdomWatchlistJob(env, job);
-      if (result.completed) {
+      // The job schema is a D1 migration, but deploy does not automatically apply D1 migrations.
+      // Bootstrap it here so an existing production database cannot fail with a generic INTERNAL_ERROR.
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
+          job_id TEXT PRIMARY KEY,
+          watchlist_id TEXT NOT NULL,
+          kid INTEGER NOT NULL,
+          top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
+          status TEXT NOT NULL CHECK (status IN ('RANKINGS', 'PLAYERS', 'COMPLETED', 'FAILED')),
+          board_index INTEGER NOT NULL DEFAULT 0,
+          player_cursor INTEGER NOT NULL DEFAULT 0,
+          player_ids_json TEXT NOT NULL DEFAULT '[]',
+          observed_at INTEGER NOT NULL,
+          ranking_rows INTEGER NOT NULL DEFAULT 0,
+          player_rows INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          completed_at INTEGER
+        )
+      `).run();
+      const body = await request.json().catch(() => ({}));
+      const watchlistId = String(body.watchlist_id || "").trim();
+      if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+  
+      const watch = await env.DB.prepare(
+        "SELECT watchlist_id, kid, top_n FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+      ).bind(watchlistId, auth.discord_id).first();
+      if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+  
+      const now = Math.floor(Date.now() / 1000);
+      let job = await env.DB.prepare(
+        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+      ).bind(watchlistId).first();
+  
+      if (!job) {
+        const jobId = crypto.randomUUID();
         await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, now, now, watchlistId).run();
-      } else {
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, watchlistId).run();
+          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+        ).bind(jobId, watch.kid, watch.top_n, now, now, now).run();
+        job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
       }
-      return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
+  
+      try {
+        const result = await processKingdomWatchlistJob(env, job);
+        if (result.completed) {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(now, now, now, watchlistId).run();
+        } else {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(now, watchlistId).run();
+        }
+        return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
+      } catch (error) {
+        const message = String(error?.message || error).slice(0, 1000);
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?"
+        ).bind(message, now, job.job_id).run();
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(message, now, watchlistId).run();
+        console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
+        return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
+  
     } catch (error) {
       const message = String(error?.message || error).slice(0, 1000);
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(message, now, job.job_id).run();
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(message, now, watchlistId).run();
-      console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
-      return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
+      console.error("kingdom_watchlist_refresh_internal_error", message);
+      return json({ ok: false, error: "WATCHLIST_REFRESH_INTERNAL", message }, 500);
     }
   }
 
