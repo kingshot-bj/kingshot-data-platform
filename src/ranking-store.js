@@ -29,6 +29,38 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
   return id;
 }
 
+export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservationId = null }) {
+  if (!db) throw new Error("D1 database binding is not configured.");
+  if (!kid || !boards || typeof boards !== "object") throw new Error("Kingdom ranking boards require kid and boards.");
+
+  const statements = [];
+  for (const [board, entries] of Object.entries(boards)) {
+    if (!Array.isArray(entries) || !entries.length) continue;
+    entries.forEach((entry, index) => {
+      const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
+      const targetId = targetType === "ALLIANCE"
+        ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
+        : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
+      statements.push(db.prepare(
+        'INSERT INTO ranking_snapshots (' +
+        'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
+        'aid, abbr, name, observed_at, source_observation_id, created_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).bind(
+        crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
+        entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
+        entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservationId, observedAt
+      ));
+    });
+  }
+
+  const batchSize = 500;
+  for (let i = 0; i < statements.length; i += batchSize) {
+    await db.batch(statements.slice(i, i + batchSize));
+  }
+  return statements.length;
+}
+
 export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
@@ -64,6 +96,44 @@ function firstString(...values) {
 }
 
 export { PLAYER_RANK_FIELDS };
+
+export async function detectRankingChangesForBoards(db, { kid, observedAt, boards }) {
+  if (!db || !Number.isFinite(Number(kid)) || !Number.isFinite(Number(observedAt))) return [];
+  const current = [];
+  for (const [board, entries] of Object.entries(boards || {})) {
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
+      const targetId = targetType === "ALLIANCE"
+        ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
+        : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
+      current.push({ board: String(board), targetType, targetId: String(targetId), rank: index + 1, score: entry.score ?? entry.value ?? null });
+    });
+  }
+  if (!current.length) return [];
+
+  const previousResult = await db.prepare(
+    "WITH previous AS (" +
+    "SELECT p.board, p.target_id, p.rank, p.score, " +
+    "ROW_NUMBER() OVER (PARTITION BY p.board, p.target_id ORDER BY p.observed_at DESC) AS rn " +
+    "FROM ranking_snapshots p " +
+    "WHERE p.kid = ? AND p.observed_at < ?" +
+    ") SELECT board, target_id, rank, score FROM previous WHERE rn = 1"
+  ).bind(Number(kid), Number(observedAt)).all();
+
+  const previousByKey = new Map();
+  for (const row of previousResult.results || []) previousByKey.set(`${row.board}:${row.target_id}`, row);
+
+  const events = [];
+  for (const row of current) {
+    const prev = previousByKey.get(`${row.board}:${row.targetId}`);
+    if (!prev) continue;
+    if (Number(prev.rank) !== Number(row.rank)) {
+      events.push({ targetType: row.targetType, targetId: row.targetId, changeType: "RANK_CHANGED", oldValue: prev.rank, newValue: row.rank, oldScore: prev.score, newScore: row.score, observedAt });
+    }
+  }
+  return events;
+}
 
 export async function getLatestKingdomRankings(db, kid, board = null, limit = 100) {
   const params = board ? [Number(kid), String(board), Number(limit)] : [Number(kid), Number(limit)];
