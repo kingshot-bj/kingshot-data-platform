@@ -22,6 +22,133 @@ async function runKingdomWatchlistJobs(env) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     if (!due) continue;
     try {
+      const result = await collectKingdomWatchlist(env, row);
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+      ).bind(now, now, now, row.watchlist_id).run();
+      console.log("kingdom_watchlist_job_ok", row.watchlist_id, result);
+    } catch (error) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+      ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+      console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
+    }
+  }
+}
+
+async function collectKingdomWatchlist(env, watchlist) {
+  const observedAt = Math.floor(Date.now() / 1000);
+  const rankings = await getMightPulseKingdomAllRankings(env, watchlist.kid, { limit: watchlist.top_n });
+  const governorIds = new Set();
+  let rankingRows = 0;
+
+  for (const [board, result] of Object.entries(rankings)) {
+    const payload = result?.data;
+    const entries = Array.isArray(payload?.rankings)
+      ? payload.rankings
+      : Array.isArray(payload?.entries)
+        ? payload.entries
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+    rankingRows += await saveKingdomRankingBoard(env.DB, {
+      kid: watchlist.kid,
+      board,
+      entries,
+      observedAt
+    });
+    for (const entry of entries) {
+      const id = entry?.governor_id ?? entry?.governorId;
+      if (id != null) governorIds.add(String(id));
+    }
+  }
+
+  let playerRows = 0;
+  for (const governorId of governorIds) {
+    const result = await getMightPulsePlayer(env, governorId, {
+      include: "base,heroes,ranks,gov_gear"
+    });
+    const raw = result?.data?.player || result?.data;
+    if (!raw) continue;
+    const observationId = crypto.randomUUID();
+    const normalized = {
+      provider: "MIGHTPULSE",
+      endpoint: `/players/${governorId}?include=base,heroes,ranks,gov_gear`,
+      target_type: "PLAYER",
+      target_id: String(governorId),
+      observed_at: observedAt,
+      http_status: result?.status ?? 200,
+      payload_json: JSON.stringify(raw),
+      created_at: observedAt
+    };
+    await env.DB.prepare(
+      "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(observationId, normalized.provider, normalized.endpoint, normalized.target_type, normalized.target_id, normalized.observed_at, normalized.http_status, normalized.payload_json, normalized.created_at).run();
+    playerRows++;
+  }
+
+  return { boards: Object.keys(rankings).length, rankingRows, uniquePlayers: governorIds.size, playerRows };
+}
+
+async function handleKingdomWatchlistApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const action = url.searchParams.get("action") || "list";
+
+  if (request.method === "GET" && action === "list") {
+    const rows = await env.DB.prepare(
+      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
+    ).bind(auth.user.discord_id).all();
+    return json({ ok: true, watchlists: rows.results || [] });
+  }
+
+  if (request.method === "POST" && action === "create") {
+    const body = await request.json().catch(() => ({}));
+    const kid = Number(body.kid);
+    const topN = Number(body.top_n);
+    const intervalHours = Number(body.interval_hours);
+    if (!Number.isInteger(kid) || kid < 1 ||
+        ![5, 10].includes(topN) ||
+        ![1, 3, 6, 12].includes(intervalHours)) {
+      return json({ ok: false, error: "INVALID_WATCHLIST_SETTINGS" }, 400);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ?)"
+    ).bind(id, auth.user.discord_id, kid, topN, intervalHours, now, now).run();
+    return json({ ok: true, watchlist_id: id });
+  }
+
+  if (request.method === "POST" && action === "toggle") {
+    const body = await request.json().catch(() => ({}));
+    const enabled = body.enabled ? 1 : 0;
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlists SET enabled = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
+    ).bind(enabled, Math.floor(Date.now() / 1000), String(body.watchlist_id || ""), auth.user.discord_id).run();
+    return json({ ok: true });
+  }
+
+  if (request.method === "DELETE") {
+    await env.DB.prepare(
+      "DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+    ).bind(url.searchParams.get("watchlist_id"), auth.user.discord_id).run();
+    return json({ ok: true });
+  }
+
+  return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+}
+
+
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await env.DB.prepare(
+    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1"
+  ).all();
+  for (const row of rows.results || []) {
+    const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
+    if (!due) continue;
+    try {
       await collectKingdomWatchlist(env, row);
       await env.DB.prepare("UPDATE kingdom_watchlists SET last_run_at = ?, updated_at = ? WHERE watchlist_id = ?")
         .bind(now, now, row.watchlist_id).run();
@@ -77,7 +204,7 @@ async function collectKingdomWatchlist(env, watchlist) {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
