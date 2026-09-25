@@ -1938,3 +1938,80 @@ function parseCookie(header) {
     const index = part.indexOf("=");
     if (index === -1) continue;
     result[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return result;
+}
+
+function base64url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64urlEncodeText(text) {
+  return base64url(new TextEncoder().encode(text));
+}
+
+function base64urlDecodeText(text) {
+  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (text.length % 4)) % 4);
+  return new TextDecoder().decode(Uint8Array.from(atob(padded), char => char.charCodeAt(0)));
+}
+
+async function hmac(input, secret) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input)));
+}
+
+async function signPayload(payload, secret) {
+  const body = base64urlEncodeText(JSON.stringify(payload));
+  return body + "." + base64url(await hmac(body, secret));
+}
+
+async function verifyPayload(token, secret) {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const body = parts[0];
+  const provided = decodeBase64Url(parts[1]);
+  const expected = await hmac(body, secret);
+  if (!constantTimeEqual(expected, provided)) return null;
+  try {
+    const payload = JSON.parse(base64urlDecodeText(body));
+    if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function createStateToken(secret) {
+  const body = Date.now() + "." + crypto.randomUUID();
+  return base64urlEncodeText(body) + "." + base64url(await hmac(body, secret));
+}
+
+async function verifyStateToken(token, secret) {
+  const parts = token.split(".");
+  if (parts.length !== 2) return false;
+  let body;
+  try {
+    body = base64urlDecodeText(parts[0]);
+  } catch {
+    return false;
+  }
+  const provided = decodeBase64Url(parts[1]);
+  const expected = await hmac(body, secret);
+  if (!constantTimeEqual(expected, provided)) return false;
+  const timestamp = Number(body.split(".")[0]);
+  return Number.isFinite(timestamp) && Date.now() - timestamp < 10 * 60 * 1000;
+}
+
+function decodeBase64Url(value) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
+}
+
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
