@@ -96,6 +96,133 @@ const RANKING_BOARD_LABELS = {
   master_power: "マスター全体総力"
 };
 
+const PLAYER_VISIBILITY_ITEMS = [
+  { key: "base_identity", category: "基本情報", label: "プレイヤー識別情報", description: "領主ID・UID・FID・プレイヤー名・王国" },
+  { key: "base_power", category: "基本情報", label: "戦力・役場", description: "戦力・役場レベル" },
+  { key: "base_vip", category: "基本情報", label: "VIP", description: "VIPレベル" },
+  { key: "base_coordinates", category: "基本情報", label: "座標", description: "X/Y座標" },
+  { key: "base_kills", category: "基本情報", label: "撃破数", description: "撃破数" },
+  { key: "base_activity", category: "基本情報", label: "オンライン・最終活動", description: "オンライン状態・最終活動・最終ログイン" },
+  { key: "base_profile", category: "基本情報", label: "プロフィール補助情報", description: "アバター・言語・シールド・炎上状態・役職" },
+  { key: "alliance_identity", category: "同盟", label: "同盟基本情報", description: "同盟ID・略称・同盟名" },
+  { key: "alliance_rank", category: "同盟", label: "同盟順位情報", description: "同盟内順位・順位ラベル" },
+  { key: "alliance_stats", category: "同盟", label: "同盟戦力・人数", description: "同盟戦力・人数・盟主・旗" },
+  { key: "heroes_list", category: "英雄", label: "英雄一覧", description: "英雄名・レベル・星・品質・戦力・配置" },
+  { key: "heroes_skills", category: "英雄", label: "英雄スキル", description: "各英雄のスキルレベル" },
+  { key: "heroes_exclusive_gear", category: "英雄", label: "英雄専用装備", description: "専用装備・補正・SLG属性" },
+  { key: "heroes_gear", category: "英雄", label: "英雄通常装備", description: "兜・手袋・鎧・靴の装備情報" },
+  { key: "ranks_core", category: "ランキング", label: "主要個人ランキング", description: "戦力・撃破・役場・移民・ミスティック順位" },
+  { key: "ranks_leaderboards", category: "ランキング", label: "その他個人ランキング", description: "leaderboards配列" },
+  { key: "gov_gear_list", category: "領主装備", label: "領主装備一覧", description: "領主装備のスロット・品質・ティア・星・強化・スコア・戦闘力" },
+  { key: "gov_gear_gems", category: "領主装備", label: "領主装備の宝石", description: "装着宝石のスロット・ID" }
+];
+
+async function ensurePlayerVisibilityTable(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS player_visibility_settings (
+      item_key TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      label TEXT NOT NULL,
+      description TEXT,
+      basic_enabled INTEGER NOT NULL DEFAULT 0,
+      advanced_enabled INTEGER NOT NULL DEFAULT 0,
+      admin_enabled INTEGER NOT NULL DEFAULT 1,
+      owner_enabled INTEGER NOT NULL DEFAULT 1,
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT
+    )
+  `).run();
+
+  const now = Math.floor(Date.now() / 1000);
+  for (const item of PLAYER_VISIBILITY_ITEMS) {
+    const defaults = {
+      basic_enabled: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? 1 : 0,
+      advanced_enabled: 1,
+      admin_enabled: 1,
+      owner_enabled: 1
+    };
+    await db.prepare(`
+      INSERT INTO player_visibility_settings
+        (item_key, category, label, description, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT(item_key) DO NOTHING
+    `).bind(item.key, item.category, item.label, item.description, defaults.basic_enabled, defaults.advanced_enabled, defaults.admin_enabled, defaults.owner_enabled, now).run();
+  }
+}
+
+async function getPlayerVisibilitySettings(db) {
+  await ensurePlayerVisibilityTable(db);
+  const result = await db.prepare(
+    "SELECT item_key, category, label, description, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by FROM player_visibility_settings ORDER BY rowid"
+  ).all();
+  return result.results || [];
+}
+
+function visibilityEnabled(settings, itemKey, role) {
+  const row = (settings || []).find(item => item.item_key === itemKey);
+  if (!row) return role === "OWNER";
+  const column = role === "OWNER" ? "owner_enabled" : role === "ADMIN" ? "admin_enabled" : role === "ADVANCED" ? "advanced_enabled" : "basic_enabled";
+  return Number(row[column]) === 1;
+}
+
+function filterPlayerProfileForRole(payload, role, settings) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const player = source.player && typeof source.player === "object" ? source.player : source;
+  const visible = {};
+
+  if (visibilityEnabled(settings, "base_identity", role)) {
+    for (const key of ["uid","governor_id","fid","nick_name","kid"]) if (player[key] !== undefined) visible[key] = player[key];
+  }
+  if (visibilityEnabled(settings, "base_power", role)) {
+    for (const key of ["power","town_center_level"]) if (player[key] !== undefined) visible[key] = player[key];
+  }
+  if (visibilityEnabled(settings, "base_vip", role) && player.vip !== undefined) visible.vip = player.vip;
+  if (visibilityEnabled(settings, "base_coordinates", role)) for (const key of ["x","y"]) if (player[key] !== undefined) visible[key] = player[key];
+  if (visibilityEnabled(settings, "base_kills", role) && player.kills !== undefined) visible.kills = player.kills;
+  if (visibilityEnabled(settings, "base_activity", role)) for (const key of ["online","last_active_at","last_login"]) if (player[key] !== undefined) visible[key] = player[key];
+  if (visibilityEnabled(settings, "base_profile", role)) for (const key of ["avatar_url","language","shield_endtime","burn_endtime","office"]) if (player[key] !== undefined) visible[key] = player[key];
+
+  const alliance = player.alliance;
+  if (alliance && typeof alliance === "object") {
+    const a = {};
+    if (visibilityEnabled(settings, "alliance_identity", role)) for (const key of ["aid","abbr","name"]) if (alliance[key] !== undefined) a[key] = alliance[key];
+    if (visibilityEnabled(settings, "alliance_rank", role)) for (const key of ["rank","rank_label"]) if (alliance[key] !== undefined) a[key] = alliance[key];
+    if (visibilityEnabled(settings, "alliance_stats", role)) for (const key of ["power","count","flag_url","leader_name"]) if (alliance[key] !== undefined) a[key] = alliance[key];
+    if (Object.keys(a).length) visible.alliance = a;
+  }
+
+  const heroes = Array.isArray(source.heroes) ? source.heroes : [];
+  if (heroes.length && (visibilityEnabled(settings, "heroes_list", role) || visibilityEnabled(settings, "heroes_skills", role) || visibilityEnabled(settings, "heroes_exclusive_gear", role) || visibilityEnabled(settings, "heroes_gear", role))) {
+    visible.heroes = heroes.map(hero => {
+      const h = {};
+      if (visibilityEnabled(settings, "heroes_list", role)) for (const key of ["id","name","level","star","stars","star_label","quality","power","icon","position"]) if (hero[key] !== undefined) h[key] = hero[key];
+      if (visibilityEnabled(settings, "heroes_skills", role) && hero.skill_levels !== undefined) h.skill_levels = hero.skill_levels;
+      if (visibilityEnabled(settings, "heroes_exclusive_gear", role)) {
+        if (hero.exclusive_gear_level !== undefined) h.exclusive_gear_level = hero.exclusive_gear_level;
+        if (hero.exclusive_gear !== undefined) h.exclusive_gear = hero.exclusive_gear;
+      }
+      if (visibilityEnabled(settings, "heroes_gear", role) && hero.gear !== undefined) h.gear = hero.gear;
+      return h;
+    });
+  }
+
+  if (source.ranks && typeof source.ranks === "object") {
+    const ranks = {};
+    if (visibilityEnabled(settings, "ranks_core", role)) for (const key of ["power","power_rank","kills","kills_rank","town_center_level","town_center_rank","migrant_score","migrant_rank","mystic_trial","mystic_rank"]) if (source.ranks[key] !== undefined) ranks[key] = source.ranks[key];
+    if (visibilityEnabled(settings, "ranks_leaderboards", role) && source.ranks.leaderboards !== undefined) ranks.leaderboards = source.ranks.leaderboards;
+    if (Object.keys(ranks).length) visible.ranks = ranks;
+  }
+
+  if (source.gov_gear && typeof source.gov_gear === "object") {
+    const gear = {};
+    if (visibilityEnabled(settings, "gov_gear_list", role)) for (const key of ["hidden","message","items"]) if (source.gov_gear[key] !== undefined) gear[key] = source.gov_gear[key];
+    if (visibilityEnabled(settings, "gov_gear_gems", role) && Array.isArray(gear.items)) gear.items = gear.items.map(item => ({ ...item, gems: item.gems || [] }));
+    if (Object.keys(gear).length) visible.gov_gear = gear;
+  }
+
+  return visible;
+}
+
 const WATCHLIST_RANKING_LIMIT = 100;
 const WATCHLIST_RANKING_BATCH = 8;
 const WATCHLIST_PLAYER_BATCH = 8;
@@ -835,6 +962,7 @@ export default {
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
+      if (url.pathname === "/api/admin/player-visibility") return await handlePlayerVisibilityApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -842,6 +970,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/admin/data-retention") return new Response(await renderDataRetentionPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/admin/player-visibility") return new Response(await renderPlayerVisibilityPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/admin/api-pool") return new Response(await renderApiPoolAdminPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
@@ -1423,6 +1552,46 @@ function parseHeaderNumber(headers, name) {
   return Number.isFinite(n) ? n : null;
 }
 
+async function handlePlayerVisibilityApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    if (request.method === "GET") return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
+    if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    const body = await request.json().catch(() => ({}));
+    const itemKey = String(body.item_key || "").trim();
+    const role = String(body.role || "").trim().toUpperCase();
+    const enabled = body.enabled ? 1 : 0;
+    if (!PLAYER_VISIBILITY_ITEMS.some(item => item.key === itemKey)) return json({ ok: false, error: "UNKNOWN_VISIBILITY_ITEM" }, 400);
+    if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
+    if (guard.auth.role === "ADMIN" && role === "OWNER") return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
+    const column = role === "OWNER" ? "owner_enabled" : role === "ADMIN" ? "admin_enabled" : role === "ADVANCED" ? "advanced_enabled" : "basic_enabled";
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare("UPDATE player_visibility_settings SET " + column + " = ?, updated_at = ?, updated_by = ? WHERE item_key = ?").bind(enabled, now, guard.auth.user_id, itemKey).run();
+    return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
+  } catch (error) {
+    console.error("Player visibility settings error:", error);
+    return json({ ok: false, error: error?.message || "PLAYER_VISIBILITY_UPDATE_FAILED" }, 400);
+  }
+}
+
+async function renderPlayerVisibilityPage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
+  const settings = await getPlayerVisibilitySettings(env.DB);
+  const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
+  const rows = settings.map(item => {
+    return "<tr><td><b>" + escapeHtml(item.category) + "</b><br><strong>" + escapeHtml(item.label) + "</strong><br><small>" + escapeHtml(item.description || "") + "</small></td>" +
+      ["BASIC","ADVANCED","ADMIN","OWNER"].map(role => {
+        const key = role.toLowerCase() + "_enabled";
+        const checked = Number(item[key]) === 1 ? " checked" : "";
+        const disabled = role === "OWNER" && guard.auth.role === "ADMIN" ? " disabled" : "";
+        return "<td class='toggle-cell'><label class='switch'><input type='checkbox' data-item='" + escapeHtml(item.item_key) + "' data-role='" + role + "'" + checked + disabled + "><span></span></label></td>";
+      }).join("") + "</tr>";
+  }).join("");
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ公開設定</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.badge{position:fixed;top:14px;right:14px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}.hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:11px 9px;border-bottom:1px solid #334155;text-align:left;vertical-align:middle}th:not(:first-child),td:not(:first-child){text-align:center}td small{color:#94a3b8;line-height:1.5}.switch{position:relative;display:inline-block;width:46px;height:26px}.switch input{opacity:0;width:0;height:0}.switch span{position:absolute;inset:0;border-radius:999px;background:#334155;cursor:pointer;transition:.15s}.switch span:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+span{background:#f59e0b}.switch input:checked+span:before{transform:translateX(20px)}.switch input:disabled+span{opacity:.45;cursor:not-allowed}.status{margin-top:10px;color:#86efac;font-size:13px}</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1><div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限だけをリアルタイムで変更できます。ADMINはOWNER列を変更できません。</div><div id='status' class='status'></div><div class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>BASIC</th><th>ADVANCED</th><th>ADMIN</th><th>OWNER</th></tr></thead><tbody>" + rows + "</tbody></table></div></div></main><script>(function(){document.querySelectorAll('input[data-item]').forEach(function(input){input.addEventListener('change',function(){var previous=!input.checked;input.disabled=true;fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item_key:input.getAttribute('data-item'),role:input.getAttribute('data-role'),enabled:input.checked})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'更新失敗');return d;});}).then(function(){document.getElementById('status').textContent='保存しました。表示権限は即時反映されます。';}).catch(function(e){input.checked=previous;document.getElementById('status').textContent='更新失敗: '+e.message;}).finally(function(){input.disabled=false;});});});}());</script></body></html>";
+}
+
 async function renderDataRetentionPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
@@ -1584,7 +1753,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
     });
 
     const result = await getMightPulsePlayer(env, id, {
-      include: "base",
+      include: "base,heroes,ranks,gov_gear",
       apiKey: lease.api_key
     });
 
@@ -1662,11 +1831,14 @@ async function handlePlayerApi(request, env) {
       player = await materializePlayer(env.DB, observation);
     }
 
-    const visiblePlayer = filterPlayerForRole(player, auth.role);
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
+    const profile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
 
     return json({
       ok: true,
       player: visiblePlayer,
+      profile,
       source,
       freshness: {
         provider: "MIGHTPULSE",
@@ -1702,9 +1874,11 @@ async function handlePlayerRefresh(request, env) {
   try {
     const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH");
     const player = await materializePlayer(env.DB, fetched.observation);
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     return json({
       ok: true,
-      player: filterPlayerForRole(player, auth.role),
+      player: filterPlayerForRole(player, auth.role, fetched.observation.payload, visibilitySettings),
+      profile: filterPlayerProfileForRole(fetched.observation.payload, auth.role, visibilitySettings),
       refreshed: true,
       freshness: {
         provider: "MIGHTPULSE",
@@ -1970,7 +2144,10 @@ async function renderPlayerPage(request, env) {
       player = await materializePlayer(env.DB, observation);
     }
 
-    return renderPlayerShell("", governorId, filterPlayerForRole(player, auth.role), observation.payload);
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
+    const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
+    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile);
   } catch (error) {
     console.error("Player page error:", error);
     const code = String(error?.code || error?.message || "PLAYER_READ_FAILED");
@@ -1985,18 +2162,35 @@ async function renderPlayerPage(request, env) {
   }
 }
 
-function filterPlayerForRole(player, role) {
+function filterPlayerForRole(player, role, payload = null, settings = null) {
   if (!player) return player;
-  if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return player;
-
+  if (!payload || !settings) {
+    if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return player;
+    const visible = { ...player };
+    delete visible.vip;
+    delete visible.x;
+    delete visible.y;
+    return visible;
+  }
   const visible = { ...player };
-  delete visible.vip;
-  delete visible.x;
-  delete visible.y;
+  if (!visibilityEnabled(settings, "base_vip", role)) delete visible.vip;
+  if (!visibilityEnabled(settings, "base_coordinates", role)) { delete visible.x; delete visible.y; }
+  if (!visibilityEnabled(settings, "base_identity", role)) { delete visible.uid; delete visible.governor_id; delete visible.fid; delete visible.nick_name; delete visible.kid; }
+  if (!visibilityEnabled(settings, "base_power", role)) { delete visible.power; delete visible.town_center_level; }
+  if (!visibilityEnabled(settings, "base_kills", role)) delete visible.kills;
+  if (!visibilityEnabled(settings, "base_activity", role)) { delete visible.online; delete visible.last_active_at; delete visible.last_login; }
+  if (!visibilityEnabled(settings, "base_profile", role)) { delete visible.avatar_url; delete visible.language; delete visible.shield_endtime; delete visible.burn_endtime; delete visible.office; }
+  if (visible.alliance) {
+    const a = { ...visible.alliance };
+    if (!visibilityEnabled(settings, "alliance_identity", role)) { delete a.aid; delete a.abbr; delete a.name; }
+    if (!visibilityEnabled(settings, "alliance_rank", role)) { delete a.rank; delete a.rank_label; }
+    if (!visibilityEnabled(settings, "alliance_stats", role)) { delete a.power; delete a.count; delete a.flag_url; delete a.leader_name; }
+    visible.alliance = a;
+  }
   return visible;
 }
 
-function renderPlayerShell(message, governorId, player = null, payload = null, notice = null) {
+function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null) {
   const p = player || {};
   const freshness = payload || {};
   const esc = escapeHtml;
@@ -2014,6 +2208,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("同盟", p.alliance_name || "-")}
     </div>
     ${noticeHtml}
+    ${renderPlayerAdvancedSections(profile)}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
@@ -2022,8 +2217,45 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.message{margin-top:24px;padding:22px;border:1px solid #334155;border-radius:16px;background:#111c31}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}}
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:8px;margin-top:10px}.hero-card,.gear-card{padding:12px;border:1px solid #334155;border-radius:10px;background:#162238}.hero-head{display:flex;justify-content:space-between;gap:10px}.hero-head span,.hero-meta,.gear-card span{display:block;color:#94a3b8;font-size:12px;margin-top:5px;overflow-wrap:anywhere}.gear-card strong{display:block}.message{.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}}
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
+}
+
+function renderPlayerAdvancedSections(profile) {
+  const p = profile || {};
+  const esc = escapeHtml;
+  let html = "";
+  const heroes = Array.isArray(p.heroes) ? p.heroes : [];
+  if (heroes.length) {
+    const totalPower = heroes.reduce((sum, hero) => sum + (Number(hero.power) || 0), 0);
+    const maxLevel = heroes.reduce((max, hero) => Math.max(max, Number(hero.level) || 0), 0);
+    html += '<section class="profile-section"><h2>英雄</h2><div class="mini-grid"><div class="mini-card"><span>英雄総戦力（算出）</span><b>' + esc(formatNumber(totalPower)) + '</b></div><div class="mini-card"><span>最高レベル（算出）</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
+    heroes.forEach(hero => {
+      const gear = Array.isArray(hero.gear) ? hero.gear : [];
+      html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(hero.name || hero.id || "-") + '</strong><span>' + esc(hero.position || "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / 星' + esc(hero.star ?? hero.stars ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
+      if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map(s => (s.id ?? "-") + ":" + (s.level ?? "-")).join(" / ")) + '</div>';
+      if (hero.exclusive_gear) html += '<div class="hero-meta">専用装備: ' + esc(hero.exclusive_gear.name || "-") + ' Lv.' + esc(hero.exclusive_gear.level ?? "-") + '</div>';
+      if (gear.length) html += '<div class="hero-meta">通常装備: ' + esc(gear.map(g => (g.slot || g.name || "-") + " +" + (g.enhancement_level ?? "-")).join(" / ")) + '</div>';
+      html += '</article>';
+    });
+    html += '</div></section>';
+  }
+  if (p.ranks && typeof p.ranks === "object") {
+    const r = p.ranks;
+    html += '<section class="profile-section"><h2>個人ランキング</h2><div class="mini-grid">';
+    [["戦力",r.power,r.power_rank],["撃破",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック",r.mystic_trial,r.mystic_rank]].forEach(item => {
+      if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
+    });
+    html += '</div></section>';
+  }
+  if (p.gov_gear && typeof p.gov_gear === "object") {
+    const g = p.gov_gear;
+    const items = Array.isArray(g.items) ? g.items : [];
+    html += '<section class="profile-section"><h2>領主装備</h2><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
+    if (items.length) html += '<div class="gear-list">' + items.map(item => '<div class="gear-card"><strong>' + esc(item.name || item.slot || "-") + '</strong><span>品質 ' + esc(item.quality ?? "-") + ' / Tier ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / Score ' + esc(formatCompactNumber(item.score)) + ' / Combat ' + esc(formatCompactNumber(item.combat)) + (Array.isArray(item.gems) && item.gems.length ? ' / 宝石 ' + esc(item.gems.length) + '個' : '') + '</span></div>').join("") + '</div>';
+    html += '</section>';
+  }
+  return html;
 }
 
 function card(label, value) {
