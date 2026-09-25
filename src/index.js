@@ -67,6 +67,35 @@ const KINGDOM_RANKING_BOARDS = [
   "master_power"
 ];
 
+const RANKING_BOARD_LABELS = {
+  alliance_power: "同盟総力",
+  alliance_kills: "同盟撃破",
+  personal_power: "個人総力",
+  kills: "個人撃破",
+  town_center: "役場Lv.",
+  rebel_conquest: "反乱軍討伐ステージ",
+  single_hero: "英雄総力",
+  hero_total: "英雄全体総力",
+  troop_power: "部隊総力",
+  building_power: "建物総力",
+  research_power: "研究総力",
+  hero_no_equip: "英雄総力（装備除外）",
+  hero_equip: "英雄総力（装備込み）",
+  gov_gear: "領主装備",
+  gov_charm: "領主宝石",
+  pet_power: "ペット総合実力",
+  island_prosperity: "島の繁栄度",
+  migrant_score: "移民スコア",
+  mystic_trial: "秘境の試練",
+  coliseum: "闘技場",
+  forest_of_life: "生命の森",
+  crystal_cave: "水晶鉱山",
+  knowledge_nexus: "知識の枢軸",
+  molten_fort: "溶岩要塞",
+  radiant_spire: "輝光の塔",
+  master_power: "マスター全体総力"
+};
+
 const WATCHLIST_RANKING_LIMIT = 100;
 const WATCHLIST_RANKING_BATCH = 8;
 const WATCHLIST_PLAYER_BATCH = 8;
@@ -301,16 +330,83 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.progress{margin:12px 0;padding:12px;border:1px solid #475569;border-radius:12px;background:#0b1220;display:grid;gap:4px}.progress b{font-size:14px}.progress span{font-size:20px;font-weight:900;color:#f59e0b}.progress small{color:#94a3b8}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
+:root{
+  color-scheme:dark;
+  --bg:#0b1220;--bg-soft:#111a2c;--card:#162238;--card-strong:#1b2a43;
+  --text:#f8fafc;--text-soft:#cbd5e1;--muted:#94a3b8;--border:#334155;
+  --border-strong:#475569;--input:#0b1220;--accent:#f59e0b;--accent-strong:#fbbf24;
+  --accent-text:#111827;--ok:#86efac;--ok-bg:#0f2a1c;--danger:#7f1d1d;--shadow:0 12px 30px rgba(0,0,0,.22);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3f6fb;--bg-soft:#eaf0f8;--card:#ffffff;--card-strong:#f8fafc;
+  --text:#172033;--text-soft:#334155;--muted:#64748b;--border:#d6deea;
+  --border-strong:#b8c5d6;--input:#f8fafc;--accent:#f59e0b;--accent-strong:#d97706;
+  --accent-text:#172033;--ok:#15803d;--ok-bg:#ecfdf3;--danger:#b91c1c;--shadow:0 10px 24px rgba(15,23,42,.08);
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 48px;background:var(--bg);color:var(--text);min-height:100vh;transition:background .2s,color .2s}
+button,input,select{font:inherit}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.back{color:var(--muted);text-decoration:none;font-weight:700}
+.back:hover{color:var(--text)}
+.topbar h1{font-size:clamp(25px,6vw,34px);margin:8px 0 0;letter-spacing:-.02em}
+.theme-toggle{width:46px;height:42px;padding:0;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);display:inline-flex;align-items:center;justify-content:center;font-size:20px;box-shadow:var(--shadow)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;margin:14px 0;box-shadow:var(--shadow)}
+.add-card{background:linear-gradient(135deg,var(--card),var(--card-strong))}
+.card h2{margin:0 0 14px;font-size:20px}
+.card p{margin:7px 0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.form-field{display:grid;gap:7px;font-weight:800;font-size:13px;flex:1 1 150px}
+input,select{width:100%;padding:12px 13px;border:1px solid var(--border-strong);border-radius:12px;background:var(--input);color:var(--text);outline:none}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,158,11,.16)}
+button{padding:12px 14px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-text);font-weight:900;cursor:pointer;transition:transform .12s,filter .12s,opacity .12s}
+button:hover{filter:brightness(1.04);transform:translateY(-1px)}
+button:disabled{opacity:.58;cursor:not-allowed;transform:none}
+.primary-action{min-width:145px}
+.danger{background:var(--danger);color:#fff}
+.muted{color:var(--muted)}
+.error{color:#ef4444}
+.ok{color:var(--ok)}
+.status-line{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:8px 2px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 15%,transparent)}
+.progress{margin:14px 0;padding:15px;border:1px solid var(--border-strong);border-radius:14px;background:var(--bg-soft);display:grid;gap:5px}
+.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:var(--accent)}.progress small{color:var(--muted)}
+.progress-track{height:7px;border-radius:999px;background:var(--border);overflow:hidden;margin-top:4px}
+.progress-fill{height:100%;border-radius:999px;background:var(--accent);transition:width .2s}
+.rank-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.rank{padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card-strong);min-width:0}
+.rank-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.rank-title b{font-size:15px}
+.rank-key{font-size:10px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
+.rank-row:first-of-type{border-top:0}
+.rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
+.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-score{font-weight:900;text-align:right;white-space:nowrap;color:var(--accent-strong)}
+.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 2px 10px}
+.section-title h2{margin:0;font-size:19px}
+.section-title span{font-size:11px;color:var(--muted)}
+.player-card{padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card-strong)}
+.player-card b{font-size:14px}.player-meta{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.6}
+@media(max-width:700px){.rank-grid{grid-template-columns:1fr}}
+@media(max-width:520px){
+  body{padding:14px 10px 36px}.card{padding:15px;border-radius:16px}
+  .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
+  .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr);}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
+}
 </style></head><body>
-<a class="back" href="/">← EagleEye</a>
-<h1>王国ウォッチリスト</h1>
-<div id="msg" class="muted">読み込み中…</div>
-<section class="card"><h2>王国を監視対象に追加</h2><div class="row">
-<label>王国番号<input id="kid" type="number" min="1" placeholder="例: 1524"></label>
-<label>ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
-<label>更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
-<button id="create">監視を登録</button></div></section>
+<div class="topbar">
+  <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1></div>
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="テーマ切り替え" title="テーマ切り替え">🌙</button>
+</div>
+<div id="msg" class="status-line"><span class="status-dot"></span><span>読み込み中…</span></div>
+<section class="card add-card"><h2>王国を監視対象に追加</h2><div class="row">
+<label class="form-field">王国番号<input id="kid" type="number" min="1" placeholder="例: 1524"></label>
+<label class="form-field">ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
+<label class="form-field">更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
+<button id="create" class="primary-action">監視を登録</button></div></section>
 <div id="list"></div><div id="detail"></div>
 <script>
 (function(){
@@ -328,11 +424,13 @@ async function renderKingdomWatchlistPage(request, env) {
       return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span></div>";
     }
     if(j.status==="RANKINGS"){
-      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><small>ランキング取得 "+esc(j.ranking_rows)+"件</small></div>";
+      var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
+      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>ランキング取得 "+esc(j.ranking_rows)+"件</small></div>";
     }
     if(j.status==="PLAYERS"){
       var count=j.player_count==null?"?":j.player_count;
-      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
+      var playerPct=count && count!=="?" ? Math.min(100,Math.round((Number(j.player_cursor)||0)/Number(count)*100)) : 0;
+      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+playerPct+"%'></div></div><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
     }
     return "";
   }
@@ -343,7 +441,7 @@ async function renderKingdomWatchlistPage(request, env) {
       ws.forEach(function(w){
         var active=isActiveJob(w);
         var card=document.createElement("div"); card.className="card";
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
         var row=document.createElement("div"); row.className="row";
         var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
@@ -399,10 +497,17 @@ async function renderKingdomWatchlistPage(request, env) {
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
       var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
-      var h='<div class="card"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><div class="grid">';
-      Object.keys(boards).forEach(function(b){h+='<div class="rank"><b>'+esc(b)+'</b>';boards[b].slice(0,d.watchlist.top_n).forEach(function(r){h+='<div>'+esc(r.rank)+". "+esc(r.nick_name||r.governor_id||r.name||"-")+" — "+esc(r.score)+'</div>';});h+='</div>';});
-      h+='</div><h2>観測プレイヤー</h2><div class="grid">';
-      (d.players||[]).forEach(function(p){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div>';});
+      var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
+      Object.keys(boards).forEach(function(b){
+        var label=RANKING_BOARD_LABELS[b]||b;
+        h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
+        boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
+          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(r.nick_name||r.governor_id||r.name||"-")+'</span><span class="rank-score">'+esc(r.score)+'</span></div>';
+        });
+        h+='</div>';
+      });
+      h+='</div><div class="section-title"><h2>観測プレイヤー</h2><span>'+(d.players||[]).length+'人</span></div><div class="rank-grid">';
+      (d.players||[]).forEach(function(p){h+='<div class="player-card"><b>'+esc(p.nick_name||p.governor_id)+'</b><div class="player-meta">戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
       h+='</div></div>';el("detail").innerHTML=h;
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
@@ -421,6 +526,23 @@ async function renderKingdomWatchlistPage(request, env) {
     .catch(function(e){
       el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
     });
+  });
+  function applyTheme(theme){
+    document.documentElement.setAttribute("data-theme",theme);
+    var button=el("themeToggle");
+    if(button){
+      button.textContent=theme==="light"?"🌙":"☀️";
+      button.title=theme==="light"?"ダークテーマに切り替え":"ライトテーマに切り替え";
+      button.setAttribute("aria-label",button.title);
+    }
+  }
+  var savedTheme=null;
+  try{savedTheme=localStorage.getItem("eagleeye_theme");}catch(e){}
+  applyTheme(savedTheme==="light"?"light":"dark");
+  el("themeToggle").addEventListener("click",function(){
+    var next=document.documentElement.getAttribute("data-theme")==="light"?"dark":"light";
+    applyTheme(next);
+    try{localStorage.setItem("eagleeye_theme",next);}catch(e){}
   });
   load();
 }());
