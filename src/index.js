@@ -2285,11 +2285,42 @@ async function getLatestPlayerHeroRankings(db, kid, governorId) {
   return result.results || [];
 }
 
+function formatProfileValue(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "-";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 function renderPlayerAdvancedSections(profile) {
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
+
+  if (p.avatar_url || p.language || p.office || p.shield_endtime || p.burn_endtime) {
+    html += '<section class="profile-section"><h2>プロフィール詳細</h2><div class="mini-grid">';
+    if (p.avatar_url) html += '<div class="mini-card"><span>アバター</span><b>取得済み</b></div>';
+    if (p.language) html += '<div class="mini-card"><span>言語</span><b>' + esc(formatProfileValue(p.language)) + '</b></div>';
+    if (p.office) html += '<div class="mini-card"><span>役職</span><b>' + esc(formatProfileValue(p.office)) + '</b></div>';
+    if (p.shield_endtime) html += '<div class="mini-card"><span>シールド終了</span><b>' + esc(formatUnix(p.shield_endtime)) + '</b></div>';
+    if (p.burn_endtime) html += '<div class="mini-card"><span>炎上終了</span><b>' + esc(formatUnix(p.burn_endtime)) + '</b></div>';
+    html += '</div></section>';
+  }
+
+  if (p.alliance && typeof p.alliance === "object") {
+    const a = p.alliance;
+    html += '<section class="profile-section"><h2>同盟詳細</h2><div class="mini-grid">';
+    if (a.aid) html += '<div class="mini-card"><span>同盟ID</span><b>' + esc(formatProfileValue(a.aid)) + '</b></div>';
+    if (a.abbr || a.name) html += '<div class="mini-card"><span>同盟</span><b>' + esc([a.abbr, a.name].filter(Boolean).join(" ")) + '</b></div>';
+    if (a.rank !== undefined || a.rank_label) html += '<div class="mini-card"><span>同盟内順位</span><b>' + esc([a.rank_label, a.rank != null ? a.rank + "位" : ""].filter(Boolean).join(" ")) + '</b></div>';
+    if (a.power !== undefined) html += '<div class="mini-card"><span>同盟戦力</span><b>' + esc(formatCompactNumber(a.power)) + '</b></div>';
+    if (a.count !== undefined) html += '<div class="mini-card"><span>同盟人数</span><b>' + esc(formatProfileValue(a.count)) + '</b></div>';
+    if (a.leader_name) html += '<div class="mini-card"><span>盟主</span><b>' + esc(formatProfileValue(a.leader_name)) + '</b></div>';
+    if (a.flag_url) html += '<div class="mini-card"><span>同盟旗</span><b>取得済み</b></div>';
+    html += '</div></section>';
+  }
+
   if (heroes.length) {
     const maxLevel = heroes.reduce((max, hero) => Math.max(max, Number(hero.level) || 0), 0);
     const heroRankings = Array.isArray(p.hero_rankings) ? p.hero_rankings : [];
@@ -2306,32 +2337,57 @@ function renderPlayerAdvancedSections(profile) {
     html += '<div class="mini-card"><span>最高レベル（取得データ内）</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
     heroes.forEach(hero => {
       const gear = Array.isArray(hero.gear) ? hero.gear : [];
-      html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(localizeHeroName(hero.name || hero.id)) + '</strong><span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / 星' + esc(hero.star ?? hero.stars ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
+      html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(localizeHeroName(hero.name || hero.id)) + '</strong><span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / ' + esc(hero.star_label || ("星" + (hero.star ?? hero.stars ?? "-"))) + ' / 品質 ' + esc(hero.quality ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
       if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map((s, i) => "スキル" + (i + 1) + " Lv." + (s.level ?? "-")).join(" / ")) + '</div>';
-      if (hero.exclusive_gear) html += '<div class="hero-meta">専用装備: ' + esc(localizeExclusiveGearName(hero.exclusive_gear.name)) + ' Lv.' + esc(hero.exclusive_gear.level ?? "-") + '</div>';
+      if (hero.exclusive_gear || hero.exclusive_gear_level !== undefined) {
+        const eg = hero.exclusive_gear || {};
+        html += '<div class="hero-meta">専用装備: ' + esc(localizeExclusiveGearName(eg.name)) + ' Lv.' + esc(hero.exclusive_gear_level ?? eg.level ?? "-") + '</div>';
+      }
       if (gear.length) html += '<div class="hero-meta">英雄装備: ' + esc(gear.map(g => localizeHeroGearSlot(g.slot || g.name) + " +" + (g.enhancement_level ?? "-")).join(" / ")) + '</div>';
+      if (hero.icon) html += '<div class="hero-meta">アイコン: 取得済み</div>';
       html += '</article>';
     });
     html += '</div></section>';
   }
+
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
     html += '<section class="profile-section"><h2>個人ランキング</h2><div class="mini-grid">';
     [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
       if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
     });
-    html += '</div></section>';
+    if (Array.isArray(r.leaderboards) && r.leaderboards.length) {
+      html += '</div><h3>その他ランキング</h3><div class="detail-list">';
+      for (const board of r.leaderboards) {
+        const label = board?.name || board?.label || board?.board || board?.key || "ランキング";
+        const score = board?.score ?? board?.value ?? board?.rank_value;
+        const rank = board?.rank ?? board?.ranking;
+        html += '<div class="detail-row"><span>' + esc(formatProfileValue(label)) + '</span><b>' + esc(score !== undefined ? formatCompactNumber(score) : "-") + (rank !== undefined ? ' / ' + esc(rank) + '位' : '') + '</b></div>';
+      }
+      html += '</div>';
+    } else {
+      html += '</div>';
+    }
+    html += '</section>';
   }
+
   if (p.gov_gear && typeof p.gov_gear === "object") {
     const g = p.gov_gear;
     const items = Array.isArray(g.items) ? g.items : [];
     html += '<section class="profile-section"><h2>領主装備</h2><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
-    if (items.length) html += '<div class="gear-list">' + items.map(item => '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>品質 ' + esc(item.quality ?? "-") + ' / ティア ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (Array.isArray(item.gems) && item.gems.length ? ' / 宝石 ' + esc(item.gems.length) + '個' : '') + '</span></div>').join("") + '</div>';
+    if (g.message) html += '<div class="notice">' + esc(formatProfileValue(g.message)) + '</div>';
+    if (items.length) {
+      html += '<div class="gear-list">' + items.map(item => {
+        const gems = Array.isArray(item.gems) ? item.gems : [];
+        const gemText = gems.length ? ' / 宝石 ' + esc(gems.map(gem => formatProfileValue(gem.name || gem.id || gem.slot || gem)).join(", ")) : "";
+        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>スロット ' + esc(item.slot ?? "-") + ' / 品質 ' + esc(item.quality ?? "-") + ' / ティア ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (item.equipid ? ' / ID ' + esc(item.equipid) : '') + gemText + '</span></div>';
+      }).join("") + '</div>';
+    }
     html += '</section>';
   }
+
   return html;
 }
-
 function card(label, value) {
   return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
 }
