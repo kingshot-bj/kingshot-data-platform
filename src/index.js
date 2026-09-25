@@ -2579,7 +2579,7 @@ function renderPlayerAdvancedSections(profile) {
         const gearIconUrl = normalizeProfileAssetUrl(item.icon);
         return '<div class="gear-card"><div class="gear-head">' +
           (gearIconUrl ? '<img class="gear-icon" src="' + esc(gearIconUrl) + '" alt="" loading="lazy">' : '<span class="gear-icon gear-icon-empty">?</span>') +
-          '<div><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong><div class="gear-name">' + esc(formatProfileValue(item.name)) + '</div></div>' +
+          '<div><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong></div>' +
           '</div><div class="gear-stats">' +
           '<div class="gear-stat">スロット<b>' + esc(localizeGovernorGearSlot(item.slot)) + '</b></div>' +
           '<div class="gear-stat">品質<b>' + esc(localizeGovernorGearQuality(item.quality)) + '</b></div>' +
