@@ -144,7 +144,7 @@ async function collectKingdomWatchlist(env, watchlist) {
   return { boards: boards.length, rankingRows, uniquePlayers: governorIds.size, playerRows };
 }
 
-async async function renderKingdomWatchlistPage(request, env) {
+async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
     return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
