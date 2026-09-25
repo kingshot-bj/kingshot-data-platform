@@ -2379,8 +2379,12 @@ function renderPlayerAdvancedSections(profile) {
     if (items.length) {
       html += '<div class="gear-list">' + items.map(item => {
         const gems = Array.isArray(item.gems) ? item.gems : [];
-        const gemText = gems.length ? ' / 宝石 ' + esc(gems.map(gem => formatProfileValue(gem.name || gem.id || gem.slot || gem)).join(", ")) : "";
-        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>スロット ' + esc(item.slot ?? "-") + ' / 品質 ' + esc(item.quality ?? "-") + ' / ティア ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (item.equipid ? ' / ID ' + esc(item.equipid) : '') + gemText + '</span></div>';
+        const gemText = gems.length ? ' / 宝石 ' + esc(gems.map(gem => {
+          const level = gem?.level ?? gem?.lv ?? gem?.gem_level ?? null;
+          const label = gem?.name || gem?.id || gem?.slot || "宝石";
+          return level !== null && level !== undefined && level !== "" ? label + " Lv." + level : label;
+        }).join(", ")) : "";
+        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>スロット ' + esc(item.slot ?? "-") + ' / 品質 ' + esc(item.quality ?? "-") + ' / Tier ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (item.equipid ? ' / ID ' + esc(item.equipid) : '') + gemText + '</span></div>';
       }).join("") + '</div>';
     }
     html += '</section>';
