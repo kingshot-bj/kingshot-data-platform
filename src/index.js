@@ -75,8 +75,8 @@ async function runKingdomWatchlistJobs(env) {
       console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
     } catch (error) {
       await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(String(error?.message || error).slice(0, 1000), now, job.job_id).run();
+        "UPDATE kingdom_watchlist_jobs SET status = ?, last_error = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS", String(error?.message || error).slice(0, 1000), now, job.job_id).run();
       await env.DB.prepare(
         "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
       ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
