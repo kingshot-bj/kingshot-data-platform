@@ -1008,8 +1008,10 @@ function formatTownCenterLevel(value) {
   const level = Number(value);
   if (!Number.isFinite(level)) return String(value);
   if (level <= 30) return `Lv.${level}`;
-  const goldLevel = Math.floor((level - 31) / 5) + 1;
-  const stage = ((level - 31) % 5) + 1;
+  // Lv.30の後は30-1〜30-4を経て黄金1に入り、以降は各黄金レベル5段階。
+  if (level <= 34) return `Lv.30-${level - 30}`;
+  const goldLevel = Math.floor((level - 35) / 5) + 1;
+  const stage = ((level - 35) % 5) + 1;
   return `黄金${goldLevel}（${stage}/5）`;
 }
 
