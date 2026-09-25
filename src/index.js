@@ -113,6 +113,19 @@ load();
 </script></body></html>`;
 }
 
+async function handleKingdomRankingHistoryApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const kid = Number(url.searchParams.get("kid"));
+  const board = url.searchParams.get("board");
+  const targetId = url.searchParams.get("target_id");
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
+  if (!Number.isInteger(kid) || kid < 1 || !board || !targetId) return json({ ok: false, error: "KID_BOARD_TARGET_REQUIRED" }, 400);
+  const history = await getRankingHistory(env.DB, { kid, board, targetId, limit });
+  return json({ ok: true, kid, board, target_id: targetId, history });
+}
+
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -230,7 +243,7 @@ async function collectKingdomWatchlist(env, watchlist) {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
       if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
