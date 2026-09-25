@@ -144,9 +144,9 @@ async function collectKingdomWatchlist(env, watchlist) {
   return { boards: boards.length, rankingRows, uniquePlayers: governorIds.size, playerRows };
 }
 
-async function renderKingdomWatchlistPage(request, env) {
+async async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) return '<!doctype html><meta charset="utf-8"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>';
+  if (!auth || auth.status !== "ACTIVE") return '<!doctype html><meta charset="utf-8"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>';
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title><style>
 body{font-family:system-ui,sans-serif;max-width:1100px;margin:auto;padding:20px;background:#f6f7f8;color:#171717}.card{background:white;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}button,select,input{padding:9px;border:1px solid #ccc;border-radius:8px}button{cursor:pointer}.muted{color:#666}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}.rank{padding:10px;border:1px solid #eee;border-radius:8px}.up{color:#087443}.down{color:#b00020}</style></head><body>
 <h1>王国ウォッチリスト</h1><div id="msg" class="muted">読み込み中…</div><div id="list"></div><div id="detail"></div>
