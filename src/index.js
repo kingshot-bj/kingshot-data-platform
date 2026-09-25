@@ -2247,21 +2247,30 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
 }
 
+const HERO_NAME_JA = { Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジャベル", Rosa: "ローザ" };
+const HERO_GEAR_SLOT_JA = { Helmet: "兜", Gloves: "手袋", Armor: "鎧", Boots: "靴" };
+const HERO_EXCLUSIVE_GEAR_JA = { "The Unrighteous": "不義", "Banner of Faith": "信仰の旗", Aeolian: "エオリアン" };
+const GOVERNOR_GEAR_NAME_JA = { "Pioneer's Wreath": "開拓者の冠", "Ranger's Caress": "レンジャーの愛撫", "Regal Leatherwear": "王家の革装備", "Regal Breeches": "王家のズボン", "Sunblossom Wreath": "サンブロッサムの冠", "Regal Hunter's Rod": "王家の狩人の杖" };
+function localizeHeroName(value) { return HERO_NAME_JA[value] || value || "-"; }
+function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value || "-"; }
+function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
+function localizeGovernorGearName(value) { return GOVERNOR_GEAR_NAME_JA[value] || value || "-"; }
+
 function renderPlayerAdvancedSections(profile) {
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
   if (heroes.length) {
-    const totalPower = heroes.reduce((sum, hero) => sum + (Number(hero.power) || 0), 0);
+    const numericHeroPowers = heroes.map(hero => Number(hero.power)).filter(Number.isFinite); const totalPower = numericHeroPowers.length ? numericHeroPowers.reduce((sum, value) => sum + value, 0) : null;
     const maxLevel = heroes.reduce((max, hero) => Math.max(max, Number(hero.level) || 0), 0);
-    html += '<section class="profile-section"><h2>英雄</h2><div class="mini-grid"><div class="mini-card"><span>英雄総戦力（算出）</span><b>' + esc(formatNumber(totalPower)) + '</b></div><div class="mini-card"><span>最高レベル（算出）</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
+    html += '<section class="profile-section"><h2>英雄</h2><div class="mini-grid"><div class="mini-card"><span>英雄総戦力</span><b>' + esc(totalPower === null ? '-' : formatNumber(totalPower)) + '</b></div><div class="mini-card"><span>最高レベル</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
     heroes.forEach(hero => {
       const gear = Array.isArray(hero.gear) ? hero.gear : [];
-      html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(hero.name || hero.id || "-") + '</strong><span>' + esc(hero.position || "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / 星' + esc(hero.star ?? hero.stars ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
-      if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map(s => (s.id ?? "-") + ":" + (s.level ?? "-")).join(" / ")) + '</div>';
-      if (hero.exclusive_gear) html += '<div class="hero-meta">専用装備: ' + esc(hero.exclusive_gear.name || "-") + ' Lv.' + esc(hero.exclusive_gear.level ?? "-") + '</div>';
-      if (gear.length) html += '<div class="hero-meta">通常装備: ' + esc(gear.map(g => (g.slot || g.name || "-") + " +" + (g.enhancement_level ?? "-")).join(" / ")) + '</div>';
+      html += '<article class="hero-card"><div class="hero-head"><strong>' + esc(localizeHeroName(hero.name || hero.id)) + '</strong><span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div><div class="hero-meta">Lv.' + esc(hero.level ?? "-") + ' / 星' + esc(hero.star ?? hero.stars ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
+      if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map((s, i) => "スキル" + (i + 1) + " Lv." + (s.level ?? "-")).join(" / ")) + '</div>';
+      if (hero.exclusive_gear) html += '<div class="hero-meta">専用装備: ' + esc(localizeExclusiveGearName(hero.exclusive_gear.name)) + ' Lv.' + esc(hero.exclusive_gear.level ?? "-") + '</div>';
+      if (gear.length) html += '<div class="hero-meta">英雄装備: ' + esc(gear.map(g => localizeHeroGearSlot(g.slot || g.name) + " +" + (g.enhancement_level ?? "-")).join(" / ")) + '</div>';
       html += '</article>';
     });
     html += '</div></section>';
@@ -2269,7 +2278,7 @@ function renderPlayerAdvancedSections(profile) {
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
     html += '<section class="profile-section"><h2>個人ランキング</h2><div class="mini-grid">';
-    [["戦力",r.power,r.power_rank],["撃破",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック",r.mystic_trial,r.mystic_rank]].forEach(item => {
+    [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
       if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
     });
     html += '</div></section>';
@@ -2278,7 +2287,7 @@ function renderPlayerAdvancedSections(profile) {
     const g = p.gov_gear;
     const items = Array.isArray(g.items) ? g.items : [];
     html += '<section class="profile-section"><h2>領主装備</h2><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
-    if (items.length) html += '<div class="gear-list">' + items.map(item => '<div class="gear-card"><strong>' + esc(item.name || item.slot || "-") + '</strong><span>品質 ' + esc(item.quality ?? "-") + ' / Tier ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / Score ' + esc(formatCompactNumber(item.score)) + ' / Combat ' + esc(formatCompactNumber(item.combat)) + (Array.isArray(item.gems) && item.gems.length ? ' / 宝石 ' + esc(item.gems.length) + '個' : '') + '</span></div>').join("") + '</div>';
+    if (items.length) html += '<div class="gear-list">' + items.map(item => '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>品質 ' + esc(item.quality ?? "-") + ' / ティア ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (Array.isArray(item.gems) && item.gems.length ? ' / 宝石 ' + esc(item.gems.length) + '個' : '') + '</span></div>').join("") + '</div>';
     html += '</section>';
   }
   return html;
