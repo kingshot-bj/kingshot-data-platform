@@ -180,6 +180,48 @@ async function handleKingdomRankingHistoryApi(request, env) {
   return json({ ok: true, kid, board, target_id: targetId, history });
 }
 
+async function handleKingdomWatchlistDataApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const watchlistId = url.searchParams.get("watchlist_id");
+  if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+
+  const watch = await env.DB.prepare(
+    "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+  ).bind(watchlistId, auth.user.discord_id).first();
+  if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+
+  const board = url.searchParams.get("board");
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
+  let rankings;
+  if (board) {
+    rankings = await env.DB.prepare(
+      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
+    ).bind(watch.kid, board, limit).all();
+  } else {
+    rankings = await env.DB.prepare(
+      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?"
+    ).bind(watch.kid, limit * 26).all();
+  }
+
+  const players = await env.DB.prepare(
+    "SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p WHERE p.kid = ? ORDER BY p.power DESC LIMIT ?"
+  ).bind(watch.kid, watch.top_n * 26).all();
+
+  const changes = await env.DB.prepare(
+    "SELECT governor_id, board, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' ORDER BY observed_at DESC LIMIT ?"
+  ).bind(watch.kid, Math.min(watch.top_n * 26 * 5, 5000)).all();
+
+  return json({
+    ok: true,
+    watchlist: watch,
+    rankings: rankings.results || [],
+    players: players.results || [],
+    ranking_observations: changes.results || []
+  });
+}
+
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -229,6 +271,58 @@ async function handleKingdomWatchlistApi(request, env) {
 
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
+export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(Promise.all([runKingdomWatchlistJobs(env), runDataRetentionJob(env)]));
+  },
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    try {
+      if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
+      if (url.pathname === "/api/auth/logout") return logout(request);
+      if (url.pathname === "/api/me") return await handleMe(request, env);
+      if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
+      if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
+      if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
+      if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
+      if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
+      if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
+      if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
+      if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
+      if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
+      if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
+      if (url.pathname === "/admin/data-retention") return new Response(await renderDataRetentionPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/admin/api-pool") return new Response(await renderApiPoolAdminPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
+      if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
+      if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
+      if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
+      if (url.pathname === "/players") return new Response(await renderPlayerSearchPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/player/history") return new Response(await renderPlayerHistoryPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/player/changes") return new Response(await renderPlayerChangesPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/player") return new Response(await renderPlayerPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      return new Response(await renderHome(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+    } catch (error) {
+      console.error("EagleEye request error:", error);
+      return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
+    }
+  }
+};
+
+function getConfig(env) {
+  return {
+    clientId: env.DISCORD_CLIENT_ID,
+    clientSecret: env.DISCORD_CLIENT_SECRET,
+    sessionSecret: env.EAGLEEYE_SESSION_SECRET,
+    redirectUri: env.DISCORD_REDIRECT_URI || DEFAULT_DISCORD_REDIRECT_URI
+  };
+}
+
 async function startDiscordLogin(request, env) {
   const config = getConfig(env);
   if (!config.clientId || !config.sessionSecret) {
