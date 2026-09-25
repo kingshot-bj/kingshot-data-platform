@@ -92,76 +92,25 @@ async function collectKingdomWatchlist(env, watchlist) {
 
 async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) {
-    return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>EagleEye</title></head><body><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a></body></html>';
-  }
+  if (!auth?.user) return '<!doctype html><meta charset="utf-8"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>';
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title><style>
-  body{font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;background:#f7f7f8;color:#171717}
-  .card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}
-  input,select,button{padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px}
-  button{cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .muted{color:#666}.error{color:#b00020}.ok{color:#087443}
-  </style></head><body>
-  <h1>王国ウォッチリスト</h1>
-  <p class="muted">王国ランキング全26種を定期取得し、各ランキング上位5人または10人のプレイヤー詳細を観測します。</p>
-  <div class="card"><h2>追加</h2><div class="row">
-  <input id="kid" type="number" min="1" placeholder="王国ID">
-  <select id="top"><option value="5">上位5人</option><option value="10">上位10人</option></select>
-  <select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select>
-  <button onclick="addWatch()">追加</button></div><p id="msg"></p></div>
-  <div id="list"></div>
-  <script>
-  async function api(url,opt){const r=await fetch(url,opt);return await r.json()}
-  async function load(){const d=await api('/api/kingdom-watchlist');const el=document.getElementById('list');el.innerHTML='';
-    (d.watchlists||[]).forEach(w=>{const x=document.createElement('div');x.className='card';x.innerHTML='<h2>KID '+w.kid+'</h2><p>上位'+w.top_n+'人 / '+w.interval_hours+'時間ごと</p><p class="muted">最終成功: '+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString('ja-JP'):'未実行')+'</p>'+(w.last_error?'<p class="error">エラー: '+esc(w.last_error)+'</p>':'')+'<button onclick="toggle(\\''+w.watchlist_id+'\\','+(w.enabled?0:1)+')">'+(w.enabled?'停止':'再開')+'</button> <button onclick="removeWatch(\\''+w.watchlist_id+'\\')">削除</button>';el.appendChild(x)})}
-  function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-  async function addWatch(){const d=await api('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(kid.value),top_n:Number(top.value),interval_hours:Number(interval.value)})});msg.textContent=d.ok?'追加しました':(d.error||'エラー');msg.className=d.ok?'ok':'error';if(d.ok)load()}
-  async function toggle(id,en){await api('/api/kingdom-watchlist?action=toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({watchlist_id:id,enabled:!!en})});load()}
-  async function removeWatch(id){if(!confirm('削除しますか？'))return;await api('/api/kingdom-watchlist?watchlist_id='+encodeURIComponent(id),{method:'DELETE'});load()}
-  load();
-  </script></body></html>`;
-}
-
-async function handleKingdomWatchlistDataApi(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
-  const url = new URL(request.url);
-  const watchlistId = url.searchParams.get("watchlist_id");
-  if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
-
-  const watch = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-  ).bind(watchlistId, auth.user.discord_id).first();
-  if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
-
-  const board = url.searchParams.get("board");
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
-  let rankings;
-  if (board) {
-    rankings = await env.DB.prepare(
-      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
-    ).bind(watch.kid, board, limit).all();
-  } else {
-    rankings = await env.DB.prepare(
-      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?"
-    ).bind(watch.kid, limit * 26).all();
-  }
-
-  const players = await env.DB.prepare(
-    "SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p WHERE p.kid = ? ORDER BY p.power DESC LIMIT ?"
-  ).bind(watch.kid, watch.top_n * 26).all();
-
-  const changes = await env.DB.prepare(
-    "SELECT governor_id, board, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' ORDER BY observed_at DESC LIMIT ?"
-  ).bind(watch.kid, Math.min(watch.top_n * 26 * 5, 5000)).all();
-
-  return json({
-    ok: true,
-    watchlist: watch,
-    rankings: rankings.results || [],
-    players: players.results || [],
-    ranking_observations: changes.results || []
-  });
+body{font-family:system-ui,sans-serif;max-width:1100px;margin:auto;padding:20px;background:#f6f7f8;color:#171717}.card{background:white;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}.row{display:flex;gap:8px;flex-wrap:wrap}button,select,input{padding:9px;border:1px solid #ccc;border-radius:8px}button{cursor:pointer}.muted{color:#666}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}.rank{padding:10px;border:1px solid #eee;border-radius:8px}.up{color:#087443}.down{color:#b00020}</style></head><body>
+<h1>王国ウォッチリスト</h1><div id="msg" class="muted">読み込み中…</div><div id="list"></div><div id="detail"></div>
+<script>
+const $=id=>document.getElementById(id);
+async function api(u,o){const r=await fetch(u,o);return r.json()}
+async function load(){const d=await api('/api/kingdom-watchlist');$('list').innerHTML='';
+for(const w of d.watchlists||[]){const x=document.createElement('div');x.className='card';x.innerHTML='<h2>KID '+w.kid+'</h2><p>上位'+w.top_n+'人 / '+w.interval_hours+'時間ごと / '+(w.enabled?'稼働中':'停止中')+'</p><p class="muted">最終成功: '+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString('ja-JP'):'未実行')+'</p><button onclick="showData(\''+w.watchlist_id+'\')">ランキングを見る</button>'; $('list').appendChild(x)}}
+async function showData(id){$('detail').innerHTML='<div class="card">読み込み中…</div>';const d=await api('/api/kingdom-watchlist/data?watchlist_id='+encodeURIComponent(id));if(!d.ok){$('detail').innerHTML='<div class="card">'+d.error+'</div>';return}
+const boards={};for(const r of d.rankings||[]){(boards[r.board]??=[]).push(r)}
+let h='<div class="card"><h2>KID '+d.watchlist.kid+' ランキング</h2><div class="grid">';
+for(const [b,rows] of Object.entries(boards)){h+='<div class="rank"><b>'+esc(b)+'</b>'+rows.slice(0,d.watchlist.top_n).map(r=>'<div>'+r.rank+'. '+esc(r.nick_name||r.governor_id||r.name||'-')+' — '+fmt(r.score)+'</div>').join('')+'</div>'}
+h+='</div><h2>観測プレイヤー</h2><div class="grid">';
+for(const p of d.players||[]){h+='<div class="rank"><b>'+esc(p.nick_name||p.governor_id)+'</b><br>戦力 '+fmt(p.power)+' / 役場 '+fmt(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||'-')+'</div>'}
+h+='</div></div>';$('detail').innerHTML=h}
+function fmt(v){return v==null?'-':Number(v).toLocaleString('ja-JP')}function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+load();
+</script></body></html>`;
 }
 
 async function handleKingdomWatchlistApi(request, env) {
