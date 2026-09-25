@@ -439,7 +439,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   });
 }
 
-async function handleKingdomWatchlistApi(request, env) {
+async function handleKingdomWatchlistApi(request, env, ctx) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
@@ -520,37 +520,18 @@ async function handleKingdomWatchlistApi(request, env) {
       job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
     }
 
-    let result = null;
-    // Manual refresh advances through all ranking batches and then one player batch.
-    // This makes "今すぐ更新" useful immediately while keeping the player work bounded.
-    for (let phase = 0; phase < 5; phase++) {
-      result = await processKingdomWatchlistJob(env, job);
-      if (result.completed) break;
-      job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(job.job_id).first();
-      if (!job) throw new Error("WATCHLIST_JOB_NOT_FOUND_AFTER_REFRESH");
-      if (result.phase === "PLAYERS") {
-        result = await processKingdomWatchlistJob(env, job);
-        break;
-      }
+    // Do not run the whole watchlist synchronously in the HTTP request.
+    // Cloudflare can terminate a long request while the 26 ranking boards are being fetched.
+    // Mark the job active and let the Worker continue it in the background; the UI polls progress.
+    if (typeof ctx?.waitUntil === "function") {
+      ctx.waitUntil(runKingdomWatchlistJobs(env));
     }
-
-    if (result.completed) {
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(now, now, now, watchlistId).run();
-    } else {
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(now, watchlistId).run();
-    }
-
-    const latest = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(job.job_id).first();
     return json({
       ok: true,
       watchlist_id: watchlistId,
       job_id: job.job_id,
-      status: latest?.status || result.phase,
-      result
+      status: job.status,
+      queued: true
     });
   }
 
@@ -583,7 +564,7 @@ export default {
     try {
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, ctx);
       if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
