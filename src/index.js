@@ -312,9 +312,20 @@ async function renderKingdomWatchlistPage(request, env) {
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
   el("create").addEventListener("click",function(){
-    api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({kid:Number(el("kid").value),top_n:Number(el("top").value),interval_hours:Number(el("interval").value)})})
+    var kidValue=String(el("kid").value||"").trim();
+    var topValue=String(el("top").value||"").trim();
+    var intervalValue=String(el("interval").value||"").trim();
+    if(!kidValue){
+      el("msg").innerHTML="<span class='error'>登録失敗: 王国番号を入力してください。</span>";
+      el("kid").focus();
+      return;
+    }
+    var payload={kid:Number(kidValue),top_n:Number(topValue),interval_hours:Number(intervalValue)};
+    api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
     .then(function(){el("kid").value="";el("msg").innerHTML="<span class='ok'>監視対象を登録しました。</span>";return load();})
-    .catch(function(e){el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";});
+    .catch(function(e){
+      el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
+    });
   });
   load();
 }());
@@ -347,20 +358,21 @@ async function handleKingdomWatchlistDataApi(request, env) {
 
   const board = url.searchParams.get("board");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
+
   let rankings;
   if (board) {
     rankings = await env.DB.prepare(
-      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
-    ).bind(watch.kid, board, limit).all();
+      "WITH latest AS (SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?) SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = (SELECT observed_at FROM latest) ORDER BY rank ASC LIMIT ?"
+    ).bind(watch.kid, board, watch.kid, board, limit).all();
   } else {
     rankings = await env.DB.prepare(
-      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?"
-    ).bind(watch.kid, limit * 26).all();
+      "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? GROUP BY board), ranked AS (SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, r.abbr, r.name, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board, r.target_type ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ?) SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranked WHERE rn <= ? ORDER BY board ASC, rank ASC"
+    ).bind(watch.kid, watch.kid, limit).all();
   }
 
   const players = await env.DB.prepare(
-    "SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p WHERE p.kid = ? ORDER BY p.power DESC LIMIT ?"
-  ).bind(watch.kid, watch.top_n * 26).all();
+    "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' GROUP BY board), ranked AS (SELECT r.governor_id, r.uid, r.nick_name, r.kid, r.rank, r.board, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ? AND r.target_type = 'PLAYER' AND r.governor_id IS NOT NULL), top_players AS (SELECT DISTINCT governor_id FROM ranked WHERE rn <= ?), latest_players AS (SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id) SELECT * FROM latest_players ORDER BY power DESC, governor_id ASC"
+  ).bind(watch.kid, watch.kid, watch.top_n).all();
 
   const changes = await env.DB.prepare(
     "SELECT governor_id, board, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' ORDER BY observed_at DESC LIMIT ?"
@@ -390,13 +402,24 @@ async function handleKingdomWatchlistApi(request, env) {
 
   if (request.method === "POST" && action === "create") {
     const body = await request.json().catch(() => ({}));
-    const kid = Number(body.kid);
-    const topN = Number(body.top_n);
-    const intervalHours = Number(body.interval_hours);
-    if (!Number.isInteger(kid) || kid < 1 ||
-        ![5, 10].includes(topN) ||
-        ![1, 3, 6, 12].includes(intervalHours)) {
-      return json({ ok: false, error: "INVALID_WATCHLIST_SETTINGS" }, 400);
+    const kidRaw = String(body.kid ?? "").trim();
+    const topRaw = String(body.top_n ?? "").trim();
+    const intervalRaw = String(body.interval_hours ?? "").trim();
+    const kid = Number(kidRaw);
+    const topN = Number(topRaw);
+    const intervalHours = Number(intervalRaw);
+    const invalidFields = [];
+    if (!kidRaw || !Number.isInteger(kid) || kid < 1) invalidFields.push("kid");
+    if (!topRaw || ![5, 10].includes(topN)) invalidFields.push("top_n");
+    if (!intervalRaw || ![1, 3, 6, 12].includes(intervalHours)) invalidFields.push("interval_hours");
+    if (invalidFields.length) {
+      return json({
+        ok: false,
+        error: "INVALID_WATCHLIST_SETTINGS",
+        message: "監視設定の値が不正です。",
+        invalid_fields: invalidFields,
+        received: { kid: body.kid ?? null, top_n: body.top_n ?? null, interval_hours: body.interval_hours ?? null }
+      }, 400);
     }
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
