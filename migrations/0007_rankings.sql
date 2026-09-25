@@ -52,3 +52,23 @@ CREATE TABLE IF NOT EXISTS player_rank_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_player_rank_snapshots_player
   ON player_rank_snapshots (governor_id, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS kingdom_watchlists (
+  watchlist_id TEXT PRIMARY KEY,
+  discord_id TEXT NOT NULL,
+  kid INTEGER NOT NULL,
+  top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
+  interval_hours INTEGER NOT NULL CHECK (interval_hours IN (1, 3, 6, 12)),
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  last_run_at INTEGER,
+  last_success_at INTEGER,
+  last_error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kingdom_watchlists_owner
+  ON kingdom_watchlists (discord_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_kingdom_watchlists_due
+  ON kingdom_watchlists (enabled, last_run_at);
