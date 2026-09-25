@@ -38,12 +38,20 @@ async function runKingdomWatchlistJobs(env) {
 
 async function collectKingdomWatchlist(env, watchlist) {
   const observedAt = Math.floor(Date.now() / 1000);
-  const rankings = await getMightPulseKingdomAllRankings(env, watchlist.kid, { limit: watchlist.top_n });
+  const boards = [
+    "alliance_power", "alliance_kills", "personal_power", "kills", "town_center",
+    "rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power",
+    "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm",
+    "pet_power", "island_prosperity", "migrant_score", "mystic_trial", "coliseum",
+    "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire",
+    "master_power"
+  ];
   const governorIds = new Set();
   let rankingRows = 0;
 
-  for (const [board, result] of Object.entries(rankings)) {
-    const payload = result?.data;
+  for (const board of boards) {
+    const fetched = await fetchKingdomRankingThroughApiPool(env, watchlist.kid, board, watchlist.top_n);
+    const payload = fetched.result?.data;
     const entries = Array.isArray(payload?.rankings)
       ? payload.rankings
       : Array.isArray(payload?.entries)
@@ -86,9 +94,8 @@ async function collectKingdomWatchlist(env, watchlist) {
 
   let playerRows = 0;
   for (const governorId of governorIds) {
-    const result = await getMightPulsePlayer(env, governorId, {
-      include: "base,heroes,ranks,gov_gear"
-    });
+    const fetched = await fetchPlayerDetailThroughApiPool(env, governorId);
+    const result = fetched.result;
     const raw = result?.data?.player || result?.data;
     if (!raw) continue;
     const observationId = crypto.randomUUID();
@@ -105,6 +112,21 @@ async function collectKingdomWatchlist(env, watchlist) {
     await env.DB.prepare(
       "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(observationId, normalized.provider, normalized.endpoint, normalized.target_type, normalized.target_id, normalized.observed_at, normalized.http_status, normalized.payload_json, normalized.created_at).run();
+
+    const observation = { ...normalized, observation_id: observationId, payload: result.data };
+    await materializePlayer(env.DB, observation);
+
+    const ranks = result?.data?.ranks || raw?.ranks;
+    if (ranks && typeof ranks === "object") {
+      await savePlayerRankSnapshot(env.DB, {
+        governorId,
+        uid: raw.uid ?? null,
+        kid: raw.kid ?? watchlist.kid,
+        ranks,
+        observedAt,
+        sourceObservationId: observationId
+      });
+    }
     playerRows++;
   }
 
