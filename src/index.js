@@ -122,6 +122,48 @@ async function renderKingdomWatchlistPage(request, env) {
   </script></body></html>`;
 }
 
+async function handleKingdomWatchlistDataApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  const url = new URL(request.url);
+  const watchlistId = url.searchParams.get("watchlist_id");
+  if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+
+  const watch = await env.DB.prepare(
+    "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+  ).bind(watchlistId, auth.user.discord_id).first();
+  if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+
+  const board = url.searchParams.get("board");
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
+  let rankings;
+  if (board) {
+    rankings = await env.DB.prepare(
+      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
+    ).bind(watch.kid, board, limit).all();
+  } else {
+    rankings = await env.DB.prepare(
+      "SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?"
+    ).bind(watch.kid, limit * 26).all();
+  }
+
+  const players = await env.DB.prepare(
+    "SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p WHERE p.kid = ? ORDER BY p.power DESC LIMIT ?"
+  ).bind(watch.kid, watch.top_n * 26).all();
+
+  const changes = await env.DB.prepare(
+    "SELECT governor_id, board, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' ORDER BY observed_at DESC LIMIT ?"
+  ).bind(watch.kid, Math.min(watch.top_n * 26 * 5, 5000)).all();
+
+  return json({
+    ok: true,
+    watchlist: watch,
+    rankings: rankings.results || [],
+    players: players.results || [],
+    ranking_observations: changes.results || []
+  });
+}
+
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -236,7 +278,7 @@ async function collectKingdomWatchlist(env, watchlist) {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);\n      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
       if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
