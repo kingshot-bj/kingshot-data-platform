@@ -2248,11 +2248,21 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:8px;margin-top:10px}.hero-card,.gear-card{padding:12px;border:1px solid #334155;border-radius:10px;background:#162238}.hero-head{display:flex;justify-content:space-between;gap:10px}.hero-head span,.hero-meta,.gear-card span{display:block;color:#94a3b8;font-size:12px;margin-top:5px;overflow-wrap:anywhere}.gear-card strong{display:block}.message{.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}}
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-head strong{font-size:15px}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
 }
 
-const HERO_NAME_JA = { Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジュベル", Rosa: "ローザ" };
+const HERO_NAME_JA = {
+  Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジュベル", Rosa: "ローザ",
+  Amadeus: "アマデウス", Marlin: "マリン", Hilde: "ヒルデ", Petra: "ペーラ",
+  Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
+  Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
+  Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
+  "Wee & Woo": "ウィー・ウー", Yeonwoo: "インウー", Amane: "あまね",
+  Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
+  Fahd: "ファアド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
+  Edwin: "エドウィン", Seth: "セス"
+};
 const HERO_GEAR_SLOT_JA = { Helmet: "兜", Gloves: "手袋", Armor: "鎧", Boots: "靴" };
 const HERO_EXCLUSIVE_GEAR_JA = { "The Unrighteous": "不義", "Banner of Faith": "信仰の旗", Aeolian: "エオリアン" };
 const GOVERNOR_GEAR_NAME_JA = { "Pioneer's Wreath": "開拓者の冠", "Ranger's Caress": "レンジャーの愛撫", "Regal Leatherwear": "王家の革装備", "Regal Breeches": "王家のズボン", "Sunblossom Wreath": "サンブロッサムの冠", "Regal Hunter's Rod": "王家の狩人の杖" };
@@ -2260,6 +2270,29 @@ function localizeHeroName(value) { return HERO_NAME_JA[value] || value || "-"; }
 function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value || "-"; }
 function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
 function localizeGovernorGearName(value) { return GOVERNOR_GEAR_NAME_JA[value] || value || "-"; }
+
+const LEADERBOARD_NAME_JA = {
+  "Personal Power": "個人総力",
+  "Kill Count": "個人撃破",
+  "Town Center Level": "役場Lv.",
+  "Migrant Score": "移民スコア",
+  "Mystic Trial": "秘境の試練",
+  "Coliseum": "闘技場",
+  "Forest of Life": "生命の森",
+  "Crystal Cave": "水晶鉱山",
+  "Knowledge Nexus": "知識の枢軸",
+  "Molten Fort": "溶岩要塞",
+  "Radiant Spire": "輝光の塔",
+  "Master Power": "マスター全体総力"
+};
+function localizeLeaderboardLabel(board) {
+  const candidates = [board?.key, board?.board, board?.name, board?.label].filter(Boolean);
+  for (const candidate of candidates) {
+    if (RANKING_BOARD_LABELS[candidate]) return RANKING_BOARD_LABELS[candidate];
+    if (LEADERBOARD_NAME_JA[candidate]) return LEADERBOARD_NAME_JA[candidate];
+  }
+  return candidates[0] || "ランキング";
+}
 
 async function getLatestPlayerHeroRankings(db, kid, governorId) {
   if (!db || kid === undefined || kid === null || !governorId) return [];
@@ -2359,7 +2392,7 @@ function renderPlayerAdvancedSections(profile) {
     if (Array.isArray(r.leaderboards) && r.leaderboards.length) {
       html += '</div><h3>その他ランキング</h3><div class="detail-list">';
       for (const board of r.leaderboards) {
-        const label = board?.name || board?.label || board?.board || board?.key || "ランキング";
+        const label = localizeLeaderboardLabel(board);
         const score = board?.score ?? board?.value ?? board?.rank_value;
         const rank = board?.rank ?? board?.ranking;
         html += '<div class="detail-row"><span>' + esc(formatProfileValue(label)) + '</span><b>' + esc(score !== undefined ? formatCompactNumber(score) : "-") + (rank !== undefined ? ' / ' + esc(rank) + '位' : '') + '</b></div>';
@@ -2375,16 +2408,25 @@ function renderPlayerAdvancedSections(profile) {
     const g = p.gov_gear;
     const items = Array.isArray(g.items) ? g.items : [];
     html += '<section class="profile-section"><h2>領主装備</h2><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
-    if (g.message) html += '<div class="notice">' + esc(formatProfileValue(g.message)) + '</div>';
-    if (items.length) {
+    if (!g.hidden && items.length) {
       html += '<div class="gear-list">' + items.map(item => {
         const gems = Array.isArray(item.gems) ? item.gems : [];
-        const gemText = gems.length ? ' / 宝石 ' + esc(gems.map(gem => {
+        const gemText = gems.length ? gems.map(gem => {
           const level = gem?.level ?? gem?.lv ?? gem?.gem_level ?? null;
           const label = gem?.name || gem?.id || gem?.slot || "宝石";
           return level !== null && level !== undefined && level !== "" ? label + " Lv." + level : label;
-        }).join(", ")) : "";
-        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><span>スロット ' + esc(item.slot ?? "-") + ' / 品質 ' + esc(item.quality ?? "-") + ' / Tier ' + esc(item.tier ?? "-") + ' / ★' + esc(item.star ?? "-") + ' / 強化 ' + esc(item.strength_level ?? "-") + ' / スコア ' + esc(formatCompactNumber(item.score)) + ' / 戦闘力 ' + esc(formatCompactNumber(item.combat)) + (item.equipid ? ' / ID ' + esc(item.equipid) : '') + gemText + '</span></div>';
+        }).join(", ") : "";
+        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><div class="gear-stats">' +
+          '<div class="gear-stat">スロット<b>' + esc(item.slot ?? "-") + '</b></div>' +
+          '<div class="gear-stat">品質<b>' + esc(item.quality ?? "-") + '</b></div>' +
+          '<div class="gear-stat">Tier<b>' + esc(item.tier ?? "-") + '</b></div>' +
+          '<div class="gear-stat">★<b>' + esc(item.star ?? "-") + '</b></div>' +
+          '<div class="gear-stat">強化<b>' + esc(item.strength_level ?? "-") + '</b></div>' +
+          '<div class="gear-stat">スコア<b>' + esc(formatCompactNumber(item.score)) + '</b></div>' +
+          '<div class="gear-stat">戦闘力<b>' + esc(formatCompactNumber(item.combat)) + '</b></div>' +
+          '</div>' +
+          (gemText ? '<div class="gear-gems">宝石 <b>' + esc(gemText) + '</b></div>' : '') +
+          '</div>';
       }).join("") + '</div>';
     }
     html += '</section>';
