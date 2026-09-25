@@ -289,7 +289,7 @@ async function renderKingdomWatchlistPage(request, env) {
   }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 40px;background:#0f172a;color:#f8fafc}.back{color:#94a3b8;text-decoration:none}.admin-badge{float:right;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900}.card{background:#162238;border:1px solid #334155;border-radius:16px;padding:18px;margin:14px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}label{display:grid;gap:6px;font-weight:800;font-size:13px}input,select,button{padding:11px 12px;border:1px solid #475569;border-radius:10px;background:#0b1220;color:#fff;font:inherit}input{width:140px}button{background:#f59e0b;color:#111827;border:0;font-weight:900;cursor:pointer}.danger{background:#7f1d1d;color:#fff}button:disabled{opacity:.5;cursor:not-allowed}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.rank{padding:12px;border:1px solid #334155;border-radius:12px;background:#111b2d}.error{color:#fca5a5}.ok{color:#86efac}@media(max-width:520px){.admin-badge{float:none;display:inline-block;margin-left:8px}.row>*{width:100%}input,select,button{width:100%}}
 </style></head><body>
 <a class="back" href="/">← EagleEye</a>
 <h1>王国ウォッチリスト</h1>
@@ -323,16 +323,27 @@ async function renderKingdomWatchlistPage(request, env) {
       var ws=d.watchlists||[];
       ws.forEach(function(w){
         var card=document.createElement("div"); card.className="card";
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
+        var statusText = w.job_status === "RANKINGS"
+          ? "更新中（ランキング "+Math.min(Number(w.job_board_index||0), 26)+" / 26）"
+          : w.job_status === "PLAYERS"
+            ? "更新中（プレイヤー "+esc(w.job_player_cursor||0)+" / "+esc(w.top_n)+"）"
+            : w.job_status === "COMPLETED" ? "更新完了" : (w.enabled?"待機中":"停止中");
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 / "+esc(w.interval_hours)+"時間ごと / "+(w.enabled?"稼働中":"停止中")+"</p><p class='muted'>"+statusText+" / 最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>";
         var row=document.createElement("div"); row.className="row";
+        var refresh=document.createElement("button"); refresh.textContent="今すぐ更新"; refresh.disabled=(w.job_status==="RANKINGS"||w.job_status==="PLAYERS"); refresh.onclick=function(){refreshWatch(w.watchlist_id);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
-        row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
+        row.appendChild(refresh);row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
       });
       el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
       syncProgressPolling(ws);
     }).catch(function(e){el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
+  }
+  function refreshWatch(id){
+    return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
+      .then(function(){return load();})
+      .catch(function(e){alert("更新開始に失敗しました: "+e.message);});
   }
   function toggleWatch(id,enabled){
     return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
@@ -412,7 +423,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   }
 
   const players = await env.DB.prepare(
-    "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' GROUP BY board), ranked AS (SELECT r.governor_id, r.uid, r.nick_name, r.kid, r.rank, r.board, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ? AND r.target_type = 'PLAYER' AND r.governor_id IS NOT NULL), top_players AS (SELECT DISTINCT governor_id FROM ranked WHERE rn <= ?), latest_players AS (SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id) SELECT * FROM latest_players ORDER BY power DESC, governor_id ASC"
+    "WITH latest AS (SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER'), top_players AS (SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND observed_at = (SELECT observed_at FROM latest) AND rank <= ? AND governor_id IS NOT NULL), latest_players AS (SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id) SELECT * FROM latest_players ORDER BY power DESC, governor_id ASC"
   ).bind(watch.kid, watch.kid, watch.top_n).all();
 
   const changes = await env.DB.prepare(
@@ -436,7 +447,24 @@ async function handleKingdomWatchlistApi(request, env) {
 
   if (request.method === "GET" && action === "list") {
     const rows = await env.DB.prepare(
-      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
+      `SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at,
+              j.status AS job_status,
+              j.board_index AS job_board_index,
+              j.player_cursor AS job_player_cursor,
+              j.ranking_rows AS job_ranking_rows,
+              j.player_rows AS job_player_rows,
+              j.updated_at AS job_updated_at
+       FROM kingdom_watchlists w
+       LEFT JOIN kingdom_watchlist_jobs j
+         ON j.job_id = (
+           SELECT j2.job_id
+           FROM kingdom_watchlist_jobs j2
+           WHERE j2.watchlist_id = w.watchlist_id
+           ORDER BY j2.created_at DESC
+           LIMIT 1
+         )
+       WHERE w.discord_id = ?
+       ORDER BY w.created_at DESC`
     ).bind(auth.discord_id).all();
     return json({ ok: true, watchlists: rows.results || [] });  }
 
@@ -467,6 +495,54 @@ async function handleKingdomWatchlistApi(request, env) {
       "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ?)"
     ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now).run();
     return json({ ok: true, watchlist_id: id });
+  }
+
+  if (request.method === "POST" && action === "refresh") {
+    const body = await request.json().catch(() => ({}));
+    const watchlistId = String(body.watchlist_id || "").trim();
+    if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+
+    const watch = await env.DB.prepare(
+      "SELECT watchlist_id, kid, top_n FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+    ).bind(watchlistId, auth.discord_id).first();
+    if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+
+    let job = await env.DB.prepare(
+      "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+    ).bind(watchlistId).first();
+
+    const now = Math.floor(Date.now() / 1000);
+    if (!job) {
+      const jobId = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+      ).bind(jobId, watch.kid, watch.top_n, now, now, now).run();
+      job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+    }
+
+    let result = null;
+    // Manual refresh advances one bounded batch immediately. The normal scheduler
+    // continues the same job without creating a duplicate run.
+    result = await processKingdomWatchlistJob(env, job);
+
+    if (result.completed) {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+      ).bind(now, now, now, watchlistId).run();
+    } else {
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+      ).bind(now, watchlistId).run();
+    }
+
+    const latest = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(job.job_id).first();
+    return json({
+      ok: true,
+      watchlist_id: watchlistId,
+      job_id: job.job_id,
+      status: latest?.status || result.phase,
+      result
+    });
   }
 
   if (request.method === "POST" && action === "toggle") {
