@@ -526,7 +526,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var label=RANKING_BOARD_LABELS[b]||b;
         h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(r.nick_name||r.governor_id||r.name||"-")+'</span><span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          var displayName=(b==="alliance_power"||b==="alliance_kills")?(r.abbr||r.name||r.nick_name||r.governor_id||"-"):(r.nick_name||r.governor_id||r.name||"-");
+          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(displayName)+'</span><span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
