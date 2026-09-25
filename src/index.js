@@ -502,12 +502,12 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var label=RANKING_BOARD_LABELS[b]||b;
         h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(r.nick_name||r.governor_id||r.name||"-")+'</span><span class="rank-score">'+esc(r.score)+'</span></div>';
+          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(r.nick_name||r.governor_id||r.name||"-")+'</span><span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
       h+='</div><div class="section-title"><h2>観測プレイヤー</h2><span>'+(d.players||[]).length+'人</span></div><div class="rank-grid">';
-      (d.players||[]).forEach(function(p){h+='<div class="player-card"><b>'+esc(p.nick_name||p.governor_id)+'</b><div class="player-meta">戦力 '+esc(p.power)+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
+      (d.players||[]).forEach(function(p){h+='<div class="player-card"><b>'+esc(p.nick_name||p.governor_id)+'</b><div class="player-meta">戦力 '+esc(formatCompactNumber(p.power))+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
       h+='</div></div>';el("detail").innerHTML=h;
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
@@ -2037,6 +2037,23 @@ function translateLastLogin(value) {
     .replace(/^Last active (\\d+)h ago$/i, "$1時間前")
     .replace(/^Last active (\\d+)m ago$/i, "$1分前")
     .replace(/^Last active (just now)$/i, "直近");
+}
+
+function formatCompactNumber(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return formatCompactUnit(n, 1e9, "B");
+  if (abs >= 1e6) return formatCompactUnit(n, 1e6, "M");
+  if (abs >= 1e3) return formatCompactUnit(n, 1e3, "K");
+  return n.toLocaleString("ja-JP");
+}
+
+function formatCompactUnit(value, divisor, suffix) {
+  const scaled = value / divisor;
+  const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+  return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + suffix;
 }
 
 function formatNumber(value) {
