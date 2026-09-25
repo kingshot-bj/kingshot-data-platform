@@ -476,7 +476,7 @@ async function handleKingdomWatchlistApi(request, env) {
         const jobId = crypto.randomUUID();
         await env.DB.prepare(
           "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
-        ).bind(jobId, watch.kid, watch.top_n, now, now, now).run();
+        ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
         job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
       }
   
