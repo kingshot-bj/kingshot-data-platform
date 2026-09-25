@@ -24,6 +24,40 @@ async function runDataRetentionJob(env) {
   }
 }
 
+const WATCHLIST_LOCK_TTL_SECONDS = 600;
+
+async function acquireKingdomWatchlistLock(env, watchlistId) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS kingdom_watchlist_locks (
+      watchlist_id TEXT PRIMARY KEY,
+      lock_token TEXT NOT NULL,
+      lock_until INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `).run();
+
+  const now = Math.floor(Date.now() / 1000);
+  const lockToken = crypto.randomUUID();
+  const lockUntil = now + WATCHLIST_LOCK_TTL_SECONDS;
+  const result = await env.DB.prepare(`
+    INSERT INTO kingdom_watchlist_locks (watchlist_id, lock_token, lock_until, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(watchlist_id) DO UPDATE SET
+      lock_token = excluded.lock_token,
+      lock_until = excluded.lock_until,
+      updated_at = excluded.updated_at
+    WHERE kingdom_watchlist_locks.lock_until <= ?
+  `).bind(watchlistId, lockToken, lockUntil, now, now).run();
+
+  return result?.meta?.changes === 1 ? lockToken : null;
+}
+
+async function releaseKingdomWatchlistLock(env, watchlistId, lockToken) {
+  await env.DB.prepare(
+    "DELETE FROM kingdom_watchlist_locks WHERE watchlist_id = ? AND lock_token = ?"
+  ).bind(watchlistId, lockToken).run();
+}
+
 const KINGDOM_RANKING_BOARDS = [
   "alliance_power", "alliance_kills", "personal_power", "kills", "town_center",
   "rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power",
@@ -45,44 +79,50 @@ async function runKingdomWatchlistJobs(env) {
   ).all();
 
   for (const row of rows.results || []) {
-    const active = await env.DB.prepare(
-      "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-    ).bind(row.watchlist_id).first();
-
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
-    if (!active && !due) continue;
-
-    let job = active;
-    if (!job) {
-      const jobId = crypto.randomUUID();
-      await env.DB.prepare(
-        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
-      ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
-      job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
-    }
+    const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
+    if (!lockToken) continue;
 
     try {
-      const result = await processKingdomWatchlistJob(env, job);
-      if (result.completed) {
+      const active = await env.DB.prepare(
+        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+      ).bind(row.watchlist_id).first();
+      if (!active && !due) continue;
+
+      let job = active;
+      if (!job) {
+        const jobId = crypto.randomUUID();
         await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, now, now, row.watchlist_id).run();
-      } else {
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, row.watchlist_id).run();
+          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+        ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
+        job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
       }
-      console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
-    } catch (error) {
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = ?, last_error = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS", String(error?.message || error).slice(0, 1000), now, job.job_id).run();
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-      ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
-      console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
+
+      try {
+        const result = await processKingdomWatchlistJob(env, job);
+        if (result.completed) {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(now, now, now, row.watchlist_id).run();
+        } else {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(now, row.watchlist_id).run();
+        }
+        console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
+      } catch (error) {
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlist_jobs SET status = ?, last_error = ?, updated_at = ? WHERE job_id = ?"
+        ).bind(job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS", String(error?.message || error).slice(0, 1000), now, job.job_id).run();
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+        console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
+      }
+      break;
+    } finally {
+      await releaseKingdomWatchlistLock(env, row.watchlist_id, lockToken);
     }
-    break;
   }
 }
 
@@ -468,40 +508,53 @@ async function handleKingdomWatchlistApi(request, env) {
       if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
   
       const now = Math.floor(Date.now() / 1000);
-      let job = await env.DB.prepare(
-        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-      ).bind(watchlistId).first();
-  
-      if (!job) {
-        const jobId = crypto.randomUUID();
-        await env.DB.prepare(
-          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
-        ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
-        job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+      const lockToken = await acquireKingdomWatchlistLock(env, watchlistId);
+      if (!lockToken) {
+        return json({
+          ok: false,
+          error: "WATCHLIST_REFRESH_IN_PROGRESS",
+          message: "この監視対象は現在更新中です。処理完了を待ってください。"
+        }, 409);
       }
-  
+
       try {
-        const result = await processKingdomWatchlistJob(env, job);
-        if (result.completed) {
+        let job = await env.DB.prepare(
+          "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+        ).bind(watchlistId).first();
+    
+        if (!job) {
+          const jobId = crypto.randomUUID();
           await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(now, now, now, watchlistId).run();
-        } else {
-          await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(now, watchlistId).run();
+            "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+          ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
+          job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
         }
-        return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
-      } catch (error) {
-        const message = String(error?.message || error).slice(0, 1000);
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?"
-        ).bind(message, now, job.job_id).run();
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(message, now, watchlistId).run();
-        console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
-        return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
+    
+        try {
+          const result = await processKingdomWatchlistJob(env, job);
+          if (result.completed) {
+            await env.DB.prepare(
+              "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+            ).bind(now, now, now, watchlistId).run();
+          } else {
+            await env.DB.prepare(
+              "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+            ).bind(now, watchlistId).run();
+          }
+          return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
+        } catch (error) {
+          const message = String(error?.message || error).slice(0, 1000);
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?"
+          ).bind(message, now, job.job_id).run();
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(message, now, watchlistId).run();
+          console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
+          return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
+        }
+      } finally {
+        await releaseKingdomWatchlistLock(env, watchlistId, lockToken);
       }
     } catch (error) {
       const message = String(error?.message || error).slice(0, 1000);
