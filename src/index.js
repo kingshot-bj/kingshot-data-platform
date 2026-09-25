@@ -224,6 +224,9 @@ async function collectKingdomWatchlist(env, watchlist) {
   }
 }
 \nexport default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runKingdomWatchlistJobs(env));
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
