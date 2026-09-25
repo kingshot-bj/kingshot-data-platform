@@ -7,7 +7,7 @@ const SESSION_COOKIE = "eagleeye_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, detectRankingChanges } from "./ranking-store.js";
+import { savePlayerRankSnapshot, saveKingdomRankingBoard, saveKingdomRankingBoards, getLatestKingdomRankings, getRankingHistory, detectRankingChanges, detectRankingChangesForBoards } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
@@ -94,63 +94,50 @@ async function processKingdomWatchlistJob(env, job) {
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const endIndex = Math.min(startIndex + WATCHLIST_RANKING_BATCH, KINGDOM_RANKING_BOARDS.length);
-    let rankingRows = Number(job.ranking_rows || 0);
+    const now = Math.floor(Date.now() / 1000);
 
-    for (let i = startIndex; i < endIndex; i++) {
-      const board = KINGDOM_RANKING_BOARDS[i];
-      const fetched = await fetchKingdomRankingThroughApiPool(
-        env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
-      );
-      const payload = fetched.result?.data;
-      const entries = Array.isArray(payload)
-        ? payload
-        : Array.isArray(payload?.rankings)
-          ? payload.rankings
-          : Array.isArray(payload?.entries)
-            ? payload.entries
-            : Array.isArray(payload?.data)
-              ? payload.data
-              : Array.isArray(payload?.data?.rankings)
-                ? payload.data.rankings
-                : [];
-
-      if (!entries.length) {
-        const error = new Error("EMPTY_RANKING_RESPONSE:" + board);
-        error.code = "EMPTY_RANKING_RESPONSE";
-        error.board = board;
-        throw error;
-      }
-
-      rankingRows += await saveKingdomRankingBoard(env.DB, {
-        kid: job.kid,
-        board,
-        entries,
-        observedAt: job.observed_at
-      });
-
-      const rankingChanges = await detectRankingChanges(env.DB, {
-        kid: job.kid,
-        board,
-        observedAt: job.observed_at
-      });
-
-      if (rankingChanges.length) {
-        await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
-          "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        ).bind(
-          crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
-          JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
-          change.sourceObservationId, change.observedAt, now
-        )));
-      }
+    if (startIndex >= KINGDOM_RANKING_BOARDS.length) {
+      const playerRows = await env.DB.prepare(
+        "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND target_type = 'PLAYER' AND rank <= ? AND governor_id IS NOT NULL ORDER BY governor_id"
+      ).bind(Number(job.kid), Number(job.observed_at), Number(job.top_n)).all();
+      const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), now, job.job_id).run();
+      return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows: Number(job.ranking_rows || 0) };
     }
 
-    if (endIndex < KINGDOM_RANKING_BOARDS.length) {
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(endIndex, rankingRows, now, job.job_id).run();
-      return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows };
+    const fetched = await fetchKingdomRankingsBulkThroughApiPool(
+      env, job.kid, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING_BULK"
+    );
+    const boards = extractKingdomRankingBoards(fetched.result?.data);
+    const missingBoards = KINGDOM_RANKING_BOARDS.filter(board => !Array.isArray(boards[board]) || !boards[board].length);
+    if (missingBoards.length) {
+      const error = new Error("BULK_RANKING_PAYLOAD_INCOMPLETE:" + missingBoards.join(","));
+      error.code = "BULK_RANKING_PAYLOAD_INCOMPLETE";
+      throw error;
+    }
+
+    const rankingRows = await saveKingdomRankingBoards(env.DB, {
+      kid: job.kid,
+      boards,
+      observedAt: job.observed_at
+    });
+
+    const rankingChanges = await detectRankingChangesForBoards(env.DB, {
+      kid: job.kid,
+      observedAt: job.observed_at,
+      boards
+    });
+
+    if (rankingChanges.length) {
+      await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
+        "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
+        JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
+        null, change.observedAt, now
+      )));
     }
 
     const playerRows = await env.DB.prepare(
@@ -162,7 +149,14 @@ async function processKingdomWatchlistJob(env, job) {
       "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
     ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, now, job.job_id).run();
 
-    return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows };
+    return {
+      completed: false,
+      phase: "PLAYERS",
+      board_index: KINGDOM_RANKING_BOARDS.length,
+      rankingRows,
+      playerCount: playerIds.length,
+      bulk: true
+    };
   }
 
   if (job.status === "PLAYERS") {
@@ -1264,6 +1258,62 @@ async function fetchThroughWatchlistApiPool(env, {
     }
     throw error;
   }
+}
+
+async function fetchKingdomRankingsBulkThroughApiPool(env, kid, limit, purpose = "KINGDOM_WATCHLIST_RANKING_BULK") {
+  return fetchThroughWatchlistApiPool(env, {
+    path: `/kingdoms/${encodeURIComponent(kid)}`,
+    endpoint: "/kingdoms/:kid?include=boards",
+    targetType: "KINGDOM",
+    targetId: String(kid),
+    purpose,
+    query: { include: "boards", limit }
+  });
+}
+
+function extractKingdomRankingBoards(payload) {
+  const expected = new Set(KINGDOM_RANKING_BOARDS);
+  const containers = [
+    payload?.boards,
+    payload?.kingdom?.boards,
+    payload?.data?.boards,
+    payload?.data?.kingdom?.boards,
+    payload?.result?.boards,
+    payload?.result?.data?.boards,
+    payload?.rankings,
+    payload?.data?.rankings
+  ];
+
+  const out = {};
+
+  function addBoard(board, value) {
+    if (!board || !expected.has(String(board))) return;
+    let entries = value;
+    if (entries && !Array.isArray(entries) && typeof entries === "object") {
+      entries = entries.rankings ?? entries.entries ?? entries.rows ?? entries.items ?? entries.data;
+    }
+    if (Array.isArray(entries) && entries.length) out[String(board)] = entries;
+  }
+
+  for (const container of containers) {
+    if (!container) continue;
+    if (Array.isArray(container)) {
+      for (const item of container) {
+        if (!item || typeof item !== "object") continue;
+        addBoard(item.board ?? item.key ?? item.type ?? item.name, item.rankings ?? item.entries ?? item.rows ?? item.items ?? item.data);
+      }
+    } else if (typeof container === "object") {
+      for (const [board, value] of Object.entries(container)) addBoard(board, value);
+    }
+  }
+
+  for (const board of expected) {
+    if (out[board]) continue;
+    const value = payload?.[board] ?? payload?.data?.[board] ?? payload?.kingdom?.[board];
+    addBoard(board, value);
+  }
+
+  return out;
 }
 
 async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING") {
