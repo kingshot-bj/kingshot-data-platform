@@ -90,6 +90,38 @@ async function collectKingdomWatchlist(env, watchlist) {
   return { boards: Object.keys(rankings).length, rankingRows, uniquePlayers: governorIds.size, playerRows };
 }
 
+async function renderKingdomWatchlistPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth?.user) {
+    return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>EagleEye</title></head><body><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a></body></html>';
+  }
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title><style>
+  body{font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px;background:#f7f7f8;color:#171717}
+  .card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}
+  input,select,button{padding:10px;border:1px solid #ccc;border-radius:8px;font-size:16px}
+  button{cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .muted{color:#666}.error{color:#b00020}.ok{color:#087443}
+  </style></head><body>
+  <h1>王国ウォッチリスト</h1>
+  <p class="muted">王国ランキング全26種を定期取得し、各ランキング上位5人または10人のプレイヤー詳細を観測します。</p>
+  <div class="card"><h2>追加</h2><div class="row">
+  <input id="kid" type="number" min="1" placeholder="王国ID">
+  <select id="top"><option value="5">上位5人</option><option value="10">上位10人</option></select>
+  <select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select>
+  <button onclick="addWatch()">追加</button></div><p id="msg"></p></div>
+  <div id="list"></div>
+  <script>
+  async function api(url,opt){const r=await fetch(url,opt);return await r.json()}
+  async function load(){const d=await api('/api/kingdom-watchlist');const el=document.getElementById('list');el.innerHTML='';
+    (d.watchlists||[]).forEach(w=>{const x=document.createElement('div');x.className='card';x.innerHTML='<h2>KID '+w.kid+'</h2><p>上位'+w.top_n+'人 / '+w.interval_hours+'時間ごと</p><p class="muted">最終成功: '+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString('ja-JP'):'未実行')+'</p>'+(w.last_error?'<p class="error">エラー: '+esc(w.last_error)+'</p>':'')+'<button onclick="toggle(\\''+w.watchlist_id+'\\','+(w.enabled?0:1)+')">'+(w.enabled?'停止':'再開')+'</button> <button onclick="removeWatch(\\''+w.watchlist_id+'\\')">削除</button>';el.appendChild(x)})}
+  function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  async function addWatch(){const d=await api('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(kid.value),top_n:Number(top.value),interval_hours:Number(interval.value)})});msg.textContent=d.ok?'追加しました':(d.error||'エラー');msg.className=d.ok?'ok':'error';if(d.ok)load()}
+  async function toggle(id,en){await api('/api/kingdom-watchlist?action=toggle',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({watchlist_id:id,enabled:!!en})});load()}
+  async function removeWatch(id){if(!confirm('削除しますか？'))return;await api('/api/kingdom-watchlist?watchlist_id='+encodeURIComponent(id),{method:'DELETE'});load()}
+  load();
+  </script></body></html>`;
+}
+
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth?.user) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -204,7 +236,8 @@ async function collectKingdomWatchlist(env, watchlist) {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });\n      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/me") return await handleMe(request, env);
