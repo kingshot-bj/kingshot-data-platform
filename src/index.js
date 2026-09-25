@@ -2637,7 +2637,10 @@ function normalizeProfileAssetUrl(value) {
   return "https://api.mightpulse.com" + (raw.startsWith("/") ? raw : "/" + raw);
 }
 
-function renderPlayerAdvancedSections(profile) {
+function renderPlayerAdvancedSections(profile, governorId = "", canExport = false) {
+  const exportButton = (section) => canExport && governorId
+    ? '<a class="section-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=' + encodeURIComponent(section) + '">スプレッドシート出力</a>'
+    : "";
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
@@ -2654,7 +2657,7 @@ function renderPlayerAdvancedSections(profile) {
 
   if (p.alliance && typeof p.alliance === "object") {
     const a = p.alliance;
-    html += '<section class="profile-section alliance-collapsible"><details><summary><span><b>同盟情報</b><small>タップして詳細を表示</small></span><span class="collapse-mark">＋</span></summary><div class="collapse-body"><div class="mini-grid">';
+    html += '<section class="profile-section alliance-collapsible"><details><summary><span><b>同盟情報</b><small>タップして詳細を表示</small></span><span class="collapse-mark">＋</span></summary><div class="collapse-body"><div class="section-heading"><h2>同盟情報</h2>' + exportButton("alliance") + '</div><div class="mini-grid">';
     if (a.aid) html += '<div class="mini-card"><span>同盟ID</span><b>' + esc(formatProfileValue(a.aid)) + '</b></div>';
     if (a.abbr || a.name) html += '<div class="mini-card"><span>同盟</span><b>' + esc([a.abbr, a.name].filter(Boolean).join(" ")) + '</b></div>';
     if (a.rank !== undefined || a.rank_label) html += '<div class="mini-card"><span>同盟内順位</span><b>' + esc([a.rank_label, a.rank != null ? a.rank + "位" : ""].filter(Boolean).join(" ")) + '</b></div>';
@@ -2677,7 +2680,7 @@ function renderPlayerAdvancedSections(profile) {
       hero_no_equip: "英雄総力（装備除外）",
       hero_equip: "英雄総力（装備込み）"
     };
-    html += '<section class="profile-section"><h2>英雄</h2>' + (heroRankings.length ? '<div class="mini-grid">' : "");
+    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + (heroRankings.length ? '<div class="mini-grid">' : "");
     for (const ranking of heroRankings) {
       html += '<div class="mini-card"><span>' + esc(heroRankingLabels[ranking.board] || ranking.board) + '</span><b>' + esc(formatCompactNumber(ranking.score)) + ' / ' + esc(ranking.rank ?? "-") + '位</b></div>';
     }
@@ -2704,7 +2707,7 @@ function renderPlayerAdvancedSections(profile) {
 
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
-    html += '<section class="profile-section"><h2>個人ランキング</h2><div class="mini-grid">';
+    html += '<section class="profile-section"><div class="section-heading"><h2>個人ランキング</h2>' + exportButton("rankings") + '</div><div class="mini-grid">';
     [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
       if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
     });
@@ -2726,7 +2729,7 @@ function renderPlayerAdvancedSections(profile) {
   if (p.gov_gear && typeof p.gov_gear === "object") {
     const g = p.gov_gear;
     const items = Array.isArray(g.items) ? g.items : [];
-    html += '<section class="profile-section"><h2>領主装備</h2><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
+    html += '<section class="profile-section"><div class="section-heading"><h2>領主装備</h2>' + exportButton("gov_gear") + '</div><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
     if (!g.hidden && items.length) {
       html += '<div class="gear-list">' + items.map(item => {
         const gems = Array.isArray(item.gems) ? item.gems : [];
