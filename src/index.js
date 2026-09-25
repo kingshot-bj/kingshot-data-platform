@@ -2253,15 +2253,15 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
 }
 
 const HERO_NAME_JA = {
-  Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジュベル", Rosa: "ローザ",
-  Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペトラ",
+  Howard: "ハワード", Zoe: "ゾーイ", Chenko: "チェンコ", Jabel: "ジェベル", Rosa: "ローザ",
+  Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペーラ",
   Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
   Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
-  Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
-  "Wee & Woo": "ウィー・ウー", Yeonwoo: "インウー", Amane: "あまね",
+  Triton: "トリトン", Sophia: "ソフィア", Ava: "エヴァ", Charles: "チャールズ",
+  "Wee & Woo": "レン&ロン", Yeonwoo: "インウー", Amane: "あまね",
   Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
-  Fahd: "ファアド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
-  Edwin: "エドウィン", Seth: "セス"
+  Fahd: "ファハド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
+  Edwin: "エドウィン", Seth: "セス", Diego: "ディエゴ", Liz: "リズ", Luna: "ルナ"
 };
 const HERO_GEAR_SLOT_JA = { Helmet: "兜", Gloves: "手袋", Armor: "鎧", Boots: "靴" };
 const HERO_EXCLUSIVE_GEAR_JA = { "The Unrighteous": "不義", "Banner of Faith": "信仰の旗", Aeolian: "エオリアン" };
