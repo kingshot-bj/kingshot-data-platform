@@ -569,7 +569,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
     const savedObservation = await saveApiObservation(env.DB, observationEnvelopeData);
     const observation = {
       ...observationEnvelopeData,
-      observation_id: savedObservation.observation_id
+      observation_id: savedObservation.observation_id,
+      payload: result.data
     };
 
     await recordApiPoolSuccess(env.DB, {
