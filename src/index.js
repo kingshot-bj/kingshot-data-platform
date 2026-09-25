@@ -2265,11 +2265,22 @@ const HERO_NAME_JA = {
 };
 const HERO_GEAR_SLOT_JA = { Helmet: "兜", Gloves: "手袋", Armor: "鎧", Boots: "靴" };
 const HERO_EXCLUSIVE_GEAR_JA = { "The Unrighteous": "不義", "Banner of Faith": "信仰の旗", Aeolian: "エオリアン" };
-const GOVERNOR_GEAR_NAME_JA = { "Pioneer's Wreath": "開拓者の冠", "Ranger's Caress": "レンジャーの愛撫", "Regal Leatherwear": "王家の革装備", "Regal Breeches": "王家のズボン", "Sunblossom Wreath": "サンブロッサムの冠", "Regal Hunter's Rod": "王家の狩人の杖" };
+const GOVERNOR_GEAR_SLOT_JA = {
+  head: "帽子", helmet: "帽子", hat: "帽子",
+  necklace: "装飾", accessory: "装飾", ornament: "装飾", decoration: "装飾",
+  cloak: "ローブ", robe: "ローブ", mantle: "ローブ",
+  pants: "ズボン", trousers: "ズボン",
+  ring: "指輪",
+  weapon: "杖", staff: "杖", rod: "杖"
+};
 function localizeHeroName(value) { return HERO_NAME_JA[value] || value || "-"; }
 function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value || "-"; }
 function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
-function localizeGovernorGearName(value) { return GOVERNOR_GEAR_NAME_JA[value] || value || "-"; }
+function localizeGovernorGearSlot(value) {
+  const raw = String(value ?? "").trim();
+  const key = raw.toLowerCase().replace(/[ _-]+/g, "_");
+  return GOVERNOR_GEAR_SLOT_JA[key] || GOVERNOR_GEAR_SLOT_JA[raw.toLowerCase()] || raw || "-";
+}
 
 const LEADERBOARD_NAME_JA = {
   "Personal Power": "個人総力",
@@ -2416,8 +2427,8 @@ function renderPlayerAdvancedSections(profile) {
           const label = gem?.name || gem?.id || gem?.slot || "宝石";
           return level !== null && level !== undefined && level !== "" ? label + " Lv." + level : label;
         }).join(", ") : "";
-        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearName(item.name || item.slot)) + '</strong><div class="gear-stats">' +
-          '<div class="gear-stat">スロット<b>' + esc(item.slot ?? "-") + '</b></div>' +
+        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong><div class="gear-stats">' +
+          '<div class="gear-stat">スロット<b>' + esc(localizeGovernorGearSlot(item.slot)) + '</b></div>' +
           '<div class="gear-stat">品質<b>' + esc(item.quality ?? "-") + '</b></div>' +
           '<div class="gear-stat">Tier<b>' + esc(item.tier ?? "-") + '</b></div>' +
           '<div class="gear-stat">★<b>' + esc(item.star ?? "-") + '</b></div>' +
