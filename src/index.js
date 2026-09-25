@@ -35,7 +35,7 @@ const KINGDOM_RANKING_BOARDS = [
 
 const WATCHLIST_RANKING_LIMIT = 100;
 const WATCHLIST_RANKING_BATCH = 8;
-const WATCHLIST_PLAYER_BATCH = 8;
+const WATCHLIST_PLAYER_BATCH = 10;
 
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
@@ -94,7 +94,6 @@ async function processKingdomWatchlistJob(env, job) {
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const now = Math.floor(Date.now() / 1000);
 
     if (startIndex >= KINGDOM_RANKING_BOARDS.length) {
       const playerRows = await env.DB.prepare(
@@ -131,13 +130,16 @@ async function processKingdomWatchlistJob(env, job) {
     });
 
     if (rankingChanges.length) {
-      await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
+      const changeStatements = rankingChanges.map(change => env.DB.prepare(
         "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
         JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
         null, change.observedAt, now
-      )));
+      ));
+      for (let i = 0; i < changeStatements.length; i += 500) {
+        await env.DB.batch(changeStatements.slice(i, i + 500));
+      }
     }
 
     const playerRows = await env.DB.prepare(
@@ -171,7 +173,13 @@ async function processKingdomWatchlistJob(env, job) {
       await env.DB.prepare(
         "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
       ).bind(now, now, job.job_id).run();
-      return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
+      return {
+        completed: true,
+        phase: "COMPLETED",
+        playerCount: ids.length,
+        playerRows: Number(job.player_rows || 0),
+        rankingRows: Number(job.ranking_rows || 0)
+      };
     }
 
     const concurrency = await getWatchlistApiConcurrency(env);
@@ -1998,41 +2006,3 @@ async function verifyPayload(token, secret) {
   try {
     const payload = JSON.parse(base64urlDecodeText(body));
     if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-async function createStateToken(secret) {
-  const body = Date.now() + "." + crypto.randomUUID();
-  return base64urlEncodeText(body) + "." + base64url(await hmac(body, secret));
-}
-
-async function verifyStateToken(token, secret) {
-  const parts = token.split(".");
-  if (parts.length !== 2) return false;
-  let body;
-  try {
-    body = base64urlDecodeText(parts[0]);
-  } catch {
-    return false;
-  }
-  const provided = decodeBase64Url(parts[1]);
-  const expected = await hmac(body, secret);
-  if (!constantTimeEqual(expected, provided)) return false;
-  const timestamp = Number(body.split(".")[0]);
-  return Number.isFinite(timestamp) && Date.now() - timestamp < 10 * 60 * 1000;
-}
-
-function decodeBase64Url(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
-  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
-}
-
-function constantTimeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
