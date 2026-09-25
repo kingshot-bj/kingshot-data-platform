@@ -954,7 +954,7 @@ export default {
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
-      if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
@@ -972,24 +972,117 @@ export default {
       if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
-      if (url.pathname === "/admin/data-retention") return new Response(await renderDataRetentionPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      if (url.pathname === "/admin/player-visibility") return new Response(await renderPlayerVisibilityPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      if (url.pathname === "/admin/api-pool") return new Response(await renderApiPoolAdminPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/admin/data-retention") return eagleEyeHtmlResponse(await renderDataRetentionPage(request, env));
+      if (url.pathname === "/admin/player-visibility") return eagleEyeHtmlResponse(await renderPlayerVisibilityPage(request, env));
+      if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
-      if (url.pathname === "/players") return new Response(await renderPlayerSearchPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      if (url.pathname === "/player/history") return new Response(await renderPlayerHistoryPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      if (url.pathname === "/player/changes") return new Response(await renderPlayerChangesPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      if (url.pathname === "/player") return new Response(await renderPlayerPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
-      return new Response(await renderHome(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+      if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
+      if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
+      if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
+      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
+      return eagleEyeHtmlResponse(await renderHome(request, env));
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
     }
   }
 };
+
+const EAGLEEYE_THEME_CSS = `
+<style id="eagleeye-theme">
+:root{color-scheme:dark}
+html[data-eagle-theme="light"]{color-scheme:light}
+html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
+html[data-eagle-theme="light"] a{color:#475569}
+html[data-eagle-theme="light"] input,html[data-eagle-theme="light"] select,html[data-eagle-theme="light"] textarea{background:#fff !important;color:#172033 !important;border-color:#cbd5e1 !important}
+html[data-eagle-theme="light"] button{color:#172033}
+html[data-eagle-theme="light"] .card,
+html[data-eagle-theme="light"] .profile-section,
+html[data-eagle-theme="light"] .hero,
+html[data-eagle-theme="light"] .message,
+html[data-eagle-theme="light"] .meta,
+html[data-eagle-theme="light"] .mini-card,
+html[data-eagle-theme="light"] .hero-card,
+html[data-eagle-theme="light"] .gear-card,
+html[data-eagle-theme="light"] .detail-row,
+html[data-eagle-theme="light"] .notice,
+html[data-eagle-theme="light"] .account,
+html[data-eagle-theme="light"] .pool-error{background:#fff !important;color:#172033 !important;border-color:#d6deea !important;box-shadow:0 8px 22px rgba(15,23,42,.06)}
+html[data-eagle-theme="light"] .meta,
+html[data-eagle-theme="light"] .gear-stat,
+html[data-eagle-theme="light"] .gear-gems{background:#f8fafc !important}
+html[data-eagle-theme="light"] .label,
+html[data-eagle-theme="light"] .sub,
+html[data-eagle-theme="light"] .hero-meta,
+html[data-eagle-theme="light"] .detail-row span,
+html[data-eagle-theme="light"] .muted,
+html[data-eagle-theme="light"] .hint,
+html[data-eagle-theme="light"] .gear-name,
+html[data-eagle-theme="light"] .gear-stat,
+html[data-eagle-theme="light"] .gear-gems{color:#64748b !important}
+html[data-eagle-theme="light"] .value,
+html[data-eagle-theme="light"] .mini-card b,
+html[data-eagle-theme="light"] .hero-title strong,
+html[data-eagle-theme="light"] .gear-card strong,
+html[data-eagle-theme="light"] .detail-row b{color:#172033 !important}
+html[data-eagle-theme="light"] .action{background:#fff !important;color:#334155 !important;border-color:#cbd5e1 !important}
+html[data-eagle-theme="light"] .action.primary,
+html[data-eagle-theme="light"] button{background:#f59e0b !important;color:#172033 !important}
+html[data-eagle-theme="light"] .search input{background:#fff !important;color:#172033 !important}
+.eagle-theme-toggle{position:fixed;right:14px;top:14px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
+html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033;border-color:#cbd5e1}
+</style>`;
+
+const EAGLEEYE_THEME_SCRIPT = `
+<script id="eagleeye-theme-script">
+(function(){
+  try {
+    var saved=localStorage.getItem("eagleeye-theme");
+    var theme=saved==="light"||saved==="dark"?saved:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
+    document.documentElement.setAttribute("data-eagle-theme",theme);
+    function setup(){
+      var existing=document.querySelector(".theme-toggle");
+      var btn=document.querySelector(".eagle-theme-toggle");
+      if(!btn){
+        btn=document.createElement("button");
+        btn.className="eagle-theme-toggle";
+        btn.type="button";
+        btn.setAttribute("aria-label","テーマ切替");
+        btn.setAttribute("title","ライト / ダーク切替");
+        document.body.appendChild(btn);
+      }
+      function paint(){
+        var isLight=document.documentElement.getAttribute("data-eagle-theme")==="light";
+        btn.textContent=isLight?"☀️":"🌙";
+        btn.setAttribute("aria-label",isLight?"ダークモードに切替":"ライトモードに切替");
+        if(existing) existing.style.display="none";
+      }
+      btn.onclick=function(){
+        var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
+        document.documentElement.setAttribute("data-eagle-theme",next);
+        localStorage.setItem("eagleeye-theme",next);
+        paint();
+      };
+      paint();
+    }
+    if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",setup); else setup();
+  } catch(e) {}
+})();
+</script>`;
+
+function applyEagleEyeTheme(html) {
+  if (typeof html !== "string" || !html.includes("<html")) return html;
+  if (!html.includes("id="eagleeye-theme"")) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
+  if (!html.includes("id="eagleeye-theme-script"")) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
+  return html;
+}
+
+function eagleEyeHtmlResponse(html) {
+  return new Response(applyEagleEyeTheme(html), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+}
 
 function getConfig(env) {
   return {
@@ -2157,7 +2250,7 @@ function renderHistoryShell(message, governorId, cards = "") {
 async function renderPlayerPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`;
+    return applyEagleEyeTheme(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`);
   }
 
   const url = new URL(request.url);
@@ -2258,7 +2351,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.profile-identity{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:9px 10px;border-radius:10px;background:#162238;border:1px solid #334155}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.profile-identity{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:9px 10px;border-radius:10px;background:#162238;border:1px solid #334155}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-head{display:flex;align-items:center;gap:10px}.gear-head>div{min-width:0}.gear-icon{width:44px;height:44px;flex:0 0 44px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.gear-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.gear-name{margin-top:2px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
 }
 
@@ -2290,6 +2383,11 @@ const GOVERNOR_GEAR_TIER_JA = {
   Gold: "レジェンド",
   Red: "神話"
 };
+const GOVERNOR_GEAR_QUALITY_JA = {
+  Green: "グッド", Blue: "レア", Purple: "エピック", Gold: "レジェンド", Red: "神話",
+  Common: "通常", Rare: "レア", Epic: "エピック", Legendary: "レジェンド", Mythic: "神話"
+};
+
 function localizeHeroName(value) { return HERO_NAME_JA[value] || value || "-"; }
 function localizeHeroGearSlot(value) { return HERO_GEAR_SLOT_JA[value] || value || "-"; }
 function localizeExclusiveGearName(value) { return HERO_EXCLUSIVE_GEAR_JA[value] || value || "-"; }
@@ -2298,10 +2396,16 @@ function localizeGovernorGearSlot(value) {
   const key = raw.toLowerCase().replace(/[ _-]+/g, "_");
   return GOVERNOR_GEAR_SLOT_JA[key] || GOVERNOR_GEAR_SLOT_JA[raw.toLowerCase()] || raw || "-";
 }
+function localizeGovernorGearQuality(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  return GOVERNOR_GEAR_QUALITY_JA[raw] || raw;
+}
+
 function localizeGovernorGearTier(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return "-";
-  const match = raw.match(/^(Green|Blue|Purple|Gold|Red)(?:[ _-]?T(\\d+))?$/i);
+  const match = raw.match(/^(Green|Blue|Purple|Gold|Red)(?:[ _-]?T(\d+))?$/i);
   if (!match) return raw;
   const base = GOVERNOR_GEAR_TIER_JA[match[1][0].toUpperCase() + match[1].slice(1).toLowerCase()] || match[1];
   return match[2] ? base + " T" + match[2] : base;
@@ -2472,9 +2576,13 @@ function renderPlayerAdvancedSections(profile) {
           const label = gem?.name || gem?.id || gem?.slot || "宝石";
           return level !== null && level !== undefined && level !== "" ? label + " Lv." + level : label;
         }).join(", ") : "";
-        return '<div class="gear-card"><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong><div class="gear-stats">' +
+        const gearIconUrl = normalizeProfileAssetUrl(item.icon);
+        return '<div class="gear-card"><div class="gear-head">' +
+          (gearIconUrl ? '<img class="gear-icon" src="' + esc(gearIconUrl) + '" alt="" loading="lazy">' : '<span class="gear-icon gear-icon-empty">?</span>') +
+          '<div><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong><div class="gear-name">' + esc(formatProfileValue(item.name)) + '</div></div>' +
+          '</div><div class="gear-stats">' +
           '<div class="gear-stat">スロット<b>' + esc(localizeGovernorGearSlot(item.slot)) + '</b></div>' +
-          '<div class="gear-stat">品質<b>' + esc(item.quality ?? "-") + '</b></div>' +
+          '<div class="gear-stat">品質<b>' + esc(localizeGovernorGearQuality(item.quality)) + '</b></div>' +
           '<div class="gear-stat">Tier<b>' + esc(localizeGovernorGearTier(item.tier)) + '</b></div>' +
           '<div class="gear-stat">★<b>' + esc(item.star ?? "-") + '</b></div>' +
           '<div class="gear-stat">強化<b>' + esc(item.strength_level ?? "-") + '</b></div>' +
