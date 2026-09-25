@@ -597,12 +597,12 @@ export default {
     const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
     if (minute === 0) await runDataRetentionJob(env);
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, ctx);
       if (url.pathname === "/kingdom-watchlist") return new Response(await renderKingdomWatchlistPage(request, env), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
