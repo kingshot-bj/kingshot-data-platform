@@ -60,6 +60,22 @@ export async function leaseApiKey(db, { provider = PROVIDER, poolType = "SYSTEM_
   };
 }
 
+export async function leaseApiKeyForHealthCheck(db, { keyId, purpose = "API_POOL_HEALTH_CHECK", targetType = "API_KEY", targetId = null, leaseSeconds = 120 } = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + Math.max(30, Number(leaseSeconds) || 120);
+  if (!keyId) throw new Error("API_POOL_KEY_ID_REQUIRED");
+  await releaseExpiredLeases(db, now);
+  const row = await db.prepare(
+    "SELECT k.* FROM api_pool_keys k WHERE k.key_id = ? AND k.status IN ('AVAILABLE','ERROR','DISABLED') AND NOT EXISTS (SELECT 1 FROM api_leases l WHERE l.key_id = k.key_id AND l.status = 'ACTIVE' AND l.expires_at > ?) LIMIT 1"
+  ).bind(keyId, now).first();
+  if (!row) throw new Error("API_POOL_KEY_NOT_HEALTH_CHECKABLE");
+  const leaseId = crypto.randomUUID();
+  await db.prepare(
+    "INSERT INTO api_leases (lease_id, key_id, pool_type, job_id, purpose, target_type, target_id, status, leased_at, expires_at, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?, 'ACTIVE', ?, ?, ?)"
+  ).bind(leaseId, row.key_id, row.pool_type, purpose, targetType, targetId, now, expiresAt, now).run();
+  return { lease_id: leaseId, key_id: row.key_id, provider: row.provider, pool_type: row.pool_type, api_key: await decryptSecret(row.encrypted_key), expires_at: expiresAt };
+}
+
 export async function releaseApiLease(db, leaseId) {
   if (!leaseId) return;
   const now = Math.floor(Date.now() / 1000);
