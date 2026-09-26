@@ -1027,7 +1027,7 @@ async function handleKingdomWatchlistApi(request, env) {
 
     const watchlists = [];
     for (const watch of rows.results || []) {
-      const job = await env.DB.prepare(
+      let job = await env.DB.prepare(
         "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
       ).bind(watch.watchlist_id).first();
 
