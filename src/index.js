@@ -318,6 +318,15 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
       completed_at INTEGER
     )
   `).run();
+
+  // Ranking change detection filters by kid + board + observed_at on every
+  // board refresh. Without this index, D1 can scan the full ranking history
+  // repeatedly and consume the free row-read quota very quickly.
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_kid_board_observed_rank
+    ON ranking_snapshots(kid, board, observed_at DESC, rank ASC)
+  `).run();
+
   const definitions = {
     kingdom_watchlist_jobs: [
       ["source_first_at", "INTEGER"],
@@ -935,7 +944,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var pollTimer=null;
       function poll(){
         return load().then(function(){
-          if(!finished) pollTimer=setTimeout(poll,1000);
+          if(!finished) pollTimer=setTimeout(poll,2000);
         }).catch(function(){
           if(!finished) pollTimer=setTimeout(poll,1000);
         });
