@@ -1191,24 +1191,80 @@ async function handlePlayerWatchlistApi(request, env) {
     // Watchlist summaries are intentionally derived from the existing targeted
     // history tables. Do not scan all player history: both tables have
     // governor_id + observed_at indexes.
-    const rankResult = await env.DB.prepare(`
-      WITH ranked AS (
-        SELECT prs.governor_id, prs.power_rank, prs.observed_at,
-               ROW_NUMBER() OVER (
-                 PARTITION BY prs.governor_id
-                 ORDER BY prs.observed_at DESC
-               ) AS rn
-        FROM player_rank_snapshots prs
-        INNER JOIN player_watchlists w
-          ON w.governor_id = prs.governor_id
-         AND w.discord_id = ?
-        WHERE w.enabled = 1
-      )
-      SELECT governor_id, power_rank, observed_at
-      FROM ranked
-      WHERE rn <= 2
-      ORDER BY governor_id, observed_at DESC
-    `).bind(auth.discord_id).all();
+    // Ranking changes are read only for the authenticated user's enabled watchlist.
+    // Do NOT scan ranking_snapshots broadly. Each scalar lookup is constrained by
+    // kid + board + PLAYER + target_id and uses the existing target-history/current indexes.
+    // The latest board observation is used as the current boundary so a player who
+    // falls outside the stored ranking window is correctly shown as 圏外.
+    const playerRankingBoards = Object.keys(RANKING_BOARD_LABELS)
+      .filter(board => board !== "alliance_power" && board !== "alliance_kills");
+
+    const boardValuesSql = playerRankingBoards
+      .map(board => "('" + board + "')")
+      .join(",");
+
+    const rankResult = await env.DB.prepare(
+      `
+      WITH boards(board) AS (VALUES ` + boardValuesSql + `)
+      SELECT
+        w.governor_id,
+        p.kid,
+        b.board,
+        (
+          SELECT rs.observed_at
+          FROM ranking_snapshots rs
+          WHERE rs.kid = p.kid
+            AND rs.board = b.board
+            AND rs.target_type = 'PLAYER'
+          ORDER BY rs.observed_at DESC
+          LIMIT 1
+        ) AS board_observed_at,
+        (
+          SELECT rs.rank
+          FROM ranking_snapshots rs
+          WHERE rs.kid = p.kid
+            AND rs.board = b.board
+            AND rs.target_type = 'PLAYER'
+            AND rs.target_id = w.governor_id
+            AND rs.observed_at = (
+              SELECT latest.observed_at
+              FROM ranking_snapshots latest
+              WHERE latest.kid = p.kid
+                AND latest.board = b.board
+                AND latest.target_type = 'PLAYER'
+              ORDER BY latest.observed_at DESC
+              LIMIT 1
+            )
+          LIMIT 1
+        ) AS current_rank,
+        (
+          SELECT rs.rank
+          FROM ranking_snapshots rs
+          WHERE rs.kid = p.kid
+            AND rs.board = b.board
+            AND rs.target_type = 'PLAYER'
+            AND rs.target_id = w.governor_id
+            AND rs.observed_at < (
+              SELECT latest.observed_at
+              FROM ranking_snapshots latest
+              WHERE latest.kid = p.kid
+                AND latest.board = b.board
+                AND latest.target_type = 'PLAYER'
+              ORDER BY latest.observed_at DESC
+              LIMIT 1
+            )
+          ORDER BY rs.observed_at DESC
+          LIMIT 1
+        ) AS previous_rank
+      FROM player_watchlists w
+      INNER JOIN players p ON p.governor_id = w.governor_id
+      CROSS JOIN boards b
+      WHERE w.discord_id = ?
+        AND w.enabled = 1
+        AND p.kid IS NOT NULL
+      ORDER BY w.governor_id, b.board
+      `
+    ).bind(auth.discord_id).all();
 
     const powerChangeResult = await env.DB.prepare(`
       WITH ranked AS (
@@ -1238,7 +1294,16 @@ async function handlePlayerWatchlistApi(request, env) {
     for (const row of rankResult.results || []) {
       const key = String(row.governor_id);
       const list = rankByGovernor.get(key) || [];
-      list.push(row);
+      list.push({
+        board: String(row.board),
+        label: RANKING_BOARD_LABELS[String(row.board)] || String(row.board),
+        current: row.current_rank == null ? null : Number(row.current_rank),
+        previous: row.previous_rank == null ? null : Number(row.previous_rank),
+        delta: row.current_rank != null && row.previous_rank != null
+          ? Number(row.previous_rank) - Number(row.current_rank)
+          : null,
+        observed_at: row.board_observed_at == null ? null : Number(row.board_observed_at)
+      });
       rankByGovernor.set(key, list);
     }
 
@@ -1260,8 +1325,6 @@ async function handlePlayerWatchlistApi(request, env) {
 
     const watchlist = watchRows.map(row => {
       const ranks = rankByGovernor.get(String(row.governor_id)) || [];
-      const currentRank = ranks[0]?.power_rank ?? null;
-      const previousRank = ranks[1]?.power_rank ?? null;
       const powerChange = powerChangeByGovernor.get(String(row.governor_id)) || null;
 
       return {
@@ -1270,14 +1333,7 @@ async function handlePlayerWatchlistApi(request, env) {
         observed_at: row.observed_at == null ? null : Number(row.observed_at),
         summary: {
           power_change: powerChange,
-          power_rank: {
-            current: currentRank == null ? null : Number(currentRank),
-            previous: previousRank == null ? null : Number(previousRank),
-            delta: currentRank != null && previousRank != null
-              ? Number(previousRank) - Number(currentRank)
-              : null,
-            observed_at: ranks[0]?.observed_at == null ? null : Number(ranks[0].observed_at)
-          }
+          ranking_changes: ranks
         }
       };
     });
@@ -1358,7 +1414,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
 .list{display:grid;gap:12px}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:14px;overflow-wrap:anywhere}
-.change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
+.change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.ranking-changes{display:grid;gap:6px;margin-top:8px}.ranking-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#0f172a;border:1px solid #273449;font-size:11px}.ranking-row .label{color:#cbd5e1;min-width:0;overflow-wrap:anywhere}.ranking-row .value{font-weight:900;text-align:right;white-space:nowrap}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
 .actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
 @media(max-width:520px){.head{display:block}.head .action{margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><main>
@@ -1387,8 +1443,9 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
   const rankText=s=>{
     const current=s?.current;
     const previous=s?.previous;
-    if(current==null)return '<span class="muted">順位データなし</span>';
-    if(previous==null)return '<span>'+number(current)+'位</span>';
+    if(current==null&&previous==null)return '<span class="muted">順位データなし</span>';
+    if(current==null)return '<span><span class="muted">圏外</span> → <b>'+number(previous)+'位</b> <span class="up">↑</span></span>';
+    if(previous==null)return '<span>初回 '+number(current)+'位</span>';
     const delta=Number(previous)-Number(current);
     if(delta===0)return '<span>'+number(current)+'位 <span class="flat">→</span></span>';
     const cls=delta>0?"up":"down";
@@ -1412,7 +1469,11 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
       root.innerHTML=d.watchlist.map(x=>{
         const s=x.summary||{};
         const powerChange=powerChangeText(s);
-        const rankChange=rankText(s.power_rank);
+        const rankingChanges=Array.isArray(s.ranking_changes)?s.ranking_changes:[];
+        const rankingRows=rankingChanges
+          .filter(r=>r.current!=null||r.previous!=null)
+          .map(r=>'<div class="ranking-row"><span class="label">'+esc(r.label)+'</span><span class="value">'+rankText(r)+'</span></div>')
+          .join("") || '<div class="muted">ランキングデータなし</div>';
         return '<article class="item">'+
           '<div class="top">'+
             (x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+
@@ -1426,12 +1487,12 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
             '<div class="stat"><span>役場</span><b>'+esc(x.town_center_level==null?"-":x.town_center_level)+'</b></div>'+
             '<div class="stat"><span>VIP</span><b>'+esc(x.vip??"-")+'</b></div>'+
             '<div class="stat"><span>撃破数</span><b>'+esc(compact(x.kills))+'</b></div>'+
-            '<div class="stat"><span>個人戦力順位</span><b>'+rankChange+'</b></div>'+
             '<div class="stat"><span>最終観測</span><b>'+esc(fmtTime(x.observed_at))+'</b></div>'+
           '</div>'+
           '<div class="change-box"><div class="change-title">前回からの変化</div>'+
             '<div class="change-row"><span class="label">戦力</span><span class="value">'+powerChange+'</span></div>'+
-            '<div class="change-row"><span class="label">個人戦力ランキング</span><span class="value">'+rankChange+'</span></div>'+
+            '<div class="change-title" style="margin-top:12px">ランキング順位変動</div>'+
+            '<div class="ranking-changes">'+rankingRows+'</div>'+
           '</div>'+
           '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
         '</article>';
