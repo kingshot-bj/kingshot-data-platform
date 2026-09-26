@@ -1384,7 +1384,7 @@ async function renderAdminDiagnosticsPage(request, env) {
 
   const overall = data.overall;
   const state = overall === "SUCCESS" ? { label:"すべて正常", tone:"good", icon:"✓", note:"すべての監視対象サービスが正常に動作しています。" }
-    : overall === "FAILED" ? { label:"障害を検知", tone:"bad", icon:"!", note:"一部のサービスで障害が発生しています。詳細を確認してください。" }
+    : overall === "CRITICAL" ? { label:"主要サービスに障害", tone:"bad", icon:"!", note:"主要サービスの一部で障害が発生しています。詳細を確認してください。" }
     : { label:"一部注意", tone:"warn", icon:"i", note:"一部のサービスで注意または未診断の状態があります。" };
 
   const serviceState = (status) => status === "SUCCESS"
@@ -4012,16 +4012,18 @@ async async function renderPublicStatusPage(request, env) {
   try {
     data = await getSystemDiagnostics(env.DB, { recentLimit: 30 });
   } catch (error) {
-    console.error("public_status_failed", error?.message || error);
+    const errorMessage = String(error?.message || error);
+    console.error("public_status_failed", errorMessage);
+    const criticalDbFailure = /D1_ERROR|D1.*(limit|quota|exceeded)|daily row (read|write) limit/i.test(errorMessage);
     return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}.wrap{max-width:760px;margin:auto;padding:34px 18px 50px}.back{color:#94a3b8;text-decoration:none;font-size:14px}.card{margin-top:22px;background:#162238;border:1px solid #334155;border-radius:24px;padding:25px}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#7f1d1d;color:#fecaca;font-weight:900;font-size:24px}.eyebrow{margin-top:20px;color:#94a3b8;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase}.title{margin:5px 0 10px;font-size:28px}.desc{color:#cbd5e1;line-height:1.6}.hint{margin-top:20px;padding:12px 14px;background:#0f172a;border-radius:12px;color:#94a3b8;font-size:12px}</style></head><body><main class="wrap"><a class="back" href="/">‹ EagleEye</a><section class="card"><div class="icon">!</div><div class="eyebrow">EagleEye System Status</div><h1 class="title">システム状況を確認できません</h1><p class="desc">現在、システム診断データを取得できません。時間をおいて再度ご確認ください。</p><div class="hint">このページ自体は公開ステータスページです。内部エラーの詳細は公開していません。</div></section></main></body></html>`);
+*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}.wrap{max-width:760px;margin:auto;padding:34px 18px 50px}.back{color:#94a3b8;text-decoration:none;font-size:14px}.card{margin-top:22px;background:#162238;border:1px solid #334155;border-radius:24px;padding:25px}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:${criticalDbFailure ? "#7f1d1d" : "#92400e"};color:${criticalDbFailure ? "#fecaca" : "#fde68a"};font-weight:900;font-size:24px}.eyebrow{margin-top:20px;color:#94a3b8;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase}.title{margin:5px 0 10px;font-size:28px}.desc{color:#cbd5e1;line-height:1.6}.hint{margin-top:20px;padding:12px 14px;background:#0f172a;border-radius:12px;color:#94a3b8;font-size:12px}</style></head><body><main class="wrap"><a class="back" href="/">‹ EagleEye</a><section class="card"><div class="icon">${criticalDbFailure ? "!" : "i"}</div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${criticalDbFailure ? "Service Disruption" : "System Status Unavailable"}</h1><p class="desc">${criticalDbFailure ? "主要なデータ基盤が現在利用できません。EagleEyeの主要機能に影響する可能性があります。" : "現在、システム診断データを取得できません。時間をおいて再度ご確認ください。"}</p><div class="hint">このページ自体は公開ステータスページです。内部エラーの詳細は公開していません。</div></section></main></body></html>`);
   }
 
   const state = data.overall === "SUCCESS"
     ? {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービスは正常に稼働しています。"}
-    : data.overall === "FAILED"
-      ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"一部のサービスで障害が確認されています。"}
-      : {label:"System Status",tone:"warn",icon:"i",desc:"一部のサービスで注意が必要です。"};
+    : data.overall === "CRITICAL"
+      ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービスの一部が利用できません。"}
+      : {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービスで注意が必要です。"};
 
   const rows = data.services.map(s => {
     const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
