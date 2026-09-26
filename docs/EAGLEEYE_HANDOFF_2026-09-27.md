@@ -403,3 +403,31 @@ D1では「取れるから取る」クエリを禁止。必要な対象・期間
 ## 30. 最重要
 EagleEyeを最初から設計し直さない。
 このhandoffと最新mainを基準に、実装済みのPlayer Watchlist順位変動を維持し、次は「戦力/役場/同盟等の変更表示」へ進む。
+
+## 31. 2026-09-27追加：D1実測・広告運営方針
+
+今後の運営方針として、EagleEyeは原則無料利用を維持し、まずは最低限の広告で運営費を賄う方向を検討する。現時点では月額課金を前提にしない。
+
+MightPulse APIはEagleEyeにとってAPI利用料の主要コストではなく無料利用を前提とする。ただしAPIキーごとのrate/day制限とAPI Pool容量は引き続き管理する。
+
+D1無料枠を超えた場合はCloudflare Paidへの移行を候補とする。Paid化してもアプリケーションを作り直さず継続できる構造を維持する。
+
+広告は「最大収益化」ではなく「サービス維持に必要な最低限」を目標とする。広告過多によるUX悪化を避ける。
+
+明日D1制限解除後に、以下を実測する:
+- D1 rows_read
+- D1 rows_written
+- Workers request/CPU
+- MightPulse API request数
+- Kingdom Watchlistの1回あたり負荷
+- Player Watchlistの1回あたり負荷
+- 両Watchlist併用時の負荷
+
+LIGHT / NORMAL / HEAVYの利用シナリオを作り、10〜10,000ユーザー規模でFree/Paidの負荷をシミュレーションする。
+
+さらに月間PV・広告表示数・広告RPMを使って広告収益をシミュレーションし、「必要最低限の広告量」を逆算する。
+
+詳細な計測項目・シナリオ・計算方法は:
+docs/EAGLEEYE_COST_AND_AD_MONITORING_PLAN.md
+
+この計画は実測前の方針であり、実測値・本番値とは区別する。
