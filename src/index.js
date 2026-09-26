@@ -1031,6 +1031,24 @@ async function handleKingdomWatchlistApi(request, env) {
         "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
       ).bind(watch.watchlist_id).first();
 
+      // Recover jobs that are visibly stuck in an active state.
+      // A failed ranking request used to leave the job as RANKINGS/PLAYERS,
+      // which made the UI show "更新中" forever even after the error.
+      if (job && (job.status === "RANKINGS" || job.status === "PLAYERS")) {
+        const staleByError = Boolean(job.last_error);
+        const staleByAge = Number(job.updated_at || job.created_at || 0) > 0 &&
+          (Math.floor(Date.now() / 1000) - Number(job.updated_at || job.created_at)) > 15 * 60;
+        if (staleByError || staleByAge) {
+          const recoveryMessage = job.last_error
+            ? String(job.last_error).slice(0, 1000)
+            : "ウォッチリスト更新ジョブが15分以上進行していないため停止しました。";
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
+          ).bind(recoveryMessage, Math.floor(Date.now() / 1000), job.job_id).run();
+          job = { ...job, status: "FAILED", last_error: recoveryMessage };
+        }
+      }
+
       let playerCount = null;
       if (job?.player_ids_json) {
         try {
