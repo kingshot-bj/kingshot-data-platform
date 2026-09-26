@@ -4,7 +4,7 @@
 
 The Google Cloud project currently enforces `iam.disableServiceAccountKeyCreation`, so EagleEye cannot use the long-lived service-account JSON key transport that `src/google-sheets.js` originally supported.
 
-For research-data accumulation, EagleEye can instead POST signed requests to a Google Apps Script Web App. Google documents that a web app can expose `doPost(e)` and can execute as the deploying user. citeturn4search0turn4search1
+For research-data accumulation, EagleEye can instead POST signed requests to a Google Apps Script Web App. A web app can expose `doPost(e)` and execute as the deploying user.
 
 ## Setup
 
