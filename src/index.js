@@ -698,7 +698,13 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     var j=w.job;
     if(!j)return "";
     if(j.status==="COMPLETED"){
-      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span></div>";
+      var sourceText="";
+      if(j.source_first_at&&j.source_last_at){
+        var first=new Date(j.source_first_at*1000).toLocaleString("ja-JP");
+        var last=new Date(j.source_last_at*1000).toLocaleString("ja-JP");
+        sourceText=first===last?first:(first+" ～ "+last);
+      }
+      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span>"+(sourceText?"<small>MightPulseデータ基準時刻: "+esc(sourceText)+"</small>":"<small>MightPulseデータ基準時刻: 未取得</small>")+"</div>";
     }
     if(j.status==="RANKINGS"){
       var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
@@ -1390,6 +1396,7 @@ async function handleRankingPlayerTest(request, env) {
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
 
   try {
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const result = await getMightPulsePlayerRanks(env, governorId);
     const raw = result.data?.player || result.data;
     const ranks = raw?.ranks || result.data?.ranks;
@@ -1423,6 +1430,7 @@ async function handleRankingBoardTest(request, env) {
   if (!kid || !board) return json({ ok: false, error: "KID_AND_BOARD_REQUIRED" }, 400);
 
   try {
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const result = await getMightPulseKingdomRanks(env, kid, { board, limit: 100 });
     const payload = result.data;
     const entries = payload?.rankings || payload?.entries || payload?.data || [];
@@ -1454,6 +1462,7 @@ async function handleMightPulsePlayerTest(request, env) {
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
 
   try {
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const result = await getMightPulsePlayer(env, governorId, { include: "base" });
     if (env.DB) {
       const observation = observationEnvelope({
@@ -1781,6 +1790,7 @@ async function handleApiPoolTestPlayer(request, env) {
 
   let lease = null;
   try {
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
     lease = await leaseApiKey(env.DB, {
       poolType: "SYSTEM_GENERAL",
       purpose: "ADMIN_TEST",
