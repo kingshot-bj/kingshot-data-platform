@@ -1097,6 +1097,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/health-check") return await handleApiPoolHealthCheck(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
+      if (url.pathname === "/api/admin/api-pool/test-ranking") return await handleApiPoolTestRanking(request, env);
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
       if (url.pathname === "/api/owner/users/status") return await handleOwnerUserStatusApi(request, env);
@@ -1858,6 +1859,114 @@ async function handleApiPoolTestPlayer(request, env) {
   }
 }
 
+async function handleApiPoolTestRanking(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const kid = String(url.searchParams.get("kid") || "").trim();
+  const board = String(url.searchParams.get("board") || "").trim();
+  if (!kid || !board) return json({ ok: false, error: "KID_AND_BOARD_REQUIRED" }, 400);
+
+  let lease = null;
+  try {
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
+    lease = await leaseApiKey(env.DB, {
+      poolType: "SYSTEM_WATCHLIST",
+      purpose: "ADMIN_TEST",
+      targetType: "KINGDOM",
+      targetId: kid
+    });
+    const startedAt = Date.now();
+    const result = await getMightPulseKingdomRanks(env, kid, {
+      board,
+      limit: 100,
+      apiKey: lease.api_key
+    });
+    const elapsedMs = Date.now() - startedAt;
+    const payload = result?.data || {};
+    const entries = Array.isArray(payload?.rankings)
+      ? payload.rankings
+      : Array.isArray(payload?.entries)
+        ? payload.entries
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id,
+      leaseId: lease.lease_id,
+      endpoint: "/kingdoms/:kid/ranks",
+      targetType: "KINGDOM",
+      targetId: kid,
+      purpose: "ADMIN_TEST",
+      httpStatus: result.status,
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+    });
+    const response = {
+      ok: true,
+      provider: "MIGHTPULSE",
+      target_type: "KINGDOM",
+      target_id: kid,
+      board,
+      upstream_status: result.status,
+      key_id: lease.key_id,
+      entry_count: entries.length,
+      source_observed_at: getMightPulseSourceTimestamp(payload),
+      upstream_elapsed_ms: elapsedMs
+    };
+    if (url.searchParams.get("format") === "json") return json(response);
+    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+    });
+  } catch (error) {
+    if (lease) {
+      const status = Number(error?.status || 0);
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401 || status === 403;
+      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      await recordApiPoolFailure(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        endpoint: "/kingdoms/:kid/ranks",
+        targetType: "KINGDOM",
+        targetId: kid,
+        purpose: "ADMIN_TEST",
+        httpStatus: status,
+        errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+        errorMessage: error?.message || null,
+        cooldownSeconds: cooldown,
+        disable,
+        keepAvailable
+      });
+    }
+    const status = Number(error?.status || 0);
+    const responseStatus = status >= 400 && status < 600 ? status : 502;
+    const response = {
+      ok: false,
+      error: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+      status,
+      diagnostic: error?.details || null
+    };
+    if (url.searchParams.get("format") === "json") return json(response, responseStatus);
+    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
+      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" },
+      status: responseStatus
+    });
+  }
+}
+
+function renderApiPoolRankingTestResult(kid, board, result, adminRole = "ADMIN") {
+  const esc = escapeHtml;
+  const ok = result?.ok === true;
+  const title = ok ? "王国ランキング テスト成功" : "王国ランキング テスト失敗";
+  const status = result?.status ?? result?.upstream_status ?? "-";
+  const diagnostic = result?.diagnostic || null;
+  const details = ok
+    ? "<div class='detail'><b>取得確認</b><div class='meta'>王国ID: " + esc(kid) + "<br>Board: " + esc(board) + "<br>取得件数: " + esc(result?.entry_count ?? "-") + "<br>MightPulse取得時間: " + esc(result?.upstream_elapsed_ms != null ? result.upstream_elapsed_ms + " ms" : "-") + "<br>Source基準時刻: " + esc(result?.source_observed_at ?? "未取得") + "</div></div>"
+    : (diagnostic ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>" : "");
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:700px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.card{margin-top:20px;padding:20px;border:1px solid #334155;border-radius:16px;background:#162238}.status{font-size:20px;font-weight:900}.ok{color:#86efac}.ng{color:#fca5a5}.meta{margin-top:12px;color:#cbd5e1;line-height:1.8}.detail{margin-top:16px}.detail pre{white-space:pre-wrap;overflow:auto;padding:12px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px}.btn{display:inline-block;margin-top:16px;padding:11px 14px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><div class='card'><div class='status " + (ok ? "ok" : "ng") + "'>" + title + "</div><div class='meta'>" + (ok ? "王国ランキングの取得に成功しました。" : "MightPulseへの王国ランキングリクエストに失敗しました。") + "<br>HTTP Status: " + esc(status) + "</div>" + details + "<a class='btn' href='/admin/api-pool'>管理画面へ戻る</a></div></main></body></html>";
+}
+
+
 function renderApiPoolTestResult(governorId, result, adminRole = "ADMIN") {
   const esc = escapeHtml;
   const ok = result?.ok === true;
@@ -1984,7 +2093,7 @@ async function renderApiPoolAdminPage(request, env) {
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{position:fixed;top:14px;right:14px;z-index:10;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:900px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap}.muted{color:#64748b}.pool-error{margin-top:6px;padding:7px 8px;border-radius:8px;background:#2a1115;border:1px solid #7f1d1d;color:#fecaca;white-space:normal;max-width:300px;line-height:1.45}.pool-error b{display:block;color:#fca5a5;font-size:11px}.pool-error div{margin-top:2px;color:#fecaca;font-size:11px;overflow-wrap:anywhere}.pool-error small{display:block;margin-top:3px;color:#fda4af;font-size:10px}.scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><a href='/admin/data-retention' style='color:#f59e0b;font-weight:900;text-decoration:none'>データ保存期間を管理 →</a><div class='hint'>履歴・生APIデータの自動削除期間を設定できます。</div></div><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>操作</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{position:fixed;top:14px;right:14px;z-index:10;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:900px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap}.muted{color:#64748b}.pool-error{margin-top:6px;padding:7px 8px;border-radius:8px;background:#2a1115;border:1px solid #7f1d1d;color:#fecaca;white-space:normal;max-width:300px;line-height:1.45}.pool-error b{display:block;color:#fca5a5;font-size:11px}.pool-error div{margin-top:2px;color:#fecaca;font-size:11px;overflow-wrap:anywhere}.pool-error small{display:block;margin-top:3px;color:#fda4af;font-size:10px}.scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><a href='/admin/data-retention' style='color:#f59e0b;font-weight:900;text-decoration:none'>データ保存期間を管理 →</a><div class='hint'>履歴・生APIデータの自動削除期間を設定できます。</div></div><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>操作</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>プレイヤーをPool経由で取得</button></form><form method='get' action='/api/admin/api-pool/test-ranking'><label>王国ID<input name='kid' placeholder='1524' required></label><label>Board<input name='board' placeholder='personal_power' required></label><button type='submit'>王国ランキングをPool経由で取得</button></form></div></main></body></html>";
 }
 
 async function fetchThroughWatchlistApiPool(env, {
