@@ -724,7 +724,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       ws.forEach(function(w){
         var active=isActiveJob(w);
         var card=document.createElement("div"); card.className="card";
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>最終成功: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>EagleEye更新完了: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
         var row=document.createElement("div"); row.className="row";
         var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
@@ -841,6 +841,10 @@ async function handleKingdomWatchlistDataApi(request, env) {
     "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
   ).bind(watchlistId, auth.discord_id).first();
   if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+
+  const freshnessJob = await env.DB.prepare(
+    "SELECT status, source_first_at, source_last_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(watchlistId).first();
 
   const board = url.searchParams.get("board");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
