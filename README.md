@@ -343,6 +343,18 @@ D1 Freeには容量・読み書きの制限があるため、D1を無制限の�
 6. エクスポート各タブの列名・データ範囲を既存Player Profileの表示仕様と一致させる。
 7. 実装後、GitHub上の実コードを再読込し、構文・ルート・権限・表示の整合性を確認してからデプロイへ進む。
 
+### 16-1. 王国ランキング（ADMIN / OWNER向け）
+- API Pool管理画面の「テスト」とは分離し、`/admin/kingdom-rankings` に管理者向けの実運用画面を追加。
+- ADMIN / OWNERが王国番号（鯖番号）とランキング種別を選択し、必要なランキングだけを取得・閲覧できる。
+- 表示件数は10 / 50 / 100位から選択。
+- 取得時は既存のWatchlist用API Pool処理を再利用し、`SYSTEM_WATCHLIST` → `SYSTEM_GENERAL` の順で利用可能なAPIキーを取得。
+- 取得したランキングは`ranking_snapshots`へ保存し、画面はD1の最新スナップショットを表示。
+- 同じランキングの全26種を一括取得する機能ではなく、「必要なランキングだけを都度取得する」用途。
+- ADMIN / OWNERは取得済みランキングを既存のGoogle Sheets連携へ出力可能。
+- Google Sheets出力は`/api/admin/kingdom-ranking-export`から行い、D1の本体DBをSheetsへ置換しない。
+- Player Section exportも仕様どおりADMIN / OWNERを許可。
+- `extractKingdomRankingEntries`は同期関数。MightPulseランキングpayloadから配列候補を抽出する。
+- 2026-09-26時点では本機能のコードはGitHubへcommit済みだが、本番デプロイ成功は別途確認すること。
 ### 17. 作業ルール
 - 「推測しない」。まずコード、DB、API実データ、既存設計を確認。
 - 確認できないことは「未確認」と明示する。
