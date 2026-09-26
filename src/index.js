@@ -1129,10 +1129,6 @@ async function handleKingdomWatchlistDataApi(request, env) {
     "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' GROUP BY board), ranked AS (SELECT r.governor_id, r.uid, r.nick_name, r.kid, r.rank, r.board, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ? AND r.target_type = 'PLAYER' AND r.governor_id IS NOT NULL), top_players AS (SELECT DISTINCT governor_id FROM ranked WHERE rn <= ?), latest_players AS (SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id) SELECT * FROM latest_players ORDER BY power DESC, governor_id ASC"
   ).bind(watch.kid, watch.kid, watch.top_n).all();
 
-  const changes = await env.DB.prepare(
-    "SELECT governor_id, board, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' ORDER BY observed_at DESC LIMIT ?"
-  ).bind(watch.kid, Math.min(watch.top_n * 26 * 5, 5000)).all();
-
   return json({
     ok: true,
     watchlist: {
@@ -1142,8 +1138,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
       source_completed_at: freshnessJob?.completed_at ? Number(freshnessJob.completed_at) : null
     },
     rankings: rankings.results || [],
-    players: players.results || [],
-    ranking_observations: changes.results || []
+    players: players.results || []
   });
 }
 
