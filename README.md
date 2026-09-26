@@ -432,4 +432,37 @@ D1 Freeには容量・読み書きの制限があるため、D1を無制限の�
   - 宝石Lv判定をobject/string/number形式に対応
 
 最新状態を「本番反映済み」とは、`wrangler deploy` の成功ログを確認するまで断定しない。
+### 19. D1 → R2 長期アーカイブ方針（2026-09-26）
 
+D1を長期履歴の無制限保管庫にしないため、Retention cleanupとR2 archiveを連携する。
+
+- D1 = 現在値・検索・権限・Watchlist・必要な直近履歴などの実行系データ
+- R2 = 長期履歴・大量snapshot・研究用の原データ保管庫
+- Google Sheets = 人間が閲覧・分析・研究するためのExport先
+
+現在の実装：
+- `src/r2-archive.js` を追加。
+- `api_observations` / `player_snapshots` / `ranking_snapshots` / `player_rank_snapshots` / `change_events` をR2退避対象とする。
+- Retention cleanupは、対象行をR2へgzip圧縮NDJSONとして保存してから、D1の同一rowidを削除する。
+- R2への保存に失敗した場合、その対象行はD1から削除しない。
+- `api_pool_usage` は運用データのため、現時点ではR2研究アーカイブ対象にせず従来どおりRetention削除する。
+- R2 bindingは `ARCHIVE`、bucket名は `eagleeye-archive`。
+- バケット自体の作成と本番Workerへのbinding反映は別途Cloudflare側で確認する。
+
+### 20. 研究用データ蓄積（Google Sheets）
+
+Google SheetsはD1の代替DBではなく、研究・分析用データセットの蓄積先として維持する。
+
+想定する研究データ：
+- プレイヤーの時系列スナップショット
+- 王国ランキングの時系列データ
+- 英雄・領主装備の観測値
+- Change Event
+- Watchlistで取得した観測結果
+
+基本フロー：
+R2/D1 → Workerで研究用データセット化 → Google Sheets
+
+Google Sheetsの直接API連携コードは既存の `src/google-sheets.js` を再利用する。サービスアカウントJSONキー方式はGoogle Cloud側の組織ポリシーにより現在利用できないため、認証方式は別途確定するまで変更しない。
+
+Google Sheetsを研究データの一次保管先にせず、長期原データはR2、EagleEyeの実行系データはD1を正とする。
