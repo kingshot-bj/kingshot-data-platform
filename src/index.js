@@ -1550,7 +1550,13 @@ async function handleApiPoolHealthCheck(request, env) {
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
-      return json({ ok: true, key_id: keyId, status: "AVAILABLE", upstream_status: result.status, message: "接続確認成功。APIキーをAVAILABLEにしました。" });
+      if (contentType.includes("application/json")) {
+        return json({ ok: true, key_id: keyId, status: "AVAILABLE", upstream_status: result.status, message: "接続確認成功。APIキーをAVAILABLEにしました。" });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { Location: "/admin/api-pool", "Cache-Control": "no-store" }
+      });
     } catch (error) {
       if (lease) {
         const status = Number(error?.status || 0);
