@@ -275,8 +275,60 @@ const WATCHLIST_RANKING_LIMIT = 100;
 const WATCHLIST_RANKING_BATCH = 8;
 const WATCHLIST_PLAYER_BATCH = 8;
 
+function normalizeMightPulseTimestamp(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\\d+(?:\\.\\d+)?$/.test(text)) {
+    const n = Number(text);
+    return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+}
+
+function getMightPulseSourceTimestamp(data) {
+  return normalizeMightPulseTimestamp(data?.cached_at);
+}
+
+async function ensureKingdomWatchlistFreshnessSchema(db) {
+  if (!db) return;
+  const definitions = {
+    kingdom_watchlist_jobs: [
+      ["source_first_at", "INTEGER"],
+      ["source_last_at", "INTEGER"]
+    ],
+    api_observations: [["source_observed_at", "INTEGER"]],
+    ranking_snapshots: [["source_observed_at", "INTEGER"]],
+    player_snapshots: [["source_observed_at", "INTEGER"]],
+    players: [["source_observed_at", "INTEGER"]],
+    player_rank_snapshots: [["source_observed_at", "INTEGER"]]
+  };
+  for (const [table, columns] of Object.entries(definitions)) {
+    const info = await db.prepare("PRAGMA table_info(" + table + ")").all();
+    const existing = new Set((info.results || []).map(row => row.name));
+    for (const [column, type] of columns) {
+      if (!existing.has(column)) {
+        await db.prepare("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type).run();
+      }
+    }
+  }
+}
+
+async function updateWatchlistSourceRange(db, jobId, sourceObservedAt) {
+  const ts = Number(sourceObservedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return;
+  await db.prepare(
+    "UPDATE kingdom_watchlist_jobs SET source_first_at = CASE WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END WHERE job_id = ?"
+  ).bind(ts, ts, ts, ts, jobId).run();
+}
+
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
+  await ensureKingdomWatchlistFreshnessSchema(env.DB);
   const now = Math.floor(Date.now() / 1000);
   const rows = await env.DB.prepare(
     "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
@@ -297,7 +349,7 @@ async function runKingdomWatchlistJobs(env) {
       if (!job) {
         const jobId = crypto.randomUUID();
         await env.DB.prepare(
-          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
         ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
         job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
       }
@@ -344,6 +396,8 @@ async function processKingdomWatchlistJob(env, job) {
         env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
       );
       const payload = fetched.result?.data;
+      const sourceObservedAt = getMightPulseSourceTimestamp(payload);
+      await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
       const entries = Array.isArray(payload?.rankings)
         ? payload.rankings
         : Array.isArray(payload?.entries)
@@ -356,7 +410,8 @@ async function processKingdomWatchlistJob(env, job) {
         kid: job.kid,
         board,
         entries,
-        observedAt: job.observed_at
+        observedAt: job.observed_at,
+        sourceObservedAt
       });
 
       const rankingChanges = await detectRankingChanges(env.DB, {
@@ -424,6 +479,8 @@ async function processKingdomWatchlistJob(env, job) {
     for (const item of fetchedPlayers) {
       if (item.error) continue;
       const result = item.fetched.result;
+      const sourceObservedAt = getMightPulseSourceTimestamp(result?.data);
+      await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
       const raw = result?.data?.player || result?.data;
       if (!raw) continue;
 
@@ -431,13 +488,13 @@ async function processKingdomWatchlistJob(env, job) {
       const governorId = String(raw.governor_id ?? item.governorId);
       await env.DB.batch([
         env.DB.prepare(
-          "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ).bind(
           observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
-          "PLAYER", governorId, job.observed_at, result?.status ?? 200, JSON.stringify(raw), job.observed_at
+          "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
         ),
         env.DB.prepare(
-          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
+          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
         ).bind(
           governorId, raw.uid ?? null, raw.fid != null ? String(raw.fid) : null, raw.nick_name ?? null,
           raw.kid ?? job.kid, raw.power ?? null, raw.town_center_level ?? null, raw.vip ?? null,
@@ -446,11 +503,11 @@ async function processKingdomWatchlistJob(env, job) {
           raw.shield_endtime ?? null, raw.burn_endtime ?? null, raw.alliance?.aid ?? null,
           raw.alliance?.abbr ?? null, raw.alliance?.name ?? null, raw.alliance?.rank ?? null,
           raw.alliance?.rank_label ?? null, raw.alliance?.power ?? null, raw.alliance?.count ?? null,
-          raw.alliance?.leader_name ?? null, job.observed_at, observationId, now
+          raw.alliance?.leader_name ?? null, job.observed_at, sourceObservedAt, observationId, now
         ),
         env.DB.prepare(
-          "INSERT INTO player_snapshots (snapshot_id, governor_id, observation_id, observed_at, payload_json) VALUES (?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, JSON.stringify(raw))
+          "INSERT INTO player_snapshots (snapshot_id, governor_id, observation_id, observed_at, source_observed_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)"
+        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, sourceObservedAt, JSON.stringify(raw))
       ]);
 
       const ranks = result?.data?.ranks || raw?.ranks;
@@ -820,7 +877,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const watchlists = [];
     for (const watch of rows.results || []) {
       const job = await env.DB.prepare(
-        "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
+        "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
       ).bind(watch.watchlist_id).first();
 
       let playerCount = null;
@@ -933,7 +990,7 @@ async function handleKingdomWatchlistApi(request, env) {
         if (!job) {
           const jobId = crypto.randomUUID();
           await env.DB.prepare(
-            "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, 0, 0, ?, ?)"
+            "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
           ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
           job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
         }
@@ -1317,7 +1374,8 @@ async function handleRankingPlayerTest(request, env) {
       uid: raw?.uid ?? result.data?.uid ?? null,
       kid: raw?.kid ?? result.data?.kid ?? null,
       ranks,
-      observedAt: Math.floor(Date.now() / 1000)
+      observedAt: Math.floor(Date.now() / 1000),
+      sourceObservedAt: getMightPulseSourceTimestamp(result.data)
     }) : null;
 
     return json({ ok: true, governor_id: governorId, saved_snapshot: Boolean(saved), ranks });
@@ -1346,7 +1404,8 @@ async function handleRankingBoardTest(request, env) {
       kid,
       board,
       entries,
-      observedAt: Math.floor(Date.now() / 1000)
+      observedAt: Math.floor(Date.now() / 1000),
+      sourceObservedAt: getMightPulseSourceTimestamp(result.data)
     }) : 0;
     return json({ ok: true, kid, board, count: Array.isArray(entries) ? entries.length : 0, saved_rows: saved });
   } catch (error) {
@@ -2027,7 +2086,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
     const observationEnvelopeData = observationEnvelope({
       endpoint: "/players/:governor_id",
       httpStatus: result.status,
-      raw: result.data
+      raw: result.data,
+      sourceObservedAt: getMightPulseSourceTimestamp(result.data)
     });
     const savedObservation = await saveApiObservation(env.DB, observationEnvelopeData);
     const observation = {
