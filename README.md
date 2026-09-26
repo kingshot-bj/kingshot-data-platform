@@ -463,6 +463,6 @@ Google SheetsはD1の代替DBではなく、研究・分析用データセット
 基本フロー：
 R2/D1 → Workerで研究用データセット化 → Google Sheets
 
-Google Sheetsの直接API連携コードは既存の `src/google-sheets.js` を再利用する。サービスアカウントJSONキー方式はGoogle Cloud側の組織ポリシーにより現在利用できないため、認証方式は別途確定するまで変更しない。
+Google Sheetsの直接API連携コードは既存の `src/google-sheets.js` を再利用する。サービスアカウントJSONキー方式はGoogle Cloud側の組織ポリシーにより現在利用できないため、Apps Script Web App + HMAC署名方式を追加した。`GOOGLE_SHEETS_WEBAPP_URL` と `GOOGLE_SHEETS_WEBAPP_SECRET` が設定されている場合はこの方式を優先し、未設定なら従来のSheets API方式へフォールバックする。
 
 Google Sheetsを研究データの一次保管先にせず、長期原データはR2、EagleEyeの実行系データはD1を正とする。
