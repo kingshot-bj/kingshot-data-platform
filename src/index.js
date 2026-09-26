@@ -1038,6 +1038,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     if(!confirm("この監視対象を削除しますか？"))return;
     return api("/api/kingdom-watchlist?watchlist_id="+encodeURIComponent(id),{method:"DELETE"}).then(function(){el("detail").innerHTML="";return load();}).catch(function(e){alert(e.message);});
   }
+  if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}";document.head.appendChild(st);}
   function showData(id){
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
@@ -1050,7 +1051,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
           var allianceAbbr=(r.abbr||playerAllianceById[String(r.governor_id)]||playerAllianceById[String(r.uid)]||playerAllianceById[String(r.target_id)]||"");
           var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span><span class="rank-name">'+esc(displayName)+'</span><span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
+          var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
+          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span>'+nameHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
