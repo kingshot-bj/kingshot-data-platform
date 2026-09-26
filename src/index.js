@@ -4007,7 +4007,7 @@ async function handleMe(request, env) {
   });
 }
 
-async async function renderPublicStatusPage(request, env) {
+async function renderPublicStatusPage(request, env) {
   let data;
   try {
     data = await getSystemDiagnostics(env.DB, { recentLimit: 30 });
