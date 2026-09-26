@@ -1808,8 +1808,8 @@ async function fetchThroughWatchlistApiPool(env, {
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
-      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
-      const disable = status === 401;
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401 || status === 403;
       const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
@@ -1905,8 +1905,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
-      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
-      const disable = status === 401;
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401 || status === 403;
       const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
