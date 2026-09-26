@@ -54,7 +54,9 @@ export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, so
     });
   }
 
-  const batchSize = 500;
+  // D1 can reject a batch when the total bound variables across statements are too large.
+  // Each ranking INSERT binds 17 values, so keep batches comfortably below the limit.
+  const batchSize = 50;
   for (let i = 0; i < statements.length; i += batchSize) {
     await db.batch(statements.slice(i, i + batchSize));
   }
