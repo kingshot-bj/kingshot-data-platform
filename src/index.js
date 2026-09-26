@@ -113,7 +113,7 @@ const PLAYER_VISIBILITY_ITEMS = [
   { key: "heroes_exclusive_gear", category: "英雄", label: "英雄専用装備", description: "専用装備・補正・SLG属性" },
   { key: "heroes_gear", category: "英雄", label: "英雄通常装備", description: "兜・手袋・鎧・靴の装備情報" },
   { key: "hero_rankings", category: "ランキング", label: "英雄ランキング", description: "単英雄・英雄全体・装備除外・装備込みの公式ランキングデータ" },
-  { key: "ranks_core", category: "ランキング", label: "主要個人ランキング", description: "戦力・撃破・役場・移民・ミスティック順位" },
+  { key: "ranks_core", category: "ランキング", label: "主要個人ランキング", description: "戦力・撃破・役場・移民・秘境の試練順位" },
   { key: "ranks_leaderboards", category: "ランキング", label: "その他個人ランキング", description: "leaderboards配列" },
   { key: "gov_gear_list", category: "領主装備", label: "領主装備一覧", description: "領主装備のスロット・品質・ティア・星・強化・スコア・戦闘力" },
   { key: "gov_gear_gems", category: "領主装備", label: "領主装備の宝石", description: "装着宝石のスロット・ID" }
@@ -2788,7 +2788,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
     html += '<section class="profile-section"><div class="section-heading"><h2>個人ランキング</h2>' + exportButton("rankings") + '</div><div class="mini-grid">';
-    [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["ミスティック試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
+    [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["秘境の試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
       if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
     });
     if (Array.isArray(r.leaderboards) && r.leaderboards.length) {
