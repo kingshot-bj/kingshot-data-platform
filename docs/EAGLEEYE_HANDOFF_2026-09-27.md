@@ -17,12 +17,16 @@
 
 ## 2. 現在の基準コミット
 直近の実装済みコミット:
-f280d2e12f9421e09e4a885c6f4c0a6b301d6527
-feat: add personal player watchlist
+766332d96db2b4329a222b1d7c89eda76c7e4f94
+fix: correct watchlist ranking out-of-range direction
 
 直前:
-af07299e12895703bc9d260fc08664f988bc2029
-fix: degrade authentication gracefully during D1 outages
+26fef71eea2a48c7f0eb1e76b87f33c2fa4dc9d1
+feat: add player watchlist ranking changes
+
+その直前:
+f280d2e12f9421e09e4a885c6f4c0a6b301d6527
+feat: add personal player watchlist
 
 新スレッドでは、まず main の最新commitを確認し、これより新しいものがあればそれを現在状態として扱う。
 
@@ -218,9 +222,9 @@ UI: /player-watchlist
 Player pageにも「☆ ウォッチリスト」ボタンを追加。
 現在のUIはwatch中ならDELETEする実装。PATCHによるpause/resumeはAPIにはあるがUIから完全には使っていない。
 
-## 15. 今すぐ実装する機能
+## 15. 実装済み機能
 ### Player Watchlistのランキング順位変動
-ユーザーが直前に指示した次の実装。
+2026-09-27に実装済み。
 
 目的:
 Watchlist登録プレイヤーについて「前回何位 → 今回何位」を表示する。
@@ -256,31 +260,36 @@ Player Watchlist一覧の各プレイヤーにランキング変動を表示。
 前回なしは9位（初回）。
 順位外も圏外 → 85位、85位 → 圏外などを扱えるようにする。
 
-## 18. 順位変動API案
-候補: GET /api/player-watchlist/changes
+## 18. 順位変動API【実装済み】
+専用の別endpointは作らず、既存の GET /api/player-watchlist が summary.ranking_changes を返す方式にした。
 
-概念:
-- governor_id
-- nick_name
-- kid
+各 ranking_changes 要素:
 - board
 - label
-- previous_rank
-- current_rank
+- current
+- previous
 - delta
-- previous_observed_at
-- current_observed_at
+- observed_at
 
-board名・labelは既存RANKING_BOARD_LABELS等に合わせる。新しい名称を勝手に作らない。
+board名・labelは既存RANKING_BOARD_LABELSをそのまま使用。新しいランキング名称は追加していない。
 
-## 19. D1負荷対策
-watchlist取得後、対象playerだけに絞る。
-N+1が大きくなる場合は対象player/board/recent observationsを適切にまとめる。
+## 19. D1負荷対策【実装済み】
+watchlist GETのランキング取得は、ログインユーザーの enabled watchlist と players の kid だけを起点にする。
+
+ranking_snapshots側は:
+- PLAYERのみ
+- kid固定
+- board固定
+- target_id = governor_id
+- boardごとの最新観測時刻をcurrent境界に使用
+- target playerのcurrent/previousだけを相関サブクエリで取得
+
+広範囲の ranking_snapshots SELECT は復活させていない。
 全ranking_snapshotsから最新100/1000/5000件を取る方式は禁止。
-不要なUI pollingも増やさない。
+専用endpointや追加pollingも増やしていない。
 
 ## 20. 次のロードマップ
-NOW: Player Watchlist → ランキング順位変動
+DONE: Player Watchlist → ランキング順位変動
 NEXT: 戦力/役場/同盟等の変更表示
 THEN: 通知ON/OFF
 THEN: Discord通知
@@ -392,5 +401,5 @@ D1では「取れるから取る」クエリを禁止。必要な対象・期間
 - f280d2e12f9421e09e4a885c6f4c0a6b301d6527 : personal Player Watchlist
 
 ## 30. 最重要
-次のスレッドではEagleEyeを最初から設計し直さない。
-このhandoffと最新mainを基準に、Player Watchlistの「前回何位 → 今回何位」機能をそのまま実装開始する。
+EagleEyeを最初から設計し直さない。
+このhandoffと最新mainを基準に、実装済みのPlayer Watchlist順位変動を維持し、次は「戦力/役場/同盟等の変更表示」へ進む。
