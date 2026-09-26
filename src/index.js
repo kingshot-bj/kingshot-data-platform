@@ -11,7 +11,7 @@ import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankin
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
-import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
+import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
 
@@ -972,7 +972,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
       if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
-      if (url.pathname === "/api/admin/api-pool/recover") return await handleApiPoolRecover(request, env);
+      if (url.pathname === "/api/admin/api-pool/health-check") return await handleApiPoolHealthCheck(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
@@ -1518,7 +1518,7 @@ async function handleApiPoolRevoke(request, env) {
 }
 
 
-async function handleApiPoolRecover(request, env) {
+async function handleApiPoolHealthCheck(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   try {
@@ -1528,16 +1528,72 @@ async function handleApiPoolRecover(request, env) {
       : Object.fromEntries((await request.formData()).entries());
     const keyId = String(body.key_id || "").trim();
     if (!keyId) return json({ ok: false, error: "KEY_ID_REQUIRED" }, 400);
-    const row = await env.DB.prepare("SELECT key_id, status, pool_type FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
-    if (!row) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
-    if (row.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
-    const now = Math.floor(Date.now() / 1000);
-    await env.DB.prepare("UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ?").bind(now, keyId).run();
-    if (contentType.includes("application/json")) return json({ ok: true, key_id: keyId, pool_type: row.pool_type, status: "AVAILABLE" });
-    return new Response(null, { status: 302, headers: { Location: "/admin/api-pool", "Cache-Control": "no-store" } });
+    const key = await env.DB.prepare("SELECT key_id, status, pool_type FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
+    if (!key) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
+    if (key.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
+    if (key.status === "COOLDOWN") return json({ ok: false, error: "API_POOL_KEY_COOLDOWN" }, 409);
+
+    configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+    const probeGovernorId = String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582").trim();
+    let lease = null;
+    try {
+      lease = await leaseApiKeyForHealthCheck(env.DB, { keyId, purpose: "API_POOL_HEALTH_CHECK", targetType: "API_KEY", targetId: probeGovernorId });
+      const result = await getMightPulsePlayer(env, probeGovernorId, { include: "base", apiKey: lease.api_key });
+      await recordApiPoolSuccess(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        endpoint: "/players/:governor_id",
+        targetType: "API_KEY",
+        targetId: probeGovernorId,
+        purpose: "API_POOL_HEALTH_CHECK",
+        httpStatus: result.status,
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      });
+      return json({ ok: true, key_id: keyId, status: "AVAILABLE", upstream_status: result.status, message: "接続確認成功。APIキーをAVAILABLEにしました。" });
+    } catch (error) {
+      if (lease) {
+        const status = Number(error?.status || 0);
+        const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+        const disable = status === 401 || status === 403;
+        const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+        await recordApiPoolFailure(env.DB, {
+          keyId: lease.key_id,
+          leaseId: lease.lease_id,
+          endpoint: "/players/:governor_id",
+          targetType: "API_KEY",
+          targetId: probeGovernorId,
+          purpose: "API_POOL_HEALTH_CHECK",
+          httpStatus: status,
+          errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage: error?.message || null,
+          cooldownSeconds: cooldown,
+          disable,
+          keepAvailable
+        });
+      }
+      const status = Number(error?.status || 0);
+      const nextStatus = status === 401 || status === 403 ? "DISABLED"
+        : status === 429 || status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? "COOLDOWN"
+        : status === 400 || status === 404 ? "AVAILABLE" : "ERROR";
+      return json({
+        ok: false,
+        key_id: keyId,
+        status: nextStatus,
+        upstream_status: status,
+        error: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        message: nextStatus === "DISABLED"
+          ? "APIキーの認証・権限エラーです。"
+          : nextStatus === "COOLDOWN"
+            ? "一時的な障害またはレート制限のためCOOLDOWNにしました。"
+            : nextStatus === "AVAILABLE"
+              ? "APIキーへの接続は確認できました。対象データ側の応答のためAVAILABLEを維持しました。"
+              : "接続確認に失敗したためERRORのままです."
+      }, 200);
+    }
   } catch (error) {
-    console.error("API pool recover error:", error);
-    return json({ ok: false, error: error?.message || "API_POOL_RECOVER_FAILED" }, 400);
+    console.error("API pool health check error:", error);
+    return json({ ok: false, error: error?.message || "API_POOL_HEALTH_CHECK_FAILED" }, 400);
   }
 }
 
@@ -1773,11 +1829,11 @@ async function renderApiPoolAdminPage(request, env) {
         (k.last_error_at ? "<small>" + escapeHtml(formatUnix(k.last_error_at)) + "</small>" : "") +
         "</div>"
       : "<span class='muted'>-</span>";
-    return "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td><b>" + escapeHtml(k.status) + "</b>" + errorInfo + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td><td>" + (k.status === "REVOKED" ? "-" : "<form method=\"post\" action=\"/api/admin/api-pool/move\" style=\"display:flex;gap:6px;align-items:center\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><select name=\"pool_type\" style=\"margin:0;padding:7px;width:auto\"><option value=\"SYSTEM_GENERAL\"" + (k.pool_type === "SYSTEM_GENERAL" ? " selected" : "") + ">GENERAL</option><option value=\"SYSTEM_WATCHLIST\"" + (k.pool_type === "SYSTEM_WATCHLIST" ? " selected" : "") + ">WATCHLIST</option></select><button type=\"submit\" style=\"margin:0;padding:7px 9px\">移動</button></form><form method=\"post\" action=\"/api/admin/api-pool/recover\" style=\"display:inline\" onsubmit=\"return confirm('このキーをAVAILABLEへ復旧しますか？')\"><input type=\"hidden\" name=\"key_id\" value=\"\" + escapeHtml(k.key_id) + \"\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#166534;color:#fff\">復旧</button></form><form method=\"post\" action=\"/api/admin/api-pool/revoke\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#7f1d1d;color:#fff\">無効化</button></form><form method=\"post\" action=\"/api/admin/api-pool/delete\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#991b1b;color:#fff\">完全削除</button></form>") + "</td></tr>";
+    return "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td><b>" + escapeHtml(k.status) + "</b>" + errorInfo + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td><td>" + (k.status === "REVOKED" ? "-" : "<form method=\"post\" action=\"/api/admin/api-pool/move\" style=\"display:flex;gap:6px;align-items:center\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><select name=\"pool_type\" style=\"margin:0;padding:7px;width:auto\"><option value=\"SYSTEM_GENERAL\"" + (k.pool_type === "SYSTEM_GENERAL" ? " selected" : "") + ">GENERAL</option><option value=\"SYSTEM_WATCHLIST\"" + (k.pool_type === "SYSTEM_WATCHLIST" ? " selected" : "") + ">WATCHLIST</option></select><button type=\"submit\" style=\"margin:0;padding:7px 9px\">移動</button></form><form method=\"post\" action=\"/api/admin/api-pool/health-check\" style=\"display:inline\" onsubmit=\"return confirm('このキーの接続確認を実行しますか？')\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#166534;color:#fff\">更新</button></form><form method=\"post\" action=\"/api/admin/api-pool/revoke\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#7f1d1d;color:#fff\">無効化</button></form><form method=\"post\" action=\"/api/admin/api-pool/delete\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#991b1b;color:#fff\">完全削除</button></form>") + "</td></tr>";
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{position:fixed;top:14px;right:14px;z-index:10;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:900px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap}.muted{color:#64748b}.pool-error{margin-top:6px;padding:7px 8px;border-radius:8px;background:#2a1115;border:1px solid #7f1d1d;color:#fecaca;white-space:normal;max-width:300px;line-height:1.45}.pool-error b{display:block;color:#fca5a5;font-size:11px}.pool-error div{margin-top:2px;color:#fecaca;font-size:11px;overflow-wrap:anywhere}.pool-error small{display:block;margin-top:3px;color:#fda4af;font-size:10px}.scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><a href='/admin/data-retention' style='color:#f59e0b;font-weight:900;text-decoration:none'>データ保存期間を管理 →</a><div class='hint'>履歴・生APIデータの自動削除期間を設定できます。</div></div><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>Pool移動</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{position:fixed;top:14px;right:14px;z-index:10;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:900px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8}.title{font-size:28px}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}input,select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}button{margin-top:12px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}th,td{text-align:left;padding:9px;border-bottom:1px solid #334155;white-space:nowrap}.muted{color:#64748b}.pool-error{margin-top:6px;padding:7px 8px;border-radius:8px;background:#2a1115;border:1px solid #7f1d1d;color:#fecaca;white-space:normal;max-width:300px;line-height:1.45}.pool-error b{display:block;color:#fca5a5;font-size:11px}.pool-error div{margin-top:2px;color:#fecaca;font-size:11px;overflow-wrap:anywhere}.pool-error small{display:block;margin-top:3px;color:#fda4af;font-size:10px}.scroll{overflow:auto}label{display:block;margin-top:10px;font-size:12px;color:#cbd5e1}</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='card'><a href='/admin/data-retention' style='color:#f59e0b;font-weight:900;text-decoration:none'>データ保存期間を管理 →</a><div class='hint'>履歴・生APIデータの自動削除期間を設定できます。</div></div><div class='card'><b>Pool Status</b><div class='hint'>" + escapeHtml(statText || "登録キーなし") + "</div></div><div class='card'><b>APIキー登録</b><div class='hint'>キー本体は保存時に暗号化され、画面には表示しません。</div><form method='post' action='/api/admin/api-pool/add'><label>Pool<select name='pool_type'><option>SYSTEM_GENERAL</option><option>SYSTEM_WATCHLIST</option><option>USER_CONTRIBUTED</option></select></label><label>ラベル<input name='label' placeholder='例: Main Key'></label><label>MightPulse API Key<input name='api_key' type='password' autocomplete='off' required></label><button type='submit'>登録</button></form></div><div class='card'><b>登録済みキー</b><div class='scroll'><table><thead><tr><th>Pool</th><th>Label</th><th>Status</th><th>Fingerprint</th><th>Remaining/min</th><th>Last Used</th><th>操作</th></tr></thead><tbody>" + (rows || "<tr><td colspan='7'>なし</td></tr>") + "</tbody></table></div></div><div class='card'><b>テスト</b><form method='get' action='/api/admin/api-pool/test-player'><label>領主ID<input name='governor_id' id='gid' placeholder='223636495' required></label><button type='submit'>Pool経由で取得</button></form></div></main></body></html>";
 }
 
 async function fetchThroughWatchlistApiPool(env, {
