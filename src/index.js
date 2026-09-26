@@ -870,13 +870,13 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var ws=d.watchlists||[];
       ws.forEach(function(w){
         var active=isActiveJob(w);
-        var card=document.createElement("div"); card.className="card";
+        var card=document.createElement("div"); card.className="card"; card.dataset.watchlistId=w.watchlist_id;
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>EagleEye更新完了: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+(w.last_error?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"");
         var row=document.createElement("div"); row.className="row";
         var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
-        var view=document.createElement("button"); view.textContent="ランキングを見る"; view.onclick=function(){showData(w.watchlist_id);};
-        var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
-        var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.onclick=function(){deleteWatch(w.watchlist_id);};
+        var view=document.createElement("button"); view.textContent="ランキングを見る"; view.disabled=active; view.onclick=function(){showData(w.watchlist_id);};
+        var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.disabled=active; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
+        var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.disabled=active; del.onclick=function(){deleteWatch(w.watchlist_id);};
         row.appendChild(refresh);row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
 
         if(active && sessionStorage.getItem("eagleeye_watchlist_running_"+w.watchlist_id)==="1" && !running[w.watchlist_id]){
@@ -901,6 +901,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         })
         .catch(function(e){
           running[id]=false;
+          setWatchCardBusy(id,false);
           if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
             return load();
           }
@@ -910,9 +911,18 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }
     return step().finally(function(){if(!sessionStorage.getItem("eagleeye_watchlist_running_"+id))running[id]=false;});
   }
+  function setWatchCardBusy(id,busy){
+    var card=document.querySelector("[data-watchlist-id='"+CSS.escape(String(id))+"']");
+    if(!card)return;
+    Array.prototype.forEach.call(card.querySelectorAll("button"),function(btn){btn.disabled=busy;});
+    var refresh=card.querySelector("button");
+    if(refresh)refresh.textContent=busy?"更新中…":"今すぐ更新";
+  }
   function refreshWatch(id){
     if(running[id])return;
+    running[id]=true;
     sessionStorage.setItem("eagleeye_watchlist_running_"+id,"1");
+    setWatchCardBusy(id,true);
     el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
     return continueWatch(id);
   }
