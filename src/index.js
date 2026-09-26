@@ -126,6 +126,7 @@ async function ensurePlayerVisibilityTable(db) {
       category TEXT NOT NULL,
       label TEXT NOT NULL,
       description TEXT,
+      min_role TEXT NOT NULL DEFAULT 'BASIC',
       basic_enabled INTEGER NOT NULL DEFAULT 0,
       advanced_enabled INTEGER NOT NULL DEFAULT 0,
       admin_enabled INTEGER NOT NULL DEFAULT 1,
@@ -135,35 +136,69 @@ async function ensurePlayerVisibilityTable(db) {
     )
   `).run();
 
+  const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
+  const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
+  if (!hasMinRole) {
+    await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
+  }
+
   const now = Math.floor(Date.now() / 1000);
+  const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+
   for (const item of PLAYER_VISIBILITY_ITEMS) {
+    // Existing installations may have non-monotonic legacy toggles. Convert them
+    // to the equivalent threshold: the lowest role that was allowed to see the item.
+    const existing = await db.prepare(
+      "SELECT min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings WHERE item_key = ? LIMIT 1"
+    ).bind(item.key).first();
+
+    const legacyMinRole =
+      Number(existing?.basic_enabled) === 1 ? "BASIC" :
+      Number(existing?.advanced_enabled) === 1 ? "ADVANCED" :
+      Number(existing?.admin_enabled) === 1 ? "ADMIN" : "OWNER";
+
+    const minRole = existing?.min_role && roleRank[String(existing.min_role).toUpperCase()]
+      ? String(existing.min_role).toUpperCase()
+      : legacyMinRole;
+
     const defaults = {
-      basic_enabled: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? 1 : 0,
-      advanced_enabled: 1,
-      admin_enabled: 1,
-      owner_enabled: 1
+      min_role: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? "BASIC" : "ADVANCED"
     };
+
     await db.prepare(`
       INSERT INTO player_visibility_settings
-        (item_key, category, label, description, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        (item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT(item_key) DO NOTHING
-    `).bind(item.key, item.category, item.label, item.description, defaults.basic_enabled, defaults.advanced_enabled, defaults.admin_enabled, defaults.owner_enabled, now).run();
+    `).bind(
+      item.key, item.category, item.label, item.description,
+      existing ? minRole : defaults.min_role,
+      1, 1, 1, 1, now
+    ).run();
 
-    // Keep display metadata in D1 synchronized with the canonical code definition.
-    // This also repairs labels created before a terminology change (e.g. ミスティック → 秘境の試練).
+    const canonicalMinRole = existing ? minRole : defaults.min_role;
+    const threshold = roleRank[canonicalMinRole] || 2;
     await db.prepare(`
       UPDATE player_visibility_settings
-      SET category = ?, label = ?, description = ?
+      SET category = ?, label = ?, description = ?, min_role = ?,
+          basic_enabled = ?, advanced_enabled = ?, admin_enabled = ?, owner_enabled = ?,
+          updated_at = ?
       WHERE item_key = ?
-    `).bind(item.category, item.label, item.description, item.key).run();
+    `).bind(
+      item.category, item.label, item.description, canonicalMinRole,
+      threshold <= 1 ? 1 : 0,
+      threshold <= 2 ? 1 : 0,
+      threshold <= 3 ? 1 : 0,
+      threshold <= 4 ? 1 : 0,
+      now, item.key
+    ).run();
   }
 }
 
 async function getPlayerVisibilitySettings(db) {
   await ensurePlayerVisibilityTable(db);
   const result = await db.prepare(
-    "SELECT item_key, category, label, description, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by FROM player_visibility_settings ORDER BY rowid"
+    "SELECT item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by FROM player_visibility_settings ORDER BY rowid"
   ).all();
   return result.results || [];
 }
@@ -171,8 +206,10 @@ async function getPlayerVisibilitySettings(db) {
 function visibilityEnabled(settings, itemKey, role) {
   const row = (settings || []).find(item => item.item_key === itemKey);
   if (!row) return role === "OWNER";
-  const column = role === "OWNER" ? "owner_enabled" : role === "ADMIN" ? "admin_enabled" : role === "ADVANCED" ? "advanced_enabled" : "basic_enabled";
-  return Number(row[column]) === 1;
+  const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+  const userRank = roleRank[String(role).toUpperCase()] || 0;
+  const minRank = roleRank[String(row.min_role || "OWNER").toUpperCase()] || 4;
+  return userRank >= minRank;
 }
 
 function filterPlayerProfileForRole(payload, role, settings) {
@@ -1767,14 +1804,27 @@ async function handlePlayerVisibilityApi(request, env) {
     if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
     const body = await request.json().catch(() => ({}));
     const itemKey = String(body.item_key || "").trim();
-    const role = String(body.role || "").trim().toUpperCase();
-    const enabled = body.enabled ? 1 : 0;
+    const minRole = String(body.min_role || "").trim().toUpperCase();
     if (!PLAYER_VISIBILITY_ITEMS.some(item => item.key === itemKey)) return json({ ok: false, error: "UNKNOWN_VISIBILITY_ITEM" }, 400);
-    if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
-    if (guard.auth.role === "ADMIN" && role === "OWNER") return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
-    const column = role === "OWNER" ? "owner_enabled" : role === "ADMIN" ? "admin_enabled" : role === "ADVANCED" ? "advanced_enabled" : "basic_enabled";
+    if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(minRole)) return json({ ok: false, error: "INVALID_MIN_ROLE" }, 400);
+    if (guard.auth.role === "ADMIN" && minRole === "OWNER") {
+      // ADMIN may not alter OWNER visibility settings.
+      // An OWNER-only threshold is therefore reserved for OWNER control.
+      return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
+    }
+    const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+    const threshold = roleRank[minRole];
     const now = Math.floor(Date.now() / 1000);
-    await env.DB.prepare("UPDATE player_visibility_settings SET " + column + " = ?, updated_at = ?, updated_by = ? WHERE item_key = ?").bind(enabled, now, guard.auth.user_id, itemKey).run();
+    await env.DB.prepare(
+      "UPDATE player_visibility_settings SET min_role = ?, basic_enabled = ?, advanced_enabled = ?, admin_enabled = ?, owner_enabled = ?, updated_at = ?, updated_by = ? WHERE item_key = ?"
+    ).bind(
+      minRole,
+      threshold <= 1 ? 1 : 0,
+      threshold <= 2 ? 1 : 0,
+      threshold <= 3 ? 1 : 0,
+      threshold <= 4 ? 1 : 0,
+      now, guard.auth.user_id, itemKey
+    ).run();
     return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
   } catch (error) {
     console.error("Player visibility settings error:", error);
@@ -1788,15 +1838,16 @@ async function renderPlayerVisibilityPage(request, env) {
   const settings = await getPlayerVisibilitySettings(env.DB);
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
   const rows = settings.map(item => {
+    const minRole = ["BASIC","ADVANCED","ADMIN","OWNER"].includes(String(item.min_role || "").toUpperCase())
+      ? String(item.min_role).toUpperCase() : "OWNER";
+    const options = ["BASIC","ADVANCED","ADMIN","OWNER"].map(role =>
+      "<option value='" + role + "'" + (role === minRole ? " selected" : "") + ">" + role + "以上</option>"
+    ).join("");
+    const disabledOwner = guard.auth.role === "ADMIN" && minRole === "OWNER" ? " disabled" : "";
     return "<tr><td class='item-cell'><b>" + escapeHtml(item.category) + "</b><br><strong>" + escapeHtml(item.label) + "</strong><br><small>" + escapeHtml(item.description || "") + "</small></td>" +
-      ["BASIC","ADVANCED","ADMIN","OWNER"].map(role => {
-        const key = role.toLowerCase() + "_enabled";
-        const checked = Number(item[key]) === 1 ? " checked" : "";
-        const disabled = role === "OWNER" && guard.auth.role === "ADMIN" ? " disabled" : "";
-        return "<td class='toggle-cell' data-role-label='" + role + "'><label class='switch'><input type='checkbox' data-item='" + escapeHtml(item.item_key) + "' data-role='" + role + "'" + checked + disabled + "><span></span></label></td>";
-      }).join("") + "</tr>";
+      "<td class='role-cell'><select class='role-select' data-item='" + escapeHtml(item.item_key) + "'" + disabledOwner + ">" + options + "</select></td></tr>";
   }).join("");
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ公開設定</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.badge{position:fixed;top:14px;right:14px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:calc(100vw - 28px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}.hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:11px 9px;border-bottom:1px solid #334155;text-align:left;vertical-align:middle}th:not(:first-child),td:not(:first-child){text-align:center}td small{color:#94a3b8;line-height:1.5}.switch{position:relative;display:inline-block;width:46px;height:26px}.switch input{opacity:0;width:0;height:0}.switch span{position:absolute;inset:0;border-radius:999px;background:#334155;cursor:pointer;transition:.15s}.switch span:before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}.switch input:checked+span{background:#f59e0b}.switch input:checked+span:before{transform:translateX(20px)}.switch input:disabled+span{opacity:.45;cursor:not-allowed}.status{margin-top:10px;color:#86efac;font-size:13px}@media(max-width:720px){.wrap{padding:58px 10px 24px}.card{padding:10px}.scroll{overflow:visible}table{min-width:0;width:100%;display:block}thead{display:none}tbody{display:block;width:100%}tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-bottom:1px solid #334155;padding:14px 0}tr:last-child{border-bottom:0}.item-cell{grid-column:1 / -1;text-align:left!important;padding:4px 8px 14px!important;border-bottom:0}.toggle-cell{border-bottom:0!important;padding:8px 2px!important;min-width:0}.toggle-cell::before{content:attr(data-role-label);display:block;color:#94a3b8;font-size:10px;font-weight:800;margin-bottom:7px}.toggle-cell .switch{width:38px;height:22px;max-width:100%;margin:0 auto}.toggle-cell .switch span:before{width:16px;height:16px;left:3px;top:3px}.toggle-cell .switch input:checked+span:before{transform:translateX(16px)}th,td{padding:8px 4px}.title{font-size:24px}.badge{font-size:10px}}</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1><div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限だけをリアルタイムで変更できます。ADMINはOWNER列を変更できません。</div><div id='status' class='status'></div><div class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>BASIC</th><th>ADVANCED</th><th>ADMIN</th><th>OWNER</th></tr></thead><tbody>" + rows + "</tbody></table></div></div></main><script>(function(){document.querySelectorAll('input[data-item]').forEach(function(input){input.addEventListener('change',function(){var previous=!input.checked;input.disabled=true;fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item_key:input.getAttribute('data-item'),role:input.getAttribute('data-role'),enabled:input.checked})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'更新失敗');return d;});}).then(function(){document.getElementById('status').textContent='保存しました。表示権限は即時反映されます。';}).catch(function(e){input.checked=previous;document.getElementById('status').textContent='更新失敗: '+e.message;}).finally(function(){input.disabled=false;});});});}());</script></body></html>";
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ公開設定</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.badge{position:fixed;top:14px;right:14px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:calc(100vw - 28px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}.hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:0}th,td{padding:11px 9px;border-bottom:1px solid #334155;text-align:left;vertical-align:middle}th:last-child,td:last-child{text-align:center;width:180px}td small{color:#94a3b8;line-height:1.5}.role-select{width:170px;max-width:100%;padding:9px 30px 9px 10px;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#f8fafc;font-weight:800}.role-select:disabled{opacity:.5}.status{margin-top:10px;color:#86efac;font-size:13px}@media(max-width:720px){.wrap{padding:58px 10px 24px}.card{padding:10px}.scroll{overflow:visible}table{width:100%}th,td{padding:10px 6px}th:last-child,td:last-child{width:120px}.role-select{width:112px;padding:8px 8px;font-size:12px}.title{font-size:24px}.badge{font-size:10px}}</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1><div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限だけをリアルタイムで変更できます。閲覧可能ロールを設定すると、そのロール以上が閲覧できます。ADMINは「OWNERのみ」を設定できません。</div><div id='status' class='status'></div><div class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>閲覧可能ロール</th></tr></thead><tbody>" + rows + "</tbody></table></div></div></main><script>(function(){document.querySelectorAll('select[data-item]').forEach(function(select){select.addEventListener('change',function(){var previous=select.value;select.disabled=true;fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item_key:select.getAttribute('data-item'),min_role:select.value})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'更新失敗');return d;});}).then(function(){document.getElementById('status').textContent='保存しました。'+select.value+'以上が閲覧できます。';}).catch(function(e){select.value=previous;document.getElementById('status').textContent='更新失敗: '+e.message;}).finally(function(){select.disabled=false;});});});}());</script></body></html>";
 }
 
 async function renderDataRetentionPage(request, env) {
