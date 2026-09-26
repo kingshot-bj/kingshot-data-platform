@@ -117,6 +117,68 @@ async function ensureGoogleSheetTab(env, spreadsheetId, title) {
   };
 }
 
+
+function base64urlFromBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+}
+
+async function createResearchWebhookSignature(secret, timestamp, nonce, payloadText) {
+  const message = String(timestamp) + "." + String(nonce) + "." + payloadText;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(secret)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return base64urlFromBytes(new Uint8Array(signature));
+}
+
+async function appendViaGoogleAppsScript(env, { sheetTitle, headers, rows }) {
+  const endpoint = String(env.GOOGLE_SHEETS_WEBAPP_URL || "").trim();
+  const secret = String(env.GOOGLE_SHEETS_WEBAPP_SECRET || "").trim();
+  const spreadsheetId = String(env.GOOGLE_SHEETS_SPREADSHEET_ID || "").trim();
+  if (!endpoint || !secret || !spreadsheetId) {
+    const error = new Error("GOOGLE_SHEETS_WEBAPP_NOT_CONFIGURED");
+    error.code = "GOOGLE_SHEETS_WEBAPP_NOT_CONFIGURED";
+    throw error;
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = crypto.randomUUID();
+  const payload = JSON.stringify({
+    spreadsheetId,
+    sheetTitle,
+    headers: Array.isArray(headers) ? headers : [],
+    rows: Array.isArray(rows) ? rows : []
+  });
+  const signature = await createResearchWebhookSignature(secret, timestamp, nonce, payload);
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ timestamp, nonce, payload, signature })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true) {
+    const error = new Error(data?.error || "GOOGLE_SHEETS_WEBAPP_FAILED");
+    error.code = "GOOGLE_SHEETS_WEBAPP_FAILED";
+    error.status = response.status;
+    throw error;
+  }
+  return {
+    updatedRows: Number(data.updatedRows || 0),
+    updatedCells: Number(data.updatedCells || 0),
+    sheetTitle,
+    spreadsheetId,
+    url: "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(spreadsheetId) + "/edit",
+    transport: "apps-script-webapp"
+  };
+}
+
 async function appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, rows) {
   const tab = await ensureGoogleSheetTab(env, spreadsheetId, sheetTitle);
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -164,10 +226,15 @@ export async function exportToGoogleSheet(env, { sheetTitle, headers, rows }) {
     throw error;
   }
 
+  if (env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET) {
+    return appendViaGoogleAppsScript(env, { sheetTitle, headers, rows });
+  }
+
   const result = await appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, rows);
   return {
     ...result,
     spreadsheetId,
-    url: "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(spreadsheetId) + "/edit"
+    url: "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(spreadsheetId) + "/edit",
+    transport: "google-sheets-api"
   };
 }
