@@ -972,6 +972,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
       if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
+      if (url.pathname === "/api/admin/api-pool/recover") return await handleApiPoolRecover(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
@@ -1517,6 +1518,29 @@ async function handleApiPoolRevoke(request, env) {
 }
 
 
+async function handleApiPoolRecover(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    const contentType = request.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+      ? await request.json().catch(() => ({}))
+      : Object.fromEntries((await request.formData()).entries());
+    const keyId = String(body.key_id || "").trim();
+    if (!keyId) return json({ ok: false, error: "KEY_ID_REQUIRED" }, 400);
+    const row = await env.DB.prepare("SELECT key_id, status, pool_type FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
+    if (!row) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
+    if (row.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare("UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ?").bind(now, keyId).run();
+    if (contentType.includes("application/json")) return json({ ok: true, key_id: keyId, pool_type: row.pool_type, status: "AVAILABLE" });
+    return new Response(null, { status: 302, headers: { Location: "/admin/api-pool", "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("API pool recover error:", error);
+    return json({ ok: false, error: error?.message || "API_POOL_RECOVER_FAILED" }, 400);
+  }
+}
+
 async function handleApiPoolDelete(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
@@ -1749,7 +1773,7 @@ async function renderApiPoolAdminPage(request, env) {
         (k.last_error_at ? "<small>" + escapeHtml(formatUnix(k.last_error_at)) + "</small>" : "") +
         "</div>"
       : "<span class='muted'>-</span>";
-    return "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td><b>" + escapeHtml(k.status) + "</b>" + errorInfo + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td><td>" + (k.status === "REVOKED" ? "-" : "<form method=\"post\" action=\"/api/admin/api-pool/move\" style=\"display:flex;gap:6px;align-items:center\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><select name=\"pool_type\" style=\"margin:0;padding:7px;width:auto\"><option value=\"SYSTEM_GENERAL\"" + (k.pool_type === "SYSTEM_GENERAL" ? " selected" : "") + ">GENERAL</option><option value=\"SYSTEM_WATCHLIST\"" + (k.pool_type === "SYSTEM_WATCHLIST" ? " selected" : "") + ">WATCHLIST</option></select><button type=\"submit\" style=\"margin:0;padding:7px 9px\">移動</button></form><form method=\"post\" action=\"/api/admin/api-pool/revoke\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#7f1d1d;color:#fff\">無効化</button></form><form method=\"post\" action=\"/api/admin/api-pool/delete\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#991b1b;color:#fff\">完全削除</button></form>") + "</td></tr>";
+    return "<tr><td>" + escapeHtml(k.pool_type) + "</td><td>" + escapeHtml(k.label || "-") + "</td><td><b>" + escapeHtml(k.status) + "</b>" + errorInfo + "</td><td>" + escapeHtml(k.key_fingerprint ? String(k.key_fingerprint).slice(0,16) + "…" : "-") + "</td><td>" + escapeHtml(k.remaining_minute ?? "-") + "</td><td>" + escapeHtml(formatUnix(k.last_used_at)) + "</td><td>" + (k.status === "REVOKED" ? "-" : "<form method=\"post\" action=\"/api/admin/api-pool/move\" style=\"display:flex;gap:6px;align-items:center\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><select name=\"pool_type\" style=\"margin:0;padding:7px;width:auto\"><option value=\"SYSTEM_GENERAL\"" + (k.pool_type === "SYSTEM_GENERAL" ? " selected" : "") + ">GENERAL</option><option value=\"SYSTEM_WATCHLIST\"" + (k.pool_type === "SYSTEM_WATCHLIST" ? " selected" : "") + ">WATCHLIST</option></select><button type=\"submit\" style=\"margin:0;padding:7px 9px\">移動</button></form><form method=\"post\" action=\"/api/admin/api-pool/recover\" style=\"display:inline\" onsubmit=\"return confirm('このキーをAVAILABLEへ復旧しますか？')\"><input type=\"hidden\" name=\"key_id\" value=\"\" + escapeHtml(k.key_id) + \"\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#166534;color:#fff\">復旧</button></form><form method=\"post\" action=\"/api/admin/api-pool/revoke\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#7f1d1d;color:#fff\">無効化</button></form><form method=\"post\" action=\"/api/admin/api-pool/delete\" style=\"display:inline\"><input type=\"hidden\" name=\"key_id\" value=\"" + escapeHtml(k.key_id) + "\"><button type=\"submit\" style=\"margin:0;padding:7px 9px;background:#991b1b;color:#fff\">完全削除</button></form>") + "</td></tr>";
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
