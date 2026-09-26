@@ -3337,6 +3337,114 @@ async function handleDebugPlayerIcons(request, env) {
 }
 
 
+
+async function getLatestAdminKingdomRankingSnapshot(env, kid, board, limit = 100) {
+  const latest = await env.DB.prepare(
+    "SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?"
+  ).bind(Number(kid), String(board)).first();
+  const observedAt = Number(latest?.observed_at || 0);
+  if (!observedAt) return { observedAt: null, sourceObservedAt: null, rows: [] };
+  const result = await env.DB.prepare(
+    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = ? ORDER BY rank ASC LIMIT ?"
+  ).bind(Number(kid), String(board), observedAt, Number(limit)).all();
+  const rows = result.results || [];
+  const sourceValues = rows.map(row => Number(row.source_observed_at || 0)).filter(value => Number.isFinite(value) && value > 0);
+  return { observedAt, sourceObservedAt: sourceValues.length ? Math.min(...sourceValues) : null, rows };
+}
+
+function adminKingdomRankingName(row) {
+  if (row?.target_type === "ALLIANCE") {
+    const abbr = String(row.abbr || "").trim();
+    const name = String(row.name || "").trim();
+    return abbr && name ? "[" + abbr + "] " + name : abbr || name || row.target_id || "-";
+  }
+  return String(row?.nick_name || row?.governor_id || row?.uid || row?.target_id || "-");
+}
+
+async function handleAdminKingdomRankingApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const kid = String(url.searchParams.get("kid") || "").trim();
+  const board = String(url.searchParams.get("board") || "").trim();
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 100), 1), 100);
+  const refresh = url.searchParams.get("refresh") === "1";
+  if (!/^\\d+$/.test(kid)) return json({ ok:false, error:"INVALID_KID" },400);
+  if (!KINGDOM_RANKING_BOARDS.includes(board)) return json({ ok:false, error:"INVALID_BOARD" },400);
+
+  try {
+    if (refresh) {
+      await ensureKingdomWatchlistFreshnessSchema(env.DB);
+      const startedAt = Date.now();
+      const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, 100, "ADMIN_KINGDOM_RANKING");
+      const elapsedMs = Date.now() - startedAt;
+      const payload = fetched.result?.data;
+      const sourceObservedAt = getMightPulseSourceTimestamp(payload);
+      const entries = extractKingdomRankingEntries(payload);
+      const observedAt = Math.floor(Date.now() / 1000);
+      const savedRows = await saveKingdomRankingBoard(env.DB, {
+        kid: Number(kid), board, entries, observedAt, sourceObservedAt
+      });
+      const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
+      return json({
+        ok:true, kid:Number(kid), board, label:RANKING_BOARD_LABELS[board] || board,
+        limit, refreshed:true, entry_count:entries.length, saved_rows:savedRows,
+        upstream_elapsed_ms:elapsedMs, source_observed_at:sourceObservedAt,
+        observed_at:snapshot.observedAt, rows:snapshot.rows, pool_type:fetched.pool_type
+      });
+    }
+    const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
+    return json({
+      ok:true, kid:Number(kid), board, label:RANKING_BOARD_LABELS[board] || board,
+      limit, refreshed:false, entry_count:snapshot.rows.length,
+      source_observed_at:snapshot.sourceObservedAt, observed_at:snapshot.observedAt,
+      rows:snapshot.rows
+    });
+  } catch (error) {
+    console.error("Admin kingdom ranking error:", error);
+    return json({
+      ok:false, error:error?.code || error?.message || "KINGDOM_RANKING_READ_FAILED",
+      status:Number(error?.status || 0), message:error?.message || null
+    }, error?.status >= 400 && error?.status < 600 ? error.status : 502);
+  }
+}
+
+async function handleAdminKingdomRankingExport(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const kid = String(url.searchParams.get("kid") || "").trim();
+  const board = String(url.searchParams.get("board") || "").trim();
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 100), 1), 100);
+  if (!/^\\d+$/.test(kid)) return json({ok:false,error:"INVALID_KID"},400);
+  if (!KINGDOM_RANKING_BOARDS.includes(board)) return json({ok:false,error:"INVALID_BOARD"},400);
+  try {
+    const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
+    if (!snapshot.rows.length) return json({ok:false,error:"RANKING_DATA_NOT_FOUND",message:"先にランキングを取得してください。"},404);
+    const exportedAt = new Date().toISOString();
+    const label = RANKING_BOARD_LABELS[board] || board;
+    const headers = ["出力日時","王国","ランキング","順位","対象種別","領主ID","UID","プレイヤー名","同盟ID","同盟略称","同盟名","スコア","EagleEye取得時刻","MightPulseデータ基準時刻"];
+    const rows = snapshot.rows.map(row => ({
+      "出力日時":exportedAt,"王国":kid,"ランキング":label,"順位":row.rank,
+      "対象種別":row.target_type === "ALLIANCE" ? "同盟" : "プレイヤー",
+      "領主ID":row.governor_id || "","UID":row.uid || "","プレイヤー名":row.nick_name || "",
+      "同盟ID":row.aid || "","同盟略称":row.abbr || "","同盟名":row.name || "","スコア":row.score,
+      "EagleEye取得時刻":row.observed_at ? formatUnix(row.observed_at) : "",
+      "MightPulseデータ基準時刻":row.source_observed_at ? formatUnix(row.source_observed_at) : ""
+    }));
+    const result = await exportToGoogleSheet(env, {
+      sheetTitle:"王国" + kid + "_" + label, headers, rows
+    });
+    return new Response(null,{status:303,headers:{location:result.url,"cache-control":"no-store"}});
+  } catch (error) {
+    console.error("Admin kingdom ranking export error:", error);
+    if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED" || error?.code === "GOOGLE_SHEETS_WEBAPP_NOT_CONFIGURED") {
+      return json({ok:false,error:error.code,message:"Google Sheets連携が未設定です。"},503);
+    }
+    return json({ok:false,error:error?.code || "KINGDOM_RANKING_EXPORT_FAILED",message:error?.message || "Google Sheetsへの出力に失敗しました。"},502);
+  }
+}
+
 async function renderAdminControlPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
