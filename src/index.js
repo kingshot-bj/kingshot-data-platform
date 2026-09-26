@@ -3393,6 +3393,17 @@ async function handleAdminKingdomRankingApi(request, env) {
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
       const entries = extractKingdomRankingEntries(payload);
+      if (!entries.length) {
+        const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).slice(0, 30) : [];
+        return json({
+          ok:false,
+          error:"RANKING_ENTRIES_EMPTY",
+          message:"ランキングAPIは成功しましたが、ランキング配列を抽出できませんでした。",
+          upstream_status:fetched.result?.status ?? 200,
+          payload_type:Array.isArray(payload) ? "array" : typeof payload,
+          payload_keys:payloadKeys
+        },502);
+      }
       const observedAt = Math.floor(Date.now() / 1000);
       const savedRows = await saveKingdomRankingBoard(env.DB, {
         kid: Number(kid), board, entries, observedAt, sourceObservedAt
