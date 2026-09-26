@@ -419,13 +419,7 @@ async function processKingdomWatchlistJob(env, job) {
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
       await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
-      const entries = Array.isArray(payload?.rankings)
-        ? payload.rankings
-        : Array.isArray(payload?.entries)
-          ? payload.entries
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : [];
+      const entries = extractKingdomRankingEntries(payload);
 
       rankingRows += await saveKingdomRankingBoard(env.DB, {
         kid: job.kid,
@@ -576,7 +570,32 @@ async function fetchWithConcurrency(items, concurrency, worker) {
   return results;
 }
 
-async function renderKingdomWatchlistPage(request, env) {
+async function extractKingdomRankingEntries(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+
+  const candidates = [
+    payload.rankings,
+    payload.entries,
+    payload.items,
+    payload.results,
+    payload.leaderboard,
+    payload.data
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+    if (candidate && typeof candidate === "object") {
+      for (const nestedKey of ["rankings", "entries", "items", "results", "leaderboard"]) {
+        if (Array.isArray(candidate[nestedKey])) return candidate[nestedKey];
+      }
+    }
+  }
+
+  return [];
+}
+
+function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
     return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
@@ -1421,7 +1440,7 @@ async function handleRankingBoardTest(request, env) {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const result = await getMightPulseKingdomRanks(env, kid, { board, limit: 100 });
     const payload = result.data;
-    const entries = payload?.rankings || payload?.entries || payload?.data || [];
+    const entries = extractKingdomRankingEntries(payload);
     const saved = env.DB ? await saveKingdomRankingBoard(env.DB, {
       kid,
       board,
@@ -1896,13 +1915,7 @@ async function handleApiPoolTestRanking(request, env) {
     });
     const elapsedMs = Date.now() - startedAt;
     const payload = result?.data || {};
-    const entries = Array.isArray(payload?.rankings)
-      ? payload.rankings
-      : Array.isArray(payload?.entries)
-        ? payload.entries
-        : Array.isArray(payload?.data)
-          ? payload.data
-          : [];
+    const entries = extractKingdomRankingEntries(payload);
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
