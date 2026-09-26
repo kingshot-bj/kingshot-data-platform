@@ -24,7 +24,7 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
     ranks.migrant_score ?? null, ranks.migrant_rank ?? null,
     ranks.mystic_trial ?? null, ranks.mystic_rank ?? null,
     JSON.stringify(Array.isArray(ranks.leaderboards) ? ranks.leaderboards : []),
-    observedAt, sourceObservationId, observedAt
+    observedAt, sourceObservedAt, sourceObservationId, observedAt
   ).run();
   return id;
 }
