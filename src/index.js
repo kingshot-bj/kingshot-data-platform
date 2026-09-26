@@ -2281,7 +2281,7 @@ function pemToArrayBuffer(pem) {
   const clean = String(pem || "")
     .replace(/-----BEGIN PRIVATE KEY-----/g, "")
     .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\\s+/g, "");
+    .replace(/\s+/g, "");
   const binary = atob(clean);
   return Uint8Array.from(binary, ch => ch.charCodeAt(0)).buffer;
 }
@@ -2307,7 +2307,7 @@ async function createGoogleServiceAccountAccessToken(env) {
   const unsigned = header + "." + claim;
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    pemToArrayBuffer(privateKey.replace(/\\n/g, "\\n")),
+    pemToArrayBuffer(privateKey.replace(/\\n/g, "\n")),
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"]
