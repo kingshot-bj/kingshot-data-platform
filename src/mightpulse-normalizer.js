@@ -13,7 +13,7 @@ export function normalizePlayerObservation(raw) {
   };
 }
 
-export function observationEnvelope({ endpoint, httpStatus, raw, observedAt = Math.floor(Date.now() / 1000) }) {
+export function observationEnvelope({ endpoint, httpStatus, raw, observedAt = Math.floor(Date.now() / 1000), sourceObservedAt = null }) {
   const normalized = normalizePlayerObservation(raw);
   return {
     provider: normalized.provider,
@@ -21,6 +21,7 @@ export function observationEnvelope({ endpoint, httpStatus, raw, observedAt = Ma
     target_type: normalized.target_type,
     target_id: normalized.target_id,
     observed_at: observedAt,
+    source_observed_at: sourceObservedAt,
     http_status: httpStatus,
     payload_json: JSON.stringify(normalized.payload),
     created_at: observedAt
