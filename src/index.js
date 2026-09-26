@@ -862,7 +862,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   function isActiveJob(w){
     return w.job && (w.job.status==="RANKINGS" || w.job.status==="PLAYERS");
   }
+  var watchlistIdForProgress="";
   function jobProgressHtml(w){
+    watchlistIdForProgress=w.watchlist_id;
     var j=w.job;
     if(!j)return "";
     if(j.status==="COMPLETED"){
@@ -872,7 +874,13 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var last=new Date(j.source_last_at*1000).toLocaleString("ja-JP");
         sourceText=first===last?first:(first+" ～ "+last);
       }
-      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span>"+(sourceText?"<small>MightPulseデータ基準時刻: "+esc(sourceText)+"</small>":"<small>MightPulseデータ基準時刻: 未取得</small>")+"</div>";
+      var elapsedText="";
+      var elapsedKey="eagleeye_watchlist_elapsed_ms_"+String(watchlistIdForProgress||"");
+      try{
+        var savedElapsed=sessionStorage.getItem(elapsedKey);
+        if(savedElapsed&&Number.isFinite(Number(savedElapsed))) elapsedText="<small>今回の更新: "+(Number(savedElapsed)/1000).toFixed(1)+"秒</small>";
+      }catch(e){}
+      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span>"+(sourceText?"<small>MightPulseデータ基準時刻: "+esc(sourceText)+"</small>":"<small>MightPulseデータ基準時刻: 未取得</small>")+elapsedText+"</div>";
     }
     if(j.status==="RANKINGS"){
       var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
@@ -938,8 +946,17 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           finished=true;
           if(pollTimer)clearTimeout(pollTimer);
           if(d.result && d.result.completed){
+            var elapsedMs=null;
+            try{
+              var startedAt=Number(sessionStorage.getItem("eagleeye_watchlist_started_at_"+id));
+              if(Number.isFinite(startedAt)&&startedAt>0){
+                elapsedMs=Math.max(0,Date.now()-startedAt);
+                sessionStorage.setItem("eagleeye_watchlist_elapsed_ms_"+id,String(elapsedMs));
+                sessionStorage.removeItem("eagleeye_watchlist_started_at_"+id);
+              }
+            }catch(e){}
             sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
-            el("msg").innerHTML="<span class='ok'>更新が完了しました。</span>";
+            el("msg").innerHTML="<span class='ok'>更新が完了しました。"+(elapsedMs!==null?" 所要時間: "+(elapsedMs/1000).toFixed(1)+"秒":"")+"</span>";
             return load();
           }
           return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,300);}); }).then(step);
@@ -968,6 +985,10 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   }
   function refreshWatch(id){
     if(running[id])return;
+    try{
+      sessionStorage.setItem("eagleeye_watchlist_started_at_"+id,String(Date.now()));
+      sessionStorage.removeItem("eagleeye_watchlist_elapsed_ms_"+id);
+    }catch(e){}
     sessionStorage.setItem("eagleeye_watchlist_running_"+id,"1");
     setWatchCardBusy(id,true);
     el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
@@ -1142,6 +1163,8 @@ async function handleKingdomWatchlistApi(request, env) {
           player_rows: Number(job.player_rows || 0),
           last_error: job.last_error || null,
           observed_at: Number(job.observed_at || 0),
+          source_first_at: job.source_first_at ? Number(job.source_first_at) : null,
+          source_last_at: job.source_last_at ? Number(job.source_last_at) : null,
           created_at: Number(job.created_at || 0),
           updated_at: Number(job.updated_at || 0),
           completed_at: job.completed_at ? Number(job.completed_at) : null
