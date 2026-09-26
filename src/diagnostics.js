@@ -1,13 +1,13 @@
 const DIAGNOSTIC_SERVICES = [
-  ["api_pool", "API Pool"],
-  ["mightpulse", "MightPulse API"],
-  ["ranking", "ランキング取得"],
-  ["player", "プレイヤー取得"],
-  ["watchlist", "王国ウォッチリスト"],
-  ["d1", "D1 Database"],
-  ["discord", "Discord認証"],
-  ["google_sheets", "Google Sheets"],
-  ["notifications", "通知システム"]
+  ["api_pool", "API Pool", "CRITICAL"],
+  ["mightpulse", "MightPulse API", "CRITICAL"],
+  ["ranking", "ランキング取得", "DEGRADED"],
+  ["player", "プレイヤー取得", "DEGRADED"],
+  ["watchlist", "王国ウォッチリスト", "DEGRADED"],
+  ["d1", "D1 Database", "CRITICAL"],
+  ["discord", "Discord認証", "DEGRADED"],
+  ["google_sheets", "Google Sheets", "DEGRADED"],
+  ["notifications", "通知システム", "DEGRADED"]
 ];
 
 export async function ensureDiagnosticSchema(db) {
@@ -107,11 +107,12 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     if (!latestByService.has(event.service)) latestByService.set(event.service, event);
   }
 
-  const services = DIAGNOSTIC_SERVICES.map(([key, label]) => {
+  const services = DIAGNOSTIC_SERVICES.map(([key, label, severity]) => {
     const latest = latestByService.get(key);
     return {
       key,
       label,
+      severity,
       status: latest?.status || "UNKNOWN",
       last_event_at: latest?.created_at || null,
       last_error_code: latest?.error_code || null,
@@ -122,12 +123,22 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
   });
 
   const failed = services.filter(item => item.status === "FAILED").length;
+  const criticalFailed = services.filter(item => item.severity === "CRITICAL" && item.status === "FAILED").length;
   const warning = services.filter(item => item.status === "WARNING").length;
   const unknown = services.filter(item => item.status === "UNKNOWN").length;
+  const criticalUnknown = services.filter(item => item.severity === "CRITICAL" && item.status === "UNKNOWN").length;
+  const degraded = failed > 0 || warning > 0 || unknown > 0;
 
   return {
-    overall: failed ? "FAILED" : warning || unknown ? "WARNING" : "SUCCESS",
-    counts: { failed, warning, unknown, healthy: services.filter(item => item.status === "SUCCESS").length },
+    overall: criticalFailed ? "CRITICAL" : degraded ? "DEGRADED" : "SUCCESS",
+    counts: {
+      failed,
+      criticalFailed,
+      warning,
+      unknown,
+      criticalUnknown,
+      healthy: services.filter(item => item.status === "SUCCESS").length
+    },
     services,
     events
   };
