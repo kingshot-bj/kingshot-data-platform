@@ -517,3 +517,14 @@ R2だけでなく、Cloudflare D1についても、無料枠・容量・読み�
 新機能は「実装できるか」だけでなく、**運用時の容量・コスト・制限・暴走リスクまで含めて設計してから実装する**。
 
 原則として、正常な無料枠超過を理由に利用者に気付かれないまま機能を停止させない。警告・可視化・管理者判断を優先し、明らかな異常動作のみ自動停止の対象とする。
+
+### 24. MightPulse freshness / Watchlist timestamp policy（2026-09-26）
+
+王国ウォッチリストの「更新完了時刻」と、MightPulseが返したデータの基準時刻を混同しない。
+
+- EagleEye更新完了 = EagleEye側のWatchlistジョブが完了した時刻。
+- MightPulseデータ基準時刻 = MightPulseレスポンスの cached_at を正規化した時刻。
+- source_observed_at をランキング・プレイヤー・スナップショット系へ保存し、D1の observed_at（EagleEye取得時刻）とは分離する。
+- Watchlistジョブでは取得したMightPulseデータの基準時刻を source_first_at / source_last_at として保持する。複数のboard/sectionで鮮度が異なる可能性があるため、単一時刻に潰さず範囲として表示する。
+- MightPulse公式API仕様では、Playerレスポンスに fresh / cached_at / age_seconds が存在し、各include sectionは個別に鮮度管理される。レスポンスは最大60分古い場合がある。cached_at が存在しないレスポンスではEagleEye側で推測せず「未取得」とする。
+- Watchlistのライト/ダークテーマはEagleEye共通の data-eagle-theme を使用し、ページ独自のテーマ状態を持たせない。
