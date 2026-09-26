@@ -641,3 +641,121 @@ UI候補：王国番号、ランキングdropdown、表示件数、取得／表�
 - MightPulseランキングのfreshness仕様はPlayerほど明確でないため断定しない。
 - 2日前の名前変更が反映されない件は、ランキング表示が古いsnapshotやplayersを参照している可能性を含めて最優先調査。
 - 新スレッドではREADME → index.js → ranking-store.js → mightpulse.jsを確認し、API payload → D1 save → D1 read → renderを実データ経路で追う。
+
+
+### 26. 2026-09-26 直近スレッド引き継ぎ：王国ランキング機能・鮮度・権限
+
+このセクションは、2026-09-26の直近スレッド終了時点で確定した設計判断と、次スレッドで最優先に確認すべき不具合候補をまとめたもの。
+
+#### 26-1. 重要：まず確認すること
+ユーザーは、Watchlist等で「更新」を実行してMightPulse APIを叩いているはずなのに、画面のランキングに2日前に変更したプレイヤー名が反映されていないことを確認した。
+
+**最優先で実コードを追跡すること：**
+1. Watchlist更新ボタン → job開始
+2. job → `fetchKingdomRankingThroughApiPool`
+3. MightPulseレスポンス payload
+4. `extractKingdomRankingEntries`
+5. `saveKingdomRankingBoard` → `ranking_snapshots`保存
+6. Watchlist表示API → 最新snapshot選択
+7. 画面render時に `nick_name` 等を別テーブル・古いsnapshotから上書きしていないか
+
+「APIを叩いている」ことと「画面に最新APIデータを表示している」ことは別。特に現在の表示SQL、`ranking_snapshots.observed_at`、`source_observed_at`、`players`参照を実データで確認する。
+
+#### 26-2. MightPulse freshnessの確定認識
+2026-09-26時点で公式MightPulse APIドキュメントを確認済み。
+- Player / Allianceレスポンスは最大60分古い場合がある。
+- 60分を超えて古い対象sectionについて更新を最大90秒待つ仕様がある。
+- それでも更新できなければ最後に保存されたデータが返る場合がある。
+- Playerレスポンスには `fresh` / `cached_at` / `age_seconds` がある。
+- **「MightPulseは毎正時に必ず更新する」「必ず1時間ごとに新データになる」という仕様ではない。**
+- **Kingdom rankingについては、公式ドキュメント上Playerと同じ最大60分というfreshness保証を確認できていない。**
+- Kingdom ranks endpoint自体は正式に存在する。
+
+したがってEagleEye側の「D1データ再取得間隔」はMightPulseの更新周期ではなく、EagleEyeがD1キャッシュを再利用する時間として扱う。
+
+#### 26-3. 王国ランキング取得ルール（チャット確定）
+- D1に対象ランキングがない：BASIC / ADVANCED / ADMIN / OWNERとも初回API取得を許可し、D1へ保存して表示。
+- D1にある：BASICは基本的にD1保存データを表示。古くても既存データは見せる。
+- ADVANCED以上：D1の「D1データ再取得間隔」を超えたらAPI取得して更新。
+- ADVANCED以上：最後の更新から24時間以上経過したデータはそのまま使い続けず、API取得を試みる。
+- 「最新取得」：ADVANCED以上を初期許可。D1鮮度判定を無視してAPIへ強制問い合わせ。
+- 最新取得の最低権限は管理設定で変更可能。
+- API取得失敗時に古いD1を表示するかエラーにするかは、実装時に既存仕様とUIを確認して決定する。勝手に決めない。
+
+#### 26-4. D1データ再取得間隔
+UIでは「TTL」という技術用語を使わず、**「D1データ再取得間隔」**等の日本語にする。
+候補：15分 / 30分 / 60分 / 120分 / 180分 / 360分。30分を初期値候補とする。
+これはMightPulseの更新間隔ではなく、EagleEyeがD1キャッシュを再利用してよい時間。
+
+別途、ADVANCED以上には「最大更新保証期間」24時間を設け、24時間以上更新されていないデータをそのまま使い続けない。
+
+#### 26-5. データ公開設定・最新取得設定
+既存の「データ公開設定」に王国ランキングを追加する。
+- **データ公開最低権限**
+- **最新取得最低権限**
+を分離して設定可能にする。
+
+権限ランク：BASIC=1 / ADVANCED=2 / ADMIN=3 / OWNER=4。
+既存の「○○以上」方式と統一する。
+
+可能ならランキングボード単位で設定できる構造にする。例：
+- 戦力：公開BASIC以上 / 最新取得ADVANCED以上
+- 秘境の試練：公開ADVANCED以上 / 最新取得ADMIN以上
+など。
+
+**データ公開権限とAPI取得権限は別物。**
+
+#### 26-6. Sheets export
+- ADMIN / OWNERは管理者ランキング画面からGoogle Sheetsへ出力可能。
+- BASIC / ADVANCEDは出力不可。
+- UIで隠すだけではなくAPI側でも認可。
+- 既存の `src/google-sheets.js` を再利用し、重複実装しない。
+
+#### 26-7. Watchlistの更新動作
+現在のコードではWatchlist更新jobのRANKINGSフェーズで、各boardについて `fetchKingdomRankingThroughApiPool` を呼んでいる。したがって「更新」操作はD1を読むだけではなく、MightPulse APIをAPI Pool経由で取得する処理。
+
+現在：
+- `WATCHLIST_RANKING_BATCH=8`
+- 26 boardを順番に処理
+- cronは5分ごと
+- ranking loopでは現在並列化していない
+- そのため全26 board完了には複数job実行が必要
+
+並列化は別タスク。API Poolの利用可能キー数に応じて同時実行数を増やす案を検討済み。
+
+#### 26-8. API Pool ranking testの実測
+1524 / `radiant_spire` でAPI Pool ranking testを実施済み：
+- HTTP 200
+- Pool：SYSTEM_GENERAL（WATCHLISTが空だったためfallback）
+- MightPulse取得：約2391ms
+- entry_count：0（当時のparser不一致の可能性）
+- source基準時刻：未取得
+
+その後 `extractKingdomRankingEntries` を追加し、以下のcommitを作成済み：
+- `55b5827a698b597a2c3964d00619336947a1d695`
+
+このcommitは**本番デプロイ成功未確認**。次スレッドではまずGitHubの現在コードと最新deploy結果を確認する。
+
+#### 26-9. 新管理者ランキング画面
+API Poolのテスト画面とは別に、実運用の王国ランキング画面を作る方針。
+想定：
+- `/admin/kingdom-rankings`
+- `/api/admin/kingdom-rankings`
+- `/api/admin/kingdom-ranking-export`
+
+機能：王国番号、ランキング選択、表示件数、D1表示、必要時API取得、最新取得、MightPulse基準時刻（取得できる場合）、Sheets export。
+
+**この機能のコードは直近時点で設計段階。GitHubへの実装・本番反映は、次スレッドで現在コードを確認してから行う。**
+
+#### 26-10. 次スレッド開始手順
+新しいスレッドでユーザーが「イーグル・アイ続き」等と言ったら、まずこのREADMEを読み、特に**セクション25と26**を確認する。
+その後、最低限以下をGitHubから再取得する：
+1. `README.md`
+2. `src/index.js`
+3. `src/ranking-store.js`
+4. `src/mightpulse.js`
+5. `src/google-sheets.js`
+
+そして、上記26-1の「API取得→D1保存→D1読込→画面表示」の経路を先に調査する。
+
+**コードにない＝未決定、チャットで決めた＝実装済み、とは判断しない。実装済み／未実装／未確認／設計確定を分離する。**
