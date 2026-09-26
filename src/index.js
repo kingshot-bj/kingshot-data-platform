@@ -475,7 +475,7 @@ async function processKingdomWatchlistJob(env, job) {
         startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
         elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
         rowsReceived: entries.length, rowsSaved: saved,
-        metadata: { board, payloadKeys, poolType: fetched.pool_type }
+        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type }
       });
 
       const rankingChanges = await detectRankingChanges(env.DB, {
