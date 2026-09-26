@@ -159,15 +159,24 @@ export async function detectRankingChanges(db, { kid, board, observedAt, sourceO
   if (!current.length) return [];
 
   const ids = current.map(row => String(row.target_id));
-  const placeholders = ids.map(() => "?").join(",");
-  const previousResult = await db.prepare(
-    "SELECT target_id, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id IN (" + placeholders + ") AND observed_at < ? ORDER BY target_id ASC, observed_at DESC"
-  ).bind(Number(kid), String(board), ...ids, Number(observedAt)).all();
 
+  // Cloudflare D1/SQLite has a low bound-variable limit. A single IN (...)
+  // query with 100 ranking IDs plus kid/board/observedAt can exceed it.
+  // Keep each lookup comfortably below the limit and merge the results.
   const previousByTarget = new Map();
-  for (const row of previousResult.results || []) {
-    const id = String(row.target_id);
-    if (!previousByTarget.has(id)) previousByTarget.set(id, row);
+  const DETECTION_ID_BATCH = 80;
+  for (let offset = 0; offset < ids.length; offset += DETECTION_ID_BATCH) {
+    const batchIds = ids.slice(offset, offset + DETECTION_ID_BATCH);
+    if (!batchIds.length) continue;
+    const placeholders = batchIds.map(() => "?").join(",");
+    const previousResult = await db.prepare(
+      "SELECT target_id, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id IN (" + placeholders + ") AND observed_at < ? ORDER BY target_id ASC, observed_at DESC"
+    ).bind(Number(kid), String(board), ...batchIds, Number(observedAt)).all();
+
+    for (const row of previousResult.results || []) {
+      const id = String(row.target_id);
+      if (!previousByTarget.has(id)) previousByTarget.set(id, row);
+    }
   }
 
   const events = [];
