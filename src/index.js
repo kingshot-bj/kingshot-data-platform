@@ -621,25 +621,45 @@ function extractKingdomRankingEntries(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
 
-  const candidates = [
-    payload.rankings,
-    payload.entries,
-    payload.items,
-    payload.results,
-    payload.leaderboard,
-    payload.data
+  // MightPulse kingdom ranking responses currently expose the selected board
+  // under `boards`. Older/other responses may use rankings/entries/items/etc.
+  // Walk the known container keys recursively so a harmless response-shape
+  // change does not silently turn a successful API call into zero rows.
+  const preferredKeys = [
+    "rankings", "entries", "items", "results", "leaderboard",
+    "boards", "data"
   ];
 
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) return candidate;
-    if (candidate && typeof candidate === "object") {
-      for (const nestedKey of ["rankings", "entries", "items", "results", "leaderboard"]) {
-        if (Array.isArray(candidate[nestedKey])) return candidate[nestedKey];
-      }
+  const visited = new Set();
+
+  function findEntries(value, depth = 0) {
+    if (Array.isArray(value)) {
+      return value;
     }
+    if (!value || typeof value !== "object" || depth > 5 || visited.has(value)) {
+      return [];
+    }
+    visited.add(value);
+
+    for (const key of preferredKeys) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+      const found = findEntries(value[key], depth + 1);
+      if (found.length) return found;
+    }
+
+    // `boards` can also be an object keyed by board name. Inspect object
+    // values after the explicit container keys above.
+    for (const [key, child] of Object.entries(value)) {
+      if (preferredKeys.includes(key)) continue;
+      if (!child || typeof child !== "object") continue;
+      const found = findEntries(child, depth + 1);
+      if (found.length) return found;
+    }
+
+    return [];
   }
 
-  return [];
+  return findEntries(payload);
 }
 
 async function renderKingdomWatchlistPage(request, env) {
