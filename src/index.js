@@ -661,10 +661,25 @@ function extractKingdomRankingEntries(payload) {
 
   function looksLikeRankingEntry(item) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return false;
-    return [
-      "rank", "ranking", "rank_no", "governor_id", "uid", "player_id",
-      "nick_name", "name", "alliance_id", "alliance_abbr", "score", "value"
-    ].some(key => Object.prototype.hasOwnProperty.call(item, key));
+
+    // Board wrapper objects can contain generic fields such as name/rank/score,
+    // but they are not rows. A real ranking row should carry an identity field
+    // and/or a numeric score/value. This prevents board wrappers from being
+    // mistaken for a single ranking entry.
+    const identityKeys = [
+      "governor_id", "governorId", "uid", "player_id",
+      "alliance_id", "allianceId", "aid", "abbr", "alliance_abbr"
+    ];
+    const hasIdentity = identityKeys.some(key => Object.prototype.hasOwnProperty.call(item, key));
+    const scoreValue = item.score ?? item.value;
+    const hasNumericScore = scoreValue !== undefined && scoreValue !== null &&
+      scoreValue !== "" && Number.isFinite(Number(scoreValue));
+    const rankValue = item.rank ?? item.ranking ?? item.rank_no;
+    const hasNumericRank = rankValue !== undefined && rankValue !== null &&
+      rankValue !== "" && Number.isFinite(Number(rankValue));
+
+    return (hasIdentity && (hasNumericRank || hasNumericScore)) ||
+      (hasNumericRank && hasNumericScore);
   }
 
   function findEntries(value, depth = 0) {
