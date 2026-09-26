@@ -424,16 +424,34 @@ async function processKingdomWatchlistJob(env, job) {
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const endIndex = Math.min(startIndex + WATCHLIST_RANKING_BATCH, KINGDOM_RANKING_BOARDS.length);
+    const concurrency = await getWatchlistApiConcurrency(env);
+    const endIndex = Math.min(startIndex + concurrency, KINGDOM_RANKING_BOARDS.length);
+    const boards = KINGDOM_RANKING_BOARDS.slice(startIndex, endIndex);
     let rankingRows = Number(job.ranking_rows || 0);
 
-    for (let i = startIndex; i < endIndex; i++) {
-      const board = KINGDOM_RANKING_BOARDS[i];
+    // Fetch multiple ranking boards concurrently. The API Pool lease system
+    // assigns different available keys to concurrent requests and prevents an
+    // actively leased key from being reused until its request is released.
+    const fetchedBoards = await fetchWithConcurrency(boards, concurrency, async board => {
       const traceId = diagnosticTraceId("ranking");
       const startedAtMs = Date.now();
-      const fetched = await fetchKingdomRankingThroughApiPool(
-        env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
-      );
+      try {
+        const fetched = await fetchKingdomRankingThroughApiPool(
+          env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
+        );
+        return { board, traceId, startedAtMs, fetched };
+      } catch (error) {
+        error.rankingBoard = board;
+        error.rankingTraceId = traceId;
+        error.rankingStartedAtMs = startedAtMs;
+        throw error;
+      }
+    });
+
+    // Persist each completed board in deterministic board order so ranking
+    // snapshots/change events remain consistent while API requests run in parallel.
+    for (const item of fetchedBoards) {
+      const { board, traceId, startedAtMs, fetched } = item;
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
       await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
@@ -485,8 +503,6 @@ async function processKingdomWatchlistJob(env, job) {
       });
 
       if (rankingChanges.length) {
-        // D1 has a bound-variable limit. Each change event uses 10 variables,
-        // so chunk the batch instead of sending a potentially large ranking delta at once.
         const changeStatements = rankingChanges.map(change => env.DB.prepare(
           "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ).bind(
@@ -499,18 +515,13 @@ async function processKingdomWatchlistJob(env, job) {
         }
       }
 
-      // Persist progress after every board so the UI never has to wait for a whole
-      // ranking batch before showing movement.
       await env.DB.prepare(
         "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(i + 1, rankingRows, now, job.job_id).run();
+      ).bind(KINGDOM_RANKING_BOARDS.indexOf(board) + 1, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
     }
 
     if (endIndex < KINGDOM_RANKING_BOARDS.length) {
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(endIndex, rankingRows, now, job.job_id).run();
-      return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows };
+      return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows, concurrency };
     }
 
     const playerRows = await env.DB.prepare(
@@ -520,9 +531,9 @@ async function processKingdomWatchlistJob(env, job) {
 
     await env.DB.prepare(
       "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-    ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, now, job.job_id).run();
+    ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
 
-    return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows };
+    return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows, concurrency };
   }
 
   if (job.status === "PLAYERS") {
