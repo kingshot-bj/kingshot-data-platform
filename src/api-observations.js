@@ -13,6 +13,7 @@ export async function saveApiObservation(db, observation) {
       target_type,
       target_id,
       observed_at,
+      source_observed_at,
       http_status,
       payload_json,
       created_at
@@ -24,6 +25,7 @@ export async function saveApiObservation(db, observation) {
     observation.target_type || null,
     observation.target_id || null,
     observation.observed_at,
+    observation.source_observed_at ?? null,
     observation.http_status,
     observation.payload_json,
     observation.created_at
