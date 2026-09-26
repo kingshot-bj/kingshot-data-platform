@@ -14,9 +14,11 @@ import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./play
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
+import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics } from "./diagnostics.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
+  await ensureDiagnosticSchema(env.DB);
   try {
     const result = await runRetentionCleanup(env.DB, { batchSize: 1000, archiveBucket: env.ARCHIVE });
     console.log("data_retention_cleanup_ok", result.deleted);
@@ -378,6 +380,13 @@ async function runKingdomWatchlistJobs(env) {
       try {
         const result = await processKingdomWatchlistJob(env, job);
         if (result.completed) {
+          await recordDiagnostic(env.DB, {
+            service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
+            status: "SUCCESS", targetType: "KINGDOM", targetId: row.kid,
+            message: "王国ウォッチリスト更新完了",
+            rowsReceived: Number(result.rankingRows || 0), rowsSaved: Number(result.rankingRows || 0),
+            metadata: { watchlistId: row.watchlist_id, playerRows: Number(result.playerRows || 0) }
+          });
           await env.DB.prepare(
             "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
           ).bind(now, now, now, row.watchlist_id).run();
@@ -394,6 +403,13 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
         ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+        await recordDiagnostic(env.DB, {
+          service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
+          status: "FAILED", errorCode: String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
+          message: String(error?.message || error).slice(0, 2000),
+          targetType: "KINGDOM", targetId: row.kid,
+          metadata: { watchlistId: row.watchlist_id, jobId: job.job_id }
+        });
         console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
       }
       break;
@@ -413,6 +429,8 @@ async function processKingdomWatchlistJob(env, job) {
 
     for (let i = startIndex; i < endIndex; i++) {
       const board = KINGDOM_RANKING_BOARDS[i];
+      const traceId = diagnosticTraceId("ranking");
+      const startedAtMs = Date.now();
       const fetched = await fetchKingdomRankingThroughApiPool(
         env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
       );
@@ -420,13 +438,42 @@ async function processKingdomWatchlistJob(env, job) {
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
       await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
       const entries = extractKingdomRankingEntries(payload);
+      const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? Object.keys(payload).slice(0, 30) : [];
 
-      rankingRows += await saveKingdomRankingBoard(env.DB, {
+      if (!entries.length) {
+        await recordDiagnostic(env.DB, {
+          traceId, service: "ranking", feature: "kingdom_watchlist",
+          operation: "FETCH_PARSE", status: "FAILED",
+          errorCode: "RANKING_ENTRIES_EMPTY",
+          message: "ランキングAPIは応答しましたが、ランキング配列を抽出できませんでした。",
+          provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
+          startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
+          elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
+          rowsReceived: 0, rowsSaved: 0,
+          metadata: { board, upstreamStatus: fetched.result?.status ?? 200, payloadType: Array.isArray(payload) ? "array" : typeof payload, payloadKeys, poolType: fetched.pool_type }
+        });
+        throw new Error("RANKING_ENTRIES_EMPTY:" + board);
+      }
+
+      const saved = await saveKingdomRankingBoard(env.DB, {
         kid: job.kid,
         board,
         entries,
         observedAt: job.observed_at,
         sourceObservedAt
+      });
+      rankingRows += saved;
+      await recordDiagnostic(env.DB, {
+        traceId, service: "ranking", feature: "kingdom_watchlist",
+        operation: "FETCH_PARSE_SAVE", status: sourceObservedAt ? "SUCCESS" : "WARNING",
+        errorCode: sourceObservedAt ? null : "SOURCE_TIME_UNAVAILABLE",
+        message: sourceObservedAt ? "ランキング取得・保存成功" : "ランキング取得・保存は成功しましたがMightPulse基準時刻を取得できませんでした。",
+        provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
+        startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
+        elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
+        rowsReceived: entries.length, rowsSaved: saved,
+        metadata: { board, payloadKeys, poolType: fetched.pool_type }
       });
 
       const rankingChanges = await detectRankingChanges(env.DB, {
@@ -1084,6 +1131,33 @@ async function handleKingdomWatchlistApi(request, env) {
 
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
+async function handleAdminDiagnosticsApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  try {
+    return json({ ok: true, ...(await getSystemDiagnostics(env.DB, { recentLimit: 100 })) });
+  } catch (error) {
+    return json({ ok: false, error: "DIAGNOSTICS_READ_FAILED", message: String(error?.message || error) }, 500);
+  }
+}
+
+async function renderAdminDiagnosticsPage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const data = await getSystemDiagnostics(env.DB, { recentLimit: 60 });
+  const overall = data.overall;
+  const title = overall === "SUCCESS" ? "すべてのサービスは正常に稼働中です" : overall === "FAILED" ? "一部のサービスで障害が発生しています" : "一部のサービスで注意が必要です";
+  const cls = overall === "SUCCESS" ? "ok" : overall === "FAILED" ? "bad" : "warn";
+  const services = data.services.map(s => {
+    const c = s.status === "SUCCESS" ? "ok" : s.status === "FAILED" ? "bad" : s.status === "WARNING" ? "warn" : "unknown";
+    const label = s.status === "SUCCESS" ? "利用可能" : s.status === "FAILED" ? "障害" : s.status === "WARNING" ? "注意" : "未診断";
+    return "<div class='service'><span class='dot "+c+"'>●</span><span class='name'>"+esc(s.label)+"</span><span class='state "+c+"'>"+label+"</span></div>";
+  }).join("");
+  const events = data.events.slice(0,30).map(e => "<div class='event'><b>"+esc(e.feature)+"</b> / "+esc(e.operation)+"<div class='meta'>"+esc(e.status)+" "+esc(e.error_code||"")+" ・ "+esc(e.target_type||"")+" "+esc(e.target_id||"")+"<br>"+esc(e.message||"")+"<br>Trace: "+esc(e.trace_id)+"</div></div>").join("") || "<p class='meta'>診断イベントはまだありません。</p>";
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>システム状況｜EagleEye</title><style>
+body{margin:0;background:#0b1220;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}.wrap{max-width:900px;margin:auto}.hero,.card{background:#162238;border:1px solid #334155;border-radius:22px;padding:22px;margin-bottom:18px}.hero h1{margin:0 0 12px}.summary{font-size:18px;font-weight:700}.ok{color:#86efac}.warn{color:#fbbf24}.bad{color:#f87171}.unknown{color:#94a3b8}.service{display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid #334155}.service:last-child{border-bottom:0}.dot{font-size:12px}.name{flex:1}.state{font-weight:700}.meta{color:#94a3b8;font-size:13px;margin-top:5px;word-break:break-word}.event{padding:13px 0;border-bottom:1px solid #334155}.event:last-child{border-bottom:0}a{color:#fbbf24}</style></head><body><div class="wrap"><div class="hero"><h1>システム状況</h1><div class="summary ${cls}">● ${title}</div><div class="meta">正常 ${data.counts.healthy} ・ 注意 ${data.counts.warning} ・ 障害 ${data.counts.failed} ・ 未診断 ${data.counts.unknown}</div></div><div class="card"><h2>サービス</h2>${services}</div><div class="card"><h2>最近の診断</h2>${events}</div><p><a href="/admin">← 管理画面へ戻る</a></p></div></body></html>`;
+}
+
 export default {
   async scheduled(controller, env, ctx) {
     await runKingdomWatchlistJobs(env);
@@ -1111,6 +1185,7 @@ export default {
       if (url.pathname === "/api/admin/player-export") return await handlePlayerSectionExport(request, env);
       if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
+      if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -1129,6 +1204,7 @@ export default {
       if (url.pathname === "/admin/data-retention") return eagleEyeHtmlResponse(await renderDataRetentionPage(request, env));
       if (url.pathname === "/admin/player-visibility") return eagleEyeHtmlResponse(await renderPlayerVisibilityPage(request, env));
       if (url.pathname === "/admin/kingdom-rankings") return eagleEyeHtmlResponse(await renderAdminKingdomRankingsPage(request, env));
+      if (url.pathname === "/admin/diagnostics") return eagleEyeHtmlResponse(await renderAdminDiagnosticsPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
