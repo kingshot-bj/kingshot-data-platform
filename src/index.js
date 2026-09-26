@@ -274,7 +274,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
 }
 
 const WATCHLIST_RANKING_LIMIT = 100;
-const WATCHLIST_RANKING_BATCH = 8;
+const WATCHLIST_RANKING_BATCH = 1;
 const WATCHLIST_PLAYER_BATCH = 8;
 
 function normalizeMightPulseTimestamp(value) {
