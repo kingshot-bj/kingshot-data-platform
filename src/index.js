@@ -636,7 +636,7 @@ function describeRankingPayloadShape(payload) {
     if (depth >= 2) return { type: "object", keys: Object.keys(value).slice(0, 30) };
 
     const out = { type: "object", keys: Object.keys(value).slice(0, 30) };
-    for (const key of ["boards", "board", "rankings", "entries", "items", "results", "leaderboard", "data"]) {
+    for (const key of ["boards", "board", "rankings", "entries", "items", "results", "leaderboard", "data", "rows"]) {
       if (Object.prototype.hasOwnProperty.call(value, key)) out[key] = describe(value[key], depth + 1);
     }
     return out;
@@ -862,6 +862,11 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var playerPct=count && count!=="?" ? Math.min(100,Math.round((Number(j.player_cursor)||0)/Number(count)*100)) : 0;
       return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+playerPct+"%'></div></div><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
     }
+    if(j.status==="FAILED"){
+      var failedPhase=(Number(j.board_index||0)<Number(j.total_boards||0))?"ランキング":"プレイヤー";
+      var failedPct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
+      return "<div class='progress'><b>更新停止："+failedPhase+"</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>取得済みランキング "+esc(j.ranking_rows)+"件 / ジョブ停止</small></div>";
+    }
     return "";
   }
   function load(){
@@ -870,6 +875,10 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var ws=d.watchlists||[];
       ws.forEach(function(w){
         var active=isActiveJob(w);
+        if(!active){
+          sessionStorage.removeItem("eagleeye_watchlist_running_"+w.watchlist_id);
+          running[w.watchlist_id]=false;
+        }
         var card=document.createElement("div"); card.className="card"; card.dataset.watchlistId=w.watchlist_id;
         var errorHtml=(!active&&w.last_error)?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"";
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>EagleEye更新完了: "+(w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行")+"</p>"+jobProgressHtml(w)+errorHtml;
@@ -908,6 +917,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           }
           sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
           el("msg").innerHTML="<span class='error'>更新失敗: "+esc(e.message)+"</span>";
+          return load();
         });
     }
     return step().finally(function(){if(!sessionStorage.getItem("eagleeye_watchlist_running_"+id))running[id]=false;});
