@@ -1142,6 +1142,154 @@ async function handleKingdomWatchlistDataApi(request, env) {
   });
 }
 
+
+async function ensurePlayerWatchlistSchema(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS player_watchlists (
+      watchlist_id TEXT PRIMARY KEY,
+      discord_id TEXT NOT NULL,
+      governor_id TEXT NOT NULL,
+      label TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(discord_id, governor_id)
+    )
+  `).run();
+  await db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_player_watchlists_user ON player_watchlists(discord_id, enabled, updated_at DESC)"
+  ).run();
+  await db.prepare(
+    "CREATE INDEX IF NOT EXISTS idx_player_watchlists_player ON player_watchlists(governor_id, enabled)"
+  ).run();
+}
+
+async function handlePlayerWatchlistApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  await ensurePlayerWatchlistSchema(env.DB);
+  const url = new URL(request.url);
+
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(`
+      SELECT w.watchlist_id, w.governor_id, w.label, w.enabled,
+             w.created_at, w.updated_at,
+             p.nick_name, p.kid, p.power, p.town_center_level,
+             p.vip, p.alliance_abbr, p.alliance_name, p.avatar_url,
+             p.observed_at
+      FROM player_watchlists w
+      LEFT JOIN players p ON p.governor_id = w.governor_id
+      WHERE w.discord_id = ?
+      ORDER BY w.updated_at DESC, w.created_at DESC
+    `).bind(auth.discord_id).all();
+
+    return json({
+      ok: true,
+      watchlist: (rows.results || []).map(row => ({
+        ...row,
+        enabled: Number(row.enabled) === 1,
+        observed_at: row.observed_at == null ? null : Number(row.observed_at)
+      }))
+    });
+  }
+
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const governorId = String(body.governor_id ?? "").trim();
+    const label = String(body.label ?? "").trim().slice(0, 80) || null;
+    if (!governorId || governorId.length > 64) {
+      return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const watchlistId = crypto.randomUUID();
+    await env.DB.prepare(`
+      INSERT INTO player_watchlists
+        (watchlist_id, discord_id, governor_id, label, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(discord_id, governor_id) DO UPDATE SET
+        label = excluded.label,
+        enabled = 1,
+        updated_at = excluded.updated_at
+    `).bind(watchlistId, auth.discord_id, governorId, label, now, now).run();
+
+    const row = await env.DB.prepare(`
+      SELECT w.watchlist_id, w.governor_id, w.label, w.enabled,
+             w.created_at, w.updated_at,
+             p.nick_name, p.kid, p.power, p.town_center_level,
+             p.vip, p.alliance_abbr, p.alliance_name, p.avatar_url,
+             p.observed_at
+      FROM player_watchlists w
+      LEFT JOIN players p ON p.governor_id = w.governor_id
+      WHERE w.discord_id = ? AND w.governor_id = ?
+      LIMIT 1
+    `).bind(auth.discord_id, governorId).first();
+
+    return json({ ok: true, item: row ? { ...row, enabled: Number(row.enabled) === 1 } : null });
+  }
+
+  if (request.method === "PATCH") {
+    const governorId = String(url.searchParams.get("governor_id") || "").trim();
+    if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+    const body = await request.json().catch(() => ({}));
+    const enabled = body.enabled ? 1 : 0;
+    const now = Math.floor(Date.now() / 1000);
+    const result = await env.DB.prepare(
+      "UPDATE player_watchlists SET enabled = ?, updated_at = ? WHERE discord_id = ? AND governor_id = ?"
+    ).bind(enabled, now, auth.discord_id, governorId).run();
+    if (!result?.meta?.changes) return json({ ok: false, error: "WATCHLIST_ITEM_NOT_FOUND" }, 404);
+    return json({ ok: true, governor_id: governorId, enabled: enabled === 1 });
+  }
+
+  if (request.method === "DELETE") {
+    const governorId = String(url.searchParams.get("governor_id") || "").trim();
+    if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+    const result = await env.DB.prepare(
+      "DELETE FROM player_watchlists WHERE discord_id = ? AND governor_id = ?"
+    ).bind(auth.discord_id, governorId).run();
+    if (!result?.meta?.changes) return json({ ok: false, error: "WATCHLIST_ITEM_NOT_FOUND" }, 404);
+    return json({ ok: true, governor_id: governorId });
+  }
+
+  return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+}
+
+async function renderPlayerWatchlistPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Watchlist</title></head><body><main class="wrap"><h1>ログインが必要です</h1><a href="/api/auth/discord">Discordでログイン</a></main></body></html>`);
+  }
+
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤーウォッチリスト｜EagleEye</title>
+<style>
+body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
+.list{display:grid;gap:10px}.item{padding:15px;border:1px solid #334155;border-radius:15px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.actions{display:flex;gap:7px;margin-top:11px}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f172a;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
+</style></head><body><main>
+<div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーを自分専用で管理します</div></div><a class="action" href="/players">プレイヤー検索</a></div>
+<div id="watchlist" class="list"><div class="loading">読み込み中…</div></div>
+</main>
+<script>
+(async function(){
+  const root=document.getElementById("watchlist");
+  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const compact=v=>{const n=Number(v);if(!Number.isFinite(n))return "-";if(n>=1e9)return (n/1e9).toFixed(1)+"B";if(n>=1e6)return (n/1e6).toFixed(1)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n)};
+  async function load(){
+    try{
+      const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
+      if(!r.ok||!d.ok)throw new Error(d.error||"読み込みに失敗しました");
+      if(!d.watchlist.length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
+      root.innerHTML=d.watchlist.map(x=>'<article class="item"><div class="top">'+(x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+'<div class="main"><div class="name">'+esc(x.label||x.nick_name||"Unknown Player")+'</div><div class="id">領主ID '+esc(x.governor_id)+(x.nick_name&&x.label? " ・ "+esc(x.nick_name):"")+'</div></div></div><div class="meta"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill">戦力 '+esc(compact(x.power))+'</span><span class="pill">役場 '+esc(x.town_center_level??"-")+'</span><span class="pill">同盟 '+esc(x.alliance_abbr||x.alliance_name||"-")+'</span><span class="pill">'+(x.enabled?"監視中":"停止中")+'</span></div><div class="actions"><a class="action" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プロフィール</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div></article>').join("");
+      root.querySelectorAll("[data-g]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=await fetch("/api/player-watchlist?governor_id="+encodeURIComponent(b.dataset.g),{method:"DELETE"});if(!r.ok)throw new Error("削除に失敗しました");await load()}catch(e){alert(e.message);b.disabled=false}});
+    }catch(e){root.innerHTML='<div class="error">'+esc(e.message)+'</div>';}
+  }
+  load();
+})();
+</script></body></html>`);
+}
+
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -1428,6 +1576,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
+      if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
@@ -3221,7 +3371,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>
     ${noticeHtml}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
-    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
+    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
       <div><b>データ状態</b> ${freshness.fresh === true ? "最新" : "キャッシュ"}</div>
@@ -3230,7 +3380,39 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.profile-language{margin-top:3px;color:#cbd5e1;font-size:11px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.section-heading h2{margin:0}.section-export{display:inline-flex;align-items:center;justify-content:center;padding:6px 9px;border:1px solid #475569;border-radius:8px;background:#162238;color:#f59e0b;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}.hero-export{margin-top:7px}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.alliance-collapsible{padding:0;overflow:hidden}.alliance-collapsible details{width:100%}.alliance-collapsible summary{list-style:none;cursor:pointer;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}.alliance-collapsible summary::-webkit-details-marker{display:none}.alliance-collapsible summary>span:first-child{min-width:0}.alliance-collapsible summary b{display:block;font-size:16px}.alliance-collapsible summary small{display:block;margin-top:3px;color:#94a3b8;font-size:10px}.collapse-mark{width:28px;height:28px;border-radius:9px;background:#162238;color:#f59e0b;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex:0 0 28px}.alliance-collapsible details[open] .collapse-mark{transform:rotate(45deg)}.collapse-body{padding:0 16px 16px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.profile-identity{display:flex;align-items:center;gap:10px}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-identity-main{display:flex;align-items:center;gap:11px;min-width:0}.player-avatar-main{width:48px;height:48px;flex:0 0 48px;border-radius:12px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-avatar-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:17px}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-head{display:flex;align-items:center;gap:10px}.gear-head>div{min-width:0}.gear-icon{width:44px;height:44px;flex:0 0 44px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.gear-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.gear-name{margin-top:2px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
-  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main></body></html>`;
+  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
+(function(){
+  const btn=document.getElementById("player-watchlist-toggle");
+  if(!btn)return;
+  const gid=btn.dataset.governorId;
+  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  async function sync(){
+    try{
+      const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
+      if(!r.ok||!d.ok)return;
+      const item=(d.watchlist||[]).find(x=>String(x.governor_id)===String(gid));
+      btn.dataset.watching=item?"1":"0";
+      btn.textContent=item?(item.enabled?"★ ウォッチ中":"☆ ウォッチ再開"):"☆ ウォッチリスト";
+    }catch{}
+  }
+  btn.addEventListener("click",async()=>{
+    btn.disabled=true;
+    try{
+      const watching=btn.dataset.watching==="1";
+      if(watching){
+        const r=await fetch("/api/player-watchlist?governor_id="+encodeURIComponent(gid),{method:"DELETE"});
+        if(!r.ok)throw new Error("ウォッチリストから削除できませんでした");
+      }else{
+        const r=await fetch("/api/player-watchlist",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({governor_id:gid})});
+        if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||"ウォッチリストに追加できませんでした");}
+      }
+      await sync();
+    }catch(e){btn.textContent="エラー: "+esc(e.message)}
+    finally{btn.disabled=false}
+  });
+  sync();
+})();
+</script></main></body></html>`;
 }
 
 const HERO_NAME_JA = {
@@ -4065,7 +4247,7 @@ async function renderHome(request, env) {
         </div>
         <a class="logout" href="/api/auth/logout">ログアウト</a>
       </section>
-      <nav class="nav"><a href="/players">プレイヤー検索</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
+      <nav class="nav"><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
     : `
       <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
 
