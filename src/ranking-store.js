@@ -6,7 +6,7 @@ const PLAYER_RANK_FIELDS = [
   ["mystic_trial", "mystic_rank"]
 ];
 
-export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid = null, ranks, observedAt, sourceObservationId = null }) {
+export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid = null, ranks, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!governorId || !ranks || typeof ranks !== "object") throw new Error("Player ranking snapshot requires governorId and ranks.");
   const id = crypto.randomUUID();
@@ -14,8 +14,8 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
     'INSERT INTO player_rank_snapshots (' +
     'player_rank_snapshot_id, governor_id, uid, kid, power, power_rank, kills, kills_rank, ' +
     'town_center_level, town_center_rank, migrant_score, migrant_rank, mystic_trial, mystic_rank, ' +
-    'leaderboards_json, observed_at, source_observation_id, created_at) ' +
-    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'leaderboards_json, observed_at, source_observed_at, source_observation_id, created_at) ' +
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(
     id, String(governorId), uid ?? null, kid ?? null,
     ranks.power ?? null, ranks.power_rank ?? null,
@@ -29,7 +29,7 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
   return id;
 }
 
-export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservationId = null }) {
+export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !boards || typeof boards !== "object") throw new Error("Kingdom ranking boards require kid and boards.");
 
@@ -44,12 +44,12 @@ export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, so
       statements.push(db.prepare(
         'INSERT INTO ranking_snapshots (' +
         'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
-        'aid, abbr, name, observed_at, source_observation_id, created_at) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(
         crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
         entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
-        entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservationId, observedAt
+        entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
       ));
     });
   }
@@ -61,7 +61,7 @@ export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, so
   return statements.length;
 }
 
-export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservationId = null }) {
+export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
   const statements = entries.map((entry, index) => {
@@ -72,12 +72,12 @@ export async function saveKingdomRankingBoard(db, { kid, board, entries, observe
     return db.prepare(
       'INSERT INTO ranking_snapshots (' +
       'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
-      'aid, abbr, name, observed_at, source_observation_id, created_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(
       crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
       entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
-      entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservationId, observedAt
+      entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
     );
   });
   if (statements.length) await db.batch(statements);
