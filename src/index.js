@@ -1600,7 +1600,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload), {
+    return new Response(renderApiPoolTestResult(governorId, payload, guard.auth.role), {
       headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
     });
   } catch (error) {
@@ -1638,7 +1638,7 @@ async function handleApiPoolTestPlayer(request, env) {
   }
 }
 
-function renderApiPoolTestResult(governorId, result) {
+function renderApiPoolTestResult(governorId, result, adminRole = "ADMIN") {
   const esc = escapeHtml;
   const ok = result?.ok === true;
   const title = ok ? "API Pool テスト成功" : "API Pool テスト失敗";
