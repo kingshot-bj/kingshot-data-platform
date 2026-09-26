@@ -485,14 +485,25 @@ async function processKingdomWatchlistJob(env, job) {
       });
 
       if (rankingChanges.length) {
-        await env.DB.batch(rankingChanges.map(change => env.DB.prepare(
+        // D1 has a bound-variable limit. Each change event uses 10 variables,
+        // so chunk the batch instead of sending a potentially large ranking delta at once.
+        const changeStatements = rankingChanges.map(change => env.DB.prepare(
           "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ).bind(
           crypto.randomUUID(), change.targetType, change.targetId, change.changeType, "rank",
           JSON.stringify(change.oldValue), JSON.stringify(change.newValue),
           change.sourceObservationId, change.observedAt, now
-        )));
+        ));
+        for (let offset = 0; offset < changeStatements.length; offset += 50) {
+          await env.DB.batch(changeStatements.slice(offset, offset + 50));
+        }
       }
+
+      // Persist progress after every board so the UI never has to wait for a whole
+      // ranking batch before showing movement.
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(i + 1, rankingRows, now, job.job_id).run();
     }
 
     if (endIndex < KINGDOM_RANKING_BOARDS.length) {
