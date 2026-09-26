@@ -1798,7 +1798,7 @@ function parseHeaderNumber(headers, name) {
 }
 
 async function handlePlayerVisibilityApi(request, env) {
-  const guard = await requireAdmin(request, env);
+  const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
   try {
     if (request.method === "GET") return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
@@ -1835,7 +1835,7 @@ async function handlePlayerVisibilityApi(request, env) {
 
 async function renderPlayerVisibilityPage(request, env) {
   const guard = await requireAdmin(request, env);
-  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
+  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1></body></html>";
   const settings = await getPlayerVisibilitySettings(env.DB);
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
   const rows = settings.map(item => {
@@ -2440,7 +2440,7 @@ function flattenCsvValue(value) {
 
 
 async function handlePlayerSectionExport(request, env) {
-  const guard = await requireAdmin(request, env);
+  const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
 
   const url = new URL(request.url);
