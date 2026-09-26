@@ -1177,7 +1177,7 @@ async function handlePlayerWatchlistApi(request, env) {
       SELECT w.watchlist_id, w.governor_id, w.label, w.enabled,
              w.created_at, w.updated_at,
              p.nick_name, p.kid, p.power, p.town_center_level,
-             p.vip, p.alliance_abbr, p.alliance_name, p.avatar_url,
+             p.vip, p.kills, p.alliance_abbr, p.alliance_name, p.avatar_url,
              p.observed_at
       FROM player_watchlists w
       LEFT JOIN players p ON p.governor_id = w.governor_id
@@ -1185,14 +1185,104 @@ async function handlePlayerWatchlistApi(request, env) {
       ORDER BY w.updated_at DESC, w.created_at DESC
     `).bind(auth.discord_id).all();
 
-    return json({
-      ok: true,
-      watchlist: (rows.results || []).map(row => ({
+    const watchRows = rows.results || [];
+    if (!watchRows.length) return json({ ok: true, watchlist: [] });
+
+    // Watchlist summaries are intentionally derived from the existing targeted
+    // history tables. Do not scan all player history: both tables have
+    // governor_id + observed_at indexes.
+    const rankResult = await env.DB.prepare(`
+      WITH ranked AS (
+        SELECT prs.governor_id, prs.power_rank, prs.observed_at,
+               ROW_NUMBER() OVER (
+                 PARTITION BY prs.governor_id
+                 ORDER BY prs.observed_at DESC
+               ) AS rn
+        FROM player_rank_snapshots prs
+        INNER JOIN player_watchlists w
+          ON w.governor_id = prs.governor_id
+         AND w.discord_id = ?
+        WHERE w.enabled = 1
+      )
+      SELECT governor_id, power_rank, observed_at
+      FROM ranked
+      WHERE rn <= 2
+      ORDER BY governor_id, observed_at DESC
+    `).bind(auth.discord_id).all();
+
+    const powerChangeResult = await env.DB.prepare(`
+      WITH ranked AS (
+        SELECT ce.target_id AS governor_id,
+               ce.old_value_json,
+               ce.new_value_json,
+               ce.detected_at,
+               ce.created_at,
+               ROW_NUMBER() OVER (
+                 PARTITION BY ce.target_id
+                 ORDER BY ce.detected_at DESC, ce.created_at DESC
+               ) AS rn
+        FROM change_events ce
+        INNER JOIN player_watchlists w
+          ON w.governor_id = ce.target_id
+         AND w.discord_id = ?
+        WHERE w.enabled = 1
+          AND ce.target_type = 'PLAYER'
+          AND ce.field_name = 'power'
+      )
+      SELECT governor_id, old_value_json, new_value_json, detected_at
+      FROM ranked
+      WHERE rn = 1
+    `).bind(auth.discord_id).all();
+
+    const rankByGovernor = new Map();
+    for (const row of rankResult.results || []) {
+      const key = String(row.governor_id);
+      const list = rankByGovernor.get(key) || [];
+      list.push(row);
+      rankByGovernor.set(key, list);
+    }
+
+    const powerChangeByGovernor = new Map();
+    for (const row of powerChangeResult.results || []) {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      powerChangeByGovernor.set(String(row.governor_id), {
+        old: oldValue,
+        new: newValue,
+        delta: Number.isFinite(Number(oldValue)) && Number.isFinite(Number(newValue))
+          ? Number(newValue) - Number(oldValue)
+          : null,
+        detected_at: row.detected_at == null ? null : Number(row.detected_at)
+      });
+    }
+
+    const watchlist = watchRows.map(row => {
+      const ranks = rankByGovernor.get(String(row.governor_id)) || [];
+      const currentRank = ranks[0]?.power_rank ?? null;
+      const previousRank = ranks[1]?.power_rank ?? null;
+      const powerChange = powerChangeByGovernor.get(String(row.governor_id)) || null;
+
+      return {
         ...row,
         enabled: Number(row.enabled) === 1,
-        observed_at: row.observed_at == null ? null : Number(row.observed_at)
-      }))
+        observed_at: row.observed_at == null ? null : Number(row.observed_at),
+        summary: {
+          power_change: powerChange,
+          power_rank: {
+            current: currentRank == null ? null : Number(currentRank),
+            previous: previousRank == null ? null : Number(previousRank),
+            delta: currentRank != null && previousRank != null
+              ? Number(previousRank) - Number(currentRank)
+              : null,
+            observed_at: ranks[0]?.observed_at == null ? null : Number(ranks[0].observed_at)
+          }
+        }
+      };
     });
+
+    return json({ ok: true, watchlist });
   }
 
   if (request.method === "POST") {
@@ -1265,31 +1355,102 @@ async function renderPlayerWatchlistPage(request, env) {
   return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤーウォッチリスト｜EagleEye</title>
 <style>
 body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
-.list{display:grid;gap:10px}.item{padding:15px;border:1px solid #334155;border-radius:15px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.actions{display:flex;gap:7px;margin-top:11px}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f172a;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
+.list{display:grid;gap:12px}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:14px;overflow-wrap:anywhere}
+.change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
+.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
+@media(max-width:520px){.head{display:block}.head .action{margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><main>
-<div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーを自分専用で管理します</div></div><a class="action" href="/players">プレイヤー検索</a></div>
+<div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
 <div id="watchlist" class="list"><div class="loading">読み込み中…</div></div>
 </main>
 <script>
-(async function(){
+(function(){
   const root=document.getElementById("watchlist");
   const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const compact=v=>{const n=Number(v);if(!Number.isFinite(n))return "-";if(n>=1e9)return (n/1e9).toFixed(1)+"B";if(n>=1e6)return (n/1e6).toFixed(1)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return String(n)};
+  const compact=v=>{
+    const n=Number(v);
+    if(!Number.isFinite(n))return "-";
+    const a=Math.abs(n);
+    if(a>=1e9)return (n/1e9).toFixed(a>=1e10?0:1)+"B";
+    if(a>=1e6)return (n/1e6).toFixed(a>=1e8?0:1)+"M";
+    if(a>=1e3)return (n/1e3).toFixed(a>=1e5?0:1)+"K";
+    return n.toLocaleString("ja-JP");
+  };
+  const number=v=>{const n=Number(v);return Number.isFinite(n)?n.toLocaleString("ja-JP"):"-";};
+  const deltaText=(delta,upIsGood=true)=>{
+    if(delta==null||!Number.isFinite(Number(delta))||Number(delta)===0)return '<span class="flat">変化なし</span>';
+    const n=Number(delta);
+    return '<span class="'+(n>0?(upIsGood?"up":"down"):(upIsGood?"down":"up"))+'">'+(n>0?"+":"")+number(n)+'</span>';
+  };
+  const rankText=s=>{
+    const current=s?.current;
+    const previous=s?.previous;
+    if(current==null)return '<span class="muted">順位データなし</span>';
+    if(previous==null)return '<span>'+number(current)+'位</span>';
+    const delta=Number(previous)-Number(current);
+    if(delta===0)return '<span>'+number(current)+'位 <span class="flat">→</span></span>';
+    const cls=delta>0?"up":"down";
+    return '<span>'+number(previous)+'位 → <b>'+number(current)+'位</b> <span class="'+cls+'">'+(delta>0?"↑":"↓")+Math.abs(delta)+'</span></span>';
+  };
+  const powerChangeText=s=>{
+    const c=s?.power_change;
+    if(!c||c.old==null||c.new==null)return '<span class="muted">前回値なし</span>';
+    const delta=Number(c.delta);
+    const cls=delta>0?"up":delta<0?"down":"flat";
+    const arrow=delta>0?"↑":delta<0?"↓":"→";
+    return '<span>'+compact(c.old)+' → <b>'+compact(c.new)+'</b> <span class="'+cls+'">'+arrow+(delta===0?"":compact(Math.abs(delta)))+'</span></span>';
+  };
+  const fmtTime=ts=>ts?new Date(Number(ts)*1000).toLocaleString("ja-JP",{timeZone:"Asia/Tokyo"}):"-";
   async function load(){
     try{
-      const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
+      const r=await fetch("/api/player-watchlist",{cache:"no-store"});
+      const d=await r.json();
       if(!r.ok||!d.ok)throw new Error(d.error||"読み込みに失敗しました");
       if(!d.watchlist.length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
-      root.innerHTML=d.watchlist.map(x=>'<article class="item"><div class="top">'+(x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+'<div class="main"><div class="name">'+esc(x.label||x.nick_name||"Unknown Player")+'</div><div class="id">領主ID '+esc(x.governor_id)+(x.nick_name&&x.label? " ・ "+esc(x.nick_name):"")+'</div></div></div><div class="meta"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill">戦力 '+esc(compact(x.power))+'</span><span class="pill">役場 '+esc(x.town_center_level??"-")+'</span><span class="pill">同盟 '+esc(x.alliance_abbr||x.alliance_name||"-")+'</span><span class="pill">'+(x.enabled?"監視中":"停止中")+'</span></div><div class="actions"><a class="action" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プロフィール</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div></article>').join("");
-      root.querySelectorAll("[data-g]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=await fetch("/api/player-watchlist?governor_id="+encodeURIComponent(b.dataset.g),{method:"DELETE"});if(!r.ok)throw new Error("削除に失敗しました");await load()}catch(e){alert(e.message);b.disabled=false}});
+      root.innerHTML=d.watchlist.map(x=>{
+        const s=x.summary||{};
+        const powerChange=powerChangeText(s);
+        const rankChange=rankText(s.power_rank);
+        return '<article class="item">'+
+          '<div class="top">'+
+            (x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+
+            '<div class="main"><div class="name">'+esc(x.nick_name||x.label||"Unknown Player")+'</div>'+
+            '<div class="id">領主ID '+esc(x.governor_id)+'</div></div>'+
+            '<span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span>'+
+          '</div>'+
+          '<div class="pill-row"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill">'+(x.alliance_abbr?"【"+esc(x.alliance_abbr)+"】 ":"")+' '+esc(x.alliance_name||"-")+'</span></div>'+
+          '<div class="stats">'+
+            '<div class="stat"><span>戦力</span><b>'+esc(compact(x.power))+'</b></div>'+
+            '<div class="stat"><span>役場</span><b>'+esc(x.town_center_level==null?"-":x.town_center_level)+'</b></div>'+
+            '<div class="stat"><span>VIP</span><b>'+esc(x.vip??"-")+'</b></div>'+
+            '<div class="stat"><span>撃破数</span><b>'+esc(compact(x.kills))+'</b></div>'+
+            '<div class="stat"><span>個人戦力順位</span><b>'+rankChange+'</b></div>'+
+            '<div class="stat"><span>最終観測</span><b>'+esc(fmtTime(x.observed_at))+'</b></div>'+
+          '</div>'+
+          '<div class="change-box"><div class="change-title">前回からの変化</div>'+
+            '<div class="change-row"><span class="label">戦力</span><span class="value">'+powerChange+'</span></div>'+
+            '<div class="change-row"><span class="label">個人戦力ランキング</span><span class="value">'+rankChange+'</span></div>'+
+          '</div>'+
+          '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
+        '</article>';
+      }).join("");
+      root.querySelectorAll("[data-g]").forEach(b=>b.onclick=async()=>{
+        if(!confirm("このプレイヤーをウォッチリストから削除しますか？"))return;
+        b.disabled=true;
+        try{
+          const r=await fetch("/api/player-watchlist?governor_id="+encodeURIComponent(b.dataset.g),{method:"DELETE"});
+          if(!r.ok)throw new Error("削除に失敗しました");
+          await load();
+        }catch(e){alert(e.message);b.disabled=false}
+      });
     }catch(e){root.innerHTML='<div class="error">'+esc(e.message)+'</div>';}
   }
   load();
 })();
 </script></body></html>`);
 }
-
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
