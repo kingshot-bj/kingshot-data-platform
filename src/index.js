@@ -1219,24 +1219,47 @@ async function renderAdminDiagnosticsPage(request, env) {
   if (guard.error) return guard.error;
   let data;
   try {
-    data = await getSystemDiagnostics(env.DB, { recentLimit: 60 });
+    data = await getSystemDiagnostics(env.DB, { recentLimit: 100 });
   } catch (error) {
     console.error("diagnostics_page_failed", error);
-    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye システム状況</title><style>body{background:#0b1220;color:#f8fafc;font-family:system-ui;padding:24px}.card{max-width:760px;margin:auto;background:#162238;border:1px solid #334155;border-radius:20px;padding:24px}.bad{color:#f87171}.meta{color:#94a3b8;word-break:break-word}</style></head><body><div class="card"><h1>システム状況</h1><h2 class="bad">診断機構自体でエラーが発生しています</h2><p class="meta">次のデプロイで診断DBの初期化を修正します。</p><p class="meta">Error: ${escapeHtml(String(error?.message || error))}</p></div></body></html>`);
+    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye システム状況</title><style>body{background:#0b1220;color:#f8fafc;font-family:system-ui;padding:24px}.card{max-width:760px;margin:auto;background:#162238;border:1px solid #334155;border-radius:20px;padding:24px}.bad{color:#f87171}.meta{color:#94a3b8;word-break:break-word}</style></head><body><div class="card"><h1>システム状況</h1><h2 class="bad">診断機構自体でエラーが発生しています</h2><p class="meta">Error: ${escapeHtml(String(error?.message || error))}</p></div></body></html>`);
   }
+
   const overall = data.overall;
   const title = overall === "SUCCESS" ? "すべてのサービスは正常に稼働中です" : overall === "FAILED" ? "一部のサービスで障害が発生しています" : "一部のサービスで注意が必要です";
   const cls = overall === "SUCCESS" ? "ok" : overall === "FAILED" ? "bad" : "warn";
+
   const services = data.services.map(s => {
     const c = s.status === "SUCCESS" ? "ok" : s.status === "FAILED" ? "bad" : s.status === "WARNING" ? "warn" : "unknown";
-    const label = s.status === "SUCCESS" ? "利用可能" : s.status === "FAILED" ? "障害" : s.status === "WARNING" ? "注意" : "未診断";
-    return "<div class='service'><span class='dot "+c+"'>●</span><span class='name'>"+esc(s.label)+"</span><span class='state "+c+"'>"+label+"</span></div>";
+    const label = s.status === "SUCCESS" ? "正常" : s.status === "FAILED" ? "障害" : s.status === "WARNING" ? "注意" : "未診断";
+    const when = s.last_event_at ? new Date(Number(s.last_event_at) * 1000).toLocaleString("ja-JP") : "未確認";
+    return "<div class='service'><span class='dot "+c+"'>●</span><span class='name'><b>"+esc(s.label)+"</b><small>"+esc(when)+"</small></span><span class='state "+c+"'>"+label+"</span></div>";
   }).join("");
-  const events = data.events.slice(0,30).map(e => "<div class='event'><b>"+esc(e.feature)+"</b> / "+esc(e.operation)+"<div class='meta'>"+esc(e.status)+" "+esc(e.error_code||"")+" ・ "+esc(e.target_type||"")+" "+esc(e.target_id||"")+"<br>"+esc(e.message||"")+"<br>Trace: "+esc(e.trace_id)+"</div></div>").join("") || "<p class='meta'>診断イベントはまだありません。</p>";
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>システム状況｜EagleEye</title><style>
-body{margin:0;background:#0b1220;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}.wrap{max-width:900px;margin:auto}.hero,.card{background:#162238;border:1px solid #334155;border-radius:22px;padding:22px;margin-bottom:18px}.hero h1{margin:0 0 12px}.summary{font-size:18px;font-weight:700}.ok{color:#86efac}.warn{color:#fbbf24}.bad{color:#f87171}.unknown{color:#94a3b8}.service{display:flex;gap:12px;padding:13px 4px;border-bottom:1px solid #334155}.service:last-child{border-bottom:0}.dot{font-size:12px}.name{flex:1}.state{font-weight:700}.meta{color:#94a3b8;font-size:13px;margin-top:5px;word-break:break-word}.event{padding:13px 0;border-bottom:1px solid #334155}.event:last-child{border-bottom:0}a{color:#fbbf24}</style></head><body><div class="wrap"><div class="hero"><h1>システム状況</h1><div class="summary ${cls}">● ${title}</div><div class="meta">正常 ${data.counts.healthy} ・ 注意 ${data.counts.warning} ・ 障害 ${data.counts.failed} ・ 未診断 ${data.counts.unknown}</div></div><div class="card"><h2>サービス</h2>${services}</div><div class="card"><h2>最近の診断</h2>${events}</div><p><a href="/admin">← 管理画面へ戻る</a></p></div></body></html>`;
-}
 
+  function jsonBlock(value) {
+    if (value == null) return "<span class='muted'>なし</span>";
+    let text;
+    try { text = JSON.stringify(value, null, 2); } catch { text = String(value); }
+    return "<pre class='json'>"+esc(text)+"</pre>";
+  }
+
+  const events = data.events.slice(0, 40).map((e, index) => {
+    const c = e.status === "SUCCESS" ? "ok" : e.status === "FAILED" ? "bad" : "warn";
+    const statusLabel = e.status === "SUCCESS" ? "正常" : e.status === "FAILED" ? "障害" : "注意";
+    const when = e.created_at ? new Date(Number(e.created_at) * 1000).toLocaleString("ja-JP") : "-";
+    const shape = e.metadata?.rankingPayloadShape;
+    const shapeHtml = shape
+      ? "<details class='shape'><summary>ランキングレスポンス構造を見る</summary>"+jsonBlock(shape)+"</details>"
+      : "";
+    const rows = (e.rows_received != null || e.rows_saved != null)
+      ? "<div class='facts'><span>受信 "+esc(e.rows_received ?? "-")+"件</span><span>保存 "+esc(e.rows_saved ?? "-")+"件</span><span>"+esc(e.elapsed_ms ?? 0)+"ms</span></div>"
+      : "";
+    return "<details class='event' "+(index === 0 && e.status === "FAILED" ? "open" : "")+"><summary><span class='event-dot "+c+"'>●</span><b>"+esc(e.feature)+"</b><span class='op'>"+esc(e.operation)+"</span><span class='event-time'>"+esc(when)+"</span></summary><div class='event-body'><div class='headline "+c+"'>"+statusLabel+" "+esc(e.error_code || "")+"</div><p>"+esc(e.message || "メッセージなし")+"</p>"+rows+"<div class='meta-grid'><div>対象 <b>"+esc((e.target_type || "-")+" "+(e.target_id || ""))+"</b></div><div>Provider <b>"+esc(e.provider || "-")+"</b></div><div>Trace <b>"+esc(e.trace_id || "-")+"</b></div></div>"+shapeHtml+(e.metadata && !shape ? "<details><summary>メタデータ</summary>"+jsonBlock(e.metadata)+"</details>" : "")+"</div></details>";
+  }).join("") || "<p class='muted'>診断イベントはまだありません。</p>";
+
+  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>システム状況｜EagleEye</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0b1220;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px}.wrap{max-width:920px;margin:auto}.hero,.card{background:#162238;border:1px solid #334155;border-radius:20px;padding:20px;margin-bottom:16px}.hero h1{margin:0 0 10px;font-size:27px}.summary{font-size:19px;font-weight:800}.meta,.muted,small{color:#94a3b8}.summary-meta{margin-top:8px;color:#94a3b8;font-size:13px}.service{display:flex;align-items:center;gap:12px;padding:14px 2px;border-bottom:1px solid #334155}.service:last-child{border-bottom:0}.dot{font-size:12px}.name{flex:1;display:flex;flex-direction:column;gap:3px}.state{font-weight:800}.ok{color:#86efac}.warn{color:#fbbf24}.bad{color:#f87171}.unknown{color:#94a3b8}.event{border:1px solid #334155;border-radius:15px;background:#111a2c;margin:10px 0;overflow:hidden}.event summary{list-style:none;cursor:pointer;padding:14px;display:flex;align-items:center;gap:9px}.event summary::-webkit-details-marker{display:none}.event-dot{font-size:11px}.op{color:#cbd5e1;font-size:12px}.event-time{margin-left:auto;color:#94a3b8;font-size:11px}.event-body{padding:0 14px 15px;border-top:1px solid #334155}.event-body p{line-height:1.6}.facts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.facts span{background:#0b1220;border:1px solid #334155;border-radius:9px;padding:6px 9px;font-size:12px;color:#cbd5e1}.meta-grid{display:grid;grid-template-columns:1fr;gap:7px;color:#94a3b8;font-size:12px;margin:12px 0}.meta-grid b{color:#e2e8f0;word-break:break-all}.shape,details:not(.event){border:1px solid #334155;border-radius:12px;margin-top:10px;background:#0b1220}.shape summary,details:not(.event) summary{cursor:pointer;padding:10px 12px;color:#fbbf24;font-weight:700;font-size:13px}.json{margin:0;padding:12px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:#cbd5e1;font-size:11px;line-height:1.45}.footer{display:flex;justify-content:space-between;gap:10px;margin-top:10px}.footer a{color:#fbbf24}.hint{font-size:12px;color:#94a3b8}@media(max-width:600px){body{padding:10px}.hero,.card{padding:15px;border-radius:17px}.event summary{flex-wrap:wrap}.event-time{width:100%;margin-left:20px}.op{font-size:11px}}</style></head><body><div class="wrap"><div class="hero"><h1>システム状況</h1><div class="summary ${cls}">● ${title}</div><div class="summary-meta">正常 ${data.counts.healthy} ・ 注意 ${data.counts.warning} ・ 障害 ${data.counts.failed} ・ 未診断 ${data.counts.unknown}<br>30秒ごとに自動更新</div></div><div class="card"><h2>サービス</h2>${services}</div><div class="card"><h2>最近の診断</h2><p class="hint">最新の障害を開くと詳細が表示されます。</p>${events}</div><div class="footer"><a href="/admin">← 管理画面へ戻る</a><span class="hint">EagleEye Diagnostics</span></div></div></body></html>`);
+}
 export default {
   async scheduled(controller, env, ctx) {
     await runKingdomWatchlistJobs(env);
