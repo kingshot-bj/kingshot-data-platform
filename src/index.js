@@ -1444,8 +1444,8 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
     const current=s?.current;
     const previous=s?.previous;
     if(current==null&&previous==null)return '<span class="muted">順位データなし</span>';
-    if(current==null)return '<span><span class="muted">圏外</span> → <b>'+number(previous)+'位</b> <span class="up">↑</span></span>';
-    if(previous==null)return '<span>初回 '+number(current)+'位</span>';
+    if(current==null)return '<span><b>'+number(previous)+'位</b> → <span class="muted">圏外</span> <span class="down">↓</span></span>';
+    if(previous==null)return '<span><span class="muted">圏外</span> → <b>'+number(current)+'位</b> <span class="up">↑</span></span>';
     const delta=Number(previous)-Number(current);
     if(delta===0)return '<span>'+number(current)+'位 <span class="flat">→</span></span>';
     const cls=delta>0?"up":"down";
