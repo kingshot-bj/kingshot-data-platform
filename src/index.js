@@ -956,7 +956,6 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   }
   function refreshWatch(id){
     if(running[id])return;
-    running[id]=true;
     sessionStorage.setItem("eagleeye_watchlist_running_"+id,"1");
     setWatchCardBusy(id,true);
     el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
