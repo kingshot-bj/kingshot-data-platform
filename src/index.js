@@ -1939,12 +1939,14 @@ async function handleApiPoolTestRanking(request, env) {
       });
     }
     const status = Number(error?.status || 0);
+    const errorCode = error?.code || error?.message || "MIGHTPULSE_RANKING_REQUEST_FAILED";
     const responseStatus = status >= 400 && status < 600 ? status : 502;
     const response = {
       ok: false,
-      error: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+      error: errorCode,
       status,
-      diagnostic: error?.details || null
+      diagnostic: error?.details || null,
+      message: error?.message || null
     };
     if (url.searchParams.get("format") === "json") return json(response, responseStatus);
     return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
@@ -1962,7 +1964,7 @@ function renderApiPoolRankingTestResult(kid, board, result, adminRole = "ADMIN")
   const diagnostic = result?.diagnostic || null;
   const details = ok
     ? "<div class='detail'><b>取得確認</b><div class='meta'>王国ID: " + esc(kid) + "<br>Board: " + esc(board) + "<br>取得件数: " + esc(result?.entry_count ?? "-") + "<br>MightPulse取得時間: " + esc(result?.upstream_elapsed_ms != null ? result.upstream_elapsed_ms + " ms" : "-") + "<br>Source基準時刻: " + esc(result?.source_observed_at ?? "未取得") + "</div></div>"
-    : (diagnostic ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>" : "");
+    : "<div class='detail'><b>エラーコード</b><div class='meta'>" + esc(result?.error || "UNKNOWN_ERROR") + (result?.message ? "<br>メッセージ: " + esc(result.message) : "") + (diagnostic ? "<br><br>詳細<pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre>" : "") + "</div></div>";
   return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:700px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.card{margin-top:20px;padding:20px;border:1px solid #334155;border-radius:16px;background:#162238}.status{font-size:20px;font-weight:900}.ok{color:#86efac}.ng{color:#fca5a5}.meta{margin-top:12px;color:#cbd5e1;line-height:1.8}.detail{margin-top:16px}.detail pre{white-space:pre-wrap;overflow:auto;padding:12px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px}.btn{display:inline-block;margin-top:16px;padding:11px 14px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><div class='card'><div class='status " + (ok ? "ok" : "ng") + "'>" + title + "</div><div class='meta'>" + (ok ? "王国ランキングの取得に成功しました。" : "MightPulseへの王国ランキングリクエストに失敗しました。") + "<br>HTTP Status: " + esc(status) + "</div>" + details + "<a class='btn' href='/admin/api-pool'>管理画面へ戻る</a></div></main></body></html>";
 }
 
