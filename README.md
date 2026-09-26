@@ -449,6 +449,10 @@ D1を長期履歴の無制限保管庫にしないため、Retention cleanupとR
 - R2 bindingは `ARCHIVE`、bucket名は `eagleeye-archive`。
 - バケット自体の作成と本番Workerへのbinding反映は別途Cloudflare側で確認する。
 
+### 19-1. R2アーカイブ詳細設計
+
+R2のオブジェクト構造、保存形式、再試行、復旧、研究データ化、セキュリティ、コスト安全方針の詳細は `docs/r2-archive-design.md` を正とする。
+
 ### 20. 研究用データ蓄積（Google Sheets）
 
 Google SheetsはD1の代替DBではなく、研究・分析用データセットの蓄積先として維持する。
