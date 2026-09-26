@@ -4035,7 +4035,7 @@ async function renderPublicStatusPage(request, env) {
 </style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">30秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section><section class="section"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">公開ステータスには、サービスの稼働状態のみを表示します。内部エラーや管理情報は公開されません。</p></main></body></html>`);
 }
 
-function renderHome(request, env) {
+async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
