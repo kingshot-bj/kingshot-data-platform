@@ -3445,6 +3445,71 @@ async function handleAdminKingdomRankingExport(request, env) {
   }
 }
 
+
+async function renderAdminKingdomRankingsPage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const kid = String(url.searchParams.get("kid") || "").trim();
+  const board = String(url.searchParams.get("board") || KINGDOM_RANKING_BOARDS[0]).trim();
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 100), 1), 100);
+  const refresh = url.searchParams.get("refresh") === "1";
+  let state = { rows:[], observedAt:null, sourceObservedAt:null, elapsedMs:null, poolType:null, error:null };
+
+  if (kid && /^\\d+$/.test(kid) && KINGDOM_RANKING_BOARDS.includes(board)) {
+    if (refresh) {
+      const apiUrl = new URL("/api/admin/kingdom-rankings", request.url);
+      apiUrl.searchParams.set("kid",kid);
+      apiUrl.searchParams.set("board",board);
+      apiUrl.searchParams.set("limit",String(limit));
+      apiUrl.searchParams.set("refresh","1");
+      const api = await handleAdminKingdomRankingApi(new Request(apiUrl.toString(), { headers: request.headers }), env);
+      const data = await api.json().catch(() => ({ok:false,error:"INVALID_RESPONSE"}));
+      if (api.ok && data.ok) {
+        state.rows=data.rows||[];
+        state.observedAt=data.observed_at||null;
+        state.sourceObservedAt=data.source_observed_at||null;
+        state.elapsedMs=data.upstream_elapsed_ms ?? null;
+        state.poolType=data.pool_type||null;
+      } else {
+        state.error=data.message||data.error||"ランキング取得に失敗しました。";
+      }
+    } else {
+      const snapshot = await getLatestAdminKingdomRankingSnapshot(env,kid,board,limit);
+      state.rows=snapshot.rows;
+      state.observedAt=snapshot.observedAt;
+      state.sourceObservedAt=snapshot.sourceObservedAt;
+    }
+  }
+
+  const esc=escapeHtml;
+  const options=KINGDOM_RANKING_BOARDS.map(item =>
+    "<option value='"+esc(item)+"'"+(item===board?" selected":"")+">"+esc(RANKING_BOARD_LABELS[item]||item)+"</option>"
+  ).join("");
+  const rowsHtml=state.rows.map(row =>
+    "<tr><td>"+esc(row.rank)+"</td><td><b>"+esc(adminKingdomRankingName(row))+"</b><small>"+
+    (row.target_type==="ALLIANCE" ? "同盟ID "+esc(row.aid||row.target_id||"-") : "領主ID "+esc(row.governor_id||row.uid||row.target_id||"-"))+
+    "</small></td><td>"+esc(formatCompactNumber(row.score))+"</td></tr>"
+  ).join("") || "<tr><td colspan='3' class='empty'>表示できるランキングデータがありません。<br>王国番号・ランキングを選択して「最新データを取得」を押してください。</td></tr>";
+
+  const exportLink=state.rows.length
+    ? "/api/admin/kingdom-ranking-export?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(board)+"&limit="+limit
+    : "";
+  const status=[];
+  if(state.observedAt) status.push("EagleEye取得時刻: "+formatUnix(state.observedAt));
+  if(state.sourceObservedAt) status.push("MightPulseデータ基準時刻: "+formatUnix(state.sourceObservedAt));
+  if(state.elapsedMs!=null) status.push("取得時間: "+state.elapsedMs+" ms");
+  if(state.poolType) status.push("Pool: "+state.poolType);
+  const statusHtml=status.length ? "<div class='status'>"+esc(status.join(" / "))+"</div>" : "";
+  const errorHtml=state.error ? "<div class='error'>"+esc(state.error)+"</div>" : "";
+
+  return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye 王国ランキング</title><style>"+
+    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 48px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0}.sub{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.form{display:grid;grid-template-columns:1fr 1.6fr 110px auto;gap:9px;align-items:end}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:10px;border:0;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900;cursor:pointer;white-space:nowrap}.btn.secondary{background:#334155;color:#e2e8f0}.status{margin-top:12px;padding:11px;border-radius:10px;background:#0f2a1c;color:#86efac;font-size:12px;line-height:1.7}.error{margin-top:12px;padding:11px;border-radius:10px;background:#3a1418;color:#fca5a5;font-size:12px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #334155;border-radius:12px}table{width:100%;border-collapse:collapse;min-width:520px}th,td{padding:10px 9px;border-bottom:1px solid #334155;text-align:left;font-size:12px}th{color:#94a3b8;font-size:11px}td:first-child{width:58px;color:#f59e0b;font-weight:900}td:last-child{text-align:right;font-weight:900;white-space:nowrap}td small{display:block;color:#94a3b8;margin-top:3px}.empty{text-align:center!important;color:#94a3b8!important;line-height:1.7;padding:24px!important;font-weight:400!important}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .field:nth-child(2){grid-column:1 / -1}.form .btn{grid-column:1 / -1;width:100%}}@media(max-width:430px){.form{grid-template-columns:1fr}.form .field:nth-child(2){grid-column:auto}}"+
+    "</style></head><body><main class='wrap'><div class='top'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='badge'>ADMIN / OWNER</div></div><div class='eyebrow'>KINGDOM RANKINGS</div><h1 class='title'>王国ランキング</h1><p class='sub'>必要なランキングだけを選択して取得・閲覧します。ウォッチリストの全ランキング監視とは分離しています。</p>"+
+    "<div class='card'><form class='form' method='get' action='/admin/kingdom-rankings'><div class='field'><label>王国番号（鯖番号）</label><input name='kid' inputmode='numeric' pattern='[0-9]+' value='"+esc(kid)+"' placeholder='例: 1524' required></div><div class='field'><label>ランキング</label><select name='board'>"+options+"</select></div><div class='field'><label>表示件数</label><select name='limit'><option value='10'"+(limit===10?" selected":"")+">10位</option><option value='50'"+(limit===50?" selected":"")+">50位</option><option value='100'"+(limit===100?" selected":"")+">100位</option></select></div><button class='btn' name='refresh' value='1'>最新データを取得</button></form></div>"+
+    "<div class='card'><div>"+(state.rows.length ? "<a class='btn secondary' href='"+exportLink+"'>スプレッドシートへ出力</a>" : "")+"</div>"+errorHtml+statusHtml+"<div class='table-wrap'><table><thead><tr><th>順位</th><th>プレイヤー / 同盟</th><th>スコア</th></tr></thead><tbody>"+rowsHtml+"</tbody></table></div></div></main></body></html>";
+}
+
 async function renderAdminControlPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
