@@ -1465,8 +1465,8 @@ export default {
       if (url.pathname === "/admin/data-retention") return eagleEyeHtmlResponse(await renderDataRetentionPage(request, env));
       if (url.pathname === "/admin/player-visibility") return eagleEyeHtmlResponse(await renderPlayerVisibilityPage(request, env));
       if (url.pathname === "/admin/kingdom-rankings") return eagleEyeHtmlResponse(await renderAdminKingdomRankingsPage(request, env));
-      if (url.pathname === "/status") return eagleEyeHtmlResponse(await renderPublicStatusPage(request, env));
-      if (url.pathname === "/admin/diagnostics") return eagleEyeHtmlResponse(await renderAdminDiagnosticsPage(request, env));
+      if (url.pathname === "/status") return await renderPublicStatusPage(request, env);
+      if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
