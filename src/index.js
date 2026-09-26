@@ -1233,8 +1233,20 @@ async function handleAdminDiagnosticsApi(request, env) {
 }
 
 async function renderAdminDiagnosticsPage(request, env) {
-  const guard = await requireAdmin(request, env);
-  if (guard.error) return guard.error;
+  let guard;
+  try {
+    guard = await requireAdmin(request, env);
+    if (guard.error) return guard.error;
+  } catch (error) {
+    console.error("diagnostics_page_auth_failed", error);
+    return json({
+      ok: false,
+      error: "DIAGNOSTICS_AUTH_FAILED",
+      message: String(error?.message || error),
+      name: String(error?.name || "Error")
+    }, 500);
+  }
+
   let data;
   try {
     data = await getSystemDiagnostics(env.DB, { recentLimit: 100 });
