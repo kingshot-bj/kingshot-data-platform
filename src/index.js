@@ -570,7 +570,7 @@ async function fetchWithConcurrency(items, concurrency, worker) {
   return results;
 }
 
-async function extractKingdomRankingEntries(payload) {
+function extractKingdomRankingEntries(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
 
@@ -2663,7 +2663,7 @@ function flattenCsvValue(value) {
 
 
 async function handlePlayerSectionExport(request, env) {
-  const guard = await requireOwner(request, env);
+  const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
 
   const url = new URL(request.url);
