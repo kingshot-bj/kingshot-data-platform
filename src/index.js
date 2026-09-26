@@ -138,7 +138,8 @@ async function ensurePlayerVisibilityTable(db) {
 
   const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
   const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
-  if (!hasMinRole) {
+  const addedMinRole = !hasMinRole;
+  if (addedMinRole) {
     await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
   }
 
@@ -157,7 +158,7 @@ async function ensurePlayerVisibilityTable(db) {
       Number(existing?.advanced_enabled) === 1 ? "ADVANCED" :
       Number(existing?.admin_enabled) === 1 ? "ADMIN" : "OWNER";
 
-    const minRole = existing?.min_role && roleRank[String(existing.min_role).toUpperCase()]
+    const minRole = !addedMinRole && existing?.min_role && roleRank[String(existing.min_role).toUpperCase()]
       ? String(existing.min_role).toUpperCase()
       : legacyMinRole;
 
