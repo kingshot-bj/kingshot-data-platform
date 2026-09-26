@@ -35,6 +35,10 @@ export async function leaseApiKey(db, { provider = PROVIDER, poolType = "SYSTEM_
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
   await releaseExpiredLeases(db, now);
 
+  await db.prepare(
+    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, updated_at = ? WHERE provider = ? AND pool_type = ? AND status = 'COOLDOWN' AND cooldown_until IS NOT NULL AND cooldown_until <= ?"
+  ).bind(now, provider, poolType, now).run();
+
   const row = await db.prepare(
     "SELECT k.* FROM api_pool_keys k WHERE k.provider = ? AND k.pool_type = ? AND k.status = 'AVAILABLE' AND (k.cooldown_until IS NULL OR k.cooldown_until <= ?) AND NOT EXISTS (SELECT 1 FROM api_leases l WHERE l.key_id = k.key_id AND l.status = 'ACTIVE' AND l.expires_at > ?) ORDER BY CASE WHEN k.last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(k.last_used_at, 0) ASC, k.created_at ASC LIMIT 1"
   ).bind(provider, poolType, now, now).first();
