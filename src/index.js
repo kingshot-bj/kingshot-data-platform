@@ -327,6 +327,34 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
     ON ranking_snapshots(kid, board, observed_at DESC, rank ASC)
   `).run();
 
+  // History/change detection looks up a specific target inside one
+  // kingdom+board. Seek by target first so SQLite avoids scanning the
+  // board's full history as it grows.
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_target_history
+    ON ranking_snapshots(kid, board, target_id, observed_at DESC)
+  `).run();
+
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_player_snapshots_governor_history
+    ON player_snapshots(governor_id, observed_at DESC)
+  `).run();
+
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_player_rank_snapshots_governor_history
+    ON player_rank_snapshots(governor_id, observed_at DESC)
+  `).run();
+
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_change_events_target_time
+    ON change_events(target_type, target_id, detected_at DESC)
+  `).run();
+
+  await db.prepare(`
+    CREATE INDEX IF NOT EXISTS idx_api_observations_target_time
+    ON api_observations(target_type, target_id, observed_at DESC)
+  `).run();
+
   const definitions = {
     kingdom_watchlist_jobs: [
       ["source_first_at", "INTEGER"],
