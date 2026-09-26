@@ -296,6 +296,27 @@ function getMightPulseSourceTimestamp(data) {
 
 async function ensureKingdomWatchlistFreshnessSchema(db) {
   if (!db) return;
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
+      job_id TEXT PRIMARY KEY,
+      watchlist_id TEXT NOT NULL,
+      kid INTEGER NOT NULL,
+      top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
+      status TEXT NOT NULL CHECK (status IN ('RANKINGS', 'PLAYERS', 'COMPLETED', 'FAILED')),
+      board_index INTEGER NOT NULL DEFAULT 0,
+      player_cursor INTEGER NOT NULL DEFAULT 0,
+      player_ids_json TEXT NOT NULL DEFAULT '[]',
+      observed_at INTEGER NOT NULL,
+      source_first_at INTEGER,
+      source_last_at INTEGER,
+      ranking_rows INTEGER NOT NULL DEFAULT 0,
+      player_rows INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      completed_at INTEGER
+    )
+  `).run();
   const definitions = {
     kingdom_watchlist_jobs: [
       ["source_first_at", "INTEGER"],
@@ -494,7 +515,7 @@ async function processKingdomWatchlistJob(env, job) {
           "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
         ),
         env.DB.prepare(
-          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
+          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
         ).bind(
           governorId, raw.uid ?? null, raw.fid != null ? String(raw.fid) : null, raw.nick_name ?? null,
           raw.kid ?? job.kid, raw.power ?? null, raw.town_center_level ?? null, raw.vip ?? null,
@@ -514,7 +535,7 @@ async function processKingdomWatchlistJob(env, job) {
       if (ranks && typeof ranks === "object") {
         await savePlayerRankSnapshot(env.DB, {
           governorId, uid: raw.uid ?? null, kid: raw.kid ?? job.kid, ranks,
-          observedAt: job.observed_at, sourceObservationId: observationId
+          observedAt: job.observed_at, sourceObservedAt, sourceObservationId: observationId
         });
       }
       playerRows++;
@@ -569,7 +590,7 @@ async function renderKingdomWatchlistPage(request, env) {
   --border-strong:#475569;--input:#0b1220;--accent:#f59e0b;--accent-strong:#fbbf24;
   --accent-text:#111827;--ok:#86efac;--ok-bg:#0f2a1c;--danger:#7f1d1d;--shadow:0 12px 30px rgba(0,0,0,.22);
 }
-:root[data-theme="light"]{
+:root[data-eagle-theme="light"]{
   color-scheme:light;
   --bg:#f3f6fb;--bg-soft:#eaf0f8;--card:#ffffff;--card-strong:#f8fafc;
   --text:#172033;--text-soft:#334155;--muted:#64748b;--border:#d6deea;
@@ -856,7 +877,12 @@ async function handleKingdomWatchlistDataApi(request, env) {
 
   return json({
     ok: true,
-    watchlist: watch,
+    watchlist: {
+      ...watch,
+      source_first_at: freshnessJob?.source_first_at ? Number(freshnessJob.source_first_at) : null,
+      source_last_at: freshnessJob?.source_last_at ? Number(freshnessJob.source_last_at) : null,
+      source_completed_at: freshnessJob?.completed_at ? Number(freshnessJob.completed_at) : null
+    },
     rankings: rankings.results || [],
     players: players.results || [],
     ranking_observations: changes.results || []
