@@ -1605,8 +1605,10 @@ async function handleApiPoolTestPlayer(request, env) {
     });
   } catch (error) {
     if (lease) {
-      const cooldown = error?.status === 429 ? 60 : error?.status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" ? 15 : 0;
-      const disable = error?.status === 401;
+      const status = Number(error?.status || 0);
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401 || status === 403;
+      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
@@ -1614,11 +1616,12 @@ async function handleApiPoolTestPlayer(request, env) {
         targetType: "PLAYER",
         targetId: governorId,
         purpose: "ADMIN_TEST",
-        httpStatus: error?.status || 0,
+        httpStatus: status,
         errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
-        disable
+        disable,
+        keepAvailable
       });
     }
     const status = Number(error?.status || 0);
