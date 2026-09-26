@@ -1673,9 +1673,15 @@ async function handleDiscordCallback(request, env) {
     exp: now + SESSION_MAX_AGE
   };
   if (env.DB) {
-    const userResult = await upsertUser(env.DB, discordUser, now);
-    if (userResult?.status === "DISABLED") {
-      return json({ ok: false, error: "USER_DISABLED" }, 403);
+    try {
+      const userResult = await upsertUser(env.DB, discordUser, now);
+      if (userResult?.status === "DISABLED") {
+        return json({ ok: false, error: "USER_DISABLED" }, 403);
+      }
+    } catch (error) {
+      // Keep Discord authentication usable during a temporary D1 outage.
+      // The signed session is safe to issue, while DB-backed roles remain unavailable.
+      console.error("discord_user_persist_failed", error?.message || error);
     }
   }
 
@@ -3550,12 +3556,19 @@ async function getAuthenticatedUser(request, env) {
   const session = await verifyPayload(token, secret);
   if (!session) return null;
 
-  if (!env.DB) return { discord_id: session.sub, status: "ACTIVE", role: "ADMIN" };
+  if (!env.DB) return null;
 
-  const user = await env.DB.prepare(
-    "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
-  ).bind(session.sub).first();
-  return user || null;
+  try {
+    const user = await env.DB.prepare(
+      "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+    ).bind(session.sub).first();
+    return user || null;
+  } catch (error) {
+    // D1 outage must not turn the public/home page into a 500.
+    // Protected routes still fail closed because they require a DB-backed user.
+    console.error("authenticated_user_lookup_failed", error?.message || error);
+    return null;
+  }
 }
 
 async function handleDebugPlayerGear(request, env) {
