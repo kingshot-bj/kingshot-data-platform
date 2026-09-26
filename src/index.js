@@ -1865,7 +1865,7 @@ function renderApiPoolTestResult(governorId, result, adminRole = "ADMIN") {
   const status = result?.status ?? result?.upstream_status ?? "-";
   const diagnostic = result?.diagnostic || null;
   const sourceDiagnostics = ok
-    ? "<div class='detail'><b>元データ確認</b><div class='meta'>MightPulseの役場レベル: " + esc(result?.source_town_center_level ?? "-") + "<br>EagleEye表示: " + esc(result?.eagleeye_town_center_display ?? "-") + "<br>Provider Fresh: " + esc(result?.source_fresh === true ? "YES" : "NO / cached") + "<br>Provider Age: " + esc(result?.source_age_seconds != null ? Math.round(result.source_age_seconds / 3600) + "時間" : "-") + "</div></div>"
+    ? "<div class='detail'><b>元データ確認</b><div class='meta'>MightPulseの役場レベル: " + esc(result?.source_town_center_level ?? "-") + "<br>EagleEye表示: " + esc(result?.eagleeye_town_center_display ?? "-") + "<br>Provider Fresh: " + esc(result?.source_fresh === true ? "YES" : "NO / cached") + "<br>Provider Age: " + esc(result?.source_age_seconds != null ? Math.round(result.source_age_seconds / 3600) + "時間" : "-") + "<br>MightPulse取得時間: " + esc(result?.upstream_elapsed_ms != null ? result.upstream_elapsed_ms + " ms" : "-") + "</div></div>"
     : "";
   const details = diagnostic
     ? "<div class='detail'><b>詳細</b><pre>" + esc(JSON.stringify(diagnostic, null, 2)) + "</pre></div>"
