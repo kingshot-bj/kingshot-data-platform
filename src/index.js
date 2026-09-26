@@ -813,23 +813,6 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
     });
   });
-  function applyTheme(theme){
-    document.documentElement.setAttribute("data-theme",theme);
-    var button=el("themeToggle");
-    if(button){
-      button.textContent=theme==="light"?"🌙":"☀️";
-      button.title=theme==="light"?"ダークテーマに切り替え":"ライトテーマに切り替え";
-      button.setAttribute("aria-label",button.title);
-    }
-  }
-  var savedTheme=null;
-  try{savedTheme=localStorage.getItem("eagleeye_theme");}catch(e){}
-  applyTheme(savedTheme==="light"?"light":"dark");
-  el("themeToggle").addEventListener("click",function(){
-    var next=document.documentElement.getAttribute("data-theme")==="light"?"dark":"light";
-    applyTheme(next);
-    try{localStorage.setItem("eagleeye_theme",next);}catch(e){}
-  });
   load();
 }());
 </script></body></html>`;
