@@ -1784,7 +1784,9 @@ async function handleApiPoolTestPlayer(request, env) {
       targetType: "PLAYER",
       targetId: governorId
     });
+    const upstreamStartedAt = Date.now();
     const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key });
+    const upstreamElapsedMs = Date.now() - upstreamStartedAt;
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
@@ -1809,6 +1811,7 @@ async function handleApiPoolTestPlayer(request, env) {
       source_town_center_level: sourceTownCenterLevel,
       source_fresh: sourceFresh,
       source_age_seconds: sourceAgeSeconds,
+      upstream_elapsed_ms: upstreamElapsedMs,
       eagleeye_town_center_display: formatTownCenterLevel(sourceTownCenterLevel)
     };
     if (new URL(request.url).searchParams.get("format") === "json") {
