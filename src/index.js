@@ -441,6 +441,8 @@ async function processKingdomWatchlistJob(env, job) {
       const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload)
         ? Object.keys(payload).slice(0, 30) : [];
 
+      const rankingPayloadShape = describeRankingPayloadShape(payload);
+
       if (!entries.length) {
         await recordDiagnostic(env.DB, {
           traceId, service: "ranking", feature: "kingdom_watchlist",
@@ -451,7 +453,7 @@ async function processKingdomWatchlistJob(env, job) {
           startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
           elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
           rowsReceived: 0, rowsSaved: 0,
-          metadata: { board, upstreamStatus: fetched.result?.status ?? 200, payloadType: Array.isArray(payload) ? "array" : typeof payload, payloadKeys, poolType: fetched.pool_type }
+          metadata: { board, upstreamStatus: fetched.result?.status ?? 200, payloadType: Array.isArray(payload) ? "array" : typeof payload, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type }
         });
         throw new Error("RANKING_ENTRIES_EMPTY:" + board);
       }
@@ -615,6 +617,31 @@ async function fetchWithConcurrency(items, concurrency, worker) {
   for (let i = 0; i < Math.min(concurrency, items.length); i++) workers.push(runWorker());
   await Promise.all(workers);
   return results;
+}
+
+function describeRankingPayloadShape(payload) {
+  const describe = (value, depth = 0) => {
+    if (Array.isArray(value)) {
+      return {
+        type: "array",
+        length: value.length,
+        itemTypes: [...new Set(value.slice(0, 5).map(item => Array.isArray(item) ? "array" : item === null ? "null" : typeof item))],
+        itemKeys: value.slice(0, 3).filter(item => item && typeof item === "object" && !Array.isArray(item))
+          .map(item => Object.keys(item).slice(0, 30))
+      };
+    }
+    if (!value || typeof value !== "object") {
+      return { type: value === null ? "null" : typeof value, value: typeof value === "string" ? value.slice(0, 120) : value };
+    }
+    if (depth >= 2) return { type: "object", keys: Object.keys(value).slice(0, 30) };
+
+    const out = { type: "object", keys: Object.keys(value).slice(0, 30) };
+    for (const key of ["boards", "board", "rankings", "entries", "items", "results", "leaderboard", "data"]) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) out[key] = describe(value[key], depth + 1);
+    }
+    return out;
+  };
+  return describe(payload);
 }
 
 function extractKingdomRankingEntries(payload) {
