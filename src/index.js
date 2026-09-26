@@ -632,10 +632,29 @@ function extractKingdomRankingEntries(payload) {
 
   const visited = new Set();
 
+  function looksLikeRankingEntry(item) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    return [
+      "rank", "ranking", "rank_no", "governor_id", "uid", "player_id",
+      "nick_name", "name", "alliance_id", "alliance_abbr", "score", "value"
+    ].some(key => Object.prototype.hasOwnProperty.call(item, key));
+  }
+
   function findEntries(value, depth = 0) {
     if (Array.isArray(value)) {
-      return value;
+      if (!value.length) return [];
+      if (value.some(looksLikeRankingEntry)) return value;
+
+      // A `boards` array may contain wrapper objects such as
+      // { board: "...", entries: [...] }. Descend into those wrappers
+      // instead of mistaking the wrapper array itself for ranking rows.
+      for (const item of value) {
+        const found = findEntries(item, depth + 1);
+        if (found.length) return found;
+      }
+      return [];
     }
+
     if (!value || typeof value !== "object" || depth > 5 || visited.has(value)) {
       return [];
     }
