@@ -911,16 +911,30 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     if(running[id])return;
     running[id]=true;
     function step(){
+      var finished=false;
+      var pollTimer=null;
+      function poll(){
+        return load().then(function(){
+          if(!finished) pollTimer=setTimeout(poll,1000);
+        }).catch(function(){
+          if(!finished) pollTimer=setTimeout(poll,1000);
+        });
+      }
+      poll();
       return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
         .then(function(d){
+          finished=true;
+          if(pollTimer)clearTimeout(pollTimer);
           if(d.result && d.result.completed){
             sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
             el("msg").innerHTML="<span class='ok'>更新が完了しました。</span>";
             return load();
           }
-          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,500);}); }).then(step);
+          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,300);}); }).then(step);
         })
         .catch(function(e){
+          finished=true;
+          if(pollTimer)clearTimeout(pollTimer);
           running[id]=false;
           setWatchCardBusy(id,false);
           if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
