@@ -45,7 +45,7 @@ export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, so
         'INSERT INTO ranking_snapshots (' +
         'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
         'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(
         crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
         entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
@@ -73,7 +73,7 @@ export async function saveKingdomRankingBoard(db, { kid, board, entries, observe
       'INSERT INTO ranking_snapshots (' +
       'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
       'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(
       crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
       entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
