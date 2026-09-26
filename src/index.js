@@ -1132,19 +1132,32 @@ async function handleKingdomWatchlistApi(request, env) {
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
 async function handleAdminDiagnosticsApi(request, env) {
-  const guard = await requireAdmin(request, env);
-  if (guard.error) return guard.error;
   try {
-    return json({ ok: true, ...(await getSystemDiagnostics(env.DB, { recentLimit: 100 })) });
+    const guard = await requireAdmin(request, env);
+    if (guard.error) return guard.error;
+    const data = await getSystemDiagnostics(env.DB, { recentLimit: 100 });
+    return json({ ok: true, ...data });
   } catch (error) {
-    return json({ ok: false, error: "DIAGNOSTICS_READ_FAILED", message: String(error?.message || error) }, 500);
+    console.error("diagnostics_api_failed", error);
+    return json({
+      ok: false,
+      error: "DIAGNOSTICS_READ_FAILED",
+      message: String(error?.message || error),
+      name: String(error?.name || "Error")
+    }, 500);
   }
 }
 
 async function renderAdminDiagnosticsPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
-  const data = await getSystemDiagnostics(env.DB, { recentLimit: 60 });
+  let data;
+  try {
+    data = await getSystemDiagnostics(env.DB, { recentLimit: 60 });
+  } catch (error) {
+    console.error("diagnostics_page_failed", error);
+    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye システム状況</title><style>body{background:#0b1220;color:#f8fafc;font-family:system-ui;padding:24px}.card{max-width:760px;margin:auto;background:#162238;border:1px solid #334155;border-radius:20px;padding:24px}.bad{color:#f87171}.meta{color:#94a3b8;word-break:break-word}</style></head><body><div class="card"><h1>システム状況</h1><h2 class="bad">診断機構自体でエラーが発生しています</h2><p class="meta">次のデプロイで診断DBの初期化を修正します。</p><p class="meta">Error: ${escapeHtml(String(error?.message || error))}</p></div></body></html>`);
+  }
   const overall = data.overall;
   const title = overall === "SUCCESS" ? "すべてのサービスは正常に稼働中です" : overall === "FAILED" ? "一部のサービスで障害が発生しています" : "一部のサービスで注意が必要です";
   const cls = overall === "SUCCESS" ? "ok" : overall === "FAILED" ? "bad" : "warn";
