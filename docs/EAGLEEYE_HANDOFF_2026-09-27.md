@@ -431,3 +431,76 @@ LIGHT / NORMAL / HEAVYの利用シナリオを作り、10〜10,000ユーザー�
 docs/EAGLEEYE_COST_AND_AD_MONITORING_PLAN.md
 
 この計画は実測前の方針であり、実測値・本番値とは区別する。
+
+
+## 32. 2026-09-27追加：MightPulse Probe【実装済み】
+
+### 目的
+MightPulseの `cached_at` を「元データの観測時刻」とみなしてよいかを推測ではなく実測で検証するためのADMIN/OWNER専用診断機能。
+
+公式APIドキュメントではPlayerレスポンスに `fresh`, `cached_at`, `age_seconds` があること、Player/Allianceのレスポンスが最大60分古い場合があることは確認できる。しかし `cached_at` が「ゲーム側の元データ観測時刻」を意味するとは明記されていない。そのため、EagleEye側で意味を確定させるまで `cached_at` を `source_observed_at` と同一視しない。
+
+### 実装
+- ADMIN/OWNER専用ページ: `/admin/mightpulse-probe`
+- API: `/api/admin/mightpulse-probe`
+- API Pool経由でMightPulseへアクセス
+- APIキー本体は表示・保存しない
+- 生レスポンスも保存しない
+- Probe履歴はブラウザのlocalStorageのみ
+- D1へのProbe専用保存は行わない
+
+### 調査対象
+1. Player `include=base`
+2. Player `include=base,ranks`
+3. Player `include=base,heroes,ranks,gov_gear`
+4. Kingdom
+5. Kingdom Ranking
+
+### Probeで取得する情報
+- EagleEye request start
+- EagleEye response received
+- elapsed_ms
+- HTTP status
+- `fresh`
+- `cached_at`
+- `age_seconds`
+- HTTP headers:
+  - Date
+  - Age
+  - ETag
+  - Last-Modified
+  - Cache-Control
+  - Expires
+  - CF-Cache-Status
+  - CF-Ray
+  - X-Cache
+  - Via
+  - rate-limit remaining
+- payload top-level keys
+- timestamp-like fieldsを再帰的に抽出
+- response SHA-256
+- 主要sectionごとのSHA-256
+
+### 実験手順
+同一Player・同一includeを固定して、T0 / T+30秒 / T+60秒 / T+120秒程度で同じProbeを繰り返す。
+
+観察ポイント:
+- `cached_at` が固定されたまま `age_seconds` だけ増える
+- `cached_at` がリクエスト時刻に追従する
+- response hashが変化したのに `cached_at` が変化しない
+- `Date` / `Age` / `Last-Modified` 等のHTTPヘッダーが存在するか
+- `last_active_at` 等、payload内部に実際の時刻候補が存在するか
+- includeを変えたとき `cached_at` / `age_seconds` / section hash がどう変化するか
+
+### 判定ルール
+確実な時刻:
+- `eagleeye_observed_at`: EagleEyeがレスポンスを受信した時刻
+
+意味未確定:
+- `mightpulse_cached_at`: MightPulseの `cached_at`
+- `mightpulse_age_seconds`: MightPulseの `age_seconds`
+
+検証後にのみ設定:
+- `source_observed_at`: 元データの観測時刻として意味を確認できたフィールド
+
+**重要:** Probeの結果が出るまではUIの「MightPulseデータ基準時刻」表示に `cached_at` を使う根拠がない。必要なら次の実装でこの表示を一旦「MightPulse cached_at」へ変更する。
