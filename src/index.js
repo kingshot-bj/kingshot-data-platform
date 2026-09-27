@@ -4799,7 +4799,7 @@ async function renderPublicStatusPage(request, env) {
 
   const queryInsights = usage.queryInsights;
   const formatDuration = value => Number(value || 0).toFixed(1) + " ms";
-  const formatQuery = value => String(value || "").replace(/\\s+/g, " ").trim();
+  const formatQuery = value => String(value || "").replace(/\s+/g, " ").trim();
   const insightCategoryRows = (queryInsights?.categories || []).slice(0, 8).map(item => `
     <div class="resource-row">
       <div><b>${escapeHtml(item.category)}</b><small>${formatInt(item.count)} queries</small></div>
