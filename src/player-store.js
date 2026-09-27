@@ -21,14 +21,16 @@ export async function getLatestPlayerObservation(db, governorId) {
   return { ...row, payload };
 }
 
-export async function materializePlayer(db, observation) {
+export async function materializePlayer(db, observation, existingPlayer = undefined) {
   const player = observation?.payload?.player;
   if (!player || typeof player !== "object") {
     throw new Error("MightPulse player payload is missing player data.");
   }
 
   const alliance = player.alliance || {};
-  const existing = await getPlayer(db, String(player.governor_id ?? observation.payload.governor_id));
+  const existing = existingPlayer !== undefined
+    ? existingPlayer
+    : await getPlayer(db, String(player.governor_id ?? observation.payload.governor_id));
   const value = (object, key, fallback = null) =>
     Object.prototype.hasOwnProperty.call(object || {}, key) ? object[key] : fallback;
   const allianceValue = (key, fallback = null) =>
