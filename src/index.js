@@ -987,7 +987,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var errorHtml=(!active&&w.last_error)?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"";
         var lastSuccessText=w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行";
         var completionText=active?(w.last_success_at?lastSuccessText+"（現在更新中）":"更新中…"):lastSuccessText;
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>EagleEye更新完了: "+esc(completionText)+"</p>"+jobProgressHtml(w)+errorHtml;
+        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>🕐 最終チェック: "+esc(completionText)+"</p><p class='ok'>✓ 最新チェック済み</p>"+jobProgressHtml(w)+errorHtml;
         var row=document.createElement("div"); row.className="row";
         var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.disabled=active; view.onclick=function(){showData(w.watchlist_id);};
@@ -1141,7 +1141,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
 
   const watch = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
+    "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_success_at AS last_checked_at, last_error FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
   ).bind(watchlistId, auth.discord_id).first();
   if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
@@ -1155,17 +1155,17 @@ async function handleKingdomWatchlistDataApi(request, env) {
   let rankings;
   if (board) {
     rankings = await env.DB.prepare(
-      "WITH latest AS (SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?) SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM ranking_snapshots a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.observed_at DESC LIMIT 1), (SELECT a.abbr FROM ranking_snapshots a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.observed_at DESC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM ranking_snapshots r WHERE r.kid = ? AND r.board = ? AND r.observed_at = (SELECT observed_at FROM latest) ORDER BY r.rank ASC LIMIT ?"
-    ).bind(watch.kid, board, watch.kid, board, limit).all();
+      "SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM kingdom_ranking_current r WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT ?"
+    ).bind(watch.kid, board, limit).all();
   } else {
     rankings = await env.DB.prepare(
-      "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? GROUP BY board), ranked AS (SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM ranking_snapshots a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.observed_at DESC LIMIT 1), (SELECT a.abbr FROM ranking_snapshots a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.observed_at DESC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board, r.target_type ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ?) SELECT board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at FROM ranked WHERE rn <= ? ORDER BY board ASC, rank ASC"
-    ).bind(watch.kid, watch.kid, limit).all();
+      "SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM kingdom_ranking_current r WHERE r.kid = ? ORDER BY r.board ASC, r.rank ASC LIMIT ?"
+    ).bind(watch.kid, limit).all();
   }
 
   const players = await env.DB.prepare(
-    "WITH latest AS (SELECT board, MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND target_type = 'PLAYER' GROUP BY board), ranked AS (SELECT r.governor_id, r.uid, r.nick_name, r.kid, r.rank, r.board, r.observed_at, ROW_NUMBER() OVER (PARTITION BY r.board ORDER BY r.rank ASC) AS rn FROM ranking_snapshots r JOIN latest l ON l.board = r.board AND l.observed_at = r.observed_at WHERE r.kid = ? AND r.target_type = 'PLAYER' AND r.governor_id IS NOT NULL), top_players AS (SELECT DISTINCT governor_id FROM ranked WHERE rn <= ?), latest_players AS (SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id) SELECT * FROM latest_players ORDER BY power DESC, governor_id ASC"
-  ).bind(watch.kid, watch.kid, watch.top_n).all();
+    "WITH top_players AS (SELECT DISTINCT governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ?) SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id ORDER BY p.power DESC, p.governor_id ASC"
+  ).bind(watch.kid, watch.top_n).all();
 
   return json({
     ok: true,
