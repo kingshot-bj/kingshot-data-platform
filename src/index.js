@@ -179,22 +179,10 @@ async function ensurePlayerVisibilityTable(db) {
       1, 1, 1, 1, now
     ).run();
 
-    const canonicalMinRole = existing ? minRole : defaults.min_role;
-    const threshold = roleRank[canonicalMinRole] || 2;
-    await db.prepare(`
-      UPDATE player_visibility_settings
-      SET category = ?, label = ?, description = ?, min_role = ?,
-          basic_enabled = ?, advanced_enabled = ?, admin_enabled = ?, owner_enabled = ?,
-          updated_at = ?
-      WHERE item_key = ?
-    `).bind(
-      item.category, item.label, item.description, canonicalMinRole,
-      threshold <= 1 ? 1 : 0,
-      threshold <= 2 ? 1 : 0,
-      threshold <= 3 ? 1 : 0,
-      threshold <= 4 ? 1 : 0,
-      now, item.key
-    ).run();
+    // Existing rows are intentionally left untouched on normal reads.
+    // Visibility settings are persistent configuration; rewriting every row on
+    // every page/API request burns the D1 free row-write quota for no benefit.
+
   }
 }
 
@@ -317,42 +305,6 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
       updated_at INTEGER NOT NULL,
       completed_at INTEGER
     )
-  `).run();
-
-  // Ranking change detection filters by kid + board + observed_at on every
-  // board refresh. Without this index, D1 can scan the full ranking history
-  // repeatedly and consume the free row-read quota very quickly.
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_kid_board_observed_rank
-    ON ranking_snapshots(kid, board, observed_at DESC, rank ASC)
-  `).run();
-
-  // History/change detection looks up a specific target inside one
-  // kingdom+board. Seek by target first so SQLite avoids scanning the
-  // board's full history as it grows.
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_target_history
-    ON ranking_snapshots(kid, board, target_id, observed_at DESC)
-  `).run();
-
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_player_snapshots_governor_history
-    ON player_snapshots(governor_id, observed_at DESC)
-  `).run();
-
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_player_rank_snapshots_governor_history
-    ON player_rank_snapshots(governor_id, observed_at DESC)
-  `).run();
-
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_change_events_target_time
-    ON change_events(target_type, target_id, detected_at DESC)
-  `).run();
-
-  await db.prepare(`
-    CREATE INDEX IF NOT EXISTS idx_api_observations_target_time
-    ON api_observations(target_type, target_id, observed_at DESC)
   `).run();
 
   const definitions = {
@@ -491,7 +443,11 @@ async function processKingdomWatchlistJob(env, job) {
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
       await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
-      const entries = extractKingdomRankingEntries(payload);
+      const extractedEntries = extractKingdomRankingEntries(payload);
+      // Never trust the upstream response to honor ?limit=100. Persist at most
+      // the configured watchlist limit, otherwise one oversized response can
+      // multiply D1 snapshot/index writes by an uncontrolled factor.
+      const entries = extractedEntries.slice(0, WATCHLIST_RANKING_LIMIT);
       const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload)
         ? Object.keys(payload).slice(0, 30) : [];
 
