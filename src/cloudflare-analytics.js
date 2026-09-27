@@ -110,11 +110,23 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
 
+  const configuration = {
+    accountId: Boolean(accountTag),
+    analyticsToken: Boolean(token),
+    databaseId: Boolean(databaseId)
+  };
+
   if (!accountTag || !token || !databaseId) {
+    const missing = Object.entries(configuration)
+      .filter(([, configured]) => !configured)
+      .map(([key]) => key)
+      .join(", ");
+
     return {
       configured: false,
       status: "UNCONFIGURED",
-      message: "Cloudflare Analytics APIの認証情報またはD1 Database IDが未設定です。"
+      configuration,
+      message: "Cloudflare Analytics APIの設定が不足しています。未設定: " + missing
     };
   }
 
