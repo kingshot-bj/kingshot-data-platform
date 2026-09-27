@@ -222,8 +222,8 @@ export async function detectRankingChangesForBoards(db, { kid, observedAt, board
 export async function getLatestKingdomRankings(db, kid, board = null, limit = 100) {
   const params = board ? [Number(kid), String(board), Number(limit)] : [Number(kid), Number(limit)];
   const sql = board
-    ? "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? ORDER BY observed_at DESC, rank ASC LIMIT ?"
-    : "SELECT * FROM ranking_snapshots WHERE kid = ? ORDER BY observed_at DESC, board ASC, rank ASC LIMIT ?";
+    ? "SELECT * FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?) latest WHERE rn = 1 ORDER BY rank ASC LIMIT ?"
+    : "SELECT * FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.board, p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn FROM ranking_snapshots p WHERE p.kid = ?) latest WHERE rn = 1 ORDER BY board ASC, rank ASC LIMIT ?";
   const result = await db.prepare(sql).bind(...params).all();
   return result.results || [];
 }
