@@ -32,15 +32,6 @@ async function runDataRetentionJob(env) {
 const WATCHLIST_LOCK_TTL_SECONDS = 600;
 
 async function acquireKingdomWatchlistLock(env, watchlistId) {
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS kingdom_watchlist_locks (
-      watchlist_id TEXT PRIMARY KEY,
-      lock_token TEXT NOT NULL,
-      lock_until INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `).run();
-
   const now = Math.floor(Date.now() / 1000);
   const lockToken = crypto.randomUUID();
   const lockUntil = now + WATCHLIST_LOCK_TTL_SECONDS;
@@ -321,6 +312,15 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       completed_at INTEGER
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS kingdom_watchlist_locks (
+      watchlist_id TEXT PRIMARY KEY,
+      lock_token TEXT NOT NULL,
+      lock_until INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     )
   `).run();
 
