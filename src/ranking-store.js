@@ -179,44 +179,6 @@ function firstString(...values) {
 
 export { PLAYER_RANK_FIELDS };
 
-export async function detectRankingChangesForBoards(db, { kid, observedAt, boards }) {
-  if (!db || !Number.isFinite(Number(kid)) || !Number.isFinite(Number(observedAt))) return [];
-  const current = [];
-  for (const [board, entries] of Object.entries(boards || {})) {
-    if (!Array.isArray(entries)) continue;
-    entries.forEach((entry, index) => {
-      const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
-      const targetId = targetType === "ALLIANCE"
-        ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
-        : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
-      current.push({ board: String(board), targetType, targetId: String(targetId), rank: index + 1, score: entry.score ?? entry.value ?? null });
-    });
-  }
-  if (!current.length) return [];
-
-  const previousResult = await db.prepare(
-    "WITH previous AS (" +
-    "SELECT p.board, p.target_id, p.rank, p.score, " +
-    "ROW_NUMBER() OVER (PARTITION BY p.board, p.target_id ORDER BY p.observed_at DESC) AS rn " +
-    "FROM ranking_snapshots p " +
-    "WHERE p.kid = ? AND p.observed_at < ?" +
-    ") SELECT board, target_id, rank, score FROM previous WHERE rn = 1"
-  ).bind(Number(kid), Number(observedAt)).all();
-
-  const previousByKey = new Map();
-  for (const row of previousResult.results || []) previousByKey.set(`${row.board}:${row.target_id}`, row);
-
-  const events = [];
-  for (const row of current) {
-    const prev = previousByKey.get(`${row.board}:${row.targetId}`);
-    if (!prev) continue;
-    if (Number(prev.rank) !== Number(row.rank)) {
-      events.push({ targetType: row.targetType, targetId: row.targetId, changeType: "RANK_CHANGED", oldValue: prev.rank, newValue: row.rank, oldScore: prev.score, newScore: row.score, observedAt });
-    }
-  }
-  return events;
-}
-
 export async function getLatestKingdomRankings(db, kid, board = null, limit = 100) {
   const params = board ? [Number(kid), String(board), Number(limit)] : [Number(kid), Number(limit)];
   const sql = board
@@ -233,51 +195,3 @@ export async function getRankingHistory(db, { kid, board, targetId, limit = 50 }
   return result.results || [];
 }
 
-export async function detectRankingChanges(db, { kid, board, observedAt, sourceObservationId = null }) {
-  const currentResult = await db.prepare(
-    "SELECT target_id, rank, score, target_type FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = ? ORDER BY rank ASC"
-  ).bind(Number(kid), String(board), Number(observedAt)).all();
-  const current = currentResult.results || [];
-  if (!current.length) return [];
-
-  const ids = current.map(row => String(row.target_id));
-
-  // Cloudflare D1/SQLite has a low bound-variable limit. A single IN (...)
-  // query with 100 ranking IDs plus kid/board/observedAt can exceed it.
-  // Keep each lookup comfortably below the limit and merge the results.
-  const previousByTarget = new Map();
-  const DETECTION_ID_BATCH = 80;
-  for (let offset = 0; offset < ids.length; offset += DETECTION_ID_BATCH) {
-    const batchIds = ids.slice(offset, offset + DETECTION_ID_BATCH);
-    if (!batchIds.length) continue;
-    const placeholders = batchIds.map(() => "?").join(",");
-    const previousResult = await db.prepare(
-      "SELECT target_id, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id IN (" + placeholders + ") AND observed_at < ? ORDER BY target_id ASC, observed_at DESC"
-    ).bind(Number(kid), String(board), ...batchIds, Number(observedAt)).all();
-
-    for (const row of previousResult.results || []) {
-      const id = String(row.target_id);
-      if (!previousByTarget.has(id)) previousByTarget.set(id, row);
-    }
-  }
-
-  const events = [];
-  for (const row of current) {
-    const prev = previousByTarget.get(String(row.target_id));
-    if (!prev) continue;
-    if (Number(prev.rank) !== Number(row.rank)) {
-      events.push({
-        targetType: row.target_type,
-        targetId: String(row.target_id),
-        changeType: "RANK_CHANGED",
-        oldValue: prev.rank,
-        newValue: row.rank,
-        oldScore: prev.score,
-        newScore: row.score,
-        observedAt,
-        sourceObservationId
-      });
-    }
-  }
-  return events;
-}
