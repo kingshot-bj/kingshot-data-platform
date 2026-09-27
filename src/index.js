@@ -4455,20 +4455,19 @@ async function handleDebugPlayerIcons(request, env) {
 
 
 async function getLatestAdminKingdomRankingSnapshot(env, kid, board, limit = 100) {
-  const latest = await env.DB.prepare(
-    "SELECT MAX(observed_at) AS observed_at FROM ranking_snapshots WHERE kid = ? AND board = ?"
+  const state = await env.DB.prepare(
+    "SELECT last_checked_at, source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?"
   ).bind(Number(kid), String(board)).first();
-  const observedAt = Number(latest?.observed_at || 0);
-  if (!observedAt) return { observedAt: null, sourceObservedAt: null, rows: [] };
   const result = await env.DB.prepare(
-    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at FROM (" +
-    "SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
-    "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?" +
-    ") latest WHERE rn = 1 ORDER BY rank ASC LIMIT ?"
+    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC LIMIT ?"
   ).bind(Number(kid), String(board), Number(limit)).all();
   const rows = result.results || [];
   const sourceValues = rows.map(row => Number(row.source_observed_at || 0)).filter(value => Number.isFinite(value) && value > 0);
-  return { observedAt, sourceObservedAt: sourceValues.length ? Math.min(...sourceValues) : null, rows };
+  return {
+    observedAt: state?.last_checked_at ? Number(state.last_checked_at) : null,
+    sourceObservedAt: state?.source_observed_at ? Number(state.source_observed_at) : (sourceValues.length ? Math.min(...sourceValues) : null),
+    rows
+  };
 }
 
 function adminKingdomRankingName(row) {
@@ -4517,7 +4516,9 @@ async function handleAdminKingdomRankingApi(request, env) {
       });
       const savedRows = await saveKingdomRankingBoard(env.DB, {
         kid: Number(kid), board, entries: rankingComparison.changedEntries,
-        entriesAlreadyFiltered: true, observedAt, sourceObservedAt
+        removedTargets: rankingComparison.removedTargets,
+        entriesAlreadyFiltered: true, observedAt, sourceObservedAt,
+        checkedAt: Math.floor(Date.now() / 1000)
       });
       const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
       return json({
