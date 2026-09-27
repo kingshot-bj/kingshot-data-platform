@@ -4026,23 +4026,17 @@ function localizeLeaderboardLabel(board) {
 async function getLatestPlayerHeroRankings(db, kid, governorId) {
   if (!db || kid === undefined || kid === null || !governorId) return [];
   const result = await db.prepare(
-    `WITH ranked AS (
-      SELECT board, rank, score, observed_at,
-        ROW_NUMBER() OVER (PARTITION BY board ORDER BY observed_at DESC) AS rn
-      FROM ranking_snapshots
-      WHERE kid = ? AND target_type = 'PLAYER' AND governor_id = ?
-        AND board IN ('single_hero', 'hero_total', 'hero_no_equip', 'hero_equip')
-    )
-    SELECT board, rank, score, observed_at
-    FROM ranked
-    WHERE rn = 1
-    ORDER BY CASE board
-      WHEN 'single_hero' THEN 1
-      WHEN 'hero_total' THEN 2
-      WHEN 'hero_no_equip' THEN 3
-      WHEN 'hero_equip' THEN 4
-      ELSE 99
-    END`
+    `SELECT board, rank, score, observed_at
+     FROM kingdom_ranking_current
+     WHERE kid = ? AND target_type = 'PLAYER' AND governor_id = ?
+       AND board IN ('single_hero', 'hero_total', 'hero_no_equip', 'hero_equip')
+     ORDER BY CASE board
+       WHEN 'single_hero' THEN 1
+       WHEN 'hero_total' THEN 2
+       WHEN 'hero_no_equip' THEN 3
+       WHEN 'hero_equip' THEN 4
+       ELSE 99
+     END`
   ).bind(Number(kid), String(governorId)).all();
   return result.results || [];
 }
