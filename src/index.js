@@ -639,6 +639,7 @@ async function processKingdomWatchlistJob(env, job) {
       if (!raw) continue;
 
       const observationId = crypto.randomUUID();
+      const governorId = String(raw.governor_id ?? item.governorId);
       const ranks = result?.data?.ranks || raw?.ranks;
       const rankSnapshot = ranks && typeof ranks === "object"
         ? buildPlayerRankSnapshotStatement(env.DB, {
@@ -646,9 +647,6 @@ async function processKingdomWatchlistJob(env, job) {
             observedAt: job.observed_at, sourceObservedAt, sourceObservationId: observationId
           })
         : null;
-
-
-      const governorId = String(raw.governor_id ?? item.governorId);
       await env.DB.batch([
         env.DB.prepare(
           "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
