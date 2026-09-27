@@ -4905,6 +4905,13 @@ async function handleMe(request, env) {
 }
 
 async function renderPublicStatusPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  const canViewDetailedUsage = Boolean(
+    auth &&
+    auth.status === "ACTIVE" &&
+    ["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())
+  );
+
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
   // its free-tier row limit, this monitor must still be able to report usage.
   const [usageResult, diagnosticsResult] = await Promise.allSettled([
@@ -4991,7 +4998,7 @@ async function renderPublicStatusPage(request, env) {
       <small>${formatInt(item.count)}回 · write ${formatInt(item.rowsWritten)} · ${formatDuration(item.durationMs)}</small>
     </div>`).join("");
 
-  const usageSection = usage.configured && usage.status !== "UNKNOWN" && usage.limits
+  const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
     ? `
       <section class="section">
         <h2>Cloudflare リソース監視</h2>
@@ -5010,6 +5017,7 @@ async function renderPublicStatusPage(request, env) {
           ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
           ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
           ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>R2 Objects</b><small>現在のオブジェクト数</small></div><strong>${formatInt(usage.r2.objectCount)}</strong></div>` : ""}
           <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
         </div>
       </section>
@@ -5029,8 +5037,8 @@ async function renderPublicStatusPage(request, env) {
       <section class="section">
         <h2>Cloudflare リソース監視</h2>
         <div class="card resource-card">
-          <div class="resource-head"><div><b>Cloudflare Analytics API</b><small>外部監視</small></div><span class="state neutral">${usageLabel.label}</span></div>
-          <p class="resource-note">${escapeHtml(usage.message || "Cloudflare Analytics APIの設定が必要です。")}</p>
+          <div class="resource-head"><div><b>Cloudflare リソース監視</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
+          <p class="resource-note">CloudflareのD1 / Workers / R2の詳細使用量とD1 Query Insightsは、ADMIN / OWNERのみ確認できます。</p>
         </div>
       </section>`;
 
