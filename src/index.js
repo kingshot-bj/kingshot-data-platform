@@ -4797,7 +4797,7 @@ async function renderPublicStatusPage(request, env) {
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
   };
 
-  const usageSection = usage.configured
+  const usageSection = usage.configured && usage.status !== "UNKNOWN" && usage.limits
     ? `
       <section class="section">
         <h2>Cloudflare リソース監視</h2>
