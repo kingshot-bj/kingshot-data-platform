@@ -330,6 +330,7 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
       target_type TEXT NOT NULL,
       target_id TEXT NOT NULL,
       rank INTEGER NOT NULL,
+      previous_rank INTEGER,
       score,
       uid TEXT,
       governor_id TEXT,
@@ -367,7 +368,8 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
     ranking_snapshots: [["source_observed_at", "INTEGER"]],
     player_snapshots: [["source_observed_at", "INTEGER"]],
     players: [["source_observed_at", "INTEGER"]],
-    player_rank_snapshots: [["source_observed_at", "INTEGER"]]
+    player_rank_snapshots: [["source_observed_at", "INTEGER"]],
+    kingdom_ranking_current: [["previous_rank", "INTEGER"]]
   };
   for (const [table, columns] of Object.entries(definitions)) {
     const info = await db.prepare("PRAGMA table_info(" + table + ")").all();
@@ -1229,18 +1231,9 @@ async function handlePlayerWatchlistApi(request, env) {
     // Watchlist summaries are intentionally derived from the existing targeted
     // history tables. Do not scan all player history: both tables have
     // governor_id + observed_at indexes.
-    // Ranking changes are read only for the authenticated user's enabled watchlist.
-    // Do NOT scan ranking_snapshots broadly. Each scalar lookup is constrained by
-    // kid + board + PLAYER + target_id and uses the existing target-history/current indexes.
-    // The latest board observation is used as the current boundary so a player who
-    // falls outside the stored ranking window is correctly shown as 圏外.
-    const playerRankingBoards = Object.keys(RANKING_BOARD_LABELS)
-      .filter(board => board !== "alliance_power" && board !== "alliance_kills");
-
-    const boardValuesSql = playerRankingBoards
-      .map(board => "('" + board + "')")
-      .join(",");
-
+    // Read current ranking state only. The old implementation scanned ranking_snapshots
+    // with multiple correlated subqueries for every watchlist player × board.
+    // Current state + previous_rank make this O(current rows) and avoid historical scans.
     const rankResult = await env.DB.prepare(
       `
       WITH boards(board) AS (VALUES ` + boardValuesSql + `)
@@ -1248,55 +1241,20 @@ async function handlePlayerWatchlistApi(request, env) {
         w.governor_id,
         p.kid,
         b.board,
-        (
-          SELECT rs.observed_at
-          FROM ranking_snapshots rs
-          WHERE rs.kid = p.kid
-            AND rs.board = b.board
-            AND rs.target_type = 'PLAYER'
-          ORDER BY rs.observed_at DESC
-          LIMIT 1
-        ) AS board_observed_at,
-        (
-          SELECT rs.rank
-          FROM ranking_snapshots rs
-          WHERE rs.kid = p.kid
-            AND rs.board = b.board
-            AND rs.target_type = 'PLAYER'
-            AND rs.target_id = w.governor_id
-            AND rs.observed_at = (
-              SELECT latest.observed_at
-              FROM ranking_snapshots latest
-              WHERE latest.kid = p.kid
-                AND latest.board = b.board
-                AND latest.target_type = 'PLAYER'
-              ORDER BY latest.observed_at DESC
-              LIMIT 1
-            )
-          LIMIT 1
-        ) AS current_rank,
-        (
-          SELECT rs.rank
-          FROM ranking_snapshots rs
-          WHERE rs.kid = p.kid
-            AND rs.board = b.board
-            AND rs.target_type = 'PLAYER'
-            AND rs.target_id = w.governor_id
-            AND rs.observed_at < (
-              SELECT latest.observed_at
-              FROM ranking_snapshots latest
-              WHERE latest.kid = p.kid
-                AND latest.board = b.board
-                AND latest.target_type = 'PLAYER'
-              ORDER BY latest.observed_at DESC
-              LIMIT 1
-            )
-          ORDER BY rs.observed_at DESC
-          LIMIT 1
-        ) AS previous_rank
+        s.last_checked_at AS board_observed_at,
+        r.rank AS current_rank,
+        r.previous_rank
       FROM player_watchlists w
       INNER JOIN players p ON p.governor_id = w.governor_id
       CROSS JOIN boards b
+      LEFT JOIN kingdom_ranking_current r
+        ON r.kid = p.kid
+       AND r.board = b.board
+       AND r.target_type = 'PLAYER'
+       AND r.target_id = w.governor_id
+      LEFT JOIN kingdom_ranking_board_state s
+        ON s.kid = p.kid
+       AND s.board = b.board
       WHERE w.discord_id = ?
         AND w.enabled = 1
         AND p.kid IS NOT NULL
