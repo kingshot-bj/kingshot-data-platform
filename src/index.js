@@ -4977,6 +4977,18 @@ async function renderPublicStatusPage(request, env) {
 
   const usageLabel = cloudflareUsageLabel(usage.status);
   const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
+  const formatBytes = value => {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes < 1024) return Math.round(bytes).toLocaleString("ja-JP") + " B";
+    const units = ["KB", "MB", "GB", "TB"];
+    let size = bytes;
+    let unit = -1;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit += 1;
+    }
+    return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[unit];
+  };
   const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
     const item = cloudflareUsageLabel(stateValue);
@@ -5024,6 +5036,17 @@ async function renderPublicStatusPage(request, env) {
           ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
           ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
           ${usage.r2?.available ? `<div class="resource-row"><div><b>R2 Objects</b><small>現在のオブジェクト数</small></div><strong>${formatInt(usage.r2.objectCount)}</strong></div>` : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>Storage 内訳</b><small>payload / metadata</small></div><strong>${formatBytes(usage.r2.payloadBytes)} / ${formatBytes(usage.r2.metadataBytes)}</strong></div>` : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>Pending Multipart</b><small>未完了アップロード</small></div><strong>${formatInt(usage.r2.uploadCount)}</strong></div>` : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>月内 Storage 増減</b><small>${usage.r2.firstStorageAt ? new Date(usage.r2.firstStorageAt).toLocaleDateString("ja-JP") : "—"} → ${usage.r2.latestStorageAt ? new Date(usage.r2.latestStorageAt).toLocaleDateString("ja-JP") : "—"}</small></div><strong class="${usage.r2.storageDeltaBytes > 0 ? "warn" : ""}">${usage.r2.storageDeltaBytes == null ? "—" : (usage.r2.storageDeltaBytes >= 0 ? "+" : "") + formatBytes(usage.r2.storageDeltaBytes)}${usage.r2.storageDeltaPercent == null ? "" : " (" + (usage.r2.storageDeltaPercent >= 0 ? "+" : "") + Number(usage.r2.storageDeltaPercent).toFixed(1) + "%)"}</strong></div>` : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>Bandwidth</b><small>月初からのUpload / Download</small></div><strong>${usage.r2.bandwidthAvailable ? formatBytes(usage.r2.bytesUpload) + " / " + formatBytes(usage.r2.bytesDownload) : "未確認"}</strong></div>` : ""}
+          ${usage.r2?.available ? `<div class="resource-row"><div><b>Operations 成功率</b><small>${formatInt(usage.r2.totalOperations)} total · ${formatInt(usage.r2.failedOperations)} errors</small></div><strong class="${usage.r2.failedPercent > 5 ? "bad" : usage.r2.failedPercent > 0 ? "warn" : "good"}">${usage.r2.failedPercent == null ? "—" : Number(100 - usage.r2.failedPercent).toFixed(1) + "%"}</strong></div>` : ""}
+          ${usage.r2?.available && usage.r2.buckets?.length ? `<div class="resource-head"><div><b>R2 Bucket 別</b><small>Analytics上のバケット別集計</small></div></div>${usage.r2.buckets.slice(0, 8).map(bucket => `<div class="resource-row"><div><b>${escapeHtml(bucket.bucketName || "account total")}</b><small>${formatInt(bucket.objectCount)} objects · A ${formatInt(bucket.classAOperations)} · B ${formatInt(bucket.classBOperations)}</small></div><strong>${formatBytes(bucket.storageBytes || 0)}</strong></div>`).join("")}` : ""}
+          ${usage.r2?.available && usage.r2.operations?.length ? `<div class="resource-head"><div><b>R2 Operations 上位</b><small>月初から · 実行回数順</small></div></div><div class="insight-list">${usage.r2.operations.slice(0, 10).map(item => `
+            <div class="insight-query">
+              <div class="insight-query-head"><b>${escapeHtml(item.actionType)}</b><span>${formatInt(item.requests)} requests</span></div>
+              <small>${escapeHtml(item.bucketName || "account")} · ${escapeHtml(item.actionStatus || "unknown")}</small>
+            </div>`).join("")}</div>` : ""}
           <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
         </div>
       </section>
