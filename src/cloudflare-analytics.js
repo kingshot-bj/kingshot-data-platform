@@ -185,7 +185,8 @@ function summarizeD1QueryInsights(groups) {
     })
     .filter(item => item.query);
 
-  queries.sort((a, b) => b.rowsWritten - a.rowsWritten);
+  const topWriteQueries = [...queries].sort((a, b) => b.rowsWritten - a.rowsWritten).slice(0, 10);
+  const topReadQueries = [...queries].sort((a, b) => b.rowsRead - a.rowsRead).slice(0, 10);
 
   const categories = new Map();
   for (const item of queries) {
@@ -198,7 +199,8 @@ function summarizeD1QueryInsights(groups) {
 
   return {
     queryCount: queries.length,
-    topWriteQueries: queries.slice(0, 10),
+    topWriteQueries,
+    topReadQueries,
     categories: [...categories.values()].sort((a, b) => b.rowsWritten - a.rowsWritten)
   };
 }
@@ -426,7 +428,7 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   if (!account) throw new Error("Cloudflare Analytics API returned no account data");
 
   const databaseMetrics = sumMetrics(account.d1AnalyticsAdaptiveGroups || []);
-  let queryInsights = { queryCount: 0, topWriteQueries: [], categories: [], available: false };
+  let queryInsights = { queryCount: 0, topWriteQueries: [], topReadQueries: [], categories: [], available: false };
   try {
     const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
       method: "POST",
