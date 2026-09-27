@@ -40,6 +40,39 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
 
   await savePlayerChangeEvents(db, existing, player, observation);
 
+  const materializedPlayer = {
+    governor_id: governorId,
+    uid: value(player, "uid", existing?.uid),
+    fid: value(player, "fid", existing?.fid) != null ? String(value(player, "fid", existing?.fid)) : null,
+    nick_name: value(player, "nick_name", existing?.nick_name),
+    kid: value(player, "kid", existing?.kid),
+    power: value(player, "power", existing?.power),
+    town_center_level: value(player, "town_center_level", existing?.town_center_level),
+    vip: value(player, "vip", existing?.vip),
+    x: value(player, "x", existing?.x),
+    y: value(player, "y", existing?.y),
+    kills: value(player, "kills", existing?.kills),
+    office: value(player, "office", existing?.office),
+    online: value(player, "online", existing?.online) ? 1 : 0,
+    last_active_at: value(player, "last_active_at", existing?.last_active_at),
+    last_login: value(player, "last_login", existing?.last_login),
+    avatar_url: value(player, "avatar_url", existing?.avatar_url),
+    language: value(player, "language", existing?.language),
+    shield_endtime: value(player, "shield_endtime", existing?.shield_endtime),
+    burn_endtime: value(player, "burn_endtime", existing?.burn_endtime),
+    alliance_aid: allianceValue("aid", existing?.alliance_aid),
+    alliance_abbr: allianceValue("abbr", existing?.alliance_abbr),
+    alliance_name: allianceValue("name", existing?.alliance_name),
+    alliance_rank: allianceValue("rank", existing?.alliance_rank),
+    alliance_rank_label: allianceValue("rank_label", existing?.alliance_rank_label),
+    alliance_power: allianceValue("power", existing?.alliance_power),
+    alliance_count: allianceValue("count", existing?.alliance_count),
+    alliance_leader_name: allianceValue("leader_name", existing?.alliance_leader_name),
+    observed_at: observation.observed_at,
+    source_observation_id: observation.observation_id,
+    updated_at: now
+  };
+
   await db.prepare(
     `INSERT INTO players (
       governor_id, uid, fid, nick_name, kid, power, town_center_level, vip,
@@ -64,34 +97,17 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id,
       updated_at=excluded.updated_at`
   ).bind(
-    governorId,
-    value(player, "uid", existing?.uid),
-    value(player, "fid", existing?.fid) != null ? String(value(player, "fid", existing?.fid)) : null,
-    value(player, "nick_name", existing?.nick_name),
-    value(player, "kid", existing?.kid),
-    value(player, "power", existing?.power),
-    value(player, "town_center_level", existing?.town_center_level),
-    value(player, "vip", existing?.vip),
-    value(player, "x", existing?.x),
-    value(player, "y", existing?.y),
-    value(player, "kills", existing?.kills),
-    value(player, "office", existing?.office),
-    value(player, "online", existing?.online) ? 1 : 0,
-    value(player, "last_active_at", existing?.last_active_at),
-    value(player, "last_login", existing?.last_login),
-    value(player, "avatar_url", existing?.avatar_url),
-    value(player, "language", existing?.language),
-    value(player, "shield_endtime", existing?.shield_endtime),
-    value(player, "burn_endtime", existing?.burn_endtime),
-    allianceValue("aid", existing?.alliance_aid),
-    allianceValue("abbr", existing?.alliance_abbr),
-    allianceValue("name", existing?.alliance_name),
-    allianceValue("rank", existing?.alliance_rank),
-    allianceValue("rank_label", existing?.alliance_rank_label),
-    allianceValue("power", existing?.alliance_power),
-    allianceValue("count", existing?.alliance_count),
-    allianceValue("leader_name", existing?.alliance_leader_name),
-    observation.observed_at, observation.observation_id, now
+    materializedPlayer.governor_id, materializedPlayer.uid, materializedPlayer.fid,
+    materializedPlayer.nick_name, materializedPlayer.kid, materializedPlayer.power,
+    materializedPlayer.town_center_level, materializedPlayer.vip, materializedPlayer.x,
+    materializedPlayer.y, materializedPlayer.kills, materializedPlayer.office,
+    materializedPlayer.online, materializedPlayer.last_active_at, materializedPlayer.last_login,
+    materializedPlayer.avatar_url, materializedPlayer.language, materializedPlayer.shield_endtime,
+    materializedPlayer.burn_endtime, materializedPlayer.alliance_aid, materializedPlayer.alliance_abbr,
+    materializedPlayer.alliance_name, materializedPlayer.alliance_rank,
+    materializedPlayer.alliance_rank_label, materializedPlayer.alliance_power,
+    materializedPlayer.alliance_count, materializedPlayer.alliance_leader_name,
+    materializedPlayer.observed_at, materializedPlayer.source_observation_id, materializedPlayer.updated_at
   ).run();
 
   await db.prepare(
@@ -103,7 +119,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
     observation.observed_at, JSON.stringify(player)
   ).run();
 
-  return getPlayer(db, governorId);
+  return materializedPlayer;
 }
 
 export async function getPlayer(db, governorId) {
@@ -148,6 +164,7 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     alliance_count: alliance.count ?? null
   };
 
+  const statements = [];
   for (const field of Object.keys(newValues)) {
     const sourceObject = field.startsWith("alliance_") ? alliance : current;
     const sourceKey = field.startsWith("alliance_") ? field.slice("alliance_".length) : field;
@@ -165,7 +182,7 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     else if (field === "online" || field === "last_active_at") changeType = "ACTIVITY_CHANGED";
     else if (field === "kills") changeType = "KILLS_CHANGED";
 
-    await db.prepare(
+    statements.push(db.prepare(
       `INSERT INTO change_events (
         event_id, target_type, target_id, change_type, field_name,
         old_value_json, new_value_json, observation_id, detected_at, created_at
@@ -180,6 +197,10 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
       observation.observation_id,
       observation.observed_at,
       Math.floor(Date.now() / 1000)
-    ).run();
+    ));
+  }
+
+  for (let offset = 0; offset < statements.length; offset += 50) {
+    await db.batch(statements.slice(offset, offset + 50));
   }
 }
