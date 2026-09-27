@@ -7,6 +7,7 @@ const SESSION_COOKIE = "eagleeye_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
+import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
 import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
@@ -1842,7 +1843,7 @@ async function renderAdminDiagnosticsPage(request, env) {
 </style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/admin">‹ 管理画面</a><div class="live"><span class="live-dot"></span>30秒ごとに自動更新</div></nav><section class="hero"><div class="hero-line"><div class="hero-icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1>${state.label}</h1></div></div><p class="note">${state.note}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未診断</span></div></div></section><section class="section"><div class="section-head"><h2>サービス</h2><span>${data.services.length}項目</span></div><div class="card">${services}</div></section><section class="section"><div class="section-head"><h2>最近の診断</h2><span>最新40件</span></div><div class="card">${events}</div></section><footer class="footer"><span>EagleEye Diagnostics</span><a href="/admin">管理画面へ戻る</a></footer></main></body></html>`);
 }
 
-function stableJsonForProbe(value) {
+async function renderMightPulseResearchPage(request, env) {\n  const guard = await requireAdmin(request, env);\n  if (guard.error) return \"<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>\";\n  return \"<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MightPulse Research Lab | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:26px 14px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0}.sub{color:#94a3b8;line-height:1.7;font-size:13px}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button,.candidate-grid button{border:1px solid #475569;border-radius:10px;background:#0f172a;color:#e2e8f0;padding:10px 12px;font-weight:800;cursor:pointer}.actions .primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.candidate-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}.result{margin-top:14px}.row{padding:12px;border-top:1px solid #334155}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;word-break:break-word}.pill{display:inline-block;padding:4px 7px;border-radius:999px;background:#0f2a1c;color:#86efac;margin:2px;font-size:10px}.note{padding:12px;border-radius:10px;background:#111c30;color:#cbd5e1;font-size:12px;line-height:1.6}@media(max-width:600px){.candidate-grid{grid-template-columns:1fr 1fr}.title{font-size:26px}}</style></head><body><main class='wrap'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='eyebrow'>MIGHTPULSE RESEARCH LAB</div><h1 class='title'>未公開データ候補の構造調査</h1><p class='sub'>公開API仕様に掲載されていない可能性があるinclude候補を、既存の認証済みPlayer APIに対して検証します。APIキー本体・生レスポンスは表示・保存しません。</p><div class='card'><div class='field'><label>Governor ID</label><input id='governorId' inputmode='numeric' placeholder='例: 225623582'></div><div class='actions'><button class='primary' id='all'>全候補を調査</button></div><div class='candidate-grid'><button type='button' data-candidate='pet'>pet</button><button type='button' data-candidate='pets'>pets</button><button type='button' data-candidate='mail'>mail</button><button type='button' data-candidate='messages'>messages</button><button type='button' data-candidate='inbox'>inbox</button><button type='button' data-candidate='record'>record</button><button type='button' data-candidate='records'>records</button><button type='button' data-candidate='battle'>battle</button><button type='button' data-candidate='battles'>battles</button><button type='button' data-candidate='battle_report'>battle_report</button><button type='button' data-candidate='battle_reports'>battle_reports</button><button type='button' data-candidate='combat'>combat</button><button type='button' data-candidate='combat_report'>combat_report</button><button type='button' data-candidate='combat_reports'>combat_reports</button><button type='button' data-candidate='report'>report</button><button type='button' data-candidate='reports'>reports</button><button type='button' data-candidate='event'>event</button><button type='button' data-candidate='events'>events</button><button type='button' data-candidate='history'>history</button><button type='button' data-candidate='activity'>activity</button></div></div><div class='card result'><div id='status' class='muted'>調査対象を選択してください。</div><div id='results'></div></div><div class='card'><div class='note'>これは認証済みPlayer APIで受け付けられる追加includeの有無とレスポンス構造を観測する研究機能です。未公開Endpointへの認証回避やアクセス制御突破は行いません。</div></div></main><script>(function(){function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]})}function draw(r){var el=document.getElementById('results');var rows=Array.isArray(r)?r:[r];el.innerHTML=rows.map(function(x){if(!x.ok){return '<div class=\"row bad\"><b>'+esc(x.candidate)+'</b> · '+esc(x.error||'ERROR')+' · HTTP '+esc(x.status||0)+'<div>'+esc(x.message||'')+'</div></div>';}return '<div class=\"row\"><b class=\"ok\">'+esc(x.candidate)+'</b> · HTTP '+esc(x.http_status)+' · '+esc(x.elapsed_ms)+'ms<br><span class=\"mono\">include='+esc(x.requested_include)+'</span><div style=\"margin-top:7px\">'+(x.sections||[]).map(function(v){return '<span class=\"pill\">'+esc(v)+'</span>'}).join('')+'</div><div class=\"muted\" style=\"margin-top:6px\">top-level: '+esc((x.payload_keys||[]).join(', ')||'-')+' / player: '+esc((x.player_keys||[]).join(', ')||'-')+'</div></div>';}).join('');}async function run(candidate,all){var id=document.getElementById('governorId').value.trim();if(!id){document.getElementById('status').innerHTML='<span class=\"bad\">Governor IDを入力してください。</span>';return;}document.getElementById('status').textContent=all?'全候補を調査中…':'調査中: '+candidate;try{var q=new URLSearchParams({governor_id:id});if(all)q.set('all','1');else q.set('candidate',candidate);var r=await fetch('/api/admin/mightpulse-research?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));draw(all?d.results:d.result);document.getElementById('status').innerHTML='<span class=\"ok\">調査完了。結果はこのブラウザには保存していません。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"bad\">調査失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('[data-candidate]').forEach(function(b){b.onclick=function(){run(b.getAttribute('data-candidate'),false)}});document.getElementById('all').onclick=function(){if(confirm('20候補を順番に調査します。MightPulse APIリクエストを最大20回使用します。実行しますか？'))run('',true)};})();</script></body></html>\";\n}function stableJsonForProbe(value) {
   if (value === null || value === undefined) return value;
   if (Array.isArray(value)) return value.map(stableJsonForProbe);
   if (typeof value === "object") {
@@ -2064,6 +2065,30 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
   }
 }
 
+async function handleMightPulseResearchApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  const candidate = String(url.searchParams.get("candidate") || "").trim().toLowerCase();
+  const all = url.searchParams.get("all") === "1";
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  try {
+    if (all) {
+      const results = [];
+      for (const item of MIGHTPULSE_RESEARCH_CANDIDATES) {
+        try { results.push(await runMightPulseResearch(env, { governorId, candidate: item })); }
+        catch (error) { results.push({ ok:false, candidate:item, error:error?.code||"MIGHTPULSE_RESEARCH_FAILED", status:Number(error?.status||0), message:error?.message||null }); }
+      }
+      return json({ ok:true, governor_id:governorId, candidate_count:results.length, results });
+    }
+    if (!candidate) return json({ ok:false, error:"RESEARCH_CANDIDATE_REQUIRED", candidates:MIGHTPULSE_RESEARCH_CANDIDATES },400);
+    return json({ ok:true, governor_id:governorId, result:await runMightPulseResearch(env,{ governorId, candidate }) });
+  } catch (error) {
+    return json({ ok:false, error:error?.code||"MIGHTPULSE_RESEARCH_FAILED", status:Number(error?.status||0), message:error?.message||null }, error?.status>=400&&error?.status<600?error.status:502);
+  }
+}
+
 async function handleMightPulseProbeApi(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
@@ -2167,6 +2192,7 @@ export default {
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
+      if (url.pathname === "/api/admin/mightpulse-research") return await handleMightPulseResearchApi(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
@@ -2196,6 +2222,7 @@ export default {
       if (url.pathname === "/status") return await renderPublicStatusPage(request, env);
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
+      if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
