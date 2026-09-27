@@ -359,15 +359,16 @@ async function runKingdomWatchlistJobs(env) {
     "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
   ).all();
 
+  // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
+  const activeJobRows = await env.DB.prepare(
+    "SELECT watchlist_id FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS')"
+  ).all();
+  const activeWatchlistIds = new Set((activeJobRows.results || []).map(item => String(item.watchlist_id)));
+
   for (const row of rows.results || []) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     // Do not write a lock for an idle watchlist that is not due.
-    if (!due) {
-      const active = await env.DB.prepare(
-        "SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-      ).bind(row.watchlist_id).first();
-      if (!active) continue;
-    }
+    if (!due && !activeWatchlistIds.has(String(row.watchlist_id))) continue;
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
     if (!lockToken) continue;
 
