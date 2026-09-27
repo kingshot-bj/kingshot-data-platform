@@ -4028,7 +4028,9 @@ async function getLatestPlayerHeroRankings(db, kid, governorId) {
   const result = await db.prepare(
     `SELECT board, rank, score, observed_at
      FROM kingdom_ranking_current
-     WHERE kid = ? AND target_type = 'PLAYER' AND governor_id = ?
+     WHERE kid = ?
+       AND target_type = 'PLAYER'
+       AND target_id = ?
        AND board IN ('single_hero', 'hero_total', 'hero_no_equip', 'hero_equip')
      ORDER BY CASE board
        WHEN 'single_hero' THEN 1
