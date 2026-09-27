@@ -82,7 +82,10 @@ export async function getKingdomRankingChanges(db, { kid, board, entries, observ
     const key = target.targetType + ":" + target.targetId;
     currentKeys.add(key);
     const previous = previousByKey.get(key);
-    if (rankingEntryChanged(previous, current)) changedEntries.push(entry);
+    if (rankingEntryChanged(previous, current)) {
+      entry.__eagleeye_rank = index + 1;
+      changedEntries.push(entry);
+    }
     if (previous && Number(previous.rank) !== Number(current.rank)) {
       rankingChanges.push({
         targetType: current.targetType, targetId: current.targetId, changeType: "RANK_CHANGED",
@@ -96,16 +99,23 @@ export async function getKingdomRankingChanges(db, { kid, board, entries, observ
   return { changedEntries, rankingChanges, removedTargets };
 }
 
+function getRankingEntryRank(entry, index) {
+  const explicit = entry?.__eagleeye_rank ?? entry?.rank;
+  const numeric = Number(explicit);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : index + 1;
+}
+
 function buildKingdomRankingInsertStatements(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
   return entries.map((entry, index) => {
-    const { targetType, targetId } = rankingEntryTarget(board, entry, index, kid);
+    const rank = getRankingEntryRank(entry, index);
+    const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
     return db.prepare(
       'INSERT INTO ranking_snapshots (' +
       'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
       'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(
-      crypto.randomUUID(), Number(kid), String(board), targetType, targetId, index + 1,
+      crypto.randomUUID(), Number(kid), String(board), targetType, targetId, rank,
       entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
       entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
     );
@@ -131,8 +141,7 @@ export async function saveKingdomRankingBoard(db, {
   const removals = entriesAlreadyFiltered ? removedTargets : comparison.removedTargets;
   const statements = [];
   for (const entry of filteredEntries) {
-    const originalIndex = entries.indexOf(entry);
-    const rank = originalIndex >= 0 ? originalIndex + 1 : filteredEntries.indexOf(entry) + 1;
+    const rank = getRankingEntryRank(entry, filteredEntries.indexOf(entry));
     const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
     statements.push(db.prepare(
       'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
