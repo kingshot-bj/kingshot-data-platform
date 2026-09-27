@@ -3,7 +3,7 @@ const CLOUDFLARE_GRAPHQL_ENDPOINT = "https://api.cloudflare.com/client/v4/graphq
 const D1_FREE_LIMITS = {
   rowsRead: 5_000_000,
   rowsWritten: 100_000,
-  storageBytes: 5 * 1024 * 1024 * 1024
+  storageBytes: 5_000_000_000
 };
 
 const D1_USAGE_QUERY = `
