@@ -8,15 +8,20 @@ const D1_FREE_LIMITS = {
 
 const D1_USAGE_QUERY = `
 query EagleEyeD1Usage(
-  $accountTag: string!
+  $accountTag: String!
   $start: Date
   $end: Date
+  $databaseId: String
 ) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
       d1AnalyticsAdaptiveGroups(
         limit: 10000
-        filter: { date_geq: $start, date_leq: $end }
+        filter: {
+          date_geq: $start
+          date_leq: $end
+          databaseId: $databaseId
+        }
       ) {
         sum {
           readQueries
@@ -33,7 +38,11 @@ query EagleEyeD1Usage(
       }
       d1StorageAdaptiveGroups(
         limit: 10000
-        filter: { date_geq: $start, date_leq: $end }
+        filter: {
+          date_geq: $start
+          date_leq: $end
+          databaseId: $databaseId
+        }
       ) {
         max {
           databaseSizeBytes
@@ -90,11 +99,6 @@ function sumMetrics(groups) {
   });
 }
 
-function filterDatabaseGroups(groups, databaseId) {
-  if (!databaseId) return [];
-  return (groups || []).filter(group => String(group?.dimensions?.databaseId || "") === String(databaseId));
-}
-
 function maxStorage(groups, databaseId) {
   return (groups || [])
     .filter(group => !databaseId || String(group?.dimensions?.databaseId || "") === String(databaseId))
@@ -106,11 +110,11 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
 
-  if (!accountTag || !token) {
+  if (!accountTag || !token || !databaseId) {
     return {
       configured: false,
       status: "UNCONFIGURED",
-      message: "Cloudflare Analytics APIの認証情報が未設定です。"
+      message: "Cloudflare Analytics APIの認証情報またはD1 Database IDが未設定です。"
     };
   }
 
@@ -126,7 +130,8 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       variables: {
         accountTag,
         start: date,
-        end: date
+        end: date,
+        databaseId
       }
     })
   });
@@ -147,12 +152,11 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
 
   const analyticsGroups = account.d1AnalyticsAdaptiveGroups || [];
   const storageGroups = account.d1StorageAdaptiveGroups || [];
-  const accountMetrics = sumMetrics(analyticsGroups);
-  const databaseMetrics = sumMetrics(filterDatabaseGroups(analyticsGroups, databaseId));
+  const databaseMetrics = sumMetrics(analyticsGroups);
   const databaseSizeBytes = maxStorage(storageGroups, databaseId);
 
-  const rowsReadPercent = percent(accountMetrics.rowsRead, D1_FREE_LIMITS.rowsRead);
-  const rowsWrittenPercent = percent(accountMetrics.rowsWritten, D1_FREE_LIMITS.rowsWritten);
+  const rowsReadPercent = percent(databaseMetrics.rowsRead, D1_FREE_LIMITS.rowsRead);
+  const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, D1_FREE_LIMITS.rowsWritten);
   const storagePercent = percent(databaseSizeBytes, D1_FREE_LIMITS.storageBytes);
   const states = [resourceState(rowsReadPercent), resourceState(rowsWrittenPercent), resourceState(storagePercent)];
 
@@ -168,12 +172,12 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
     note: "Cloudflare Analyticsの集計値です。最新値の反映には遅延が発生する場合があります。",
     limits: D1_FREE_LIMITS,
     account: {
-      rowsRead: accountMetrics.rowsRead,
-      rowsWritten: accountMetrics.rowsWritten,
-      readQueries: accountMetrics.readQueries,
-      writeQueries: accountMetrics.writeQueries,
-      queryBatchResponseBytes: accountMetrics.queryBatchResponseBytes,
-      queryBatchTimeMs: accountMetrics.queryBatchTimeMs,
+      rowsRead: databaseMetrics.rowsRead,
+      rowsWritten: databaseMetrics.rowsWritten,
+      readQueries: databaseMetrics.readQueries,
+      writeQueries: databaseMetrics.writeQueries,
+      queryBatchResponseBytes: databaseMetrics.queryBatchResponseBytes,
+      queryBatchTimeMs: databaseMetrics.queryBatchTimeMs,
       rowsReadPercent,
       rowsWrittenPercent,
       rowsReadState: resourceState(rowsReadPercent),
