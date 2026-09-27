@@ -42,7 +42,7 @@ query EagleEyeD1QueryInsights(
 `;
 
 function classifyD1Query(query) {
-  const sql = String(query || "").toUpperCase().replace(/\\s+/g, " ");
+  const sql = String(query || "").toUpperCase().replace(/\s+/g, " ");
   const rules = [
     ["Ranking Snapshot", ["RANKING_SNAPSHOTS", "PLAYER_RANK_SNAPSHOTS"]],
     ["Player Observation", ["API_OBSERVATIONS", "PLAYER_OBSERVATIONS"]],
