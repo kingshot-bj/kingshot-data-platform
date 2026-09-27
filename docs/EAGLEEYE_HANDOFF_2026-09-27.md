@@ -17,8 +17,12 @@
 
 ## 2. 現在の基準コミット
 直近の実装済みコミット:
-766332d96db2b4329a222b1d7c89eda76c7e4f94
-fix: correct watchlist ranking out-of-range direction
+02b3fd3e054eb04f71d3e694c8ed6ba6f2651137
+refactor: remove legacy ranking history scans
+
+直前:
+e1785f074904ae98b599560800d70f4d88fbdd63
+Update EagleEye handoff with D1 optimization progress
 
 直前:
 26fef71eea2a48c7f0eb1e76b87f33c2fa4dc9d1
@@ -564,6 +568,18 @@ Player Watchlistのランキング取得を、過去の `ranking_snapshots` に�
 - D1全体Read: 約30〜70%削減可能性
 
 上記はあくまで予測。明日のD1制限解除後、変更前後のAnalytics実測値で確定する。
+
+### 2026-09-27追加：旧ranking履歴走査関数の整理
+
+現行フローでは使用されていなかった以下の旧関数を src/ranking-store.js から削除した:
+- detectRankingChangesForBoards()
+- detectRankingChanges()
+
+どちらも ranking_snapshots を広範囲に走査する旧方式を前提としていたため、current state方式との混在・誤再利用を防ぐ目的で整理。
+履歴表示用の getRankingHistory() は維持する。
+
+関連コミット:
+- 02b3fd3e054eb04f71d3e694c8ed6ba6f2651137 — refactor: remove legacy ranking history scans
 
 ### 未確認 / 次にやること
 1. D1が書ける状態で自動デプロイ後のWatchlist実動作確認。
