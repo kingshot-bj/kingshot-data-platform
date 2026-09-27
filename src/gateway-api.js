@@ -1,3 +1,6 @@
+import { DIAGNOSTIC_SERVICES } from "./diagnostics.js";
+import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
+
 const GATEWAY_VERSION = "v1";
 
 function jsonResponse(data, status = 200) {
