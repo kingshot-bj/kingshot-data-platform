@@ -17,6 +17,10 @@
 
 ## 2. 現在の基準コミット
 直近の実装済みコミット:
+a71f6c0fc5cd730b5cfe6c6fd1b0d3bc05610982
+feat: show player watchlist field changes
+
+直前:
 02b3fd3e054eb04f71d3e694c8ed6ba6f2651137
 refactor: remove legacy ranking history scans
 
@@ -580,6 +584,19 @@ Player Watchlistのランキング取得を、過去の `ranking_snapshots` に�
 
 関連コミット:
 - 02b3fd3e054eb04f71d3e694c8ed6ba6f2651137 — refactor: remove legacy ranking history scans
+
+### 2026-09-27追加：Player Watchlistの戦力・役場・同盟変更表示
+
+Player Watchlist APIのsummaryに以下を追加:
+- power_change（既存）
+- town_center_change
+- alliance_change
+
+change_eventsからログインユーザーのenabled watch対象だけを対象に、最新のTOWN_CENTER_CHANGED / ALLIANCE_CHANGEDを取得する。
+UIの「前回からの変化」に戦力・役場・同盟を表示し、既存のランキング順位変動表示と併用する。
+
+関連コミット:
+- a71f6c0fc5cd730b5cfe6c6fd1b0d3bc05610982 — feat: show player watchlist field changes
 
 ### 未確認 / 次にやること
 1. D1が書ける状態で自動デプロイ後のWatchlist実動作確認。
