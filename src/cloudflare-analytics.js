@@ -88,6 +88,7 @@ query EagleEyeR2Usage(
         }
         dimensions {
           actionType
+          actionStatus
           bucketName
         }
       }
@@ -114,6 +115,35 @@ query EagleEyeR2Usage(
   }
 }
 
+`;
+
+const R2_BANDWIDTH_QUERY = `
+query EagleEyeR2Bandwidth(
+  $accountTag: String!
+  $start: Time
+  $end: Time
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      r2BandwidthUsageAdaptiveGroups(
+        limit: 10000
+        filter: {
+          datetime_geq: $start
+          datetime_leq: $end
+        }
+      ) {
+        sum {
+          bytesUpload
+          bytesDownload
+        }
+        dimensions {
+          bucketName
+          datetimeHour
+        }
+      }
+    }
+  }
+}
 `;
 
 const D1_QUERY_INSIGHTS_QUERY = `
@@ -289,45 +319,195 @@ function summarizeWorkersUsage(groups) {
   };
 }
 
-function summarizeR2Usage(operationGroups, storageGroups) {
+function summarizeR2Usage(operationGroups, storageGroups, bandwidthGroups) {
   let classA = 0;
   let classB = 0;
   let free = 0;
+  let totalOperations = 0;
+  let successfulOperations = 0;
+  let failedOperations = 0;
+  let payloadBytes = 0;
+  let metadataBytes = 0;
+  let objectCount = 0;
+  let uploadCount = 0;
+  let latestStorageAt = null;
+  let firstStorageAt = null;
+  let firstStorageBytes = null;
+  let latestStorageBytes = null;
+  let firstObjectCount = null;
+  let latestObjectCount = null;
+
   const operations = [];
+  const bucketMap = new Map();
+
   for (const group of operationGroups || []) {
     const actionType = String(group?.dimensions?.actionType || "Unknown");
+    const actionStatus = String(group?.dimensions?.actionStatus || "unknown");
+    const bucketName = String(group?.dimensions?.bucketName || "");
     const requests = normalizeNumber(group?.sum?.requests);
+
+    totalOperations += requests;
+    if (actionStatus.toLowerCase() === "success") successfulOperations += requests;
+    else if (actionStatus.toLowerCase() === "userError" || actionStatus.toLowerCase() === "internalError") failedOperations += requests;
+
     if (R2_CLASS_A_OPERATIONS.has(actionType)) classA += requests;
     else if (R2_CLASS_B_OPERATIONS.has(actionType)) classB += requests;
     else free += requests;
-    operations.push({ actionType, bucketName: String(group?.dimensions?.bucketName || ""), requests });
+
+    operations.push({ actionType, actionStatus, bucketName, requests });
+
+    const bucket = bucketMap.get(bucketName) || {
+      bucketName,
+      operations: 0,
+      classAOperations: 0,
+      classBOperations: 0,
+      freeOperations: 0,
+      successfulOperations: 0,
+      failedOperations: 0
+    };
+    bucket.operations += requests;
+    if (R2_CLASS_A_OPERATIONS.has(actionType)) bucket.classAOperations += requests;
+    else if (R2_CLASS_B_OPERATIONS.has(actionType)) bucket.classBOperations += requests;
+    else bucket.freeOperations += requests;
+    if (actionStatus.toLowerCase() === "success") bucket.successfulOperations += requests;
+    else if (actionStatus.toLowerCase() === "userError" || actionStatus.toLowerCase() === "internalError") bucket.failedOperations += requests;
+    bucketMap.set(bucketName, bucket);
   }
-  const latestByBucket = new Map();
+
+  const storageByBucket = new Map();
   for (const group of storageGroups || []) {
     const bucketName = String(group?.dimensions?.bucketName || "");
-    if (!latestByBucket.has(bucketName)) latestByBucket.set(bucketName, group);
+    const datetime = String(group?.dimensions?.datetime || "");
+    const payloadSize = normalizeNumber(group?.max?.payloadSize);
+    const metadataSize = normalizeNumber(group?.max?.metadataSize);
+    const objects = normalizeNumber(group?.max?.objectCount);
+    const uploads = normalizeNumber(group?.max?.uploadCount);
+    const totalBytes = payloadSize + metadataSize;
+
+    if (!firstStorageAt || datetime < firstStorageAt) {
+      firstStorageAt = datetime;
+      firstStorageBytes = totalBytes;
+      firstObjectCount = objects;
+    }
+    if (!latestStorageAt || datetime > latestStorageAt) {
+      latestStorageAt = datetime;
+      latestStorageBytes = totalBytes;
+      latestObjectCount = objects;
+    }
+
+    const current = storageByBucket.get(bucketName);
+    if (!current || datetime > current.datetime) {
+      storageByBucket.set(bucketName, {
+        bucketName,
+        datetime,
+        payloadBytes: payloadSize,
+        metadataBytes: metadataSize,
+        storageBytes: totalBytes,
+        objectCount: objects,
+        uploadCount: uploads
+      });
+    }
   }
-  let storageBytes = 0;
-  let objectCount = 0;
-  for (const group of latestByBucket.values()) {
-    storageBytes += normalizeNumber(group?.max?.payloadSize) + normalizeNumber(group?.max?.metadataSize);
-    objectCount += normalizeNumber(group?.max?.objectCount);
+
+  for (const item of storageByBucket.values()) {
+    payloadBytes += item.payloadBytes;
+    metadataBytes += item.metadataBytes;
+    objectCount += item.objectCount;
+    uploadCount += item.uploadCount;
+
+    const bucket = bucketMap.get(item.bucketName) || {
+      bucketName: item.bucketName,
+      operations: 0,
+      classAOperations: 0,
+      classBOperations: 0,
+      freeOperations: 0,
+      successfulOperations: 0,
+      failedOperations: 0
+    };
+    Object.assign(bucket, {
+      payloadBytes: item.payloadBytes,
+      metadataBytes: item.metadataBytes,
+      storageBytes: item.storageBytes,
+      objectCount: item.objectCount,
+      uploadCount: item.uploadCount
+    });
+    bucketMap.set(item.bucketName, bucket);
   }
+
+  let bytesUpload = 0;
+  let bytesDownload = 0;
+  const bandwidthByBucket = new Map();
+  for (const group of bandwidthGroups || []) {
+    const bucketName = String(group?.dimensions?.bucketName || "");
+    const upload = normalizeNumber(group?.sum?.bytesUpload);
+    const download = normalizeNumber(group?.sum?.bytesDownload);
+    bytesUpload += upload;
+    bytesDownload += download;
+    const current = bandwidthByBucket.get(bucketName) || { bucketName, bytesUpload: 0, bytesDownload: 0 };
+    current.bytesUpload += upload;
+    current.bytesDownload += download;
+    bandwidthByBucket.set(bucketName, current);
+  }
+
+  for (const item of bandwidthByBucket.values()) {
+    const bucket = bucketMap.get(item.bucketName) || {
+      bucketName: item.bucketName,
+      operations: 0,
+      classAOperations: 0,
+      classBOperations: 0,
+      freeOperations: 0,
+      successfulOperations: 0,
+      failedOperations: 0
+    };
+    bucket.bytesUpload = item.bytesUpload;
+    bucket.bytesDownload = item.bytesDownload;
+    bucketMap.set(item.bucketName, bucket);
+  }
+
+  const storageBytes = payloadBytes + metadataBytes;
   const storagePercent = percent(storageBytes, R2_FREE_LIMITS.storageBytes);
   const classAPercent = percent(classA, R2_FREE_LIMITS.classAOperationsPerMonth);
   const classBPercent = percent(classB, R2_FREE_LIMITS.classBOperationsPerMonth);
+  const failedPercent = percent(failedOperations, totalOperations);
+  const storageDeltaBytes = latestStorageBytes != null && firstStorageBytes != null
+    ? latestStorageBytes - firstStorageBytes
+    : null;
+  const storageDeltaPercent = firstStorageBytes > 0 && storageDeltaBytes != null
+    ? (storageDeltaBytes / firstStorageBytes) * 100
+    : null;
+  const objectDelta = latestObjectCount != null && firstObjectCount != null
+    ? latestObjectCount - firstObjectCount
+    : null;
+
   return {
     classAOperations: classA,
     classBOperations: classB,
     freeOperations: free,
+    totalOperations,
+    successfulOperations,
+    failedOperations,
+    failedPercent,
+    payloadBytes,
+    metadataBytes,
     storageBytes,
     objectCount,
+    uploadCount,
     storagePercent,
     classAPercent,
     classBPercent,
     storageState: resourceState(storagePercent),
     classAState: resourceState(classAPercent),
     classBState: resourceState(classBPercent),
+    bytesUpload,
+    bytesDownload,
+    latestStorageAt,
+    firstStorageAt,
+    latestStorageBytes,
+    firstStorageBytes,
+    storageDeltaBytes,
+    storageDeltaPercent,
+    objectDelta,
+    buckets: [...bucketMap.values()].sort((a, b) => (b.storageBytes || 0) - (a.storageBytes || 0)),
     operations: operations.sort((a,b) => b.requests - a.requests).slice(0, 20)
   };
 }
@@ -482,26 +662,43 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
 
   let r2 = { available: false };
   try {
-    const r2Response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        query: R2_USAGE_QUERY,
-        variables: { accountTag, start: monthStart, end: endTime }
+    const [r2Response, bandwidthResponse] = await Promise.all([
+      fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          query: R2_USAGE_QUERY,
+          variables: { accountTag, start: monthStart, end: endTime }
+        })
+      }),
+      fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          query: R2_BANDWIDTH_QUERY,
+          variables: { accountTag, start: monthStart, end: endTime }
+        })
       })
-    });
+    ]);
     const r2Payload = await r2Response.json().catch(() => null);
+    const bandwidthPayload = await bandwidthResponse.json().catch(() => null);
     if (r2Response.ok && !Array.isArray(r2Payload?.errors)) {
       const r2Account = r2Payload?.data?.viewer?.accounts?.[0];
+      const bandwidthAccount = bandwidthPayload?.data?.viewer?.accounts?.[0];
       r2 = {
         ...summarizeR2Usage(
           r2Account?.r2OperationsAdaptiveGroups || [],
-          r2Account?.r2StorageAdaptiveGroups || []
+          r2Account?.r2StorageAdaptiveGroups || [],
+          bandwidthAccount?.r2BandwidthUsageAdaptiveGroups || []
         ),
         available: true,
+        bandwidthAvailable: bandwidthResponse.ok && !Array.isArray(bandwidthPayload?.errors),
         monthStart,
         bucket: String(env.CLOUDFLARE_R2_BUCKET_NAME || "eagleeye-archive")
       };
