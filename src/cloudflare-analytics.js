@@ -6,6 +6,115 @@ const D1_FREE_LIMITS = {
   storageBytes: 5_000_000_000
 };
 
+const WORKERS_FREE_LIMITS = {
+  requestsPerDay: 100_000,
+  cpuTimeMsPerInvocation: 10,
+  subrequestsPerInvocation: 50
+};
+
+const R2_FREE_LIMITS = {
+  storageBytes: 10_000_000_000,
+  classAOperationsPerMonth: 1_000_000,
+  classBOperationsPerMonth: 10_000_000
+};
+
+const R2_CLASS_A_OPERATIONS = new Set([
+  "ListBuckets", "PutBucket", "ListObjects", "PutObject", "CopyObject",
+  "CompleteMultipartUpload", "CreateMultipartUpload", "LifecycleStorageTierTransition",
+  "ListMultipartUploads", "UploadPart", "UploadPartCopy", "ListParts",
+  "PutBucketEncryption", "PutBucketCors", "PutBucketLifecycleConfiguration"
+]);
+
+const R2_CLASS_B_OPERATIONS = new Set([
+  "HeadBucket", "HeadObject", "GetObject", "UsageSummary",
+  "GetBucketEncryption", "GetBucketLocation", "GetBucketCors",
+  "GetBucketLifecycleConfiguration"
+]);
+
+
+const WORKERS_USAGE_QUERY = `
+query EagleEyeWorkersUsage(
+  $accountTag: String!
+  $start: Time
+  $end: Time
+  $scriptName: String
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      workersInvocationsAdaptive(
+        limit: 1000
+        filter: {
+          datetime_geq: $start
+          datetime_leq: $end
+          scriptName: $scriptName
+        }
+      ) {
+        sum {
+          requests
+          errors
+          subrequests
+        }
+        quantiles {
+          cpuTimeP50
+          cpuTimeP90
+          cpuTimeP99
+        }
+        dimensions {
+          scriptName
+        }
+      }
+    }
+  }
+}
+`;
+
+const R2_USAGE_QUERY = `
+query EagleEyeR2Usage(
+  $accountTag: String!
+  $start: Time
+  $end: Time
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      r2OperationsAdaptiveGroups(
+        limit: 10000
+        filter: {
+          datetime_geq: $start
+          datetime_leq: $end
+        }
+      ) {
+        sum {
+          requests
+        }
+        dimensions {
+          actionType
+          bucketName
+        }
+      }
+      r2StorageAdaptiveGroups(
+        limit: 10000
+        filter: {
+          datetime_geq: $start
+          datetime_leq: $end
+        }
+        orderBy: [datetime_DESC]
+      ) {
+        max {
+          payloadSize
+          metadataSize
+          objectCount
+          uploadCount
+        }
+        dimensions {
+          datetime
+          bucketName
+        }
+      }
+    }
+  }
+}
+
+`;
 
 const D1_QUERY_INSIGHTS_QUERY = `
 query EagleEyeD1QueryInsights(
@@ -143,6 +252,84 @@ query EagleEyeD1Usage(
 }
 `;
 
+function monthStartUtcString(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString();
+}
+
+function dayStartUtcString(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())).toISOString();
+}
+
+function summarizeWorkersUsage(groups) {
+  const total = (groups || []).reduce((acc, group) => {
+    const sum = group?.sum || {};
+    acc.requests += normalizeNumber(sum.requests);
+    acc.errors += normalizeNumber(sum.errors);
+    acc.subrequests += normalizeNumber(sum.subrequests);
+    acc.cpuTimeP50 = Math.max(acc.cpuTimeP50, normalizeNumber(group?.quantiles?.cpuTimeP50));
+    acc.cpuTimeP90 = Math.max(acc.cpuTimeP90, normalizeNumber(group?.quantiles?.cpuTimeP90));
+    acc.cpuTimeP99 = Math.max(acc.cpuTimeP99, normalizeNumber(group?.quantiles?.cpuTimeP99));
+    return acc;
+  }, { requests: 0, errors: 0, subrequests: 0, cpuTimeP50: 0, cpuTimeP90: 0, cpuTimeP99: 0 });
+  const requestsPercent = percent(total.requests, WORKERS_FREE_LIMITS.requestsPerDay);
+  const cpuPercent = percent(total.cpuTimeP99, WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation);
+  const averageSubrequests = total.requests > 0 ? total.subrequests / total.requests : 0;
+  const subrequestsPercent = percent(averageSubrequests, WORKERS_FREE_LIMITS.subrequestsPerInvocation);
+  return {
+    ...total,
+    requestsPercent,
+    requestsState: resourceState(requestsPercent),
+    cpuTimeP99Percent: cpuPercent,
+    cpuTimeP99State: resourceState(cpuPercent),
+    averageSubrequests,
+    averageSubrequestsPercent: subrequestsPercent,
+    averageSubrequestsState: resourceState(subrequestsPercent)
+  };
+}
+
+function summarizeR2Usage(operationGroups, storageGroups) {
+  let classA = 0;
+  let classB = 0;
+  let free = 0;
+  const operations = [];
+  for (const group of operationGroups || []) {
+    const actionType = String(group?.dimensions?.actionType || "Unknown");
+    const requests = normalizeNumber(group?.sum?.requests);
+    if (R2_CLASS_A_OPERATIONS.has(actionType)) classA += requests;
+    else if (R2_CLASS_B_OPERATIONS.has(actionType)) classB += requests;
+    else free += requests;
+    operations.push({ actionType, bucketName: String(group?.dimensions?.bucketName || ""), requests });
+  }
+  const latestByBucket = new Map();
+  for (const group of storageGroups || []) {
+    const bucketName = String(group?.dimensions?.bucketName || "");
+    if (!latestByBucket.has(bucketName)) latestByBucket.set(bucketName, group);
+  }
+  let storageBytes = 0;
+  let objectCount = 0;
+  for (const group of latestByBucket.values()) {
+    storageBytes += normalizeNumber(group?.max?.payloadSize) + normalizeNumber(group?.max?.metadataSize);
+    objectCount += normalizeNumber(group?.max?.objectCount);
+  }
+  const storagePercent = percent(storageBytes, R2_FREE_LIMITS.storageBytes);
+  const classAPercent = percent(classA, R2_FREE_LIMITS.classAOperationsPerMonth);
+  const classBPercent = percent(classB, R2_FREE_LIMITS.classBOperationsPerMonth);
+  return {
+    classAOperations: classA,
+    classBOperations: classB,
+    freeOperations: free,
+    storageBytes,
+    objectCount,
+    storagePercent,
+    classAPercent,
+    classBPercent,
+    storageState: resourceState(storagePercent),
+    classAState: resourceState(classAPercent),
+    classBState: resourceState(classBPercent),
+    operations: operations.sort((a,b) => b.requests - a.requests).slice(0, 20)
+  };
+}
+
 function utcDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
@@ -191,6 +378,7 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   const accountTag = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
+  const workerName = String(env.CLOUDFLARE_WORKER_NAME || "kingshot-data-platform").trim();
 
   const configuration = {
     accountId: Boolean(accountTag),
@@ -203,7 +391,6 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       .filter(([, configured]) => !configured)
       .map(([key]) => key)
       .join(", ");
-
     return {
       configured: false,
       status: "UNCONFIGURED",
@@ -213,6 +400,10 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   }
 
   const date = utcDateString(now);
+  const dayStart = dayStartUtcString(now);
+  const endTime = now.toISOString();
+  const monthStart = monthStartUtcString(now);
+
   const response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
     method: "POST",
     headers: {
@@ -221,32 +412,20 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
     },
     body: JSON.stringify({
       query: D1_USAGE_QUERY,
-      variables: {
-        accountTag,
-        start: date,
-        end: date,
-        databaseId
-      }
+      variables: { accountTag, start: date, end: date, databaseId }
     })
   });
 
-  const payload = await response.json().catch(() => null);  if (!response.ok) {
-    throw new Error("Cloudflare Analytics API HTTP " + response.status);
-  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error("Cloudflare Analytics API HTTP " + response.status);
   if (Array.isArray(payload?.errors) && payload.errors.length) {
     const message = payload.errors.map(item => item?.message).filter(Boolean).join("; ");
     throw new Error(message || "Cloudflare Analytics GraphQL error");
   }
-
   const account = payload?.data?.viewer?.accounts?.[0];
-  if (!account) {
-    throw new Error("Cloudflare Analytics API returned no account data");
-  }
+  if (!account) throw new Error("Cloudflare Analytics API returned no account data");
 
-  const analyticsGroups = account.d1AnalyticsAdaptiveGroups || [];
-  const storageGroups = account.d1StorageAdaptiveGroups || [];
-  const databaseMetrics = sumMetrics(analyticsGroups);
-
+  const databaseMetrics = sumMetrics(account.d1AnalyticsAdaptiveGroups || []);
   let queryInsights = { queryCount: 0, topWriteQueries: [], categories: [], available: false };
   try {
     const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
@@ -271,24 +450,95 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   } catch (error) {
     console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
   }
-  const databaseSizeBytes = maxStorage(storageGroups, databaseId);
 
+  let workers = { available: false };
+  try {
+    const workersResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: WORKERS_USAGE_QUERY,
+        variables: { accountTag, start: dayStart, end: endTime, scriptName: workerName }
+      })
+    });
+    const workersPayload = await workersResponse.json().catch(() => null);
+    if (workersResponse.ok && !Array.isArray(workersPayload?.errors)) {
+      const workerAccount = workersPayload?.data?.viewer?.accounts?.[0];
+      workers = {
+        ...summarizeWorkersUsage(workerAccount?.workersInvocationsAdaptive || []),
+        available: true,
+        date,
+        scriptName: workerName
+      };
+    }
+  } catch (error) {
+    console.warn("cloudflare_workers_usage_failed", error?.message || error);
+  }
+
+  let r2 = { available: false };
+  try {
+    const r2Response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: R2_USAGE_QUERY,
+        variables: { accountTag, start: monthStart, end: endTime }
+      })
+    });
+    const r2Payload = await r2Response.json().catch(() => null);
+    if (r2Response.ok && !Array.isArray(r2Payload?.errors)) {
+      const r2Account = r2Payload?.data?.viewer?.accounts?.[0];
+      r2 = {
+        ...summarizeR2Usage(
+          r2Account?.r2OperationsAdaptiveGroups || [],
+          r2Account?.r2StorageAdaptiveGroups || []
+        ),
+        available: true,
+        monthStart,
+        bucket: String(env.CLOUDFLARE_R2_BUCKET_NAME || "eagleeye-archive")
+      };
+    }
+  } catch (error) {
+    console.warn("cloudflare_r2_usage_failed", error?.message || error);
+  }
+
+  const databaseSizeBytes = maxStorage(account.d1StorageAdaptiveGroups || [], databaseId);
   const rowsReadPercent = percent(databaseMetrics.rowsRead, D1_FREE_LIMITS.rowsRead);
   const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, D1_FREE_LIMITS.rowsWritten);
   const storagePercent = percent(databaseSizeBytes, D1_FREE_LIMITS.storageBytes);
-  const states = [resourceState(rowsReadPercent), resourceState(rowsWrittenPercent), resourceState(storagePercent)];
+
+  const resourceStates = [
+    resourceState(rowsReadPercent),
+    resourceState(rowsWrittenPercent),
+    resourceState(storagePercent),
+    workers.available ? resourceState(workers.requestsPercent) : "UNKNOWN",
+    r2.available ? resourceState(r2.classAPercent) : "UNKNOWN",
+    r2.available ? resourceState(r2.classBPercent) : "UNKNOWN",
+    r2.available ? resourceState(r2.storagePercent) : "UNKNOWN"
+  ];
+  const status = resourceStates.includes("EXHAUSTED") ? "EXHAUSTED"
+    : resourceStates.includes("CRITICAL") ? "CRITICAL"
+    : resourceStates.includes("WARNING") ? "WARNING"
+    : "OK";
 
   return {
     configured: true,
-    status: states.includes("EXHAUSTED") ? "EXHAUSTED"
-      : states.includes("CRITICAL") ? "CRITICAL"
-      : states.includes("WARNING") ? "WARNING"
-      : "OK",
+    status,
     source: "Cloudflare GraphQL Analytics API",
     date,
     retrievedAt: new Date().toISOString(),
     note: "Cloudflare Analyticsの集計値です。最新値の反映には遅延が発生する場合があります。",
-    limits: D1_FREE_LIMITS,
+    limits: {
+      d1: D1_FREE_LIMITS,
+      workers: WORKERS_FREE_LIMITS,
+      r2: R2_FREE_LIMITS
+    },
     account: {
       rowsRead: databaseMetrics.rowsRead,
       rowsWritten: databaseMetrics.rowsWritten,
@@ -299,7 +549,6 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       rowsReadState: resourceState(rowsReadPercent),
       rowsWrittenState: resourceState(rowsWrittenPercent)
     },
-    queryInsights,
     database: {
       databaseId,
       rowsRead: databaseMetrics.rowsRead,
@@ -309,7 +558,10 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       databaseSizeBytes,
       storagePercent,
       storageState: resourceState(storagePercent)
-    }
+    },
+    queryInsights,
+    workers,
+    r2
   };
 }
 
