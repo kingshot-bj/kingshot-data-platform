@@ -898,269 +898,194 @@ raw responseをR2へ保存するかは未決定。
 - 復元性
 - デバッグ容易性
 - object数
-- R2 Class A/B operations
 
-### R2 Object Key
+## 38. 2026-09-28追加：永久保存層 / EagleEye Library 構想【将来アーキテクチャ】
 
-候補:
+今回、D1/R2の先にある長期保存と研究利用の構想を正式に追加する。
 
-```
-players/{kid}/{governor_id}/YYYY/MM/DD/{timestamp}.json.gz
+### 基本思想
 
-ranking/{kid}/{board}/YYYY/MM/DD/{timestamp}.json.gz
+EagleEyeの現役運用データと、研究のための永久保存データを同じ場所に抱え続けない。
 
-change-events/{kid}/{governor_id}/YYYY/MM/DD/{timestamp}.json.gz
-
-api-observations/{target_type}/{target_id}/YYYY/MM/DD/{timestamp}.json.gz
-```
-
-またはpartition方式:
+想定する大枠:
 
 ```
-ranking/kid=123/board=power/date=2026-09-27/part-001.jsonl.gz
-```
-
-最終方式は未決定。
-
-### Archive方式
-
-比較対象:
-
-#### A. Write-through
-取得時にD1 + R2へ同時保存。
-
-問題:
-- R2 writeが毎回発生
-- エラー処理複雑化
-
-#### B. D1 hot → 定期archive
-一定期間D1へ保持し、古いデータをR2へ移動。
-
-#### C. Queue / Cron archive
-Workers Cron / Queue / Scheduled Job等で古いD1データをR2へ移動。
-
-現時点ではB/Cを有力候補として検討する。
-
-### D1→R2削除順序
-
-必ず:
-
-```
-D1
- ↓
-archive job
- ↓
-R2 write成功
- ↓
-R2 object確認 / checksum等
- ↓
-D1 DELETE
-```
-
-R2保存成功前にD1を削除しない。
-
-一時的な二重保存は許容する。
-
-### R2を検索DBにしない
-
-R2へ移した後に、
-
-「R2内の全オブジェクトをscanして履歴検索」
-
-という構造は作らない。
-
-必要なら:
-- D1 metadata/index
-- partition
-- manifest
-- date/kid/target index
-- 将来Analytics基盤
-
-などを組み合わせる。
-
-### Google Sheetsとの役割
-
-Google Sheetsは本番DB/R2の代替ではない。
-
-用途:
-- ADMIN/OWNER export
-- 人間による確認
-- 外部共有
-- 一時分析
-
-基本:
-
-```
-D1 / R2
+MightPulse
    ↓
-Google Sheets Export
+API Pool
+   ↓
+EagleEye
+   ├── D1 = Operational / Current / Hot History
+   └── R2 = Archive / Data Lake
+                ↓
+          Permanent Archive
+                ↓
+          EagleEye Library
+           ├── Research Lab
+           ├── JARVIS / ChatGPT
+           └── 将来の別研究プロジェクト
 ```
 
-### Retentionの再設計
+### 永久保存層
 
-現在の暫定設定:
-- API observations 14日
-- player snapshots 90日
-- ranking snapshots 180日
-- player ranking snapshots 180日
-- change events 2年
-- API Pool usage 90日
+R2よりさらにデータを逃がし、EagleEye本体の運用寿命やD1/R2の容量・料金事情から切り離した長期保存層を将来的に設ける。
 
-R2導入後は、
+重要方針:
+- 原則として取得済みの価値ある履歴データを永久保存する。
+- 「永久保存」はD1に永久保持する意味ではない。
+- EagleEyeの現在状態と長期原本を分離する。
+- 将来サービスや保存先を変更しても再利用できる標準的なデータ形式を優先する。
+- 保存先の無料性は保証ではなく、将来有料化・仕様変更してもデータを移行できることを優先する。
+
+### Google Sheets / Google Driveの役割
+
+Google Sheetsを永久保存庫そのものにはしない。
+
+理由:
+- 1ファイルのセル数制限がある。
+- 大量履歴をDBとして検索する用途に向かない。
+- APIクォータがある。
+- Googleの無料サービス仕様を「永遠に無料」と仮定できない。
+
+一方で、Google Driveは永久保存層の候補として検討する。
+
+想定:
+- 原本: Google Drive等へ圧縮NDJSON / JSONL / 将来的にParquet等で保存。
+- Google Sheets: 人間向けのLibrary Index（図書目録）として利用。
+
+つまり:
 
 ```
-D1 retention
-+
-R2 retention
+Google Drive = 本そのもの / 書庫
+Google Sheets = 図書目録
+Library API = 司書
+Research Lab = 研究者
 ```
 
-の二層設計にする。
+### Library Index
+
+「Library Index」は既存の外部サービス名ではない。
+EagleEye側で作る「永久保存資料がどこにあり、何のデータなのか」を管理する目録を指す。
+
+Google Sheetsを初期実装候補とするが、将来SQLite/D1/JSON等へ置き換え可能な疎結合設計にする。
 
 例:
-- D1: 7〜30日
-- R2: 1年 / 2年 / 無期限
-
-ただし最終値はデータ量・利用頻度・Cloudflareコスト実測後に決定。
-
-### 復旧設計
-
-R2 archiveからD1へ戻せる構造を最初から考える。
-
-最低限:
+- dataset_id
+- data_type
+- period
+- kingdom / target
+- description
+- format
+- archive_location
+- file/object identifier
 - schema version
-- object metadata
-- archive timestamp
-- source observed timestamp
-- object checksum/hash
+- checksum/hash
 - record count
-- partition情報
+- created/archive timestamp
 
-を検討。
+### Library API
 
-### 無料運用 / Paid移行
+Library APIは既存サービスではなく、将来EagleEye側で開発する自作の読み取りAPI。
 
-EagleEyeは原則無料利用を目指し、最低限の広告で運営費を賄う方向。
+目的:
+- 永久保存データを研究者が直接ストレージ操作せず利用できるようにする。
+- Library Indexから資料を検索する。
+- 必要なデータセットだけ取得する。
+- 権限・アクセス範囲を制御する。
+- 将来保存先をGoogle Driveから別ストレージへ移しても利用者側の仕様を極力変えない。
 
-D1/R2は無料枠を意識するが、無料枠だけに依存した設計にはしない。
+重要:
+- ChatGPT / Research LabからGoogle Drive全体を直接見せる構造にはしない。
+- Library APIを境界として設ける。
+- R2を検索DBとして全件scanする設計にはしない。
 
-Cloudflare Paidへ移行しても、
-- schema
-- object key
-- archive flow
-- application logic
+### Research Labとの関係
 
-を大きく作り直さなくて済む構造を目指す。
+Research LabはLibraryの唯一の利用者ではない。
 
-### D1/R2設計の絶対ルール
+Libraryは将来的に、
+- MightPulse Research Lab
+- JARVIS / ChatGPT
+- 将来追加される研究プロジェクト
+が必要な資料を取りに来られる共通研究資料基盤とする。
 
-1. D1を長期データ倉庫にしない。
-2. R2を検索DBとして無理に使わない。
-3. current stateとhistoryを分離する。
-4. R2 archive成功前にD1を削除しない。
-5. R2移行後にUIが大量R2 scanする構造を作らない。
-6. 「取れるから保存する」をしない。
-7. 必要なデータ・期間・列だけ保存する。
-8. Paid化しても構造を変えない。
+Research Labは「図書館を利用する研究者」であり、永久保存データそのものを所有する役割ではない。
 
-### 次スレッドで最初にやること
+### EagleEye / Gateway / Libraryの分離
 
-いきなりR2実装を始めない。
+将来的には少なくとも以下を論理分離する。
 
-まずGitHub mainから現在の実装を棚卸しする。
+```
+EagleEye Gateway
+  → 現在のSystem Status / Diagnostics / 必要な現在データ
 
-確認対象:
-1. 全D1 migrations
-2. 全D1 tables
-3. 全D1 indexes
-4. Player保存処理
-5. Player snapshot保存処理
-6. ranking保存処理
-7. change_events保存処理
-8. api_observations保存処理
-9. API Pool usage
-10. Data Retention
-11. D1 read queries
-12. D1 write queries
-13. 現在のR2コード/設定
-14. Google Sheets export
+Library API
+  → 過去の永久保存資料 / 研究資料
+```
 
-その後、全データを以下へ分類:
+ChatGPTが現在状態を見る場合はEagleEye Gatewayを使い、過去データを研究する場合はLibrary APIを使う。
 
-- D1 Core
-- D1 Current
-- D1 Hot History
-- R2 Archive
-- External Export
+### コスト原則
 
-分類後に、
-R2 format → object key → archive方式 → retention → restore方式
-の順に設計する。
+「研究のためにEagleEyeのD1/R2へデータを二重保存し続ける」ことを避ける。
 
-設計が固まってからmigration / archive job / R2 write / cleanupを実装する。
+また、永久保存層へ逃がしたデータをResearch Lab専用に複製しない。
+一度保存した資料を共通Libraryから必要な研究者が参照する。
 
-### 次スレッド開始文
+### 39. 2026-09-28追加：直近の実装判断 — System Log取得API
 
-「GitHubの `docs/EAGLEEYE_HANDOFF_2026-09-27.md` を読んで、最新mainも確認してEagleEye本体を続けて。
-今回はD1/R2データアーキテクチャが本題。
-まず全D1テーブル・保存処理・読込処理・現在のR2設定をコードから棚卸しして、D1 Core / Current / Hot History / R2 Archive / External Exportに分類しよう。
-その後、R2の保存形式、Object Key、archive方式、retention、復旧方式まで設計を固めてから実装する。
-MightPulse Research Projectは別プロジェクトなので混ぜない。」
+上記の将来構想を前提として、現在は永久保存層やLibrary APIを先に実装しない。
 
----
+**直近で実装対象とするのは、ChatGPTからEagleEyeのSystem Status / Diagnostics等を読み取るためのRead-Only Gateway API。**
 
-## 37. 2026-09-27追加：引き継ぎ運用ルール
+理由:
+- 現在の運用でシステムログ・状態をChatGPTが直接確認できる必要がある。
+- 将来のResearch Lab / Library構想とは役割が異なる。
+- 現在データと過去研究資料の境界を最初から明確にできる。
+- 後からLibrary APIへ拡張できるよう、API境界・認証・レスポンス形式を最初から分離する。
 
-EagleEye本体の引き継ぎは、この
-`docs/EAGLEEYE_HANDOFF_2026-09-27.md`
-を**マスター文書として継続更新する**。
+### Gateway APIの基本方針
 
-新しいEagleEye用の細分化handoffを乱立させない。
+- Read-only。
+- D1/R2/API Poolのwrite操作を提供しない。
+- MightPulse API keyを返さない。
+- session secret / Discord OAuth secret / Cloudflare secretを返さない。
+- 生のAPIキーや認証情報をレスポンスに含めない。
+- System Status / Diagnostics / resource usage等、必要な運用情報だけ正規化して返す。
+- ChatGPTからのオンデマンド取得を基本とし、不要な常時pollingを作らない。
+- 専用のサーバー間認証（例: Cloudflare Secretに保存するread-only token）を候補とする。
+- 実装時は既存のgetCloudflareD1Usage等を再利用し、同じ情報を別経路で二重計算しない。
 
-例外:
-- MightPulse未公開データ研究は別プロジェクトなので `docs/MIGHTPULSE_RESEARCH_PROJECT_2026-09-27.md` に分離する。
-- それ以外のEagleEye本体の設計・実装・運用決定は本書へ統合する。
+### 将来拡張
 
-今回誤って作成した
-`docs/EAGLEEYE_HANDOFF_2026-09-27_D1_R2.md`
-は重複文書なので削除対象。
+V1:
+```
+ChatGPT
+  ↓
+EagleEye Read-Only Gateway
+  ↓
+System Status / Diagnostics
+```
 
----
+将来:
+```
+ChatGPT
+  ├─ EagleEye Gateway → 現在状態
+  └─ Library API      → 過去資料 / 研究資料
+```
 
-## 2026-09-27追加：D1最適化 Phase A 実装完了
+さらに将来、Library APIにResearch用データセット検索・取得を追加する。
+この拡張を前提にするが、現時点では研究データの大量取得APIを作らない。
 
-D1の追加最適化について、既存機能を維持できることをコード・migration横断で確認した上で、A-1〜A-5を実装した。
+### 絶対ルール
 
-### A-1｜Player Watchlist schema cache
-ensurePlayerWatchlistSchema() にPromise cacheを導入。player_watchlistsのDDLは初回bootstrap時のみ実行し、失敗時はPromiseを解除して次回リトライ可能。データ仕様・権限・API挙動は変更なし。
-
-### A-2｜Kingdom Watchlist lock schema cache
-kingdom_watchlist_locks のDDLを ensureKingdomWatchlistFreshnessSchema() に統合。acquireKingdomWatchlistLock() から毎回のCREATE TABLEを削除。既存DBでテーブルが無い場合も共通bootstrapが作成するため後方互換。
-
-### A-3｜Manual Refresh schema bootstrap統一
-手動refreshに残っていたinlineの kingdom_watchlist_jobs DDLを削除し、ensureKingdomWatchlistFreshnessSchema() を共通利用。cron経路とmanual refresh経路のschema初期化方式を統一。
-
-### A-4｜API Pool completion batch
-recordApiPoolSuccess() / recordApiPoolFailure() をD1 batch化。api_pool_keys状態更新、api_pool_usage利用履歴INSERT、api_leases lease解放を1 batchへ集約。Write行数・監査履歴・状態遷移は維持し、query/subrequest overheadを削減。
-
-### A-5｜Watchlist player snapshot batch
-WatchlistのPlayer取得処理で api_observations、players、player_snapshots、player_rank_snapshots を1回のD1 batchへ統合。player_rank_snapshotsのINSERT SQLは buildPlayerRankSnapshotStatement() として共通化し、既存 savePlayerRankSnapshot() の単体利用時の挙動も維持。
-
-### 実装コミット
-- db8d886134f1e3adfee521847474207c133ea1ff — A-1
-- 6b64039bdf28ac58b61733a01b6395bf0c526380 — A-2
-- b140162827a9a5cdba988e7e10eefa34ddbd9af8 — A-3
-- 78a346a7be7ebc80a20be1258aedf4bbc1cc9771 — A-4
-- 7f65921c7f994b4916e0527290d5f8df3e5602ac — A-5共通化
-- 31b396f017d33f233e56a056f58ca616f7b35002 — A-5 batch利用
-- 0fe62047ea998e3f36c3c29f38c6dd8b1a12a958 — A-5変数初期化順序修正
-
-### A Phaseの効果
-A-1〜A-3: 繰り返しDDL / schema metadata処理を削減。
-A-4: API Pool 1回の成功/失敗処理を3 D1 operationsから1 batchへ集約。
-A-5: Watchlist Player 1件あたりの4系統保存処理を1 batchへ集約。Rows Written自体は削減しないが、query/subrequest overheadを削減。
-
-### 注意
-- D1 rows writtenそのものをさらに削る変更ではない。
-- api_pool_usage、player_snapshots、player_rank_snapshots等の機能データは削除していない。
-- R2移行設計はまだ開始しない。
-- 次段階ではD1 Analytics実測を見ながら、B候補（相関SELECT最適化、Player materializationの既取得state再利用）を個別検証する。
+1. LibraryはResearch Lab専用にしない。
+2. 永久保存原本をGoogle Sheetsのセルだけで管理しない。
+3. Sheetsは初期Library Index候補として使い、原本保存とは分離する。
+4. 永久保存層の「無料永久」を保証事項として扱わない。
+5. 保存形式は将来移行できる標準形式を優先する。
+6. EagleEyeの現在状態取得APIとLibraryの過去資料APIを分離する。
+7. ChatGPTにD1/R2への直接フルアクセスを与えない。
+8. 研究用の複製・常時pollingでEagleEyeの無料枠を不必要に消費しない。
+9. 直近はSystem Log取得Read-Only Gateway APIを先に実装する。
+10. 永久保存層・Library APIは、このGatewayと将来接続できる境界を最初から設計しておく。
