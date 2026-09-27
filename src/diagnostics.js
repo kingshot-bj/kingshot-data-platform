@@ -10,7 +10,12 @@ const DIAGNOSTIC_SERVICES = [
   ["notifications", "通知システム", "DEGRADED"]
 ];
 
+let diagnosticSchemaPromise = null;
+
 export async function ensureDiagnosticSchema(db) {
+  if (!db) return;
+  if (diagnosticSchemaPromise) return diagnosticSchemaPromise;
+  diagnosticSchemaPromise = (async () => {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS diagnostic_events (
       event_id TEXT PRIMARY KEY,
@@ -37,6 +42,13 @@ export async function ensureDiagnosticSchema(db) {
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_created ON diagnostic_events(created_at DESC)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_service ON diagnostic_events(service, created_at DESC)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_trace ON diagnostic_events(trace_id)").run();
+  })();
+  try {
+    return await diagnosticSchemaPromise;
+  } catch (error) {
+    diagnosticSchemaPromise = null;
+    throw error;
+  }
 }
 
 export function diagnosticTraceId(prefix = "ee") {
