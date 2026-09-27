@@ -1123,3 +1123,44 @@ EagleEye本体の引き継ぎは、この
 今回誤って作成した
 `docs/EAGLEEYE_HANDOFF_2026-09-27_D1_R2.md`
 は重複文書なので削除対象。
+
+---
+
+## 2026-09-27追加：D1最適化 Phase A 実装完了
+
+D1の追加最適化について、既存機能を維持できることをコード・migration横断で確認した上で、A-1〜A-5を実装した。
+
+### A-1｜Player Watchlist schema cache
+ensurePlayerWatchlistSchema() にPromise cacheを導入。player_watchlistsのDDLは初回bootstrap時のみ実行し、失敗時はPromiseを解除して次回リトライ可能。データ仕様・権限・API挙動は変更なし。
+
+### A-2｜Kingdom Watchlist lock schema cache
+kingdom_watchlist_locks のDDLを ensureKingdomWatchlistFreshnessSchema() に統合。acquireKingdomWatchlistLock() から毎回のCREATE TABLEを削除。既存DBでテーブルが無い場合も共通bootstrapが作成するため後方互換。
+
+### A-3｜Manual Refresh schema bootstrap統一
+手動refreshに残っていたinlineの kingdom_watchlist_jobs DDLを削除し、ensureKingdomWatchlistFreshnessSchema() を共通利用。cron経路とmanual refresh経路のschema初期化方式を統一。
+
+### A-4｜API Pool completion batch
+recordApiPoolSuccess() / recordApiPoolFailure() をD1 batch化。api_pool_keys状態更新、api_pool_usage利用履歴INSERT、api_leases lease解放を1 batchへ集約。Write行数・監査履歴・状態遷移は維持し、query/subrequest overheadを削減。
+
+### A-5｜Watchlist player snapshot batch
+WatchlistのPlayer取得処理で api_observations、players、player_snapshots、player_rank_snapshots を1回のD1 batchへ統合。player_rank_snapshotsのINSERT SQLは buildPlayerRankSnapshotStatement() として共通化し、既存 savePlayerRankSnapshot() の単体利用時の挙動も維持。
+
+### 実装コミット
+- db8d886134f1e3adfee521847474207c133ea1ff — A-1
+- 6b64039bdf28ac58b61733a01b6395bf0c526380 — A-2
+- b140162827a9a5cdba988e7e10eefa34ddbd9af8 — A-3
+- 78a346a7be7ebc80a20be1258aedf4bbc1cc9771 — A-4
+- 7f65921c7f994b4916e0527290d5f8df3e5602ac — A-5共通化
+- 31b396f017d33f233e56a056f58ca616f7b35002 — A-5 batch利用
+- 0fe62047ea998e3f36c3c29f38c6dd8b1a12a958 — A-5変数初期化順序修正
+
+### A Phaseの効果
+A-1〜A-3: 繰り返しDDL / schema metadata処理を削減。
+A-4: API Pool 1回の成功/失敗処理を3 D1 operationsから1 batchへ集約。
+A-5: Watchlist Player 1件あたりの4系統保存処理を1 batchへ集約。Rows Written自体は削減しないが、query/subrequest overheadを削減。
+
+### 注意
+- D1 rows writtenそのものをさらに削る変更ではない。
+- api_pool_usage、player_snapshots、player_rank_snapshots等の機能データは削除していない。
+- R2移行設計はまだ開始しない。
+- 次段階ではD1 Analytics実測を見ながら、B候補（相関SELECT最適化、Player materializationの既取得state再利用）を個別検証する。
