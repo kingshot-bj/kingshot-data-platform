@@ -55,7 +55,7 @@ function classifyD1Query(query) {
   for (const [label, needles] of rules) {
     if (needles.some(needle => sql.includes(needle))) return label;
   }
-  if (/\\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\\b/.test(sql)) return "Other Write";
+  if (/\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\b/.test(sql)) return "Other Write";
   return "Other";
 }
 
