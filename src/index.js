@@ -1943,6 +1943,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
+      poolType: lease.pool_type,
       endpoint: spec.endpoint,
       targetType: spec.targetType,
       targetId: spec.targetId,
@@ -1989,6 +1990,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint: spec.endpoint,
         targetType: spec.targetType,
         targetId: spec.targetId,
@@ -2696,6 +2698,7 @@ async function handleApiPoolHealthCheck(request, env) {
       await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint: "/players/:governor_id",
         targetType: "API_KEY",
         targetId: probeGovernorId,
@@ -2720,6 +2723,7 @@ async function handleApiPoolHealthCheck(request, env) {
         await recordApiPoolFailure(env.DB, {
           keyId: lease.key_id,
           leaseId: lease.lease_id,
+      poolType: lease.pool_type,
           endpoint: "/players/:governor_id",
           targetType: "API_KEY",
           targetId: probeGovernorId,
@@ -2832,6 +2836,7 @@ async function handleApiPoolTestPlayer(request, env) {
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
+      poolType: lease.pool_type,
       endpoint: "/players/:governor_id",
       targetType: "PLAYER",
       targetId: governorId,
@@ -2871,6 +2876,7 @@ async function handleApiPoolTestPlayer(request, env) {
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint: "/players/:governor_id",
         targetType: "PLAYER",
         targetId: governorId,
@@ -2941,6 +2947,7 @@ async function handleApiPoolTestRanking(request, env) {
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
+      poolType: lease.pool_type,
       endpoint: "/kingdoms/:kid/ranks",
       targetType: "KINGDOM",
       targetId: kid,
@@ -2974,6 +2981,7 @@ async function handleApiPoolTestRanking(request, env) {
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint: "/kingdoms/:kid/ranks",
         targetType: "KINGDOM",
         targetId: kid,
@@ -3185,6 +3193,7 @@ async function fetchThroughWatchlistApiPool(env, {
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
+      poolType: lease.pool_type,
       endpoint,
       targetType,
       targetId,
@@ -3204,6 +3213,7 @@ async function fetchThroughWatchlistApiPool(env, {
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint,
         targetType,
         targetId,
@@ -3284,6 +3294,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
+      poolType: lease.pool_type,
       endpoint: "/players/:governor_id",
       targetType: "PLAYER",
       targetId: id,
@@ -3302,6 +3313,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
+      poolType: lease.pool_type,
         endpoint: "/players/:governor_id",
         targetType: "PLAYER",
         targetId: id,
