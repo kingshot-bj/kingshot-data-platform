@@ -6,11 +6,11 @@ const PLAYER_RANK_FIELDS = [
   ["mystic_trial", "mystic_rank"]
 ];
 
-export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid = null, ranks, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
+export function buildPlayerRankSnapshotStatement(db, { governorId, uid = null, kid = null, ranks, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!governorId || !ranks || typeof ranks !== "object") throw new Error("Player ranking snapshot requires governorId and ranks.");
   const id = crypto.randomUUID();
-  await db.prepare(
+  const statement = db.prepare(
     'INSERT INTO player_rank_snapshots (' +
     'player_rank_snapshot_id, governor_id, uid, kid, power, power_rank, kills, kills_rank, ' +
     'town_center_level, town_center_rank, migrant_score, migrant_rank, mystic_trial, mystic_rank, ' +
@@ -25,7 +25,13 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
     ranks.mystic_trial ?? null, ranks.mystic_rank ?? null,
     JSON.stringify(Array.isArray(ranks.leaderboards) ? ranks.leaderboards : []),
     observedAt, sourceObservedAt, sourceObservationId, observedAt
-  ).run();
+  );
+  return { id, statement };
+}
+
+export async function savePlayerRankSnapshot(db, options) {
+  const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
+  await statement.run();
   return id;
 }
 
