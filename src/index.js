@@ -351,14 +351,6 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
   }
 }
 
-async function updateWatchlistSourceRange(db, jobId, sourceObservedAt) {
-  const ts = Number(sourceObservedAt);
-  if (!Number.isFinite(ts) || ts <= 0) return;
-  await db.prepare(
-    "UPDATE kingdom_watchlist_jobs SET source_first_at = CASE WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END WHERE job_id = ?"
-  ).bind(ts, ts, ts, ts, jobId).run();
-}
-
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
   await ensureKingdomWatchlistFreshnessSchema(env.DB);
@@ -467,7 +459,6 @@ async function processKingdomWatchlistJob(env, job) {
       const { board, traceId, startedAtMs, fetched } = item;
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
-      await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
       const extractedEntries = extractKingdomRankingEntries(payload);
       // Never trust the upstream response to honor ?limit=100. Persist at most
       // the configured watchlist limit, otherwise one oversized response can
@@ -533,8 +524,15 @@ async function processKingdomWatchlistJob(env, job) {
       }
 
       await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(KINGDOM_RANKING_BOARDS.indexOf(board) + 1, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+      ).bind(
+        KINGDOM_RANKING_BOARDS.indexOf(board) + 1,
+        rankingRows,
+        sourceObservedAt, sourceObservedAt, sourceObservedAt,
+        sourceObservedAt, sourceObservedAt, sourceObservedAt,
+        Math.floor(Date.now() / 1000),
+        job.job_id
+      ).run();
     }
 
     if (endIndex < KINGDOM_RANKING_BOARDS.length) {
@@ -579,11 +577,17 @@ async function processKingdomWatchlistJob(env, job) {
     });
 
     let playerRows = Number(job.player_rows || 0);
+    let sourceFirstAt = null;
+    let sourceLastAt = null;
     for (const item of fetchedPlayers) {
       if (item.error) continue;
       const result = item.fetched.result;
       const sourceObservedAt = getMightPulseSourceTimestamp(result?.data);
-      await updateWatchlistSourceRange(env.DB, job.job_id, sourceObservedAt);
+      if (Number.isFinite(Number(sourceObservedAt)) && Number(sourceObservedAt) > 0) {
+        const ts = Number(sourceObservedAt);
+        sourceFirstAt = sourceFirstAt == null ? ts : Math.min(sourceFirstAt, ts);
+        sourceLastAt = sourceLastAt == null ? ts : Math.max(sourceLastAt, ts);
+      }
       const raw = result?.data?.player || result?.data;
       if (!raw) continue;
 
@@ -626,8 +630,17 @@ async function processKingdomWatchlistJob(env, job) {
     const nextCursor = cursor + batchIds.length;
     const completed = nextCursor >= ids.length;
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, updated_at = ? WHERE job_id = ?"
-    ).bind(nextCursor, playerRows, completed ? "COMPLETED" : "PLAYERS", completed ? now : null, now, job.job_id).run();
+      "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+    ).bind(
+      nextCursor,
+      playerRows,
+      completed ? "COMPLETED" : "PLAYERS",
+      completed ? now : null,
+      sourceFirstAt, sourceFirstAt, sourceFirstAt,
+      sourceLastAt, sourceLastAt, sourceLastAt,
+      now,
+      job.job_id
+    ).run();
 
     return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
   }
