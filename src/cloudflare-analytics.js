@@ -6,6 +6,94 @@ const D1_FREE_LIMITS = {
   storageBytes: 5_000_000_000
 };
 
+
+const D1_QUERY_INSIGHTS_QUERY = `
+query EagleEyeD1QueryInsights(
+  $accountTag: String!
+  $start: Date
+  $end: Date
+  $databaseId: String
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      d1QueriesAdaptiveGroups(
+        limit: 1000
+        filter: {
+          date_geq: $start
+          date_leq: $end
+          databaseId: $databaseId
+        }
+      ) {
+        count
+        sum {
+          rowsRead
+          rowsWritten
+          rowsReturned
+          queryDurationMs
+        }
+        dimensions {
+          databaseId
+          query
+        }
+      }
+    }
+  }
+}
+`;
+
+function classifyD1Query(query) {
+  const sql = String(query || "").toUpperCase().replace(/\\s+/g, " ");
+  const rules = [
+    ["Ranking Snapshot", ["RANKING_SNAPSHOTS", "PLAYER_RANK_SNAPSHOTS"]],
+    ["Player Observation", ["API_OBSERVATIONS", "PLAYER_OBSERVATIONS"]],
+    ["Player Snapshot", ["PLAYER_SNAPSHOTS"]],
+    ["API Pool", ["API_POOL"]],
+    ["Diagnostics", ["DIAGNOSTIC_EVENTS"]],
+    ["Watchlist Job", ["KINGDOM_WATCHLIST_JOBS", "KINGDOM_WATCHLIST_LOCKS", "KINGDOM_WATCHLISTS"]],
+    ["Change Event", ["CHANGE_EVENTS", "CHANGE_EVENT"]],
+  ];
+  for (const [label, needles] of rules) {
+    if (needles.some(needle => sql.includes(needle))) return label;
+  }
+  if (/\\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\\b/.test(sql)) return "Other Write";
+  return "Other";
+}
+
+function summarizeD1QueryInsights(groups) {
+  const queries = (groups || [])
+    .map(group => {
+      const sum = group?.sum || {};
+      const query = String(group?.dimensions?.query || "").trim();
+      return {
+        query,
+        count: normalizeNumber(group?.count),
+        rowsRead: normalizeNumber(sum.rowsRead),
+        rowsWritten: normalizeNumber(sum.rowsWritten),
+        rowsReturned: normalizeNumber(sum.rowsReturned),
+        durationMs: normalizeNumber(sum.queryDurationMs),
+        category: classifyD1Query(query)
+      };
+    })
+    .filter(item => item.query);
+
+  queries.sort((a, b) => b.rowsWritten - a.rowsWritten);
+
+  const categories = new Map();
+  for (const item of queries) {
+    const current = categories.get(item.category) || { category: item.category, rowsWritten: 0, count: 0, rowsRead: 0 };
+    current.rowsWritten += item.rowsWritten;
+    current.count += item.count;
+    current.rowsRead += item.rowsRead;
+    categories.set(item.category, current);
+  }
+
+  return {
+    queryCount: queries.length,
+    topWriteQueries: queries.slice(0, 10),
+    categories: [...categories.values()].sort((a, b) => b.rowsWritten - a.rowsWritten)
+  };
+}
+
 const D1_USAGE_QUERY = `
 query EagleEyeD1Usage(
   $accountTag: String!
@@ -142,8 +230,7 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
     })
   });
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
+  const payload = await response.json().catch(() => null);  if (!response.ok) {
     throw new Error("Cloudflare Analytics API HTTP " + response.status);
   }
   if (Array.isArray(payload?.errors) && payload.errors.length) {
@@ -159,6 +246,31 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
   const analyticsGroups = account.d1AnalyticsAdaptiveGroups || [];
   const storageGroups = account.d1StorageAdaptiveGroups || [];
   const databaseMetrics = sumMetrics(analyticsGroups);
+
+  let queryInsights = { queryCount: 0, topWriteQueries: [], categories: [], available: false };
+  try {
+    const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        query: D1_QUERY_INSIGHTS_QUERY,
+        variables: { accountTag, start: date, end: date, databaseId }
+      })
+    });
+    const insightsPayload = await insightsResponse.json().catch(() => null);
+    if (insightsResponse.ok && !Array.isArray(insightsPayload?.errors)) {
+      const insightAccount = insightsPayload?.data?.viewer?.accounts?.[0];
+      queryInsights = {
+        ...summarizeD1QueryInsights(insightAccount?.d1QueriesAdaptiveGroups || []),
+        available: true
+      };
+    }
+  } catch (error) {
+    console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
+  }
   const databaseSizeBytes = maxStorage(storageGroups, databaseId);
 
   const rowsReadPercent = percent(databaseMetrics.rowsRead, D1_FREE_LIMITS.rowsRead);
@@ -187,6 +299,7 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       rowsReadState: resourceState(rowsReadPercent),
       rowsWrittenState: resourceState(rowsWrittenPercent)
     },
+    queryInsights,
     database: {
       databaseId,
       rowsRead: databaseMetrics.rowsRead,
