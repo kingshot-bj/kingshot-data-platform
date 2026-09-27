@@ -28,8 +28,6 @@ query EagleEyeD1Usage(
           writeQueries
           rowsRead
           rowsWritten
-          queryBatchResponseBytes
-          queryBatchTimeMs
         }
         dimensions {
           date
@@ -86,16 +84,12 @@ function sumMetrics(groups) {
     total.rowsWritten += normalizeNumber(sum.rowsWritten);
     total.readQueries += normalizeNumber(sum.readQueries);
     total.writeQueries += normalizeNumber(sum.writeQueries);
-    total.queryBatchResponseBytes += normalizeNumber(sum.queryBatchResponseBytes);
-    total.queryBatchTimeMs += normalizeNumber(sum.queryBatchTimeMs);
     return total;
   }, {
     rowsRead: 0,
     rowsWritten: 0,
     readQueries: 0,
     writeQueries: 0,
-    queryBatchResponseBytes: 0,
-    queryBatchTimeMs: 0
   });
 }
 
@@ -188,8 +182,6 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
       rowsWritten: databaseMetrics.rowsWritten,
       readQueries: databaseMetrics.readQueries,
       writeQueries: databaseMetrics.writeQueries,
-      queryBatchResponseBytes: databaseMetrics.queryBatchResponseBytes,
-      queryBatchTimeMs: databaseMetrics.queryBatchTimeMs,
       rowsReadPercent,
       rowsWrittenPercent,
       rowsReadState: resourceState(rowsReadPercent),
