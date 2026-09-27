@@ -13,6 +13,11 @@
     "CLOUDFLARE_ACCOUNT_ID": "991e65e37de26f2e996fe296ab0d1a3a",
     "CLOUDFLARE_D1_DATABASE_ID": "0024b5df-4dcf-45f7-b9a7-6fa621cbb80a"
   },
+  "secrets": {
+    "required": [
+      "CLOUDFLARE_ANALYTICS_TOKEN"
+    ]
+  },
   "d1_databases": [
     {
       "binding": "DB",
