@@ -4915,7 +4915,13 @@ async function renderPublicStatusPage(request, env) {
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
   // its free-tier row limit, this monitor must still be able to report usage.
   const [usageResult, diagnosticsResult] = await Promise.allSettled([
-    getCloudflareD1Usage(env),
+    canViewDetailedUsage
+      ? getCloudflareD1Usage(env)
+      : Promise.resolve({
+          configured: false,
+          status: "HIDDEN",
+          message: "Cloudflareの詳細使用量はADMIN / OWNERのみ確認できます。"
+        }),
     getSystemDiagnostics(env.DB, { recentLimit: 30 })
   ]);
 
