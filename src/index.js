@@ -8,7 +8,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
-import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges } from "./ranking-store.js";
+import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
@@ -639,6 +639,15 @@ async function processKingdomWatchlistJob(env, job) {
       if (!raw) continue;
 
       const observationId = crypto.randomUUID();
+      const ranks = result?.data?.ranks || raw?.ranks;
+      const rankSnapshot = ranks && typeof ranks === "object"
+        ? buildPlayerRankSnapshotStatement(env.DB, {
+            governorId, uid: raw.uid ?? null, kid: raw.kid ?? job.kid, ranks,
+            observedAt: job.observed_at, sourceObservedAt, sourceObservationId: observationId
+          })
+        : null;
+
+
       const governorId = String(raw.governor_id ?? item.governorId);
       await env.DB.batch([
         env.DB.prepare(
@@ -661,16 +670,10 @@ async function processKingdomWatchlistJob(env, job) {
         ),
         env.DB.prepare(
           "INSERT INTO player_snapshots (snapshot_id, governor_id, observation_id, observed_at, source_observed_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, sourceObservedAt, JSON.stringify(raw))
+        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, sourceObservedAt, JSON.stringify(raw)),
+        ...(rankSnapshot ? [rankSnapshot.statement] : [])
       ]);
 
-      const ranks = result?.data?.ranks || raw?.ranks;
-      if (ranks && typeof ranks === "object") {
-        await savePlayerRankSnapshot(env.DB, {
-          governorId, uid: raw.uid ?? null, kid: raw.kid ?? job.kid, ranks,
-          observedAt: job.observed_at, sourceObservedAt, sourceObservationId: observationId
-        });
-      }
       playerRows++;
     }
 
