@@ -629,3 +629,24 @@ Probe画面を、単発結果の表示だけでなく同一対象・同一Probe�
 
 ### 次スレッドでの開始文
 「GitHubの `docs/EAGLEEYE_HANDOFF_2026-09-27.md` を読んで、最新mainも確認してEagleEye開発を続けて。」
+
+
+## 34. 2026-09-27追加：MightPulse Research Lab
+
+今回の研究構想に対応し、MightPulseの公開仕様にない可能性があるPlayer APIの追加include候補を正規のAPI Pool経由で検証するADMIN/OWNER専用Research Labを追加。
+
+- UI: /admin/mightpulse-research
+- API: /api/admin/mightpulse-research
+- 実装: src/mightpulse-research.js
+- 候補: pet, pets, mail, messages, inbox, record, records, battle, battles, battle_report, battle_reports, combat, combat_report, combat_reports, report, reports, event, events, history, activity
+- 方式: /players/{governor_id}?include=base,<candidate> を1候補ずつ検証
+- 保存: 研究結果・生レスポンスはD1へ保存しない。API Pool利用履歴のみ既存機構で記録。
+- セキュリティ: APIキー本体・生レスポンスはUIに表示しない。認証回避やアクセス制御突破は行わない。
+- 「全候補を調査」は最大20 API requestsを順番に実行するため、rate/day制限を考慮してADMIN/OWNERの明示操作のみ。
+
+調査目的は「Battle Reportという名前のEndpointを探す」だけではなく、Mail / Record / Combat / Event等の別データモデルとしてBattle情報が返る可能性を確認すること。公開APIドキュメント上は現時点でPlayer/Alliance/Kingdom/Ranking系が明示されており、Battle Report/Mail系Endpointは掲載されていない。一方、MightPulse Web UIにはPlayerの「Record」タブが存在するため、公開APIと内部Webデータモデルの差分は今後も研究対象とする。
+
+関連コミット:
+- 810267dc574ddcbaae429b5ca84f7ec435daf146 — feat: add MightPulse research candidate probe
+- 82d500c751baa3d00af90fd08c099526dbbf733a — feat: add MightPulse Research Lab
+- e21d005aeb5d62172ee7afb921fd10f1aec5d1f0 — fix: compare MightPulse Probe with prior result
