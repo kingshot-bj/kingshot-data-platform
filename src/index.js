@@ -121,7 +121,11 @@ const PLAYER_VISIBILITY_ITEMS = [
   { key: "gov_gear_gems", category: "領主装備", label: "領主装備の宝石", description: "装着宝石のスロット・ID" }
 ];
 
+let playerVisibilitySchemaPromise = null;
+
 async function ensurePlayerVisibilityTable(db) {
+  if (playerVisibilitySchemaPromise) return playerVisibilitySchemaPromise;
+  playerVisibilitySchemaPromise = (async () => {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS player_visibility_settings (
       item_key TEXT PRIMARY KEY,
@@ -183,6 +187,13 @@ async function ensurePlayerVisibilityTable(db) {
     // Visibility settings are persistent configuration; rewriting every row on
     // every page/API request burns the D1 free row-write quota for no benefit.
 
+  }
+  })();
+  try {
+    return await playerVisibilitySchemaPromise;
+  } catch (error) {
+    playerVisibilitySchemaPromise = null;
+    throw error;
   }
 }
 
@@ -283,8 +294,12 @@ function getMightPulseSourceTimestamp(data) {
   return normalizeMightPulseTimestamp(data?.cached_at);
 }
 
+let kingdomWatchlistSchemaPromise = null;
+
 async function ensureKingdomWatchlistFreshnessSchema(db) {
   if (!db) return;
+  if (kingdomWatchlistSchemaPromise) return kingdomWatchlistSchemaPromise;
+  kingdomWatchlistSchemaPromise = (async () => {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
       job_id TEXT PRIMARY KEY,
@@ -327,6 +342,13 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
       }
     }
   }
+  })();
+  try {
+    return await kingdomWatchlistSchemaPromise;
+  } catch (error) {
+    kingdomWatchlistSchemaPromise = null;
+    throw error;
+  }
 }
 
 async function updateWatchlistSourceRange(db, jobId, sourceObservedAt) {
@@ -347,6 +369,13 @@ async function runKingdomWatchlistJobs(env) {
 
   for (const row of rows.results || []) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
+    // Do not write a lock for an idle watchlist that is not due.
+    if (!due) {
+      const active = await env.DB.prepare(
+        "SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
+      ).bind(row.watchlist_id).first();
+      if (!active) continue;
+    }
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
     if (!lockToken) continue;
 
@@ -378,10 +407,6 @@ async function runKingdomWatchlistJobs(env) {
           await env.DB.prepare(
             "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
           ).bind(now, now, now, row.watchlist_id).run();
-        } else {
-          await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(now, row.watchlist_id).run();
         }
         console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
       } catch (error) {
