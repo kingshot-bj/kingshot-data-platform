@@ -29,7 +29,6 @@ export function buildPlayerRankSnapshotStatement(db, { governorId, uid = null, k
   return { id, statement };
 }
 
-export { buildPlayerRankSnapshotStatement };
 
 export async function savePlayerRankSnapshot(db, options) {
   const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
