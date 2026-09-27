@@ -423,7 +423,23 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
         ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
-        job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+        job = {
+          job_id: jobId,
+          watchlist_id: row.watchlist_id,
+          kid: Number(row.kid),
+          top_n: Number(row.top_n),
+          status: "RANKINGS",
+          board_index: 0,
+          player_cursor: 0,
+          player_ids_json: "[]",
+          observed_at: now,
+          source_first_at: null,
+          source_last_at: null,
+          ranking_rows: 0,
+          player_rows: 0,
+          created_at: now,
+          updated_at: now
+        };
       }
 
       try {
@@ -1744,7 +1760,23 @@ async function handleKingdomWatchlistApi(request, env) {
           await env.DB.prepare(
             "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
           ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
-          job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).first();
+          job = {
+            job_id: jobId,
+            watchlist_id: watchlistId,
+            kid: Number(watch.kid),
+            top_n: Number(watch.top_n),
+            status: "RANKINGS",
+            board_index: 0,
+            player_cursor: 0,
+            player_ids_json: "[]",
+            observed_at: now,
+            source_first_at: null,
+            source_last_at: null,
+            ranking_rows: 0,
+            player_rows: 0,
+            created_at: now,
+            updated_at: now
+          };
         }
     
         try {
