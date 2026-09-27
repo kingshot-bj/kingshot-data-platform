@@ -14,7 +14,8 @@ import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./play
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
-import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics } from "./diagnostics.js";
+import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
+import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -4731,31 +4732,95 @@ async function handleMe(request, env) {
 }
 
 async function renderPublicStatusPage(request, env) {
+  // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
+  // its free-tier row limit, this monitor must still be able to report usage.
+  const [usageResult, diagnosticsResult] = await Promise.allSettled([
+    getCloudflareD1Usage(env),
+    getSystemDiagnostics(env.DB, { recentLimit: 30 })
+  ]);
+
+  const usage = usageResult.status === "fulfilled" ? usageResult.value : {
+    configured: Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN),
+    status: "UNKNOWN",
+    message: usageResult.reason?.message || "Cloudflare Analytics APIの取得に失敗しました。"
+  };
+
   let data;
-  try {
-    data = await getSystemDiagnostics(env.DB, { recentLimit: 30 });
-  } catch (error) {
-    const errorMessage = String(error?.message || error);
-    console.error("public_status_failed", errorMessage);
-    const criticalDbFailure = /D1_ERROR|D1.*(limit|quota|exceeded)|daily row (read|write) limit/i.test(errorMessage);
-    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}.wrap{max-width:760px;margin:auto;padding:34px 18px 50px}.back{color:#94a3b8;text-decoration:none;font-size:14px}.card{margin-top:22px;background:#162238;border:1px solid #334155;border-radius:24px;padding:25px}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:${criticalDbFailure ? "#7f1d1d" : "#92400e"};color:${criticalDbFailure ? "#fecaca" : "#fde68a"};font-weight:900;font-size:24px}.eyebrow{margin-top:20px;color:#94a3b8;font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase}.title{margin:5px 0 10px;font-size:28px}.desc{color:#cbd5e1;line-height:1.6}.hint{margin-top:20px;padding:12px 14px;background:#0f172a;border-radius:12px;color:#94a3b8;font-size:12px}</style></head><body><main class="wrap"><a class="back" href="/">‹ EagleEye</a><section class="card"><div class="icon">${criticalDbFailure ? "!" : "i"}</div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${criticalDbFailure ? "Service Disruption" : "System Status Unavailable"}</h1><p class="desc">${criticalDbFailure ? "主要なデータ基盤が現在利用できません。EagleEyeの主要機能に影響する可能性があります。" : "現在、システム診断データを取得できません。時間をおいて再度ご確認ください。"}</p><div class="hint">このページ自体は公開ステータスページです。内部エラーの詳細は公開していません。</div></section></main></body></html>`);
+  if (diagnosticsResult.status === "fulfilled") {
+    data = diagnosticsResult.value;
+  } else {
+    const services = DIAGNOSTIC_SERVICES.map(([key, label, severity]) => ({
+      key,
+      label,
+      severity,
+      status: key === "d1" ? "FAILED" : "UNKNOWN",
+      last_event_at: null,
+      last_error_code: diagnosticsResult.reason?.code || "D1_DIAGNOSTICS_UNAVAILABLE",
+      last_message: key === "d1" ? "D1診断データを取得できません。" : null,
+      last_trace_id: null,
+      last_target_id: null
+    }));
+    data = {
+      overall: "CRITICAL",
+      counts: {
+        failed: 1,
+        criticalFailed: 1,
+        warning: 0,
+        unknown: services.filter(item => item.status === "UNKNOWN").length,
+        criticalUnknown: 0,
+        healthy: 0
+      },
+      services,
+      events: []
+    };
+    console.error("public_status_diagnostics_unavailable", diagnosticsResult.reason?.message || diagnosticsResult.reason);
   }
 
-  const state = data.overall === "SUCCESS"
-    ? {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービスは正常に稼働しています。"}
-    : data.overall === "CRITICAL"
-      ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービスの一部が利用できません。"}
-      : {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービスで注意が必要です。"};
+  const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
+  const usageWarning = usage.status === "WARNING";
+  const state = usageCritical || data.overall === "CRITICAL"
+    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービスまたはCloudflareリソースの一部で障害・上限到達が検知されています。"}
+    : usageWarning || data.overall === "DEGRADED"
+      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービスまたはCloudflareリソースで注意が必要です。"}
+      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービスとCloudflareリソースは正常範囲です。"};
 
   const rows = data.services.map(s => {
     const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
     return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
   }).join("");
 
-  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}}
-</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">30秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section><section class="section"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">公開ステータスには、サービスの稼働状態のみを表示します。内部エラーや管理情報は公開されません。</p></main></body></html>`);
+  const usageLabel = cloudflareUsageLabel(usage.status);
+  const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
+  const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
+  const resourceRow = (label, used, limit, percentValue, stateValue) => {
+    const item = cloudflareUsageLabel(stateValue);
+    return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
+  };
+
+  const usageSection = usage.configured
+    ? `
+      <section class="section">
+        <h2>Cloudflare リソース監視</h2>
+        <div class="card resource-card">
+          <div class="resource-head"><div><b>D1 Free Tier</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
+          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
+          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
+          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
+          <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
+        </div>
+      </section>`
+    : `
+      <section class="section">
+        <h2>Cloudflare リソース監視</h2>
+        <div class="card resource-card">
+          <div class="resource-head"><div><b>Cloudflare Analytics API</b><small>外部監視</small></div><span class="state neutral">${usageLabel.label}</span></div>
+          <p class="resource-note">${escapeHtml(usage.message || "Cloudflare Analytics APIの設定が必要です。")}</p>
+        </div>
+      </section>`;
+
+  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
+</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}<section class="section"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p></main></body></html>`);
 }
 
 async function renderHome(request, env) {
