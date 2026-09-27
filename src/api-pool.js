@@ -82,17 +82,17 @@ export async function releaseApiLease(db, leaseId) {
   await db.prepare("UPDATE api_leases SET status = 'RELEASED', released_at = ? WHERE lease_id = ? AND status = 'ACTIVE'").bind(now, leaseId).run();
 }
 
-export async function recordApiPoolSuccess(db, { keyId, leaseId, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null } = {}) {
+export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
   await db.prepare(
     "UPDATE api_pool_keys SET status = 'AVAILABLE', remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ?"
   ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, keyId).run();
 
-  await recordUsage(db, { keyId, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay });
+  await recordUsage(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay });
   await releaseApiLease(db, leaseId);
 }
 
-export async function recordApiPoolFailure(db, { keyId, leaseId, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
+export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : keepAvailable ? "AVAILABLE" : "ERROR";
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
@@ -101,17 +101,14 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, endpoint = null
     "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE key_id = ?"
   ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId).run();
 
-  await recordUsage(db, { keyId, endpoint, targetType, targetId, jobId, purpose, httpStatus });
+  await recordUsage(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus });
   await releaseApiLease(db, leaseId);
 }
 
 export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = null, requestCount = 1, measuredQuota = null, measuredRemaining = null, estimated = 0 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const usageId = crypto.randomUUID();
-  if (!poolType && keyId) {
-    const key = await db.prepare("SELECT pool_type FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
-    poolType = key?.pool_type || "SYSTEM_GENERAL";
-  }
+  if (!poolType) poolType = "SYSTEM_GENERAL";
   await db.prepare(
     "INSERT INTO api_pool_usage (usage_id, key_id, provider, pool_type, endpoint, target_type, target_id, job_id, purpose, http_status, request_count, measured_quota, measured_remaining, estimated, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).bind(usageId, keyId, provider, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount, measuredQuota, measuredRemaining, estimated ? 1 : 0, now, now).run();
