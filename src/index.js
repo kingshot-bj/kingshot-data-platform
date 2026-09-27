@@ -1262,6 +1262,32 @@ async function handlePlayerWatchlistApi(request, env) {
       `
     ).bind(auth.discord_id).all();
 
+    const playerChangeResult = await env.DB.prepare(`
+      WITH ranked AS (
+        SELECT ce.target_id AS governor_id,
+               ce.change_type,
+               ce.field_name,
+               ce.old_value_json,
+               ce.new_value_json,
+               ce.detected_at,
+               ce.created_at,
+               ROW_NUMBER() OVER (
+                 PARTITION BY ce.target_id, ce.change_type
+                 ORDER BY ce.detected_at DESC, ce.created_at DESC
+               ) AS rn
+        FROM change_events ce
+        INNER JOIN player_watchlists w
+          ON w.governor_id = ce.target_id
+         AND w.discord_id = ?
+        WHERE w.enabled = 1
+          AND ce.target_type = 'PLAYER'
+          AND ce.change_type IN ('TOWN_CENTER_CHANGED','ALLIANCE_CHANGED')
+      )
+      SELECT governor_id, change_type, field_name, old_value_json, new_value_json, detected_at
+      FROM ranked
+      WHERE rn = 1
+    `).bind(auth.discord_id).all();
+
     const powerChangeResult = await env.DB.prepare(`
       WITH ranked AS (
         SELECT ce.target_id AS governor_id,
@@ -1285,6 +1311,25 @@ async function handlePlayerWatchlistApi(request, env) {
       FROM ranked
       WHERE rn = 1
     `).bind(auth.discord_id).all();
+
+    const playerChangeByGovernor = new Map();
+    for (const row of playerChangeResult.results || []) {
+      let oldValue = null;
+      let newValue = null;
+      try { oldValue = JSON.parse(row.old_value_json); } catch {}
+      try { newValue = JSON.parse(row.new_value_json); } catch {}
+      const key = String(row.governor_id);
+      const current = playerChangeByGovernor.get(key) || {};
+      const item = {
+        field: row.field_name,
+        old: oldValue,
+        new: newValue,
+        detected_at: row.detected_at == null ? null : Number(row.detected_at)
+      };
+      if (row.change_type === "TOWN_CENTER_CHANGED") current.town_center = item;
+      if (row.change_type === "ALLIANCE_CHANGED") current.alliance = item;
+      playerChangeByGovernor.set(key, current);
+    }
 
     const rankByGovernor = new Map();
     for (const row of rankResult.results || []) {
@@ -1321,14 +1366,16 @@ async function handlePlayerWatchlistApi(request, env) {
 
     const watchlist = watchRows.map(row => {
       const ranks = rankByGovernor.get(String(row.governor_id)) || [];
-      const powerChange = powerChangeByGovernor.get(String(row.governor_id)) || null;
+      const playerChanges = playerChangeByGovernor.get(String(row.governor_id)) || {};
 
       return {
         ...row,
         enabled: Number(row.enabled) === 1,
         observed_at: row.observed_at == null ? null : Number(row.observed_at),
         summary: {
-          power_change: powerChange,
+          power_change: powerChangeByGovernor.get(String(row.governor_id)) || null,
+          town_center_change: playerChanges.town_center || null,
+          alliance_change: playerChanges.alliance || null,
           ranking_changes: ranks
         }
       };
@@ -1447,6 +1494,13 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
     const cls=delta>0?"up":"down";
     return '<span>'+number(previous)+'位 → <b>'+number(current)+'位</b> <span class="'+cls+'">'+(delta>0?"↑":"↓")+Math.abs(delta)+'</span></span>';
   };
+  const simpleChangeText=(c, formatter)=>{
+    if(!c||c.old==null||c.new==null)return '<span class="muted">前回値なし</span>';
+    const oldText=formatter(c.old);
+    const newText=formatter(c.new);
+    if(String(c.old)===String(c.new))return '<span>'+esc(newText)+' <span class="flat">→</span></span>';
+    return '<span>'+esc(oldText)+' → <b>'+esc(newText)+'</b></span>';
+  };
   const powerChangeText=s=>{
     const c=s?.power_change;
     if(!c||c.old==null||c.new==null)return '<span class="muted">前回値なし</span>';
@@ -1487,6 +1541,8 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           '</div>'+
           '<div class="change-box"><div class="change-title">前回からの変化</div>'+
             '<div class="change-row"><span class="label">戦力</span><span class="value">'+powerChange+'</span></div>'+
+            '<div class="change-row"><span class="label">役場</span><span class="value">'+simpleChangeText(s.town_center_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
+            '<div class="change-row"><span class="label">同盟</span><span class="value">'+simpleChangeText(s.alliance_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
             '<div class="change-title" style="margin-top:12px">ランキング順位変動</div>'+
             '<div class="ranking-changes">'+rankingRows+'</div>'+
           '</div>'+
