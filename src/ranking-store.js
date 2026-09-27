@@ -29,60 +29,142 @@ export async function savePlayerRankSnapshot(db, { governorId, uid = null, kid =
   return id;
 }
 
-export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
+export async function getLatestKingdomRankingBoard(db, { kid, board }) {
   if (!db) throw new Error("D1 database binding is not configured.");
-  if (!kid || !boards || typeof boards !== "object") throw new Error("Kingdom ranking boards require kid and boards.");
-
-  const statements = [];
-  for (const [board, entries] of Object.entries(boards)) {
-    if (!Array.isArray(entries) || !entries.length) continue;
-    entries.forEach((entry, index) => {
-      const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
-      const targetId = targetType === "ALLIANCE"
-        ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
-        : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
-      statements.push(db.prepare(
-        'INSERT INTO ranking_snapshots (' +
-        'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
-        'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).bind(
-        crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
-        entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
-        entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
-      ));
-    });
-  }
-
-  // D1 can reject a batch when the total bound variables across statements are too large.
-  // Each ranking INSERT binds 17 values, so keep batches comfortably below the limit.
-  const batchSize = 50;
-  for (let i = 0; i < statements.length; i += batchSize) {
-    await db.batch(statements.slice(i, i + batchSize));
-  }
-  return statements.length;
+  if (!kid || !board) throw new Error("Kingdom ranking board requires kid and board.");
+  const result = await db.prepare(
+    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id " +
+    "FROM (" +
+    "SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
+    "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?" +
+    ") latest WHERE rn = 1 ORDER BY rank ASC"
+  ).bind(Number(kid), String(board)).all();
+  return result.results || [];
 }
 
-export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
+function normalizeRankingValue(value) {
+  if (value === null || value === undefined) return null;
+  return String(value);
+}
+
+function rankingEntryTarget(board, entry, index, kid) {
+  const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
+  const targetId = targetType === "ALLIANCE"
+    ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
+    : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
+  return { targetType, targetId: String(targetId) };
+}
+
+function rankingEntryChanged(previous, current) {
+  if (!previous) return true;
+  return Number(previous.rank) !== Number(current.rank)
+    || normalizeRankingValue(previous.score) !== normalizeRankingValue(current.score)
+    || normalizeRankingValue(previous.uid) !== normalizeRankingValue(current.uid)
+    || normalizeRankingValue(previous.governor_id) !== normalizeRankingValue(current.governor_id)
+    || normalizeRankingValue(previous.nick_name) !== normalizeRankingValue(current.nick_name)
+    || normalizeRankingValue(previous.aid) !== normalizeRankingValue(current.aid)
+    || normalizeRankingValue(previous.abbr) !== normalizeRankingValue(current.abbr)
+    || normalizeRankingValue(previous.name) !== normalizeRankingValue(current.name);
+}
+
+export async function getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
-  if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
-  const statements = entries.map((entry, index) => {
-    const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
-    const targetId = targetType === "ALLIANCE"
-      ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
-      : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
+  if (!Number.isFinite(Number(kid)) || !board || !Array.isArray(entries)) return { changedEntries: [], rankingChanges: [] };
+
+  const previousRows = await getLatestKingdomRankingBoard(db, { kid, board });
+  const previousByTarget = new Map(previousRows.map(row => [String(row.target_id), row]));
+  const changedEntries = [];
+  const rankingChanges = [];
+
+  entries.forEach((entry, index) => {
+    const target = rankingEntryTarget(board, entry, index, kid);
+    const current = {
+      board: String(board),
+      targetType: target.targetType,
+      targetId: target.targetId,
+      rank: index + 1,
+      score: entry.score ?? entry.value ?? null,
+      uid: entry.uid ?? null,
+      governor_id: entry.governor_id ?? null,
+      nick_name: entry.nick_name ?? null,
+      aid: entry.aid ?? null,
+      abbr: entry.abbr ?? null,
+      name: entry.name ?? null
+    };
+    const previous = previousByTarget.get(target.targetId);
+    if (rankingEntryChanged(previous, current)) changedEntries.push(entry);
+
+    if (previous && Number(previous.rank) !== Number(current.rank)) {
+      rankingChanges.push({
+        targetType: current.targetType,
+        targetId: current.targetId,
+        changeType: "RANK_CHANGED",
+        oldValue: previous.rank,
+        newValue: current.rank,
+        oldScore: previous.score,
+        newScore: current.score,
+        observedAt,
+        sourceObservationId
+      });
+    }
+  });
+
+  return { changedEntries, rankingChanges };
+}
+
+function buildKingdomRankingInsertStatements(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
+  return entries.map((entry, index) => {
+    const { targetType, targetId } = rankingEntryTarget(board, entry, index, kid);
     return db.prepare(
       'INSERT INTO ranking_snapshots (' +
       'ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, ' +
       'aid, abbr, name, observed_at, source_observed_at, source_observation_id, created_at) ' +
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(
-      crypto.randomUUID(), Number(kid), String(board), targetType, String(targetId), index + 1,
+      crypto.randomUUID(), Number(kid), String(board), targetType, targetId, index + 1,
       entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
       entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
     );
   });
-  if (statements.length) await db.batch(statements);
+}
+
+async function insertRankingStatements(db, statements) {
+  const batchSize = 50;
+  for (let i = 0; i < statements.length; i += batchSize) {
+    await db.batch(statements.slice(i, i + batchSize));
+  }
+}
+
+export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
+  if (!db) throw new Error("D1 database binding is not configured.");
+  if (!kid || !boards || typeof boards !== "object") throw new Error("Kingdom ranking boards require kid and boards.");
+
+  let saved = 0;
+  for (const [board, entries] of Object.entries(boards)) {
+    if (!Array.isArray(entries) || !entries.length) continue;
+    const { changedEntries } = await getKingdomRankingChanges(db, {
+      kid, board, entries, observedAt, sourceObservationId
+    });
+    const statements = buildKingdomRankingInsertStatements(db, {
+      kid, board, entries: changedEntries, observedAt, sourceObservedAt, sourceObservationId
+    });
+    await insertRankingStatements(db, statements);
+    saved += statements.length;
+  }
+  return saved;
+}
+
+export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null, entriesAlreadyFiltered = false }) {
+  if (!db) throw new Error("D1 database binding is not configured.");
+  if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
+
+  const filteredEntries = entriesAlreadyFiltered
+    ? entries
+    : (await getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId })).changedEntries;
+  const statements = buildKingdomRankingInsertStatements(db, {
+    kid, board, entries: filteredEntries, observedAt, sourceObservedAt, sourceObservationId
+  });
+  if (statements.length) await insertRankingStatements(db, statements);
   return statements.length;
 }
 
