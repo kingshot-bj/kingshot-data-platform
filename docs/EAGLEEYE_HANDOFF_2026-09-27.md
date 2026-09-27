@@ -504,3 +504,76 @@ MightPulseの `cached_at` を「元データの観測時刻」とみなしてよ
 - `source_observed_at`: 元データの観測時刻として意味を確認できたフィールド
 
 **重要:** Probeの結果が出るまではUIの「MightPulseデータ基準時刻」表示に `cached_at` を使う根拠がない。必要なら次の実装でこの表示を一旦「MightPulse cached_at」へ変更する。
+
+
+## 33. 2026-09-27追加：ランキングCurrent化 / D1負荷削減の最新状態
+
+今回、ランキングを「毎回全件保存」から「current state + change history」へ分離する実装を進めた。
+
+### 新テーブル
+- `kingdom_ranking_current`: 現在ランキング状態
+- `kingdom_ranking_board_state`: boardごとの最終チェック時刻・件数
+
+`kingdom_ranking_current`には `previous_rank` を追加し、更新時に直前rankを保持する。
+
+### 保存ルール
+- 変化なし: board_stateのlast_checked_atのみ更新。大量Snapshot INSERTはしない。
+- 変化あり: changed rowだけcurrentをUPSERTし、ranking_snapshotsへ変更履歴を保存。
+- Top100脱落: currentからDELETE。
+- 再ランクイン: currentへINSERT。
+
+### Read削減
+Player Watchlistのランキング取得を、過去の `ranking_snapshots` に対する複数相関サブクエリから、
+`kingdom_ranking_current` + `kingdom_ranking_board_state` の直接JOINへ変更。
+
+`getLatestPlayerHeroRankings()` も `ranking_snapshots` のwindow functionを廃止し、`kingdom_ranking_current` を直接参照する方式へ変更済み。
+
+### 関連最新コミット
+- `a2ff2238bb545a5e9e3d8df417ca01ddf537bd73` — Read hero rankings from current ranking state
+- `c6da4746dbe97b01ad56fd76d5ffbf787e6c7446` — Use current ranking state for hero ranking reads
+- `9babf6de1bfa5bb2ea88ee54823f8e3bea8fda67` — Track previous ranking position in current state
+- `f1c237de24350ca34effbd000ec48896d5f3d4fd` — Avoid ranking history scans in player watchlist reads
+- `c8b0e90022cf912389b8663f97a5de8b1dbe708f` — Use current ranking state for admin reads and refreshes
+- `b6ab1887326bebfa77ed0e418b67fdbb99969035` — Preserve original ranking positions in delta snapshots
+- `bdadc29c7d7a51826791255842c0dd1451dbf8ad` — Use current ranking state and show last check time
+- `d5c8edb20e842b49fa68b4b9578f787c367ef64a` — Separate current ranking state from change snapshots
+
+### Cloudflare監視
+`src/cloudflare-analytics.js` とstatus UIに以下を追加済み:
+- D1 Rows Read / Written / Storage
+- D1 Query Insights
+- 上位Read SQL
+- 上位Write SQL
+- Workers Requests
+- Workers CPU P99 / Subrequestsの近似的な制限監視
+- R2 Class A / Class B / Storage
+
+関連コミット:
+- `ec3b55b49cd2883a7db27bc6f0ce69eff9aab605`
+- `e1c7787e41871e24085f21683bca599abe45ce1c`
+- `ac7c6369afdde25624f4712f9fcd654d65352467`
+- `ad3e0f170000e5a92a71671d5a0962e468dd1adf`
+
+### 2026-09-27の実測
+日付変更後まもないCloudflare画面で、D1 Rows Read約51.8%、Rows Written 100%、Storage約0.2%を確認。D1 Query Insightsは76 queries。
+以前のWrite InsightsではTotal Rows Written約111,478、Ranking Snapshot約95,850（約86%）。
+
+### 現時点の削減予測（未実測）
+- Ranking Snapshot由来Write: 約90〜99%削減余地
+- D1全体Write: 約80〜90%削減可能性
+- D1全体Read: 約30〜70%削減可能性
+
+上記はあくまで予測。明日のD1制限解除後、変更前後のAnalytics実測値で確定する。
+
+### 未確認 / 次にやること
+1. D1が書ける状態で自動デプロイ後のWatchlist実動作確認。
+2. 変化なし時にlast_checked_atだけ更新されること。
+3. changed rowsだけcurrent/Snapshotへ保存されること。
+4. previous_rankが正しいこと。
+5. Top100脱落・再ランクインの整合性。
+6. D1 Read/Write削減率をAnalyticsで実測。
+7. `ranking-store.js` の `detectRankingChangesForBoards()` / `detectRankingChanges()` が現行フローで未使用か呼び出し元を確認。未使用なら旧Read処理として整理候補。
+8. `getRankingHistory()` は履歴表示用途なので基本的に残す。
+
+### 次スレッドでの開始文
+「GitHubの `docs/EAGLEEYE_HANDOFF_2026-09-27.md` を読んで、最新mainも確認してEagleEye開発を続けて。」
