@@ -17,6 +17,7 @@ import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } fr
 import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
+import { handleGatewayApi } from "./gateway-api.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -2245,6 +2246,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
