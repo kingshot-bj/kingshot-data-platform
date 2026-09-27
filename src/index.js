@@ -323,6 +323,41 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
     )
   `).run();
 
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS kingdom_ranking_current (
+      kid INTEGER NOT NULL,
+      board TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      score,
+      uid TEXT,
+      governor_id TEXT,
+      nick_name TEXT,
+      aid TEXT,
+      abbr TEXT,
+      name TEXT,
+      observed_at INTEGER NOT NULL,
+      source_observed_at INTEGER,
+      source_observation_id TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (kid, board, target_type, target_id)
+    )
+  `).run();
+
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS kingdom_ranking_board_state (
+      kid INTEGER NOT NULL,
+      board TEXT NOT NULL,
+      last_checked_at INTEGER NOT NULL,
+      source_observed_at INTEGER,
+      checked_rows INTEGER NOT NULL DEFAULT 0,
+      changed_rows INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (kid, board)
+    )
+  `).run();
+
   const definitions = {
     kingdom_watchlist_jobs: [
       ["source_first_at", "INTEGER"],
@@ -496,9 +531,11 @@ async function processKingdomWatchlistJob(env, job) {
         kid: job.kid,
         board,
         entries: rankingComparison.changedEntries,
+        removedTargets: rankingComparison.removedTargets,
         entriesAlreadyFiltered: true,
         observedAt: job.observed_at,
-        sourceObservedAt
+        sourceObservedAt,
+        checkedAt: Math.floor(Date.now() / 1000)
       });
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
@@ -545,10 +582,9 @@ async function processKingdomWatchlistJob(env, job) {
     }
 
     const playerRows = await env.DB.prepare(
-      "SELECT governor_id FROM (" +
-      "SELECT p.governor_id, p.rank, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
-      "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = 'personal_power' AND p.target_type = 'PLAYER' AND p.governor_id IS NOT NULL" +
-      ") latest WHERE rn = 1 AND rank <= ? ORDER BY rank ASC, governor_id"
+      "SELECT governor_id FROM kingdom_ranking_current " +
+      "WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL " +
+      "AND rank <= ? ORDER BY rank ASC, governor_id"
     ).bind(Number(job.kid), Number(job.top_n)).all();
     const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
 
