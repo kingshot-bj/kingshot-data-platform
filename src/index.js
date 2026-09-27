@@ -1789,6 +1789,288 @@ async function renderAdminDiagnosticsPage(request, env) {
 *{box-sizing:border-box}html{background:#f5f5f7}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:860px;margin:auto;padding:20px 16px 50px}.nav{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 22px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.live{display:flex;align-items:center;gap:7px;color:#86868b;font-size:12px}.live-dot{width:7px;height:7px;border-radius:50%;background:#34c759}.hero{background:#fff;border-radius:28px;padding:30px 26px;border:1px solid #d2d2d7;box-shadow:0 6px 24px rgba(0,0,0,.05)}.hero-line{display:flex;align-items:center;gap:16px}.hero-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-size:25px;font-weight:800}.hero-icon.good{background:#e8f8ed;color:#1b8a3e}.hero-icon.warn{background:#fff4d6;color:#b77900}.hero-icon.bad{background:#ffe9e7;color:#d70015}.hero-icon.neutral{background:#f2f2f7;color:#6e6e73}.eyebrow{color:#86868b;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}.hero h1{margin:3px 0 0;font-size:30px;letter-spacing:-.035em}.note{margin:20px 0 0;color:#6e6e73;line-height:1.55}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:24px;border-top:1px solid #e5e5ea;padding-top:20px}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border-right:0}.stat b{display:block;font-size:22px;letter-spacing:-.03em}.stat span{display:block;margin-top:4px;color:#86868b;font-size:11px}.section{margin-top:28px}.section-head{display:flex;align-items:end;justify-content:space-between;padding:0 5px 10px}.section-head h2{margin:0;font-size:20px;letter-spacing:-.02em}.section-head span{color:#86868b;font-size:11px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:22px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.035)}.service{display:flex;align-items:center;gap:13px;padding:16px 18px;border-bottom:1px solid #e5e5ea}.service:last-child{border-bottom:0}.service-icon,.mini-icon{flex:0 0 auto;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800}.service-main{flex:1;min-width:0}.service-name{font-size:15px;font-weight:650}.service-time{margin-top:3px;color:#86868b;font-size:11px}.service-state{font-size:12px;font-weight:700}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.event{border-bottom:1px solid #e5e5ea}.event:last-child{border-bottom:0}.event summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:10px}.event summary::-webkit-details-marker{display:none}.event-title{font-size:14px;font-weight:650}.event-op{color:#86868b;font-size:11px}.event-time{margin-left:auto;color:#86868b;font-size:11px;text-align:right}.event-body{padding:0 18px 18px}.event-status{font-size:12px;font-weight:700}.event-body p{margin:9px 0 14px;color:#6e6e73;font-size:13px;line-height:1.6;word-break:break-word}.facts{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 14px}.facts span{padding:6px 9px;background:#f5f5f7;border-radius:9px;color:#6e6e73;font-size:11px}.details-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.details-grid div{background:#f5f5f7;border-radius:11px;padding:9px}.details-grid small{display:block;color:#86868b;font-size:10px}.details-grid b{display:block;margin-top:3px;font-size:11px;word-break:break-all}.event details{margin-top:10px;border-top:1px solid #e5e5ea}.event details summary{padding:11px 0;font-size:11px;color:#0071e3}.json{margin:0;padding:12px;background:#1d1d1f;color:#f5f5f7;border-radius:12px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:10px;line-height:1.5}.empty{padding:28px;text-align:center;color:#86868b;font-size:13px}.footer{display:flex;justify-content:space-between;gap:12px;margin:18px 4px;color:#86868b;font-size:11px}.footer a{color:#0071e3;text-decoration:none}@media(max-width:600px){.wrap{padding:12px 10px 40px}.hero{padding:23px 18px;border-radius:22px}.hero h1{font-size:25px}.stats{grid-template-columns:repeat(2,1fr);gap:14px}.stat{border-right:0}.stat:nth-child(-n+2){padding-bottom:3px;border-bottom:1px solid #e5e5ea}.service{padding:14px}.service-time{font-size:10px}.event summary{padding:14px}.event-op{display:none}.event-time{font-size:10px}.details-grid{grid-template-columns:1fr}.footer{flex-direction:column}}
 </style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/admin">‹ 管理画面</a><div class="live"><span class="live-dot"></span>30秒ごとに自動更新</div></nav><section class="hero"><div class="hero-line"><div class="hero-icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1>${state.label}</h1></div></div><p class="note">${state.note}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未診断</span></div></div></section><section class="section"><div class="section-head"><h2>サービス</h2><span>${data.services.length}項目</span></div><div class="card">${services}</div></section><section class="section"><div class="section-head"><h2>最近の診断</h2><span>最新40件</span></div><div class="card">${events}</div></section><footer class="footer"><span>EagleEye Diagnostics</span><a href="/admin">管理画面へ戻る</a></footer></main></body></html>`);
 }
+
+function stableJsonForProbe(value) {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(stableJsonForProbe);
+  if (typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = stableJsonForProbe(value[key]);
+    return out;
+  }
+  return value;
+}
+
+async function sha256HexForProbe(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(stableJsonForProbe(value)));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function collectMightPulseTimestampFields(value, path = "", depth = 0, output = []) {
+  if (depth > 7 || output.length >= 120 || value === null || value === undefined) return output;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length && output.length < 120; i++) {
+      collectMightPulseTimestampFields(value[i], path + "[" + i + "]", depth + 1, output);
+    }
+    return output;
+  }
+  if (typeof value !== "object") return output;
+  for (const [key, child] of Object.entries(value)) {
+    if (output.length >= 120) break;
+    const childPath = path ? path + "." + key : key;
+    const keyLooksTemporal = /(?:cached|observed|updated|created|modified|timestamp|time|date|active|login|endtime|opened_on|refresh)/i.test(key);
+    if (keyLooksTemporal && (typeof child === "string" || typeof child === "number")) {
+      const normalized = normalizeMightPulseTimestamp(child);
+      if (normalized !== null) {
+        output.push({ path: childPath, raw: child, unix: normalized, iso: new Date(normalized * 1000).toISOString() });
+      }
+    }
+    if (child && typeof child === "object") {
+      collectMightPulseTimestampFields(child, childPath, depth + 1, output);
+    }
+  }
+  return output;
+}
+
+function mightPulseProbeHeaders(headers) {
+  const names = [
+    "date", "age", "etag", "last-modified", "cache-control", "expires",
+    "cf-cache-status", "cf-ray", "x-cache", "via",
+    "x-ratelimit-remaining", "x-ratelimit-day-remaining", "content-age", "vary"
+  ];
+  const result = {};
+  for (const name of names) {
+    const value = headers?.get?.(name);
+    if (value !== null && value !== undefined && value !== "") result[name] = value;
+  }
+  return result;
+}
+
+function mightPulseProbeRequestSpec(type, { governorId, kid, board, include }) {
+  if (type === "PLAYER") {
+    const id = String(governorId || "").trim();
+    if (!id) {
+      const error = new Error("GOVERNOR_ID_REQUIRED");
+      error.code = "GOVERNOR_ID_REQUIRED";
+      error.status = 400;
+      throw error;
+    }
+    const selectedInclude = ["base", "base,ranks", "base,heroes,ranks,gov_gear"].includes(include) ? include : "base";
+    return {
+      targetType: "PLAYER",
+      targetId: id,
+      endpoint: "/players/:governor_id",
+      path: "/players/" + encodeURIComponent(id),
+      query: { include: selectedInclude },
+      label: "Player " + selectedInclude
+    };
+  }
+
+  const kingdomId = String(kid || "").trim();
+  if (!/^\d+$/.test(kingdomId)) {
+    const error = new Error("INVALID_KID");
+    error.code = "INVALID_KID";
+    error.status = 400;
+    throw error;
+  }
+
+  if (type === "KINGDOM") {
+    return {
+      targetType: "KINGDOM",
+      targetId: kingdomId,
+      endpoint: "/kingdoms/:kid",
+      path: "/kingdoms/" + encodeURIComponent(kingdomId),
+      query: {},
+      label: "Kingdom"
+    };
+  }
+
+  const selectedBoard = String(board || "").trim();
+  if (!KINGDOM_RANKING_BOARDS.includes(selectedBoard)) {
+    const error = new Error("INVALID_BOARD");
+    error.code = "INVALID_BOARD";
+    error.status = 400;
+    throw error;
+  }
+
+  return {
+    targetType: "KINGDOM",
+    targetId: kingdomId,
+    endpoint: "/kingdoms/:kid/ranks",
+    path: "/kingdoms/" + encodeURIComponent(kingdomId) + "/ranks",
+    query: { board: selectedBoard, limit: 20 },
+    label: "Kingdom Ranking " + selectedBoard
+  };
+}
+
+async function fetchMightPulseProbeThroughPool(env, spec) {
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  let lease = null;
+  let poolType = spec.targetType === "KINGDOM" ? "SYSTEM_WATCHLIST" : "SYSTEM_GENERAL";
+
+  try {
+    try {
+      lease = await leaseApiKey(env.DB, {
+        poolType,
+        purpose: "MIGHTPULSE_PROBE",
+        targetType: spec.targetType,
+        targetId: spec.targetId
+      });
+    } catch (error) {
+      if (poolType !== "SYSTEM_WATCHLIST" || error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
+      poolType = "SYSTEM_GENERAL";
+      lease = await leaseApiKey(env.DB, {
+        poolType,
+        purpose: "MIGHTPULSE_PROBE",
+        targetType: spec.targetType,
+        targetId: spec.targetId
+      });
+    }
+
+    const requestStartedAt = Date.now();
+    const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key });
+    const responseReceivedAt = Date.now();
+    const payload = result?.data ?? null;
+
+    const responseHash = await sha256HexForProbe(payload);
+    const sectionHashes = {};
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      for (const key of ["player", "heroes", "ranks", "gov_gear", "kingdom", "boards", "leaderboards"]) {
+        if (payload[key] !== undefined) sectionHashes[key] = await sha256HexForProbe(payload[key]);
+      }
+    }
+
+    const cachedAt = normalizeMightPulseTimestamp(payload?.cached_at);
+    const timestampFields = collectMightPulseTimestampFields(payload);
+    const headers = mightPulseProbeHeaders(result.headers);
+
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id,
+      leaseId: lease.lease_id,
+      endpoint: spec.endpoint,
+      targetType: spec.targetType,
+      targetId: spec.targetId,
+      purpose: "MIGHTPULSE_PROBE",
+      httpStatus: result.status,
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    });
+
+    return {
+      ok: true,
+      probe: {
+        request_id: crypto.randomUUID(),
+        type: spec.label,
+        target_type: spec.targetType,
+        target_id: spec.targetId,
+        endpoint: spec.endpoint,
+        request_path: spec.path,
+        query: spec.query,
+        pool_type: poolType,
+        http_status: result.status,
+        request_started_at_iso: new Date(requestStartedAt).toISOString(),
+        response_received_at_iso: new Date(responseReceivedAt).toISOString(),
+        elapsed_ms: responseReceivedAt - requestStartedAt,
+        server_now_unix: Math.floor(responseReceivedAt / 1000),
+        fresh: payload?.fresh ?? null,
+        cached_at: payload?.cached_at ?? null,
+        cached_at_unix: cachedAt,
+        cached_at_iso: cachedAt ? new Date(cachedAt * 1000).toISOString() : null,
+        age_seconds: payload?.age_seconds ?? null,
+        headers,
+        payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
+        timestamp_like_fields: timestampFields,
+        response_sha256: responseHash,
+        section_sha256: sectionHashes
+      }
+    };
+  } catch (error) {
+    if (lease) {
+      const status = Number(error?.status || 0);
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401 || status === 403;
+      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      await recordApiPoolFailure(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        endpoint: spec.endpoint,
+        targetType: spec.targetType,
+        targetId: spec.targetId,
+        purpose: "MIGHTPULSE_PROBE",
+        httpStatus: status,
+        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        errorMessage: error?.message || null,
+        cooldownSeconds: cooldown,
+        disable,
+        keepAvailable
+      });
+    }
+    throw error;
+  }
+}
+
+async function handleMightPulseProbeApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  const url = new URL(request.url);
+  const type = String(url.searchParams.get("type") || "PLAYER").trim().toUpperCase();
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  const kid = String(url.searchParams.get("kid") || "").trim();
+  const board = String(url.searchParams.get("board") || "").trim();
+  const include = String(url.searchParams.get("include") || "base").trim();
+
+  try {
+    const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
+    return json(await fetchMightPulseProbeThroughPool(env, spec));
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    return json({
+      ok: false,
+      error: error?.code || "MIGHTPULSE_PROBE_FAILED",
+      status,
+      message: error?.message || null,
+      diagnostic: error?.details || null
+    }, status >= 400 && status < 600 ? status : 502);
+  }
+}
+
+async function renderMightPulseProbePage(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) {
+    return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:#fff;font-family:system-ui;padding:32px'><h1>ADMIN権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
+  }
+
+  const boardOptions = KINGDOM_RANKING_BOARDS.map(board => "<option value='" + escapeHtml(board) + "'>" + escapeHtml(RANKING_BOARD_LABELS[board] || board) + "</option>").join("");
+
+  return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='color-scheme' content='dark'><title>MightPulse Probe | EagleEye</title>" +
+  "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 50px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;font-size:12px;line-height:1.65}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#fff}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}.btn.secondary{background:#334155;color:#e2e8f0}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}.kv{display:grid;grid-template-columns:180px minmax(0,1fr);gap:7px 10px}.kv b{color:#94a3b8;font-size:11px}.kv span{font-size:12px;word-break:break-word}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:8px;border-bottom:1px solid #334155;text-align:left;font-size:11px;vertical-align:top}th{color:#94a3b8}.ok{color:#86efac}.error{color:#fca5a5}.pill{display:inline-block;padding:3px 6px;border-radius:7px;background:#0b1220;margin:2px}.small{font-size:10px;color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.form{grid-template-columns:1fr}.kv{grid-template-columns:1fr;gap:2px}.kv b{margin-top:8px}table{min-width:620px}}</style></head><body><main class='wrap'>" +
+  "<div class='top'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='badge'>ADMIN / OWNER · PROBE</div></div>" +
+  "<h1>MightPulse Probe</h1><p class='hint'>MightPulseのレスポンス時刻・HTTPキャッシュヘッダー・cached_at / age_seconds / fresh・タイムスタンプ候補を比較するための診断画面です。APIキー本体や生レスポンスは表示・保存しません。</p>" +
+  "<div class='card'><h2>1. 対象を指定</h2><div class='form'>" +
+  "<label class='field'><span>Player 領主ID</span><input id='governorId' inputmode='numeric' placeholder='例: 223636495'></label>" +
+  "<label class='field'><span>Kingdom 王国番号</span><input id='kid' inputmode='numeric' placeholder='例: 1524'></label>" +
+  "<label class='field'><span>Player include</span><select id='include'><option value='base'>base</option><option value='base,ranks'>base,ranks</option><option value='base,heroes,ranks,gov_gear'>base,heroes,ranks,gov_gear</option></select></label>" +
+  "<label class='field'><span>Kingdom ranking</span><select id='board'>" + boardOptions + "</select></label>" +
+  "</div><div class='actions'><button class='btn' data-type='PLAYER'>Playerを取得</button><button class='btn secondary' data-type='KINGDOM'>Kingdomを取得</button><button class='btn secondary' data-type='KINGDOM_RANKING'>Kingdom Rankingを取得</button><button class='btn secondary' id='clearHistory' type='button'>履歴クリア</button></div><div id='status' class='hint'></div></div>" +
+  "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。履歴はこのブラウザのlocalStorageだけに保持します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
+  "<script>(function(){var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.type)+'<br><span class=\"small\">'+esc(p.target_id)+'</span></td><td>'+esc(p.fresh==null?'-':p.fresh)+'</td><td>'+esc(p.cached_at||'-')+'</td><td>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</td><td>'+esc(p.http_status)+'</td><td>'+esc(p.elapsed_ms)+' ms</td><td class=\"mono\">'+esc(String(p.hash||'').slice(0,16))+'…</td></tr>';}).join('')||'<tr><td colspan=\"8\" class=\"small\">まだProbe結果がありません。</td></tr>';}function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.section_sha256||{};var th=t.length?t.map(function(x){return '<div class=\"pill\"><b>'+esc(x.path)+'</b> = '+esc(x.raw)+'<br><span class=\"small\">'+esc(x.iso)+'</span></div>';}).join(''):'<span class=\"small\">候補なし</span>';var sh=Object.keys(s).length?Object.keys(s).map(function(k){return '<div class=\"pill\">'+esc(k)+': '+esc(String(s[k]).slice(0,20))+'…</div>';}).join(''):'<span class=\"small\">なし</span>';document.getElementById('latest').innerHTML='<div class=\"card\"><h2>最新Probe</h2><div class=\"kv\">'+
+  '<b>Request ID</b><span class=\"mono\">'+esc(p.request_id)+'</span>'+
+  '<b>対象</b><span>'+esc(p.type)+' / '+esc(p.target_type)+' / '+esc(p.target_id)+'</span>'+
+  '<b>EagleEye request start</b><span>'+esc(p.request_started_at_iso)+'</span>'+
+  '<b>EagleEye response received</b><span>'+esc(p.response_received_at_iso)+'</span>'+
+  '<b>Elapsed</b><span>'+esc(p.elapsed_ms)+' ms</span>'+
+  '<b>HTTP</b><span>'+esc(p.http_status)+'</span>'+
+  '<b>fresh</b><span>'+esc(p.fresh==null?'-':p.fresh)+'</span>'+
+  '<b>cached_at</b><span>'+esc(p.cached_at||'-')+' / '+esc(p.cached_at_iso||'-')+'</span>'+
+  '<b>age_seconds</b><span>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</span>'+
+  '<b>Payload keys</b><span class=\"mono\">'+esc((p.payload_keys||[]).join(', '))+'</span>'+
+  '<b>HTTP headers</b><span class=\"mono\">'+esc(JSON.stringify(h,null,2))+'</span>'+
+  '<b>Timestamp-like fields</b><span>'+th+'</span>'+
+  '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
+  '<b>Section SHA-256</b><span>'+sh+'</span>'+
+  '</div></div>';}async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>";
+}
 export default {
   async scheduled(controller, env, ctx) {
     await runKingdomWatchlistJobs(env);
@@ -1811,6 +2093,7 @@ export default {
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
+      if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
@@ -1839,6 +2122,7 @@ export default {
       if (url.pathname === "/admin/kingdom-rankings") return eagleEyeHtmlResponse(await renderAdminKingdomRankingsPage(request, env));
       if (url.pathname === "/status") return await renderPublicStatusPage(request, env);
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
+      if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
@@ -4296,7 +4580,7 @@ async function renderAdminControlPage(request, env) {
   const visibilityLink = isOwner ? "<a class=\"card\" href=\"/admin/player-visibility\"><b>データ公開設定</b><span>ロール別公開範囲を管理</span></a>" : "";
   return "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>EagleEye ADMIN CONTROL</title>" +
     "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:820px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.grid{display:grid;gap:12px;margin-top:22px}.card{display:block;padding:18px;border:1px solid #334155;border-radius:14px;background:#162238;color:#f8fafc;text-decoration:none}.card:hover{border-color:#64748b;background:#1b2a42}.card b{display:block;font-size:16px}.card span{display:block;margin-top:5px;color:#94a3b8;font-size:13px}.section{margin-top:28px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.notice{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#cbd5e1;font-size:13px;line-height:1.6}</style></head><body><main class=\"wrap\"><a class=\"back\" href=\"/\">← EagleEye</a><div class=\"eyebrow\">ADMIN CONSOLE</div><h1 class=\"title\">ADMIN CONTROL</h1><p class=\"sub\">EagleEyeの運用・データ管理をまとめて操作できます。</p><div class=\"badge\">ROLE: " + escapeHtml(guard.auth.role) + "</div>" +
-    "<div class=\"grid\"><a class=\"card\" href=\"/admin/api-pool\"><b>API Pool管理</b><span>APIキー・Pool状態・利用状況・テスト</span></a><a class=\"card\" href=\"/admin/diagnostics\"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細を確認</span></a><a class=\"card\" href=\"/admin/data-retention\"><b>データ保存期間</b><span>D1履歴の保持期間とR2アーカイブ対象を管理</span></a>" + visibilityLink + "<a class=\"card\" href=\"/players\"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更イベント・必要なデータ更新</span></a><a class=\"card\" href=\"/kingdom-watchlist\"><b>王国ウォッチリスト</b><span>監視対象・ランキング監視・進捗を確認</span></a></div>" +
+    "<div class=\"grid\"><a class=\"card\" href=\"/admin/api-pool\"><b>API Pool管理</b><span>APIキー・Pool状態・利用状況・テスト</span></a><a class=\"card\" href=\"/admin/diagnostics\"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細を確認</span></a><a class=\"card\" href=\"/admin/mightpulse-probe\"><b>MightPulse Probe</b><span>cached_at・age_seconds・HTTPヘッダー・時刻候補を比較</span></a><a class=\"card\" href=\"/admin/data-retention\"><b>データ保存期間</b><span>D1履歴の保持期間とR2アーカイブ対象を管理</span></a>" + visibilityLink + "<a class=\"card\" href=\"/players\"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更イベント・必要なデータ更新</span></a><a class=\"card\" href=\"/kingdom-watchlist\"><b>王国ウォッチリスト</b><span>監視対象・ランキング監視・進捗を確認</span></a></div>" +
     "<div class=\"section\"><h2>権限について</h2><div class=\"notice\">ADMINは運用・データ管理を担当します。ユーザーのロール変更、ユーザー停止、ログイン履歴、OWNER監査ログなどのアカウント管理はOWNER CONTROLからOWNERのみが行います。</div></div>" + ownerLink +
     "</main></body></html>";
 }
