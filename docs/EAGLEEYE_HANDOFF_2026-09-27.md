@@ -17,6 +17,10 @@
 
 ## 2. 現在の基準コミット
 直近の実装済みコミット:
+5e02be7b4d3dc7b6ef668892fe4d7d666ca8c590
+feat: add MightPulse Probe comparison analysis
+
+直前:
 a71f6c0fc5cd730b5cfe6c6fd1b0d3bc05610982
 feat: show player watchlist field changes
 
@@ -597,6 +601,21 @@ UIの「前回からの変化」に戦力・役場・同盟を表示し、既存
 
 関連コミット:
 - a71f6c0fc5cd730b5cfe6c6fd1b0d3bc05610982 — feat: show player watchlist field changes
+
+### 2026-09-27追加：MightPulse Probe比較分析
+
+Probe画面を、単発結果の表示だけでなく同一対象・同一Probe種別の過去結果との比較にも対応。
+比較する主な項目:
+- cached_atの変化
+- age_secondsの変化
+- response SHA-256の変化
+- Probe間の経過時間
+
+画面上では、cached_at固定＋age_seconds増加、cached_at変化、レスポンス変化なし等の観測パターンを「可能性」として整理する。
+これはcached_atの意味を断定するものではなく、source_observed_at採用判断のための観測補助。
+
+関連コミット:
+- 5e02be7b4d3dc7b6ef668892fe4d7d666ca8c590 — feat: add MightPulse Probe comparison analysis
 
 ### 未確認 / 次にやること
 1. D1が書ける状態で自動デプロイ後のWatchlist実動作確認。
