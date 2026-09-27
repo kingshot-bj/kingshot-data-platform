@@ -1159,7 +1159,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   let rankings;
   if (board) {
     rankings = await env.DB.prepare(
-      "WITH alliance_abbr AS (
+      `WITH alliance_abbr AS (
         SELECT aid,
           MAX(CASE WHEN board = 'alliance_power' THEN abbr END) AS power_abbr,
           MAX(CASE WHEN board = 'alliance_kills' THEN abbr END) AS kills_abbr
@@ -1177,11 +1177,11 @@ async function handleKingdomWatchlistDataApi(request, env) {
       FROM kingdom_ranking_current r
       LEFT JOIN alliance_abbr aa ON aa.aid = r.aid
       WHERE r.kid = ? AND r.board = ?
-      ORDER BY r.rank ASC LIMIT ?"
+      ORDER BY r.rank ASC LIMIT ?`
     ).bind(watch.kid, watch.kid, board, limit).all();
   } else {
     rankings = await env.DB.prepare(
-      "WITH alliance_abbr AS (
+      `WITH alliance_abbr AS (
         SELECT aid,
           MAX(CASE WHEN board = 'alliance_power' THEN abbr END) AS power_abbr,
           MAX(CASE WHEN board = 'alliance_kills' THEN abbr END) AS kills_abbr
@@ -1199,7 +1199,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
       FROM kingdom_ranking_current r
       LEFT JOIN alliance_abbr aa ON aa.aid = r.aid
       WHERE r.kid = ?
-      ORDER BY r.board ASC, r.rank ASC LIMIT ?"
+      ORDER BY r.board ASC, r.rank ASC LIMIT ?`
     ).bind(watch.kid, watch.kid, limit).all();
   }
 
