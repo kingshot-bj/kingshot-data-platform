@@ -7,7 +7,7 @@ const SESSION_COOKIE = "eagleeye_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, detectRankingChanges } from "./ranking-store.js";
+import { savePlayerRankSnapshot, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
@@ -486,31 +486,34 @@ async function processKingdomWatchlistJob(env, job) {
         throw new Error("RANKING_ENTRIES_EMPTY:" + board);
       }
 
-      const saved = await saveKingdomRankingBoard(env.DB, {
+      const rankingComparison = await getKingdomRankingChanges(env.DB, {
         kid: job.kid,
         board,
         entries,
+        observedAt: job.observed_at
+      });
+      const saved = await saveKingdomRankingBoard(env.DB, {
+        kid: job.kid,
+        board,
+        entries: rankingComparison.changedEntries,
+        entriesAlreadyFiltered: true,
         observedAt: job.observed_at,
         sourceObservedAt
       });
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
         traceId, service: "ranking", feature: "kingdom_watchlist",
-        operation: "FETCH_PARSE_SAVE", status: sourceObservedAt ? "SUCCESS" : "WARNING",
+        operation: "FETCH_COMPARE_SAVE", status: sourceObservedAt ? "SUCCESS" : "WARNING",
         errorCode: sourceObservedAt ? null : "SOURCE_TIME_UNAVAILABLE",
-        message: sourceObservedAt ? "ランキング取得・保存成功" : "ランキング取得・保存は成功しましたがMightPulse基準時刻を取得できませんでした。",
+        message: sourceObservedAt ? "ランキング取得・比較・保存成功" : "ランキング取得・比較・保存は成功しましたがMightPulse基準時刻を取得できませんでした。",
         provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
         startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
         elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
         rowsReceived: entries.length, rowsSaved: saved,
-        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type }
+        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type, changedRows: rankingComparison.changedEntries.length }
       });
 
-      const rankingChanges = await detectRankingChanges(env.DB, {
-        kid: job.kid,
-        board,
-        observedAt: job.observed_at
-      });
+      const rankingChanges = rankingComparison.rankingChanges;
 
       if (rankingChanges.length) {
         const changeStatements = rankingChanges.map(change => env.DB.prepare(
@@ -542,8 +545,11 @@ async function processKingdomWatchlistJob(env, job) {
     }
 
     const playerRows = await env.DB.prepare(
-      "SELECT DISTINCT governor_id FROM ranking_snapshots WHERE kid = ? AND observed_at = ? AND target_type = 'PLAYER' AND board = 'personal_power' AND rank <= ? AND governor_id IS NOT NULL ORDER BY rank ASC, governor_id"
-    ).bind(Number(job.kid), Number(job.observed_at), Number(job.top_n)).all();
+      "SELECT governor_id FROM (" +
+      "SELECT p.governor_id, p.rank, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
+      "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = 'personal_power' AND p.target_type = 'PLAYER' AND p.governor_id IS NOT NULL" +
+      ") latest WHERE rn = 1 AND rank <= ? ORDER BY rank ASC, governor_id"
+    ).bind(Number(job.kid), Number(job.top_n)).all();
     const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
 
     await env.DB.prepare(
@@ -4419,8 +4425,11 @@ async function getLatestAdminKingdomRankingSnapshot(env, kid, board, limit = 100
   const observedAt = Number(latest?.observed_at || 0);
   if (!observedAt) return { observedAt: null, sourceObservedAt: null, rows: [] };
   const result = await env.DB.prepare(
-    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND observed_at = ? ORDER BY rank ASC LIMIT ?"
-  ).bind(Number(kid), String(board), observedAt, Number(limit)).all();
+    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at FROM (" +
+    "SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
+    "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?" +
+    ") latest WHERE rn = 1 ORDER BY rank ASC LIMIT ?"
+  ).bind(Number(kid), String(board), Number(limit)).all();
   const rows = result.results || [];
   const sourceValues = rows.map(row => Number(row.source_observed_at || 0)).filter(value => Number.isFinite(value) && value > 0);
   return { observedAt, sourceObservedAt: sourceValues.length ? Math.min(...sourceValues) : null, rows };
@@ -4467,8 +4476,12 @@ async function handleAdminKingdomRankingApi(request, env) {
         },502);
       }
       const observedAt = Math.floor(Date.now() / 1000);
+      const rankingComparison = await getKingdomRankingChanges(env.DB, {
+        kid: Number(kid), board, entries, observedAt
+      });
       const savedRows = await saveKingdomRankingBoard(env.DB, {
-        kid: Number(kid), board, entries, observedAt, sourceObservedAt
+        kid: Number(kid), board, entries: rankingComparison.changedEntries,
+        entriesAlreadyFiltered: true, observedAt, sourceObservedAt
       });
       const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
       return json({
