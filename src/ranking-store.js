@@ -33,11 +33,8 @@ export async function getLatestKingdomRankingBoard(db, { kid, board }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board) throw new Error("Kingdom ranking board requires kid and board.");
   const result = await db.prepare(
-    "SELECT ranking_snapshot_id, kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id " +
-    "FROM (" +
-    "SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn " +
-    "FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?" +
-    ") latest WHERE rn = 1 ORDER BY rank ASC"
+    "SELECT kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id " +
+    "FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC"
   ).bind(Number(kid), String(board)).all();
   return result.results || [];
 }
@@ -69,47 +66,34 @@ function rankingEntryChanged(previous, current) {
 
 export async function getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId = null }) {
   if (!db) throw new Error("D1 database binding is not configured.");
-  if (!Number.isFinite(Number(kid)) || !board || !Array.isArray(entries)) return { changedEntries: [], rankingChanges: [] };
-
+  if (!Number.isFinite(Number(kid)) || !board || !Array.isArray(entries)) return { changedEntries: [], rankingChanges: [], removedTargets: [] };
   const previousRows = await getLatestKingdomRankingBoard(db, { kid, board });
-  const previousByTarget = new Map(previousRows.map(row => [String(row.target_id), row]));
+  const previousByKey = new Map(previousRows.map(row => [String(row.target_type) + ":" + String(row.target_id), row]));
+  const currentKeys = new Set();
   const changedEntries = [];
   const rankingChanges = [];
-
   entries.forEach((entry, index) => {
     const target = rankingEntryTarget(board, entry, index, kid);
     const current = {
-      board: String(board),
-      targetType: target.targetType,
-      targetId: target.targetId,
-      rank: index + 1,
-      score: entry.score ?? entry.value ?? null,
-      uid: entry.uid ?? null,
-      governor_id: entry.governor_id ?? null,
-      nick_name: entry.nick_name ?? null,
-      aid: entry.aid ?? null,
-      abbr: entry.abbr ?? null,
-      name: entry.name ?? null
+      board: String(board), targetType: target.targetType, targetId: target.targetId, rank: index + 1,
+      score: entry.score ?? entry.value ?? null, uid: entry.uid ?? null, governor_id: entry.governor_id ?? null,
+      nick_name: entry.nick_name ?? null, aid: entry.aid ?? null, abbr: entry.abbr ?? null, name: entry.name ?? null
     };
-    const previous = previousByTarget.get(target.targetId);
+    const key = target.targetType + ":" + target.targetId;
+    currentKeys.add(key);
+    const previous = previousByKey.get(key);
     if (rankingEntryChanged(previous, current)) changedEntries.push(entry);
-
     if (previous && Number(previous.rank) !== Number(current.rank)) {
       rankingChanges.push({
-        targetType: current.targetType,
-        targetId: current.targetId,
-        changeType: "RANK_CHANGED",
-        oldValue: previous.rank,
-        newValue: current.rank,
-        oldScore: previous.score,
-        newScore: current.score,
-        observedAt,
-        sourceObservationId
+        targetType: current.targetType, targetId: current.targetId, changeType: "RANK_CHANGED",
+        oldValue: previous.rank, newValue: current.rank, oldScore: previous.score, newScore: current.score,
+        observedAt, sourceObservationId
       });
     }
   });
-
-  return { changedEntries, rankingChanges };
+  const removedTargets = previousRows.filter(row => !currentKeys.has(String(row.target_type) + ":" + String(row.target_id)))
+    .map(row => ({ targetType: String(row.target_type), targetId: String(row.target_id) }));
+  return { changedEntries, rankingChanges, removedTargets };
 }
 
 function buildKingdomRankingInsertStatements(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
@@ -135,37 +119,42 @@ async function insertRankingStatements(db, statements) {
   }
 }
 
-export async function saveKingdomRankingBoards(db, { kid, boards, observedAt, sourceObservedAt = null, sourceObservationId = null }) {
-  if (!db) throw new Error("D1 database binding is not configured.");
-  if (!kid || !boards || typeof boards !== "object") throw new Error("Kingdom ranking boards require kid and boards.");
-
-  let saved = 0;
-  for (const [board, entries] of Object.entries(boards)) {
-    if (!Array.isArray(entries) || !entries.length) continue;
-    const { changedEntries } = await getKingdomRankingChanges(db, {
-      kid, board, entries, observedAt, sourceObservationId
-    });
-    const statements = buildKingdomRankingInsertStatements(db, {
-      kid, board, entries: changedEntries, observedAt, sourceObservedAt, sourceObservationId
-    });
-    await insertRankingStatements(db, statements);
-    saved += statements.length;
-  }
-  return saved;
-}
-
-export async function saveKingdomRankingBoard(db, { kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null, entriesAlreadyFiltered = false }) {
+export async function saveKingdomRankingBoard(db, {
+  kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null,
+  entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000)
+}) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
-
-  const filteredEntries = entriesAlreadyFiltered
-    ? entries
-    : (await getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId })).changedEntries;
-  const statements = buildKingdomRankingInsertStatements(db, {
+  let comparison = null;
+  if (!entriesAlreadyFiltered) comparison = await getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId });
+  const filteredEntries = entriesAlreadyFiltered ? entries : comparison.changedEntries;
+  const removals = entriesAlreadyFiltered ? removedTargets : comparison.removedTargets;
+  const statements = [];
+  for (const entry of filteredEntries) {
+    const originalIndex = entries.indexOf(entry);
+    const rank = originalIndex >= 0 ? originalIndex + 1 : filteredEntries.indexOf(entry) + 1;
+    const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
+    statements.push(db.prepare(
+      'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
+    ).bind(
+      Number(kid), String(board), targetType, targetId, rank, entry.score ?? entry.value ?? null,
+      entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null, entry.aid ?? null,
+      entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, Number(checkedAt)
+    ));
+  }
+  for (const removed of removals) {
+    statements.push(db.prepare(
+      "DELETE FROM kingdom_ranking_current WHERE kid = ? AND board = ? AND target_type = ? AND target_id = ?"
+    ).bind(Number(kid), String(board), String(removed.targetType), String(removed.targetId)));
+  }
+  statements.push(...buildKingdomRankingInsertStatements(db, {
     kid, board, entries: filteredEntries, observedAt, sourceObservedAt, sourceObservationId
-  });
-  if (statements.length) await insertRankingStatements(db, statements);
-  return statements.length;
+  }));
+  statements.push(db.prepare(
+    "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
+  ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
+  await insertRankingStatements(db, statements);
+  return filteredEntries.length;
 }
 
 function isAllianceEntry(board, entry) {
@@ -222,8 +211,8 @@ export async function detectRankingChangesForBoards(db, { kid, observedAt, board
 export async function getLatestKingdomRankings(db, kid, board = null, limit = 100) {
   const params = board ? [Number(kid), String(board), Number(limit)] : [Number(kid), Number(limit)];
   const sql = board
-    ? "SELECT * FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn FROM ranking_snapshots p WHERE p.kid = ? AND p.board = ?) latest WHERE rn = 1 ORDER BY rank ASC LIMIT ?"
-    : "SELECT * FROM (SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.board, p.target_id ORDER BY p.observed_at DESC, p.created_at DESC) AS rn FROM ranking_snapshots p WHERE p.kid = ?) latest WHERE rn = 1 ORDER BY board ASC, rank ASC LIMIT ?";
+    ? "SELECT * FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC LIMIT ?"
+    : "SELECT * FROM kingdom_ranking_current WHERE kid = ? ORDER BY board ASC, rank ASC LIMIT ?";
   const result = await db.prepare(sql).bind(...params).all();
   return result.results || [];
 }
