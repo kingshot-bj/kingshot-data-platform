@@ -2741,6 +2741,15 @@ async function handleApiPoolHealthCheck(request, env) {
       const nextStatus = status === 401 || status === 403 ? "DISABLED"
         : status === 429 || status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? "COOLDOWN"
         : status === 400 || status === 404 ? "AVAILABLE" : "ERROR";
+      console.error("API pool health check upstream failure", {
+        keyId,
+        probeGovernorId,
+        status,
+        code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        name: error?.name || null,
+        message: error?.message || null,
+        details: error?.details || null
+      });
       return json({
         ok: false,
         key_id: keyId,
@@ -2753,7 +2762,13 @@ async function handleApiPoolHealthCheck(request, env) {
             ? "一時的な障害またはレート制限のためCOOLDOWNにしました。"
             : nextStatus === "AVAILABLE"
               ? "APIキーへの接続は確認できました。対象データ側の応答のためAVAILABLEを維持しました。"
-              : "接続確認に失敗したためERRORのままです."
+              : "接続確認に失敗したためERRORのままです。",
+        diagnostic: {
+          code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          error_name: error?.name || null,
+          error_message: error?.message || null,
+          details: error?.details || null
+        }
       }, 200);
     }
   } catch (error) {
