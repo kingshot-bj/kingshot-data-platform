@@ -650,3 +650,476 @@ Probe画面を、単発結果の表示だけでなく同一対象・同一Probe�
 - 810267dc574ddcbaae429b5ca84f7ec435daf146 — feat: add MightPulse research candidate probe
 - 82d500c751baa3d00af90fd08c099526dbbf733a — feat: add MightPulse Research Lab
 - e21d005aeb5d62172ee7afb921fd10f1aec5d1f0 — fix: compare MightPulse Probe with prior result
+
+
+## 35. 2026-09-27追加：D1 / R2データアーキテクチャ検討【次スレッドの本丸】
+
+今回の次スレッドでは、EagleEye本体のD1/R2データ保管設計を正式に固める。
+
+### 基本方針
+
+現時点の方向性:
+
+```
+MightPulse
+   ↓
+API Pool
+   ↓
+EagleEye
+   ├── D1 = operational database
+   └── R2 = long-term data archive / data lake
+```
+
+これは方向性であり、最終確定設計ではない。
+次スレッドでは、既存コード・schema・保存/読込処理を棚卸しした上で最終決定する。
+
+### D1の役割
+
+D1は「現在のEagleEyeが認証・判断・表示・監視するために必要なデータ」を保持する。
+
+候補:
+- users / sessions / auth
+- roles / permissions
+- API Pool state / health
+- Player current state
+- kingdom_ranking_current
+- kingdom_ranking_board_state
+- 最新player ranking state
+- player_watchlists
+- kingdom_watchlists
+- Group / Workspace
+- notification settings
+- 直近Change Events
+- 最新API observations
+- diagnosticsに必要なoperational state
+
+D1を長期履歴の倉庫にはしない。
+
+### R2の役割
+
+R2は「大量・長期・履歴・アーカイブ」を担当する方向。
+
+候補:
+- ranking history
+- player snapshots
+- player rank snapshots
+- 古いchange events
+- API observationsの長期履歴
+- analytics dataset
+- 長期export source
+- 必要に応じたraw / normalized archive
+
+基本概念:
+
+```
+D1 = Operational Database
+R2 = Data Lake / Archive
+```
+
+### 重要な考え方
+
+現在のランキング最適化で採用した:
+
+```
+CURRENT → D1
+HISTORY → archive候補
+```
+
+という分離を、他の大量履歴データにも適用する。
+
+ただし、直近履歴をUIで頻繁に読むデータまで即R2へ移すとは限らない。
+
+想定:
+
+```
+Hot History → D1
+Cold History → R2
+```
+
+### 現在のD1問題
+
+2026-09-27時点でD1 free-tier daily row read limitに到達した。
+
+代表エラー:
+
+`D1_ERROR: Your account has exceeded D1's free tier daily row read limit...`
+
+保存データが消えたわけではなく、row read上限による読み取り失敗。
+
+日次リセット:
+- 00:00 UTC
+- 日本時間09:00
+
+Paid化は可能だが、先にD1 read/write構造を最適化する。
+
+### 過去の実測
+
+Cloudflare Analyticsで確認した値:
+
+- D1 Rows Read 約51.8%
+- D1 Rows Written 100%
+- D1 Storage 約0.2%
+- D1 Query Insights 76 queries
+- Total Rows Written 約111,478
+- Ranking Snapshot 約95,850
+- Ranking SnapshotだけでWriteの約86%
+
+したがって、現時点の主要課題は単純なStorage容量ではなく、**D1 row read / write operation**。
+
+### 現在の削減予測
+
+まだ変更後の実測ではない。
+
+予測:
+- Ranking Snapshot由来Write: 約90〜99%削減余地
+- D1全体Write: 約80〜90%削減可能性
+- D1全体Read: 約30〜70%削減可能性
+
+D1復旧後にAnalyticsで実測し、予測値を確定値へ更新する。
+
+### R2移行候補
+
+優先的に検討:
+
+1. ranking_snapshotsの古い履歴
+2. player_snapshots
+3. player_rank_snapshots
+4. 古いchange_events
+5. api_observationsの長期履歴
+6. 将来のanalytics dataset
+
+現在のcurrent stateはD1に残す。
+
+### ranking_snapshots
+
+現在の列例:
+- kid
+- board
+- target_type
+- target_id
+- rank
+- score
+- uid
+- governor_id
+- nick_name
+- aid
+- abbr
+- name
+- observed_at
+- source_observed_at
+
+ランキングは既に、
+「毎回全件保存」
+から
+「current state + change history」
+へ移行済み。
+
+新テーブル:
+- kingdom_ranking_current
+- kingdom_ranking_board_state
+
+保存ルール:
+- 変化なし → board_stateのlast_checked_atのみ更新
+- 変化あり → changed rowだけcurrent UPSERT + ranking_snapshots history
+- Top100脱落 → current DELETE
+- 再ランクイン → current INSERT
+
+R2移行は、このcurrent化によるD1 write削減を確認してから設計・実装する。
+
+### Change Events
+
+現在のtype:
+- POWER_CHANGED
+- TOWN_CENTER_CHANGED
+- ALLIANCE_CHANGED
+- COORDINATES_CHANGED
+- ACTIVITY_CHANGED
+- KILLS_CHANGED
+- PLAYER_FIELD_CHANGED
+
+old_value_json / new_value_jsonを保持。
+
+index:
+`idx_change_events_target_time (target_type, target_id, detected_at DESC)`
+
+方向性:
+- 直近の監視/通知用 → D1
+- 古い長期履歴 → R2
+
+Data Retention UIの現在の「change events 2年」等はR2設計確定前の暫定値として扱う。
+
+### Player Snapshots
+
+主な履歴系:
+- player_snapshots
+- player_rank_snapshots
+
+既存index:
+- idx_player_snapshots_governor_history
+- idx_player_rank_snapshots_governor_history
+
+これらはR2 archive候補。
+
+Player History UIのために必要な直近期間をD1へ残し、それ以前をR2へ移すhot/cold方式を検討する。
+
+### API Observations
+
+候補:
+
+D1:
+- 最新観測
+- diagnostics
+- current freshness
+- Watchlist判断に必要な情報
+
+R2:
+- 長期API observation
+- 長期分析
+- 監査/検証用履歴
+
+raw responseをR2へ保存するかは未決定。
+「取得できるから全部保存」は禁止。
+
+### R2保存形式
+
+未決定。次スレッドで比較する:
+
+- JSON
+- JSONL
+- JSON.gz
+- Parquet
+- raw response + normalized index
+
+判断軸:
+- Cloudflare Workersからの読み出し
+- archive書き込みコスト
+- 圧縮率
+- 将来Analytics
+- 復元性
+- デバッグ容易性
+- object数
+- R2 Class A/B operations
+
+### R2 Object Key
+
+候補:
+
+```
+players/{kid}/{governor_id}/YYYY/MM/DD/{timestamp}.json.gz
+
+ranking/{kid}/{board}/YYYY/MM/DD/{timestamp}.json.gz
+
+change-events/{kid}/{governor_id}/YYYY/MM/DD/{timestamp}.json.gz
+
+api-observations/{target_type}/{target_id}/YYYY/MM/DD/{timestamp}.json.gz
+```
+
+またはpartition方式:
+
+```
+ranking/kid=123/board=power/date=2026-09-27/part-001.jsonl.gz
+```
+
+最終方式は未決定。
+
+### Archive方式
+
+比較対象:
+
+#### A. Write-through
+取得時にD1 + R2へ同時保存。
+
+問題:
+- R2 writeが毎回発生
+- エラー処理複雑化
+
+#### B. D1 hot → 定期archive
+一定期間D1へ保持し、古いデータをR2へ移動。
+
+#### C. Queue / Cron archive
+Workers Cron / Queue / Scheduled Job等で古いD1データをR2へ移動。
+
+現時点ではB/Cを有力候補として検討する。
+
+### D1→R2削除順序
+
+必ず:
+
+```
+D1
+ ↓
+archive job
+ ↓
+R2 write成功
+ ↓
+R2 object確認 / checksum等
+ ↓
+D1 DELETE
+```
+
+R2保存成功前にD1を削除しない。
+
+一時的な二重保存は許容する。
+
+### R2を検索DBにしない
+
+R2へ移した後に、
+
+「R2内の全オブジェクトをscanして履歴検索」
+
+という構造は作らない。
+
+必要なら:
+- D1 metadata/index
+- partition
+- manifest
+- date/kid/target index
+- 将来Analytics基盤
+
+などを組み合わせる。
+
+### Google Sheetsとの役割
+
+Google Sheetsは本番DB/R2の代替ではない。
+
+用途:
+- ADMIN/OWNER export
+- 人間による確認
+- 外部共有
+- 一時分析
+
+基本:
+
+```
+D1 / R2
+   ↓
+Google Sheets Export
+```
+
+### Retentionの再設計
+
+現在の暫定設定:
+- API observations 14日
+- player snapshots 90日
+- ranking snapshots 180日
+- player ranking snapshots 180日
+- change events 2年
+- API Pool usage 90日
+
+R2導入後は、
+
+```
+D1 retention
++
+R2 retention
+```
+
+の二層設計にする。
+
+例:
+- D1: 7〜30日
+- R2: 1年 / 2年 / 無期限
+
+ただし最終値はデータ量・利用頻度・Cloudflareコスト実測後に決定。
+
+### 復旧設計
+
+R2 archiveからD1へ戻せる構造を最初から考える。
+
+最低限:
+- schema version
+- object metadata
+- archive timestamp
+- source observed timestamp
+- object checksum/hash
+- record count
+- partition情報
+
+を検討。
+
+### 無料運用 / Paid移行
+
+EagleEyeは原則無料利用を目指し、最低限の広告で運営費を賄う方向。
+
+D1/R2は無料枠を意識するが、無料枠だけに依存した設計にはしない。
+
+Cloudflare Paidへ移行しても、
+- schema
+- object key
+- archive flow
+- application logic
+
+を大きく作り直さなくて済む構造を目指す。
+
+### D1/R2設計の絶対ルール
+
+1. D1を長期データ倉庫にしない。
+2. R2を検索DBとして無理に使わない。
+3. current stateとhistoryを分離する。
+4. R2 archive成功前にD1を削除しない。
+5. R2移行後にUIが大量R2 scanする構造を作らない。
+6. 「取れるから保存する」をしない。
+7. 必要なデータ・期間・列だけ保存する。
+8. Paid化しても構造を変えない。
+
+### 次スレッドで最初にやること
+
+いきなりR2実装を始めない。
+
+まずGitHub mainから現在の実装を棚卸しする。
+
+確認対象:
+1. 全D1 migrations
+2. 全D1 tables
+3. 全D1 indexes
+4. Player保存処理
+5. Player snapshot保存処理
+6. ranking保存処理
+7. change_events保存処理
+8. api_observations保存処理
+9. API Pool usage
+10. Data Retention
+11. D1 read queries
+12. D1 write queries
+13. 現在のR2コード/設定
+14. Google Sheets export
+
+その後、全データを以下へ分類:
+
+- D1 Core
+- D1 Current
+- D1 Hot History
+- R2 Archive
+- External Export
+
+分類後に、
+R2 format → object key → archive方式 → retention → restore方式
+の順に設計する。
+
+設計が固まってからmigration / archive job / R2 write / cleanupを実装する。
+
+### 次スレッド開始文
+
+「GitHubの `docs/EAGLEEYE_HANDOFF_2026-09-27.md` を読んで、最新mainも確認してEagleEye本体を続けて。
+今回はD1/R2データアーキテクチャが本題。
+まず全D1テーブル・保存処理・読込処理・現在のR2設定をコードから棚卸しして、D1 Core / Current / Hot History / R2 Archive / External Exportに分類しよう。
+その後、R2の保存形式、Object Key、archive方式、retention、復旧方式まで設計を固めてから実装する。
+MightPulse Research Projectは別プロジェクトなので混ぜない。」
+
+---
+
+## 37. 2026-09-27追加：引き継ぎ運用ルール
+
+EagleEye本体の引き継ぎは、この
+`docs/EAGLEEYE_HANDOFF_2026-09-27.md`
+を**マスター文書として継続更新する**。
+
+新しいEagleEye用の細分化handoffを乱立させない。
+
+例外:
+- MightPulse未公開データ研究は別プロジェクトなので `docs/MIGHTPULSE_RESEARCH_PROJECT_2026-09-27.md` に分離する。
+- それ以外のEagleEye本体の設計・実装・運用決定は本書へ統合する。
+
+今回誤って作成した
+`docs/EAGLEEYE_HANDOFF_2026-09-27_D1_R2.md`
+は重複文書なので削除対象。
