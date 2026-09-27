@@ -4849,17 +4849,23 @@ async function renderPublicStatusPage(request, env) {
 
   const queryInsights = usage.queryInsights;
   const formatDuration = value => Number(value || 0).toFixed(1) + " ms";
-  const formatQuery = value => String(value || "").replace(/\s+/g, " ").trim();
+  const formatQuery = value => String(value || "").replace(/\\s+/g, " ").trim();
   const insightCategoryRows = (queryInsights?.categories || []).slice(0, 8).map(item => `
     <div class="resource-row">
       <div><b>${escapeHtml(item.category)}</b><small>${formatInt(item.count)} queries</small></div>
-      <strong>${formatInt(item.rowsWritten)} writes</strong>
+      <strong>${formatInt(item.rowsRead)} reads · ${formatInt(item.rowsWritten)} writes</strong>
     </div>`).join("");
-  const insightQueryRows = (queryInsights?.topWriteQueries || []).slice(0, 10).map(item => `
+  const insightWriteRows = (queryInsights?.topWriteQueries || []).slice(0, 10).map(item => `
     <div class="insight-query">
       <div class="insight-query-head"><b>${escapeHtml(item.category)}</b><span>${formatInt(item.rowsWritten)} writes</span></div>
       <code>${escapeHtml(formatQuery(item.query))}</code>
       <small>${formatInt(item.count)}回 · read ${formatInt(item.rowsRead)} · ${formatDuration(item.durationMs)}</small>
+    </div>`).join("");
+  const insightReadRows = (queryInsights?.topReadQueries || []).slice(0, 10).map(item => `
+    <div class="insight-query">
+      <div class="insight-query-head"><b>${escapeHtml(item.category)}</b><span>${formatInt(item.rowsRead)} reads</span></div>
+      <code>${escapeHtml(formatQuery(item.query))}</code>
+      <small>${formatInt(item.count)}回 · write ${formatInt(item.rowsWritten)} · ${formatDuration(item.durationMs)}</small>
     </div>`).join("");
 
   const usageSection = usage.configured && usage.status !== "UNKNOWN" && usage.limits
@@ -4868,20 +4874,31 @@ async function renderPublicStatusPage(request, env) {
         <h2>Cloudflare リソース監視</h2>
         <div class="card resource-card">
           <div class="resource-head"><div><b>D1 Free Tier</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
-          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
-          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
-          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
+          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
+          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
+          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
+
+          <div class="resource-head"><div><b>Workers Free Tier</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · 当日UTC</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
+          ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
+          ${usage.workers?.available ? `<div class="resource-row"><div><b>CPU P99</b><small>${formatDuration(usage.workers.cpuTimeP99)} / ${formatDuration(usage.limits?.workers?.cpuTimeMsPerInvocation)} hard limit</small></div><strong class="${cloudflareUsageLabel(usage.workers.cpuTimeP99State).tone}">${formatPercent(usage.workers.cpuTimeP99Percent)} · ${cloudflareUsageLabel(usage.workers.cpuTimeP99State).label}</strong></div>` : ""}
+          ${usage.workers?.available ? `<div class="resource-row"><div><b>平均Subrequests</b><small>${formatInt(usage.workers.subrequests)} total / ${formatInt(usage.workers.requests)} requests</small></div><strong class="${cloudflareUsageLabel(usage.workers.averageSubrequestsState).tone}">${Number(usage.workers.averageSubrequests || 0).toFixed(1)} / ${formatInt(usage.limits?.workers?.subrequestsPerInvocation)} hard limit</strong></div>` : ""}
+
+          <div class="resource-head"><div><b>R2 Free Tier</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
+          ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
+          ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
+          ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
           <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
         </div>
       </section>
       ${queryInsights?.available ? `
       <section class="section">
-        <h2>D1 Write Insights</h2>
+        <h2>D1 Query Insights</h2>
         <div class="card resource-card">
           <div class="resource-head"><div><b>直近のD1クエリ分析</b><small>Cloudflare Analytics · 現在のUTC日</small></div><span class="state neutral">${formatInt(queryInsights.queryCount)} queries</span></div>
           ${insightCategoryRows || '<div class="resource-note">まだ分析データがありません。</div>'}
-          <div class="resource-note">上位クエリをSQL単位で集計しています。分類はテーブル名ベースの推定です。</div>
-          ${insightQueryRows ? `<div class="insight-list">${insightQueryRows}</div>` : ""}
+          <div class="resource-note">カテゴリは実行SQLのテーブル名ベースの推定です。Read/Writeの両方を分析します。</div>
+          ${insightReadRows ? `<div class="resource-head"><div><b>上位Read SQL</b><small>Rows Readが多い順</small></div></div><div class="insight-list">${insightReadRows}</div>` : ""}
+          ${insightWriteRows ? `<div class="resource-head"><div><b>上位Write SQL</b><small>Rows Writtenが多い順</small></div></div><div class="insight-list">${insightWriteRows}</div>` : ""}
         </div>
       </section>` : ""}
       `
@@ -4893,6 +4910,7 @@ async function renderPublicStatusPage(request, env) {
           <p class="resource-note">${escapeHtml(usage.message || "Cloudflare Analytics APIの設定が必要です。")}</p>
         </div>
       </section>`;
+
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
