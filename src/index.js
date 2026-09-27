@@ -1159,12 +1159,48 @@ async function handleKingdomWatchlistDataApi(request, env) {
   let rankings;
   if (board) {
     rankings = await env.DB.prepare(
-      "SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM kingdom_ranking_current r WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT ?"
-    ).bind(watch.kid, board, limit).all();
+      "WITH alliance_abbr AS (
+        SELECT aid,
+          MAX(CASE WHEN board = 'alliance_power' THEN abbr END) AS power_abbr,
+          MAX(CASE WHEN board = 'alliance_kills' THEN abbr END) AS kills_abbr
+        FROM kingdom_ranking_current
+        WHERE kid = ? AND board IN ('alliance_power', 'alliance_kills')
+          AND target_type = 'ALLIANCE' AND aid IS NOT NULL
+        GROUP BY aid
+      )
+      SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid,
+        COALESCE(r.abbr, aa.power_abbr, aa.kills_abbr,
+          (SELECT p.alliance_abbr FROM players p
+           WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id
+              OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)
+        ) AS abbr, r.name, r.observed_at
+      FROM kingdom_ranking_current r
+      LEFT JOIN alliance_abbr aa ON aa.aid = r.aid
+      WHERE r.kid = ? AND r.board = ?
+      ORDER BY r.rank ASC LIMIT ?"
+    ).bind(watch.kid, watch.kid, board, limit).all();
   } else {
     rankings = await env.DB.prepare(
-      "SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid, COALESCE(r.abbr, (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_power' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT a.abbr FROM kingdom_ranking_current a WHERE a.kid = r.kid AND a.board = 'alliance_kills' AND a.target_type = 'ALLIANCE' AND a.aid = r.aid ORDER BY a.rank ASC LIMIT 1), (SELECT p.alliance_abbr FROM players p WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)) AS abbr, r.name, r.observed_at FROM kingdom_ranking_current r WHERE r.kid = ? ORDER BY r.board ASC, r.rank ASC LIMIT ?"
-    ).bind(watch.kid, limit).all();
+      "WITH alliance_abbr AS (
+        SELECT aid,
+          MAX(CASE WHEN board = 'alliance_power' THEN abbr END) AS power_abbr,
+          MAX(CASE WHEN board = 'alliance_kills' THEN abbr END) AS kills_abbr
+        FROM kingdom_ranking_current
+        WHERE kid = ? AND board IN ('alliance_power', 'alliance_kills')
+          AND target_type = 'ALLIANCE' AND aid IS NOT NULL
+        GROUP BY aid
+      )
+      SELECT r.board, r.target_type, r.target_id, r.rank, r.score, r.uid, r.governor_id, r.nick_name, r.aid,
+        COALESCE(r.abbr, aa.power_abbr, aa.kills_abbr,
+          (SELECT p.alliance_abbr FROM players p
+           WHERE p.governor_id = r.governor_id OR p.governor_id = r.target_id
+              OR p.uid = r.uid OR p.uid = r.target_id LIMIT 1)
+        ) AS abbr, r.name, r.observed_at
+      FROM kingdom_ranking_current r
+      LEFT JOIN alliance_abbr aa ON aa.aid = r.aid
+      WHERE r.kid = ?
+      ORDER BY r.board ASC, r.rank ASC LIMIT ?"
+    ).bind(watch.kid, watch.kid, limit).all();
   }
 
   const players = await env.DB.prepare(
@@ -3452,10 +3488,10 @@ async function handlePlayerApi(request, env) {
     if (!observation || refresh || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
-      player = await materializePlayer(env.DB, observation);
+      player = await materializePlayer(env.DB, observation, player);
       source = "MIGHTPULSE";
     } else if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation);
+      player = await materializePlayer(env.DB, observation, player);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
@@ -3929,7 +3965,7 @@ async function renderPlayerPage(request, env) {
 
     let player = await getPlayer(env.DB, governorId);
     if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation);
+      player = await materializePlayer(env.DB, observation, player);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
