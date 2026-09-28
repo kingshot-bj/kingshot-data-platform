@@ -2426,6 +2426,7 @@ export default {
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
       if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
       if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
+      if (url.pathname === "/api/admin/r2-archive-objects") return await handleR2ArchiveObjectsApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -5495,6 +5496,44 @@ async function handleMonitoringProfileApi(request, env) {
   }));
   return response;
 }
+async function handleR2ArchiveObjectsApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
+    return json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!env.ARCHIVE) return json({ ok: false, error: "R2_ARCHIVE_NOT_CONFIGURED" }, 503);
+
+  const url = new URL(request.url);
+  const requestedLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
+  const requestedPrefix = String(url.searchParams.get("prefix") || "").trim();
+  const prefixes = requestedPrefix ? [requestedPrefix.slice(0, 120)] : ["history/v1/", "archive/v1/"];
+  const checkedAt = Date.now();
+  const results = [];
+  const prefixStatus = [];
+
+  for (const prefix of prefixes) {
+    try {
+      const listed = await env.ARCHIVE.list({ prefix, limit });
+      const objects = (listed.objects || []).slice(0, limit).map(object => ({
+        key: object.key,
+        size: Number(object.size || 0),
+        uploaded: object.uploaded || null,
+        etag: object.etag || null,
+        httpEtag: object.httpEtag || null
+      }));
+      results.push(...objects);
+      prefixStatus.push({ prefix, listedCount: objects.length, truncated: Boolean(listed.truncated), cursorAvailable: Boolean(listed.cursor) });
+    } catch (error) {
+      prefixStatus.push({ prefix, listedCount: 0, truncated: false, cursorAvailable: false, error: String(error?.message || error).slice(0, 500) });
+    }
+  }
+
+  results.sort((a, b) => String(b.uploaded || "").localeCompare(String(a.uploaded || "")) || String(a.key).localeCompare(String(b.key)));
+  return json({ ok: true, bucket: "eagleeye-archive", checkedAt, limit, objectCountListed: results.length, prefixes: prefixStatus, objects: results.slice(0, limit) });
+}
+
 async function renderPublicStatusPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   const canViewDetailedUsage = Boolean(
@@ -5718,6 +5757,17 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>`;
 
+  const r2ObjectInventorySection = canViewDetailedUsage ? `
+    <section class="section">
+      <h2>R2 実オブジェクト確認</h2>
+      <div class="card resource-card">
+        <div class="resource-head">
+          <div><b>eagleeye-archive</b><small>R2に実際に保存されているアーカイブオブジェクトを手動確認</small></div>
+          <button type="button" id="r2-object-check" class="monitoring-switch-btn" style="border:1px solid #d2d2d7;background:#f2f2f7">実オブジェクトを確認</button>
+        </div>
+        <div id="r2-object-check-result" class="resource-note">未確認。ボタンを押した時だけR2 LISTを実行します（D1は使用しません）。</div>
+      </div>
+    </section>` : "";
   const googleModes = [
     env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
     env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account" : null
@@ -5889,7 +5939,7 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
 
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
+  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + r2ObjectInventorySection + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
@@ -5914,6 +5964,39 @@ ${canViewDetailedUsage ? `<script>
         buttons.forEach(function(b){b.disabled=false;});
       }
     });
+  });
+})();
+${canViewDetailedUsage ? `<script>
+(function(){
+  var button=document.getElementById("r2-object-check");
+  var result=document.getElementById("r2-object-check-result");
+  if(!button||!result)return;
+  button.addEventListener("click",async function(){
+    button.disabled=true;
+    button.textContent="確認中…";
+    result.textContent="R2実オブジェクトを取得しています…";
+    try{
+      var res=await fetch("/api/admin/r2-archive-objects?limit=50",{cache:"no-store",credentials:"same-origin"});
+      var data=await res.json().catch(function(){return {};});
+      if(!res.ok||!data.ok)throw new Error(data.error||("HTTP "+res.status));
+      var objects=data.objects||[];
+      var prefixText=(data.prefixes||[]).map(function(p){return p.prefix+" "+p.listedCount+"件"+(p.truncated?"（続きあり）":"");}).join(" / ");
+      var html="<div><b>確認時刻</b> "+new Date(data.checkedAt||Date.now()).toLocaleString("ja-JP")+" · <b>一覧取得</b> "+objects.length+"件</div>";
+      html+="<div style='margin-top:5px'>"+prefixText+"</div>";
+      if(objects.length){
+        html+="<div class='insight-list' style='margin:10px -17px -12px'>";
+        objects.forEach(function(o){html+="<div class='insight-query'><div class='insight-query-head'><span>"+escapeHtml(o.key)+"</span><span>"+formatBytes(o.size)+"</span></div><small>"+(o.uploaded?new Date(o.uploaded).toLocaleString("ja-JP"):"—")+" · ETag "+escapeHtml(o.etag||o.httpEtag||"—")+"</small></div>";});
+        html+="</div>";
+      }else{
+        html+="<div style='margin-top:6px'><b>実オブジェクトなし</b></div>";
+      }
+      result.innerHTML=html;
+    }catch(error){
+      result.textContent="R2実オブジェクト確認失敗: "+(error.message||String(error));
+    }finally{
+      button.disabled=false;
+      button.textContent="再確認";
+    }
   });
 })();
 </script>` : ""}<style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}}</style></main></body></html>`);
