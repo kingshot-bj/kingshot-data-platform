@@ -5450,7 +5450,7 @@ async function renderPublicStatusPage(request, env) {
 
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
   // its free-tier row limit, this monitor must still be able to report usage.
-  const [usageResult, diagnosticsResult, operationalResult] = await Promise.allSettled([
+  const [usageResult, diagnosticsResult, operationalResult, historyStorageResult] = await Promise.allSettled([
     canViewDetailedUsage
       ? getCloudflareD1Usage(env, { includeQueryInsights: true })
       : Promise.resolve({
@@ -5458,14 +5458,34 @@ async function renderPublicStatusPage(request, env) {
           status: "HIDDEN",
           message: "Cloudflareの詳細使用量はADMIN / OWNERのみ確認できます。"
         }),
-    getSystemDiagnostics(env.DB, { recentLimit: 30 }),
-    getOperationalStatus(env.DB)
+    getSystemDiagnostics(env.DB, { recentLimit: 100 }),
+    getOperationalStatus(env.DB),
+    canViewDetailedUsage
+      ? (async () => {
+          const mode = String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase();
+          if (!env.ARCHIVE) return { mode, archiveBindingConfigured: false, archiveReadProbe: "NOT_CONFIGURED", archiveReadOnly: true };
+          try {
+            await env.ARCHIVE.head("__eagleeye_runtime_probe__");
+            return { mode, archiveBindingConfigured: true, archiveReadProbe: "OK", archiveReadOnly: true };
+          } catch (error) {
+            return { mode, archiveBindingConfigured: true, archiveReadProbe: "FAILED", archiveReadOnly: true, archiveReadError: String(error?.message || error).slice(0, 500) };
+          }
+        })()
+      : Promise.resolve({ mode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(), archiveBindingConfigured: Boolean(env.ARCHIVE), archiveReadProbe: "HIDDEN", archiveReadOnly: true })
   ]);
 
   const usage = usageResult.status === "fulfilled" ? usageResult.value : {
     configured: Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN),
     status: "UNKNOWN",
     message: usageResult.reason?.message || "Cloudflare Analytics APIの取得に失敗しました。"
+  };
+
+  const historyStorage = historyStorageResult.status === "fulfilled" ? historyStorageResult.value : {
+    mode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(),
+    archiveBindingConfigured: Boolean(env.ARCHIVE),
+    archiveReadProbe: "UNKNOWN",
+    archiveReadOnly: true,
+    archiveReadError: historyStorageResult.reason?.message || "HISTORY_STORAGE_STATUS_UNAVAILABLE"
   };
 
   const operational = operationalResult.status === "fulfilled" ? operationalResult.value : {
@@ -5649,6 +5669,72 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>`;
 
+  const runtimeConfigRows = [
+    ["Worker", "kingshot-data-platform", true],
+    ["DB Binding", "D1", Boolean(env.DB)],
+    ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
+    ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
+    ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
+    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_BASE_URL)],
+    ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
+    ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
+    ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
+    ["Gateway", "Read-only Status API", Boolean(env.EAGLEEYE_GATEWAY_TOKEN)]
+  ];
+  const runtimeConfigSection = canViewDetailedUsage ? `
+    <section class="section">
+      <h2>Runtime / Configuration</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>実行時構成</b><small>秘密値そのものは表示しません</small></div><span class="state good">取得済み</span></div>
+        ${runtimeConfigRows.map(([label, detail, configured]) => `
+          <div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${escapeHtml(detail)}</small></div><strong class="${configured ? "good" : "neutral"}">${configured ? "設定済み" : "未設定"}</strong></div>
+        `).join("")}
+        <div class="resource-row"><div><b>R2 Runtime Probe</b><small>read-only HeadObject</small></div><strong class="${historyStorage.archiveReadProbe === "OK" ? "good" : historyStorage.archiveReadProbe === "FAILED" ? "bad" : "neutral"}">${escapeHtml(historyStorage.archiveReadProbe)}</strong></div>
+        ${historyStorage.archiveReadError ? `<div class="resource-note">${escapeHtml(historyStorage.archiveReadError)}</div>` : ""}
+      </div>
+    </section>` : "";
+
+  const workerDetailSection = canViewDetailedUsage && usage.workers?.available ? `
+    <section class="section">
+      <h2>Workers 詳細</h2>
+      <div class="card resource-card">
+        <div class="resource-row"><div><b>Requests</b><small>当日UTC / Free Tier 100,000</small></div><strong>${formatInt(usage.workers.requests)} · ${formatPercent(usage.workers.requestsPercent)}</strong></div>
+        <div class="resource-row"><div><b>Errors</b><small>当日UTC</small></div><strong>${formatInt(usage.workers.errors)}</strong></div>
+        <div class="resource-row"><div><b>Subrequests</b><small>平均 / invocation</small></div><strong>${formatInt(usage.workers.subrequests)} · avg ${Number(usage.workers.averageSubrequests || 0).toFixed(2)}</strong></div>
+        <div class="resource-row"><div><b>CPU P50 / P90 / P99</b><small>ms / invocation</small></div><strong>${Number(usage.workers.cpuTimeP50 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP90 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP99 || 0).toFixed(2)} ms</strong></div>
+        <div class="resource-note">WorkersのFree Tier上限だけでなく、Errors・Subrequests・CPU分位点も同時表示しています。</div>
+      </div>
+    </section>` : "";
+
+  const r2DetailSection = canViewDetailedUsage && usage.r2?.available ? `
+    <section class="section">
+      <h2>R2 詳細</h2>
+      <div class="card resource-card">
+        <div class="resource-row"><div><b>Operations</b><small>Total / Success / Failed</small></div><strong>${formatInt(usage.r2.totalOperations)} / ${formatInt(usage.r2.successfulOperations)} / ${formatInt(usage.r2.failedOperations)}</strong></div>
+        <div class="resource-row"><div><b>Failed Rate</b><small>R2 operations</small></div><strong>${formatPercent(usage.r2.failedPercent)}</strong></div>
+        <div class="resource-row"><div><b>Upload / Download</b><small>Bandwidth</small></div><strong>${formatBytes(usage.r2.bytesUpload)} / ${formatBytes(usage.r2.bytesDownload)}</strong></div>
+        <div class="resource-row"><div><b>Payload / Metadata</b><small>latest aggregated storage</small></div><strong>${formatBytes(usage.r2.payloadBytes)} / ${formatBytes(usage.r2.metadataBytes)}</strong></div>
+        <div class="resource-row"><div><b>Objects / Upload Count</b><small>latest storage snapshot</small></div><strong>${formatInt(usage.r2.objectCount)} / ${formatInt(usage.r2.uploadCount)}</strong></div>
+        <div class="resource-row"><div><b>Storage Delta</b><small>first → latest Analytics sample</small></div><strong>${usage.r2.storageDeltaBytes == null ? "—" : formatBytes(usage.r2.storageDeltaBytes)} ${usage.r2.storageDeltaPercent == null ? "" : "(" + Number(usage.r2.storageDeltaPercent).toFixed(2) + "%)"}</strong></div>
+        <div class="resource-row"><div><b>Object Delta</b><small>first → latest Analytics sample</small></div><strong>${usage.r2.objectDelta == null ? "—" : formatInt(usage.r2.objectDelta)}</strong></div>
+        ${(usage.r2.buckets || []).map(b => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(b.bucketName || "(default)")}</span><span>${formatInt(b.operations)} ops</span></div><small>A ${formatInt(b.classAOperations)} · B ${formatInt(b.classBOperations)} · Free ${formatInt(b.freeOperations)} · Success ${formatInt(b.successfulOperations)} · Failed ${formatInt(b.failedOperations)}</small><small>Storage ${formatBytes(b.storageBytes)} · Objects ${formatInt(b.objectCount)} · Upload ${formatBytes(b.bytesUpload)} / Download ${formatBytes(b.bytesDownload)}</small></div>`).join("")}
+        <details><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全R2 Operation Groupを見る</summary>
+          <div class="insight-list">${(usage.r2.operations || []).map(op => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(op.actionType)} · ${escapeHtml(op.actionStatus)}</span><span>${formatInt(op.requests)}</span></div><small>${escapeHtml(op.bucketName || "(default)")}</small></div>`).join("") || '<div class="resource-note">Operation dataなし</div>'}</div>
+        </details>
+      </div>
+    </section>` : "";
+
+  const d1QueryDetailSection = canViewDetailedUsage && queryInsights ? `
+    <section class="section">
+      <h2>D1 Query Insights 詳細</h2>
+      <div class="card resource-card">
+        <div class="resource-row"><div><b>Unique Query Groups</b><small>全取得件数</small></div><strong>${formatInt(queryInsights.queryCount)}</strong></div>
+        <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全Query Groupを見る</summary>
+          <div class="insight-list">${(queryInsights.queries || []).map(q => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(q.category)}</span><span>${formatInt(q.count)} 回</span></div><small>Read ${formatInt(q.rowsRead)} · Written ${formatInt(q.rowsWritten)} · Returned ${formatInt(q.rowsReturned)} · Duration ${formatInt(q.durationMs)} ms</small><code>${escapeHtml(q.query)}</code></div>`).join("") || '<div class="resource-note">Query dataなし</div>'}</div>
+        </details>
+      </div>
+    </section>` : "";
+
   const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
     ? `
       <section class="section">
@@ -5698,7 +5784,7 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
 
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection;
+  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
