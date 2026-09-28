@@ -191,3 +191,90 @@ export async function listRankingHistoryFromR2(bucket, {
     .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
     .slice(0, Math.min(Math.max(Number(limit) || 50, 1), 200));
 }
+
+
+export async function archivePlayerHistoryBatch(bucket, {
+  governorId,
+  observationId = null,
+  observedAt,
+  player
+}) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!governorId || !player || typeof player !== "object") return null;
+
+  const row = {
+    _eagleeye_archive_version: RANKING_HISTORY_ARCHIVE_VERSION,
+    _source_table: "player_snapshots",
+    governor_id: String(governorId),
+    observation_id: observationId,
+    observed_at: Number(observedAt),
+    player
+  };
+  const body = await gzipText(JSON.stringify(row) + "\n");
+  const key = [
+    "history",
+    RANKING_HISTORY_ARCHIVE_VERSION,
+    "player_snapshots",
+    String(governorId),
+    String(observedAt),
+    crypto.randomUUID()
+  ].join("/") + ".ndjson.gz";
+
+  await bucket.put(key, body, {
+    httpMetadata: {
+      contentType: "application/x-ndjson",
+      contentEncoding: "gzip",
+      cacheControl: "private, no-store"
+    },
+    customMetadata: {
+      sourceTable: "player_snapshots",
+      archiveVersion: RANKING_HISTORY_ARCHIVE_VERSION,
+      governorId: String(governorId),
+      observedAt: String(observedAt)
+    }
+  });
+
+  return { key, rowCount: 1 };
+}
+
+export async function listPlayerHistoryFromR2(bucket, {
+  governorId,
+  limit = 50
+}) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!governorId) return [];
+
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const prefix = [
+    "history",
+    RANKING_HISTORY_ARCHIVE_VERSION,
+    "player_snapshots",
+    String(governorId)
+  ].join("/") + "/";
+
+  const objects = [];
+  let cursor;
+  do {
+    const listed = await bucket.list({ prefix, cursor, limit: 1000 });
+    objects.push(...(listed.objects || []));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+
+  objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+
+  const result = [];
+  for (const object of objects) {
+    if (result.length >= safeLimit) break;
+    const response = await bucket.get(object.key);
+    if (!response?.body) continue;
+    const stream = await ungzipBody(response.body);
+    const text = await new Response(stream).text();
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      result.push(JSON.parse(line));
+      if (result.length >= safeLimit) break;
+    }
+  }
+
+  return result.sort((a, b) => Number(b.observed_at) - Number(a.observed_at)).slice(0, safeLimit);
+}
