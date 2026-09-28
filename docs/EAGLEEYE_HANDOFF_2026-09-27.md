@@ -1874,3 +1874,24 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - 既存のD1 `ranking_snapshots` 広範囲SELECTは復活させない。
 - 既存のDUALモードでは従来のD1履歴保存を維持し、Emergency BufferはR2_ONLYの障害退避経路としてのみ使用する。
 - 本番デプロイ・本番動作は未確認。確認済みとは扱わない。
+## Cloudflare Paid $5 開発期間の監視プロファイル（2026-09-28）
+
+- 開発・テスター待機を止めないため、Workers Paid を1か月だけ利用する前提を採用。
+- Cloudflare公式のWorkers Paid最低料金は $5/月。D1のPaid込み枠はRows Read 25B/月、Rows Written 50M/月、Storage 5GB。Workersは10M requests/月、30M CPU-ms/月。R2は10GB storage / Class A 1M / Class B 10M が月次無料枠。これらは超過すると従量課金になるため、EagleEyeは「無制限」と扱わない。
+- src/cloudflare-analytics.js に CLOUDFLARE_MONITORING_PROFILE を追加。
+  - FREE：従来のFree監視（D1 Read 5M/day、Write 100K/day、D1 5GB、Workers 100K/day、R2月次無料枠）。
+  - PAID_5USD：Paidの月次込み枠を基準に、EagleEye側では90%を安全上限として監視。
+- PAID_5USD のEagleEye安全上限：
+  - D1 Rows Read 22.5B/月
+  - D1 Rows Written 45M/月
+  - D1 Storage 4.5GB
+  - Workers Requests 9M/月
+  - R2 Class A 900K/月
+  - R2 Class B 9M/月
+  - R2 Storage 9GB
+- Paidプロファイル時はD1/Workersを月次集計へ切り替え、R2は従来通り月次。Status JSONに monitoring.profile, budgetUsd, safetyFactor, budgetUtilizationPercent, budgetState, period と選択中のlimitsを含める。
+- budgetUtilizationPercent は監視対象リソースの最大使用率。UIには「$5 Paid枠・安全上限の最大使用率」として表示。
+- 無料へ戻す場合は CLOUDFLARE_MONITORING_PROFILE=FREE に戻して再デプロイする。コード本体の監視ロジックを戻す必要はない。
+- **重要**：Cloudflareの月次込み枠は月初ではなく、Paid購入時に決まる請求サイクルでリセットされる。現在の実装はCloudflare Analyticsから取得できる月次データを基準にするため、PAID_5USD の表示は「請求サイクル推定」として扱う。請求上限を厳密に保証するものではない。
+- 本変更は監視表示・集計プロファイルのみであり、EagleEyeのD1/R2データ保存アーキテクチャやR2_ONLY/DUAL動作を変更しない。
+- 本番デプロイ・本番動作は未確認。確認済みとは扱わない。
