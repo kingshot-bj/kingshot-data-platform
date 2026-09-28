@@ -5784,7 +5784,26 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
 
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection;
+  const diagnosticsDetailSection = canViewDetailedUsage ? `
+    <section class="section">
+      <h2>Diagnostics 詳細</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>直近診断イベント</b><small>最大100件 · 最新→過去</small></div><span class="state good">${escapeHtml(data.overall)}</span></div>
+        <div class="resource-row"><div><b>Healthy / Warning / Failed / Unknown</b><small>サービス集計</small></div><strong>${formatInt(data.counts.healthy)} / ${formatInt(data.counts.warning)} / ${formatInt(data.counts.failed)} / ${formatInt(data.counts.unknown)}</strong></div>
+        <details><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全診断イベントを見る</summary>
+          <div class="insight-list">${(data.events || []).map(e => `
+            <div class="insight-query">
+              <div class="insight-query-head"><span>${escapeHtml(e.service || e.feature || "unknown")} · ${escapeHtml(e.status || "UNKNOWN")}</span><span>${formatUnixStatus(e.created_at)}</span></div>
+              <small>${escapeHtml(e.feature || "—")} / ${escapeHtml(e.operation || "—")} · ${escapeHtml(e.error_code || "—")}</small>
+              <small>trace ${escapeHtml(e.trace_id || "—")} · ${escapeHtml(e.provider || "—")} · ${escapeHtml((e.target_type || "—") + " " + (e.target_id || ""))}</small>
+              <small>elapsed ${e.elapsed_ms == null ? "—" : formatInt(e.elapsed_ms) + " ms"} · received ${e.rows_received == null ? "—" : formatInt(e.rows_received)} · saved ${e.rows_saved == null ? "—" : formatInt(e.rows_saved)}</small>
+              <div style="margin-top:5px;font-size:10px;line-height:1.45;word-break:break-word">${escapeHtml(e.message || "メッセージなし")}</div>
+            </div>`).join("") || '<div class="resource-note">診断イベントはありません。</div>'}</div>
+        </details>
+      </div>
+    </section>` : "";
+
+  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
