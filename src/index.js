@@ -1887,9 +1887,17 @@ async function handleKingdomWatchlistApi(request, env) {
   }
 
   if (request.method === "DELETE") {
-    await env.DB.prepare(
-      "DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(url.searchParams.get("watchlist_id"), auth.discord_id).run();
+    const watchlistId = String(url.searchParams.get("watchlist_id") || "").trim();
+    if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+    const target = await env.DB.prepare(
+      "SELECT watchlist_id FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+    ).bind(watchlistId, auth.discord_id).first();
+    if (!target) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM kingdom_watchlist_jobs WHERE watchlist_id = ?").bind(watchlistId),
+      env.DB.prepare("DELETE FROM kingdom_watchlist_locks WHERE watchlist_id = ?").bind(watchlistId),
+      env.DB.prepare("DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?").bind(watchlistId, auth.discord_id)
+    ]);
     return json({ ok: true });
   }
 
