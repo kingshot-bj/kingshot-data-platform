@@ -120,43 +120,8 @@ const PLAYER_VISIBILITY_ITEMS = [
 ];
 
 let playerVisibilitySchemaPromise = null;
-let watchlistLimitSchemaPromise = null;
-
-const WATCHLIST_LIMIT_DEFAULTS = {
-  BASIC: { kingdom: 1, player: 5 },
-  ADVANCED: { kingdom: 3, player: 20 },
-  ADMIN: { kingdom: 10, player: 50 },
-  OWNER: { kingdom: 50, player: 200 }
-};
-
-async function ensureWatchlistLimitTable(db) {
-  if (watchlistLimitSchemaPromise) return watchlistLimitSchemaPromise;
-  watchlistLimitSchemaPromise = (async () => {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS watchlist_limits (
-        role TEXT PRIMARY KEY CHECK (role IN ('BASIC','ADVANCED','ADMIN','OWNER')),
-        kingdom_limit INTEGER NOT NULL DEFAULT 1 CHECK (kingdom_limit >= 0),
-        player_limit INTEGER NOT NULL DEFAULT 5 CHECK (player_limit >= 0),
-        updated_at INTEGER NOT NULL,
-        updated_by TEXT
-      )
-    `).run();
-    const now = Math.floor(Date.now() / 1000);
-    for (const role of Object.keys(WATCHLIST_LIMIT_DEFAULTS)) {
-      const d = WATCHLIST_LIMIT_DEFAULTS[role];
-      await db.prepare(`
-        INSERT INTO watchlist_limits (role, kingdom_limit, player_limit, updated_at, updated_by)
-        VALUES (?, ?, ?, ?, NULL)
-        ON CONFLICT(role) DO NOTHING
-      `).bind(role, d.kingdom, d.player, now).run();
-    }
-  })();
-  try { return await watchlistLimitSchemaPromise; }
-  catch (error) { watchlistLimitSchemaPromise = null; throw error; }
-}
 
 async function getWatchlistLimits(db) {
-  await ensureWatchlistLimitTable(db);
   const rows = await db.prepare(
     "SELECT role, kingdom_limit, player_limit, updated_at, updated_by FROM watchlist_limits ORDER BY CASE role WHEN 'BASIC' THEN 1 WHEN 'ADVANCED' THEN 2 WHEN 'ADMIN' THEN 3 WHEN 'OWNER' THEN 4 END"
   ).all();
@@ -3425,7 +3390,6 @@ async function handlePlayerVisibilityApi(request, env) {
     const body = await request.json().catch(() => ({}));
 
     if (body.action === "watchlist_limit") {
-      await ensureWatchlistLimitTable(env.DB);
       const role = String(body.role || "").trim().toUpperCase();
       const kingdomLimit = Number(body.kingdom_limit);
       const playerLimit = Number(body.player_limit);
