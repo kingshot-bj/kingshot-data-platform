@@ -220,8 +220,9 @@ export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = n
 }
 
 export async function releaseExpiredLeases(db, now = Math.floor(Date.now() / 1000)) {
-  // New lease state lives on api_pool_keys. Clear expired claims without
-  // touching the legacy api_leases history table in the hot path.
+  // Lease coordination now lives entirely on api_pool_keys.
+  // Expired claims are cleared during scheduled maintenance, never in the
+  // request hot path.
   await db.prepare(
     `UPDATE api_pool_keys
      SET lease_id = NULL,
@@ -234,14 +235,6 @@ export async function releaseExpiredLeases(db, now = Math.floor(Date.now() / 100
      WHERE leased_until IS NOT NULL
        AND leased_until <= ?`
   ).bind(now, now).run();
-
-  // Legacy leases are retained only for transition cleanup.
-  await db.prepare("UPDATE api_leases SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at <= ?").bind(now).run();
-
-  const leaseHistoryCutoff = now - 24 * 60 * 60;
-  await db.prepare(
-    "DELETE FROM api_leases WHERE status IN ('RELEASED','EXPIRED') AND COALESCE(released_at, expires_at, created_at) < ?"
-  ).bind(leaseHistoryCutoff).run();
 }
 
 async function fingerprintKey(apiKey) {
