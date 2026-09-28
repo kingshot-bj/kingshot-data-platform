@@ -1895,3 +1895,16 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - **重要**：Cloudflareの月次込み枠は月初ではなく、Paid購入時に決まる請求サイクルでリセットされる。現在の実装はCloudflare Analyticsから取得できる月次データを基準にするため、PAID_5USD の表示は「請求サイクル推定」として扱う。請求上限を厳密に保証するものではない。
 - 本変更は監視表示・集計プロファイルのみであり、EagleEyeのD1/R2データ保存アーキテクチャやR2_ONLY/DUAL動作を変更しない。
 - 本番デプロイ・本番動作は未確認。確認済みとは扱わない。
+
+
+## 2026-09-28｜$5 Paid開発用モニタリング切替
+
+- Cloudflare Workers Paidの月額最低料金は$5。Workers Paidには月10M requests / 30M CPU-ms、D1には月25B rows read / 50M rows writtenが含まれる。R2 Standardは別途10GB-month / Class A 1M / Class B 10Mの無料枠がある。Cloudflare公式料金表を基準にする。
+- EagleEyeのSystem Statusは `CLOUDFLARE_MONITORING_PROFILE` で監視プロファイルを切替可能。
+  - `PAID_5USD`: Paid開発中。D1/Workersの月次Included枠を基準に90%をEagleEye側の安全監視上限として表示。
+  - `FREE`: 従来のFree日次/月次監視へ復帰。
+- 現在の `wrangler.jsonc` は一時的に `CLOUDFLARE_MONITORING_PROFILE=PAID_5USD` を設定。
+- System Statusでは常時、選択プロファイルの最大使用率、推定月額、推定超過額を表示する。
+- 推定超過額はD1 rows read/write、Workers requests/CPUの公開単価による推計であり、Cloudflare請求額そのものではない。GraphQL Analyticsは請求値そのものではないため、最終請求確認はCloudflare Billingを正とする。
+- 無料へ戻す際は `CLOUDFLARE_MONITORING_PROFILE=FREE` に変更してデプロイする。コードの監視ロジックを作り直す必要はない。
+- 本変更はGitHub上のコード/configのみ実施。**本番デプロイ・本番での数値確認は未実施。確認済みとは扱わない。**
