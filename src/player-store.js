@@ -259,7 +259,7 @@ export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket
     .slice(0, safeLimit);
 }
 
-export async function getPlayerNameHistory(db, governorId, limit = 20)
+export async function getPlayerNameHistory(db, governorId, limit = 20) {
   if (!db) throw new Error("D1 database binding is not configured.");
   await ensurePlayerIdentityHistorySchema(db);
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
