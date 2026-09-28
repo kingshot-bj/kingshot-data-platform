@@ -44,8 +44,10 @@ const R2_PAID_INCLUDED = {
 };
 
 const PAID_SAFETY_FACTOR = 0.90;
+const DEFAULT_USD_JPY_RATE = 157.5;
 
 function getCloudflareMonitoringProfile(env) {
+  const usdJpyRate = Number(env.CLOUDFLARE_USD_JPY_RATE || DEFAULT_USD_JPY_RATE);
   const requested = String(env.CLOUDFLARE_MONITORING_PROFILE || "FREE").trim().toUpperCase();
   if (requested === "PAID_5USD") {
     return {
@@ -54,6 +56,7 @@ function getCloudflareMonitoringProfile(env) {
       budgetUsd: 5,
       period: "BILLING_MONTH_ESTIMATE",
       safetyFactor: PAID_SAFETY_FACTOR,
+      usdJpyRate: Number.isFinite(usdJpyRate) && usdJpyRate > 0 ? usdJpyRate : DEFAULT_USD_JPY_RATE,
       d1: Object.fromEntries(Object.entries(D1_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)])),
       workers: Object.fromEntries(Object.entries(WORKERS_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)])),
       r2: Object.fromEntries(Object.entries(R2_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)]))
@@ -65,6 +68,7 @@ function getCloudflareMonitoringProfile(env) {
     budgetUsd: 0,
     period: "CURRENT_FREE_LIMIT_WINDOW",
     safetyFactor: 1,
+    usdJpyRate: Number.isFinite(usdJpyRate) && usdJpyRate > 0 ? usdJpyRate : DEFAULT_USD_JPY_RATE,
     d1: D1_FREE_LIMITS,
     workers: WORKERS_FREE_LIMITS,
     r2: R2_FREE_LIMITS
@@ -854,6 +858,9 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       budgetState,
       estimatedOverageUsd,
       estimatedMonthlyCostUsd,
+      usdJpyRate: monitoring.usdJpyRate,
+      estimatedMonthlyCostJpy: Math.round(estimatedMonthlyCostUsd * monitoring.usdJpyRate),
+      estimatedOverageJpy: Math.round(estimatedOverageUsd * monitoring.usdJpyRate),
       costEstimateBasis: paidMode
         ? "D1 rows + Workers requests/CPUの請求単価による推計。Cloudflare請求額そのものではなく、R2無料枠は含めない。"
         : "Free profile: billable cost estimate is not applicable.",
