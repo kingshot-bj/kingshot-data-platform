@@ -5796,7 +5796,7 @@ async function renderPublicStatusPage(request, env) {
     ["Worker", "kingshot-data-platform", true],
     ["Worker Version ID", workerVersion?.id || "未取得", Boolean(workerVersion?.id)],
     ["Worker Version Tag", workerVersion?.tag || "未取得", Boolean(workerVersion?.tag)],
-    ["Worker Version Created", workerVersion?.timestamp ? formatUnixStatus(workerVersion.timestamp) : "未取得", Boolean(workerVersion?.timestamp)],
+    ["Worker Version Created", workerVersion?.timestamp ? new Date(workerVersion.timestamp).toLocaleString("ja-JP") : "未取得", Boolean(workerVersion?.timestamp)],
     ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
     ["DB Binding", "D1", Boolean(env.DB)],
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
