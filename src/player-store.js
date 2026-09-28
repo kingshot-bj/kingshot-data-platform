@@ -54,7 +54,7 @@ export async function getLatestPlayerObservation(db, governorId) {
   return { ...row, payload };
 }
 
-export async function materializePlayer(db, observation, existingPlayer = undefined, archiveBucket = null) {
+export async function materializePlayer(db, observation, existingPlayer = undefined, archiveBucket = null, historyMode = "DUAL") {
   const player = observation?.payload?.player;
   if (!player || typeof player !== "object") {
     throw new Error("MightPulse player payload is missing player data.");
@@ -145,17 +145,9 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
     materializedPlayer.observed_at, materializedPlayer.source_observation_id, materializedPlayer.updated_at
   ).run();
 
-  await db.prepare(
-    `INSERT INTO player_snapshots (
-      snapshot_id, governor_id, observation_id, observed_at, payload_json
-    ) VALUES (?, ?, ?, ?, ?)`
-  ).bind(
-    crypto.randomUUID(), governorId, observation.observation_id,
-    observation.observed_at, JSON.stringify(player)
-  ).run();
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+  let archived = false;
 
-  // Migration bridge: keep the existing D1 player history reader authoritative
-  // while writing the same raw observation history to R2.
   if (archiveBucket) {
     try {
       await archivePlayerHistoryBatch(archiveBucket, {
@@ -164,24 +156,41 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
         observedAt: observation.observed_at,
         player
       });
+      archived = true;
     } catch (error) {
       console.error("player_history_r2_archive_failed", {
         governorId,
         message: error?.message || String(error)
       });
+      if (r2Only) console.warn("player_history_d1_fallback", { governorId });
     }
+  }
+
+  if (!r2Only || !archived) {
+    await db.prepare(
+      `INSERT INTO player_snapshots (
+        snapshot_id, governor_id, observation_id, observed_at, payload_json
+      ) VALUES (?, ?, ?, ?, ?)`
+    ).bind(
+      crypto.randomUUID(), governorId, observation.observation_id,
+      observation.observed_at, JSON.stringify(player)
+    ).run();
   }
 
   return materializedPlayer;
 }
 
-export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket = null) {
+export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket = null, historyMode = "DUAL") {
   const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
-  const d1Result = await db.prepare(
-    'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
-  ).bind(String(governorId), safeLimit).all();
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+  let d1Rows = [];
 
-  const d1Rows = (d1Result.results || []).map(row => {
+  if (!r2Only || !archiveBucket) {
+    const d1Result = await db.prepare(
+      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
+    ).bind(String(governorId), safeLimit).all();
+
+    d1Rows = (d1Result.results || []).map(row => {
     let payload = {};
     try { payload = JSON.parse(row.payload_json); } catch {}
     const player = payload.player && typeof payload.player === "object" ? payload.player : payload;
