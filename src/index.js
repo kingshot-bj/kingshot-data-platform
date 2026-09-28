@@ -5671,6 +5671,7 @@ async function renderPublicStatusPage(request, env) {
   };
   const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
   const formatYen = value => value == null ? "—" : "¥" + Math.round(Number(value)).toLocaleString("ja-JP");
+  const workerVersion = env.CF_VERSION_METADATA ? { id: env.CF_VERSION_METADATA.id || null, tag: env.CF_VERSION_METADATA.tag || null, timestamp: env.CF_VERSION_METADATA.timestamp || null } : null;
   const monitoringProfile = usage.monitoring?.profile || monitoringProfileSetting.profile || "FREE";
   const monitoringLabel = usage.monitoring?.label || "Workers Free";
   const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
@@ -5793,6 +5794,9 @@ async function renderPublicStatusPage(request, env) {
 
   const runtimeConfigRows = [
     ["Worker", "kingshot-data-platform", true],
+    ["Worker Version ID", workerVersion?.id || "未取得", Boolean(workerVersion?.id)],
+    ["Worker Version Tag", workerVersion?.tag || "未取得", Boolean(workerVersion?.tag)],
+    ["Worker Version Created", workerVersion?.timestamp ? formatUnixStatus(workerVersion.timestamp) : "未取得", Boolean(workerVersion?.timestamp)],
     ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
     ["DB Binding", "D1", Boolean(env.DB)],
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
@@ -5812,6 +5816,7 @@ async function renderPublicStatusPage(request, env) {
         ${runtimeConfigRows.map(([label, detail, configured]) => `
           <div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${escapeHtml(detail)}</small></div><strong class="${configured ? "good" : "neutral"}">${configured ? "設定済み" : "未設定"}</strong></div>
         `).join("")}
+        <div class="resource-row"><div><b>Worker Version</b><small>Cloudflare Version Metadata · 本番で実行されたWorkerの版を識別</small></div><strong>${workerVersion?.id ? escapeHtml(workerVersion.id) : "未取得"}</strong></div>
         <div class="resource-row"><div><b>R2 Runtime Probe</b><small>read-only HeadObject</small></div><strong class="${historyStorage.archiveReadProbe === "OK" ? "good" : historyStorage.archiveReadProbe === "FAILED" ? "bad" : "neutral"}">${escapeHtml(historyStorage.archiveReadProbe)}</strong></div>
         ${historyStorage.archiveReadError ? `<div class="resource-note">${escapeHtml(historyStorage.archiveReadError)}</div>` : ""}
       </div>
