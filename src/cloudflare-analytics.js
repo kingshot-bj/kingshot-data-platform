@@ -106,6 +106,7 @@ query EagleEyeWorkersUsage(
           requests
           errors
           subrequests
+          cpuTime
         }
         quantiles {
           cpuTimeP50
@@ -355,24 +356,27 @@ function summarizeWorkersUsage(groups, limits) {
     acc.requests += normalizeNumber(sum.requests);
     acc.errors += normalizeNumber(sum.errors);
     acc.subrequests += normalizeNumber(sum.subrequests);
+    acc.cpuTimeMs = normalizeNumber(sum.cpuTime);
     acc.cpuTimeP50 = Math.max(acc.cpuTimeP50, normalizeNumber(group?.quantiles?.cpuTimeP50));
     acc.cpuTimeP90 = Math.max(acc.cpuTimeP90, normalizeNumber(group?.quantiles?.cpuTimeP90));
     acc.cpuTimeP99 = Math.max(acc.cpuTimeP99, normalizeNumber(group?.quantiles?.cpuTimeP99));
     return acc;
-  }, { requests: 0, errors: 0, subrequests: 0, cpuTimeP50: 0, cpuTimeP90: 0, cpuTimeP99: 0 });
+  }, { requests: 0, errors: 0, subrequests: 0, cpuTimeMs: 0, cpuTimeP50: 0, cpuTimeP90: 0, cpuTimeP99: 0 });
   const requestsLimit = limits?.requestsPerDay ?? limits?.requestsPerMonth ?? WORKERS_FREE_LIMITS.requestsPerDay;
-  const cpuLimit = limits?.cpuTimeMsPerInvocation ?? WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation;
+  const cpuLimit = limits?.cpuTimeMsPerMonth ?? null;
   const subrequestsLimit = limits?.subrequestsPerInvocation ?? WORKERS_FREE_LIMITS.subrequestsPerInvocation;
   const requestsPercent = percent(total.requests, requestsLimit);
-  const cpuPercent = percent(total.cpuTimeP99, cpuLimit);
+  const cpuPercent = cpuLimit != null ? percent(total.cpuTimeMs, cpuLimit) : null;
   const averageSubrequests = total.requests > 0 ? total.subrequests / total.requests : 0;
   const subrequestsPercent = percent(averageSubrequests, subrequestsLimit);
   return {
     ...total,
     requestsPercent,
     requestsState: resourceState(requestsPercent),
-    cpuTimeP99Percent: cpuPercent,
-    cpuTimeP99State: resourceState(cpuPercent),
+    cpuTimeMsPercent: cpuPercent,
+    cpuTimeMsState: resourceState(cpuPercent),
+    cpuTimeP99Percent: percent(total.cpuTimeP99, WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation),
+    cpuTimeP99State: resourceState(percent(total.cpuTimeP99, WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation)),
     averageSubrequests,
     averageSubrequestsPercent: subrequestsPercent,
     averageSubrequestsState: resourceState(subrequestsPercent)
@@ -791,16 +795,24 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, monitoring.d1.rowsWritten);
   const storagePercent = percent(databaseSizeBytes, monitoring.d1.storageBytes);
 
-  const resourcePercents = [
-    rowsReadPercent,
-    rowsWrittenPercent,
-    storagePercent,
-    workers.available ? workers.requestsPercent : null,
-    r2.available ? r2.classAPercent : null,
-    r2.available ? r2.classBPercent : null,
-    r2.available ? r2.storagePercent : null
-  ].filter(value => Number.isFinite(value));
-  const budgetUtilizationPercent = resourcePercents.length ? Math.max(...resourcePercents) : null;
+  const d1WriteOverage = Math.max(0, databaseMetrics.rowsWritten - monitoring.d1.rowsWritten);
+  const d1ReadOverage = Math.max(0, databaseMetrics.rowsRead - monitoring.d1.rowsRead);
+  const workerRequestOverage = workers.available && monitoring.workers.requestsPerMonth
+    ? Math.max(0, workers.requests - monitoring.workers.requestsPerMonth)
+    : 0;
+  const workerCpuOverage = workers.available && monitoring.workers.cpuTimeMsPerMonth && Number.isFinite(workers.cpuTimeMs)
+    ? Math.max(0, workers.cpuTimeMs - monitoring.workers.cpuTimeMsPerMonth)
+    : 0;
+  const estimatedOverageUsd = paidMode
+    ? (d1ReadOverage / 1_000_000) * 0.001
+      + (d1WriteOverage / 1_000_000) * 1
+      + (workerRequestOverage / 1_000_000) * 0.30
+      + (workerCpuOverage / 1_000_000) * 0.02
+    : 0;
+  const estimatedMonthlyCostUsd = monitoring.budgetUsd + estimatedOverageUsd;
+  const budgetUtilizationPercent = monitoring.budgetUsd > 0
+    ? (estimatedMonthlyCostUsd / monitoring.budgetUsd) * 100
+    : null;
   const budgetState = resourceState(budgetUtilizationPercent);
   const resourceStates = [
     resourceState(rowsReadPercent),
@@ -831,6 +843,11 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       period: monitoring.period,
       budgetUtilizationPercent,
       budgetState,
+      estimatedOverageUsd,
+      estimatedMonthlyCostUsd,
+      costEstimateBasis: paidMode
+        ? "D1 rows + Workers requests/CPUの請求単価による推計。Cloudflare請求額そのものではなく、R2無料枠は含めない。"
+        : "Free profile: billable cost estimate is not applicable.",
       d1: monitoring.d1,
       workers: monitoring.workers,
       r2: monitoring.r2
