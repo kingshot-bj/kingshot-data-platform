@@ -120,12 +120,19 @@ const PLAYER_VISIBILITY_ITEMS = [
 ];
 
 let playerVisibilitySchemaPromise = null;
+let playerVisibilityCache = null;
+let watchlistLimitsCache = null;
+const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
 
 async function getWatchlistLimits(db) {
+  const now = Date.now();
+  if (watchlistLimitsCache && now - watchlistLimitsCache.at < CONFIG_CACHE_TTL_MS) return watchlistLimitsCache.rows;
   const rows = await db.prepare(
-    "SELECT role, kingdom_limit, player_limit, updated_at, updated_by FROM watchlist_limits ORDER BY CASE role WHEN 'BASIC' THEN 1 WHEN 'ADVANCED' THEN 2 WHEN 'ADMIN' THEN 3 WHEN 'OWNER' THEN 4 END"
+    "SELECT role, kingdom_limit, player_limit, updated_at, updated_by FROM watchlist_limits ORDER BY CASE role WHEN 'BASIC' THEN 1 WHEN 'ADVANCED' THEN 2 WHEN 'ADMIN' THEN 3 ELSE 4 END"
   ).all();
-  return rows.results || [];
+  const result = rows.results || [];
+  watchlistLimitsCache = { at: now, rows: result };
+  return result;
 }
 
 function getRoleWatchlistLimit(limits, role, type) {
@@ -219,10 +226,14 @@ async function ensurePlayerVisibilityTable(db) {
 
 async function getPlayerVisibilitySettings(db) {
   await ensurePlayerVisibilityTable(db);
+  const now = Date.now();
+  if (playerVisibilityCache && now - playerVisibilityCache.at < CONFIG_CACHE_TTL_MS) return playerVisibilityCache.rows;
   const result = await db.prepare(
     "SELECT item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by FROM player_visibility_settings ORDER BY rowid"
   ).all();
-  return result.results || [];
+  const rows = result.results || [];
+  playerVisibilityCache = { at: now, rows };
+  return rows;
 }
 
 function visibilityEnabled(settings, itemKey, role) {
@@ -320,73 +331,8 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
   if (!db) return;
   if (kingdomWatchlistSchemaPromise) return kingdomWatchlistSchemaPromise;
   kingdomWatchlistSchemaPromise = (async () => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS kingdom_watchlist_jobs (
-      job_id TEXT PRIMARY KEY,
-      watchlist_id TEXT NOT NULL,
-      kid INTEGER NOT NULL,
-      top_n INTEGER NOT NULL CHECK (top_n IN (5, 10)),
-      status TEXT NOT NULL CHECK (status IN ('RANKINGS', 'PLAYERS', 'COMPLETED', 'FAILED')),
-      board_index INTEGER NOT NULL DEFAULT 0,
-      player_cursor INTEGER NOT NULL DEFAULT 0,
-      player_ids_json TEXT NOT NULL DEFAULT '[]',
-      observed_at INTEGER NOT NULL,
-      source_first_at INTEGER,
-      source_last_at INTEGER,
-      ranking_rows INTEGER NOT NULL DEFAULT 0,
-      player_rows INTEGER NOT NULL DEFAULT 0,
-      last_error TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      completed_at INTEGER
-    )
-  `).run();
-
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS kingdom_watchlist_locks (
-      watchlist_id TEXT PRIMARY KEY,
-      lock_token TEXT NOT NULL,
-      lock_until INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `).run();
-
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS kingdom_ranking_current (
-      kid INTEGER NOT NULL,
-      board TEXT NOT NULL,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      rank INTEGER NOT NULL,
-      previous_rank INTEGER,
-      score,
-      uid TEXT,
-      governor_id TEXT,
-      nick_name TEXT,
-      aid TEXT,
-      abbr TEXT,
-      name TEXT,
-      observed_at INTEGER NOT NULL,
-      source_observed_at INTEGER,
-      source_observation_id TEXT,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (kid, board, target_type, target_id)
-    )
-  `).run();
-
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS kingdom_ranking_board_state (
-      kid INTEGER NOT NULL,
-      board TEXT NOT NULL,
-      last_checked_at INTEGER NOT NULL,
-      source_observed_at INTEGER,
-      checked_rows INTEGER NOT NULL DEFAULT 0,
-      changed_rows INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (kid, board)
-    )
-  `).run();
-
+    // Stable tables/indexes are provisioned by D1 migrations.
+    // Keep only additive compatibility checks for legacy databases.
   const definitions = {
     kingdom_watchlist_jobs: [
       ["source_first_at", "INTEGER"],
