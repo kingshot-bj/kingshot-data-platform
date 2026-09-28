@@ -4944,88 +4944,201 @@ async function renderOwnerAdminPage(request,env){
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
 (function(){
-const initialUsers=${usersJson},initialLogs=${logsJson},ownerId=${ownerId};
-const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const fmt=t=>t?new Date(Number(t)*1000).toLocaleString("ja-JP"):"-";
-let users=Array.isArray(initialUsers)?initialUsers:[],activeWatchUserId=null;
-const ue=document.getElementById("users"),ae=document.getElementById("audit"),msg=document.getElementById("msg"),search=document.getElementById("search");
+var initialUsers=${usersJson}, initialLogs=${logsJson}, ownerId=${ownerId};
+var users=Array.isArray(initialUsers)?initialUsers:[], activeWatchUserId=null;
+var ue=document.getElementById("users"), ae=document.getElementById("audit"), msg=document.getElementById("msg"), search=document.getElementById("search");
+
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function fmt(t){
+  return t ? new Date(Number(t)*1000).toLocaleString("ja-JP") : "-";
+}
+function button(label, action, id, extra, disabled){
+  return '<button type="button" class="'+(extra||"")+'" data-a="'+action+'" data-id="'+esc(id||"")+'"'+(disabled?' disabled':'')+'>'+label+'</button>';
+}
 function draw(){
- const q=search.value.trim().toLowerCase();
- const rows=users.filter(u=>!q||String(u.discord_id).includes(q)||String(u.username||"").toLowerCase().includes(q)||String(u.global_name||"").toLowerCase().includes(q));
- ue.innerHTML=rows.map(u=>{
-  const self=u.user_id===ownerId;
-  const rs=["BASIC","ADVANCED","ADMIN","OWNER"].filter(r=>r!==u.role);
-  const actions='<button type="button" class="secondary" data-a="history" data-id="'+esc(u.user_id)+'">履歴</button>'+
-   rs.map(r=>'<button type="button" data-a="role" data-id="'+esc(u.user_id)+'" data-role="'+r+'" '+(self&&r!=="OWNER"?"disabled":"")+'>'+r+'へ</button>').join("")+
-   (u.status==="ACTIVE"?'<button type="button" class="danger" data-a="status" data-id="'+esc(u.user_id)+'" data-status="DISABLED" '+(self||u.role==="OWNER"?"disabled":"")+'>無効化</button>':'<button type="button" class="secondary" data-a="status" data-id="'+esc(u.user_id)+'" data-status="ACTIVE">有効化</button>');
-  const watch=self?'<span class="muted">自分は対象外</span>':'<button type="button" class="secondary" data-a="watchlists" data-id="'+esc(u.user_id)+'">監視管理</button>';
-  const panel=activeWatchUserId===u.user_id?'<div class="watchlist-panel" data-watch-panel="'+esc(u.user_id)+'"><div class="muted">監視データを読み込み中…</div></div>':"";
-  return '<article class="user-card"><div class="user-head"><div class="user-name"><b>'+esc(u.global_name||u.username||"Discord User")+'</b><span class="muted">@'+esc(u.username||"")+'</span><div class="user-id">'+esc(u.discord_id)+'</div></div><div class="badges"><span class="role">'+esc(u.role)+'</span><span class="status">'+esc(u.status)+'</span></div></div>'+
-   '<div class="user-stats"><div class="stat"><span>登録</span><b>'+fmt(u.created_at)+'</b></div><div class="stat"><span>最終ログイン</span><b>'+fmt(u.last_login_at)+'</b></div><div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'</b></div><div class="stat"><span>王国ウォッチ</span><b>'+esc(u.kingdom_watchlist_count||0)+'件</b></div><div class="stat"><span>プレイヤーウォッチ</span><b>'+esc(u.player_watchlist_count||0)+'件</b></div></div>'+
-   '<div class="actions">'+actions+watch+'</div>'+panel+'</article>';
- }).join("")||'<div class="muted">該当ユーザーなし</div>';
+  var q=(search.value||"").trim().toLowerCase();
+  var rows=users.filter(function(u){
+    return !q ||
+      String(u.discord_id||"").indexOf(q)>=0 ||
+      String(u.username||"").toLowerCase().indexOf(q)>=0 ||
+      String(u.global_name||"").toLowerCase().indexOf(q)>=0;
+  });
+  ue.innerHTML=rows.map(function(u){
+    var self=u.user_id===ownerId;
+    var actions=button("履歴","history",u.user_id,"secondary",false);
+    ["BASIC","ADVANCED","ADMIN","OWNER"].forEach(function(role){
+      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER");
+    });
+    if(u.status==="ACTIVE"){
+      actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER");
+    }else{
+      actions+=button("有効化","status",u.user_id,"secondary",false);
+    }
+    if(self){
+      actions+='<span class="muted">自分は対象外</span>';
+    }else{
+      actions+=button("監視管理","watchlists",u.user_id,"secondary",false);
+    }
+    var panel=activeWatchUserId===u.user_id
+      ? '<div class="watchlist-panel" data-watch-panel="'+esc(u.user_id)+'"><div class="muted">監視データを読み込み中…</div></div>'
+      : "";
+    return '<article class="user-card"><div class="user-head"><div class="user-name"><b>'+
+      esc(u.global_name||u.username||"Discord User")+
+      '</b><span class="muted">@'+esc(u.username||"")+
+      '</span><div class="user-id">'+esc(u.discord_id)+
+      '</div></div><div class="badges"><span class="role">'+esc(u.role)+
+      '</span><span class="status">'+esc(u.status)+
+      '</span></div></div><div class="user-stats">'+
+      '<div class="stat"><span>登録</span><b>'+fmt(u.created_at)+'</b></div>'+
+      '<div class="stat"><span>最終ログイン</span><b>'+fmt(u.last_login_at)+'</b></div>'+
+      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'</b></div>'+
+      '<div class="stat"><span>王国ウォッチ</span><b>'+esc(u.kingdom_watchlist_count||0)+'件</b></div>'+
+      '<div class="stat"><span>プレイヤーウォッチ</span><b>'+esc(u.player_watchlist_count||0)+'件</b></div>'+
+      '</div><div class="actions">'+actions+'</div>'+panel+'</article>';
+  }).join("") || '<div class="muted">該当ユーザーなし</div>';
 }
 function drawAudit(ls){
- ae.innerHTML=(ls||[]).map(x=>'<div class="audit-item"><b>'+esc(x.action)+'</b> · target '+esc(x.target_discord_id||"-")+'<br><small>'+fmt(x.created_at)+' · actor '+esc(x.actor_discord_id||"-")+'<br>'+esc(x.details_json||"")+'</small></div>').join("")||'<div class="muted">監査ログなし</div>';
+  ae.innerHTML=(ls||[]).map(function(x){
+    return '<div class="audit-item"><b>'+esc(x.action)+
+      '</b> · target '+esc(x.target_discord_id||"-")+
+      '<br><small>'+fmt(x.created_at)+' · actor '+esc(x.actor_discord_id||"-")+
+      '<br>'+esc(x.details_json||"")+'</small></div>';
+  }).join("") || '<div class="muted">監査ログなし</div>';
 }
-async function post(url,body){
- const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),credentials:"same-origin"}),d=await r.json();
- if(!r.ok||d.ok===false)throw Error(d.error||"更新失敗"); return d;
+function jsonFetch(url, options){
+  return fetch(url, options).then(function(r){
+    return r.json().catch(function(){return {ok:false,error:"INVALID_RESPONSE"};}).then(function(d){
+      if(!r.ok || d.ok===false) throw new Error(d.error||"リクエスト失敗");
+      return d;
+    });
+  });
 }
-async function showHistory(id){
- const r=await fetch("/api/owner/users/login-history?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"}),d=await r.json();
- if(!d.ok)throw Error(d.error||"履歴取得失敗");
- const text=(d.history||[]).map(x=>fmt(x.logged_in_at)+" · "+esc(x.global_name||x.username||x.discord_id)).join("\n")||"ログイン履歴なし";
- alert("ログイン履歴\n\n"+text);
+function showHistory(id){
+  return jsonFetch("/api/owner/users/login-history?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"})
+    .then(function(d){
+      var text=(d.history||[]).map(function(x){
+        return fmt(x.logged_in_at)+" · "+esc(x.global_name||x.username||x.discord_id);
+      }).join("\n") || "ログイン履歴なし";
+      alert("ログイン履歴\n\n"+text);
+    });
 }
-async function loadWatchlists(id){
- activeWatchUserId=id; draw();
- const panel=document.querySelector('[data-watch-panel="'+CSS.escape(id)+'"]'); if(!panel)return;
- try{
-  const r=await fetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"}),d=await r.json();
-  if(!r.ok||!d.ok)throw Error(d.error||"監視データ取得失敗");
-  const items=[];
-  (d.kingdom_watchlists||[]).forEach(w=>items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>王国 '+esc(w.kid)+'</b><small>TOP '+esc(w.top_n)+' / '+esc(w.interval_hours)+'時間 / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="KINGDOM" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>'));
-  (d.player_watchlists||[]).forEach(w=>items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>プレイヤー '+esc(w.governor_id)+'</b><small>'+esc(w.label||"")+' / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="PLAYER" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>'));
-  panel.innerHTML='<div class="watchlist-head"><b>'+esc(d.user?.global_name||d.user?.username||"ユーザー")+' の監視管理</b><button type="button" class="secondary" data-a="close-watch">閉じる</button></div><div class="muted" style="margin-top:6px">王国 '+(d.kingdom_watchlists||[]).length+'件 / プレイヤー '+(d.player_watchlists||[]).length+'件</div><div class="watchlist-list">'+(items.length?items.join(""):'<div class="muted">ウォッチリストはありません。</div>')+'</div>';
- }catch(e){panel.innerHTML='<div style="color:#fca5a5">読み込み失敗: '+esc(e.message||e)+'</div>';}
+function findWatchPanel(id){
+  var panels=ue.querySelectorAll("[data-watch-panel]");
+  for(var i=0;i<panels.length;i++){
+    if(panels[i].getAttribute("data-watch-panel")===String(id)) return panels[i];
+  }
+  return null;
 }
-async function deleteWatchlist(type,id,userId,button){
- if(!confirm((type==="KINGDOM"?"王国":"プレイヤー")+"ウォッチリストを削除しますか？\nこの操作はOWNERによる復旧操作です。"))return;
- button.disabled=true;
- try{
-  const r=await fetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(userId)+"&type="+encodeURIComponent(type)+"&watchlist_id="+encodeURIComponent(id),{method:"DELETE",credentials:"same-origin"}),d=await r.json();
-  if(!r.ok||!d.ok)throw Error(d.error||"削除失敗");
-  msg.textContent="ウォッチリストを削除しました。"; await refresh(); await loadWatchlists(userId);
- }catch(e){msg.textContent="削除失敗: "+(e.message||e);button.disabled=false;}
+function loadWatchlists(id){
+  activeWatchUserId=id;
+  draw();
+  var panel=findWatchPanel(id);
+  if(!panel) return Promise.reject(new Error("監視パネルを表示できませんでした"));
+  return jsonFetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"})
+    .then(function(d){
+      var items=[];
+      (d.kingdom_watchlists||[]).forEach(function(w){
+        items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>王国 '+esc(w.kid)+'</b><small>TOP '+esc(w.top_n)+' / '+esc(w.interval_hours)+'時間 / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="KINGDOM" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>');
+      });
+      (d.player_watchlists||[]).forEach(function(w){
+        items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>プレイヤー '+esc(w.governor_id)+'</b><small>'+esc(w.label||"")+' / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="PLAYER" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>');
+      });
+      panel.innerHTML='<div class="watchlist-head"><b>'+esc(d.user&& (d.user.global_name||d.user.username) || "ユーザー")+' の監視管理</b><button type="button" class="secondary" data-a="close-watch">閉じる</button></div><div class="muted" style="margin-top:6px">王国 '+(d.kingdom_watchlists||[]).length+'件 / プレイヤー '+(d.player_watchlists||[]).length+'件</div><div class="watchlist-list">'+(items.length?items.join(""):'<div class="muted">ウォッチリストはありません。</div>')+'</div>';
+    })
+    .catch(function(e){
+      panel.innerHTML='<div style="color:#fca5a5">読み込み失敗: '+esc(e.message||e)+'</div>';
+      throw e;
+    });
 }
-async function refresh(){
- msg.textContent="更新中…"; const btn=document.getElementById("reload"); if(btn)btn.disabled=true;
- try{
-  const r=await fetch("/api/owner/users?limit=250",{cache:"no-store",credentials:"same-origin"}),d=await r.json().catch(()=>({ok:false,error:"INVALID_RESPONSE"}));
-  if(!r.ok||!d.ok)throw Error(d.error||"読み込み失敗");
-  users=d.users||[]; draw();
-  const ar=await fetch("/api/owner/audit-log?limit=250",{cache:"no-store",credentials:"same-origin"}),a=await ar.json().catch(()=>({logs:[]}));
-  if(ar.ok&&a.ok)drawAudit(a.logs||[]);
-  msg.textContent="更新しました。 "+users.length+"ユーザー";
- }catch(e){msg.textContent="読み込み失敗: "+(e.message||e);}finally{if(btn)btn.disabled=false;}
+function deleteWatchlist(type,id,userId,buttonEl){
+  if(!confirm((type==="KINGDOM"?"王国":"プレイヤー")+"ウォッチリストを削除しますか？\nこの操作はOWNERによる復旧操作です。")) return Promise.resolve();
+  buttonEl.disabled=true;
+  return jsonFetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(userId)+"&type="+encodeURIComponent(type)+"&watchlist_id="+encodeURIComponent(id),{
+    method:"DELETE",credentials:"same-origin"
+  }).then(function(){
+    msg.textContent="ウォッチリストを削除しました。";
+    return refresh();
+  }).then(function(){
+    return loadWatchlists(userId);
+  }).catch(function(e){
+    msg.textContent="削除失敗: "+(e.message||e);
+    buttonEl.disabled=false;
+  });
+}
+function post(url,body){
+  return jsonFetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),credentials:"same-origin"});
+}
+function refresh(){
+  msg.textContent="更新中…";
+  var btn=document.getElementById("reload");
+  if(btn) btn.disabled=true;
+  return jsonFetch("/api/owner/users?limit=250",{cache:"no-store",credentials:"same-origin"})
+    .then(function(d){
+      users=d.users||[];
+      activeWatchUserId=null;
+      draw();
+      return jsonFetch("/api/owner/audit-log?limit=250",{cache:"no-store",credentials:"same-origin"}).then(function(a){
+        drawAudit(a.logs||[]);
+        msg.textContent="更新しました。 "+users.length+"ユーザー";
+      });
+    })
+    .catch(function(e){
+      msg.textContent="読み込み失敗: "+(e.message||e);
+    })
+    .then(function(){
+      if(btn) btn.disabled=false;
+    });
 }
 search.addEventListener("input",draw);
-ue.addEventListener("click",async e=>{
- const button=e.target.closest("button"); if(!button||!ue.contains(button))return;
- if(button.dataset.wtype){await deleteWatchlist(button.dataset.wtype,button.dataset.wid,button.dataset.uid,button);return;}
- const a=button.dataset.a;
- if(a==="watchlists"){await loadWatchlists(button.dataset.id);return;}
- if(a==="close-watch"){activeWatchUserId=null;draw();return;}
- if(a==="history"){try{await showHistory(button.dataset.id)}catch(err){msg.textContent=err.message}return;}
- if(a!=="role"&&a!=="status")return;
- if(!confirm(a==="role"?"権限を "+button.dataset.role+" に変更しますか？":"状態を "+button.dataset.status+" に変更しますか？"))return;
- button.disabled=true;
- try{await post(a==="role"?"/api/owner/users/role":"/api/owner/users/status",a==="role"?{user_id:button.dataset.id,role:button.dataset.role}:{user_id:button.dataset.id,status:button.dataset.status});msg.textContent="保存しました。";await refresh();}
- catch(err){msg.textContent=err.message;button.disabled=false;}
+ue.addEventListener("click",function(e){
+  var node=e.target;
+  while(node && node!==ue && node.tagName!=="BUTTON") node=node.parentNode;
+  if(!node || node===ue) return;
+  var action=node.getAttribute("data-a");
+  if(node.getAttribute("data-wtype")){
+    deleteWatchlist(node.getAttribute("data-wtype"),node.getAttribute("data-wid"),node.getAttribute("data-uid"),node);
+    return;
+  }
+  if(action==="watchlists"){
+    node.disabled=true;
+    node.textContent="読み込み中…";
+    loadWatchlists(node.getAttribute("data-id")).then(function(){
+      node.disabled=false;
+      node.textContent="監視管理";
+    }).catch(function(e){
+      msg.textContent="監視管理エラー: "+(e.message||e);
+      node.disabled=false;
+      node.textContent="監視管理";
+    });
+    return;
+  }
+  if(action==="close-watch"){
+    activeWatchUserId=null;
+    draw();
+    return;
+  }
+  if(action==="history"){
+    showHistory(node.getAttribute("data-id")).catch(function(e){msg.textContent=e.message||String(e);});
+    return;
+  }
+  if(action!=="role" && action!=="status") return;
+  var question=action==="role" ? "権限を "+node.getAttribute("data-role")+" に変更しますか？" : "状態を "+node.getAttribute("data-status")+" に変更しますか？";
+  if(!confirm(question)) return;
+  node.disabled=true;
+  var body=action==="role"
+    ? {user_id:node.getAttribute("data-id"),role:node.getAttribute("data-role")}
+    : {user_id:node.getAttribute("data-id"),status:node.getAttribute("data-status")};
+  post(action==="role"?"/api/owner/users/role":"/api/owner/users/status",body)
+    .then(function(){msg.textContent="保存しました。";return refresh();})
+    .catch(function(e){msg.textContent=e.message||String(e);node.disabled=false;});
 });
 document.getElementById("reload").addEventListener("click",refresh);
-try{draw();}catch(error){msg.textContent="ユーザー一覧の表示エラー: "+(error.message||error);}drawAudit(initialLogs);
+draw();
+drawAudit(initialLogs);
 })();
 </script></body></html>`;
 }
