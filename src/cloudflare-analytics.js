@@ -556,7 +556,7 @@ function maxStorage(groups, databaseId) {
     .reduce((max, group) => Math.max(max, normalizeNumber(group?.max?.databaseSizeBytes)), 0);
 }
 
-export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
+export async function getCloudflareD1Usage(env, { now = new Date(), includeQueryInsights = true } = {}) {
   const accountTag = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
@@ -609,29 +609,31 @@ export async function getCloudflareD1Usage(env, { now = new Date() } = {}) {
 
   const databaseMetrics = sumMetrics(account.d1AnalyticsAdaptiveGroups || []);
   let queryInsights = { queryCount: 0, topWriteQueries: [], topReadQueries: [], categories: [], available: false };
-  try {
-    const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        query: D1_QUERY_INSIGHTS_QUERY,
-        variables: { accountTag, start: date, end: date, databaseId }
-      })
-    });
-    const insightsPayload = await insightsResponse.json().catch(() => null);
-    if (insightsResponse.ok && !Array.isArray(insightsPayload?.errors)) {
-      const insightAccount = insightsPayload?.data?.viewer?.accounts?.[0];
-      queryInsights = {
-        ...summarizeD1QueryInsights(insightAccount?.d1QueriesAdaptiveGroups || []),
-        available: true
-      };
-    }
-  } catch (error) {
-    console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
+  if (includeQueryInsights) {
+        const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            query: D1_QUERY_INSIGHTS_QUERY,
+            variables: { accountTag, start: date, end: date, databaseId }
+          })
+        });
+        const insightsPayload = await insightsResponse.json().catch(() => null);
+        if (insightsResponse.ok && !Array.isArray(insightsPayload?.errors)) {
+          const insightAccount = insightsPayload?.data?.viewer?.accounts?.[0];
+          queryInsights = {
+            ...summarizeD1QueryInsights(insightAccount?.d1QueriesAdaptiveGroups || []),
+            available: true
+          };
+        }
+      } catch (error) {
+        console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
+      }
   }
+
 
   let workers = { available: false };
   try {
