@@ -179,7 +179,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
     }
   }
 
-  if (!archived) {
+  if (!archived && r2Only) {
     try {
       await enqueueHistoryEmergencyBuffer(db, {
         historyType: "PLAYER",
@@ -196,7 +196,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
         message: "R2アーカイブ失敗のためPlayer履歴をD1緊急退避バッファへ保存しました。R2復旧後に再アーカイブします。",
         provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: governorId,
         rowsReceived: 1, rowsSaved: 1,
-        metadata: { historyMode, emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
+        metadata: { historyMode: "R2_ONLY", emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
       });
     } catch (bufferError) {
       await recordDiagnostic(db, {
@@ -205,7 +205,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
         message: String(bufferError?.message || bufferError),
         provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: governorId,
         rowsReceived: 1, rowsSaved: 0,
-        metadata: { historyMode, emergencyBuffered: false, fallback: "STOP" }
+        metadata: { historyMode: "R2_ONLY", emergencyBuffered: false, fallback: "STOP" }
       });
       throw bufferError;
     }
