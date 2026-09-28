@@ -28,9 +28,13 @@ function archiveKey(table, rows) {
 async function gzipText(text) {
   const response = new Response(text);
   if (!response.body || typeof CompressionStream === "undefined") {
-    return response.body;
+    return new TextEncoder().encode(text).buffer;
   }
-  return response.body.pipeThrough(new CompressionStream("gzip"));
+  // R2 accepts ReadableStream values, but the Worker runtime can reject a
+  // transformed stream when its final length is unknown. Materialize the
+  // compressed payload so PutObject receives a known-length ArrayBuffer.
+  const compressed = response.body.pipeThrough(new CompressionStream("gzip"));
+  return await new Response(compressed).arrayBuffer();
 }
 
 export async function archiveD1RowsToR2(bucket, { table, rows }) {
