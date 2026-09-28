@@ -1,7 +1,7 @@
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, watchResult, jobResult] = await Promise.all([
+  const [poolResult, leaseResult, watchResult, jobResult, latestKeyResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -13,6 +13,9 @@ export async function getOperationalStatus(db) {
     ).first(),
     db.prepare(
       "SELECT status, last_error, updated_at, completed_at, source_last_at, ranking_rows, player_rows FROM kingdom_watchlist_jobs ORDER BY created_at DESC LIMIT 1"
+    ).first(),
+    db.prepare(
+      "SELECT pool_type, status, label, last_success_at, last_error_at, last_error_code, last_error_message FROM api_pool_keys ORDER BY COALESCE(last_error_at, 0) DESC, updated_at DESC LIMIT 1"
     ).first()
   ]);
 
@@ -30,9 +33,7 @@ export async function getOperationalStatus(db) {
     for (const status of API_POOL_STATUS_ORDER) poolTotals[status] += Number(pool[status] || 0);
   }
 
-  const latestError = poolRows.length
-    ? null
-    : null;
+  const latestKey = latestKeyResult || null;
 
   const watch = watchResult || {};
   const job = jobResult || null;
@@ -45,7 +46,15 @@ export async function getOperationalStatus(db) {
       availableKeys: poolTotals.AVAILABLE,
       activeLeases: Number(leaseResult?.active_count || 0),
       expiredActiveLeases: Number(leaseResult?.expired_active_count || 0),
-      latestError: latestError
+      latestKey: latestKey ? {
+        poolType: latestKey.pool_type,
+        status: latestKey.status,
+        label: latestKey.label || null,
+        lastSuccessAt: latestKey.last_success_at ? Number(latestKey.last_success_at) : null,
+        lastErrorAt: latestKey.last_error_at ? Number(latestKey.last_error_at) : null,
+        lastErrorCode: latestKey.last_error_code || null,
+        lastErrorMessage: latestKey.last_error_message || null
+      } : null
     },
     watchlist: {
       total: Number(watch.total_count || 0),
