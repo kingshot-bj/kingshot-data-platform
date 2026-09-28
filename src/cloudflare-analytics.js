@@ -610,28 +610,29 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const databaseMetrics = sumMetrics(account.d1AnalyticsAdaptiveGroups || []);
   let queryInsights = { queryCount: 0, topWriteQueries: [], topReadQueries: [], categories: [], available: false };
   if (includeQueryInsights) {
-        const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
-          method: "POST",
-          headers: {
-            "Authorization": "Bearer " + token,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            query: D1_QUERY_INSIGHTS_QUERY,
-            variables: { accountTag, start: date, end: date, databaseId }
-          })
-        });
-        const insightsPayload = await insightsResponse.json().catch(() => null);
-        if (insightsResponse.ok && !Array.isArray(insightsPayload?.errors)) {
-          const insightAccount = insightsPayload?.data?.viewer?.accounts?.[0];
-          queryInsights = {
-            ...summarizeD1QueryInsights(insightAccount?.d1QueriesAdaptiveGroups || []),
-            available: true
-          };
-        }
-      } catch (error) {
-        console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
+    try {
+      const insightsResponse = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          query: D1_QUERY_INSIGHTS_QUERY,
+          variables: { accountTag, start: date, end: date, databaseId }
+        })
+      });
+      const insightsPayload = await insightsResponse.json().catch(() => null);
+      if (insightsResponse.ok && !Array.isArray(insightsPayload?.errors)) {
+        const insightAccount = insightsPayload?.data?.viewer?.accounts?.[0];
+        queryInsights = {
+          ...summarizeD1QueryInsights(insightAccount?.d1QueriesAdaptiveGroups || []),
+          available: true
+        };
       }
+    } catch (error) {
+      console.warn("cloudflare_d1_query_insights_failed", error?.message || error);
+    }
   }
 
 
