@@ -295,7 +295,7 @@ export async function saveKingdomRankingBoard(db, {
       }
     }
 
-    if (!archived) {
+    if (!archived && r2Only) {
       try {
         await enqueueHistoryEmergencyBuffer(db, {
           historyType: "RANKING",
@@ -313,7 +313,7 @@ export async function saveKingdomRankingBoard(db, {
           message: "R2アーカイブ失敗のため履歴をD1緊急退避バッファへ保存しました。R2復旧後に再アーカイブします。",
           provider: "CLOUDFLARE_D1", targetType: "KINGDOM", targetId: String(kid),
           rowsReceived: filteredEntries.length, rowsSaved: 1,
-          metadata: { board, historyMode, emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
+          metadata: { board, historyMode: "R2_ONLY", emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
         });
       } catch (bufferError) {
         await recordDiagnostic(db, {
@@ -322,7 +322,7 @@ export async function saveKingdomRankingBoard(db, {
           message: String(bufferError?.message || bufferError),
           provider: "CLOUDFLARE_D1", targetType: "KINGDOM", targetId: String(kid),
           rowsReceived: filteredEntries.length, rowsSaved: 0,
-          metadata: { board, historyMode, emergencyBuffered: false, fallback: "STOP" }
+          metadata: { board, historyMode: "R2_ONLY", emergencyBuffered: false, fallback: "STOP" }
         });
         throw bufferError;
       }
