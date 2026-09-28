@@ -69,3 +69,125 @@ export async function archiveD1RowsToR2(bucket, { table, rows }) {
 }
 
 export { ARCHIVE_TABLES };
+
+
+const RANKING_HISTORY_ARCHIVE_VERSION = "v1";
+
+function rankingHistoryArchiveKey({ kid, board, observedAt }) {
+  return [
+    "history",
+    RANKING_HISTORY_ARCHIVE_VERSION,
+    "ranking_snapshots",
+    String(kid),
+    encodeURIComponent(String(board)),
+    String(observedAt),
+    crypto.randomUUID()
+  ].join("/") + ".ndjson.gz";
+}
+
+async function ungzipBody(body) {
+  if (!body) return null;
+  if (typeof DecompressionStream === "undefined") return body;
+  return body.pipeThrough(new DecompressionStream("gzip"));
+}
+
+export async function archiveRankingHistoryBatch(bucket, {
+  kid,
+  board,
+  entries,
+  observedAt,
+  sourceObservedAt = null,
+  sourceObservationId = null
+}) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!Number.isFinite(Number(kid)) || !board || !Array.isArray(entries) || entries.length === 0) return null;
+
+  const rows = entries.map((entry, index) => ({
+    _eagleeye_archive_version: RANKING_HISTORY_ARCHIVE_VERSION,
+    _source_table: "ranking_snapshots",
+    kid: Number(kid),
+    board: String(board),
+    target_type: entry?.target_type ?? null,
+    target_id: entry?.target_id ?? null,
+    rank: Number(entry?.__eagleeye_rank ?? entry?.rank ?? index + 1),
+    score: entry?.score ?? entry?.value ?? null,
+    uid: entry?.uid ?? null,
+    governor_id: entry?.governor_id ?? null,
+    nick_name: entry?.nick_name ?? null,
+    aid: entry?.aid ?? null,
+    abbr: entry?.abbr ?? null,
+    name: entry?.name ?? null,
+    observed_at: Number(observedAt),
+    source_observed_at: sourceObservedAt,
+    source_observation_id: sourceObservationId
+  }));
+
+  const body = await gzipText(rows.map(row => JSON.stringify(row)).join("\n") + "\n");
+  const key = rankingHistoryArchiveKey({ kid, board, observedAt });
+
+  await bucket.put(key, body, {
+    httpMetadata: {
+      contentType: "application/x-ndjson",
+      contentEncoding: "gzip",
+      cacheControl: "private, no-store"
+    },
+    customMetadata: {
+      sourceTable: "ranking_snapshots",
+      archiveVersion: RANKING_HISTORY_ARCHIVE_VERSION,
+      kid: String(kid),
+      board: String(board),
+      observedAt: String(observedAt),
+      rowCount: String(rows.length)
+    }
+  });
+
+  return { key, rowCount: rows.length };
+}
+
+export async function listRankingHistoryFromR2(bucket, {
+  kid,
+  board,
+  targetId,
+  limit = 50
+}) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!Number.isFinite(Number(kid)) || !board || !targetId) return [];
+
+  const prefix = [
+    "history",
+    RANKING_HISTORY_ARCHIVE_VERSION,
+    "ranking_snapshots",
+    String(kid),
+    encodeURIComponent(String(board))
+  ].join("/") + "/";
+
+  const objects = [];
+  let cursor;
+  do {
+    const listed = await bucket.list({ prefix, cursor, limit: 1000 });
+    objects.push(...(listed.objects || []));
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+
+  objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+
+  const result = [];
+  for (const object of objects) {
+    if (result.length >= Math.min(Math.max(Number(limit) || 50, 1), 200)) break;
+    const response = await bucket.get(object.key);
+    if (!response?.body) continue;
+    const stream = await ungzipBody(response.body);
+    const text = await new Response(stream).text();
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const row = JSON.parse(line);
+      if (String(row.target_id) !== String(targetId)) continue;
+      result.push(row);
+      if (result.length >= Math.min(Math.max(Number(limit) || 50, 1), 200)) break;
+    }
+  }
+
+  return result
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, Math.min(Math.max(Number(limit) || 50, 1), 200));
+}
