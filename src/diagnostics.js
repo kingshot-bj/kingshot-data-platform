@@ -13,42 +13,9 @@ const DIAGNOSTIC_SERVICES = [
 let diagnosticSchemaPromise = null;
 
 export async function ensureDiagnosticSchema(db) {
-  if (!db) return;
-  if (diagnosticSchemaPromise) return diagnosticSchemaPromise;
-  diagnosticSchemaPromise = (async () => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS diagnostic_events (
-      event_id TEXT PRIMARY KEY,
-      trace_id TEXT NOT NULL,
-      service TEXT NOT NULL,
-      feature TEXT NOT NULL,
-      operation TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('SUCCESS','WARNING','FAILED')),
-      error_code TEXT,
-      message TEXT,
-      provider TEXT,
-      target_type TEXT,
-      target_id TEXT,
-      started_at INTEGER NOT NULL,
-      completed_at INTEGER NOT NULL,
-      elapsed_ms INTEGER NOT NULL DEFAULT 0,
-      source_observed_at INTEGER,
-      rows_received INTEGER,
-      rows_saved INTEGER,
-      metadata_json TEXT,
-      created_at INTEGER NOT NULL
-    )
-  `).run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_created ON diagnostic_events(created_at DESC)").run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_service ON diagnostic_events(service, created_at DESC)").run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_diagnostic_events_trace ON diagnostic_events(trace_id)").run();
-  })();
-  try {
-    return await diagnosticSchemaPromise;
-  } catch (error) {
-    diagnosticSchemaPromise = null;
-    throw error;
-  }
+  // diagnostic_events and its indexes are provisioned by D1 migrations.
+  // Keep this function as a compatibility no-op for existing callers.
+  return db || null;
 }
 
 export function diagnosticTraceId(prefix = "ee") {
