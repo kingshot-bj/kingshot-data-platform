@@ -1514,7 +1514,6 @@ async function handlePlayerWatchlistApi(request, env) {
       return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
     }
 
-    await ensureWatchlistLimitTable(env.DB);
     const limits = await getWatchlistLimits(env.DB);
     const role = String(auth.role || "BASIC").toUpperCase();
     const playerLimit = getRoleWatchlistLimit(limits, role, "player");
@@ -1564,8 +1563,7 @@ async function handlePlayerWatchlistApi(request, env) {
     const body = await request.json().catch(() => ({}));
     const enabled = body.enabled ? 1 : 0;
     if (enabled) {
-      await ensureWatchlistLimitTable(env.DB);
-      const limits = await getWatchlistLimits(env.DB);
+        const limits = await getWatchlistLimits(env.DB);
       const role = String(auth.role || "BASIC").toUpperCase();
       const limit = getRoleWatchlistLimit(limits, role, "player");
       const usage = await env.DB.prepare(
@@ -1805,7 +1803,6 @@ async function handleKingdomWatchlistApi(request, env) {
         received: { kid: body.kid ?? null, top_n: body.top_n ?? null, interval_hours: body.interval_hours ?? null }
       }, 400);
     }
-    await ensureWatchlistLimitTable(env.DB);
     const limits = await getWatchlistLimits(env.DB);
     const role = String(auth.role || "BASIC").toUpperCase();
     const kingdomLimit = getRoleWatchlistLimit(limits, role, "kingdom");
@@ -1916,8 +1913,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const enabled = body.enabled ? 1 : 0;
     const watchlistId = String(body.watchlist_id || "");
     if (enabled) {
-      await ensureWatchlistLimitTable(env.DB);
-      const limits = await getWatchlistLimits(env.DB);
+        const limits = await getWatchlistLimits(env.DB);
       const role = String(auth.role || "BASIC").toUpperCase();
       const limit = getRoleWatchlistLimit(limits, role, "kingdom");
       const usage = await env.DB.prepare(
