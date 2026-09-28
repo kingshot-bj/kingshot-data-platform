@@ -1713,3 +1713,126 @@ R2障害時にはD1へフォールバックする。
 特に「ランキング取得2000件」が必ずしも2000件分のAPIレスポンスをそのままD1へ書き込んでいることを意味するわけではないため、コードと実測ログを確認してから実装変更を判断する。
 
 **本番確認済みと表現するのは、実際に本番環境で確認した範囲のみとする。**
+
+
+## 2026-09-28追加：機械取得用Status JSONを「全システム情報の集約点」として固定
+
+### 方針
+EagleEyeの機械取得用Status JSON（Gateway: `/api/gateway/v1/status`）は、今後の実測・障害切り分け・性能計測で使用する**単一の機械可読なシステム状態取得口**として扱う。
+
+「画面には表示しているがJSONでは取得できない」「既存JSONにはあるが新機能追加時に取得項目を追加し忘れる」という状態を作らない。
+
+### 現在取得対象
+Status JSONには、少なくとも以下を常に含める。
+
+1. **Cloudflare / D1**
+   - D1 Rows Read / Written
+   - Read / Write Query数
+   - D1 Storage
+   - Free Tier上限・使用率・状態
+   - D1 Query Insights
+   - Queryごとのcount / rowsRead / rowsWritten / rowsReturned / durationMs / category
+   - Write/Read上位クエリ
+   - カテゴリ集計
+
+2. **Workers**
+   - requests
+   - errors
+   - subrequests
+   - CPU P50 / P90 / P99
+   - requests / CPU / subrequestsの使用率・状態
+
+3. **R2**
+   - Class A / Class B / free operations
+   - total / successful / failed operations
+   - failed percentage
+   - upload / download bytes
+   - storage / payload / metadata bytes
+   - object count
+   - upload count
+   - storage増減
+   - bucket別集計
+   - operation別集計
+   - 月次期間
+   - Free Tier使用率・状態
+
+4. **History Storage Runtime**
+   - HISTORY_STORAGE_MODE
+   - DB binding有無
+   - ARCHIVE binding有無
+   - R2 read-only runtime probe結果
+   - R2 probe error
+   - R2_ONLY / DUALの実行時状態
+
+5. **Operational Status**
+   - API PoolのPool別・Status別キー数
+   - AVAILABLE / COOLDOWN / ERROR / DISABLED / REVOKED
+   - totalKeys / availableKeys
+   - activeLeases / expiredActiveLeases
+   - 直近キーの状態・成功・エラー情報
+   - Kingdom Watchlistの登録数・有効数・エラー数
+   - latest success / update
+   - 最新Watchlist Jobのstatus / error / rankingRows / playerRows / source time
+
+6. **Diagnostics**
+   - overall
+   - service別status
+   - last event / error code / message / trace ID / target
+   - 直近診断イベント
+   - metadata
+   - R2 history archive失敗を含む履歴保存系診断
+
+7. **Runtime / Configuration Presence**
+   - Worker名
+   - History Storage Mode
+   - DB / ARCHIVE binding
+   - Cloudflare Analytics設定有無
+   - R2 bucket設定有無
+   - MightPulse設定有無
+   - Discord設定有無
+   - Google Sheets連携設定有無
+   - Gateway設定有無
+
+### セキュリティ方針
+Status JSONで取得するのは**設定の有無・状態・メトリクス**であり、以下は絶対に返さない。
+
+- API Key本体
+- Bearer Token
+- Secret
+- Password
+- Private Key
+- Discord Client Secret
+- Google Service Account Private Key
+- その他認証情報
+
+### 今回の実装
+- `src/cloudflare-analytics.js`
+  - Query Insightsの完全なquery一覧をmachine-readable payloadに保持。
+  - R2 operation一覧を上位20件だけで切らず、完全なoperation groupを保持。
+- `src/gateway-api.js`
+  - `historyStorage` を追加。
+  - R2 read-only runtime probeを追加。
+  - `operational` を追加。
+  - `runtime` / configuration presenceを追加。
+- R2アーカイブ失敗時にはranking診断イベントとして原因を保存する。
+
+### 今後の絶対ルール
+**新機能・新しい外部サービス・新しいCloudflareリソース・新しいDBテーブル・新しいAPI Pool・新しいWatchlist・新しい保存方式・新しい性能指標を追加した場合、Status JSONにも必ず取得項目を追加する。**
+
+実装手順としては、
+
+1. 機能本体を実装
+2. その機能の「現在状態」「成功/失敗」「使用量」「性能」「エラー」「依存Binding/外部サービス」を定義
+3. Gateway Status JSONにmachine-readable項目を追加
+4. 必要ならDiagnosticsにもイベント/metadataを追加
+5. UIはStatus JSONの全情報のうち必要なものだけ表示してよい
+6. **UIに表示していないからJSONにも不要、という判断は禁止**
+7. Status JSONを取得して実測ログに残せることを確認
+8. 本番確認前は「本番確認済み」と表現しない
+
+### 重要な考え方
+Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSONの表示層**とする。
+
+したがって将来、UI側に新しい診断項目だけを追加してJSON側を忘れることがないよう、機能追加時には必ずStatus JSONの契約も同時更新する。
+
+この方針はEagleEyeの今後の全機能追加に適用する。
