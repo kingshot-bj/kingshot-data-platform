@@ -1167,6 +1167,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }).catch(function(e){alert(e.message||'ウォッチリスト更新に失敗しました。');})
       .finally(function(){button.disabled=false;});
   }
+  window.togglePlayerWatch = togglePlayerWatch;
   if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}.rank-watch-star{margin-left:6px;padding:0 3px;border:0;background:transparent;color:#fbbf24;font-size:16px;line-height:1;cursor:pointer}.rank-watch-star:disabled{opacity:.5}";document.head.appendChild(st);}
   function showData(id){
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
