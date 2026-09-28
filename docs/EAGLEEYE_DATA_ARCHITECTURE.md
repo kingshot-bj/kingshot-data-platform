@@ -27,6 +27,8 @@ Google Drive and Sheets are intentionally not required for this migration phase.
 
 ### Implemented in this phase
 
+In addition to lightweight identity history, Player History and Ranking History now have an R2 dual-archive bridge. Existing D1 history writes/readers remain active, so this phase does not reduce D1 usage yet. The R2 archive is intentionally non-fatal: an R2 archive failure does not break the existing D1 path.
+
 player_identity_history is a lightweight D1 identity timeline.
 
 A row is created:
@@ -63,7 +65,7 @@ MightPulse
 ## Migration order
 
 1. Add lightweight D1 identity/change state.
-2. Add R2 history writers/readers behind stable interfaces.
+2. Add R2 history writers/readers behind stable interfaces. (Direct dual-archive writers are now in place for Player History and Ranking History.)
 3. Move Player History reads from player_snapshots to R2.
 4. Move Ranking History reads from ranking_snapshots to R2.
 5. Move Player Ranking History reads from player_rank_snapshots to R2.
