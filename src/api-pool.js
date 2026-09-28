@@ -106,19 +106,19 @@ export async function leaseApiKeyForHealthCheck(db, {
   const leaseId = crypto.randomUUID();
   const row = await db.prepare(
     `UPDATE api_pool_keys
-     SET lease_id = ?,
-         leased_until = ?,
+     SET lease_id = ?1,
+         leased_until = ?2,
          lease_job_id = NULL,
-         lease_purpose = ?,
-         lease_target_type = ?,
-         lease_target_id = ?,
-         updated_at = ?
-     WHERE key_id = ?
+         lease_purpose = ?3,
+         lease_target_type = ?4,
+         lease_target_id = ?5,
+         updated_at = ?6
+     WHERE key_id = ?7
        AND status IN ('AVAILABLE','ERROR','DISABLED')
-       AND (leased_until IS NULL OR leased_until <= ?)
+       AND (leased_until IS NULL OR leased_until <= ?8)
      RETURNING key_id, provider, pool_type, encrypted_key`
   ).bind(
-    leaseId, expiresAt, purpose, targetType, targetId, now, keyId, now
+    leaseId, expiresAt, purpose ?? null, targetType ?? null, targetId ?? null, now, keyId, now
   ).first();
 
   if (!row) throw new Error("API_POOL_KEY_NOT_HEALTH_CHECKABLE");
@@ -160,8 +160,8 @@ function prepareUsageInsert(db, { keyId, provider = PROVIDER, poolType = null, e
 export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
   await db.prepare(
-    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-  ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, keyId, leaseId).run();
+    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?1, remaining_minute), remaining_day = COALESCE(?2, remaining_day), quota_reset_at = COALESCE(?3, quota_reset_at), last_used_at = ?4, last_success_at = ?5, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?6 WHERE key_id = ?7 AND lease_id = ?8"
+  ).bind(remainingMinute ?? null, remainingDay ?? null, quotaResetAt ?? null, now, now, keyId, leaseId).run();
 }
 
 export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
@@ -170,8 +170,8 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
 
   await db.prepare(
-    "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-  ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId).run();
+    "UPDATE api_pool_keys SET status = ?1, cooldown_until = ?2, last_used_at = ?3, last_error_at = ?4, last_error_code = ?5, last_error_message = ?6, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?7 WHERE key_id = ?8 AND lease_id = ?9"
+  ).bind(status, cooldownUntil, now, now, errorCode ?? null, truncate(errorMessage, 500), now, keyId, leaseId).run();
 }
 
 export async function getPoolStats(db) {
