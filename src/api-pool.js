@@ -49,21 +49,21 @@ async function claimApiPoolKey(db, {
     `UPDATE api_pool_keys
      SET status = 'AVAILABLE',
          cooldown_until = NULL,
-         lease_id = ?,
-         leased_until = ?,
-         lease_job_id = ?,
-         lease_purpose = ?,
-         lease_target_type = ?,
-         lease_target_id = ?,
-         updated_at = ?
+         lease_id = ?1,
+         leased_until = ?2,
+         lease_job_id = ?3,
+         lease_purpose = ?4,
+         lease_target_type = ?5,
+         lease_target_id = ?6,
+         updated_at = ?7
      WHERE key_id = (
        SELECT key_id
        FROM api_pool_keys
-       WHERE provider = ?
-         AND pool_type = ?
+       WHERE provider = ?8
+         AND pool_type = ?9
          AND status IN ('AVAILABLE','COOLDOWN')
-         AND (cooldown_until IS NULL OR cooldown_until <= ?)
-         AND (leased_until IS NULL OR leased_until <= ?)
+         AND (cooldown_until IS NULL OR cooldown_until <= ?10)
+         AND (leased_until IS NULL OR leased_until <= ?11)
        ORDER BY
          CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END,
          COALESCE(last_used_at, 0) ASC,
@@ -72,8 +72,8 @@ async function claimApiPoolKey(db, {
      )
      RETURNING key_id, provider, pool_type, encrypted_key`
   ).bind(
-    leaseId, expiresAt, jobId, purpose, targetType, targetId, now,
-    provider, poolType, now, now
+    leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
+    provider ?? PROVIDER, poolType ?? "SYSTEM_GENERAL", now, now
   ).first();
 
   if (!row) throw new Error("NO_API_POOL_KEY_AVAILABLE");
@@ -144,8 +144,8 @@ export async function releaseApiLease(db, leaseId) {
          lease_purpose = NULL,
          lease_target_type = NULL,
          lease_target_id = NULL,
-         updated_at = ?
-     WHERE lease_id = ?`
+         updated_at = ?1
+     WHERE lease_id = ?2`
   ).bind(now, leaseId).run();
 }
 
