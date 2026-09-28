@@ -55,6 +55,9 @@ export function diagnosticTraceId(prefix = "ee") {
   return prefix + "-" + crypto.randomUUID();
 }
 
+const DIAGNOSTIC_SUCCESS_THROTTLE_SECONDS = 300;
+const diagnosticSuccessThrottle = new Map();
+
 export async function recordDiagnostic(db, input = {}) {
   if (!db) return null;
   try {
@@ -62,13 +65,30 @@ export async function recordDiagnostic(db, input = {}) {
     const now = Math.floor(Date.now() / 1000);
     const startedAt = Number(input.startedAt || now);
     const completedAt = Number(input.completedAt || now);
+    const status = ["SUCCESS","WARNING","FAILED"].includes(String(input.status))
+      ? String(input.status)
+      : "WARNING";
+    const throttleKey = [
+      String(input.service || "system"),
+      String(input.feature || "unknown"),
+      String(input.operation || "unknown")
+    ].join(":");
+
+    // SUCCESS is a heartbeat, not an audit event. Keep WARNING/FAILED durable,
+    // but suppress repeated SUCCESS writes within the same Worker isolate.
+    if (status === "SUCCESS") {
+      const lastRecordedAt = Number(diagnosticSuccessThrottle.get(throttleKey) || 0);
+      if (now - lastRecordedAt < DIAGNOSTIC_SUCCESS_THROTTLE_SECONDS) return null;
+      diagnosticSuccessThrottle.set(throttleKey, now);
+    }
+
     const event = {
       eventId: input.eventId || crypto.randomUUID(),
       traceId: input.traceId || diagnosticTraceId(),
       service: String(input.service || "system"),
       feature: String(input.feature || "unknown"),
       operation: String(input.operation || "unknown"),
-      status: ["SUCCESS","WARNING","FAILED"].includes(String(input.status)) ? String(input.status) : "WARNING",
+      status,
       errorCode: input.errorCode ? String(input.errorCode) : null,
       message: input.message ? String(input.message).slice(0, 2000) : null,
       provider: input.provider ? String(input.provider) : null,
