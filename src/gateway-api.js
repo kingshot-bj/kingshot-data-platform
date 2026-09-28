@@ -99,14 +99,49 @@ async function getReadOnlyDiagnostics(db, { recentLimit = 30 } = {}) {
   };
 }
 
+async function getHistoryStorageStatus(env) {
+  const mode = String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase();
+  const bindingConfigured = Boolean(env.ARCHIVE);
+
+  if (!bindingConfigured) {
+    return {
+      mode,
+      archiveBindingConfigured: false,
+      archiveReadProbe: "NOT_CONFIGURED",
+      archiveReadOnly: true
+    };
+  }
+
+  try {
+    // Read-only runtime probe. head() returns null for a missing key and does not
+    // create anything in R2, so this verifies the live binding without a test write.
+    await env.ARCHIVE.head("__eagleeye_runtime_probe__");
+    return {
+      mode,
+      archiveBindingConfigured: true,
+      archiveReadProbe: "OK",
+      archiveReadOnly: true
+    };
+  } catch (error) {
+    return {
+      mode,
+      archiveBindingConfigured: true,
+      archiveReadProbe: "FAILED",
+      archiveReadOnly: true,
+      archiveReadError: sanitizeDiagnosticText(error?.message || String(error))
+    };
+  }
+}
+
 async function handleGatewayStatus(request, env) {
   if (request.method !== "GET") return jsonResponse({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   if (!String(env.EAGLEEYE_GATEWAY_TOKEN || "").trim()) return jsonResponse({ ok: false, error: "GATEWAY_NOT_CONFIGURED" }, 503);
   if (!isGatewayAuthorized(request, env)) return jsonResponse({ ok: false, error: "UNAUTHORIZED" }, 401);
 
-  const [diagnosticsResult, usageResult] = await Promise.allSettled([
+  const [diagnosticsResult, usageResult, historyStorageResult] = await Promise.allSettled([
     getReadOnlyDiagnostics(env.DB, { recentLimit: 30 }),
-    getCloudflareD1Usage(env)
+    getCloudflareD1Usage(env),
+    getHistoryStorageStatus(env)
   ]);
 
   return jsonResponse({
@@ -115,7 +150,16 @@ async function handleGatewayStatus(request, env) {
     system: {
       overall: diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value.overall : "CRITICAL",
       diagnostics: diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : { overall: "CRITICAL", counts: { failed: 1, criticalFailed: 1, warning: 0, unknown: 0, criticalUnknown: 0, healthy: 0 }, services: [], events: [], error: "DIAGNOSTICS_UNAVAILABLE" },
-      cloudflare: usageResult.status === "fulfilled" ? usageResult.value : { configured: false, status: "UNKNOWN", error: "CLOUDFLARE_ANALYTICS_UNAVAILABLE" }
+      cloudflare: usageResult.status === "fulfilled" ? usageResult.value : { configured: false, status: "UNKNOWN", error: "CLOUDFLARE_ANALYTICS_UNAVAILABLE" },
+      historyStorage: historyStorageResult.status === "fulfilled"
+        ? historyStorageResult.value
+        : {
+            mode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(),
+            archiveBindingConfigured: Boolean(env.ARCHIVE),
+            archiveReadProbe: "UNKNOWN",
+            archiveReadOnly: true,
+            archiveReadError: "HISTORY_STORAGE_DIAGNOSTICS_UNAVAILABLE"
+          }
     }
   });
 }
