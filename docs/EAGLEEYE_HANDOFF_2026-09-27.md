@@ -1251,3 +1251,178 @@ G. D1 read/write削減率の確定
 H. R2/D1 archive設計の確定
 I. 永久保存層 / EagleEye Library設計
 J. ChatGPT / JARVISからのLibrary利用設計
+
+## 41. 2026-09-28追加：ウォッチリスト上限実装とD1 Rows Written実測【次スレッド最優先】
+
+### 41-1. 今回実装したウォッチリスト上限
+ユーザー要望:
+- 王国ウォッチリスト / プレイヤーウォッチリストをロールごとに無制限登録できる状態はD1/API負荷上危険。
+- 既存の「プレイヤーデータ公開設定」に、各ロールのウォッチリスト登録上限を追加する。
+- 上限は管理画面から随時変更できる仕組みにする。
+
+実装済みコミット:
+- 00387812886e11973080ac9af2e1c6cfed918144 : feat: manage watchlist limits in visibility settings API
+- b0359e0dac8483f2d00717717fe96569d7905f84 : feat: add watchlist limit controls to visibility page
+- 28e2d982fc82661a13998227bdf8d9074462425e : feat: add player watchlist star shortcut to rankings
+- a02c5de54b68444af537a70e0754d2fc2aaf8491 : fix: enforce watchlist limits on reactivation
+- 69f604a4e0f73d1a2e36ea783258b68345b39d04 : fix: repair watchlist limit settings script syntax
+- 2216a9c75f9bb01ded8fd0304eb43ab2aa4ddc1c : fix: escape limit settings selector quotes
+- 1ef86fba5c79aae68b61ecaed7b3b2d78b3b6dcb : fix: expose ranking watch shortcut handler
+- 849b9a7f1aba6ff1fac60952f2450365b9f6543a : feat: complete watchlist limits admin controls
+
+現在のmain最新commitは 849b9a7f1aba6ff1fac60952f2450365b9f6543a。
+
+実装内容:
+- BASIC / ADVANCED / ADMIN / OWNERごとに、王国 / プレイヤーの上限を個別設定。
+- 初期値:
+  - BASIC: 王国1 / プレイヤー5
+  - ADVANCED: 王国3 / プレイヤー20
+  - ADMIN: 王国10 / プレイヤー50
+  - OWNER: 王国50 / プレイヤー200
+- 管理画面から数値変更可能。
+- ADMINはOWNERの設定変更不可。
+- 登録時にサーバー側でも上限を強制。
+- プレイヤーウォッチリストは再有効化時にも上限チェック。
+- 既存登録の再利用時に不要な重複登録を避ける。
+- 0は現状「無制限」として扱う仕様。D1保護を目的とするため、将来0を許可しない仕様に変更するかは別途判断。
+- 王国ランキング画面からプレイヤーを☆/★でPlayer Watchlistへ追加・解除できるショートカットを追加。
+- ranking APIではログインユーザーのenabled player_watchlistsだけを対象にwatched状態を付与する。広域watchlist読取ではない。
+
+### 41-2. 重要：今回の実測ログ
+ユーザーが動作確認後に取得した /status PDFおよびstatus JSONを2026-09-28 12:21 JST時点の実測資料として受領。
+
+PDF/JSONの実測:
+- D1 Rows Read: 317,266 / 5,000,000 = 6.3%
+- D1 Rows Written: 52,305 / 100,000 = 52.3%
+- D1 Storage: 12,984,320 bytes = 約12.4 MB / 5 GB
+- Worker Requests: 393 / 100,000
+- R2 Class A: 15 / 1,000,000
+- R2 Class B: 386 / 10,000,000
+- Watchlist: 王国watchlist 有効1 / 登録1、現在の有効監視エラー0
+- 最新watchlist job: COMPLETED、ranking 2,600 / player 5
+
+出典ファイル:
+- システム状況 EagleEye(6).pdf
+- status(4).json
+
+### 41-3. D1 Query Insightsで判明したRows Writtenの主因
+今回のstatus JSONのQuery Insightsでは、書き込みの大部分がランキング処理に集中している。
+
+カテゴリ集計:
+- Ranking Snapshot: 4,546 queries / Rows Written 35,976
+- Other Write: 5,953 queries / Rows Written 9,542
+- Watchlist Job: 1,013 queries / Rows Written 417
+- API Pool: 1,147 queries / Rows Written 189
+- Diagnostics: 184 queries / Rows Written 100
+- Player Snapshot: 22 queries / Rows Written 20
+- Player Observation: 65 queries / Rows Written 12
+- Other: 735 queries / Rows Written 6
+- Change Event: 16 queries / Rows Read 56 / Rows Written 0
+
+D1全体:
+- Rows Written 52,305
+- Write queries 11,259
+- Read queries 2,473
+
+特に上位Write query:
+1. INSERT INTO ranking_snapshots ...
+   - Query count: 4,497
+   - Rows Written: 35,976
+   - Rows Read: 0
+   - 平均的に1 queryあたり8 rows程度の書き込みとして集計されている。
+
+2. INSERT INTO kingdom_ranking_current ... ON CONFLICT ...
+   - Query count: 5,122
+   - Rows Read: 2,547
+   - Rows Written: 7,697
+
+3. INSERT INTO api_leases ...
+   - Query count: 329
+   - Rows Written: 1,645
+
+このため、「Writtenが跳ねる」問題は実際に存在する。Storage容量ではなく、D1 Rows Writtenの消費速度が現在の実用化上の重要課題。
+
+### 41-4. ここでの重要な認識
+現在のランキングcurrent化により、ランキング表示・現在状態については kingdom_ranking_current を読む方向へ移行している。
+ただし、ランキング変更履歴として ranking_snapshots へのINSERT自体はまだ残っている。
+
+今回の実測では、ranking_snapshots が35,976 rows writtenで、D1全体52,305 rows writtenの大部分を占めている。
+
+したがって、次スレッドでは「current化したからWriteも十分減っている」とは考えず、実際の saveKingdomRankingBoard / ranking history保存条件をコードから再確認すること。
+
+重要:
+- ranking_snapshots の広範囲SELECTを復活させない。
+- 現在表示は kingdom_ranking_current を優先。
+- 履歴保存は本当に必要な変更だけになっているかを確認。
+- 「変更あり」の判定粒度が細かすぎて、ほぼ毎回snapshotを保存していないか確認。
+- previous_rank / current state / change_eventsとの役割重複を確認。
+
+### 41-5. 次スレッドで最初に調査する箇所
+最優先でmainの実コードを確認する。
+
+1. saveKingdomRankingBoard() の完全な実装
+   - ranking_snapshots INSERT条件
+   - kingdom_ranking_current UPSERT条件
+   - 変更なし時の処理
+   - Top100脱落時の処理
+   - 再ランクイン時の処理
+
+2. getKingdomRankingChanges()
+   - 何を「changed」と判定しているか
+   - rank以外のscore/identity等の変化でsnapshot保存されていないか
+   - currentとの差分判定が適切か
+
+3. kingdom_ranking_current
+   - current row数
+   - previous_rankの更新頻度
+   - UPSERTが本当に必要な変更時だけか
+
+4. ranking_snapshots
+   - 1回のwatchlist更新で何board × 何rowがhistory保存されるか
+   - retention / archiveとの役割分担
+
+5. change_events
+   - ranking_snapshotsと重複して同じ順位変動を保持していないか
+
+### 41-6. 実測値からの暫定評価
+2026-09-28 12:21 JSTの実測では、D1 Rows Written 52.3%まで進んでいる一方、Rows Readは6.3%に留まっている。
+
+つまり現時点では、以前の「D1 Readが最大問題」という状態から、今回のランキングcurrent化後はWrite側も独立した重要課題として実測確認する段階に入った。
+
+ただし、この1回のログだけで1日分の最終消費量や1ユーザー/1watchlistあたりの恒常負荷を確定してはいけない。Cloudflare Analyticsには反映遅延があるため、同条件で複数回測定して基準値を作る。
+
+### 41-7. 実用化に向けた目標
+次スレッドでは、単純に「無料枠の52%だからOK」と判断しない。
+
+見るべき指標:
+- 1回の王国Watchlist更新あたり Rows Written
+- 1回のPlayer取得あたり Rows Written
+- API Pool 1 requestあたりのRows Written
+- Diagnostics 1 eventあたりのRows Written
+- Watchlist 1件 × 1 intervalあたりのRows Written
+- 1日あたりのWatchlist更新回数
+- ユーザー数増加時の線形/非線形増加
+
+最終的には「Free Tierで何ユーザーまで安全に運用できるか」を実測で出す。
+
+### 41-8. 次スレッドの優先順位
+A. saveKingdomRankingBoard() と getKingdomRankingChanges() の完全確認
+B. ranking_snapshots へのWriteが35,976 rowsになった理由を特定
+C. 不要なhistory writeがあれば削減。ただし順位履歴機能を壊さない
+D. kingdom_ranking_current / previous_rank / change_events / ranking_snapshots の責務を整理
+E. 同じテスト条件で再計測
+F. その後にPlayer Watchlist / Kingdom Watchlistの上限機能を実機確認
+
+### 41-9. 絶対ルール
+- 本番確認していないものを「本番確認済み」と言わない。
+- D1 free-tierを守ることを最優先。
+- ranking_snapshots の広域SELECTを復活させない。
+- 「Write削減」のために履歴を勝手に消す・順位変動機能を壊す変更はしない。
+- まず保存責務と必要性を確認してから削減する。
+- D1のRows WrittenだけでなくRows Readも同時に追う。
+- 既存のcurrent state設計を尊重し、全面作り直しはしない。
+
+### 41-10. 新スレッド開始時の一言
+次スレッドでは、以下から開始する:
+
+「前スレの引き継ぎ読んで。まずmain最新を確認して、今回のstatusログでWrittenが跳ねた原因を saveKingdomRankingBoard() / getKingdomRankingChanges() から特定しよう。ranking_snapshotsの広域SELECTは絶対に復活させない。」
