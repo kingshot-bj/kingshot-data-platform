@@ -161,7 +161,7 @@ export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null
   const now = Math.floor(Date.now() / 1000);
   await db.prepare(
     "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?1, remaining_minute), remaining_day = COALESCE(?2, remaining_day), quota_reset_at = COALESCE(?3, quota_reset_at), last_used_at = ?4, last_success_at = ?5, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?6 WHERE key_id = ?7 AND lease_id = ?8"
-  ).bind(remainingMinute ?? null, remainingDay ?? null, quotaResetAt ?? null, now, now, keyId, leaseId).run();
+  ).bind(remainingMinute ?? null, remainingDay ?? null, quotaResetAt ?? null, now, now, now, keyId, leaseId).run();
 }
 
 export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
