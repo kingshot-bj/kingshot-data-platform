@@ -1,3 +1,5 @@
+import { archiveRankingHistoryBatch } from "./r2-archive.js";
+
 const PLAYER_RANK_FIELDS = [
   ["power", "power_rank"],
   ["kills", "kills_rank"],
@@ -146,7 +148,7 @@ async function insertRankingStatements(db, statements) {
 
 export async function saveKingdomRankingBoard(db, {
   kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null,
-  entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000)
+  entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000), archiveBucket = null
 }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
@@ -178,6 +180,39 @@ export async function saveKingdomRankingBoard(db, {
     "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
   ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
   await insertRankingStatements(db, statements);
+
+  // Migration bridge: archive the same logical history rows to R2 without
+  // changing the existing D1 history reader yet. R2 failure is deliberately
+  // non-fatal during this phase so the existing D1 path remains authoritative.
+  if (archiveBucket && filteredEntries.length) {
+    try {
+      const archiveEntries = filteredEntries.map((entry, index) => {
+        const rank = getRankingEntryRank(entry, index);
+        const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
+        return {
+          ...entry,
+          __eagleeye_rank: rank,
+          target_type: targetType,
+          target_id: targetId
+        };
+      });
+      await archiveRankingHistoryBatch(archiveBucket, {
+        kid,
+        board,
+        entries: archiveEntries,
+        observedAt,
+        sourceObservedAt,
+        sourceObservationId
+      });
+    } catch (error) {
+      console.error("ranking_history_r2_archive_failed", {
+        kid,
+        board,
+        message: error?.message || String(error)
+      });
+    }
+  }
+
   return filteredEntries.length;
 }
 
