@@ -1848,3 +1848,15 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 したがって将来、UI側に新しい診断項目だけを追加してJSON側を忘れることがないよう、機能追加時には必ずStatus JSONの契約も同時更新する。
 
 この方針はEagleEyeの今後の全機能追加に適用する。
+
+## 2026-09-28追加：王国WatchlistのPlayer保存経路R2_ONLY統一
+
+王国WatchlistのPLAYERSフェーズが `index.js` から `players` / `player_snapshots` / `player_rank_snapshots` を直接D1へINSERTしていたため、R2_ONLYの履歴保存ポリシーを迂回していた。今回この経路を共通Storeへ統一した。
+
+- `api_observations` は従来どおりD1へ保存。
+- Player本体は `materializePlayer()` を経由し、R2_ONLYなら `player_snapshots` のD1履歴INSERTをスキップ。
+- Playerランキング履歴は `savePlayerRankSnapshot()` を経由し、R2_ONLYなら `player_rank_snapshots` のD1履歴INSERTをスキップ。
+- R2成功時は `ARCHIVE_R2 / SUCCESS / d1HistoryInsertSkipped=true` の診断証跡を記録。
+- `source_observed_at` は既存の保存情報を維持する。
+
+次回影響度テストは、過去に同条件で実行した王国とは別の未テスト王国を使用する。既存履歴の影響を避け、今回パッチ後の新規実行でD1 Rows Writtenと診断証跡を確認する。
