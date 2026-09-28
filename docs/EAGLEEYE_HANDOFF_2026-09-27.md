@@ -1495,3 +1495,37 @@ docs/EAGLEEYE_DATA_ARCHITECTURE.md
 本番確認について:
 - 上記はGitHub上のコード変更であり、本番Cloudflareでの動作確認をまだ意味しない。
 - 本番で確認していない事項を「確認済み」と表現しない。
+
+## 2026-09-28 D1最小化移行の追加進捗
+
+### 今回の実装
+- src/r2-archive.js
+  - Ranking History の直接R2保存 archiveRankingHistoryBatch()
+  - Ranking History のR2読取 listRankingHistoryFromR2()
+  - Player History の直接R2保存 archivePlayerHistoryBatch()
+  - Player History のR2読取 listPlayerHistoryFromR2()
+- src/ranking-store.js
+  - saveKingdomRankingBoard() に archiveBucket を追加。
+  - 既存のD1 ranking_snapshots 保存後、同じ論理履歴をR2へ並行保存。
+  - R2保存失敗は既存D1動作を壊さないため非致命。
+- src/player-store.js
+  - materializePlayer() に archiveBucket を追加。
+  - 既存のD1 player_snapshots 保存後、同じ観測をR2へ並行保存。
+  - R2保存失敗は既存D1動作を壊さないため非致命。
+- src/index.js
+  - Watchlist / Admin Ranking Test / Player取得経路から env.ARCHIVE を渡すよう変更。
+
+### 重要
+- この段階ではD1使用量はまだ減っていない。
+- ranking_snapshots / player_snapshots のD1書込みはまだ生きている。
+- 本番テストはまだ依頼しない。
+- 次の目標は、R2 readerを実際の既存History API/UIと比較できる状態にしてから、D1 history writeを段階的に止めること。
+- 本番確認済みとは一切扱わない。R2 dual-writeも未デプロイ・未本番確認。
+
+### 次の実装順
+1. R2 Player History readerを既存 getPlayerHistory 相当のAPI/UIへ接続可能な比較層として仕上げる。
+2. R2 Ranking History readerを既存 getRankingHistory 相当へ接続可能な比較層として仕上げる。
+3. Player Ranking HistoryもR2化。
+4. 既存UI/APIとの出力差分を確認。
+5. R2が同等結果を返せることを確認してからD1 history write削減へ進む。
+6. 同一条件でD1 Rows Writtenを再計測し、そこで初めて本番テストを依頼する。
