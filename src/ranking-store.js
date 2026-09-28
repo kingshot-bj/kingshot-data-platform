@@ -250,8 +250,6 @@ export async function saveKingdomRankingBoard(db, {
   statements.push(db.prepare(
     "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
   ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
-  await insertRankingStatements(db, statements);
-
   const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
   let archived = false;
 
