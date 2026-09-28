@@ -5095,7 +5095,7 @@ async function renderPublicStatusPage(request, env) {
 
   const googleModes = [
     env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
-    env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account"
+    env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account" : null
   ].filter(Boolean);
   const googleSection = `
     <section class="section">
