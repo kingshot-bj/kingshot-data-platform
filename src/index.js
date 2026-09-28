@@ -4919,7 +4919,7 @@ async function renderPublicStatusPage(request, env) {
   // its free-tier row limit, this monitor must still be able to report usage.
   const [usageResult, diagnosticsResult, operationalResult] = await Promise.allSettled([
     canViewDetailedUsage
-      ? getCloudflareD1Usage(env)
+      ? getCloudflareD1Usage(env, { includeQueryInsights: false })
       : Promise.resolve({
           configured: false,
           status: "HIDDEN",
