@@ -810,11 +810,19 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       + (workerRequestOverage / 1_000_000) * 0.30
       + (workerCpuOverage / 1_000_000) * 0.02
     : 0;
-  const estimatedMonthlyCostUsd = monitoring.budgetUsd + estimatedOverageUsd;
-  const budgetUtilizationPercent = monitoring.budgetUsd > 0
-    ? (estimatedMonthlyCostUsd / monitoring.budgetUsd) * 100
-    : null;
+  const resourcePercents = [
+    rowsReadPercent,
+    rowsWrittenPercent,
+    storagePercent,
+    workers.available ? workers.requestsPercent : null,
+    workers.available ? workers.cpuTimeMsPercent : null,
+    r2.available ? r2.classAPercent : null,
+    r2.available ? r2.classBPercent : null,
+    r2.available ? r2.storagePercent : null
+  ].filter(value => Number.isFinite(value));
+  const budgetUtilizationPercent = resourcePercents.length ? Math.max(...resourcePercents) : null;
   const budgetState = resourceState(budgetUtilizationPercent);
+  const estimatedMonthlyCostUsd = monitoring.budgetUsd + estimatedOverageUsd;
   const resourceStates = [
     resourceState(rowsReadPercent),
     resourceState(rowsWrittenPercent),
