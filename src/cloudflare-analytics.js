@@ -106,7 +106,6 @@ query EagleEyeWorkersUsage(
           requests
           errors
           subrequests
-          cpuTime
         }
         quantiles {
           cpuTimeP50
@@ -356,8 +355,10 @@ function summarizeWorkersUsage(groups, limits) {
     acc.requests += normalizeNumber(sum.requests);
     acc.errors += normalizeNumber(sum.errors);
     acc.subrequests += normalizeNumber(sum.subrequests);
-    acc.cpuTimeMs = normalizeNumber(sum.cpuTime);
-    acc.cpuTimeP50 = Math.max(acc.cpuTimeP50, normalizeNumber(group?.quantiles?.cpuTimeP50));
+    const requests = normalizeNumber(sum.requests);
+    const cpuP50 = normalizeNumber(group?.quantiles?.cpuTimeP50);
+    acc.cpuTimeMs += requests * cpuP50;
+    acc.cpuTimeP50 = Math.max(acc.cpuTimeP50, cpuP50);
     acc.cpuTimeP90 = Math.max(acc.cpuTimeP90, normalizeNumber(group?.quantiles?.cpuTimeP90));
     acc.cpuTimeP99 = Math.max(acc.cpuTimeP99, normalizeNumber(group?.quantiles?.cpuTimeP99));
     return acc;
