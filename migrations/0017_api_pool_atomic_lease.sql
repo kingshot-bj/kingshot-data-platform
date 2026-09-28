@@ -11,3 +11,9 @@ ALTER TABLE api_pool_keys ADD COLUMN lease_target_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_api_pool_keys_lease
   ON api_pool_keys(provider, pool_type, status, leased_until, cooldown_until, last_used_at, created_at);
+
+-- Existing leases belong to the pre-migration coordination model. The new
+-- claim path does not consult api_leases, so expire them once during migration.
+UPDATE api_leases
+SET status = 'EXPIRED'
+WHERE status = 'ACTIVE';
