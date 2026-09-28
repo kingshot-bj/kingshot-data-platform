@@ -1796,6 +1796,18 @@ async function handleKingdomWatchlistApi(request, env) {
         received: { kid: body.kid ?? null, top_n: body.top_n ?? null, interval_hours: body.interval_hours ?? null }
       }, 400);
     }
+    await ensureWatchlistLimitTable(env.DB);
+    const limits = await getWatchlistLimits(env.DB);
+    const role = String(auth.role || "BASIC").toUpperCase();
+    const kingdomLimit = getRoleWatchlistLimit(limits, role, "kingdom");
+    const usage = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM kingdom_watchlists WHERE discord_id = ? AND enabled = 1"
+    ).bind(auth.discord_id).first();
+    const used = Number(usage?.count || 0);
+    if (kingdomLimit > 0 && used >= kingdomLimit) {
+      return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit: kingdomLimit, used }, 409);
+    }
+
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
     await env.DB.prepare(
