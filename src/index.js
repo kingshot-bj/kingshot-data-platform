@@ -5590,6 +5590,13 @@ async function renderPublicStatusPage(request, env) {
     return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[unit];
   };
   const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
+  const monitoringProfile = usage.monitoring?.profile || "FREE";
+  const monitoringLabel = usage.monitoring?.label || "Workers Free";
+  const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
+  const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
+  const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
+    ? "$5 Paid枠・安全上限の最大使用率"
+    : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
     const item = cloudflareUsageLabel(stateValue);
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
@@ -5689,6 +5696,7 @@ async function renderPublicStatusPage(request, env) {
 
   const runtimeConfigRows = [
     ["Worker", "kingshot-data-platform", true],
+    ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
     ["DB Binding", "D1", Boolean(env.DB)],
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
     ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
@@ -5716,7 +5724,7 @@ async function renderPublicStatusPage(request, env) {
     <section class="section">
       <h2>Workers 詳細</h2>
       <div class="card resource-card">
-        <div class="resource-row"><div><b>Requests</b><small>当日UTC / Free Tier 100,000</small></div><strong>${formatInt(usage.workers.requests)} · ${formatPercent(usage.workers.requestsPercent)}</strong></div>
+        <div class="resource-row"><div><b>Requests</b><small>${monitoringProfile === "PAID_5USD" ? "請求サイクル内 / Paid込み枠安全上限" : "当日UTC / Free Tier 100,000"}</small></div><strong>${formatInt(usage.workers.requests)} · ${formatPercent(usage.workers.requestsPercent)}</strong></div>
         <div class="resource-row"><div><b>Errors</b><small>当日UTC</small></div><strong>${formatInt(usage.workers.errors)}</strong></div>
         <div class="resource-row"><div><b>Subrequests</b><small>平均 / invocation</small></div><strong>${formatInt(usage.workers.subrequests)} · avg ${Number(usage.workers.averageSubrequests || 0).toFixed(2)}</strong></div>
         <div class="resource-row"><div><b>CPU P50 / P90 / P99</b><small>ms / invocation</small></div><strong>${Number(usage.workers.cpuTimeP50 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP90 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP99 || 0).toFixed(2)} ms</strong></div>
@@ -5758,17 +5766,19 @@ async function renderPublicStatusPage(request, env) {
       <section class="section">
         <h2>Cloudflare リソース監視</h2>
         <div class="card resource-card">
-          <div class="resource-head"><div><b>D1 Free Tier</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
+          <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>監視プロファイル: PAID_5USD · 請求サイクルはCloudflare側を基準</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
           ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
           <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
-          <div class="resource-head"><div><b>Workers Free Tier</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · 当日UTC</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
+          <div class="resource-head"><div><b>${monitoringProfile === "PAID_5USD" ? "Workers Paid $5 Included" : "Workers Free Tier"}</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · ${monitoringProfile === "PAID_5USD" ? "請求サイクル内" : "当日UTC"}</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
           ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
-          <div class="resource-head"><div><b>R2 Free Tier</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
+          <div class="resource-head"><div><b>R2 ${monitoringProfile === "PAID_5USD" ? "Included" : "Free Tier"}</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
           ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
           ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
           ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
           <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-note">PAID_5USD はCloudflare Workers Paidの月次込み枠を基準に、EagleEye側で90%を安全上限として監視します。無料へ戻す場合は <code>CLOUDFLARE_MONITORING_PROFILE=FREE</code> に切り替えて再デプロイすると、従来のFree監視へ戻せます。</div>` : `<div class="resource-note">現在はFree監視プロファイルです。Paid移行時は <code>CLOUDFLARE_MONITORING_PROFILE=PAID_5USD</code> に切り替えます。</div>`}
         </div>
       </section>
     `
