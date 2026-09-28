@@ -1860,3 +1860,17 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - `source_observed_at` は既存の保存情報を維持する。
 
 次回影響度テストは、過去に同条件で実行した王国とは別の未テスト王国を使用する。既存履歴の影響を避け、今回パッチ後の新規実行でD1 Rows Writtenと診断証跡を確認する。
+
+
+## 2026-09-28｜R2障害時のD1緊急退避設計
+
+- R2は正式な履歴アーカイブ、D1は現在状態を担当する基本方針を維持する。
+- R2障害時の可用性確保のため、D1に `history_emergency_buffer` を追加。これは通常履歴保存先ではなく、R2復旧までの一時退避専用。
+- `HISTORY_STORAGE_MODE=R2_ONLY` では、R2成功時は `ranking_snapshots` / `player_snapshots` / `player_rank_snapshots` へ1件ずつ履歴を書かない。
+- R2失敗時は履歴データをEmergency Bufferへ1 batch = 1 row単位で退避し、上限を超える場合は履歴保存を継続せずジョブを停止する。これによりR2障害がD1 Free Tierの大量消費へ連鎖しないようにする。
+- R2復旧時はCronでEmergency Bufferを古い順にR2へ再アーカイブし、成功した行からD1 Bufferを削除する。
+- Emergency Bufferの状態（pending / failed / bytes / limits）はGatewayのStatus JSONへ公開し、Status JSONをテレメトリの正規ソースとする。
+- R2 PutObjectは未知長のgzip ReadableStreamを直接渡さず、gzip済みArrayBufferを渡す。これにより既知長ペイロードとして保存する。
+- 既存のD1 `ranking_snapshots` 広範囲SELECTは復活させない。
+- 既存のDUALモードでは従来のD1履歴保存を維持し、Emergency BufferはR2_ONLYの障害退避経路としてのみ使用する。
+- 本番デプロイ・本番動作は未確認。確認済みとは扱わない。
