@@ -3315,8 +3315,27 @@ async function handlePlayerVisibilityApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
   try {
-    if (request.method === "GET") return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
+    if (request.method === "GET") return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB), watchlist_limits: await getWatchlistLimits(env.DB) });
     if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    if (body.action === "watchlist_limit") {
+      await ensureWatchlistLimitTable(env.DB);
+      const role = String(body.role || "").trim().toUpperCase();
+      const kingdomLimit = Number(body.kingdom_limit);
+      const playerLimit = Number(body.player_limit);
+      if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(role) ||
+          !Number.isInteger(kingdomLimit) || kingdomLimit < 0 || kingdomLimit > 1000 ||
+          !Number.isInteger(playerLimit) || playerLimit < 0 || playerLimit > 5000) {
+        return json({ ok: false, error: "INVALID_WATCHLIST_LIMIT" }, 400);
+      }
+      if (guard.auth.role === "ADMIN" && role === "OWNER") {
+        return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(
+        "UPDATE watchlist_limits SET kingdom_limit = ?, player_limit = ?, updated_at = ?, updated_by = ? WHERE role = ?"
+      ).bind(kingdomLimit, playerLimit, now, guard.auth.user_id, role).run();
+      return json({ ok: true, watchlist_limits: await getWatchlistLimits(env.DB) });
+    }
     const body = await request.json().catch(() => ({}));
     const itemKey = String(body.item_key || "").trim();
     const minRole = String(body.min_role || "").trim().toUpperCase();
