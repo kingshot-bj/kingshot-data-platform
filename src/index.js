@@ -174,7 +174,6 @@ async function ensurePlayerVisibilityTable(db) {
     );
 
     const now = Math.floor(Date.now() / 1000);
-    const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
     const statements = [];
 
     if (!hasMinRole && legacyRows.length) {
