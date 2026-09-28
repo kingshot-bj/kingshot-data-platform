@@ -3536,7 +3536,7 @@ async function renderPlayerVisibilityPage(request, env) {
     ".catch(function(e){select.value=previous;setStatus('更新失敗: '+e.message,true);})" +
     ".finally(function(){select.disabled=false;});});});" +
     "document.querySelectorAll('.limit-input').forEach(function(input){input.addEventListener('change',function(){var role=input.getAttribute('data-role');" +
-    "var group=Array.prototype.slice.call(document.querySelectorAll('.limit-input[data-role="'+role+'"]'));var kingdom=0,player=0;" +
+     "var group=Array.prototype.slice.call(document.querySelectorAll('.limit-input[data-role=\"'+role+'\"]'));var kingdom=0,player=0;" +
     "group.forEach(function(x){if(x.getAttribute('data-type')==='kingdom')kingdom=Number(x.value);if(x.getAttribute('data-type')==='player')player=Number(x.value);});" +
     "if(!Number.isInteger(kingdom)||kingdom<0||kingdom>1000||!Number.isInteger(player)||player<0||player>5000){setStatus('上限値が不正です。王国0〜1000、プレイヤー0〜5000で設定してください。',true);return;}" +
     "group.forEach(function(x){x.disabled=true;});" +
