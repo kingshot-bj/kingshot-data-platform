@@ -5594,6 +5594,8 @@ async function renderPublicStatusPage(request, env) {
   const monitoringLabel = usage.monitoring?.label || "Workers Free";
   const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
   const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
+  const monitoringEstimatedCostUsd = usage.monitoring?.estimatedMonthlyCostUsd ?? null;
+  const monitoringEstimatedOverageUsd = usage.monitoring?.estimatedOverageUsd ?? null;
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
     ? "$5.00 Paid枠・安全上限の最大使用率"
     : "Freeプラン現行監視の最大使用率";
@@ -5768,6 +5770,7 @@ async function renderPublicStatusPage(request, env) {
         <div class="card resource-card">
           <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>監視プロファイル: PAID_5USD · 請求サイクルはCloudflare側を基準</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div>` : ""}
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計</small></div><strong>${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出</small></div><strong>${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</strong></div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
           ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
           <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
