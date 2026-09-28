@@ -1908,3 +1908,42 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - 推定超過額はD1 rows read/write、Workers requests/CPUの公開単価による推計であり、Cloudflare請求額そのものではない。GraphQL Analyticsは請求値そのものではないため、最終請求確認はCloudflare Billingを正とする。
 - 無料へ戻す際は `CLOUDFLARE_MONITORING_PROFILE=FREE` に変更してデプロイする。コードの監視ロジックを作り直す必要はない。
 - 本変更はGitHub上のコード/configのみ実施。**本番デプロイ・本番での数値確認は未実施。確認済みとは扱わない。**
+
+
+## 2026-09-28｜D1削減 Phase 2：API Pool atomic lease 実装
+
+### 実装済み（GitHub main）
+- migrations/0017_api_pool_atomic_lease.sql
+  - api_pool_keys に lease_id / leased_until / lease_job_id / lease_purpose / lease_target_type / lease_target_id を追加。
+  - API Pool用lease indexを追加。
+  - 旧 api_leases のACTIVE行はmigration時にEXPIREDへ移行。
+- src/api-pool.js
+  - 従来の SELECT key → INSERT api_leases を廃止。
+  - api_pool_keys の1回のUPDATEでkey claim + lease確保を行う方式へ変更。
+  - lease releaseを api_pool_keys UPDATEへ移行。
+  - 成功/失敗時のkey状態更新とlease解放を同一UPDATEへ統合。
+  - scheduled cleanupは api_pool_keys.leased_until の期限切れclaimのみを処理。
+  - 旧 api_leases の定期UPDATE/DELETEを停止。
+  - api_leases テーブル自体は互換期間のため残置。Adminのkey削除時のcleanupにも残している。
+- migrations/0018_runtime_schema_cleanup.sql
+  - watchlist_limits のschema/default seedをmigration化。
+  - diagnostic_events のschema/indexをmigration化。
+- src/index.js
+  - watchlist_limits のruntime CREATE/seed処理を削除。
+  - 各watchlist操作からruntime schema checkを削除。
+- src/diagnostics.js
+  - diagnostic_events のruntime CREATE/INDEX処理をmigration前提のno-opへ変更。
+  - SUCCESS 5分throttleは維持。
+
+### 検証
+- GitHub上のmainコードについて src/api-pool.js / src/diagnostics.js / src/index.js の構文チェックを実施し、すべてsyntax OK。
+- atomic claim SQLはSQLite互換テストで、1件目のclaim成功・2件目のlease中claim拒否を確認。
+- success時のlease解放を同一UPDATEへ統合したSQLもSQLite互換テストで確認。
+- Cloudflare本番DBへのmigration適用、Worker deploy、本番API Pool実行、D1 Query Insightsでの削減量は未確認。
+- 本番確認済みとは扱わない。
+
+### 次の候補
+- player_visibility_settings のruntime CREATE / PRAGMA / 初期seedもmigrationへ移す。ただし既存legacy schemaの min_role 有無を本番DBで確認してから実施する。
+- api_pool_usage は監査・履歴として当面維持。
+- api_leases は新方式の安定確認後に完全撤去する。
+- api_pool_keys の last_used_at / last_success_at telemetry writeは、round-robin性能を維持しながら条件付き更新へ削減できる可能性がある。
