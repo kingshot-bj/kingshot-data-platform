@@ -5023,8 +5023,8 @@ function showHistory(id){
     .then(function(d){
       var text=(d.history||[]).map(function(x){
         return fmt(x.logged_in_at)+" · "+esc(x.global_name||x.username||x.discord_id);
-      }).join("\n") || "ログイン履歴なし";
-      alert("ログイン履歴\n\n"+text);
+      }).join("\\n") || "ログイン履歴なし";
+      alert("ログイン履歴\\n\\n"+text);
     });
 }
 function findWatchPanel(id){
@@ -5056,7 +5056,7 @@ function loadWatchlists(id){
     });
 }
 function deleteWatchlist(type,id,userId,buttonEl){
-  if(!confirm((type==="KINGDOM"?"王国":"プレイヤー")+"ウォッチリストを削除しますか？\nこの操作はOWNERによる復旧操作です。")) return Promise.resolve();
+  if(!confirm((type==="KINGDOM"?"王国":"プレイヤー")+"ウォッチリストを削除しますか？\\nこの操作はOWNERによる復旧操作です。")) return Promise.resolve();
   buttonEl.disabled=true;
   return jsonFetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(userId)+"&type="+encodeURIComponent(type)+"&watchlist_id="+encodeURIComponent(id),{
     method:"DELETE",credentials:"same-origin"
