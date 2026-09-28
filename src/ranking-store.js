@@ -46,6 +46,14 @@ export async function getLatestKingdomRankingBoard(db, { kid, board }) {
   return result.results || [];
 }
 
+export function normalizeGovernorId(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\d+\.0+$/.test(text)) return text.slice(0, text.indexOf("."));
+  return text;
+}
+
 function normalizeRankingValue(value) {
   if (value === null || value === undefined) return null;
   return String(value);
@@ -55,7 +63,7 @@ function rankingEntryTarget(board, entry, index, kid) {
   const targetType = isAllianceEntry(board, entry) ? "ALLIANCE" : "PLAYER";
   const targetId = targetType === "ALLIANCE"
     ? firstString(entry.aid, entry.id, entry.abbr, `${kid}:${board}:${index}`)
-    : firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`);
+    : normalizeGovernorId(firstString(entry.governor_id, entry.governorId, entry.uid, `${kid}:${board}:${index}`));
   return { targetType, targetId: String(targetId) };
 }
 
@@ -83,7 +91,7 @@ export async function getKingdomRankingChanges(db, { kid, board, entries, observ
     const target = rankingEntryTarget(board, entry, index, kid);
     const current = {
       board: String(board), targetType: target.targetType, targetId: target.targetId, rank: index + 1,
-      score: entry.score ?? entry.value ?? null, uid: entry.uid ?? null, governor_id: entry.governor_id ?? null,
+      score: entry.score ?? entry.value ?? null, uid: entry.uid ?? null, governor_id: normalizeGovernorId(entry.governor_id),
       nick_name: entry.nick_name ?? null, aid: entry.aid ?? null, abbr: entry.abbr ?? null, name: entry.name ?? null
     };
     const key = target.targetType + ":" + target.targetId;
@@ -123,7 +131,7 @@ function buildKingdomRankingInsertStatements(db, { kid, board, entries, observed
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).bind(
       crypto.randomUUID(), Number(kid), String(board), targetType, targetId, rank,
-      entry.score ?? entry.value ?? null, entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null,
+      entry.score ?? entry.value ?? null, entry.uid ?? null, normalizeGovernorId(entry.governor_id), entry.nick_name ?? null,
       entry.aid ?? null, entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, observedAt
     );
   });
@@ -154,7 +162,7 @@ export async function saveKingdomRankingBoard(db, {
       'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, previous_rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET previous_rank=kingdom_ranking_current.rank, rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
     ).bind(
       Number(kid), String(board), targetType, targetId, rank, null, entry.score ?? entry.value ?? null,
-      entry.uid ?? null, entry.governor_id ?? null, entry.nick_name ?? null, entry.aid ?? null,
+      entry.uid ?? null, normalizeGovernorId(entry.governor_id), entry.nick_name ?? null, entry.aid ?? null,
       entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, Number(checkedAt)
     ));
   }
