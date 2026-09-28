@@ -1,4 +1,5 @@
 import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2 } from "./r2-archive.js";
+import { recordDiagnostic } from "./diagnostics.js";
 
 const PLAYER_RANK_FIELDS = [
   ["power", "power_rank"],
@@ -281,13 +282,45 @@ export async function saveKingdomRankingBoard(db, {
       });
       archived = true;
     } catch (error) {
+      const message = error?.message || String(error);
       console.error("ranking_history_r2_archive_failed", {
         kid,
         board,
-        message: error?.message || String(error)
+        message
       });
-      if (r2Only) console.warn("ranking_history_d1_fallback", { kid, board });
+      if (r2Only) {
+        console.warn("ranking_history_d1_fallback", { kid, board });
+        await recordDiagnostic(db, {
+          service: "ranking",
+          feature: "history_storage",
+          operation: "ARCHIVE_R2",
+          status: "FAILED",
+          errorCode: "R2_ARCHIVE_FAILED",
+          message,
+          provider: "CLOUDFLARE_R2",
+          targetType: "KINGDOM",
+          targetId: String(kid),
+          rowsReceived: filteredEntries.length,
+          rowsSaved: 0,
+          metadata: { board, historyMode: "R2_ONLY", fallback: "D1" }
+        });
+      }
     }
+  } else if (r2Only && filteredEntries.length) {
+    await recordDiagnostic(db, {
+      service: "ranking",
+      feature: "history_storage",
+      operation: "ARCHIVE_R2",
+      status: "FAILED",
+      errorCode: "R2_ARCHIVE_BINDING_MISSING",
+      message: "HISTORY_STORAGE_MODE=R2_ONLYですがARCHIVE R2 bindingが実行時に存在しません。",
+      provider: "CLOUDFLARE_R2",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      rowsReceived: filteredEntries.length,
+      rowsSaved: 0,
+      metadata: { board, historyMode: "R2_ONLY", fallback: "D1", archiveBindingConfigured: false }
+    });
   }
 
   if (!r2Only || !filteredEntries.length || !archived) {
