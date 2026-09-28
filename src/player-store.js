@@ -1,3 +1,34 @@
+let playerIdentityHistorySchemaPromise = null;
+
+async function ensurePlayerIdentityHistorySchema(db) {
+  if (playerIdentityHistorySchemaPromise) return playerIdentityHistorySchemaPromise;
+  playerIdentityHistorySchemaPromise = (async () => {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS player_identity_history (
+        identity_history_id TEXT PRIMARY KEY,
+        governor_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        first_seen_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        source_observation_id TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+    await db.prepare(
+      "CREATE INDEX IF NOT EXISTS idx_player_identity_history_governor ON player_identity_history (governor_id, first_seen_at ASC)"
+    ).run();
+    await db.prepare(
+      "CREATE INDEX IF NOT EXISTS idx_player_identity_history_name ON player_identity_history (name, governor_id)"
+    ).run();
+  })();
+  try {
+    return await playerIdentityHistorySchemaPromise;
+  } catch (error) {
+    playerIdentityHistorySchemaPromise = null;
+    throw error;
+  }
+}
+
 export async function getLatestPlayerObservation(db, governorId) {
   const row = await db.prepare(
     `SELECT observation_id, observed_at, http_status, payload_json
@@ -38,6 +69,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
   const now = Math.floor(Date.now() / 1000);
   const governorId = String(player.governor_id ?? observation.payload.governor_id);
 
+  await ensurePlayerIdentityHistorySchema(db);
   await savePlayerIdentityHistory(db, existing, player, observation);
   await savePlayerChangeEvents(db, existing, player, observation);
 
@@ -125,6 +157,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
 
 export async function getPlayerNameHistory(db, governorId, limit = 20) {
   if (!db) throw new Error("D1 database binding is not configured.");
+  await ensurePlayerIdentityHistorySchema(db);
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
   const result = await db.prepare(
     `SELECT name, first_seen_at, last_seen_at, source_observation_id
