@@ -8,7 +8,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
-import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
+import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
@@ -2433,6 +2433,7 @@ export default {
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
+      if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
@@ -2711,6 +2712,32 @@ function logout(request) {
     maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
   return new Response(null, { status: 302, headers });
+}
+
+async function handlePlayerRankHistoryApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+
+  const url = new URL(request.url);
+  const governorId = String(url.searchParams.get("governor_id") || "").trim();
+  if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
+  try {
+    const history = await getPlayerRankHistory(env.DB, {
+      governorId,
+      limit,
+      archiveBucket: env.ARCHIVE
+    });
+    return json({
+      ok: true,
+      governor_id: governorId,
+      history
+    });
+  } catch (error) {
+    console.error("Player rank history API error:", error);
+    return json({ ok: false, error: "PLAYER_RANK_HISTORY_READ_FAILED" }, 500);
+  }
 }
 
 async function handleRankingPlayerTest(request, env) {
