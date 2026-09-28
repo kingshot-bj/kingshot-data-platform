@@ -4917,18 +4917,37 @@ async function renderOwnerAdminPage(request,env){
     user.player_watchlist_count = playerByDiscord.get(String(user.discord_id)) || 0;
   });
   const ownerUsers=users.results || [];
+  const initialUsersHtml = ownerUsers.map(user => {
+    const self = user.user_id === guard.auth.user_id;
+    const watchAction = self
+      ? '<span class="muted">自分は対象外</span>'
+      : '<button type="button" class="secondary" data-a="watchlists" data-id="' + escapeHtml(user.user_id) + '">監視管理</button>';
+    return '<article class="user-card"><div class="user-head"><div class="user-name"><b>' +
+      escapeHtml(user.global_name || user.username || "Discord User") +
+      '</b><span class="muted">@' + escapeHtml(user.username || "") +
+      '</span><div class="user-id">' + escapeHtml(user.discord_id) +
+      '</div></div><div class="badges"><span class="role">' + escapeHtml(user.role) +
+      '</span><span class="status">' + escapeHtml(user.status) +
+      '</span></div></div><div class="user-stats">' +
+      '<div class="stat"><span>登録</span><b>' + (user.created_at ? new Date(Number(user.created_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
+      '<div class="stat"><span>最終ログイン</span><b>' + (user.last_login_at ? new Date(Number(user.last_login_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
+      '<div class="stat"><span>ログイン回数</span><b>' + escapeHtml(user.login_count || 0) + '</b></div>' +
+      '<div class="stat"><span>王国ウォッチ</span><b>' + escapeHtml(user.kingdom_watchlist_count || 0) + '件</b></div>' +
+      '<div class="stat"><span>プレイヤーウォッチ</span><b>' + escapeHtml(user.player_watchlist_count || 0) + '件</b></div>' +
+      '</div><div class="actions">' + watchAction + '</div></article>';
+  }).join("") || '<div class="muted">ユーザーが登録されていません</div>';
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye OWNER CONTROL</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← EagleEye</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
 <div class="card"><h2>管理機能</h2><div class="links"><a class="link" href="/admin/api-pool"><b>API Pool管理</b><span>APIキー・Pool・テスト</span></a><a class="link" href="/admin/diagnostics"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細</span></a><a class="link" href="/admin/kingdom-rankings"><b>王国ランキング</b><span>必要なランキングだけ取得・閲覧・Sheets出力</span></a><a class="link" href="/admin/data-retention"><b>データ保存期間</b><span>D1履歴・R2アーカイブ</span></a><a class="link" href="/admin/player-visibility"><b>データ公開設定</b><span>ロール別公開範囲</span></a><a class="link" href="/players"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更</span></a><a class="link" href="/kingdom-watchlist"><b>王国ウォッチリスト</b><span>監視対象・ランキング</span></a></div></div>
-<div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list"></div></div>
+<div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
 (function(){
 const initialUsers=${usersJson},initialLogs=${logsJson},ownerId=${ownerId};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=t=>t?new Date(Number(t)*1000).toLocaleString("ja-JP"):"-";
-let users=initialUsers,activeWatchUserId=null;
+let users=Array.isArray(initialUsers)?initialUsers:[],activeWatchUserId=null;
 const ue=document.getElementById("users"),ae=document.getElementById("audit"),msg=document.getElementById("msg"),search=document.getElementById("search");
 function draw(){
  const q=search.value.trim().toLowerCase();
@@ -5006,7 +5025,7 @@ ue.addEventListener("click",async e=>{
  catch(err){msg.textContent=err.message;button.disabled=false;}
 });
 document.getElementById("reload").addEventListener("click",refresh);
-draw();drawAudit(initialLogs);
+try{draw();}catch(error){msg.textContent="ユーザー一覧の表示エラー: "+(error.message||error);}drawAudit(initialLogs);
 })();
 </script></body></html>`;
 }
