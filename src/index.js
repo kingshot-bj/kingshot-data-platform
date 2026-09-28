@@ -608,7 +608,8 @@ async function processKingdomWatchlistJob(env, job) {
         entriesAlreadyFiltered: true,
         observedAt: job.observed_at,
         sourceObservedAt,
-        checkedAt: Math.floor(Date.now() / 1000)
+        checkedAt: Math.floor(Date.now() / 1000),
+        archiveBucket: env.ARCHIVE
       });
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
@@ -2732,7 +2733,8 @@ async function handleRankingPlayerTest(request, env) {
       kid: raw?.kid ?? result.data?.kid ?? null,
       ranks,
       observedAt: Math.floor(Date.now() / 1000),
-      sourceObservedAt: getMightPulseSourceTimestamp(result.data)
+      sourceObservedAt: getMightPulseSourceTimestamp(result.data),
+      archiveBucket: env.ARCHIVE
     }) : null;
 
     return json({ ok: true, governor_id: governorId, saved_snapshot: Boolean(saved), ranks });
@@ -4889,7 +4891,8 @@ async function handleAdminKingdomRankingApi(request, env) {
         kid: Number(kid), board, entries: rankingComparison.changedEntries,
         removedTargets: rankingComparison.removedTargets,
         entriesAlreadyFiltered: true, observedAt, sourceObservedAt,
-        checkedAt: Math.floor(Date.now() / 1000)
+        checkedAt: Math.floor(Date.now() / 1000),
+        archiveBucket: env.ARCHIVE
       });
       const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
       return json({
