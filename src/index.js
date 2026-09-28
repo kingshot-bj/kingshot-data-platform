@@ -3763,10 +3763,10 @@ async function handlePlayerApi(request, env) {
     if (!observation || refresh || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
-      player = await materializePlayer(env.DB, observation, player);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
       source = "MIGHTPULSE";
     } else if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation, player);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
@@ -3814,7 +3814,7 @@ async function handlePlayerRefresh(request, env) {
 
   try {
     const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH");
-    const player = await materializePlayer(env.DB, fetched.observation);
+    const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     return json({
       ok: true,
@@ -4243,7 +4243,7 @@ async function renderPlayerPage(request, env) {
 
     let player = await getPlayer(env.DB, governorId);
     if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation, player);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
