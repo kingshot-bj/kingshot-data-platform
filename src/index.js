@@ -5116,7 +5116,28 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>`;
 
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection;
+  const queryInsights = usage.queryInsights?.available ? usage.queryInsights : null;
+  const queryInsightCategories = (queryInsights?.categories || []).slice(0, 6);
+  const queryInsightsSection = queryInsights ? `
+    <section class="section">
+      <h2>D1 Query Insights</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>Database Query Insights</b><small>Cloudflare Analytics · 当日のクエリ集計</small></div><span class="state good">取得済み</span></div>
+        <div class="resource-row"><div><b>クエリ種類</b><small>集計されたユニーククエリ</small></div><strong>${formatInt(queryInsights.queryCount)}</strong></div>
+        ${queryInsightCategories.length ? `
+          <div class="insight-list">
+            ${queryInsightCategories.map(item => `
+              <div class="insight-query">
+                <div class="insight-query-head"><span>${escapeHtml(item.category)}</span><span>${formatInt(item.count)} 回</span></div>
+                <small>Rows Read ${formatInt(item.rowsRead)} · Rows Written ${formatInt(item.rowsWritten)}</small>
+              </div>
+            `).join("")}
+          </div>` : '<div class="resource-note">当日のクエリ集計はまだありません。</div>'}
+        <div class="resource-note">公開ステータスではSQL本文を表示せず、カテゴリ別の集計のみ表示します。詳細なSQL調査は管理者向け診断画面で行います。</div>
+      </div>
+    </section>` : "";
+
+  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection + queryInsightsSection;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
