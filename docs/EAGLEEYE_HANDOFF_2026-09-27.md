@@ -1529,3 +1529,43 @@ docs/EAGLEEYE_DATA_ARCHITECTURE.md
 4. 既存UI/APIとの出力差分を確認。
 5. R2が同等結果を返せることを確認してからD1 history write削減へ進む。
 6. 同一条件でD1 Rows Writtenを再計測し、そこで初めて本番テストを依頼する。
+
+## 2026-09-28 R2履歴Reader移行ブリッジ実装
+
+今回、R2へのdual-writeだけで止まっていたPlayer History / Ranking Historyについて、既存APIからR2を参照できる互換Readerを追加した。
+
+### Player History
+- `src/player-store.js`
+  - `getPlayerHistory(db, governorId, limit, archiveBucket)` を追加。
+  - D1 `player_snapshots` とR2 `history/v1/player_snapshots/...\` を取得し、`observation_id` を優先して重複排除。
+  - R2読取失敗時はD1結果を維持する。
+  - R2にまだ履歴が存在しない場合もD1結果を返す。
+- `src/index.js`
+  - `/api/player/history` が `getPlayerHistory(..., env.ARCHIVE)` を利用するよう変更。
+  - 既存のrole別filterを維持。
+
+### Ranking History
+- `src/ranking-store.js`
+  - `getRankingHistory(..., archiveBucket)` を拡張。
+  - D1 `ranking_snapshots` とR2履歴を取得し、source observation id等で重複排除。
+  - R2読取失敗時はD1結果を維持する。
+- `src/index.js`
+  - `/api/kingdom-watchlist/history` から `env.ARCHIVE` を渡すよう変更。
+
+### D1最小化への位置づけ
+この段階でもD1の履歴読み書きは削減していない。
+これは意図的であり、先に「R2が既存D1履歴と同じ意味のデータを返せる」ことを検証するための移行ブリッジである。
+
+次に行うこと：
+1. Player History / Ranking History のR2結果とD1結果の比較確認。
+2. Player Ranking HistoryについてもR2 Readerを実装。
+3. APIレスポンスの互換性を確認。
+4. 十分に一致した後、D1履歴書き込み停止を検討。
+5. その後、同一条件でD1 Rows Writtenを再計測。
+6. 初めてここで本番テストを依頼する。
+
+重要：
+- 本番デプロイ・本番動作確認はまだ行っていない。
+- 「R2へ移行済み」「D1使用量が削減された」とは扱わない。
+- broadな `ranking_snapshots` SELECTは追加していない。
+- 現在のD1履歴SELECTは対象IDを限定した既存API互換処理のみ。
