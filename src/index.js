@@ -1585,6 +1585,19 @@ async function handlePlayerWatchlistApi(request, env) {
     if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
     const body = await request.json().catch(() => ({}));
     const enabled = body.enabled ? 1 : 0;
+    if (enabled) {
+      await ensureWatchlistLimitTable(env.DB);
+      const limits = await getWatchlistLimits(env.DB);
+      const role = String(auth.role || "BASIC").toUpperCase();
+      const limit = getRoleWatchlistLimit(limits, role, "player");
+      const usage = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM player_watchlists WHERE discord_id = ? AND enabled = 1 AND governor_id <> ?"
+      ).bind(auth.discord_id, governorId).first();
+      const used = Number(usage?.count || 0);
+      if (limit > 0 && used >= limit) {
+        return json({ ok: false, error: "PLAYER_WATCHLIST_LIMIT_REACHED", message: "プレイヤーウォッチリストの登録上限に達しています。", limit, used }, 409);
+      }
+    }
     const now = Math.floor(Date.now() / 1000);
     const result = await env.DB.prepare(
       "UPDATE player_watchlists SET enabled = ?, updated_at = ? WHERE discord_id = ? AND governor_id = ?"
@@ -1923,9 +1936,23 @@ async function handleKingdomWatchlistApi(request, env) {
   if (request.method === "POST" && action === "toggle") {
     const body = await request.json().catch(() => ({}));
     const enabled = body.enabled ? 1 : 0;
+    const watchlistId = String(body.watchlist_id || "");
+    if (enabled) {
+      await ensureWatchlistLimitTable(env.DB);
+      const limits = await getWatchlistLimits(env.DB);
+      const role = String(auth.role || "BASIC").toUpperCase();
+      const limit = getRoleWatchlistLimit(limits, role, "kingdom");
+      const usage = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM kingdom_watchlists WHERE discord_id = ? AND enabled = 1 AND watchlist_id <> ?"
+      ).bind(auth.discord_id, watchlistId).first();
+      const used = Number(usage?.count || 0);
+      if (limit > 0 && used >= limit) {
+        return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit, used }, 409);
+      }
+    }
     await env.DB.prepare(
       "UPDATE kingdom_watchlists SET enabled = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
-    ).bind(enabled, Math.floor(Date.now() / 1000), String(body.watchlist_id || ""), auth.discord_id).run();
+    ).bind(enabled, Math.floor(Date.now() / 1000), watchlistId, auth.discord_id).run();
     return json({ ok: true });
   }
 
