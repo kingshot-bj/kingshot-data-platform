@@ -1426,3 +1426,68 @@ F. その後にPlayer Watchlist / Kingdom Watchlistの上限機能を実機確�
 次スレッドでは、以下から開始する:
 
 「前スレの引き継ぎ読んで。まずmain最新を確認して、今回のstatusログでWrittenが跳ねた原因を saveKingdomRankingBoard() / getKingdomRankingChanges() から特定しよう。ranking_snapshotsの広域SELECTは絶対に復活させない。」
+
+## 33. 2026-09-28追加：D1最小化アーキテクチャ移行開始
+
+ユーザー方針:
+- D1 free-tierを最優先し、D1は必要最低限のCurrent/Change/System Stateに統一する。
+- R2をHistory/Archiveの本体にする。
+- Google Driveは将来の永久保存先。
+- Google Sheetsは将来のResearch/検索/Export/Index用途。
+- Drive/SheetsのGoogle API連携はまだ未実装であり、後から接続できる境界を維持する。
+- 既存機能を壊さないことを最優先し、履歴の読み先をR2へ切り替える前にD1の既存履歴書き込みを削除しない。
+
+### 今回実装済み
+commit:
+- 8ffb08186f1b136abe881221a2247498b8e5dd8f
+  feat: add lightweight player name history storage
+- 377b785ba24dad53fb56ba7f7ddd2c238c1e9397
+  feat: record player name history only on identity changes
+- 6478aebe58a2dfc1c4ca4160a979d0dde6e887e7
+  feat: expose lightweight player name history reader
+- 47215fd71890b60042fd13948b90f7be6ac94255
+  feat: show player name history without snapshot reads
+- 37a2dd9725183ad7040dcb065e2c2190ee686461
+  docs: define D1 minimum and archive migration architecture
+
+### Player Identity History
+migration:
+- migrations/0014_player_identity_history.sql
+
+table:
+- player_identity_history
+
+保存ルール:
+- 初回観測時に1件作成。
+- 名前が同じ再観測ではD1 writeなし。
+- 名前変更時のみ旧名のlast_seen_at更新 + 新名1件追加。
+- governor_idを内部の同一人物キーとして使用。
+- UI/APIから過去名を確認できる。
+- これはPlayer Snapshotの代替ではなく、軽量なIdentity History。
+
+### 重要な安全措置
+まだ以下は削除・停止していない:
+- player_snapshots
+- ranking_snapshots
+- player_rank_snapshots
+- api_observations
+
+理由:
+既存のPlayer History / Ranking History / API機能がこれらを参照しているため。R2 readerを先に完成させ、既存UI/APIと同等の挙動を確認してからD1 history writeを縮小する。
+
+### 次の実装候補
+1. R2 Historyの共通reader/writer境界を作る。
+2. Player HistoryをR2 readerへ移行。
+3. Ranking HistoryをR2 readerへ移行。
+4. Player Ranking HistoryをR2 readerへ移行。
+5. API raw observationのR2化。
+6. 同一条件でD1 rows_read / rows_writtenを再計測。
+7. その後に不要なD1 history writes/retentionを縮小。
+8. 最後にGoogle Drive / Google Sheets API連携を追加。
+
+詳細設計:
+docs/EAGLEEYE_DATA_ARCHITECTURE.md
+
+本番確認について:
+- 上記はGitHub上のコード変更であり、本番Cloudflareでの動作確認をまだ意味しない。
+- 本番で確認していない事項を「確認済み」と表現しない。
