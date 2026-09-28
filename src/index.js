@@ -8,7 +8,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
-import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges } from "./ranking-store.js";
+import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer } from "./player-store.js";
@@ -662,7 +662,7 @@ async function processKingdomWatchlistJob(env, job) {
       if (!raw) continue;
 
       const observationId = crypto.randomUUID();
-      const governorId = String(raw.governor_id ?? item.governorId);
+      const governorId = normalizeGovernorId(raw.governor_id ?? item.governorId);
       const ranks = result?.data?.ranks || raw?.ranks;
       const rankSnapshot = ranks && typeof ranks === "object"
         ? buildPlayerRankSnapshotStatement(env.DB, {
@@ -1458,7 +1458,7 @@ async function handlePlayerWatchlistApi(request, env) {
 
   if (request.method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const governorId = String(body.governor_id ?? "").trim();
+    const governorId = normalizeGovernorId(body.governor_id);
     const label = String(body.label ?? "").trim().slice(0, 80) || null;
     if (!governorId || governorId.length > 64) {
       return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
@@ -1492,7 +1492,7 @@ async function handlePlayerWatchlistApi(request, env) {
   }
 
   if (request.method === "PATCH") {
-    const governorId = String(url.searchParams.get("governor_id") || "").trim();
+    const governorId = normalizeGovernorId(url.searchParams.get("governor_id"));
     if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
     const body = await request.json().catch(() => ({}));
     const enabled = body.enabled ? 1 : 0;
