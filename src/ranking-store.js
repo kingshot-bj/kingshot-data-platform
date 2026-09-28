@@ -364,6 +364,12 @@ export async function getRankingHistory(db, { kid, board, targetId, limit = 50, 
       targetId: String(targetId),
       message: error?.message || String(error)
     });
+    if (r2Only && !d1Rows.length) {
+      const fallback = await db.prepare(
+        "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? ORDER BY observed_at DESC LIMIT ?"
+      ).bind(Number(kid), String(board), String(targetId), safeLimit).all();
+      d1Rows = fallback.results || [];
+    }
   }
 
   // Migration bridge: keep D1 as the compatibility fallback while R2 history
