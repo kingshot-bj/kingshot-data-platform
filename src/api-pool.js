@@ -123,6 +123,13 @@ export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = n
 
 export async function releaseExpiredLeases(db, now = Math.floor(Date.now() / 1000)) {
   await db.prepare("UPDATE api_leases SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at <= ?").bind(now).run();
+
+  // Lease rows are coordination state, not long-term history. Keep only a short
+  // diagnostic window after release/expiry so the table cannot grow forever.
+  const leaseHistoryCutoff = now - 24 * 60 * 60;
+  await db.prepare(
+    "DELETE FROM api_leases WHERE status IN ('RELEASED','EXPIRED') AND COALESCE(released_at, expires_at, created_at) < ?"
+  ).bind(leaseHistoryCutoff).run();
 }
 
 export async function getPoolStats(db) {
