@@ -1273,6 +1273,12 @@ async function handleKingdomWatchlistDataApi(request, env) {
     ).bind(watch.kid, watch.kid, limit).all();
   }
 
+  await ensurePlayerWatchlistSchema(env.DB);
+  const watchedRows = await env.DB.prepare(
+    "SELECT governor_id FROM player_watchlists WHERE discord_id = ? AND enabled = 1"
+  ).bind(auth.discord_id).all();
+  const watchedGovernorIds = new Set((watchedRows.results || []).map(row => normalizeGovernorId(row.governor_id)).filter(Boolean));
+
   const players = await env.DB.prepare(
     "WITH top_players AS (SELECT DISTINCT CASE WHEN governor_id LIKE '%.0' THEN substr(governor_id, 1, length(governor_id) - 2) ELSE governor_id END AS governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ?) SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = CASE WHEN p.governor_id LIKE '%.0' THEN substr(p.governor_id, 1, length(p.governor_id) - 2) ELSE p.governor_id END ORDER BY p.power DESC, p.governor_id ASC"
   ).bind(watch.kid, watch.top_n).all();
@@ -1285,7 +1291,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
       source_last_at: freshnessJob?.source_last_at ? Number(freshnessJob.source_last_at) : null,
       source_completed_at: freshnessJob?.completed_at ? Number(freshnessJob.completed_at) : null
     },
-    rankings: rankings.results || [],
+    rankings: (rankings.results || []).map(row => ({ ...row, watched: row.target_type === 'PLAYER' && watchedGovernorIds.has(normalizeGovernorId(row.governor_id || row.target_id)) })),
     players: players.results || []
   });
 }
