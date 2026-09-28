@@ -136,68 +136,61 @@ function getRoleWatchlistLimit(limits, role, type) {
 async function ensurePlayerVisibilityTable(db) {
   if (playerVisibilitySchemaPromise) return playerVisibilitySchemaPromise;
   playerVisibilitySchemaPromise = (async () => {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS player_visibility_settings (
-      item_key TEXT PRIMARY KEY,
-      category TEXT NOT NULL,
-      label TEXT NOT NULL,
-      description TEXT,
-      min_role TEXT NOT NULL DEFAULT 'BASIC',
-      basic_enabled INTEGER NOT NULL DEFAULT 0,
-      advanced_enabled INTEGER NOT NULL DEFAULT 0,
-      admin_enabled INTEGER NOT NULL DEFAULT 1,
-      owner_enabled INTEGER NOT NULL DEFAULT 1,
-      updated_at INTEGER NOT NULL,
-      updated_by TEXT
-    )
-  `).run();
-
-  const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
-  const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
-  const addedMinRole = !hasMinRole;
-  if (addedMinRole) {
-    await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
-
-  for (const item of PLAYER_VISIBILITY_ITEMS) {
-    // Existing installations may have non-monotonic legacy toggles. Convert them
-    // to the equivalent threshold: the lowest role that was allowed to see the item.
-    const existing = await db.prepare(
-      "SELECT min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings WHERE item_key = ? LIMIT 1"
-    ).bind(item.key).first();
-
-    const legacyMinRole =
-      Number(existing?.basic_enabled) === 1 ? "BASIC" :
-      Number(existing?.advanced_enabled) === 1 ? "ADVANCED" :
-      Number(existing?.admin_enabled) === 1 ? "ADMIN" : "OWNER";
-
-    const minRole = !addedMinRole && existing?.min_role && roleRank[String(existing.min_role).toUpperCase()]
-      ? String(existing.min_role).toUpperCase()
-      : legacyMinRole;
-
-    const defaults = {
-      min_role: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? "BASIC" : "ADVANCED"
-    };
-
     await db.prepare(`
-      INSERT INTO player_visibility_settings
-        (item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-      ON CONFLICT(item_key) DO NOTHING
-    `).bind(
-      item.key, item.category, item.label, item.description,
-      existing ? minRole : defaults.min_role,
-      1, 1, 1, 1, now
-    ).run();
+      CREATE TABLE IF NOT EXISTS player_visibility_settings (
+        item_key TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        label TEXT NOT NULL,
+        description TEXT,
+        min_role TEXT NOT NULL DEFAULT 'BASIC',
+        basic_enabled INTEGER NOT NULL DEFAULT 0,
+        advanced_enabled INTEGER NOT NULL DEFAULT 0,
+        admin_enabled INTEGER NOT NULL DEFAULT 1,
+        owner_enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL,
+        updated_by TEXT
+      )
+    `).run();
 
-    // Existing rows are intentionally left untouched on normal reads.
-    // Visibility settings are persistent configuration; rewriting every row on
-    // every page/API request burns the D1 free row-write quota for no benefit.
+    const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
+    const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
+    if (!hasMinRole) {
+      await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
+    }
 
-  }
+    // Read all existing rows once. The old implementation issued one SELECT per
+    // visibility item, multiplying D1 row reads during cold Worker isolates.
+    const existingRows = await db.prepare(
+      "SELECT item_key, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings"
+    ).all();
+    const existingByKey = new Map(
+      (existingRows.results || []).map(row => [String(row.item_key), row])
+    );
+
+    const now = Math.floor(Date.now() / 1000);
+    const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+    const statements = [];
+
+    for (const item of PLAYER_VISIBILITY_ITEMS) {
+      const existing = existingByKey.get(item.key);
+      if (existing) continue;
+
+      const defaults = {
+        min_role: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? "BASIC" : "ADVANCED"
+      };
+
+      statements.push(db.prepare(`
+        INSERT INTO player_visibility_settings
+          (item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
+        VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?, NULL)
+        ON CONFLICT(item_key) DO NOTHING
+      `).bind(
+        item.key, item.category, item.label, item.description,
+        defaults.min_role, now
+      ));
+    }
+
+    if (statements.length) await db.batch(statements);
   })();
   try {
     return await playerVisibilitySchemaPromise;
