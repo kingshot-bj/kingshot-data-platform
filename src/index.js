@@ -1221,8 +1221,8 @@ async function handleKingdomWatchlistDataApi(request, env) {
         ) AS abbr, r.name, r.observed_at
       FROM kingdom_ranking_current r
       LEFT JOIN alliance_abbr aa ON aa.aid = r.aid
-      WHERE r.kid = ?
-      ORDER BY r.board ASC, r.rank ASC LIMIT ?`
+      WHERE r.kid = ? AND r.rank <= ?
+      ORDER BY r.board ASC, r.rank ASC`
     ).bind(watch.kid, watch.kid, limit).all();
   }
 
