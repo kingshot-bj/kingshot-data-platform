@@ -1795,12 +1795,16 @@ async function handleKingdomWatchlistApi(request, env) {
       const watchlistId = String(body.watchlist_id || "").trim();
       if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
   
-      const watch = await env.DB.prepare(
-        "SELECT watchlist_id, kid, top_n FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?"
-      ).bind(watchlistId, auth.discord_id).first();
-      if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
-  
       const now = Math.floor(Date.now() / 1000);
+      // For continuation requests, authenticate the watchlist and find its active
+      // job in one indexed lookup. The initial request may still need the watchlist
+      // row when no active job exists.
+      let active = await env.DB.prepare(
+        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS') WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
+      ).bind(watchlistId, auth.discord_id).first();
+      if (!active) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+      const watch = { watchlist_id: active.watchlist_id, kid: active.kid, top_n: active.top_n };
+
       const lockToken = await acquireKingdomWatchlistLock(env, watchlistId);
       if (!lockToken) {
         return json({
@@ -1811,9 +1815,23 @@ async function handleKingdomWatchlistApi(request, env) {
       }
 
       try {
-        let job = await env.DB.prepare(
-          "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-        ).bind(watchlistId).first();
+        let job = active.job_id ? {
+          job_id: active.job_id,
+          watchlist_id: active.watchlist_id,
+          kid: Number(active.kid),
+          top_n: Number(active.top_n),
+          status: active.status,
+          board_index: Number(active.board_index || 0),
+          player_cursor: Number(active.player_cursor || 0),
+          player_ids_json: active.player_ids_json || "[]",
+          observed_at: Number(active.observed_at || 0),
+          source_first_at: active.source_first_at ?? null,
+          source_last_at: active.source_last_at ?? null,
+          ranking_rows: Number(active.ranking_rows || 0),
+          player_rows: Number(active.player_rows || 0),
+          created_at: active.created_at,
+          updated_at: active.updated_at
+        } : null;
     
         if (!job) {
           const jobId = crypto.randomUUID();
