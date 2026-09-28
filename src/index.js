@@ -562,17 +562,25 @@ async function processKingdomWatchlistJob(env, job) {
         }
       }
 
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
-      ).bind(
-        KINGDOM_RANKING_BOARDS.indexOf(board) + 1,
-        rankingRows,
-        sourceObservedAt, sourceObservedAt, sourceObservedAt,
-        sourceObservedAt, sourceObservedAt, sourceObservedAt,
-        Math.floor(Date.now() / 1000),
-        job.job_id
-      ).run();
+      // Progress is persisted once after the whole concurrent batch, not once per board.
     }
+
+    const batchSourceTimes = fetchedBoards
+      .map(item => getMightPulseSourceTimestamp(item.fetched.result?.data))
+      .filter(value => Number.isFinite(Number(value)) && Number(value) > 0)
+      .map(value => Number(value));
+    const batchSourceFirstAt = batchSourceTimes.length ? Math.min(...batchSourceTimes) : null;
+    const batchSourceLastAt = batchSourceTimes.length ? Math.max(...batchSourceTimes) : null;
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+    ).bind(
+      endIndex,
+      rankingRows,
+      batchSourceFirstAt, batchSourceFirstAt, batchSourceFirstAt,
+      batchSourceLastAt, batchSourceLastAt, batchSourceLastAt,
+      Math.floor(Date.now() / 1000),
+      job.job_id
+    ).run();
 
     if (endIndex < KINGDOM_RANKING_BOARDS.length) {
       return { completed: false, phase: "RANKINGS", board_index: endIndex, rankingRows, concurrency };
@@ -1017,9 +1025,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var pollTimer=null;
       function poll(){
         return load().then(function(){
-          if(!finished) pollTimer=setTimeout(poll,2000);
+          if(!finished) pollTimer=setTimeout(poll,4000);
         }).catch(function(){
-          if(!finished) pollTimer=setTimeout(poll,1000);
+          if(!finished) pollTimer=setTimeout(poll,2000);
         });
       }
       poll();
@@ -1041,7 +1049,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
             el("msg").innerHTML="<span class='ok'>更新が完了しました。"+(elapsedMs!==null?" 所要時間: "+(elapsedMs/1000).toFixed(1)+"秒":"")+"</span>";
             return load();
           }
-          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,300);}); }).then(step);
+          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,500);}); }).then(step);
         })
         .catch(function(e){
           finished=true;
@@ -1838,9 +1846,8 @@ async function handleKingdomWatchlistApi(request, env) {
               "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
             ).bind(now, now, now, watchlistId).run();
           } else {
-            await env.DB.prepare(
-              "UPDATE kingdom_watchlists SET last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-            ).bind(now, watchlistId).run();
+            // Intermediate continuation does not need a D1 write. The final
+            // successful step clears last_error together with last_run_at.
           }
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
