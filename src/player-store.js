@@ -1,3 +1,5 @@
+import { archivePlayerHistoryBatch } from "./r2-archive.js";
+
 let playerIdentityHistorySchemaPromise = null;
 
 async function ensurePlayerIdentityHistorySchema(db) {
@@ -52,7 +54,7 @@ export async function getLatestPlayerObservation(db, governorId) {
   return { ...row, payload };
 }
 
-export async function materializePlayer(db, observation, existingPlayer = undefined) {
+export async function materializePlayer(db, observation, existingPlayer = undefined, archiveBucket = null) {
   const player = observation?.payload?.player;
   if (!player || typeof player !== "object") {
     throw new Error("MightPulse player payload is missing player data.");
@@ -151,6 +153,24 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
     crypto.randomUUID(), governorId, observation.observation_id,
     observation.observed_at, JSON.stringify(player)
   ).run();
+
+  // Migration bridge: keep the existing D1 player history reader authoritative
+  // while writing the same raw observation history to R2.
+  if (archiveBucket) {
+    try {
+      await archivePlayerHistoryBatch(archiveBucket, {
+        governorId,
+        observationId: observation.observation_id,
+        observedAt: observation.observed_at,
+        player
+      });
+    } catch (error) {
+      console.error("player_history_r2_archive_failed", {
+        governorId,
+        message: error?.message || String(error)
+      });
+    }
+  }
 
   return materializedPlayer;
 }
