@@ -1449,8 +1449,12 @@ commit:
   feat: show player name history without snapshot reads
 - 37a2dd9725183ad7040dcb065e2c2190ee686461
   docs: define D1 minimum and archive migration architecture
+- 0420d3a4b3d3ab86ac7f0ee3d699b6ce59ef1a54
+  fix: bootstrap player name history table safely
 
 ### Player Identity History
+runtime bootstrapも実装し、migrationが先に適用されていない環境でもPlayer本体の取得が壊れないようにした。履歴保存はテーブル準備後に行う。
+
 migration:
 - migrations/0014_player_identity_history.sql
 
