@@ -1,5 +1,6 @@
 import { DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
+import { getOperationalStatus } from "./status-ops.js";
 
 const GATEWAY_VERSION = "v1";
 
@@ -138,10 +139,11 @@ async function handleGatewayStatus(request, env) {
   if (!String(env.EAGLEEYE_GATEWAY_TOKEN || "").trim()) return jsonResponse({ ok: false, error: "GATEWAY_NOT_CONFIGURED" }, 503);
   if (!isGatewayAuthorized(request, env)) return jsonResponse({ ok: false, error: "UNAUTHORIZED" }, 401);
 
-  const [diagnosticsResult, usageResult, historyStorageResult] = await Promise.allSettled([
-    getReadOnlyDiagnostics(env.DB, { recentLimit: 30 }),
+  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult] = await Promise.allSettled([
+    getReadOnlyDiagnostics(env.DB, { recentLimit: 100 }),
     getCloudflareD1Usage(env),
-    getHistoryStorageStatus(env)
+    getHistoryStorageStatus(env),
+    getOperationalStatus(env.DB)
   ]);
 
   return jsonResponse({
@@ -159,7 +161,33 @@ async function handleGatewayStatus(request, env) {
             archiveReadProbe: "UNKNOWN",
             archiveReadOnly: true,
             archiveReadError: "HISTORY_STORAGE_DIAGNOSTICS_UNAVAILABLE"
+          },
+      operational: operationalResult.status === "fulfilled"
+        ? operationalResult.value
+        : {
+            apiPool: null,
+            watchlist: null,
+            error: "OPERATIONAL_STATUS_UNAVAILABLE"
           }
+    },
+    runtime: {
+      workerName: String(env.CLOUDFLARE_WORKER_NAME || "kingshot-data-platform"),
+      historyStorageMode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(),
+      bindings: {
+        DB: Boolean(env.DB),
+        ARCHIVE: Boolean(env.ARCHIVE)
+      },
+      configuration: {
+        CLOUDFLARE_ACCOUNT_ID: Boolean(env.CLOUDFLARE_ACCOUNT_ID),
+        CLOUDFLARE_ANALYTICS_TOKEN: Boolean(env.CLOUDFLARE_ANALYTICS_TOKEN),
+        CLOUDFLARE_D1_DATABASE_ID: Boolean(env.CLOUDFLARE_D1_DATABASE_ID),
+        CLOUDFLARE_R2_BUCKET_NAME: Boolean(env.CLOUDFLARE_R2_BUCKET_NAME),
+        MIGHTPULSE: Boolean(env.MIGHTPULSE_BASE_URL),
+        DISCORD: Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET),
+        GOOGLE_SHEETS_APPS_SCRIPT: Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET),
+        GOOGLE_SHEETS_SERVICE_ACCOUNT: Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID),
+        GATEWAY: Boolean(env.EAGLEEYE_GATEWAY_TOKEN)
+      }
     }
   });
 }
