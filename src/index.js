@@ -3360,6 +3360,7 @@ async function handlePlayerVisibilityApi(request, env) {
       await env.DB.prepare(
         "UPDATE watchlist_limits SET kingdom_limit = ?, player_limit = ?, updated_at = ?, updated_by = ? WHERE role = ?"
       ).bind(kingdomLimit, playerLimit, now, guard.auth.user_id, role).run();
+      watchlistLimitsCache = null;
 
       return json({
         ok: true,
