@@ -61,7 +61,7 @@ async function claimApiPoolKey(db, {
        FROM api_pool_keys
        WHERE provider = ?
          AND pool_type = ?
-         AND status = 'AVAILABLE'
+         AND status IN ('AVAILABLE','COOLDOWN')
          AND (cooldown_until IS NULL OR cooldown_until <= ?)
          AND (leased_until IS NULL OR leased_until <= ?)
        ORDER BY
@@ -189,10 +189,9 @@ export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null
   const now = Math.floor(Date.now() / 1000);
   await db.batch([
     db.prepare(
-      "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-    ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, keyId, leaseId),
-    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay, now }),
-    prepareLeaseClear(db, leaseId, now)
+      "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+    ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, now, keyId, leaseId),
+    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay, now })
   ]);
 }
 
@@ -203,10 +202,9 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
 
   await db.batch([
     db.prepare(
-      "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-    ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId),
-    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, now }),
-    prepareLeaseClear(db, leaseId, now)
+      "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+    ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId, leaseId),
+    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, now })
   ]);
 }
 
