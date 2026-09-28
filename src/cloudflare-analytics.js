@@ -18,6 +18,59 @@ const R2_FREE_LIMITS = {
   classBOperationsPerMonth: 10_000_000
 };
 
+// Workers Paid starts at $5/month. The included allocations below are the
+// Cloudflare-published monthly allowances. EagleEye deliberately monitors a
+// 90% safety ceiling so the system does not intentionally consume the full
+// included allowance and accidentally cross into usage-based overage.
+// The profile is selected by CLOUDFLARE_MONITORING_PROFILE:
+//   FREE       = existing daily/monthly Free-plan monitoring
+//   PAID_5USD  = monthly Paid-plan monitoring within the $5 base-plan envelope
+const D1_PAID_INCLUDED = {
+  rowsRead: 25_000_000_000,
+  rowsWritten: 50_000_000,
+  storageBytes: 5_000_000_000
+};
+
+const WORKERS_PAID_INCLUDED = {
+  requestsPerMonth: 10_000_000,
+  cpuTimeMsPerMonth: 30_000_000,
+  subrequestsPerInvocation: 10_000
+};
+
+const R2_PAID_INCLUDED = {
+  storageBytes: 10_000_000_000,
+  classAOperationsPerMonth: 1_000_000,
+  classBOperationsPerMonth: 10_000_000
+};
+
+const PAID_SAFETY_FACTOR = 0.90;
+
+function getCloudflareMonitoringProfile(env) {
+  const requested = String(env.CLOUDFLARE_MONITORING_PROFILE || "FREE").trim().toUpperCase();
+  if (requested === "PAID_5USD") {
+    return {
+      key: "PAID_5USD",
+      label: "Workers Paid $5 envelope",
+      budgetUsd: 5,
+      period: "BILLING_MONTH_ESTIMATE",
+      safetyFactor: PAID_SAFETY_FACTOR,
+      d1: Object.fromEntries(Object.entries(D1_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)])),
+      workers: Object.fromEntries(Object.entries(WORKERS_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)])),
+      r2: Object.fromEntries(Object.entries(R2_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)]))
+    };
+  }
+  return {
+    key: "FREE",
+    label: "Workers Free",
+    budgetUsd: 0,
+    period: "CURRENT_FREE_LIMIT_WINDOW",
+    safetyFactor: 1,
+    d1: D1_FREE_LIMITS,
+    workers: WORKERS_FREE_LIMITS,
+    r2: R2_FREE_LIMITS
+  };
+}
+
 const R2_CLASS_A_OPERATIONS = new Set([
   "ListBuckets", "PutBucket", "ListObjects", "PutObject", "CopyObject",
   "CompleteMultipartUpload", "CreateMultipartUpload", "LifecycleStorageTierTransition",
@@ -296,7 +349,7 @@ function dayStartUtcString(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())).toISOString();
 }
 
-function summarizeWorkersUsage(groups) {
+function summarizeWorkersUsage(groups, limits) {
   const total = (groups || []).reduce((acc, group) => {
     const sum = group?.sum || {};
     acc.requests += normalizeNumber(sum.requests);
@@ -307,10 +360,13 @@ function summarizeWorkersUsage(groups) {
     acc.cpuTimeP99 = Math.max(acc.cpuTimeP99, normalizeNumber(group?.quantiles?.cpuTimeP99));
     return acc;
   }, { requests: 0, errors: 0, subrequests: 0, cpuTimeP50: 0, cpuTimeP90: 0, cpuTimeP99: 0 });
-  const requestsPercent = percent(total.requests, WORKERS_FREE_LIMITS.requestsPerDay);
-  const cpuPercent = percent(total.cpuTimeP99, WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation);
+  const requestsLimit = limits?.requestsPerDay ?? limits?.requestsPerMonth ?? WORKERS_FREE_LIMITS.requestsPerDay;
+  const cpuLimit = limits?.cpuTimeMsPerInvocation ?? WORKERS_FREE_LIMITS.cpuTimeMsPerInvocation;
+  const subrequestsLimit = limits?.subrequestsPerInvocation ?? WORKERS_FREE_LIMITS.subrequestsPerInvocation;
+  const requestsPercent = percent(total.requests, requestsLimit);
+  const cpuPercent = percent(total.cpuTimeP99, cpuLimit);
   const averageSubrequests = total.requests > 0 ? total.subrequests / total.requests : 0;
-  const subrequestsPercent = percent(averageSubrequests, WORKERS_FREE_LIMITS.subrequestsPerInvocation);
+  const subrequestsPercent = percent(averageSubrequests, subrequestsLimit);
   return {
     ...total,
     requestsPercent,
@@ -563,6 +619,7 @@ function maxStorage(groups, databaseId) {
 }
 
 export async function getCloudflareD1Usage(env, { now = new Date(), includeQueryInsights = true } = {}) {
+  const monitoring = getCloudflareMonitoringProfile(env);
   const accountTag = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
@@ -591,6 +648,10 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const dayStart = dayStartUtcString(now);
   const endTime = now.toISOString();
   const monthStart = monthStartUtcString(now);
+  const paidMode = monitoring.key === "PAID_5USD";
+  const d1Start = paidMode ? monthStart.slice(0, 10) : date;
+  const d1End = date;
+  const workerStart = paidMode ? monthStart : dayStart;
 
   const response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
     method: "POST",
@@ -600,7 +661,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
     },
     body: JSON.stringify({
       query: D1_USAGE_QUERY,
-      variables: { accountTag, start: date, end: date, databaseId }
+      variables: { accountTag, start: d1Start, end: d1End, databaseId }
     })
   });
 
@@ -625,7 +686,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
         },
         body: JSON.stringify({
           query: D1_QUERY_INSIGHTS_QUERY,
-          variables: { accountTag, start: date, end: date, databaseId }
+          variables: { accountTag, start: d1Start, end: d1End, databaseId }
         })
       });
       const insightsPayload = await insightsResponse.json().catch(() => null);
@@ -652,14 +713,14 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       },
       body: JSON.stringify({
         query: WORKERS_USAGE_QUERY,
-        variables: { accountTag, start: dayStart, end: endTime, scriptName: workerName }
+        variables: { accountTag, start: workerStart, end: endTime, scriptName: workerName }
       })
     });
     const workersPayload = await workersResponse.json().catch(() => null);
     if (workersResponse.ok && !Array.isArray(workersPayload?.errors)) {
       const workerAccount = workersPayload?.data?.viewer?.accounts?.[0];
       workers = {
-        ...summarizeWorkersUsage(workerAccount?.workersInvocationsAdaptive || []),
+        ...summarizeWorkersUsage(workerAccount?.workersInvocationsAdaptive || [], monitoring.workers),
         available: true,
         date,
         scriptName: workerName
@@ -716,11 +777,31 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
     console.warn("cloudflare_r2_usage_failed", error?.message || error);
   }
 
-  const databaseSizeBytes = maxStorage(account.d1StorageAdaptiveGroups || [], databaseId);
-  const rowsReadPercent = percent(databaseMetrics.rowsRead, D1_FREE_LIMITS.rowsRead);
-  const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, D1_FREE_LIMITS.rowsWritten);
-  const storagePercent = percent(databaseSizeBytes, D1_FREE_LIMITS.storageBytes);
+  if (r2.available) {
+    r2.storagePercent = percent(r2.storageBytes, monitoring.r2.storageBytes);
+    r2.classAPercent = percent(r2.classAOperations, monitoring.r2.classAOperationsPerMonth);
+    r2.classBPercent = percent(r2.classBOperations, monitoring.r2.classBOperationsPerMonth);
+    r2.storageState = resourceState(r2.storagePercent);
+    r2.classAState = resourceState(r2.classAPercent);
+    r2.classBState = resourceState(r2.classBPercent);
+  }
 
+  const databaseSizeBytes = maxStorage(account.d1StorageAdaptiveGroups || [], databaseId);
+  const rowsReadPercent = percent(databaseMetrics.rowsRead, monitoring.d1.rowsRead);
+  const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, monitoring.d1.rowsWritten);
+  const storagePercent = percent(databaseSizeBytes, monitoring.d1.storageBytes);
+
+  const resourcePercents = [
+    rowsReadPercent,
+    rowsWrittenPercent,
+    storagePercent,
+    workers.available ? workers.requestsPercent : null,
+    r2.available ? r2.classAPercent : null,
+    r2.available ? r2.classBPercent : null,
+    r2.available ? r2.storagePercent : null
+  ].filter(value => Number.isFinite(value));
+  const budgetUtilizationPercent = resourcePercents.length ? Math.max(...resourcePercents) : null;
+  const budgetState = resourceState(budgetUtilizationPercent);
   const resourceStates = [
     resourceState(rowsReadPercent),
     resourceState(rowsWrittenPercent),
@@ -742,10 +823,22 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
     date,
     retrievedAt: new Date().toISOString(),
     note: "Cloudflare Analyticsの集計値です。最新値の反映には遅延が発生する場合があります。",
+    monitoring: {
+      profile: monitoring.key,
+      label: monitoring.label,
+      budgetUsd: monitoring.budgetUsd,
+      safetyFactor: monitoring.safetyFactor,
+      period: monitoring.period,
+      budgetUtilizationPercent,
+      budgetState,
+      d1: monitoring.d1,
+      workers: monitoring.workers,
+      r2: monitoring.r2
+    },
     limits: {
-      d1: D1_FREE_LIMITS,
-      workers: WORKERS_FREE_LIMITS,
-      r2: R2_FREE_LIMITS
+      d1: monitoring.d1,
+      workers: monitoring.workers,
+      r2: monitoring.r2
     },
     account: {
       rowsRead: databaseMetrics.rowsRead,
