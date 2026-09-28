@@ -1518,6 +1518,23 @@ async function handlePlayerWatchlistApi(request, env) {
       return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
     }
 
+    await ensureWatchlistLimitTable(env.DB);
+    const limits = await getWatchlistLimits(env.DB);
+    const role = String(auth.role || "BASIC").toUpperCase();
+    const playerLimit = getRoleWatchlistLimit(limits, role, "player");
+    const existing = await env.DB.prepare(
+      "SELECT enabled FROM player_watchlists WHERE discord_id = ? AND governor_id = ? LIMIT 1"
+    ).bind(auth.discord_id, governorId).first();
+    if (Number(existing?.enabled) !== 1) {
+      const usage = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM player_watchlists WHERE discord_id = ? AND enabled = 1"
+      ).bind(auth.discord_id).first();
+      const used = Number(usage?.count || 0);
+      if (playerLimit > 0 && used >= playerLimit) {
+        return json({ ok: false, error: "PLAYER_WATCHLIST_LIMIT_REACHED", message: "プレイヤーウォッチリストの登録上限に達しています。", limit: playerLimit, used }, 409);
+      }
+    }
+
     const now = Math.floor(Date.now() / 1000);
     const watchlistId = crypto.randomUUID();
     await env.DB.prepare(`
@@ -1559,7 +1576,7 @@ async function handlePlayerWatchlistApi(request, env) {
   }
 
   if (request.method === "DELETE") {
-    const governorId = String(url.searchParams.get("governor_id") || "").trim();
+    const governorId = normalizeGovernorId(url.searchParams.get("governor_id"));
     if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
     const result = await env.DB.prepare(
       "DELETE FROM player_watchlists WHERE discord_id = ? AND governor_id = ?"
