@@ -1947,3 +1947,12 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - api_pool_usage は監査・履歴として当面維持。
 - api_leases は新方式の安定確認後に完全撤去する。
 - api_pool_keys の last_used_at / last_success_at telemetry writeは、round-robin性能を維持しながら条件付き更新へ削減できる可能性がある。
+
+
+## 2026-09-28 D1 optimization phase 3
+- API Pool lease claim/readback was collapsed using D1/SQLite `UPDATE ... RETURNING`, removing the post-claim SELECT for normal and health-check leases. Commit: `08350b67ab8923014e750d39f4c696b30651650f`.
+- System Status active-lease metrics now read `api_pool_keys.leased_until` instead of legacy `api_leases`. Commit: `537f9254223eb2f605a2f5c80ee917780ffa1391`.
+- Kingdom Watchlist stable schemas (`kingdom_watchlist_jobs`, `kingdom_watchlist_locks`, `kingdom_ranking_current`, `kingdom_ranking_board_state`) moved to migration `0019_watchlist_runtime_schema.sql`; runtime keeps only additive compatibility checks for legacy timestamp/rank columns. Commit: `d802617a5e65a2a3336ae001a1efa108fa3ac376` plus `41acac18ccd8d569e364ae44a809ee89ad0e7328`.
+- Watchlist limits and player visibility settings now use a 5-minute Worker-isolate cache; admin updates invalidate the corresponding cache. Commit: `bddbdac99b1c783f1b5e5b4aee0c42946b93c4d5`.
+- `api_pool_usage` remains per-request audit history for now. Full aggregation was intentionally not changed yet because current code has no read-side consumer and changing granularity would alter audit semantics.
+- Production D1 migration application, Worker deployment, and measured D1 read/write reduction remain unverified at this point. Do not state production confirmation without actual evidence.
