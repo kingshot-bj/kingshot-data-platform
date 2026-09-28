@@ -713,37 +713,46 @@ async function processKingdomWatchlistJob(env, job) {
       const observationId = crypto.randomUUID();
       const governorId = normalizeGovernorId(raw.governor_id ?? item.governorId);
       const ranks = result?.data?.ranks || raw?.ranks;
-      const rankSnapshot = ranks && typeof ranks === "object"
-        ? buildPlayerRankSnapshotStatement(env.DB, {
-            governorId, uid: raw.uid ?? null, kid: raw.kid ?? job.kid, ranks,
-            observedAt: job.observed_at, sourceObservedAt, sourceObservationId: observationId
-          })
-        : null;
-      await env.DB.batch([
-        env.DB.prepare(
-          "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        ).bind(
-          observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
-          "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
-        ),
-        env.DB.prepare(
-          "INSERT INTO players (governor_id, uid, fid, nick_name, kid, power, town_center_level, vip, x, y, kills, office, online, last_active_at, last_login, avatar_url, language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr, alliance_name, alliance_rank, alliance_rank_label, alliance_power, alliance_count, alliance_leader_name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(governor_id) DO UPDATE SET uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name, kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level, vip=excluded.vip, x=excluded.x, y=excluded.y, kills=excluded.kills, office=excluded.office, online=excluded.online, last_active_at=excluded.last_active_at, last_login=excluded.last_login, avatar_url=excluded.avatar_url, language=excluded.language, shield_endtime=excluded.shield_endtime, burn_endtime=excluded.burn_endtime, alliance_aid=excluded.alliance_aid, alliance_abbr=excluded.alliance_abbr, alliance_name=excluded.alliance_name, alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label, alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count, alliance_leader_name=excluded.alliance_leader_name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at"
-        ).bind(
-          governorId, raw.uid ?? null, raw.fid != null ? String(raw.fid) : null, raw.nick_name ?? null,
-          raw.kid ?? job.kid, raw.power ?? null, raw.town_center_level ?? null, raw.vip ?? null,
-          raw.x ?? null, raw.y ?? null, raw.kills ?? null, raw.office ?? null, raw.online ? 1 : 0,
-          raw.last_active_at ?? null, raw.last_login ?? null, raw.avatar_url ?? null, raw.language ?? null,
-          raw.shield_endtime ?? null, raw.burn_endtime ?? null, raw.alliance?.aid ?? null,
-          raw.alliance?.abbr ?? null, raw.alliance?.name ?? null, raw.alliance?.rank ?? null,
-          raw.alliance?.rank_label ?? null, raw.alliance?.power ?? null, raw.alliance?.count ?? null,
-          raw.alliance?.leader_name ?? null, job.observed_at, sourceObservedAt, observationId, now
-        ),
-        env.DB.prepare(
-          "INSERT INTO player_snapshots (snapshot_id, governor_id, observation_id, observed_at, source_observed_at, payload_json) VALUES (?, ?, ?, ?, ?, ?)"
-        ).bind(crypto.randomUUID(), governorId, observationId, job.observed_at, sourceObservedAt, JSON.stringify(raw)),
-        ...(rankSnapshot ? [rankSnapshot.statement] : [])
-      ]);
+      await env.DB.prepare(
+        "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
+        "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
+      ).run();
 
+      const observation = {
+        observation_id: observationId,
+        observed_at: job.observed_at,
+        source_observed_at: sourceObservedAt,
+        http_status: result?.status ?? 200,
+        payload: {
+          ...result?.data,
+          player: raw,
+          ranks
+        }
+      };
+      const existingPlayer = await getPlayer(env.DB, governorId);
+      await materializePlayer(
+        env.DB,
+        observation,
+        existingPlayer,
+        env.ARCHIVE,
+        env.HISTORY_STORAGE_MODE
+      );
+
+      if (ranks && typeof ranks === "object") {
+        await savePlayerRankSnapshot(env.DB, {
+          governorId,
+          uid: raw.uid ?? null,
+          kid: raw.kid ?? job.kid,
+          ranks,
+          observedAt: job.observed_at,
+          sourceObservedAt,
+          sourceObservationId: observationId,
+          archiveBucket: env.ARCHIVE,
+          historyMode: env.HISTORY_STORAGE_MODE
+        });
+      }
       playerRows++;
     }
 

@@ -115,8 +115,8 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       x, y, kills, office, online, last_active_at, last_login, avatar_url,
       language, shield_endtime, burn_endtime, alliance_aid, alliance_abbr,
       alliance_name, alliance_rank, alliance_rank_label, alliance_power,
-      alliance_count, alliance_leader_name, observed_at, source_observation_id,
-      updated_at
+      alliance_count, alliance_leader_name, observed_at, source_observed_at,
+      source_observation_id, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(governor_id) DO UPDATE SET
       uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name,
@@ -130,7 +130,8 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       alliance_rank=excluded.alliance_rank, alliance_rank_label=excluded.alliance_rank_label,
       alliance_power=excluded.alliance_power, alliance_count=excluded.alliance_count,
       alliance_leader_name=excluded.alliance_leader_name,
-      observed_at=excluded.observed_at, source_observation_id=excluded.source_observation_id,
+      observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at,
+      source_observation_id=excluded.source_observation_id,
       updated_at=excluded.updated_at`
   ).bind(
     materializedPlayer.governor_id, materializedPlayer.uid, materializedPlayer.fid,
@@ -143,7 +144,8 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
     materializedPlayer.alliance_name, materializedPlayer.alliance_rank,
     materializedPlayer.alliance_rank_label, materializedPlayer.alliance_power,
     materializedPlayer.alliance_count, materializedPlayer.alliance_leader_name,
-    materializedPlayer.observed_at, materializedPlayer.source_observation_id, materializedPlayer.updated_at
+    materializedPlayer.observed_at, observation.source_observed_at ?? null,
+    materializedPlayer.source_observation_id, materializedPlayer.updated_at
   ).run();
 
   const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
@@ -194,7 +196,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       ) VALUES (?, ?, ?, ?, ?)`
     ).bind(
       crypto.randomUUID(), governorId, observation.observation_id,
-      observation.observed_at, JSON.stringify(player)
+      observation.observed_at, observation.source_observed_at ?? null, JSON.stringify(player)
     ).run();
   }
 

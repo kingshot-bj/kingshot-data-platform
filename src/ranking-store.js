@@ -50,26 +50,6 @@ export async function savePlayerRankSnapshot(db, options) {
         sourceObservationId: options.sourceObservationId
       });
       archived = true;
-      if (r2Only) {
-        await recordDiagnostic(db, {
-          service: "ranking",
-          feature: "player_history_storage",
-          operation: "ARCHIVE_R2",
-          status: "SUCCESS",
-          errorCode: null,
-          message: "R2アーカイブ成功。R2_ONLYのためD1 player_rank_snapshots INSERTをスキップしました。",
-          provider: "CLOUDFLARE_R2",
-          targetType: "PLAYER",
-          targetId: String(options.governorId),
-          rowsReceived: 1,
-          rowsSaved: 1,
-          metadata: {
-            historyMode: "R2_ONLY",
-            archiveSuccess: true,
-            d1HistoryInsertSkipped: true
-          }
-        });
-      }
     } catch (error) {
       console.error("player_rank_history_r2_archive_failed", {
         governorId: String(options.governorId),
