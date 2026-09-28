@@ -1,4 +1,4 @@
-import { archiveRankingHistoryBatch, listRankingHistoryFromR2 } from "./r2-archive.js";
+import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2 } from "./r2-archive.js";
 
 const PLAYER_RANK_FIELDS = [
   ["power", "power_rank"],
@@ -35,7 +35,66 @@ export function buildPlayerRankSnapshotStatement(db, { governorId, uid = null, k
 export async function savePlayerRankSnapshot(db, options) {
   const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
   await statement.run();
+
+  if (options?.archiveBucket) {
+    try {
+      await archivePlayerRankHistoryBatch(options.archiveBucket, {
+        governorId: options.governorId,
+        uid: options.uid,
+        kid: options.kid,
+        ranks: options.ranks,
+        observedAt: options.observedAt,
+        sourceObservedAt: options.sourceObservedAt,
+        sourceObservationId: options.sourceObservationId
+      });
+    } catch (error) {
+      console.error("player_rank_history_r2_archive_failed", {
+        governorId: String(options.governorId),
+        message: error?.message || String(error)
+      });
+    }
+  }
+
   return id;
+}
+
+export async function getPlayerRankHistory(db, {
+  governorId,
+  limit = 50,
+  archiveBucket = null
+}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const result = await db.prepare(
+    "SELECT * FROM player_rank_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?"
+  ).bind(String(governorId), safeLimit).all();
+
+  const d1Rows = result.results || [];
+  if (!archiveBucket) return d1Rows;
+
+  let r2Rows = [];
+  try {
+    r2Rows = await listPlayerRankHistoryFromR2(archiveBucket, {
+      governorId: String(governorId),
+      limit: safeLimit
+    });
+  } catch (error) {
+    console.error("player_rank_history_r2_read_failed", {
+      governorId: String(governorId),
+      message: error?.message || String(error)
+    });
+  }
+
+  const merged = new Map();
+  for (const row of [...d1Rows, ...r2Rows]) {
+    const key = row.source_observation_id
+      ? `observation:${row.source_observation_id}`
+      : `snapshot:${row.observed_at}:${row.power_rank}:${row.kills_rank}:${row.town_center_rank}`;
+    if (!merged.has(key)) merged.set(key, row);
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, safeLimit);
 }
 
 export async function getLatestKingdomRankingBoard(db, { kid, board }) {
