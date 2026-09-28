@@ -159,12 +159,9 @@ function prepareUsageInsert(db, { keyId, provider = PROVIDER, poolType = null, e
 
 export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
-  await db.batch([
-    db.prepare(
-      "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-    ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, keyId, leaseId),
-    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay, now })
-  ]);
+  await db.prepare(
+    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+  ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, keyId, leaseId).run();
 }
 
 export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false } = {}) {
@@ -172,12 +169,9 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
   const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : keepAvailable ? "AVAILABLE" : "ERROR";
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
 
-  await db.batch([
-    db.prepare(
-      "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
-    ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId),
-    prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, now })
-  ]);
+  await db.prepare(
+    "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+  ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId).run();
 }
 
 export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = null, requestCount = 1, measuredQuota = null, measuredRemaining = null, estimated = 0 } = {}) {
