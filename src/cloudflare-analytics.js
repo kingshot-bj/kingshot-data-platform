@@ -46,9 +46,9 @@ const R2_PAID_INCLUDED = {
 const PAID_SAFETY_FACTOR = 0.90;
 const DEFAULT_USD_JPY_RATE = 157.5;
 
-function getCloudflareMonitoringProfile(env) {
+function getCloudflareMonitoringProfile(env, profileOverride = null) {
   const usdJpyRate = Number(env.CLOUDFLARE_USD_JPY_RATE || DEFAULT_USD_JPY_RATE);
-  const requested = String(env.CLOUDFLARE_MONITORING_PROFILE || "FREE").trim().toUpperCase();
+  const requested = String(profileOverride || env.CLOUDFLARE_MONITORING_PROFILE || "FREE").trim().toUpperCase();
   if (requested === "PAID_5USD") {
     return {
       key: "PAID_5USD",
@@ -627,8 +627,8 @@ function maxStorage(groups, databaseId) {
     .reduce((max, group) => Math.max(max, normalizeNumber(group?.max?.databaseSizeBytes)), 0);
 }
 
-export async function getCloudflareD1Usage(env, { now = new Date(), includeQueryInsights = true } = {}) {
-  const monitoring = getCloudflareMonitoringProfile(env);
+export async function getCloudflareD1Usage(env, { now = new Date(), includeQueryInsights = true, monitoringProfile = null } = {}) {
+  const monitoring = getCloudflareMonitoringProfile(env, monitoringProfile);
   const accountTag = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
   const token = String(env.CLOUDFLARE_ANALYTICS_TOKEN || "").trim();
   const databaseId = String(env.CLOUDFLARE_D1_DATABASE_ID || "").trim();
