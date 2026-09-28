@@ -18,6 +18,7 @@ import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 import { handleGatewayApi } from "./gateway-api.js";
+import { getOperationalStatus } from "./status-ops.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -4916,7 +4917,7 @@ async function renderPublicStatusPage(request, env) {
 
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
   // its free-tier row limit, this monitor must still be able to report usage.
-  const [usageResult, diagnosticsResult] = await Promise.allSettled([
+  const [usageResult, diagnosticsResult, operationalResult] = await Promise.allSettled([
     canViewDetailedUsage
       ? getCloudflareD1Usage(env)
       : Promise.resolve({
@@ -4924,7 +4925,8 @@ async function renderPublicStatusPage(request, env) {
           status: "HIDDEN",
           message: "Cloudflareの詳細使用量はADMIN / OWNERのみ確認できます。"
         }),
-    getSystemDiagnostics(env.DB, { recentLimit: 30 })
+    getSystemDiagnostics(env.DB, { recentLimit: 30 }),
+    getOperationalStatus(env.DB)
   ]);
 
   const usage = usageResult.status === "fulfilled" ? usageResult.value : {
@@ -4932,6 +4934,29 @@ async function renderPublicStatusPage(request, env) {
     status: "UNKNOWN",
     message: usageResult.reason?.message || "Cloudflare Analytics APIの取得に失敗しました。"
   };
+
+  const operational = operationalResult.status === "fulfilled" ? operationalResult.value : {
+    apiPool: {
+      pools: {},
+      totals: { AVAILABLE: 0, COOLDOWN: 0, ERROR: 0, DISABLED: 0, REVOKED: 0 },
+      totalKeys: 0,
+      availableKeys: 0,
+      activeLeases: 0,
+      expiredActiveLeases: 0,
+      latestKey: null
+    },
+    watchlist: {
+      total: 0,
+      enabled: 0,
+      enabledErrors: 0,
+      latestSuccessAt: null,
+      latestUpdatedAt: null,
+      latestJob: null
+    }
+  };
+  if (operationalResult.status !== "fulfilled") {
+    console.error("public_status_operational_unavailable", operationalResult.reason?.message || operationalResult.reason);
+  }
 
   let data;
   if (diagnosticsResult.status === "fulfilled") {
@@ -4964,13 +4989,15 @@ async function renderPublicStatusPage(request, env) {
     console.error("public_status_diagnostics_unavailable", diagnosticsResult.reason?.message || diagnosticsResult.reason);
   }
 
+  const apiPoolCritical = operational.apiPool.totalKeys > 0 && operational.apiPool.availableKeys === 0;
+  const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
   const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
   const usageWarning = usage.status === "WARNING";
-  const state = usageCritical || data.overall === "CRITICAL"
-    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービスまたはCloudflareリソースの一部で障害・上限到達が検知されています。"}
-    : usageWarning || data.overall === "DEGRADED"
-      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービスまたはCloudflareリソースで注意が必要です。"}
-      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービスとCloudflareリソースは正常範囲です。"};
+  const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
+    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
+    : usageWarning || data.overall === "DEGRADED" || watchlistWarning
+      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
+      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
 
   const rows = data.services.map(s => {
     const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
@@ -4997,81 +5024,100 @@ async function renderPublicStatusPage(request, env) {
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
   };
 
-  const queryInsights = usage.queryInsights;
-  const formatDuration = value => Number(value || 0).toFixed(1) + " ms";
-  const formatQuery = value => String(value || "").replace(/\s+/g, " ").trim();
-  const insightCategoryRows = (queryInsights?.categories || []).slice(0, 8).map(item => `
+  const formatUnixStatus = value => value ? new Date(Number(value) * 1000).toLocaleString("ja-JP") : "—";
+  const poolTypeLabel = type => ({
+    SYSTEM_GENERAL: "SYSTEM_GENERAL",
+    SYSTEM_WATCHLIST: "SYSTEM_WATCHLIST",
+    USER_CONTRIBUTED: "USER_CONTRIBUTED"
+  })[type] || type;
+  const poolRows = Object.entries(operational.apiPool.pools).map(([type, statuses]) => `
     <div class="resource-row">
-      <div><b>${escapeHtml(item.category)}</b><small>${formatInt(item.count)} queries</small></div>
-      <strong>${formatInt(item.rowsRead)} reads · ${formatInt(item.rowsWritten)} writes</strong>
-    </div>`).join("");
-  const insightWriteRows = (queryInsights?.topWriteQueries || []).slice(0, 10).map(item => `
-    <div class="insight-query">
-      <div class="insight-query-head"><b>${escapeHtml(item.category)}</b><span>${formatInt(item.rowsWritten)} writes</span></div>
-      <code>${escapeHtml(formatQuery(item.query))}</code>
-      <small>${formatInt(item.count)}回 · read ${formatInt(item.rowsRead)} · ${formatDuration(item.durationMs)}</small>
-    </div>`).join("");
-  const insightReadRows = (queryInsights?.topReadQueries || []).slice(0, 10).map(item => `
-    <div class="insight-query">
-      <div class="insight-query-head"><b>${escapeHtml(item.category)}</b><span>${formatInt(item.rowsRead)} reads</span></div>
-      <code>${escapeHtml(formatQuery(item.query))}</code>
-      <small>${formatInt(item.count)}回 · write ${formatInt(item.rowsWritten)} · ${formatDuration(item.durationMs)}</small>
-    </div>`).join("");
+      <div><b>${escapeHtml(poolTypeLabel(type))}</b><small>登録 ${formatInt(Object.values(statuses).reduce((a,b)=>a+Number(b||0),0))} · AVAILABLE / ERROR / COOLDOWN / DISABLED</small></div>
+      <strong>${formatInt(statuses.AVAILABLE)} / ${formatInt(statuses.ERROR + statuses.COOLDOWN + statuses.DISABLED + statuses.REVOKED)}</strong>
+    </div>`).join("") || '<div class="resource-note">APIキーが登録されていません。</div>';
+  const latestKey = operational.apiPool.latestKey;
+  const apiPoolSection = `
+    <section class="section">
+      <h2>API Pool Health</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>現在のPool状態</b><small>${formatInt(operational.apiPool.availableKeys)} / ${formatInt(operational.apiPool.totalKeys)} keys がAVAILABLE</small></div><span class="state ${apiPoolCritical ? "bad" : operational.apiPool.availableKeys > 0 ? "good" : "neutral"}">${apiPoolCritical ? "利用可能キーなし" : operational.apiPool.availableKeys > 0 ? "利用可能" : "未登録"}</span></div>
+        ${poolRows}
+        <div class="resource-row"><div><b>ACTIVE Lease</b><small>現在有効なAPIキー貸出</small></div><strong>${formatInt(operational.apiPool.activeLeases)}</strong></div>
+        <div class="resource-row"><div><b>Pool合計</b><small>AVAILABLE / COOLDOWN / ERROR / DISABLED / REVOKED</small></div><strong>${formatInt(operational.apiPool.totals.AVAILABLE)} / ${formatInt(operational.apiPool.totals.COOLDOWN)} / ${formatInt(operational.apiPool.totals.ERROR)} / ${formatInt(operational.apiPool.totals.DISABLED)} / ${formatInt(operational.apiPool.totals.REVOKED)}</strong></div>
+        ${latestKey ? `<div class="resource-row"><div><b>直近キー状態</b><small>${escapeHtml(latestKey.poolType || "—")} · ${escapeHtml(latestKey.label || "ラベルなし")}</small></div><strong>${escapeHtml(latestKey.status || "—")}</strong></div>` : ""}
+        ${latestKey?.lastErrorAt ? `<div class="resource-row"><div><b>直近エラー履歴</b><small>${formatUnixStatus(latestKey.lastErrorAt)} · ${escapeHtml(latestKey.lastErrorCode || "ERROR")}</small></div><strong>${escapeHtml(latestKey.lastErrorMessage || "メッセージなし")}</strong></div>` : ""}
+      </div>
+    </section>`;
 
-  const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
-    ? `
-      <section class="section">
-        <h2>Cloudflare リソース監視</h2>
-        <div class="card resource-card">
-          <div class="resource-head"><div><b>D1 Free Tier</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
-          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
-          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
-          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
+  const mightPulseService = data.services.find(item => item.key === "mightpulse");
+  const mightPulseSection = `
+    <section class="section">
+      <h2>MightPulse</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>MightPulse API</b><small>直近の診断イベントに基づく状態</small></div><span class="state ${mightPulseService?.status === "FAILED" ? "bad" : mightPulseService?.status === "SUCCESS" ? "good" : "warn"}">${mightPulseService?.status === "FAILED" ? "障害" : mightPulseService?.status === "SUCCESS" ? "正常" : mightPulseService?.status === "WARNING" ? "注意" : "未確認"}</span></div>
+        <div class="resource-row"><div><b>直近イベント</b><small>${formatUnixStatus(mightPulseService?.last_event_at)}</small></div><strong>${escapeHtml(mightPulseService?.last_error_code || mightPulseService?.last_message || "—")}</strong></div>
+      </div>
+    </section>`;
 
-          <div class="resource-head"><div><b>Workers Free Tier</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · 当日UTC</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
-          ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
-          ${usage.workers?.available ? `<div class="resource-row"><div><b>CPU P99</b><small>${formatDuration(usage.workers.cpuTimeP99)} / ${formatDuration(usage.limits?.workers?.cpuTimeMsPerInvocation)} hard limit</small></div><strong class="${cloudflareUsageLabel(usage.workers.cpuTimeP99State).tone}">${formatPercent(usage.workers.cpuTimeP99Percent)} · ${cloudflareUsageLabel(usage.workers.cpuTimeP99State).label}</strong></div>` : ""}
-          ${usage.workers?.available ? `<div class="resource-row"><div><b>平均Subrequests</b><small>${formatInt(usage.workers.subrequests)} total / ${formatInt(usage.workers.requests)} requests</small></div><strong class="${cloudflareUsageLabel(usage.workers.averageSubrequestsState).tone}">${Number(usage.workers.averageSubrequests || 0).toFixed(1)} / ${formatInt(usage.limits?.workers?.subrequestsPerInvocation)} hard limit</strong></div>` : ""}
+  const watch = operational.watchlist;
+  const latestJob = watch.latestJob;
+  const watchlistSection = `
+    <section class="section">
+      <h2>ウォッチリスト</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>王国ウォッチリスト</b><small>有効 ${formatInt(watch.enabled)} / 登録 ${formatInt(watch.total)}</small></div><span class="state ${watch.enabled === 0 ? "neutral" : watch.enabledErrors > 0 ? "warn" : "good"}">${watch.enabled === 0 ? "監視なし" : watch.enabledErrors > 0 ? "注意" : "正常"}</span></div>
+        <div class="resource-row"><div><b>有効監視エラー</b><small>last_error が残っている有効監視</small></div><strong>${formatInt(watch.enabledErrors)}</strong></div>
+        ${latestJob ? `<div class="resource-row"><div><b>最新ジョブ</b><small>${formatUnixStatus(latestJob.updatedAt)} · ranking ${formatInt(latestJob.rankingRows)} / player ${formatInt(latestJob.playerRows)}</small></div><strong>${escapeHtml(latestJob.status || "—")}</strong></div>` : '<div class="resource-note">まだウォッチリストジョブはありません。</div>'}
+        ${latestJob?.lastError ? `<div class="resource-row"><div><b>最新ジョブエラー</b><small>${formatUnixStatus(latestJob.updatedAt)}</small></div><strong>${escapeHtml(latestJob.lastError)}</strong></div>` : ""}
+      </div>
+    </section>`;
 
-          <div class="resource-head"><div><b>R2 Free Tier</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
-          ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
-          ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
-          ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>R2 Objects</b><small>現在のオブジェクト数</small></div><strong>${formatInt(usage.r2.objectCount)}</strong></div>` : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>Storage 内訳</b><small>payload / metadata</small></div><strong>${formatBytes(usage.r2.payloadBytes)} / ${formatBytes(usage.r2.metadataBytes)}</strong></div>` : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>Pending Multipart</b><small>未完了アップロード</small></div><strong>${formatInt(usage.r2.uploadCount)}</strong></div>` : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>月内 Storage 増減</b><small>${usage.r2.firstStorageAt ? new Date(usage.r2.firstStorageAt).toLocaleDateString("ja-JP") : "—"} → ${usage.r2.latestStorageAt ? new Date(usage.r2.latestStorageAt).toLocaleDateString("ja-JP") : "—"}</small></div><strong class="${usage.r2.storageDeltaBytes > 0 ? "warn" : ""}">${usage.r2.storageDeltaBytes == null ? "—" : (usage.r2.storageDeltaBytes >= 0 ? "+" : "") + formatBytes(usage.r2.storageDeltaBytes)}${usage.r2.storageDeltaPercent == null ? "" : " (" + (usage.r2.storageDeltaPercent >= 0 ? "+" : "") + Number(usage.r2.storageDeltaPercent).toFixed(1) + "%)"}</strong></div>` : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>Bandwidth</b><small>月初からのUpload / Download</small></div><strong>${usage.r2.bandwidthAvailable ? formatBytes(usage.r2.bytesUpload) + " / " + formatBytes(usage.r2.bytesDownload) : "未確認"}</strong></div>` : ""}
-          ${usage.r2?.available ? `<div class="resource-row"><div><b>Operations 成功率</b><small>${formatInt(usage.r2.totalOperations)} total · ${formatInt(usage.r2.failedOperations)} errors</small></div><strong class="${usage.r2.failedPercent > 5 ? "bad" : usage.r2.failedPercent > 0 ? "warn" : "good"}">${usage.r2.failedPercent == null ? "—" : Number(100 - usage.r2.failedPercent).toFixed(1) + "%"}</strong></div>` : ""}
-          ${usage.r2?.available && usage.r2.buckets?.length ? `<div class="resource-head"><div><b>R2 Bucket 別</b><small>Analytics上のバケット別集計</small></div></div>${usage.r2.buckets.slice(0, 8).map(bucket => `<div class="resource-row"><div><b>${escapeHtml(bucket.bucketName || "account total")}</b><small>${formatInt(bucket.objectCount)} objects · A ${formatInt(bucket.classAOperations)} · B ${formatInt(bucket.classBOperations)}</small></div><strong>${formatBytes(bucket.storageBytes || 0)}</strong></div>`).join("")}` : ""}
-          ${usage.r2?.available && usage.r2.operations?.length ? `<div class="resource-head"><div><b>R2 Operations 上位</b><small>月初から · 実行回数順</small></div></div><div class="insight-list">${usage.r2.operations.slice(0, 10).map(item => `
-            <div class="insight-query">
-              <div class="insight-query-head"><b>${escapeHtml(item.actionType)}</b><span>${formatInt(item.requests)} requests</span></div>
-              <small>${escapeHtml(item.bucketName || "account")} · ${escapeHtml(item.actionStatus || "unknown")}</small>
-            </div>`).join("")}</div>` : ""}
-          <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
-        </div>
-      </section>
-      ${queryInsights?.available ? `
-      <section class="section">
-        <h2>D1 Query Insights</h2>
-        <div class="card resource-card">
-          <div class="resource-head"><div><b>直近のD1クエリ分析</b><small>Cloudflare Analytics · 現在のUTC日</small></div><span class="state neutral">${formatInt(queryInsights.queryCount)} queries</span></div>
-          ${insightCategoryRows || '<div class="resource-note">まだ分析データがありません。</div>'}
-          <div class="resource-note">カテゴリは実行SQLのテーブル名ベースの推定です。Read/Writeの両方を分析します。</div>
-          ${insightReadRows ? `<div class="resource-head"><div><b>上位Read SQL</b><small>Rows Readが多い順</small></div></div><div class="insight-list">${insightReadRows}</div>` : ""}
-          ${insightWriteRows ? `<div class="resource-head"><div><b>上位Write SQL</b><small>Rows Writtenが多い順</small></div></div><div class="insight-list">${insightWriteRows}</div>` : ""}
-        </div>
-      </section>` : ""}
-      `
-    : `
-      <section class="section">
-        <h2>Cloudflare リソース監視</h2>
-        <div class="card resource-card">
-          <div class="resource-head"><div><b>Cloudflare リソース監視</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
-          <p class="resource-note">CloudflareのD1 / Workers / R2の詳細使用量とD1 Query Insightsは、ADMIN / OWNERのみ確認できます。</p>
-        </div>
-      </section>`;
+  const databaseSection = `
+    <section class="section">
+      <h2>Database</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : "good"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
+        <div class="resource-row"><div><b>D1 Storage</b><small>Cloudflare Analytics ${usage.database?.databaseSizeBytes != null ? "取得済み" : "未確認"}</small></div><strong>${usage.database?.databaseSizeBytes != null ? formatBytes(usage.database.databaseSizeBytes) : "—"}</strong></div>
+        <div class="resource-note">D1のRows Read / Rows Written / Storageの使用量はCloudflareリソース監視に表示しています。</div>
+      </div>
+    </section>`;
+
+  const r2Section = `
+    <section class="section">
+      <h2>R2 Archive</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>eagleeye-archive</b><small>D1履歴のアーカイブ先</small></div><span class="state ${env.ARCHIVE ? "good" : "bad"}">${env.ARCHIVE ? "接続済み" : "未設定"}</span></div>
+        <div class="resource-row"><div><b>アーカイブ対象</b><small>operational archive tables</small></div><strong>5 tables</strong></div>
+        <div class="resource-row"><div><b>対象</b><small>api_observations / player_snapshots / ranking_snapshots</small></div><strong>R2</strong></div>
+        <div class="resource-note">R2の月次使用量・オブジェクト数・OperationsはCloudflareリソース監視に表示しています。</div>
+      </div>
+    </section>`;
+
+  const googleModes = [
+    env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
+    env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account"
+  ].filter(Boolean);
+  const googleSection = `
+    <section class="section">
+      <h2>Google連携</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>Google Sheets</b><small>管理者向けエクスポート連携</small></div><span class="state ${googleModes.length ? "good" : "neutral"}">${googleModes.length ? "設定済み" : "未設定"}</span></div>
+        <div class="resource-row"><div><b>接続方式</b><small>利用可能な設定</small></div><strong>${escapeHtml(googleModes.join(" / ") || "未設定")}</strong></div>
+      </div>
+    </section>`;
+
+  const runtimeSection = `
+    <section class="section">
+      <h2>Runtime / Cron</h2>
+      <div class="card resource-card">
+        <div class="resource-row"><div><b>Worker</b><small>kingshot-data-platform</small></div><strong>稼働</strong></div>
+        <div class="resource-row"><div><b>Cron</b><small>Worker scheduled trigger</small></div><strong>5分ごと</strong></div>
+        <div class="resource-row"><div><b>Retention</b><small>毎時00分に実行</small></div><strong>設定済み</strong></div>
+      </div>
+    </section>`;
+
+  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + googleSection + runtimeSection;
+  const queryInsights = null;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
