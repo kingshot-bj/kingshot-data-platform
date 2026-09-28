@@ -34,7 +34,8 @@ export function buildPlayerRankSnapshotStatement(db, { governorId, uid = null, k
 
 export async function savePlayerRankSnapshot(db, options) {
   const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
-  await statement.run();
+  const r2Only = String(options?.historyMode || "").toUpperCase() === "R2_ONLY";
+  let archived = false;
 
   if (options?.archiveBucket) {
     try {
@@ -47,13 +48,17 @@ export async function savePlayerRankSnapshot(db, options) {
         sourceObservedAt: options.sourceObservedAt,
         sourceObservationId: options.sourceObservationId
       });
+      archived = true;
     } catch (error) {
       console.error("player_rank_history_r2_archive_failed", {
         governorId: String(options.governorId),
         message: error?.message || String(error)
       });
+      if (r2Only) console.warn("player_rank_history_d1_fallback", { governorId: String(options.governorId) });
     }
   }
+
+  if (!r2Only || !archived) await statement.run();
 
   return id;
 }
@@ -61,14 +66,20 @@ export async function savePlayerRankSnapshot(db, options) {
 export async function getPlayerRankHistory(db, {
   governorId,
   limit = 50,
-  archiveBucket = null
+  archiveBucket = null,
+  historyMode = "DUAL"
 }) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
-  const result = await db.prepare(
-    "SELECT * FROM player_rank_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?"
-  ).bind(String(governorId), safeLimit).all();
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+  let d1Rows = [];
 
-  const d1Rows = result.results || [];
+  if (!r2Only || !archiveBucket) {
+    const result = await db.prepare(
+      "SELECT * FROM player_rank_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?"
+    ).bind(String(governorId), safeLimit).all();
+    d1Rows = result.results || [];
+  }
+
   if (!archiveBucket) return d1Rows;
 
   let r2Rows = [];
@@ -207,7 +218,8 @@ async function insertRankingStatements(db, statements) {
 
 export async function saveKingdomRankingBoard(db, {
   kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null,
-  entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000), archiveBucket = null
+  entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000), archiveBucket = null,
+  historyMode = "DUAL"
 }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
@@ -240,9 +252,9 @@ export async function saveKingdomRankingBoard(db, {
   ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
   await insertRankingStatements(db, statements);
 
-  // Migration bridge: archive the same logical history rows to R2 without
-  // changing the existing D1 history reader yet. R2 failure is deliberately
-  // non-fatal during this phase so the existing D1 path remains authoritative.
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+  let archived = false;
+
   if (archiveBucket && filteredEntries.length) {
     try {
       const archiveEntries = filteredEntries.map((entry, index) => {
@@ -263,13 +275,41 @@ export async function saveKingdomRankingBoard(db, {
         sourceObservedAt,
         sourceObservationId
       });
+      archived = true;
     } catch (error) {
       console.error("ranking_history_r2_archive_failed", {
         kid,
         board,
         message: error?.message || String(error)
       });
+      if (r2Only) console.warn("ranking_history_d1_fallback", { kid, board });
     }
+  }
+
+  if (!r2Only || !filteredEntries.length || !archived) {
+    await insertRankingStatements(db, statements);
+  } else {
+    const currentStatements = [];
+    for (const entry of filteredEntries) {
+      const rank = getRankingEntryRank(entry, filteredEntries.indexOf(entry));
+      const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
+      currentStatements.push(db.prepare(
+        'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, previous_rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET previous_rank=kingdom_ranking_current.rank, rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
+      ).bind(
+        Number(kid), String(board), targetType, targetId, rank, null, entry.score ?? entry.value ?? null,
+        entry.uid ?? null, normalizeGovernorId(entry.governor_id), entry.nick_name ?? null, entry.aid ?? null,
+        entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, Number(checkedAt)
+      ));
+    }
+    for (const removed of removals) {
+      currentStatements.push(db.prepare(
+        "DELETE FROM kingdom_ranking_current WHERE kid = ? AND board = ? AND target_type = ? AND target_id = ?"
+      ).bind(Number(kid), String(board), String(removed.targetType), String(removed.targetId)));
+    }
+    currentStatements.push(db.prepare(
+      "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
+    ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
+    await insertRankingStatements(db, currentStatements);
   }
 
   return filteredEntries.length;
@@ -297,13 +337,18 @@ export async function getLatestKingdomRankings(db, kid, board = null, limit = 10
   return result.results || [];
 }
 
-export async function getRankingHistory(db, { kid, board, targetId, limit = 50, archiveBucket = null }) {
+export async function getRankingHistory(db, { kid, board, targetId, limit = 50, archiveBucket = null, historyMode = "DUAL" }) {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
-  const result = await db.prepare(
-    "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? ORDER BY observed_at DESC LIMIT ?"
-  ).bind(Number(kid), String(board), String(targetId), safeLimit).all();
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+  let d1Rows = [];
 
-  const d1Rows = result.results || [];
+  if (!r2Only || !archiveBucket) {
+    const result = await db.prepare(
+      "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? ORDER BY observed_at DESC LIMIT ?"
+    ).bind(Number(kid), String(board), String(targetId), safeLimit).all();
+    d1Rows = result.results || [];
+  }
+
   if (!archiveBucket) return d1Rows;
 
   let r2Rows = [];
