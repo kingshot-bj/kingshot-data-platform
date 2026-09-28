@@ -1956,3 +1956,7 @@ Status画面は「JSONの代替」ではなく、**JSONが正本、画面はJSON
 - Watchlist limits and player visibility settings now use a 5-minute Worker-isolate cache; admin updates invalidate the corresponding cache. Commit: `bddbdac99b1c783f1b5e5b4aee0c42946b93c4d5`.
 - `api_pool_usage` remains per-request audit history for now. Full aggregation was intentionally not changed yet because current code has no read-side consumer and changing granularity would alter audit semantics.
 - Production D1 migration application, Worker deployment, and measured D1 read/write reduction remain unverified at this point. Do not state production confirmation without actual evidence.
+
+
+- 2026-09-28: 実コードを再確認し、`api_pool_usage` は現行 `src/index.js` から `recordUsage()` が呼ばれておらず、通常API成功/失敗処理では監査INSERTしか用途がないことを確認。そこで `recordApiPoolSuccess/Failure` の per-request `api_pool_usage` INSERT を停止し、`api_pool_keys` の状態・成功/失敗・quota telemetry は維持。Commit: `bacf28759982c34eca04ad4a816b46097f2bf2e3`.
+- この変更により、API request 1回ごとの D1 write を1本削減できる見込み。ただし本番D1 Query Insightsでの実測値は未確認。
