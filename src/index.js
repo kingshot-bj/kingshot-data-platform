@@ -1903,12 +1903,35 @@ async function handleKingdomWatchlistApi(request, env) {
 
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
+function getJapanStatusFilename(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `status(${values.year}${values.month}${values.day}-${values.hour}${values.minute}${values.second}).json`;
+}
+
 async function handleAdminDiagnosticsApi(request, env) {
   try {
     const guard = await requireAdmin(request, env);
     if (guard.error) return guard.error;
     const data = await getSystemDiagnostics(env.DB, { recentLimit: 100 });
-    return json({ ok: true, ...data });
+    const filename = getJapanStatusFilename();
+    return new Response(JSON.stringify({ ok: true, ...data }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=UTF-8",
+        "cache-control": "no-store",
+        "content-disposition": `attachment; filename="${filename}"`
+      }
+    });
   } catch (error) {
     console.error("diagnostics_api_failed", error);
     return json({
