@@ -126,3 +126,236 @@ Freeで実用運用できることを実測してからPaid緊急運用を終了
 
 ## 16. 次スレッドへの伝言
 今は$5 Paid監視が本番画面に出るところまで来た。$5は緊急避難であってゴールではない。円表示を必要なら整え、その後は本丸のR2/D1最適化へ戻る。最終的にFree枠で余裕を持って運用できるところまで詰める。
+
+## 17. 2026-09-28 後半スレッド：Watchlist削除後の実測とD1 Query Insights調査
+
+### 17-1. 時刻表示ルール
+ユーザーの明示ルール：**時間はファイル名に統一する。**
+- status(20260928-170316).json → 17:03:16
+- status(20260928-171008).json → 17:10:08
+- status(20260928-171652).json → 17:16:52
+内部JSONの created_at / completed_at / retrieved_at / Unix epoch 等を画面上の時刻として使用しない。
+
+### 17-2. 今回実際に確認した3ファイル
+ユーザーが新規提供した以下3ファイルを実在確認し、比較した。
+- status(20260928-170316).json
+- status(20260928-171008).json
+- status(20260928-171652).json
+以前、存在確認していないファイル名を推測してしまった経緯があるため、今後は**ファイル名を絶対に推測しない**。実際に提供・検索確認できたファイルだけを扱う。
+
+### 17-3. 17:03:16 の実測
+D1:
+- storagePercent: 0.4413667555555555
+- databaseSizeBytes: 19,861,504
+- writeQueries: 71,287
+- readQueries: 27,791
+- rowsRead: 13,371,398
+- rowsWritten: 360,766
+
+Workers:
+- requests: 4,849
+- subrequests: 2,661
+- cpuTimeMs: 11,724,882
+- errors: 372
+
+Query Insights:
+- queryCount: 282
+- Ranking Snapshot: count 37,807 / rowsRead 12,627,370 / rowsWritten 267,913
+- Other Write: count 33,782 / rowsRead 2,316,344 / rowsWritten 58,116
+- API Pool: count 9,307 / rowsRead 20,089 / rowsWritten 13,554
+- Watchlist Job: count 9,522 / rowsRead 32,748 / rowsWritten 4,896
+- Diagnostics: count 2,715 / rowsRead 16,700 / rowsWritten 1,574
+- Player Observation: count 653 / rowsRead 182 / rowsWritten 502
+- Player Snapshot: count 317 / rowsRead 142 / rowsWritten 255
+- Other: count 5,518 / rowsRead 382,114 / rowsWritten 105
+- Change Event: count 101 / rowsRead 325 / rowsWritten 8
+
+Watchlist:
+- total 1
+- enabled 1
+- latestSuccessAtあり
+- latestJob: COMPLETED / playerRows 5 / rankingRows 2600 / lastError null
+- enabledErrors 0
+
+### 17-4. 17:10:08 の実測
+D1:
+- storagePercent: 0.4413667555555555（変化なし）
+- databaseSizeBytes: 19,861,504（変化なし）
+- writeQueries: 73,710
+- readQueries: 28,016
+- rowsRead: 13,379,634
+- rowsWritten: 363,600
+
+Workers:
+- requests: 4,865
+- subrequests: 2,673
+- cpuTimeMs: 11,724,650
+- errors: 372
+
+Query Insights:
+- queryCount: 282
+- Ranking Snapshot: 変化なし
+- Other Write: count 35,665 / rowsRead 2,318,227 / rowsWritten 60,039
+- API Pool: count 9,445 / rowsRead 21,316 / rowsWritten 14,229
+- Watchlist Job: count 10,084 / rowsRead 33,296 / rowsWritten 5,445
+- Diagnostics: 変化なし
+- Player Observation: 変化なし
+- Player Snapshot: 変化なし
+- Other: count 5,545 / rowsRead 382,148 / rowsWritten 105
+- Change Event: 変化なし
+
+Watchlist:
+- total 1
+- enabled 1
+- latestJobは17:03:16時点と同じ COMPLETED / playerRows 5 / rankingRows 2600 / lastError null
+- enabledErrors 0
+
+### 17-5. 17:16:52 の実測
+D1:
+- storagePercent: 0.4413667555555555（変化なし）
+- databaseSizeBytes: 19,861,504（変化なし）
+- writeQueries: 73,710（17:10:08から変化なし）
+- readQueries: 28,029
+- rowsRead: 13,379,858
+- rowsWritten: 363,600（17:10:08から変化なし）
+
+Workers:
+- requests: 4,867
+- subrequests: 2,678
+- cpuTimeMs: 11,748,938
+- errors: 372
+
+Query Insights:
+- Ranking Snapshot: 変化なし
+- Other Write: 変化なし
+- API Pool: count +3 / rowsRead +12 / rowsWritten +0
+- Watchlist Job: count +2 / rowsRead +8 / rowsWritten +0
+- Other: count +8 / rowsRead +6 / rowsWritten +0
+- その他主要カテゴリ変化なし
+
+Watchlist:
+- total 0
+- enabled 0
+- latestSuccessAt null
+- latestUpdatedAt null
+- latestJobは過去のCOMPLETED job（playerRows 5 / rankingRows 2600 / lastError null）
+- enabledErrors 0
+
+### 17-6. 3ファイル間の差分
+17:03:16 → 17:10:08:
+- Rows Read +8,236
+- Rows Written +2,834
+- Read Queries +225
+- Write Queries +2,423
+- Worker Requests +16
+- Subrequests +12
+- CPUは -232ms（Analytics集計の揺らぎとして扱う）
+- Ranking Snapshotは完全に変化なし
+- Other Write: count +1,883 / rowsRead +1,883 / rowsWritten +1,923
+- API Pool: count +138 / rowsRead +1,227 / rowsWritten +675
+- Watchlist Job: count +562 / rowsRead +548 / rowsWritten +549
+
+17:10:08 → 17:16:52:
+- Rows Read +224
+- Rows Written 0
+- Read Queries +13
+- Write Queries 0
+- Worker Requests +2
+- Subrequests +5
+- Ranking Snapshot変化なし
+- Watchlist Job +2 queries / +8 rowsRead / +0 rowsWritten
+- API Pool +3 queries / +12 rowsRead / +0 rowsWritten
+
+結論：17:03:16→17:10:08の大量D1活動は**新しいRanking Snapshot書き込みではない**。主にOther Write / API Pool / Watchlist Jobが増えている。17:10:08→17:16:52ではD1 writeは発生していない。17:10:08から17:16:52の間にWatchlistが1 enabled→0 enabledになっており、削除と整合する。
+
+重要な注意：この約6分44秒だけでは「Cronが永久に停止した」とは証明できない。ただし、この観測区間では削除後のWatchlist D1 writeが発生していないことは確認できる。
+
+### 17-7. Watchlist削除処理の確認
+DELETE pathは以下。
+```js
+await env.DB.batch([
+  env.DB.prepare("DELETE FROM kingdom_watchlist_jobs WHERE watchlist_id = ?").bind(watchlistId),
+  env.DB.prepare("DELETE FROM kingdom_watchlist_locks WHERE watchlist_id = ?").bind(watchlistId),
+  env.DB.prepare("DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?").bind(watchlistId, auth.discord_id)
+]);
+```
+
+Cronはenabled watchlistだけをSELECTする。削除されたjobsは後続Cronで拾われない。既にin-flightのHTTP/API処理そのものを強制abortする設計ではない。
+
+### 17-8. 今回の本丸：Watchlist Job +562 の正体を調べる
+17:03:16→17:10:08でQuery Insightsの「Watchlist Job」が+562になったが、status JSONのカテゴリ集計だけではSQLごとの内訳を把握していない状態だった。
+
+そこで次スレッドでは、**実際のstatus JSON内の queryInsights.queries をSQL単位で比較する**。
+見る項目:
+- query
+- count
+- rowsRead
+- rowsWritten
+- rowsReturned
+- durationMs
+- category
+
+目的は+562を、例えば以下のどれが何回発生したかまで分解すること。
+- SELECT ... kingdom_ranking_current
+- INSERT/UPDATE ... kingdom_ranking_current
+- UPDATE ... kingdom_watchlist_jobs
+- INSERT/UPDATE ... kingdom_ranking_board_state
+- INSERT ... change_events
+- その他Watchlist関連SQL
+
+### 17-9. 重要：src/cloudflare-analytics.js は既にSQL単位情報を取得する実装済み
+2026-09-28後半にmainの `src/cloudflare-analytics.js` を実コード確認した。
+
+D1_QUERY_INSIGHTS_QUERY は以下をCloudflare GraphQLから取得している:
+- count
+- rowsRead
+- rowsWritten
+- rowsReturned
+- queryDurationMs
+- dimensions.databaseId
+- dimensions.query
+
+summarizeD1QueryInsights() は各queryを以下に変換する:
+- query
+- count
+- rowsRead
+- rowsWritten
+- rowsReturned
+- durationMs
+- category
+
+さらにreturn値は:
+- queryCount
+- queries（**全query一覧**）
+- topWriteQueries
+- topReadQueries
+- categories
+
+そしてgetCloudflareD1Usage()のreturnにqueryInsightsをそのまま含めている。
+コードコメントにも「complete query list available to the status JSON」「machine-readable status endpoint must not silently discard query-level metrics」と明記されている。
+
+したがって、現時点では**status JSONへ情報を追加するパッチは不要**。既にstatus JSONへSQL単位情報を出す設計になっている。
+
+今回の問題は実装不足ではなく、**既に出ているqueryInsights.queriesを3つの実status JSONでまだ全件比較していなかったこと**。
+
+### 17-10. 次スレッドの最初の作業
+1. ユーザーが提供済みの実ファイル名を再確認する。ファイル名を推測しない。
+2. status(20260928-170316).json と status(20260928-171008).json の `queryInsights.queries` を全件取得。
+3. SQL文字列を正規化して同一SQLを対応付ける。
+4. count / rowsRead / rowsWritten / rowsReturned / durationMs の差分を計算。
+5. 特にcategory=Watchlist Jobを全件抽出し、+562の内訳を確定する。
+6. そのSQLをmainの `src/index.js`, `src/ranking-store.js`, `src/api-pool.js`, `src/diagnostics.js` の実装箇所と1対1で照合する。
+7. 「固定コスト」「変更行数依存」「プレイヤー数依存」「API request依存」に分解する。
+8. その後、Free枠削減率を具体的に試算する。
+
+### 17-11. 重要な実装・分析上の注意
+- `ranking_snapshots` の広範囲SELECTを絶対に復活させない。
+- R2_ONLYを維持する。
+- 「コード上実装済み」「deploy済み」「本番確認済み」を混同しない。
+- 本番未確認を「確認済み」と言わない。
+- Cloudflare Analyticsには集計遅延があり得るため、瞬間値だけで因果関係を断定しない。
+- status JSONの内部 `retrievedAt` 等を表示時刻として使わず、**ファイル名の時刻だけを使う**。
+
+### 17-12. このスレッドでの重要な訂正
+一度、「status JSONにSQL単位情報がないのでパッチが必要」という方向で回答しかけたが、mainの `src/cloudflare-analytics.js` を確認した結果、それは誤りだった。
+正しくは、SQL単位の `queryInsights.queries` は既に実装・返却されている。次スレッドでは新規パッチを作る前に、**既存のstatus JSONを最後まで読み切ってから判断する**こと。
