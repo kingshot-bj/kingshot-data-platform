@@ -1,4 +1,4 @@
-import { archivePlayerHistoryBatch } from "./r2-archive.js";
+import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive.js";
 
 let playerIdentityHistorySchemaPromise = null;
 
@@ -175,7 +175,64 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
   return materializedPlayer;
 }
 
-export async function getPlayerNameHistory(db, governorId, limit = 20) {
+export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket = null) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 30, 1), 100);
+  const d1Result = await db.prepare(
+    'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
+  ).bind(String(governorId), safeLimit).all();
+
+  const d1Rows = (d1Result.results || []).map(row => {
+    let payload = {};
+    try { payload = JSON.parse(row.payload_json); } catch {}
+    const player = payload.player && typeof payload.player === "object" ? payload.player : payload;
+    return {
+      snapshot_id: row.snapshot_id,
+      governor_id: row.governor_id,
+      observation_id: row.observation_id,
+      observed_at: row.observed_at,
+      player,
+      profile: payload
+    };
+  });
+
+  if (!archiveBucket) return d1Rows;
+
+  let r2Rows = [];
+  try {
+    r2Rows = await listPlayerHistoryFromR2(archiveBucket, {
+      governorId: String(governorId),
+      limit: safeLimit
+    });
+  } catch (error) {
+    console.error("player_history_r2_read_failed", {
+      governorId: String(governorId),
+      message: error?.message || String(error)
+    });
+  }
+
+  // Migration bridge: merge R2 and D1 by observation_id so the API remains
+  // complete while historical data is being migrated. D1 remains the fallback.
+  const merged = new Map();
+  for (const row of [...d1Rows, ...r2Rows.map(row => ({
+    snapshot_id: row.observation_id || null,
+    governor_id: String(row.governor_id ?? governorId),
+    observation_id: row.observation_id ?? null,
+    observed_at: row.observed_at,
+    player: row.player && typeof row.player === "object" ? row.player : {},
+    profile: row.player && typeof row.player === "object" ? { player: row.player } : {}
+  }))]) {
+    const key = row.observation_id
+      ? `observation:${row.observation_id}`
+      : `time:${row.observed_at}`;
+    if (!merged.has(key)) merged.set(key, row);
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, safeLimit);
+}
+
+export async function getPlayerNameHistory(db, governorId, limit = 20)
   if (!db) throw new Error("D1 database binding is not configured.");
   await ensurePlayerIdentityHistorySchema(db);
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
