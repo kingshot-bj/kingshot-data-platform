@@ -5931,7 +5931,7 @@ async function renderPublicStatusPage(request, env) {
       <div class="card resource-card">
         <div class="resource-head"><div><b>直近診断イベント</b><small>最大100件 · 最新→過去</small></div><span class="state good">${escapeHtml(data.overall)}</span></div>
         <div class="resource-row"><div><b>Healthy / Warning / Failed / Unknown</b><small>サービス集計</small></div><strong>${formatInt(data.counts.healthy)} / ${formatInt(data.counts.warning)} / ${formatInt(data.counts.failed)} / ${formatInt(data.counts.unknown)}</strong></div>
-        <details><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全診断イベントを見る</summary>
+        <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全診断イベント</summary>
           <div class="insight-list">${(data.events || []).map(e => `
             <div class="insight-query">
               <div class="insight-query-head"><span>${escapeHtml(e.service || e.feature || "unknown")} · ${escapeHtml(e.status || "UNKNOWN")}</span><span>${formatUnixStatus(e.created_at)}</span></div>
