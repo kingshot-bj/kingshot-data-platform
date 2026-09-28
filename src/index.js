@@ -5595,7 +5595,7 @@ async function renderPublicStatusPage(request, env) {
   const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
   const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
-    ? "$5 Paid枠・安全上限の最大使用率"
+    ? "$5.00 Paid枠・安全上限の最大使用率"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
     const item = cloudflareUsageLabel(stateValue);
