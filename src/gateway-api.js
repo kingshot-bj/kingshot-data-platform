@@ -1,6 +1,7 @@
 import { DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
 import { getOperationalStatus } from "./status-ops.js";
+import { getHistoryEmergencyBufferStatus } from "./history-emergency-buffer.js";
 
 const GATEWAY_VERSION = "v1";
 
@@ -139,11 +140,12 @@ async function handleGatewayStatus(request, env) {
   if (!String(env.EAGLEEYE_GATEWAY_TOKEN || "").trim()) return jsonResponse({ ok: false, error: "GATEWAY_NOT_CONFIGURED" }, 503);
   if (!isGatewayAuthorized(request, env)) return jsonResponse({ ok: false, error: "UNAUTHORIZED" }, 401);
 
-  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult] = await Promise.allSettled([
+  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult] = await Promise.allSettled([
     getReadOnlyDiagnostics(env.DB, { recentLimit: 100 }),
     getCloudflareD1Usage(env),
     getHistoryStorageStatus(env),
-    getOperationalStatus(env.DB)
+    getOperationalStatus(env.DB),
+    getHistoryEmergencyBufferStatus(env.DB)
   ]);
 
   return jsonResponse({
@@ -168,6 +170,16 @@ async function handleGatewayStatus(request, env) {
             apiPool: null,
             watchlist: null,
             error: "OPERATIONAL_STATUS_UNAVAILABLE"
+          },
+      historyEmergencyBuffer: emergencyBufferResult.status === "fulfilled"
+        ? emergencyBufferResult.value
+        : {
+            pending: null,
+            failed: null,
+            bytes: null,
+            limit: null,
+            maxBytes: null,
+            error: "HISTORY_EMERGENCY_BUFFER_STATUS_UNAVAILABLE"
           }
     },
     runtime: {
