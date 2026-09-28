@@ -1953,7 +1953,7 @@ async function renderAdminDiagnosticsPage(request, env) {
 
   const services = data.services.map(s => {
     const st = serviceState(s.status);
-    const when = s.last_event_at ? new Date(Number(s.last_event_at)*1000).toLocaleString("ja-JP") : "未確認";
+    const when = s.last_event_at ? new Date(Number(s.last_event_at)*1000).toLocaleString("ja-JP",{timeZone:"Asia/Tokyo"}) : "未確認";
     return `<div class="service"><div class="service-icon ${st.tone}">${st.icon}</div><div class="service-main"><div class="service-name">${esc(s.label)}</div><div class="service-time">${esc(when)}</div></div><div class="service-state ${st.tone}">${st.label}</div></div>`;
   }).join("");
 
@@ -1965,7 +1965,7 @@ async function renderAdminDiagnosticsPage(request, env) {
 
   const events = data.events.slice(0,40).map((e,index) => {
     const st = serviceState(e.status);
-    const when = e.created_at ? new Date(Number(e.created_at)*1000).toLocaleString("ja-JP") : "-";
+    const when = e.created_at ? new Date(Number(e.created_at)*1000).toLocaleString("ja-JP",{timeZone:"Asia/Tokyo"}) : "-";
     const shape = e.metadata?.rankingPayloadShape;
     const shapeHtml = shape ? "<details><summary>ランキングレスポンス構造を見る</summary>"+jsonBlock(shape)+"</details>" : "";
     const facts = (e.rows_received != null || e.rows_saved != null)
