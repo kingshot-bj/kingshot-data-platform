@@ -4919,7 +4919,7 @@ async function renderPublicStatusPage(request, env) {
   // its free-tier row limit, this monitor must still be able to report usage.
   const [usageResult, diagnosticsResult, operationalResult] = await Promise.allSettled([
     canViewDetailedUsage
-      ? getCloudflareD1Usage(env, { includeQueryInsights: false })
+      ? getCloudflareD1Usage(env, { includeQueryInsights: true })
       : Promise.resolve({
           configured: false,
           status: "HIDDEN",
@@ -5115,6 +5115,34 @@ async function renderPublicStatusPage(request, env) {
         <div class="resource-row"><div><b>Retention</b><small>毎時00分に実行</small></div><strong>設定済み</strong></div>
       </div>
     </section>`;
+
+  const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
+    ? `
+      <section class="section">
+        <h2>Cloudflare リソース監視</h2>
+        <div class="card resource-card">
+          <div class="resource-head"><div><b>D1 Free Tier</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
+          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
+          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
+          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
+          <div class="resource-head"><div><b>Workers Free Tier</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · 当日UTC</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
+          ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
+          <div class="resource-head"><div><b>R2 Free Tier</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
+          ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
+          ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
+          ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
+          <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
+        </div>
+      </section>
+    `
+    : `
+      <section class="section">
+        <h2>Cloudflare リソース監視</h2>
+        <div class="card resource-card">
+          <div class="resource-head"><div><b>Cloudflare Usage</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
+          <div class="resource-note">D1 / Workers / R2の詳細使用量とD1 Query InsightsはADMIN / OWNERのみ確認できます。</div>
+        </div>
+      </section>`;
 
   const queryInsights = usage.queryInsights?.available ? usage.queryInsights : null;
   const queryInsightCategories = (queryInsights?.categories || []).slice(0, 6);
