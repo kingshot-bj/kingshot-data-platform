@@ -6007,7 +6007,7 @@ ${canViewDetailedUsage ? `<script>
   }
 })();
 </script>` : ""}
-<style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}}</style></main></body></html>`);
+<style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}details>summary{display:none!important}details> :not(summary){display:block!important}}</style></main></body></html>`);
 }
 
 async function renderHome(request, env) {
