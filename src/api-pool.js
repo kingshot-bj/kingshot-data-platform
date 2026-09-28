@@ -30,23 +30,60 @@ export async function listApiPoolKeys(db) {
   return result.results || [];
 }
 
-export async function leaseApiKey(db, { provider = PROVIDER, poolType = "SYSTEM_GENERAL", jobId = null, purpose = "GENERAL", targetType = null, targetId = null, leaseSeconds = LEASE_SECONDS } = {}) {
+async function claimApiPoolKey(db, {
+  provider = PROVIDER,
+  poolType = "SYSTEM_GENERAL",
+  jobId = null,
+  purpose = "GENERAL",
+  targetType = null,
+  targetId = null,
+  leaseSeconds = LEASE_SECONDS
+} = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
-  await db.prepare(
-    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, updated_at = ? WHERE provider = ? AND pool_type = ? AND status = 'COOLDOWN' AND cooldown_until IS NOT NULL AND cooldown_until <= ?"
-  ).bind(now, provider, poolType, now).run();
+  const leaseId = crypto.randomUUID();
+
+  // Claim the least-recently-used eligible key in the same write statement that
+  // establishes the lease. This removes the old SELECT -> INSERT race window.
+  const claim = await db.prepare(
+    `UPDATE api_pool_keys
+     SET status = 'AVAILABLE',
+         cooldown_until = NULL,
+         lease_id = ?,
+         leased_until = ?,
+         lease_job_id = ?,
+         lease_purpose = ?,
+         lease_target_type = ?,
+         lease_target_id = ?,
+         updated_at = ?
+     WHERE key_id = (
+       SELECT key_id
+       FROM api_pool_keys
+       WHERE provider = ?
+         AND pool_type = ?
+         AND status = 'AVAILABLE'
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+       ORDER BY
+         CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END,
+         COALESCE(last_used_at, 0) ASC,
+         created_at ASC
+       LIMIT 1
+     )`
+  ).bind(
+    leaseId, expiresAt, jobId, purpose, targetType, targetId, now,
+    provider, poolType, now, now
+  ).run();
+
+  if (Number(claim?.meta?.changes || 0) !== 1) {
+    throw new Error("NO_API_POOL_KEY_AVAILABLE");
+  }
 
   const row = await db.prepare(
-    "SELECT k.* FROM api_pool_keys k WHERE k.provider = ? AND k.pool_type = ? AND k.status = 'AVAILABLE' AND (k.cooldown_until IS NULL OR k.cooldown_until <= ?) AND NOT EXISTS (SELECT 1 FROM api_leases l WHERE l.key_id = k.key_id AND l.status = 'ACTIVE' AND l.expires_at > ?) ORDER BY CASE WHEN k.last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(k.last_used_at, 0) ASC, k.created_at ASC LIMIT 1"
-  ).bind(provider, poolType, now, now).first();
+    "SELECT * FROM api_pool_keys WHERE lease_id = ? AND key_id IS NOT NULL LIMIT 1"
+  ).bind(leaseId).first();
 
-  if (!row) throw new Error("NO_API_POOL_KEY_AVAILABLE");
-
-  const leaseId = crypto.randomUUID();
-  await db.prepare(
-    "INSERT INTO api_leases (lease_id, key_id, pool_type, job_id, purpose, target_type, target_id, status, leased_at, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)"
-  ).bind(leaseId, row.key_id, row.pool_type, jobId, purpose, targetType, targetId, now, expiresAt, now).run();
+  if (!row) throw new Error("API_POOL_LEASE_CLAIM_READBACK_FAILED");
 
   return {
     lease_id: leaseId,
@@ -58,25 +95,72 @@ export async function leaseApiKey(db, { provider = PROVIDER, poolType = "SYSTEM_
   };
 }
 
-export async function leaseApiKeyForHealthCheck(db, { keyId, purpose = "API_POOL_HEALTH_CHECK", targetType = "API_KEY", targetId = null, leaseSeconds = 120 } = {}) {
+export async function leaseApiKey(db, options = {}) {
+  return claimApiPoolKey(db, options);
+}
+
+export async function leaseApiKeyForHealthCheck(db, {
+  keyId,
+  purpose = "API_POOL_HEALTH_CHECK",
+  targetType = "API_KEY",
+  targetId = null,
+  leaseSeconds = 120
+} = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || 120);
   if (!keyId) throw new Error("API_POOL_KEY_ID_REQUIRED");
-  const row = await db.prepare(
-    "SELECT k.* FROM api_pool_keys k WHERE k.key_id = ? AND k.status IN ('AVAILABLE','ERROR','DISABLED') AND NOT EXISTS (SELECT 1 FROM api_leases l WHERE l.key_id = k.key_id AND l.status = 'ACTIVE' AND l.expires_at > ?) LIMIT 1"
-  ).bind(keyId, now).first();
-  if (!row) throw new Error("API_POOL_KEY_NOT_HEALTH_CHECKABLE");
+
   const leaseId = crypto.randomUUID();
-  await db.prepare(
-    "INSERT INTO api_leases (lease_id, key_id, pool_type, job_id, purpose, target_type, target_id, status, leased_at, expires_at, created_at) VALUES (?, ?, ?, NULL, ?, ?, ?, 'ACTIVE', ?, ?, ?)"
-  ).bind(leaseId, row.key_id, row.pool_type, purpose, targetType, targetId, now, expiresAt, now).run();
-  return { lease_id: leaseId, key_id: row.key_id, provider: row.provider, pool_type: row.pool_type, api_key: await decryptSecret(row.encrypted_key), expires_at: expiresAt };
+  const claim = await db.prepare(
+    `UPDATE api_pool_keys
+     SET lease_id = ?,
+         leased_until = ?,
+         lease_job_id = NULL,
+         lease_purpose = ?,
+         lease_target_type = ?,
+         lease_target_id = ?,
+         updated_at = ?
+     WHERE key_id = ?
+       AND status IN ('AVAILABLE','ERROR','DISABLED')
+       AND (leased_until IS NULL OR leased_until <= ?)`
+  ).bind(
+    leaseId, expiresAt, purpose, targetType, targetId, now, keyId, now
+  ).run();
+
+  if (Number(claim?.meta?.changes || 0) !== 1) {
+    throw new Error("API_POOL_KEY_NOT_HEALTH_CHECKABLE");
+  }
+
+  const row = await db.prepare(
+    "SELECT * FROM api_pool_keys WHERE key_id = ? AND lease_id = ? LIMIT 1"
+  ).bind(keyId, leaseId).first();
+
+  if (!row) throw new Error("API_POOL_LEASE_CLAIM_READBACK_FAILED");
+
+  return {
+    lease_id: leaseId,
+    key_id: row.key_id,
+    provider: row.provider,
+    pool_type: row.pool_type,
+    api_key: await decryptSecret(row.encrypted_key),
+    expires_at: expiresAt
+  };
 }
 
 export async function releaseApiLease(db, leaseId) {
   if (!leaseId) return;
   const now = Math.floor(Date.now() / 1000);
-  await db.prepare("UPDATE api_leases SET status = 'RELEASED', released_at = ? WHERE lease_id = ? AND status = 'ACTIVE'").bind(now, leaseId).run();
+  await db.prepare(
+    `UPDATE api_pool_keys
+     SET lease_id = NULL,
+         leased_until = NULL,
+         lease_job_id = NULL,
+         lease_purpose = NULL,
+         lease_target_type = NULL,
+         lease_target_id = NULL,
+         updated_at = ?
+     WHERE lease_id = ?`
+  ).bind(now, leaseId).run();
 }
 
 function prepareUsageInsert(db, { keyId, provider = PROVIDER, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = null, requestCount = 1, measuredQuota = null, measuredRemaining = null, estimated = 0, now }) {
@@ -87,14 +171,28 @@ function prepareUsageInsert(db, { keyId, provider = PROVIDER, poolType = null, e
   ).bind(usageId, keyId, provider, resolvedPoolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount, measuredQuota, measuredRemaining, estimated ? 1 : 0, now, now);
 }
 
+function prepareLeaseClear(db, leaseId, now) {
+  return db.prepare(
+    `UPDATE api_pool_keys
+     SET lease_id = NULL,
+         leased_until = NULL,
+         lease_job_id = NULL,
+         lease_purpose = NULL,
+         lease_target_type = NULL,
+         lease_target_id = NULL,
+         updated_at = ?
+     WHERE lease_id = ?`
+  ).bind(now, leaseId);
+}
+
 export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
   await db.batch([
     db.prepare(
-      "UPDATE api_pool_keys SET status = 'AVAILABLE', remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ?"
-    ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, keyId),
+      "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?, remaining_minute), remaining_day = COALESCE(?, remaining_day), quota_reset_at = COALESCE(?, quota_reset_at), last_used_at = ?, last_success_at = ?, last_error_code = NULL, last_error_message = NULL, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+    ).bind(remainingMinute, remainingDay, quotaResetAt, now, now, now, keyId, leaseId),
     prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, measuredRemaining: remainingDay, now }),
-    db.prepare("UPDATE api_leases SET status = 'RELEASED', released_at = ? WHERE lease_id = ? AND status = 'ACTIVE'").bind(now, leaseId)
+    prepareLeaseClear(db, leaseId, now)
   ]);
 }
 
@@ -105,10 +203,10 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
 
   await db.batch([
     db.prepare(
-      "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE key_id = ?"
-    ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId),
+      "UPDATE api_pool_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_error_at = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE key_id = ? AND lease_id = ?"
+    ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId),
     prepareUsageInsert(db, { keyId, provider: PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, now }),
-    db.prepare("UPDATE api_leases SET status = 'RELEASED', released_at = ? WHERE lease_id = ? AND status = 'ACTIVE'").bind(now, leaseId)
+    prepareLeaseClear(db, leaseId, now)
   ]);
 }
 
@@ -122,19 +220,28 @@ export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = n
 }
 
 export async function releaseExpiredLeases(db, now = Math.floor(Date.now() / 1000)) {
+  // New lease state lives on api_pool_keys. Clear expired claims without
+  // touching the legacy api_leases history table in the hot path.
+  await db.prepare(
+    `UPDATE api_pool_keys
+     SET lease_id = NULL,
+         leased_until = NULL,
+         lease_job_id = NULL,
+         lease_purpose = NULL,
+         lease_target_type = NULL,
+         lease_target_id = NULL,
+         updated_at = ?
+     WHERE leased_until IS NOT NULL
+       AND leased_until <= ?`
+  ).bind(now, now).run();
+
+  // Legacy leases are retained only for transition cleanup.
   await db.prepare("UPDATE api_leases SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at <= ?").bind(now).run();
 
-  // Lease rows are coordination state, not long-term history. Keep only a short
-  // diagnostic window after release/expiry so the table cannot grow forever.
   const leaseHistoryCutoff = now - 24 * 60 * 60;
   await db.prepare(
     "DELETE FROM api_leases WHERE status IN ('RELEASED','EXPIRED') AND COALESCE(released_at, expires_at, created_at) < ?"
   ).bind(leaseHistoryCutoff).run();
-}
-
-export async function getPoolStats(db) {
-  const result = await db.prepare("SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status").all();
-  return result.results || [];
 }
 
 async function fingerprintKey(apiKey) {
