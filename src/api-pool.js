@@ -33,8 +33,6 @@ export async function listApiPoolKeys(db) {
 export async function leaseApiKey(db, { provider = PROVIDER, poolType = "SYSTEM_GENERAL", jobId = null, purpose = "GENERAL", targetType = null, targetId = null, leaseSeconds = LEASE_SECONDS } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
-  await releaseExpiredLeases(db, now);
-
   await db.prepare(
     "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, updated_at = ? WHERE provider = ? AND pool_type = ? AND status = 'COOLDOWN' AND cooldown_until IS NOT NULL AND cooldown_until <= ?"
   ).bind(now, provider, poolType, now).run();
@@ -64,7 +62,6 @@ export async function leaseApiKeyForHealthCheck(db, { keyId, purpose = "API_POOL
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || 120);
   if (!keyId) throw new Error("API_POOL_KEY_ID_REQUIRED");
-  await releaseExpiredLeases(db, now);
   const row = await db.prepare(
     "SELECT k.* FROM api_pool_keys k WHERE k.key_id = ? AND k.status IN ('AVAILABLE','ERROR','DISABLED') AND NOT EXISTS (SELECT 1 FROM api_leases l WHERE l.key_id = k.key_id AND l.status = 'ACTIVE' AND l.expires_at > ?) LIMIT 1"
   ).bind(keyId, now).first();
