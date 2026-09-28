@@ -123,6 +123,19 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
   return materializedPlayer;
 }
 
+export async function getPlayerNameHistory(db, governorId, limit = 20) {
+  if (!db) throw new Error("D1 database binding is not configured.");
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const result = await db.prepare(
+    `SELECT name, first_seen_at, last_seen_at, source_observation_id
+     FROM player_identity_history
+     WHERE governor_id = ?
+     ORDER BY first_seen_at DESC
+     LIMIT ?`
+  ).bind(String(governorId), safeLimit).all();
+  return result.results || [];
+}
+
 export async function getPlayer(db, governorId) {
   return db.prepare(
     `SELECT * FROM players WHERE governor_id = ? LIMIT 1`
