@@ -1569,3 +1569,36 @@ docs/EAGLEEYE_DATA_ARCHITECTURE.md
 - 「R2へ移行済み」「D1使用量が削減された」とは扱わない。
 - broadな `ranking_snapshots` SELECTは追加していない。
 - 現在のD1履歴SELECTは対象IDを限定した既存API互換処理のみ。
+
+## 2026-09-28 Player Ranking History R2 Reader追加
+
+Player Ranking History（`player_rank_snapshots`）についてもR2移行ブリッジを追加した。
+
+- `src/r2-archive.js`
+  - `archivePlayerRankHistoryBatch()`
+  - `listPlayerRankHistoryFromR2()`
+  - 保存先: `history/v1/player_rank_snapshots/<governorId>/<observedAt>/...`
+- `src/ranking-store.js`
+  - `savePlayerRankSnapshot()` にR2 dual-writeを追加。
+  - `getPlayerRankHistory()` を追加。
+  - D1とR2を `source_observation_id` 等で重複排除。
+  - R2読取失敗時はD1をフォールバック。
+- `src/index.js`
+  - `/api/player/rank-history` を追加。
+  - Player Ranking History APIもR2 migration bridge経由で取得可能にした。
+
+### 現在の状態
+Player History / Ranking History / Player Ranking History の3系統について、
+「D1を残したままR2へdual-write → R2 Reader追加 → D1 fallback」
+まで揃った。
+
+ただし、まだD1履歴書き込みは停止していない。
+また本番デプロイ・本番確認も行っていない。
+
+次段階は、3系統のD1/R2結果を比較できる状態を前提として、
+- R2の履歴意味・件数・順序・フィールド互換性を確認
+- 問題がなければD1履歴書き込み停止
+- D1 Rows Writtenを同一条件で再計測
+へ進む。
+
+今回もbroadな`ranking_snapshots` SELECTは追加していない。
