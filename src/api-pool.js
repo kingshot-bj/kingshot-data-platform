@@ -174,6 +174,17 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
   ).bind(status, cooldownUntil, now, now, errorCode, truncate(errorMessage, 500), now, keyId, leaseId).run();
 }
 
+export async function getPoolStats(db) {
+  const result = await db.prepare(
+    "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type ASC, status ASC"
+  ).all();
+  return (result.results || []).map(row => ({
+    pool_type: String(row.pool_type || ""),
+    status: String(row.status || ""),
+    count: Number(row.count || 0)
+  }));
+}
+
 export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = null, requestCount = 1, measuredQuota = null, measuredRemaining = null, estimated = 0 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const usageId = crypto.randomUUID();
