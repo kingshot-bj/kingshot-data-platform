@@ -1089,3 +1089,165 @@ ChatGPT
 8. 研究用の複製・常時pollingでEagleEyeの無料枠を不必要に消費しない。
 9. 直近はSystem Log取得Read-Only Gateway APIを先に実装する。
 10. 永久保存層・Library APIは、このGatewayと将来接続できる境界を最初から設計しておく。
+
+## 40. 2026-09-28追加：System Status拡張方針と直近実測【次スレッド開始時に必ず確認】
+
+### 40-1. System Statusの方針
+現行の `/status` を、EagleEye全体の運用状況を一枚で把握できる「System Status / Operations Control Tower」として拡張する。
+
+ユーザー判断:
+- Cloudflareの詳細Usage等は、これまで通り画面スクリーンショットを取得してユーザー側でPDF化する。
+- EagleEye側でサーバーサイドPDF生成機能は実装しない。
+- Status画面のPDF化専用機能・印刷専用UIは今回の実装対象外。
+
+### 40-2. System Statusに追加する情報
+既存のCloudflare Resource / Query Insights / Diagnosticsを維持しつつ、以下を追加する方針。
+
+1. API Pool Health
+   - Pool type別: SYSTEM_GENERAL / SYSTEM_WATCHLIST / USER_CONTRIBUTED
+   - AVAILABLE / COOLDOWN / ERROR / DISABLED / REVOKED の状態数
+   - AVAILABLEキー数 / 総キー数
+   - ACTIVE lease数
+   - 直近キーの状態
+   - 直近エラー情報
+   - APIキー本体・encrypted_key・secretは絶対に表示しない
+
+2. MightPulse
+   - Diagnostics上のMightPulse状態
+   - 直近イベント
+   - エラーコード等の運用情報
+   - APIキーや生レスポンスは表示しない
+
+3. 王国Watchlist
+   - 登録数
+   - 有効監視数
+   - 有効監視のlast_error件数
+   - 最新Watchlist Jobのstatus
+   - 最新jobの更新時刻
+   - ranking/player処理行数
+   - 最新job error
+   - 監視対象0件なら「監視なし」と表示
+   - 削除済みWatchlistの過去ログだけを見て現在Watchlistが稼働中と誤認しない
+
+4. Database
+   - D1状態
+   - D1 Storage等の詳細は既存Cloudflare Resource表示を利用
+   - D1を長期履歴倉庫として扱わない
+
+5. R2 Archive
+   - ARCHIVE bindingの有無
+   - eagleeye-archiveの運用状態
+   - 現在のアーカイブ対象テーブル
+   - R2使用量等は既存Cloudflare Analytics表示を利用
+   - R2を検索DBとして全件scanしない
+
+6. Google連携
+   - Google Sheets設定有無
+   - Apps Script Web App方式 / Service Account方式の設定状態
+   - secret値そのものは表示しない
+   - Google Drive永久保存層はまだ実装しない
+
+7. Runtime / Cron
+   - Worker
+   - Cron設定
+   - Retention実行方針
+   - 実際に取得できない値を「実行成功」と断定しない
+   - コード上の設定値と本番実測値を分ける
+
+### 40-3. 全体状態判定
+API Poolがキー登録済みなのにAVAILABLE=0の場合、System Status全体を障害側へ寄せる候補とする。
+Watchlistに有効監視が存在しlast_errorが残っている場合は注意状態へ寄せる。
+
+ただし、過去のdiagnostic error・削除済みWatchlistの古いerror・以前のAPI Pool errorだけを理由に「現在障害中」と断定しない。「現在状態」と「過去イベント」を分離する。
+
+### 40-4. D1負荷への注意
+`/status` は自動更新ページなので追加D1 queryを増やしすぎない。
+- per-key queryを大量発行しない
+- 可能なら集約queryで取得
+- ranking_snapshotsを読む必要なし
+- Watchlist status確認のためranking historyを読まない
+
+D1 DiagnosticsはD1内のdiagnostic_events、Cloudflare resource usageはCloudflare GraphQL Analyticsから取得する。
+
+### 40-5. 直近のAPI Pool実測【重要】
+ユーザーが実際のEagleEye API Poolを画面から確認したところ、登録キー2本に対してAVAILABLEが0本で、API Poolでエラーが発生していた。
+
+その後、ユーザーが手動更新を行い、登録されている2本のキーをAVAILABLEへ復旧する作業を実施した。
+
+重要な運用上の発見:
+- API Poolが存在するだけではWatchlistが動くとは限らない。
+- AVAILABLE数をSystem Statusで直接確認できる価値がある。
+- Watchlistの `NO_API_POOL_KEY_AVAILABLE` は、実際にAVAILABLEキーが0本だった状態と整合する可能性がある。
+- ただし過去ログだけから現在も障害中とは判断しない。
+- 復旧後の新しい診断ログを基準に現在状態を判断する。
+
+### 40-6. 次スレッドで取得する新規ログ
+直前ログ取得から約12分経過し、その間に行った操作はAPI Poolの2キー手動復旧のみ。
+
+次スレッド開始時に**新しいSystem Status / Diagnosticsログを取得する価値が高い**。
+
+理由:
+1. 復旧前のAVAILABLE=0 / ERROR状態と復旧後を分離できる。
+2. 復旧操作による新規diagnostic event / API Pool usage / lease状態の変化を確認できる。
+3. Watchlist削除後に新しいWatchlist処理が走っていないことを確認できる。
+4. D1復旧後の実測ベースラインとして使える。
+5. 約12分なので「復旧操作だけを行った直後の差分」としてノイズが少ない。
+
+新スレッドでは、ユーザーが取得した新規ログ/スクリーンショット/PDFを受け取り、**前回ログ → 約12分後 → API Pool 2キー手動復旧後**の差分として読む。
+
+### 40-7. 今回の実装作業について
+System Status拡張の実装作業を開始したが、このスレッド終了時点で本番デプロイ・本番確認は行っていない。
+
+追加ファイル:
+- `src/status-ops.js`
+  - API Pool / Watchlist operational statusを集約する読み取り処理
+  - API Pool key本体は返さない
+  - Pool type/status集計
+  - active lease数
+  - Watchlist件数/有効数/error数/latest job
+  - latest API Pool key health
+
+`src/index.js` にSystem Status拡張を接続する変更作業も開始済み。
+**次スレッド開始時には必ずmainの最新commitと実ファイルを確認し、途中実装が完全にコミット済みか、本番デプロイ済みかを推測しないこと。**
+
+「実装済み」「GitHub mainにcommit済み」「本番deploy済み」「本番画面で確認済み」は別物。本番確認していないものを確認済みと言わない。不要な再デプロイを繰り返さない。
+
+### 40-8. 次スレッド開始手順
+1. このhandoffを読む。
+2. GitHub `main` の最新commitを取得する。
+3. `src/status-ops.js` の存在と内容を確認する。
+4. `src/index.js` のSystem Status変更を確認する。
+5. 直近commit履歴から途中実装/未commit/既commitを区別する。
+6. ユーザーから新規取得したSystem Status / Diagnosticsログを読む。
+7. 前回ログと比較してAPI Pool 2キー復旧後の実測差分を確認する。
+8. 必要ならAPI Pool管理画面も再確認する。
+9. System Status拡張を完成させる。
+10. 完成後にcommit hashを報告する。
+11. deployは必要な段階で行い、本番確認は実際に確認できた場合だけ報告する。
+
+### 40-9. D1 Query Insights専用セクションは追加しない
+ユーザー判断により、Status画面に新しい専用のD1 Query Insightsセクションを追加する必要はない。既存のCloudflare Resource / Query Insights表示を利用する。
+ユーザーはCloudflare画面をスクリーンショットからPDF化して渡す運用を継続する。
+
+### 40-10. Research Labとの分離
+今回のAPI Pool実測はEagleEye本体の運用状態確認であり、MightPulse Research Labとは別目的。
+- EagleEye API Pool = 本番サービス運用
+- MightPulse Research Lab = ADMIN/OWNERが明示的に実行する研究
+- Research結果をoperational statusに混ぜない
+- System Status自動更新から研究目的の追加API requestを発生させない
+- System Statusはread-only観測画面として維持する
+
+### 40-11. 次スレッドの優先順位
+最優先:
+A. 新規ログ取得後のAPI Pool復旧状態の実測確認
+B. System Status拡張の途中実装をmain基準で整理
+C. API Pool Health表示の完成
+D. Watchlist / MightPulse / R2 / Google / Runtime statusの完成
+E. 本番deploy後の実機確認
+
+その後:
+F. D1 reset後の実測値取得
+G. D1 read/write削減率の確定
+H. R2/D1 archive設計の確定
+I. 永久保存層 / EagleEye Library設計
+J. ChatGPT / JARVISからのLibrary利用設計
