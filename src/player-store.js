@@ -118,7 +118,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       alliance_name, alliance_rank, alliance_rank_label, alliance_power,
       alliance_count, alliance_leader_name, observed_at, source_observed_at,
       source_observation_id, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(governor_id) DO UPDATE SET
       uid=excluded.uid, fid=excluded.fid, nick_name=excluded.nick_name,
       kid=excluded.kid, power=excluded.power, town_center_level=excluded.town_center_level,
