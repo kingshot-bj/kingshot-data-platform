@@ -5495,32 +5495,6 @@ async function handleMonitoringProfileApi(request, env) {
   }));
   return response;
 }
-
-const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) return json({ ok: false, error: "FORBIDDEN" }, 403);
-  if (request.method === "GET") {
-    const setting = await getRuntimeMonitoringProfile(env, { forceRefresh: true });
-    return json({ ok: true, profile: setting.profile, source: setting.source, updated_at: setting.updatedAt, updated_by: setting.updatedBy });
-  }
-  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  let body;
-  try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
-  const profile = normalizeMonitoringProfile(body?.profile, "");
-  if (!profile) return json({ ok: false, error: "INVALID_PROFILE" }, 400);
-  if (!env.DB) return json({ ok: false, error: "DB_UNAVAILABLE" }, 503);
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  await env.DB.prepare(`
-    INSERT INTO runtime_settings (setting_key, setting_value, updated_at, updated_by)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(setting_key) DO UPDATE SET
-      setting_value = excluded.setting_value,
-      updated_at = excluded.updated_at,
-      updated_by = excluded.updated_by
-  `).bind(RUNTIME_MONITORING_PROFILE_KEY, profile, nowSeconds, auth.discord_id || auth.user_id || null).run();
-  runtimeMonitoringProfileCache = { profile, source: "DB", updatedAt: nowSeconds, updatedBy: auth.discord_id || auth.user_id || null, expiresAt: Date.now() + 60_000 };
-  return json({ ok: true, profile, source: "DB", updated_at: nowSeconds });
-}
-
 async function renderPublicStatusPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   const canViewDetailedUsage = Boolean(
