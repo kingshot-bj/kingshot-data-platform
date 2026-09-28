@@ -65,6 +65,8 @@ const KINGDOM_RANKING_BOARDS = [
   "master_power"
 ];
 
+const PLAYER_WATCHLIST_RANKING_VALUES_SQL = KINGDOM_RANKING_BOARDS.map(board => "('" + board + "')").join(",");
+
 const RANKING_BOARD_LABELS = {
   alliance_power: "同盟総力",
   alliance_kills: "同盟撃破",
@@ -1306,7 +1308,7 @@ async function handlePlayerWatchlistApi(request, env) {
     // Current state + previous_rank make this O(current rows) and avoid historical scans.
     const rankResult = await env.DB.prepare(
       `
-      WITH boards(board) AS (VALUES ` + boardValuesSql + `)
+      WITH boards(board) AS (VALUES ` + PLAYER_WATCHLIST_RANKING_VALUES_SQL + `)
       SELECT
         w.governor_id,
         p.kid,
