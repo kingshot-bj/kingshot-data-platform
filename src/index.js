@@ -154,7 +154,13 @@ async function ensurePlayerVisibilityTable(db) {
 
     const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
     const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
+    let legacyRows = [];
     if (!hasMinRole) {
+      // Capture legacy thresholds before ALTER adds the BASIC default.
+      const legacy = await db.prepare(
+        "SELECT item_key, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings"
+      ).all();
+      legacyRows = legacy.results || [];
       await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
     }
 
@@ -171,13 +177,26 @@ async function ensurePlayerVisibilityTable(db) {
     const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
     const statements = [];
 
-    for (const item of PLAYER_VISIBILITY_ITEMS) {
-      const existing = existingByKey.get(item.key);
-      if (existing) continue;
+    if (!hasMinRole && legacyRows.length) {
+      for (const row of legacyRows) {
+        const minRole =
+          Number(row.basic_enabled) === 1 ? "BASIC" :
+          Number(row.advanced_enabled) === 1 ? "ADVANCED" :
+          Number(row.admin_enabled) === 1 ? "ADMIN" : "OWNER";
+        statements.push(
+          db.prepare(
+            "UPDATE player_visibility_settings SET min_role = ? WHERE item_key = ?"
+          ).bind(minRole, row.item_key)
+        );
+      }
+    }
 
-      const defaults = {
-        min_role: ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key) ? "BASIC" : "ADVANCED"
-      };
+    for (const item of PLAYER_VISIBILITY_ITEMS) {
+      if (existingByKey.has(item.key)) continue;
+
+      const minRole = ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key)
+        ? "BASIC"
+        : "ADVANCED";
 
       statements.push(db.prepare(`
         INSERT INTO player_visibility_settings
@@ -185,8 +204,7 @@ async function ensurePlayerVisibilityTable(db) {
         VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?, NULL)
         ON CONFLICT(item_key) DO NOTHING
       `).bind(
-        item.key, item.category, item.label, item.description,
-        defaults.min_role, now
+        item.key, item.category, item.label, item.description, minRole, now
       ));
     }
 
