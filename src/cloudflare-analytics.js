@@ -229,6 +229,10 @@ function summarizeD1QueryInsights(groups) {
 
   return {
     queryCount: queries.length,
+    // Keep the complete query list available to the status JSON. The UI may
+    // choose to show only a compact subset, but the machine-readable status
+    // endpoint must not silently discard query-level metrics.
+    queries,
     topWriteQueries,
     topReadQueries,
     categories: [...categories.values()].sort((a, b) => b.rowsWritten - a.rowsWritten)
@@ -508,7 +512,9 @@ function summarizeR2Usage(operationGroups, storageGroups, bandwidthGroups) {
     storageDeltaPercent,
     objectDelta,
     buckets: [...bucketMap.values()].sort((a, b) => (b.storageBytes || 0) - (a.storageBytes || 0)),
-    operations: operations.sort((a,b) => b.requests - a.requests).slice(0, 20)
+    // Keep every operation group in the machine-readable status payload.
+    // The UI can still render a compact subset without losing diagnostic data.
+    operations: operations.sort((a,b) => b.requests - a.requests)
   };
 }
 
