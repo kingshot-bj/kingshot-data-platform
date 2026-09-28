@@ -1150,7 +1150,24 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     if(!confirm("この監視対象を削除しますか？"))return;
     return api("/api/kingdom-watchlist?watchlist_id="+encodeURIComponent(id),{method:"DELETE"}).then(function(){el("detail").innerHTML="";return load();}).catch(function(e){alert(e.message);});
   }
-  if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}";document.head.appendChild(st);}
+  function togglePlayerWatch(button){
+    var governorId=button.getAttribute('data-governor-id');
+    var watched=button.getAttribute('data-watched')==='1';
+    if(!governorId)return;
+    button.disabled=true;
+    var request=watched
+      ? api("/api/player-watchlist?governor_id="+encodeURIComponent(governorId),{method:"DELETE"})
+      : api("/api/player-watchlist",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({governor_id:governorId})});
+    request.then(function(){
+      var next=!watched;
+      button.setAttribute('data-watched',next?'1':'0');
+      button.textContent=next?'★':'☆';
+      button.title=next?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録';
+      button.setAttribute('aria-label',button.title);
+    }).catch(function(e){alert(e.message||'ウォッチリスト更新に失敗しました。');})
+      .finally(function(){button.disabled=false;});
+  }
+  if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}.rank-watch-star{margin-left:6px;padding:0 3px;border:0;background:transparent;color:#fbbf24;font-size:16px;line-height:1;cursor:pointer}.rank-watch-star:disabled{opacity:.5}";document.head.appendChild(st);}
   function showData(id){
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
@@ -1165,7 +1182,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
           var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
           var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span>'+nameHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
+          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span>'+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
