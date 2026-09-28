@@ -1227,7 +1227,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   }
 
   const players = await env.DB.prepare(
-    "WITH top_players AS (SELECT DISTINCT governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ?) SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = p.governor_id ORDER BY p.power DESC, p.governor_id ASC"
+    "WITH top_players AS (SELECT DISTINCT CASE WHEN governor_id LIKE '%.0' THEN substr(governor_id, 1, length(governor_id) - 2) ELSE governor_id END AS governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ?) SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = CASE WHEN p.governor_id LIKE '%.0' THEN substr(p.governor_id, 1, length(p.governor_id) - 2) ELSE p.governor_id END ORDER BY p.power DESC, p.governor_id ASC"
   ).bind(watch.kid, watch.top_n).all();
 
   return json({
@@ -1323,7 +1323,8 @@ async function handlePlayerWatchlistApi(request, env) {
         ON r.kid = p.kid
        AND r.board = b.board
        AND r.target_type = 'PLAYER'
-       AND r.target_id = w.governor_id
+       AND (CASE WHEN r.target_id LIKE '%.0' THEN substr(r.target_id, 1, length(r.target_id) - 2) ELSE r.target_id END) =
+           (CASE WHEN w.governor_id LIKE '%.0' THEN substr(w.governor_id, 1, length(w.governor_id) - 2) ELSE w.governor_id END)
       LEFT JOIN kingdom_ranking_board_state s
         ON s.kid = p.kid
        AND s.board = b.board
