@@ -4956,8 +4956,9 @@ function esc(s){
 function fmt(t){
   return t ? new Date(Number(t)*1000).toLocaleString("ja-JP") : "-";
 }
-function button(label, action, id, extra, disabled){
-  return '<button type="button" class="'+(extra||"")+'" data-a="'+action+'" data-id="'+esc(id||"")+'"'+(disabled?' disabled':'')+'>'+label+'</button>';
+function button(label, action, id, extra, disabled, value){
+  var attr=value ? (action==="role" ? ' data-role="'+esc(value)+'"' : ' data-status="'+esc(value)+'"') : "";
+  return '<button type="button" class="'+(extra||"")+'" data-a="'+action+'" data-id="'+esc(id||"")+'"'+attr+(disabled?' disabled':'')+'>'+label+'</button>';
 }
 function draw(){
   var q=(search.value||"").trim().toLowerCase();
@@ -4971,12 +4972,12 @@ function draw(){
     var self=u.user_id===ownerId;
     var actions=button("履歴","history",u.user_id,"secondary",false);
     ["BASIC","ADVANCED","ADMIN","OWNER"].forEach(function(role){
-      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER");
+      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
     });
     if(u.status==="ACTIVE"){
-      actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER");
+      actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER","DISABLED");
     }else{
-      actions+=button("有効化","status",u.user_id,"secondary",false);
+      actions+=button("有効化","status",u.user_id,"secondary",false,"ACTIVE");
     }
     if(self){
       actions+='<span class="muted">自分は対象外</span>';
