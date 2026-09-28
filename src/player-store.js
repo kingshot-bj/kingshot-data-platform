@@ -1,4 +1,5 @@
 import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive.js";
+import { recordDiagnostic } from "./diagnostics.js";
 
 let playerIdentityHistorySchemaPromise = null;
 
@@ -157,6 +158,26 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
         player
       });
       archived = true;
+      if (r2Only) {
+        await recordDiagnostic(db, {
+          service: "player",
+          feature: "history_storage",
+          operation: "ARCHIVE_R2",
+          status: "SUCCESS",
+          errorCode: null,
+          message: "R2アーカイブ成功。R2_ONLYのためD1 player_snapshots INSERTをスキップしました。",
+          provider: "CLOUDFLARE_R2",
+          targetType: "PLAYER",
+          targetId: governorId,
+          rowsReceived: 1,
+          rowsSaved: 1,
+          metadata: {
+            historyMode: "R2_ONLY",
+            archiveSuccess: true,
+            d1HistoryInsertSkipped: true
+          }
+        });
+      }
     } catch (error) {
       console.error("player_history_r2_archive_failed", {
         governorId,

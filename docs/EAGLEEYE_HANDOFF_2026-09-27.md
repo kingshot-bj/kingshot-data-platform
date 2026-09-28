@@ -1715,6 +1715,18 @@ R2障害時にはD1へフォールバックする。
 **本番確認済みと表現するのは、実際に本番環境で確認した範囲のみとする。**
 
 
+
+## 2026-09-28追加：R2_ONLYアーカイブ成功とD1履歴INSERTスキップの機械証明
+
+R2_ONLY移行後に「R2 archive成功 → D1 history INSERT skip」が実際に通ったかを推測ではなく診断イベントで確認できるようにする。
+
+- Kingdom ranking: saveKingdomRankingBoard() のR2アーカイブ成功時、R2_ONLYなら history_storage / ARCHIVE_R2 / SUCCESS を記録。
+- 成功イベントには archiveSuccess=true、d1HistoryInsertSkipped=true、filteredRows を記録する。
+- R2アーカイブ失敗時は既存の R2_ARCHIVE_FAILED、ARCHIVE binding欠落時は R2_ARCHIVE_BINDING_MISSING を記録し、D1 fallbackを明示する。
+- Player snapshot / Player rank snapshot も同じ証跡を持たせる方針とする。
+- この診断イベント自体のD1書き込みは「履歴データの大量INSERT」と別物だが、R2_ONLYの実証用として必要最小限に限定する。
+- 本番確認では、対象処理の実行後にStatus JSON/Diagnosticsで ARCHIVE_R2 / SUCCESS と d1HistoryInsertSkipped=true を確認する。これが確認できるまで「R2移行確認済み」とは扱わない。
+
 ## 2026-09-28追加：機械取得用Status JSONを「全システム情報の集約点」として固定
 
 ### 方針

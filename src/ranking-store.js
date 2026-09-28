@@ -281,6 +281,28 @@ export async function saveKingdomRankingBoard(db, {
         sourceObservationId
       });
       archived = true;
+      if (r2Only) {
+        await recordDiagnostic(db, {
+          service: "ranking",
+          feature: "history_storage",
+          operation: "ARCHIVE_R2",
+          status: "SUCCESS",
+          errorCode: null,
+          message: "R2アーカイブ成功。R2_ONLYのためD1 ranking_snapshots INSERTをスキップしました。",
+          provider: "CLOUDFLARE_R2",
+          targetType: "KINGDOM",
+          targetId: String(kid),
+          rowsReceived: filteredEntries.length,
+          rowsSaved: filteredEntries.length,
+          metadata: {
+            board,
+            historyMode: "R2_ONLY",
+            archiveSuccess: true,
+            d1HistoryInsertSkipped: true,
+            filteredRows: filteredEntries.length
+          }
+        });
+      }
     } catch (error) {
       const message = error?.message || String(error);
       console.error("ranking_history_r2_archive_failed", {
