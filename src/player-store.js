@@ -203,6 +203,7 @@ export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket
       profile: payload
     };
   });
+  }
 
   if (!archiveBucket) return d1Rows;
 
