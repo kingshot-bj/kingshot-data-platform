@@ -230,15 +230,19 @@ export async function saveKingdomRankingBoard(db, {
 }) {
   if (!db) throw new Error("D1 database binding is not configured.");
   if (!kid || !board || !Array.isArray(entries)) throw new Error("Kingdom ranking board requires kid, board and entries.");
+
+  const { enqueueHistoryEmergencyBuffer } = await import("./history-emergency-buffer.js");
   let comparison = null;
   if (!entriesAlreadyFiltered) comparison = await getKingdomRankingChanges(db, { kid, board, entries, observedAt, sourceObservationId });
   const filteredEntries = entriesAlreadyFiltered ? entries : comparison.changedEntries;
   const removals = entriesAlreadyFiltered ? removedTargets : comparison.removedTargets;
-  const statements = [];
-  for (const entry of filteredEntries) {
-    const rank = getRankingEntryRank(entry, filteredEntries.indexOf(entry));
+  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
+
+  const currentStatements = [];
+  for (const [index, entry] of filteredEntries.entries()) {
+    const rank = getRankingEntryRank(entry, index);
     const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
-    statements.push(db.prepare(
+    currentStatements.push(db.prepare(
       'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, previous_rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET previous_rank=kingdom_ranking_current.rank, rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
     ).bind(
       Number(kid), String(board), targetType, targetId, rank, null, entry.score ?? entry.value ?? null,
@@ -247,127 +251,95 @@ export async function saveKingdomRankingBoard(db, {
     ));
   }
   for (const removed of removals) {
-    statements.push(db.prepare(
+    currentStatements.push(db.prepare(
       "DELETE FROM kingdom_ranking_current WHERE kid = ? AND board = ? AND target_type = ? AND target_id = ?"
     ).bind(Number(kid), String(board), String(removed.targetType), String(removed.targetId)));
   }
-  statements.push(...buildKingdomRankingInsertStatements(db, {
-    kid, board, entries: filteredEntries, observedAt, sourceObservedAt, sourceObservationId
-  }));
-  statements.push(db.prepare(
+  currentStatements.push(db.prepare(
     "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
   ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
-  const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
-  let archived = false;
 
-  if (archiveBucket && filteredEntries.length) {
-    try {
-      const archiveEntries = filteredEntries.map((entry, index) => {
-        const rank = getRankingEntryRank(entry, index);
-        const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
-        return {
-          ...entry,
-          __eagleeye_rank: rank,
-          target_type: targetType,
-          target_id: targetId
-        };
-      });
-      await archiveRankingHistoryBatch(archiveBucket, {
-        kid,
-        board,
-        entries: archiveEntries,
-        observedAt,
-        sourceObservedAt,
-        sourceObservationId
-      });
-      archived = true;
-      if (r2Only) {
-        await recordDiagnostic(db, {
-          service: "ranking",
-          feature: "history_storage",
-          operation: "ARCHIVE_R2",
-          status: "SUCCESS",
-          errorCode: null,
-          message: "R2アーカイブ成功。R2_ONLYのためD1 ranking_snapshots INSERTをスキップしました。",
-          provider: "CLOUDFLARE_R2",
-          targetType: "KINGDOM",
-          targetId: String(kid),
-          rowsReceived: filteredEntries.length,
-          rowsSaved: filteredEntries.length,
-          metadata: {
-            board,
-            historyMode: "R2_ONLY",
-            archiveSuccess: true,
-            d1HistoryInsertSkipped: true,
-            filteredRows: filteredEntries.length
-          }
+  let archived = false;
+  let emergencyBuffered = false;
+
+  if (filteredEntries.length) {
+    const archiveEntries = filteredEntries.map((entry, index) => {
+      const rank = getRankingEntryRank(entry, index);
+      const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
+      return {
+        ...entry,
+        __eagleeye_rank: rank,
+        target_type: targetType,
+        target_id: targetId
+      };
+    });
+
+    if (archiveBucket) {
+      try {
+        await archiveRankingHistoryBatch(archiveBucket, {
+          kid, board, entries: archiveEntries, observedAt, sourceObservedAt, sourceObservationId
         });
-      }
-    } catch (error) {
-      const message = error?.message || String(error);
-      console.error("ranking_history_r2_archive_failed", {
-        kid,
-        board,
-        message
-      });
-      if (r2Only) {
-        console.warn("ranking_history_d1_fallback", { kid, board });
-        await recordDiagnostic(db, {
-          service: "ranking",
-          feature: "history_storage",
-          operation: "ARCHIVE_R2",
-          status: "FAILED",
-          errorCode: "R2_ARCHIVE_FAILED",
-          message,
-          provider: "CLOUDFLARE_R2",
-          targetType: "KINGDOM",
-          targetId: String(kid),
-          rowsReceived: filteredEntries.length,
-          rowsSaved: 0,
-          metadata: { board, historyMode: "R2_ONLY", fallback: "D1" }
-        });
+        archived = true;
+        if (r2Only) {
+          await recordDiagnostic(db, {
+            service: "ranking", feature: "history_storage", operation: "ARCHIVE_R2",
+            status: "SUCCESS", errorCode: null,
+            message: "R2アーカイブ成功。R2_ONLYのためD1 ranking_snapshots INSERTをスキップしました。",
+            provider: "CLOUDFLARE_R2", targetType: "KINGDOM", targetId: String(kid),
+            rowsReceived: filteredEntries.length, rowsSaved: filteredEntries.length,
+            metadata: { board, historyMode: "R2_ONLY", archiveSuccess: true, d1HistoryInsertSkipped: true, filteredRows: filteredEntries.length }
+          });
+        }
+      } catch (error) {
+        console.error("ranking_history_r2_archive_failed", { kid, board, message: error?.message || String(error) });
       }
     }
-  } else if (r2Only && filteredEntries.length) {
-    await recordDiagnostic(db, {
-      service: "ranking",
-      feature: "history_storage",
-      operation: "ARCHIVE_R2",
-      status: "FAILED",
-      errorCode: "R2_ARCHIVE_BINDING_MISSING",
-      message: "HISTORY_STORAGE_MODE=R2_ONLYですがARCHIVE R2 bindingが実行時に存在しません。",
-      provider: "CLOUDFLARE_R2",
-      targetType: "KINGDOM",
-      targetId: String(kid),
-      rowsReceived: filteredEntries.length,
-      rowsSaved: 0,
-      metadata: { board, historyMode: "R2_ONLY", fallback: "D1", archiveBindingConfigured: false }
-    });
+
+    if (!archived) {
+      try {
+        await enqueueHistoryEmergencyBuffer(db, {
+          historyType: "RANKING",
+          kid: Number(kid),
+          board: String(board),
+          observedAt,
+          sourceObservedAt,
+          sourceObservationId,
+          payload: { entries: archiveEntries }
+        });
+        emergencyBuffered = true;
+        await recordDiagnostic(db, {
+          service: "ranking", feature: "history_storage", operation: "EMERGENCY_BUFFER",
+          status: "WARNING", errorCode: "R2_ARCHIVE_FAILED",
+          message: "R2アーカイブ失敗のため履歴をD1緊急退避バッファへ保存しました。R2復旧後に再アーカイブします。",
+          provider: "CLOUDFLARE_D1", targetType: "KINGDOM", targetId: String(kid),
+          rowsReceived: filteredEntries.length, rowsSaved: 1,
+          metadata: { board, historyMode, emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
+        });
+      } catch (bufferError) {
+        await recordDiagnostic(db, {
+          service: "ranking", feature: "history_storage", operation: "EMERGENCY_BUFFER",
+          status: "FAILED", errorCode: bufferError?.code || "HISTORY_EMERGENCY_BUFFER_FAILED",
+          message: String(bufferError?.message || bufferError),
+          provider: "CLOUDFLARE_D1", targetType: "KINGDOM", targetId: String(kid),
+          rowsReceived: filteredEntries.length, rowsSaved: 0,
+          metadata: { board, historyMode, emergencyBuffered: false, fallback: "STOP" }
+        });
+        throw bufferError;
+      }
+    }
   }
 
-  if (!r2Only || !filteredEntries.length || !archived) {
-    await insertRankingStatements(db, statements);
+  if (!r2Only) {
+    const historyStatements = buildKingdomRankingInsertStatements(db, {
+      kid, board, entries: filteredEntries, observedAt, sourceObservedAt, sourceObservationId
+    });
+    await insertRankingStatements(db, [...currentStatements, ...historyStatements]);
   } else {
-    const currentStatements = [];
-    for (const entry of filteredEntries) {
-      const rank = getRankingEntryRank(entry, filteredEntries.indexOf(entry));
-      const { targetType, targetId } = rankingEntryTarget(board, entry, rank - 1, kid);
-      currentStatements.push(db.prepare(
-        'INSERT INTO kingdom_ranking_current (kid, board, target_type, target_id, rank, previous_rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board, target_type, target_id) DO UPDATE SET previous_rank=kingdom_ranking_current.rank, rank=excluded.rank, score=excluded.score, uid=excluded.uid, governor_id=excluded.governor_id, nick_name=excluded.nick_name, aid=excluded.aid, abbr=excluded.abbr, name=excluded.name, observed_at=excluded.observed_at, source_observed_at=excluded.source_observed_at, source_observation_id=excluded.source_observation_id, updated_at=excluded.updated_at'
-      ).bind(
-        Number(kid), String(board), targetType, targetId, rank, null, entry.score ?? entry.value ?? null,
-        entry.uid ?? null, normalizeGovernorId(entry.governor_id), entry.nick_name ?? null, entry.aid ?? null,
-        entry.abbr ?? null, entry.name ?? null, observedAt, sourceObservedAt, sourceObservationId, Number(checkedAt)
-      ));
+    // R2_ONLY never writes one D1 history row per ranking entry. If R2 is
+    // unavailable, the bounded emergency buffer is the only history fallback.
+    if (filteredEntries.length && !archived && !emergencyBuffered) {
+      throw new Error("HISTORY_EMERGENCY_BUFFER_NOT_AVAILABLE");
     }
-    for (const removed of removals) {
-      currentStatements.push(db.prepare(
-        "DELETE FROM kingdom_ranking_current WHERE kid = ? AND board = ? AND target_type = ? AND target_id = ?"
-      ).bind(Number(kid), String(board), String(removed.targetType), String(removed.targetId)));
-    }
-    currentStatements.push(db.prepare(
-      "INSERT INTO kingdom_ranking_board_state (kid, board, last_checked_at, source_observed_at, checked_rows, changed_rows, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, board) DO UPDATE SET last_checked_at=excluded.last_checked_at, source_observed_at=excluded.source_observed_at, checked_rows=excluded.checked_rows, changed_rows=excluded.changed_rows, updated_at=excluded.updated_at"
-    ).bind(Number(kid), String(board), Number(checkedAt), sourceObservedAt, entries.length, filteredEntries.length, Number(checkedAt)));
     await insertRankingStatements(db, currentStatements);
   }
 
