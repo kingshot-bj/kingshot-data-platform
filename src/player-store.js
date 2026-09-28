@@ -38,6 +38,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
   const now = Math.floor(Date.now() / 1000);
   const governorId = String(player.governor_id ?? observation.payload.governor_id);
 
+  await savePlayerIdentityHistory(db, existing, player, observation);
   await savePlayerChangeEvents(db, existing, player, observation);
 
   const materializedPlayer = {
@@ -126,6 +127,57 @@ export async function getPlayer(db, governorId) {
   return db.prepare(
     `SELECT * FROM players WHERE governor_id = ? LIMIT 1`
   ).bind(String(governorId)).first();
+}
+
+async function savePlayerIdentityHistory(db, previous, current, observation) {
+  const governorId = String(current?.governor_id ?? observation?.payload?.governor_id ?? "");
+  const currentName = current?.nick_name == null ? "" : String(current.nick_name).trim();
+  if (!governorId || !currentName) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const observedAt = Number(observation?.observed_at) || now;
+  const previousName = previous?.nick_name == null ? "" : String(previous.nick_name).trim();
+
+  // First observation: create the initial identity record.
+  // Normal observations with the same name cause no D1 write.
+  if (!previousName) {
+    await db.prepare(
+      `INSERT INTO player_identity_history (
+        identity_history_id, governor_id, name, first_seen_at, last_seen_at,
+        source_observation_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      crypto.randomUUID(), governorId, currentName, observedAt, observedAt,
+      observation?.observation_id ?? null, now
+    ).run();
+    return;
+  }
+
+  if (previousName === currentName) return;
+
+  // Name transition: close the previous period and open the new one.
+  // This intentionally writes only when the identity actually changes.
+  await db.prepare(
+    `UPDATE player_identity_history
+     SET last_seen_at = ?
+     WHERE identity_history_id = (
+       SELECT identity_history_id
+       FROM player_identity_history
+       WHERE governor_id = ? AND name = ?
+       ORDER BY last_seen_at DESC
+       LIMIT 1
+     )`
+  ).bind(observedAt, governorId, previousName).run();
+
+  await db.prepare(
+    `INSERT INTO player_identity_history (
+      identity_history_id, governor_id, name, first_seen_at, last_seen_at,
+      source_observation_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    crypto.randomUUID(), governorId, currentName, observedAt, observedAt,
+    observation?.observation_id ?? null, now
+  ).run();
 }
 
 async function savePlayerChangeEvents(db, previous, current, observation) {
