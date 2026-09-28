@@ -6,7 +6,7 @@ export async function getOperationalStatus(db) {
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
     db.prepare(
-      "SELECT COUNT(*) AS active_count, SUM(CASE WHEN expires_at <= ? THEN 1 ELSE 0 END) AS expired_active_count FROM api_leases WHERE status = 'ACTIVE'"
+      "SELECT COUNT(*) AS active_count, SUM(CASE WHEN leased_until <= ? THEN 1 ELSE 0 END) AS expired_active_count FROM api_pool_keys WHERE leased_until IS NOT NULL"
     ).bind(Math.floor(Date.now() / 1000)).first(),
     db.prepare(
       "SELECT COUNT(*) AS total_count, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled_count, SUM(CASE WHEN enabled = 1 AND last_error IS NOT NULL THEN 1 ELSE 0 END) AS enabled_error_count, MAX(last_success_at) AS latest_success_at, MAX(updated_at) AS latest_updated_at FROM kingdom_watchlists"
