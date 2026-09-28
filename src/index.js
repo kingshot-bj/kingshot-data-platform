@@ -2425,6 +2425,7 @@ export default {
       if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
       if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
+      if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
       if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
@@ -5458,6 +5459,67 @@ async function handleMe(request, env) {
   });
 }
 
+const RUNTIME_MONITORING_PROFILE_KEY = "cloudflare_monitoring_profile";
+let runtimeMonitoringProfileCache = { profile: null, source: null, updatedAt: null, updatedBy: null, expiresAt: 0 };
+
+function normalizeMonitoringProfile(value, fallback = "FREE") {
+  const profile = String(value || "").trim().toUpperCase();
+  return profile === "PAID_5USD" || profile === "FREE" ? profile : fallback;
+}
+
+async function getRuntimeMonitoringProfile(env, { forceRefresh = false } = {}) {
+  const now = Date.now();
+  if (!forceRefresh && runtimeMonitoringProfileCache.expiresAt > now && runtimeMonitoringProfileCache.profile) return runtimeMonitoringProfileCache;
+  const envProfile = normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE");
+  if (!env.DB) {
+    runtimeMonitoringProfileCache = { profile: envProfile, source: "ENV", updatedAt: null, updatedBy: null, expiresAt: now + 60_000 };
+    return runtimeMonitoringProfileCache;
+  }
+  try {
+    const row = await env.DB.prepare(
+      "SELECT setting_value, updated_at, updated_by FROM runtime_settings WHERE setting_key = ? LIMIT 1"
+    ).bind(RUNTIME_MONITORING_PROFILE_KEY).first();
+    const profile = normalizeMonitoringProfile(row?.setting_value, envProfile);
+    runtimeMonitoringProfileCache = {
+      profile,
+      source: row?.setting_value ? "DB" : "ENV",
+      updatedAt: row?.updated_at ? Number(row.updated_at) : null,
+      updatedBy: row?.updated_by || null,
+      expiresAt: now + 60_000
+    };
+  } catch (error) {
+    console.warn("runtime_monitoring_profile_read_failed", error?.message || error);
+    runtimeMonitoringProfileCache = { profile: envProfile, source: "ENV_FALLBACK", updatedAt: null, updatedBy: null, expiresAt: now + 15_000 };
+  }
+  return runtimeMonitoringProfileCache;
+}
+
+async function handleMonitoringProfileApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) return json({ ok: false, error: "FORBIDDEN" }, 403);
+  if (request.method === "GET") {
+    const setting = await getRuntimeMonitoringProfile(env, { forceRefresh: true });
+    return json({ ok: true, profile: setting.profile, source: setting.source, updated_at: setting.updatedAt, updated_by: setting.updatedBy });
+  }
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const profile = normalizeMonitoringProfile(body?.profile, "");
+  if (!profile) return json({ ok: false, error: "INVALID_PROFILE" }, 400);
+  if (!env.DB) return json({ ok: false, error: "DB_UNAVAILABLE" }, 503);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(`
+    INSERT INTO runtime_settings (setting_key, setting_value, updated_at, updated_by)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(setting_key) DO UPDATE SET
+      setting_value = excluded.setting_value,
+      updated_at = excluded.updated_at,
+      updated_by = excluded.updated_by
+  `).bind(RUNTIME_MONITORING_PROFILE_KEY, profile, nowSeconds, auth.discord_id || auth.user_id || null).run();
+  runtimeMonitoringProfileCache = { profile, source: "DB", updatedAt: nowSeconds, updatedBy: auth.discord_id || auth.user_id || null, expiresAt: Date.now() + 60_000 };
+  return json({ ok: true, profile, source: "DB", updated_at: nowSeconds });
+}
+
 async function renderPublicStatusPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   const canViewDetailedUsage = Boolean(
@@ -5466,11 +5528,15 @@ async function renderPublicStatusPage(request, env) {
     ["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())
   );
 
+  const monitoringProfileSetting = canViewDetailedUsage
+    ? await getRuntimeMonitoringProfile(env)
+    : { profile: normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE"), source: "ENV", updatedAt: null, updatedBy: null };
+
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
   // its free-tier row limit, this monitor must still be able to report usage.
   const [usageResult, diagnosticsResult, operationalResult, historyStorageResult] = await Promise.allSettled([
     canViewDetailedUsage
-      ? getCloudflareD1Usage(env, { includeQueryInsights: true })
+      ? getCloudflareD1Usage(env, { includeQueryInsights: true, monitoringProfile: monitoringProfileSetting.profile })
       : Promise.resolve({
           configured: false,
           status: "HIDDEN",
@@ -5591,7 +5657,7 @@ async function renderPublicStatusPage(request, env) {
   };
   const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
   const formatYen = value => value == null ? "—" : "¥" + Math.round(Number(value)).toLocaleString("ja-JP");
-  const monitoringProfile = usage.monitoring?.profile || "FREE";
+  const monitoringProfile = usage.monitoring?.profile || monitoringProfileSetting.profile || "FREE";
   const monitoringLabel = usage.monitoring?.label || "Workers Free";
   const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
   const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
@@ -5773,6 +5839,16 @@ async function renderPublicStatusPage(request, env) {
         <h2>Cloudflare リソース監視</h2>
         <div class="card resource-card">
           <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
+          ${canViewDetailedUsage ? `
+          <div class="resource-row monitoring-switch-row">
+            <div><b>監視プロファイル</b><small>監視基準だけを変更します。Cloudflareの契約・請求プランは変更しません。</small></div>
+            <div class="monitoring-switch" role="group" aria-label="Cloudflare監視プロファイル">
+              <button type="button" class="monitoring-switch-btn ${monitoringProfile === "FREE" ? "active" : ""}" data-monitoring-profile="FREE">🆓 Free枠</button>
+              <button type="button" class="monitoring-switch-btn ${monitoringProfile === "PAID_5USD" ? "active" : ""}" data-monitoring-profile="PAID_5USD">💰 $5枠</button>
+            </div>
+          </div>
+          <div class="resource-note" id="monitoring-profile-message">現在: <b>${escapeHtml(monitoringProfile === "PAID_5USD" ? "Workers Paid $5" : "Workers Free")}</b> · ${escapeHtml(monitoringProfileSetting.source === "DB" ? "保存済み設定" : "環境変数の既定値")}</div>
+          ` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>監視プロファイル: PAID_5USD · 請求サイクルはCloudflare側を基準</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div>` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
@@ -5842,8 +5918,30 @@ async function renderPublicStatusPage(request, env) {
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
-</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p><style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}}</style></main></body></html>`);
+*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.monitoring-switch{display:flex;gap:5px;padding:4px;background:#f2f2f7;border-radius:12px}.monitoring-switch-btn{border:0;border-radius:9px;padding:9px 10px;background:transparent;color:#6e6e73;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.monitoring-switch-btn.active{background:#fff;color:#1d1d1f;box-shadow:0 2px 8px rgba(0,0,0,.10)}.monitoring-switch-btn:disabled{opacity:.55;cursor:wait}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
+</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
+${canViewDetailedUsage ? `
+(function(){
+  document.querySelectorAll("[data-monitoring-profile]").forEach(function(btn){
+    btn.addEventListener("click", async function(){
+      var profile=btn.getAttribute("data-monitoring-profile");
+      var buttons=Array.from(document.querySelectorAll("[data-monitoring-profile]"));
+      buttons.forEach(function(b){b.disabled=true;});
+      var msg=document.getElementById("monitoring-profile-message");
+      if(msg) msg.textContent="監視プロファイルを切り替えています…";
+      try{
+        var res=await fetch("/api/admin/monitoring-profile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({profile:profile}),credentials:"same-origin"});
+        var data=await res.json().catch(function(){return {};});
+        if(!res.ok||!data.ok) throw new Error(data.error||"切替に失敗しました");
+        window.location.reload();
+      }catch(error){
+        if(msg) msg.textContent="切替失敗: "+(error.message||String(error));
+        buttons.forEach(function(b){b.disabled=false;});
+      }
+    });
+  });
+})();
+` : ""}<style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}}</style></main></body></html>`);
 }
 
 async function renderHome(request, env) {
