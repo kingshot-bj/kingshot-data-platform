@@ -950,7 +950,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .rank-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .rank-title b{font-size:15px}
 .rank-key{font-size:10px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
+.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
 .rank-row:first-of-type{border-top:0}
 .rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
 .rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -964,7 +964,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 @media(max-width:520px){
   body{padding:14px 10px 36px}.card{padding:15px;border-radius:16px}
   .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
-  .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr);}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
+  .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr) auto;}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
 }
 </style></head><body>
 <div class="topbar">
@@ -3361,37 +3361,56 @@ async function handlePlayerVisibilityApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
   try {
-    if (request.method === "GET") return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB), watchlist_limits: await getWatchlistLimits(env.DB) });
+    if (request.method === "GET") {
+      return json({
+        ok: true,
+        settings: await getPlayerVisibilitySettings(env.DB),
+        watchlist_limits: await getWatchlistLimits(env.DB)
+      });
+    }
     if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+
+    const body = await request.json().catch(() => ({}));
+
     if (body.action === "watchlist_limit") {
       await ensureWatchlistLimitTable(env.DB);
       const role = String(body.role || "").trim().toUpperCase();
       const kingdomLimit = Number(body.kingdom_limit);
       const playerLimit = Number(body.player_limit);
-      if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(role) ||
+
+      if (!["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(role) ||
           !Number.isInteger(kingdomLimit) || kingdomLimit < 0 || kingdomLimit > 1000 ||
           !Number.isInteger(playerLimit) || playerLimit < 0 || playerLimit > 5000) {
         return json({ ok: false, error: "INVALID_WATCHLIST_LIMIT" }, 400);
       }
+
       if (guard.auth.role === "ADMIN" && role === "OWNER") {
         return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
       }
+
       const now = Math.floor(Date.now() / 1000);
       await env.DB.prepare(
         "UPDATE watchlist_limits SET kingdom_limit = ?, player_limit = ?, updated_at = ?, updated_by = ? WHERE role = ?"
       ).bind(kingdomLimit, playerLimit, now, guard.auth.user_id, role).run();
-      return json({ ok: true, watchlist_limits: await getWatchlistLimits(env.DB) });
+
+      return json({
+        ok: true,
+        watchlist_limits: await getWatchlistLimits(env.DB)
+      });
     }
-    const body = await request.json().catch(() => ({}));
+
     const itemKey = String(body.item_key || "").trim();
     const minRole = String(body.min_role || "").trim().toUpperCase();
-    if (!PLAYER_VISIBILITY_ITEMS.some(item => item.key === itemKey)) return json({ ok: false, error: "UNKNOWN_VISIBILITY_ITEM" }, 400);
-    if (!["BASIC","ADVANCED","ADMIN","OWNER"].includes(minRole)) return json({ ok: false, error: "INVALID_MIN_ROLE" }, 400);
+    if (!PLAYER_VISIBILITY_ITEMS.some(item => item.key === itemKey)) {
+      return json({ ok: false, error: "UNKNOWN_VISIBILITY_ITEM" }, 400);
+    }
+    if (!["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(minRole)) {
+      return json({ ok: false, error: "INVALID_MIN_ROLE" }, 400);
+    }
     if (guard.auth.role === "ADMIN" && minRole === "OWNER") {
-      // ADMIN may not alter OWNER visibility settings.
-      // An OWNER-only threshold is therefore reserved for OWNER control.
       return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
     }
+
     const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
     const threshold = roleRank[minRole];
     const now = Math.floor(Date.now() / 1000);
@@ -3403,41 +3422,98 @@ async function handlePlayerVisibilityApi(request, env) {
       threshold <= 2 ? 1 : 0,
       threshold <= 3 ? 1 : 0,
       threshold <= 4 ? 1 : 0,
-      now, guard.auth.user_id, itemKey
+      now,
+      guard.auth.user_id,
+      itemKey
     ).run();
-    return json({ ok: true, settings: await getPlayerVisibilitySettings(env.DB) });
+
+    return json({
+      ok: true,
+      settings: await getPlayerVisibilitySettings(env.DB),
+      watchlist_limits: await getWatchlistLimits(env.DB)
+    });
   } catch (error) {
     console.error("Player visibility settings error:", error);
     return json({ ok: false, error: error?.message || "PLAYER_VISIBILITY_UPDATE_FAILED" }, 400);
   }
 }
-
 async function renderPlayerVisibilityPage(request, env) {
   const guard = await requireAdmin(request, env);
-  if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1></body></html>";
+  if (guard.error) {
+    return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
+  }
+
   const settings = await getPlayerVisibilitySettings(env.DB);
   const watchlistLimits = await getWatchlistLimits(env.DB);
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
+
   const rows = settings.map(item => {
-    const minRole = ["BASIC","ADVANCED","ADMIN","OWNER"].includes(String(item.min_role || "").toUpperCase())
-      ? String(item.min_role).toUpperCase() : "OWNER";
-    const options = ["BASIC","ADVANCED","ADMIN","OWNER"].map(role =>
+    const minRole = ["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(String(item.min_role || "").toUpperCase())
+      ? String(item.min_role).toUpperCase()
+      : "OWNER";
+    const options = ["BASIC", "ADVANCED", "ADMIN", "OWNER"].map(role =>
       "<option value='" + role + "'" + (role === minRole ? " selected" : "") + ">" + role + "以上</option>"
     ).join("");
     const disabledOwner = guard.auth.role === "ADMIN" && minRole === "OWNER" ? " disabled" : "";
-    return "<tr><td class='item-cell'><b>" + escapeHtml(item.category) + "</b><br><strong>" + escapeHtml(item.label) + "</strong><br><small>" + escapeHtml(item.description || "") + "</small></td>" +
-      "<td class='role-cell'><select class='role-select' data-item='" + escapeHtml(item.item_key) + "'" + disabledOwner + ">" + options + "</select></td></tr>";
+    return "<tr><td class='item-cell'><b>" + escapeHtml(item.category) + "</b><br><strong>" +
+      escapeHtml(item.label) + "</strong><br><small>" + escapeHtml(item.description || "") +
+      "</small></td><td class='role-cell'><select class='role-select' data-item='" +
+      escapeHtml(item.item_key) + "'" + disabledOwner + ">" + options + "</select></td></tr>";
   }).join("");
+
   const watchlistLimitRows = watchlistLimits.map(item => {
     const role = String(item.role).toUpperCase();
     const disabled = guard.auth.role === "ADMIN" && role === "OWNER" ? " disabled" : "";
-    return "<tr><td><strong>" + escapeHtml(role) + "</strong></td>" +
-      "<td><input class='limit-input' type='number' min='0' max='1000' data-role='" + escapeHtml(role) + "' data-type='kingdom' value='" + Number(item.kingdom_limit) + "'" + disabled + "></td>" +
-      "<td><input class='limit-input' type='number' min='0' max='5000' data-role='" + escapeHtml(role) + "' data-type='player' value='" + Number(item.player_limit) + "'" + disabled + "></td></tr>";
+    return "<tr>" +
+      "<td><strong>" + escapeHtml(role) + "</strong></td>" +
+      "<td><input class='limit-input' type='number' min='0' max='1000' inputmode='numeric' data-role='" + escapeHtml(role) +
+      "' data-type='kingdom' value='" + Number(item.kingdom_limit) + "'" + disabled + "></td>" +
+      "<td><input class='limit-input' type='number' min='0' max='5000' inputmode='numeric' data-role='" + escapeHtml(role) +
+      "' data-type='player' value='" + Number(item.player_limit) + "'" + disabled + "></td>" +
+      "</tr>";
   }).join("");
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ公開設定</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.badge{position:fixed;top:14px;right:14px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:calc(100vw - 28px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}.hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:0}th,td{padding:11px 9px;border-bottom:1px solid #334155;text-align:left;vertical-align:middle}th:last-child,td:last-child{text-align:center;width:180px}td small{color:#94a3b8;line-height:1.5}.role-select{width:170px;max-width:100%;padding:9px 30px 9px 10px;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#f8fafc;font-weight:800}.role-select:disabled{opacity:.5}.status{margin-top:10px;color:#86efac;font-size:13px}@media(max-width:720px){.wrap{padding:58px 10px 24px}.card{padding:10px}.scroll{overflow:visible}table{width:100%}th,td{padding:10px 6px}th:last-child,td:last-child{width:120px}.role-select{width:112px;padding:8px 8px;font-size:12px}.title{font-size:24px}.badge{font-size:10px}}</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1><div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限だけをリアルタイムで変更できます。閲覧可能ロールを設定すると、そのロール以上が閲覧できます。ADMINは「OWNERのみ」を設定できません。</div><div id='status' class='status'></div><div class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>閲覧可能ロール</th></tr></thead><tbody>" + rows + "</tbody></table></div><div class='card'><h2>ウォッチリスト登録上限</h2><div class='hint'>ロールごとの有効な監視対象数。0は無制限。王国ウォッチリストは定期的にランキング取得するため、D1/API負荷対策として上限を設定します。</div><div class='scroll'><table><thead><tr><th>ロール</th><th>王国</th><th>プレイヤー</th></tr></thead><tbody>"+watchlistLimitRows+"</tbody></table></div></div></div></main><script>(function(){document.querySelectorAll('select[data-item]').forEach(function(select){select.addEventListener('change',function(){var previous=select.value;select.disabled=true;fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item_key:select.getAttribute('data-item'),min_role:select.value})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'更新失敗');return d;});}).then(function(){document.getElementById('status').textContent='保存しました。'+select.value+'以上が閲覧できます。';}).catch(function(e){select.value=previous;document.getElementById('status').textContent='更新失敗: '+e.message;}).finally(function(){select.disabled=false;});});});document.querySelectorAll('.limit-input').forEach(function(input){input.addEventListener('change',function(){var role=input.getAttribute('data-role');var inputs=document.querySelectorAll('.limit-input[data-role=\\''+role+'\\'']');var kingdom='0',player='0';inputs.forEach(function(x){if(x.getAttribute('data-type')==='kingdom')kingdom=x.value;if(x.getAttribute('data-type')==='player')player=x.value;});inputs.forEach(function(x){x.disabled=true;});fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'watchlist_limit',role:role,kingdom_limit:Number(kingdom),player_limit:Number(player)})}).then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.error||'更新失敗');return d;});}).then(function(){document.getElementById('status').textContent='ウォッチリスト上限を保存しました。';}).catch(function(e){document.getElementById('status').textContent='更新失敗: '+e.message;}).finally(function(){inputs.forEach(function(x){x.disabled=false;});});});});}());</script></script></body></html>";
-}
 
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
+    "<title>EagleEye データ公開設定</title><style>" +
+    ":root{color-scheme:dark}*{box-sizing:border-box}" +
+    "body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
+    ".badge{position:fixed;top:14px;right:14px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:calc(100vw - 28px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}" +
+    ".hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}" +
+    ".card h2{margin:0 0 8px;font-size:19px}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:0}" +
+    "th,td{padding:11px 9px;border-bottom:1px solid #334155;text-align:left;vertical-align:middle}th:last-child,td:last-child{text-align:center;width:180px}" +
+    "td small{color:#94a3b8;line-height:1.5}.role-select{width:170px;max-width:100%;padding:9px 30px 9px 10px;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#f8fafc;font-weight:800}" +
+    ".role-select:disabled,.limit-input:disabled{opacity:.5}.limit-input{width:100%;min-width:88px;padding:9px 10px;border:1px solid #475569;border-radius:10px;background:#0f172a;color:#f8fafc;font-weight:800;text-align:right}" +
+    ".status{margin-top:10px;color:#86efac;font-size:13px;min-height:20px}.limit-note{margin-top:8px;color:#64748b;font-size:11px;line-height:1.6}" +
+    "@media(max-width:720px){.wrap{padding:58px 10px 24px}.card{padding:12px}.scroll{overflow:visible}table{width:100%}th,td{padding:10px 6px}" +
+    "th:last-child,td:last-child{width:120px}.role-select{width:112px;padding:8px;font-size:12px}.limit-input{min-width:70px;padding:8px 7px;font-size:13px}.title{font-size:24px}.badge{font-size:10px}}" +
+    "</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'>" +
+    "<a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1>" +
+    "<div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限とウォッチリスト登録上限を変更できます。変更は即時反映されます。ADMINは「OWNERのみ」を設定できません。</div>" +
+    "<div id='status' class='status'></div>" +
+    "<section class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>閲覧可能ロール</th></tr></thead><tbody>" + rows + "</tbody></table></div></section>" +
+    "<section class='card'><h2>ウォッチリスト登録上限</h2>" +
+    "<div class='hint'>ロールごとに「有効な登録数」の上限を設定します。王国ウォッチリストは定期ランキング取得、プレイヤーウォッチリストは監視・変更履歴の対象になるため、無制限登録を防ぎます。</div>" +
+    "<div class='limit-note'>0を設定した場合は無制限です。D1/API負荷を抑える目的なら、各ロールに有限値を設定してください。</div>" +
+    "<div class='scroll'><table><thead><tr><th>ロール</th><th>王国ウォッチリスト</th><th>プレイヤーウォッチリスト</th></tr></thead><tbody>" + watchlistLimitRows + "</tbody></table></div></section>" +
+    "</main><script>(function(){function setStatus(text,error){var s=document.getElementById('status');s.textContent=text;s.style.color=error?'#fca5a5':'#86efac';}" +
+    "document.querySelectorAll('select[data-item]').forEach(function(select){select.addEventListener('change',function(){var previous=select.value;select.disabled=true;" +
+    "fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({item_key:select.getAttribute('data-item'),min_role:select.value})})" +
+    ".then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'更新失敗');return d;});})" +
+    ".then(function(){setStatus('公開設定を保存しました。'+select.value+'以上が閲覧できます。',false);})" +
+    ".catch(function(e){select.value=previous;setStatus('更新失敗: '+e.message,true);})" +
+    ".finally(function(){select.disabled=false;});});});" +
+    "document.querySelectorAll('.limit-input').forEach(function(input){input.addEventListener('change',function(){var role=input.getAttribute('data-role');" +
+    "var group=Array.prototype.slice.call(document.querySelectorAll('.limit-input[data-role="'+role+'"]'));var kingdom=0,player=0;" +
+    "group.forEach(function(x){if(x.getAttribute('data-type')==='kingdom')kingdom=Number(x.value);if(x.getAttribute('data-type')==='player')player=Number(x.value);});" +
+    "if(!Number.isInteger(kingdom)||kingdom<0||kingdom>1000||!Number.isInteger(player)||player<0||player>5000){setStatus('上限値が不正です。王国0〜1000、プレイヤー0〜5000で設定してください。',true);return;}" +
+    "group.forEach(function(x){x.disabled=true;});" +
+    "fetch('/api/admin/player-visibility',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'watchlist_limit',role:role,kingdom_limit:kingdom,player_limit:player})})" +
+    ".then(function(r){return r.json().then(function(d){if(!r.ok||d.ok===false)throw new Error(d.message||d.error||'更新失敗');return d;});})" +
+    ".then(function(){setStatus(role+'のウォッチリスト上限を保存しました。',false);})" +
+    ".catch(function(e){setStatus('更新失敗: '+e.message,true);})" +
+    ".finally(function(){group.forEach(function(x){x.disabled=false;});});});});}());</script></body></html>";
+}
 async function renderDataRetentionPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return "<!DOCTYPE html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
