@@ -19,6 +19,7 @@ import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemD
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
+import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -2385,6 +2386,14 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
 }
 export default {
   async scheduled(controller, env, ctx) {
+    if (env.DB && env.ARCHIVE) {
+      try {
+        const drained = await drainHistoryEmergencyBuffer(env.DB, env.ARCHIVE, { limit: 10 });
+        if (drained.attempted) console.log("history_emergency_buffer_drain", drained);
+      } catch (error) {
+        console.error("history_emergency_buffer_drain_failed", error?.message || error);
+      }
+    }
     await runKingdomWatchlistJobs(env);
     const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
     if (minute === 0) await runDataRetentionJob(env);
