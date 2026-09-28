@@ -609,7 +609,8 @@ async function processKingdomWatchlistJob(env, job) {
         observedAt: job.observed_at,
         sourceObservedAt,
         checkedAt: Math.floor(Date.now() / 1000),
-        archiveBucket: env.ARCHIVE
+        archiveBucket: env.ARCHIVE,
+        historyMode: env.HISTORY_STORAGE_MODE
       });
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
@@ -1223,7 +1224,7 @@ async function handleKingdomRankingHistoryApi(request, env) {
   const targetId = url.searchParams.get("target_id");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
   if (!Number.isInteger(kid) || kid < 1 || !board || !targetId) return json({ ok: false, error: "KID_BOARD_TARGET_REQUIRED" }, 400);
-  const history = await getRankingHistory(env.DB, { kid, board, targetId, limit, archiveBucket: env.ARCHIVE });
+  const history = await getRankingHistory(env.DB, { kid, board, targetId, limit, archiveBucket: env.ARCHIVE, historyMode: env.HISTORY_STORAGE_MODE });
   return json({ ok: true, kid, board, target_id: targetId, history });
 }
 
@@ -2727,7 +2728,8 @@ async function handlePlayerRankHistoryApi(request, env) {
     const history = await getPlayerRankHistory(env.DB, {
       governorId,
       limit,
-      archiveBucket: env.ARCHIVE
+      archiveBucket: env.ARCHIVE,
+      historyMode: env.HISTORY_STORAGE_MODE
     });
     return json({
       ok: true,
@@ -2761,7 +2763,8 @@ async function handleRankingPlayerTest(request, env) {
       ranks,
       observedAt: Math.floor(Date.now() / 1000),
       sourceObservedAt: getMightPulseSourceTimestamp(result.data),
-      archiveBucket: env.ARCHIVE
+      archiveBucket: env.ARCHIVE,
+      historyMode: env.HISTORY_STORAGE_MODE
     }) : null;
 
     return json({ ok: true, governor_id: governorId, saved_snapshot: Boolean(saved), ranks });
@@ -3790,10 +3793,10 @@ async function handlePlayerApi(request, env) {
     if (!observation || refresh || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
-      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
       source = "MIGHTPULSE";
     } else if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
@@ -3841,7 +3844,7 @@ async function handlePlayerRefresh(request, env) {
 
   try {
     const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH");
-    const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE);
+    const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     return json({
       ok: true,
@@ -4263,7 +4266,7 @@ async function renderPlayerPage(request, env) {
 
     let player = await getPlayer(env.DB, governorId);
     if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
-      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE);
+      player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     }
 
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
@@ -4912,7 +4915,8 @@ async function handleAdminKingdomRankingApi(request, env) {
         removedTargets: rankingComparison.removedTargets,
         entriesAlreadyFiltered: true, observedAt, sourceObservedAt,
         checkedAt: Math.floor(Date.now() / 1000),
-        archiveBucket: env.ARCHIVE
+        archiveBucket: env.ARCHIVE,
+        historyMode: env.HISTORY_STORAGE_MODE
       });
       const snapshot = await getLatestAdminKingdomRankingSnapshot(env, kid, board, limit);
       return json({
