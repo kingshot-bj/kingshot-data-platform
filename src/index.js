@@ -11,7 +11,7 @@ import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpu
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
-import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerNameHistory } from "./player-store.js";
+import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
@@ -1223,7 +1223,7 @@ async function handleKingdomRankingHistoryApi(request, env) {
   const targetId = url.searchParams.get("target_id");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
   if (!Number.isInteger(kid) || kid < 1 || !board || !targetId) return json({ ok: false, error: "KID_BOARD_TARGET_REQUIRED" }, 400);
-  const history = await getRankingHistory(env.DB, { kid, board, targetId, limit });
+  const history = await getRankingHistory(env.DB, { kid, board, targetId, limit, archiveBucket: env.ARCHIVE });
   return json({ ok: true, kid, board, target_id: targetId, history });
 }
 
@@ -3896,23 +3896,16 @@ async function handlePlayerHistoryApi(request, env) {
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   try {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
-    const result = await env.DB.prepare(
-      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
-    ).bind(governorId, limit).all();
-    const snapshots = (result.results || []).map(row => {
-      let payload = {};
-      try { payload = JSON.parse(row.payload_json); } catch {}
-      const player = payload.player && typeof payload.player === "object" ? payload.player : payload;
-      return {
-        snapshot_id: row.snapshot_id,
-        governor_id: row.governor_id,
-        observation_id: row.observation_id,
-        observed_at: row.observed_at,
-        player: filterPlayerForRole(player, auth.role, payload, visibilitySettings),
-        profile: filterPlayerProfileForRole(payload, auth.role, visibilitySettings)
-      };
-    });
-    return json({ ok: true, governor_id: governorId, snapshots });
+    const snapshots = await getPlayerHistory(env.DB, governorId, limit, env.ARCHIVE);
+    const visibleSnapshots = snapshots.map(row => ({
+      snapshot_id: row.snapshot_id,
+      governor_id: row.governor_id,
+      observation_id: row.observation_id,
+      observed_at: row.observed_at,
+      player: filterPlayerForRole(row.player || {}, auth.role, row.profile || {}, visibilitySettings),
+      profile: filterPlayerProfileForRole(row.profile || {}, auth.role, visibilitySettings)
+    }));
+    return json({ ok: true, governor_id: governorId, snapshots: visibleSnapshots });
   } catch (error) {
     console.error("Player history API error:", error);
     return json({ ok: false, error: "PLAYER_HISTORY_READ_FAILED" }, 500);
