@@ -1,5 +1,6 @@
 import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
+import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 
 let playerIdentityHistorySchemaPromise = null;
 
@@ -150,6 +151,7 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
 
   const r2Only = String(historyMode || "").toUpperCase() === "R2_ONLY";
   let archived = false;
+  let emergencyBuffered = false;
 
   if (archiveBucket) {
     try {
@@ -162,42 +164,64 @@ export async function materializePlayer(db, observation, existingPlayer = undefi
       archived = true;
       if (r2Only) {
         await recordDiagnostic(db, {
-          service: "player",
-          feature: "history_storage",
-          operation: "ARCHIVE_R2",
-          status: "SUCCESS",
-          errorCode: null,
+          service: "player", feature: "history_storage", operation: "ARCHIVE_R2",
+          status: "SUCCESS", errorCode: null,
           message: "R2アーカイブ成功。R2_ONLYのためD1 player_snapshots INSERTをスキップしました。",
-          provider: "CLOUDFLARE_R2",
-          targetType: "PLAYER",
-          targetId: governorId,
-          rowsReceived: 1,
-          rowsSaved: 1,
-          metadata: {
-            historyMode: "R2_ONLY",
-            archiveSuccess: true,
-            d1HistoryInsertSkipped: true
-          }
+          provider: "CLOUDFLARE_R2", targetType: "PLAYER", targetId: governorId,
+          rowsReceived: 1, rowsSaved: 1,
+          metadata: { historyMode: "R2_ONLY", archiveSuccess: true, d1HistoryInsertSkipped: true }
         });
       }
     } catch (error) {
       console.error("player_history_r2_archive_failed", {
-        governorId,
-        message: error?.message || String(error)
+        governorId, message: error?.message || String(error)
       });
-      if (r2Only) console.warn("player_history_d1_fallback", { governorId });
     }
   }
 
-  if (!r2Only || !archived) {
+  if (!archived) {
+    try {
+      await enqueueHistoryEmergencyBuffer(db, {
+        historyType: "PLAYER",
+        governorId,
+        observedAt: observation.observed_at,
+        sourceObservedAt: observation.source_observed_at ?? null,
+        sourceObservationId: observation.observation_id,
+        payload: { player }
+      });
+      emergencyBuffered = true;
+      await recordDiagnostic(db, {
+        service: "player", feature: "history_storage", operation: "EMERGENCY_BUFFER",
+        status: "WARNING", errorCode: "R2_ARCHIVE_FAILED",
+        message: "R2アーカイブ失敗のためPlayer履歴をD1緊急退避バッファへ保存しました。R2復旧後に再アーカイブします。",
+        provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: governorId,
+        rowsReceived: 1, rowsSaved: 1,
+        metadata: { historyMode, emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
+      });
+    } catch (bufferError) {
+      await recordDiagnostic(db, {
+        service: "player", feature: "history_storage", operation: "EMERGENCY_BUFFER",
+        status: "FAILED", errorCode: bufferError?.code || "HISTORY_EMERGENCY_BUFFER_FAILED",
+        message: String(bufferError?.message || bufferError),
+        provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: governorId,
+        rowsReceived: 1, rowsSaved: 0,
+        metadata: { historyMode, emergencyBuffered: false, fallback: "STOP" }
+      });
+      throw bufferError;
+    }
+  }
+
+  if (!r2Only && !archived) {
     await db.prepare(
       `INSERT INTO player_snapshots (
         snapshot_id, governor_id, observation_id, observed_at, payload_json
       ) VALUES (?, ?, ?, ?, ?)`
     ).bind(
       crypto.randomUUID(), governorId, observation.observation_id,
-      observation.observed_at, observation.source_observed_at ?? null, JSON.stringify(player)
+      observation.observed_at, JSON.stringify(player)
     ).run();
+  } else if (r2Only && !archived && !emergencyBuffered) {
+    throw new Error("HISTORY_EMERGENCY_BUFFER_NOT_AVAILABLE");
   }
 
   return materializedPlayer;
