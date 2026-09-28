@@ -217,6 +217,24 @@ export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket
       governorId: String(governorId),
       message: error?.message || String(error)
     });
+    if (r2Only && !d1Rows.length) {
+      const fallback = await db.prepare(
+        'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?'
+      ).bind(String(governorId), safeLimit).all();
+      d1Rows = (fallback.results || []).map(row => {
+        let payload = {};
+        try { payload = JSON.parse(row.payload_json); } catch {}
+        const player = payload.player && typeof payload.player === "object" ? payload.player : payload;
+        return {
+          snapshot_id: row.snapshot_id,
+          governor_id: row.governor_id,
+          observation_id: row.observation_id,
+          observed_at: row.observed_at,
+          player,
+          profile: payload
+        };
+      });
+    }
   }
 
   // Migration bridge: merge R2 and D1 by observation_id so the API remains
