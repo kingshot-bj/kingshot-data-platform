@@ -463,9 +463,12 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
         ).bind(String(error?.message || error).slice(0, 1000), now, job.job_id).run();
+        // Record the failed attempt time as well. Otherwise a failed watchlist
+        // keeps its old last_run_at and is retried on every 5-minute Cron tick,
+        // bypassing the user's configured interval and consuming API/D1 resources.
         await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(now, String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
           status: "FAILED", errorCode: String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
