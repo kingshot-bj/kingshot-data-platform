@@ -5590,12 +5590,16 @@ async function renderPublicStatusPage(request, env) {
     return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[unit];
   };
   const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
+  const formatYen = value => value == null ? "—" : "¥" + Math.round(Number(value)).toLocaleString("ja-JP");
   const monitoringProfile = usage.monitoring?.profile || "FREE";
   const monitoringLabel = usage.monitoring?.label || "Workers Free";
   const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
   const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
   const monitoringEstimatedCostUsd = usage.monitoring?.estimatedMonthlyCostUsd ?? null;
   const monitoringEstimatedOverageUsd = usage.monitoring?.estimatedOverageUsd ?? null;
+  const monitoringEstimatedCostJpy = usage.monitoring?.estimatedMonthlyCostJpy ?? null;
+  const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
+  const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
     ? "$5.00 Paid枠・安全上限の最大使用率"
     : "Freeプラン現行監視の最大使用率";
@@ -5770,7 +5774,7 @@ async function renderPublicStatusPage(request, env) {
         <div class="card resource-card">
           <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>監視プロファイル: PAID_5USD · 請求サイクルはCloudflare側を基準</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div>` : ""}
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計</small></div><strong>${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出</small></div><strong>${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</strong></div>` : ""}
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
           ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
           <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
