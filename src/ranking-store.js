@@ -93,6 +93,12 @@ export async function getPlayerRankHistory(db, {
       governorId: String(governorId),
       message: error?.message || String(error)
     });
+    if (r2Only && !d1Rows.length) {
+      const fallback = await db.prepare(
+        "SELECT * FROM player_rank_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT ?"
+      ).bind(String(governorId), safeLimit).all();
+      d1Rows = fallback.results || [];
+    }
   }
 
   const merged = new Map();
