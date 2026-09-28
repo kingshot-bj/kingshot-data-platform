@@ -1,5 +1,6 @@
 import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
+import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 
 const PLAYER_RANK_FIELDS = [
   ["power", "power_rank"],
@@ -37,6 +38,7 @@ export async function savePlayerRankSnapshot(db, options) {
   const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
   const r2Only = String(options?.historyMode || "").toUpperCase() === "R2_ONLY";
   let archived = false;
+  let emergencyBuffered = false;
 
   if (options?.archiveBucket) {
     try {
@@ -50,19 +52,68 @@ export async function savePlayerRankSnapshot(db, options) {
         sourceObservationId: options.sourceObservationId
       });
       archived = true;
+      if (r2Only) {
+        await recordDiagnostic(db, {
+          service: "ranking", feature: "player_history_storage", operation: "ARCHIVE_R2",
+          status: "SUCCESS", errorCode: null,
+          message: "R2アーカイブ成功。R2_ONLYのためD1 player_rank_snapshots INSERTをスキップしました。",
+          provider: "CLOUDFLARE_R2", targetType: "PLAYER", targetId: String(options.governorId),
+          rowsReceived: 1, rowsSaved: 1,
+          metadata: { historyMode: "R2_ONLY", archiveSuccess: true, d1HistoryInsertSkipped: true }
+        });
+      }
     } catch (error) {
       console.error("player_rank_history_r2_archive_failed", {
-        governorId: String(options.governorId),
-        message: error?.message || String(error)
+        governorId: String(options.governorId), message: error?.message || String(error)
       });
-      if (r2Only) console.warn("player_rank_history_d1_fallback", { governorId: String(options.governorId) });
     }
   }
 
-  if (!r2Only || !archived) await statement.run();
+  if (!archived && r2Only) {
+    try {
+      await enqueueHistoryEmergencyBuffer(db, {
+        historyType: "PLAYER_RANK",
+        kid: options.kid ?? null,
+        governorId: String(options.governorId),
+        observedAt: options.observedAt,
+        sourceObservedAt: options.sourceObservedAt ?? null,
+        sourceObservationId: options.sourceObservationId ?? null,
+        payload: {
+          uid: options.uid ?? null,
+          ranks: options.ranks
+        }
+      });
+      emergencyBuffered = true;
+      await recordDiagnostic(db, {
+        service: "ranking", feature: "player_history_storage", operation: "EMERGENCY_BUFFER",
+        status: "WARNING", errorCode: "R2_ARCHIVE_FAILED",
+        message: "R2アーカイブ失敗のためPlayer順位履歴をD1緊急退避バッファへ保存しました。R2復旧後に再アーカイブします。",
+        provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: String(options.governorId),
+        rowsReceived: 1, rowsSaved: 1,
+        metadata: { historyMode: "R2_ONLY", emergencyBuffered: true, fallback: "D1_EMERGENCY_BUFFER" }
+      });
+    } catch (bufferError) {
+      await recordDiagnostic(db, {
+        service: "ranking", feature: "player_history_storage", operation: "EMERGENCY_BUFFER",
+        status: "FAILED", errorCode: bufferError?.code || "HISTORY_EMERGENCY_BUFFER_FAILED",
+        message: String(bufferError?.message || bufferError),
+        provider: "CLOUDFLARE_D1", targetType: "PLAYER", targetId: String(options.governorId),
+        rowsReceived: 1, rowsSaved: 0,
+        metadata: { historyMode: "R2_ONLY", emergencyBuffered: false, fallback: "STOP" }
+      });
+      throw bufferError;
+    }
+  }
+
+  if (!r2Only) {
+    await statement.run();
+  } else if (!archived && !emergencyBuffered) {
+    throw new Error("HISTORY_EMERGENCY_BUFFER_NOT_AVAILABLE");
+  }
 
   return id;
 }
+
 
 export async function getPlayerRankHistory(db, {
   governorId,
