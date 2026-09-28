@@ -1602,3 +1602,65 @@ Player History / Ranking History / Player Ranking History の3系統について
 へ進む。
 
 今回もbroadな`ranking_snapshots` SELECTは追加していない。
+
+## 2026-09-28追加：R2履歴を正本化する安全切替スイッチ
+
+現時点では、Player History / Ranking History / Player Ranking History はR2へアーカイブしつつD1履歴も残すDUAL状態を維持している。
+
+今回、D1履歴書き込みを安全に停止できる切替を実装した。
+
+### HISTORY_STORAGE_MODE
+
+`env.HISTORY_STORAGE_MODE` を以下で制御する。
+
+- 未設定 / `DUAL`
+  - 従来どおりD1履歴 + R2履歴の二重保存。
+  - R2障害時も既存D1動作を維持。
+- `R2_ONLY`
+  - R2へのアーカイブ成功後、bulk history tableへのD1 INSERTを行わない。
+  - R2アーカイブ失敗時のみD1へフォールバックして履歴消失を防ぐ。
+  - 現在状態を表すD1テーブル（players / kingdom_ranking_current / board_state等）は引き続きD1へ保存。
+  - 履歴APIは原則R2のみを読む。
+  - R2読み出し失敗時はD1履歴へフォールバックする。
+
+### 対象
+
+R2_ONLY対象:
+- `ranking_snapshots`
+- `player_snapshots`
+- `player_rank_snapshots`
+
+対象外:
+- `players`
+- `kingdom_ranking_current`
+- `kingdom_ranking_board_state`
+- `change_events`
+- `api_observations`
+- API Pool / watchlist / diagnostics等の運用データ
+
+### 重要な安全条件
+
+R2_ONLYは「D1履歴を即削除する」方式ではない。
+既存D1履歴は残したまま新規履歴書き込みだけをR2中心へ切り替える。
+
+また、R2アーカイブ成功前にD1履歴を止めることはしない。
+R2障害時にはD1へフォールバックする。
+
+### 現在の状態
+
+- コード実装済み
+- `HISTORY_STORAGE_MODE` 未設定なら従来のDUAL動作
+- 本番環境へのR2_ONLY切替は未実施
+- 本番デプロイ・本番動作確認は未実施
+- D1 Rows Written削減効果も未実測
+
+### 次の手順
+
+1. mainのコードレビュー / 構文確認
+2. R2_ONLY切替を本番へ適用
+3. Watchlist / Player History / Ranking History / Player Ranking Historyを実動作確認
+4. Cloudflare AnalyticsでD1 Rows Written / Readを同条件比較
+5. R2障害時フォールバックも確認
+6. 問題がなければ旧D1履歴データの扱い（保持期間 / R2永久保存 / 削除）を別途決定
+
+**本番で確認できていないものは確認済みとしない。**
