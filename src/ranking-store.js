@@ -1,4 +1,4 @@
-import { archiveRankingHistoryBatch } from "./r2-archive.js";
+import { archiveRankingHistoryBatch, listRankingHistoryFromR2 } from "./r2-archive.js";
 
 const PLAYER_RANK_FIELDS = [
   ["power", "power_rank"],
@@ -238,10 +238,44 @@ export async function getLatestKingdomRankings(db, kid, board = null, limit = 10
   return result.results || [];
 }
 
-export async function getRankingHistory(db, { kid, board, targetId, limit = 50 }) {
+export async function getRankingHistory(db, { kid, board, targetId, limit = 50, archiveBucket = null }) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const result = await db.prepare(
     "SELECT * FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id = ? ORDER BY observed_at DESC LIMIT ?"
-  ).bind(Number(kid), String(board), String(targetId), Number(limit)).all();
-  return result.results || [];
+  ).bind(Number(kid), String(board), String(targetId), safeLimit).all();
+
+  const d1Rows = result.results || [];
+  if (!archiveBucket) return d1Rows;
+
+  let r2Rows = [];
+  try {
+    r2Rows = await listRankingHistoryFromR2(archiveBucket, {
+      kid,
+      board,
+      targetId,
+      limit: safeLimit
+    });
+  } catch (error) {
+    console.error("ranking_history_r2_read_failed", {
+      kid,
+      board,
+      targetId: String(targetId),
+      message: error?.message || String(error)
+    });
+  }
+
+  // Migration bridge: keep D1 as the compatibility fallback while R2 history
+  // is introduced. A source observation id is preferred for de-duplication.
+  const merged = new Map();
+  for (const row of [...d1Rows, ...r2Rows]) {
+    const key = row.source_observation_id
+      ? `observation:${row.source_observation_id}:${row.target_id}`
+      : `snapshot:${row.observed_at}:${row.target_id}:${row.rank}:${row.score}`;
+    if (!merged.has(key)) merged.set(key, row);
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, safeLimit);
 }
 
