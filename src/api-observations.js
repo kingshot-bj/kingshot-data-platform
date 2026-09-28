@@ -17,7 +17,7 @@ export async function saveApiObservation(db, observation) {
       http_status,
       payload_json,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     observationId,
     observation.provider,
