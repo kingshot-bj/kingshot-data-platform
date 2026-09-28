@@ -5459,7 +5459,7 @@ async function handleMe(request, env) {
   });
 }
 
-const RUNTIME_MONITORING_PROFILE_KEY = "cloudflare_monitoring_profile";
+const RUNTIME_MONITORING_PROFILE_COOKIE = "EAGLEEYE_MONITORING_PROFILE";
 let runtimeMonitoringProfileCache = { profile: null, source: null, updatedAt: null, updatedBy: null, expiresAt: 0 };
 
 function normalizeMonitoringProfile(value, fallback = "FREE") {
@@ -5467,35 +5467,36 @@ function normalizeMonitoringProfile(value, fallback = "FREE") {
   return profile === "PAID_5USD" || profile === "FREE" ? profile : fallback;
 }
 
-async function getRuntimeMonitoringProfile(env, { forceRefresh = false } = {}) {
-  const now = Date.now();
-  if (!forceRefresh && runtimeMonitoringProfileCache.expiresAt > now && runtimeMonitoringProfileCache.profile) return runtimeMonitoringProfileCache;
-  const envProfile = normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE");
-  if (!env.DB) {
-    runtimeMonitoringProfileCache = { profile: envProfile, source: "ENV", updatedAt: null, updatedBy: null, expiresAt: now + 60_000 };
-    return runtimeMonitoringProfileCache;
-  }
-  try {
-    const row = await env.DB.prepare(
-      "SELECT setting_value, updated_at, updated_by FROM runtime_settings WHERE setting_key = ? LIMIT 1"
-    ).bind(RUNTIME_MONITORING_PROFILE_KEY).first();
-    const profile = normalizeMonitoringProfile(row?.setting_value, envProfile);
-    runtimeMonitoringProfileCache = {
-      profile,
-      source: row?.setting_value ? "DB" : "ENV",
-      updatedAt: row?.updated_at ? Number(row.updated_at) : null,
-      updatedBy: row?.updated_by || null,
-      expiresAt: now + 60_000
-    };
-  } catch (error) {
-    console.warn("runtime_monitoring_profile_read_failed", error?.message || error);
-    runtimeMonitoringProfileCache = { profile: envProfile, source: "ENV_FALLBACK", updatedAt: null, updatedBy: null, expiresAt: now + 15_000 };
-  }
-  return runtimeMonitoringProfileCache;
+function getRuntimeMonitoringProfile(request, env) {
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  const cookieProfile = normalizeMonitoringProfile(cookies[RUNTIME_MONITORING_PROFILE_COOKIE], "");
+  if (cookieProfile) return { profile: cookieProfile, source: "COOKIE", updatedAt: null, updatedBy: null };
+  return { profile: normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE"), source: "ENV", updatedAt: null, updatedBy: null };
 }
 
 async function handleMonitoringProfileApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
+    return json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  if (request.method === "GET") {
+    const setting = getRuntimeMonitoringProfile(request, env);
+    return json({ ok: true, profile: setting.profile, source: setting.source });
+  }
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
+  const profile = normalizeMonitoringProfile(body?.profile, "");
+  if (!profile) return json({ ok: false, error: "INVALID_PROFILE" }, 400);
+
+  const response = json({ ok: true, profile, source: "COOKIE" });
+  response.headers.set("Set-Cookie", serializeCookie(RUNTIME_MONITORING_PROFILE_COOKIE, profile, {
+    maxAge: 60 * 60 * 24 * 365, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+  }));
+  return response;
+}
+
+const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) return json({ ok: false, error: "FORBIDDEN" }, 403);
   if (request.method === "GET") {
     const setting = await getRuntimeMonitoringProfile(env, { forceRefresh: true });
@@ -5529,7 +5530,7 @@ async function renderPublicStatusPage(request, env) {
   );
 
   const monitoringProfileSetting = canViewDetailedUsage
-    ? await getRuntimeMonitoringProfile(env)
+    ? await getRuntimeMonitoringProfile(request, env)
     : { profile: normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE"), source: "ENV", updatedAt: null, updatedBy: null };
 
   // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
