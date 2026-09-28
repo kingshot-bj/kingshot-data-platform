@@ -5724,13 +5724,13 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
 
-  const d1QueryDetailSection = canViewDetailedUsage && queryInsights ? `
+  const d1QueryDetailSection = canViewDetailedUsage && usage.queryInsights?.available ? `
     <section class="section">
       <h2>D1 Query Insights 詳細</h2>
       <div class="card resource-card">
-        <div class="resource-row"><div><b>Unique Query Groups</b><small>全取得件数</small></div><strong>${formatInt(queryInsights.queryCount)}</strong></div>
+        <div class="resource-row"><div><b>Unique Query Groups</b><small>全取得件数</small></div><strong>${formatInt(usage.queryInsights.queryCount)}</strong></div>
         <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全Query Groupを見る</summary>
-          <div class="insight-list">${(queryInsights.queries || []).map(q => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(q.category)}</span><span>${formatInt(q.count)} 回</span></div><small>Read ${formatInt(q.rowsRead)} · Written ${formatInt(q.rowsWritten)} · Returned ${formatInt(q.rowsReturned)} · Duration ${formatInt(q.durationMs)} ms</small><code>${escapeHtml(q.query)}</code></div>`).join("") || '<div class="resource-note">Query dataなし</div>'}</div>
+          <div class="insight-list">${(usage.queryInsights.queries || []).map(q => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(q.category)}</span><span>${formatInt(q.count)} 回</span></div><small>Read ${formatInt(q.rowsRead)} · Written ${formatInt(q.rowsWritten)} · Returned ${formatInt(q.rowsReturned)} · Duration ${formatInt(q.durationMs)} ms</small><code>${escapeHtml(q.query)}</code></div>`).join("") || '<div class="resource-note">Query dataなし</div>'}</div>
         </details>
       </div>
     </section>` : "";
