@@ -60,3 +60,60 @@ DriveをDBや検索基盤として扱わず、原本保管層として利用す�
 6. 検証成功後のR2削除
 
 これらは今回の接続準備には含めない。
+## 2026-09-29 方針更新：個人Googleアカウント OAuth方式
+
+Google Workspaceは利用しない。EagleEye専用として用意済みの個人GoogleアカウントのMy Driveを保存先にする。
+
+従来のService Account方式は採用せず、Google OAuth 2.0のユーザー認可＋offline accessで運用する。Google公式ではoffline accessによりユーザー不在時でもrefresh tokenからaccess tokenを更新できる。
+
+### 使用する設定
+- GOOGLE_OAUTH_CLIENT_ID
+- GOOGLE_OAUTH_CLIENT_SECRET（Secret）
+- GOOGLE_DRIVE_OAUTH_REDIRECT_URI
+- GOOGLE_DRIVE_REFRESH_TOKEN（Secret）
+- GOOGLE_DRIVE_FOLDER_ID
+
+Drive scopeは https://www.googleapis.com/auth/drive.file を使用する。これはアプリが作成したファイル、またはアプリと共有されたファイルに限定する狭い権限で、今回の専用アーカイブ用途に合わせる。
+
+### 現在実装した接続フロー
+1. OWNERが /admin/google-drive を開く。
+2. Google OAuthへリダイレクト。
+3. stateをEagleEyeの既存HMAC方式で検証。
+4. 認可コードをtoken endpointで交換。
+5. 初回認証時はOAuth access tokenでEagleEyeフォルダを作成。
+6. Refresh TokenとFolder IDを画面に一度だけ表示。
+7. Cloudflare Secret / Variableへ手動登録。
+8. Worker再deploy後、R2→Drive transportがrefresh tokenでaccess tokenを取得して動作する。
+
+Google OAuthのredirect URIはGoogle Cloud側の登録値と完全一致が必要。
+
+### R2→Drive transport
+src/google-drive.js は以下を実装済み。
+- ユーザーOAuth refresh tokenからaccess tokenを取得
+- R2 object取得
+- appProperties.eagleeyeSourceKeyによる同一R2 objectの重複検出
+- Drive multipart upload
+- source size / Drive sizeの検証
+- verification成功を verified: true として返す
+- duplicate時もsizeを再確認
+
+Drive upload成功とverification成功は分離して扱う。
+
+### まだ実装しないもの
+- cronからの自動R2→Drive転送
+- retentionからのDrive連携
+- Library Index
+- Drive checksumを使った完全なchecksum verification
+- record count verification
+- batch_id実装
+- verification前のR2削除
+- verification後の自動R2削除
+
+R2は引き続きcanonical source。
+
+### OAuth token運用上の注意
+Refresh TokenはGitHubへ保存しない。Cloudflare Secretへ登録する。Google公式もrefresh tokenを安全な長期保存先で管理するよう案内している。
+
+Google Cloud OAuth同意画面をTestingのまま運用すると、テストユーザー向けrefresh tokenは7日で失効する仕様がある。長期運用前にGoogle Cloud側の公開状態を確認すること。
+
+本番でR2→Drive実アップロードが成功するまで、Google Drive連携をproduction-confirmedとは扱わない。
