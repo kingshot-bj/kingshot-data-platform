@@ -20,6 +20,7 @@ import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analyti
 import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
+import { recordServiceUsage } from "./service-usage.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -1386,6 +1387,13 @@ async function handlePlayerWatchlistApi(request, env) {
     `).bind(auth.discord_id).all();
 
     const watchRows = rows.results || [];
+    await trackServiceUsage(env, auth, "PLAYER_WATCHLIST_VIEW", {
+      metadata: {
+        watchlist_count: watchRows.length,
+        enabled_count: watchRows.filter(row => Number(row.enabled) === 1).length,
+        disabled_count: watchRows.filter(row => Number(row.enabled) !== 1).length
+      }
+    });
     if (!watchRows.length) return json({ ok: true, watchlist: [] });
 
     // Watchlist summaries are intentionally derived from the existing targeted
@@ -1618,6 +1626,11 @@ async function handlePlayerWatchlistApi(request, env) {
       "UPDATE player_watchlists SET enabled = ?, updated_at = ? WHERE discord_id = ? AND governor_id = ?"
     ).bind(enabled, now, auth.discord_id, governorId).run();
     if (!result?.meta?.changes) return json({ ok: false, error: "WATCHLIST_ITEM_NOT_FOUND" }, 404);
+    await trackServiceUsage(env, auth, enabled === 1 ? "PLAYER_WATCHLIST_ADD" : "PLAYER_WATCHLIST_REMOVE", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: { source: "PLAYER_WATCHLIST", enabled: enabled === 1 }
+    });
     return json({ ok: true, governor_id: governorId, enabled: enabled === 1 });
   }
 
@@ -1628,6 +1641,11 @@ async function handlePlayerWatchlistApi(request, env) {
       "DELETE FROM player_watchlists WHERE discord_id = ? AND governor_id = ?"
     ).bind(auth.discord_id, governorId).run();
     if (!result?.meta?.changes) return json({ ok: false, error: "WATCHLIST_ITEM_NOT_FOUND" }, 404);
+    await trackServiceUsage(env, auth, "PLAYER_WATCHLIST_REMOVE", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: { source: "PLAYER_WATCHLIST" }
+    });
     return json({ ok: true, governor_id: governorId });
   }
 
@@ -3993,6 +4011,28 @@ async function handlePlayerApi(request, env) {
       profile.name_history = await getPlayerNameHistory(env.DB, governorId);
     }
 
+    await trackServiceUsage(env, auth, refresh ? "PLAYER_REFRESH" : "PLAYER_VIEW", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: {
+        source,
+        kid: player?.kid,
+        power: player?.power,
+        town_center_level: player?.town_center_level,
+        vip: player?.vip,
+        alliance_aid: player?.alliance_aid,
+        alliance_abbr: player?.alliance_abbr,
+        alliance_name: player?.alliance_name,
+        alliance_rank: player?.alliance_rank,
+        kills: player?.kills,
+        x: player?.x,
+        y: player?.y,
+        online: player?.online,
+        observed_at: observation.observed_at,
+        cached_at: observation.payload?.cached_at ?? null,
+        age_seconds: observation.payload?.age_seconds ?? null
+      }
+    });
     return json({
       ok: true,
       player: visiblePlayer,
@@ -4033,6 +4073,32 @@ async function handlePlayerRefresh(request, env) {
     const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH");
     const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    await trackServiceUsage(env, auth, "PLAYER_REFRESH", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: {
+        source: "MIGHTPULSE",
+        refresh_reason: "EXPLICIT_REFRESH",
+        new_observed_at: fetched.observation.observed_at,
+        new_source_observed_at: fetched.observation.source_observed_at ?? null,
+        upstream_fresh: fetched.observation.payload?.fresh ?? null,
+        upstream_age_seconds: fetched.observation.payload?.age_seconds ?? null,
+        kid: player?.kid,
+        power: player?.power,
+        town_center_level: player?.town_center_level,
+        vip: player?.vip,
+        alliance_aid: player?.alliance_aid,
+        alliance_abbr: player?.alliance_abbr,
+        alliance_name: player?.alliance_name,
+        alliance_rank: player?.alliance_rank,
+        kills: player?.kills,
+        x: player?.x,
+        y: player?.y,
+        online: player?.online,
+        observed_at: fetched.observation.observed_at,
+        source_observed_at: fetched.observation.source_observed_at ?? null
+      }
+    });
     return json({
       ok: true,
       player: filterPlayerForRole(player, auth.role, fetched.observation.payload, visibilitySettings),
@@ -4089,6 +4155,18 @@ async function renderPlayerSearchPage(request, env) {
       </div>
       <div class="power">${escapeHtml(formatNumber(row.power))}</div>
     </a>`).join("");
+
+  if (q) {
+    await trackServiceUsage(env, auth, "PLAYER_SEARCH", {
+      metadata: {
+        search_type: /^\d{7,12}$/.test(q) ? "GOVERNOR_ID" : "TEXT",
+        result_count: rows.length,
+        result_has_match: rows.length > 0,
+        selected_result: rows.length === 1 ? rows[0]?.governor_id ?? null : null,
+        direct_lookup: /^\d{7,12}$/.test(q)
+      }
+    });
+  }
 
   const numericGovernorId = /^\d{7,12}$/.test(q);
   const body = q
@@ -4906,6 +4984,23 @@ async function getAuthenticatedUser(request, env) {
     return null;
   }
 }
+
+async function trackServiceUsage(env, auth, operation, { targetType = null, targetId = null, metadata = {} } = {}) {
+  if (!auth?.user_id) return;
+  try {
+    await recordServiceUsage(env, {
+      operation,
+      actorUserId: auth.user_id,
+      targetType,
+      targetId,
+      metadata
+    });
+  } catch (error) {
+    // Usage telemetry must never break the originating user action.
+    console.error("service_usage_track_failed", operation, error?.message || error);
+  }
+}
+
 
 async function handleDebugPlayerGear(request, env) {
   const auth = await getAuthenticatedUser(request, env);
