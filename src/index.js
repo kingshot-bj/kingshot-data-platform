@@ -33,7 +33,7 @@ import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
-import { getUserPlayerLink, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId } from "./user-player-link.js";
+import { getUserPlayerLink, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -1428,7 +1428,30 @@ async function handleMyPlayerApi(request, env) {
       if (!governorId) return json({ ok: false, error: "INVALID_GOVERNOR_ID", message: "領主IDは7〜12桁の数字で入力してください。" }, 400);
 
       const before = await getUserPlayerLink(env.DB, auth.user_id);
-      const link = await saveUserPlayerLink(env.DB, auth.user_id, governorId);
+      let link;
+      try {
+        link = await saveUserPlayerLink(env.DB, auth.user_id, governorId);
+      } catch (error) {
+        if (error?.code === "GOVERNOR_ID_ALREADY_LINKED") {
+          const supportUrl = String(env.DISCORD_SUPPORT_URL || "").trim() || null;
+          const requestRecord = await createOwnershipSupportRequest(env.DB, {
+            requesterUserId: auth.user_id,
+            governorId,
+            conflictingUserId: error.owner?.user_id || null,
+            discordSupportUrl: supportUrl
+          });
+          return json({
+            ok: false,
+            error: "GOVERNOR_ID_ALREADY_LINKED",
+            message: "この領主IDはすでに別のEagleEyeアカウントに登録されています。",
+            support_required: true,
+            support_request_id: requestRecord.request_id,
+            support_url: supportUrl,
+            note: "本人である場合は、KingShotゲーム内で本人しか表示できない情報が確認できるスクリーンショットを添えてEagleEye専用サポートへ問い合わせてください。"
+          }, 409);
+        }
+        throw error;
+      }
       await trackServiceUsage(env, auth, before?.governor_id === governorId ? "KINGSHOT_ID_REGISTER" : "KINGSHOT_ID_CHANGE", {
         targetType: "PLAYER",
         targetId: governorId
@@ -1488,7 +1511,7 @@ async function renderMyPlayerPage(request, env) {
       return;
     }
     const p=d.player||{};
-    app.innerHTML='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.verified?"認証済み":"自己申告・未認証")+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
+    app.innerHTML='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.official_verified_at?"✓ EagleEye公式認証":(link.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
     document.getElementById("change").onclick=()=>showForm(link.governor_id);
     document.getElementById("remove").onclick=remove;
   }
@@ -1503,6 +1526,11 @@ async function renderMyPlayerPage(request, env) {
     try{
       const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim()})});
       const d=await r.json().catch(()=>({}));
+      if(r.status===409 && d.error==="GOVERNOR_ID_ALREADY_LINKED"){
+        app.innerHTML='<div class="card"><h2 style="margin-top:0">この領主IDは既に登録されています</h2><p class="muted">'+esc(d.message)+'</p><p class="muted">あなたが正当な所有者である場合は、KingShotゲーム内で本人しか表示できない情報が分かるスクリーンショットを用意して、EagleEye専用サポートへ問い合わせてください。確認後、正しい所有者へ移管し、公式認証マークを付与します。</p>'+(d.support_url?'<a class="btn" href="'+esc(d.support_url)+'" target="_blank" rel="noopener">Discordサポートへ問い合わせる</a>':'<div class="muted">DiscordサポートURLは未設定です。</div>')+'<div class="muted" style="margin-top:12px">問い合わせ番号: '+esc(d.support_request_id)+'</div><button class="btn danger" id="back">戻る</button></div>';
+        document.getElementById("back").onclick=load;
+        return;
+      }
       if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
       await load();
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
