@@ -32,7 +32,7 @@ import { getOperationalStatus } from "./status-ops.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
-import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus } from "./google-drive.js";
+import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -2634,6 +2634,32 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>比較</b><span><strong>'+esc(comparison.title)+'</strong><br>'+comparison.items.map(function(x){return '• '+esc(x);}).join('<br>')+'</span>'+
   '</div></div>';}async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
 }
+async function handleGoogleDriveVerifyApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  try {
+    const result = await verifyGoogleDriveRefreshToken(env);
+    return json({
+      ok: true,
+      verified: true,
+      message: "Google Drive Refresh Tokenの交換とDrive API接続に成功しました。",
+      sampleFolder: result.sampleFolder
+        ? { id: result.sampleFolder.id || null, name: result.sampleFolder.name || null }
+        : null
+    });
+  } catch (error) {
+    return json({
+      ok: false,
+      verified: false,
+      error: error?.code || "GOOGLE_DRIVE_VERIFY_FAILED",
+      status: error?.status || 0,
+      google_error: error?.googleError?.error || null,
+      google_error_description: error?.googleError?.error_description || null,
+      message: error?.message || "Google Drive接続検証に失敗しました。"
+    }, error?.status === 401 || error?.status === 403 ? 502 : 500);
+  }
+}
 async function handleGoogleDriveAuthorizeApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
@@ -2660,7 +2686,35 @@ async function renderGoogleDriveSetupPage(request, env, message = null, error = 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google Drive設定 | EagleEye</title><style>
 body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0 10px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:16px;padding:17px;border:1px solid #334155;border-radius:16px;background:#162238}.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #334155}.row:last-child{border:0}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:12px 15px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}.note{margin-top:14px;color:#94a3b8;font-size:12px;line-height:1.7}.message{margin-top:16px;padding:13px;border-radius:10px;background:#0f2a1c;color:#86efac}.error{margin-top:16px;padding:13px;border-radius:10px;background:#3a1418;color:#fca5a5}</style></head><body><main class="wrap"><a class="back" href="/admin">← ADMIN CONTROL</a><div class="eyebrow">GOOGLE DRIVE</div><h1 class="title">Google Drive連携</h1><p class="sub">EagleEye専用の個人GoogleアカウントをOAuthで接続します。WorkspaceやService Accountは使用しません。</p>
 ${message ? '<div class="message">'+esc(message)+'</div>' : ''}${error ? '<div class="error">'+esc(error)+'</div>' : ''}
-<div class="card"><div class="row"><span>OAuth設定</span><strong class="${authorizeReady ? "ok" : "bad"}">${authorizeReady ? "設定済み" : "未設定"}</strong></div><div class="row"><span>Refresh Token</span><strong class="${status.refreshConfigured ? "ok" : "bad"}">${status.refreshConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>DriveフォルダID</span><strong class="${status.folderConfigured ? "ok" : "bad"}">${status.folderConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>自動転送の接続状態</span><strong class="${status.ready ? "ok" : "muted"}">${status.ready ? "利用可能" : "未設定"}</strong></div></div>
+<div class="card"><div class="row"><span>OAuth設定</span><strong class="${authorizeReady ? "ok" : "bad"}">${authorizeReady ? "設定済み" : "未設定"}</strong></div><div class="row"><span>Refresh Token</span><strong class="${status.refreshConfigured ? "ok" : "bad"}">${status.refreshConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>DriveフォルダID</span><strong class="${status.folderConfigured ? "ok" : "bad"}">${status.folderConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>接続設定</span><strong class="${status.ready ? "ok" : "muted"}">${status.ready ? "設定済み" : "未設定"}</strong></div></div>
+<div class="card"><b>Google Drive接続検証</b><div class="note">Cloudflare SecretのRefresh TokenをGoogleへ交換し、Drive APIへ接続できるか確認します。Token自体は表示しません。</div><button id="verify-drive" class="btn" type="button" onclick="verifyDrive()">接続を検証</button><div id="verify-result" class="note"></div></div>
+<script>
+async function verifyDrive(){
+  const button=document.getElementById("verify-drive");
+  const result=document.getElementById("verify-result");
+  button.disabled=true;
+  button.textContent="検証中…";
+  result.textContent="";
+  try{
+    const response=await fetch("/api/admin/google-drive/verify",{credentials:"same-origin"});
+    const data=await response.json().catch(()=>({}));
+    if(data.ok){
+      result.className="message";
+      result.textContent="✓ "+(data.message||"Google Drive接続を確認しました。")+(data.sampleFolder?.name?" フォルダ例: "+data.sampleFolder.name:"");
+    }else{
+      result.className="error";
+      const detail=[data.google_error,data.google_error_description].filter(Boolean).join(": ");
+      result.textContent="✕ "+(data.message||data.error||"接続検証に失敗しました。")+(detail?" / "+detail:"");
+    }
+  }catch(error){
+    result.className="error";
+    result.textContent="✕ 接続検証リクエストに失敗しました。";
+  }finally{
+    button.disabled=false;
+    button.textContent="接続を検証";
+  }
+}
+</script>
 ${authorizeReady ? '<a class="btn" href="/api/admin/google-drive/authorize">Googleアカウントを接続 / 再認証</a>' : '<div class="note">先にGoogle CloudでOAuthクライアントを作成し、Client ID / Client Secret / Redirect URIをCloudflareへ設定してください。</div>'}
 <div class="card"><b>この画面の注意</b><div class="note">認証後に表示されるRefresh TokenはCloudflare Secretへ登録します。画面・URL・GitHubへ保存しないでください。Google公式でもRefresh Tokenは安全な長期保存先で管理するよう案内されています。</div></div>
 </main></body></html>`);
@@ -2737,6 +2791,7 @@ export default {
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/admin/google-drive/authorize") return await handleGoogleDriveAuthorizeApi(request, env);
+      if (url.pathname === "/api/admin/google-drive/verify") return await handleGoogleDriveVerifyApi(request, env);
       if (url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);
       if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
