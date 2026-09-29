@@ -1657,7 +1657,7 @@ async function renderMyPlayerPage(request, env) {
   }
 
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.warn{color:#fbbf24}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}.check{display:flex;align-items:center;gap:9px;margin:9px 0}.check-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#334155;font-size:12px;font-weight:900}.check-icon.ok{background:#14532d;color:#86efac}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントと、自分のKingShot領主IDを紐づけます。さらにMightPulse APIキーをPoolへ提供すると、Advanced昇格条件を満たせます。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input,.select{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.warn{color:#fbbf24}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}.account{margin-top:14px;padding:14px;border:1px solid #334155;border-radius:14px;background:#101b2d}.account-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.badge{padding:4px 8px;border-radius:999px;background:#334155;font-size:11px;font-weight:900}.badge.main{background:#78350f;color:#fde68a}.badge.sub{background:#1e3a8a;color:#bfdbfe}.check{display:flex;align-items:center;gap:9px;margin:9px 0}.check-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#334155;font-size:12px;font-weight:900}.check-icon.ok{background:#14532d;color:#86efac}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントに、自分のKingShot領主IDを複数紐づけできます。無料枠は1王国につきメイン1＋サブ1、最大2王国です。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -1666,59 +1666,62 @@ async function renderMyPlayerPage(request, env) {
       fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"}),
       fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
     ]);
-    const player=await playerRes.json().catch(()=>({}));
-    const advanced=await advancedRes.json().catch(()=>({}));
+    const player=await playerRes.json().catch(()=>({})); const advanced=await advancedRes.json().catch(()=>({}));
     if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
     if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
     return {player,advanced};
   }
-  async function load(){ render(await getData()); }
+  async function load(){render(await getData());}
   function render(d){
-    const link=d.player.link&&d.player.link.status==="ACTIVE"?d.player.link:null;
-    const p=d.player.player||{};
-    const a=d.advanced||{};
-    let html="";
-    if(!link){
-      html+='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">7〜12桁の数字を入力してください。</div><div id="msg"></div></div>';
-    }else{
-      html+='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.official_verified_at?"✓ EagleEye公式認証":(link.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
+    const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
+    const limits=d.player.limits||{};
+    let html='<div class="card"><h2 style="margin:0 0 6px">登録済みの領主</h2><p class="muted" style="margin:0">無料枠：最大2王国、各王国メイン1＋サブ1</p>';
+    if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
+    for(const l of rows){
+      const p=l.player||{};
+      html+='<div class="account"><div class="account-head"><strong>王国 '+esc(l.kingdom_id)+'</strong><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span></div>'+
+        '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
+        '<div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div>'+
+        '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
+        '<div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div>'+
+        '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
+        '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div>';
     }
-
-    const role=String(a.role||"BASIC").toUpperCase();
-    const promoted=role==="ADVANCED"||role==="ADMIN"||role==="OWNER";
+    html+='<div class="muted" style="margin-top:12px">現在 '+esc(limits.registeredKingdoms||0)+' / 2 王国、'+esc(limits.activeAccounts||0)+' アカウントを登録中</div></div>';
+    html+='<div class="card"><h2 style="margin:0 0 6px">KingShotアカウントを追加</h2><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype" style="margin-top:14px">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">同じ王国ではメイン1件＋サブ1件まで無料で登録できます。追加サブは将来の有料機能として提供予定です。</div><div id="msg"></div></div>';
+    const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","ADMIN","OWNER"].includes(role);
     html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
-      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを登録</span></div>'+
+      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーをPoolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+
-      (a.hasMightPulseKey?'<div class="muted" style="margin-top:12px">APIキーは暗号化してPoolへ保存されています。画面にはキー本体を表示しません。</div>':'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">提供したキーはMightPulse API Poolで利用できるようになり、提供者としてあなたのEagleEyeユーザーIDが記録されます。生キーは画面やログには表示しません。</div>')+
+      (a.hasMightPulseKey?'<div class="muted" style="margin-top:12px">APIキーは暗号化してPoolへ保存されています。画面にはキー本体を表示しません。</div>':'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">提供したキーはMightPulse API Poolで利用できるようになります。生キーは画面やログには表示しません。</div>')+
       '<div id="key-msg"></div></div>';
-
     app.innerHTML=html;
-    if(document.getElementById("save")) document.getElementById("save").onclick=save;
-    if(document.getElementById("change")) document.getElementById("change").onclick=()=>showForm(link.governor_id);
-    if(document.getElementById("remove")) document.getElementById("remove").onclick=remove;
+    document.getElementById("save").onclick=save;
+    document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
   }
-  function showForm(current){
-    app.innerHTML='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" maxlength="12" value="'+esc(current)+'"><button class="btn" id="save">保存する</button><button class="btn danger" id="cancel">キャンセル</button><div id="msg"></div></div>';
-    document.getElementById("save").onclick=save;
-    document.getElementById("cancel").onclick=load;
-  }
   async function save(){
-    const input=document.getElementById("gid"), msg=document.getElementById("msg"), button=document.getElementById("save");
+    const input=document.getElementById("gid"), type=document.getElementById("atype"), msg=document.getElementById("msg"), button=document.getElementById("save");
     button.disabled=true; msg.textContent="";
     try{
-      const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim()})});
+      const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim(),account_type:type.value})});
       const d=await r.json().catch(()=>({}));
       if(r.status===409 && d.error==="GOVERNOR_ID_ALREADY_LINKED"){
-        app.innerHTML='<div class="card"><h2 style="margin-top:0">この領主IDは既に登録されています</h2><p class="muted">'+esc(d.message)+'</p><p class="muted">あなたが正当な所有者である場合は、KingShotゲーム内で本人しか表示できない情報が分かるスクリーンショットを用意して、EagleEye専用サポートへ問い合わせてください。確認後、正しい所有者へ移管し、公式認証マークを付与します。</p>'+(d.support_url?'<a class="btn" href="'+esc(d.support_url)+'" target="_blank" rel="noopener">Discordサポートへ問い合わせる</a>':'<div class="muted">DiscordサポートURLは未設定です。</div>')+'<div class="muted" style="margin-top:12px">問い合わせ番号: '+esc(d.support_request_id)+'</div><button class="btn danger" id="back">戻る</button></div>';
-        document.getElementById("back").onclick=load;
-        return;
+        app.innerHTML='<div class="card"><h2 style="margin-top:0">この領主IDは既に登録されています</h2><p class="muted">'+esc(d.message)+'</p><p class="muted">正当な所有者である場合は、KingShotゲーム内で本人しか表示できない情報が分かるスクリーンショットを用意してEagleEye専用サポートへ問い合わせてください。</p>'+(d.support_url?'<a class="btn" href="'+esc(d.support_url)+'" target="_blank" rel="noopener">Discordサポートへ問い合わせる</a>':'<div class="muted">DiscordサポートURLは未設定です。</div>')+'<div class="muted" style="margin-top:12px">問い合わせ番号: '+esc(d.support_request_id)+'</div><button class="btn danger" id="back">戻る</button></div>';
+        document.getElementById("back").onclick=load; return;
       }
       if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
       await load();
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
     finally{button.disabled=false;}
+  }
+  async function remove(governorId){
+    if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
+    const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
+    await load();
   }
   async function registerKey(){
     const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
@@ -1731,17 +1734,9 @@ async function renderMyPlayerPage(request, env) {
       const d=await r.json().catch(()=>({}));
       if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
       msg.className="ok"; msg.textContent=d.promoted?"APIキーを登録しました。Advancedへ昇格しました。":"APIキーを登録しました。領主ID登録後にAdvanced昇格条件を満たします。";
-      input.value="";
-      setTimeout(load,500);
+      input.value=""; setTimeout(load,500);
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
     finally{button.disabled=false;}
-  }
-  async function remove(){
-    if(!confirm("KingShot IDの登録を解除しますか？")) return;
-    const r=await fetch("/api/me/player",{method:"DELETE",credentials:"same-origin"});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
-    await load();
   }
   load().catch(e=>{app.innerHTML='<div class="card error">'+esc(e.message||String(e))+'</div>';});
 }());
