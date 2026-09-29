@@ -655,3 +655,33 @@ Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `s
 - `9daee207726a57352e95e01ea37be4ceaf89f9ee` — Drive duplicate key normalization
 
 注意: GitHub mainへのコード反映と構文確認はできているが、Cloudflare本番deploy、Google Cloud OAuth client設定、OAuth認証、Refresh Token設定、R2→Drive実データuploadは未確認。
+
+
+## 追記：開発・デプロイ運用ルール（2026-09-30）
+
+### GitHub → Cloudflare 自動デプロイ
+- EagleEye本体は **GitHub main へのコミットを起点にCloudflareへ自動デプロイ**される運用。
+- 手動でCloudflareへデプロイする前提ではない。
+- したがって、コード変更をmainへコミットした後は、Cloudflare側の自動デプロイ完了を待って本番確認する。
+
+### 本番確認の表現ルール
+- **コミット済み／コード上で修正済み** と **本番デプロイ成功／本番動作確認済み** を必ず区別する。
+- ユーザーからCloudflare自動デプロイ成功のログ・画面が提示されるまでは、本番デプロイ成功とは断定しない。
+- 本番環境で実際に確認していない機能について「確認済み」「動作確認済み」と表現しない。
+- 次スレッドでもこのルールを前提として扱い、ユーザーに毎回再説明を求めない。
+
+### 現在の直近修正
+- /my-player が [object Response] と表示される問題を調査。
+- 原因は /my-player ルート側ですでに eagleEyeHtmlResponse() を適用しているのに、renderMyPlayerPage() 側でも eagleEyeHtmlResponse() を返していた二重Response化。
+- これを修正し、renderMyPlayerPage() はHTML文字列を返す構造に変更。
+- その修正時に未ログイン分岐のテンプレートリテラル終端を誤って残したため、Cloudflare自動デプロイで Expected ";" but found ")" が発生。
+- 未ログイン分岐の return `...`); を return `...`; に修正済み。
+- 修正コミット：797286e301a07c0efe695943b87e0e99108964a8
+- このコミット後の **本番デプロイ成功・/my-player正常表示は未確認**。
+
+### API Pool Advanced用インデックス
+- migrations/0006_api_pool.sql を確認し、api_pool_keys に contributed_by_user_id を軸にした既存インデックスがないことを確認。
+- Advanced昇格判定の USER_CONTRIBUTED MightPulse APIキー検索を効率化するため、migrations/0025_api_pool_user_contributed_index.sql を追加。
+- インデックス：provider, pool_type, contributed_by_user_id, contributed_at DESC
+- コミット：53c4a7b70582264072f429a916671c8b9642785d
+- 本番D1へのmigration適用・本番での効果確認は未実施。
