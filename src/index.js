@@ -1621,7 +1621,7 @@ async function handleMyPlayerApi(request, env) {
 async function renderMyPlayerPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title></head><body style="background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`);
+    return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title></head><body style="background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`);
   }
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
@@ -1713,7 +1713,7 @@ async function renderMyPlayerPage(request, env) {
   }
   load().catch(e=>{app.innerHTML='<div class="card error">'+esc(e.message||String(e))+'</div>';});
 }());
-</script></body></html>`);
+</script></body></html>`;
 }
 
 async function handlePlayerWatchlistApi(request, env) {
