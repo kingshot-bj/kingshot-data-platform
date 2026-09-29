@@ -359,3 +359,200 @@ summarizeD1QueryInsights() は各queryを以下に変換する:
 ### 17-12. このスレッドでの重要な訂正
 一度、「status JSONにSQL単位情報がないのでパッチが必要」という方向で回答しかけたが、mainの `src/cloudflare-analytics.js` を確認した結果、それは誤りだった。
 正しくは、SQL単位の `queryInsights.queries` は既に実装・返却されている。次スレッドでは新規パッチを作る前に、**既存のstatus JSONを最後まで読み切ってから判断する**こと。
+
+
+---
+
+## 18. 2026-09-29 SERVICE_USAGE実装・EagleEye Management分離・次工程
+
+### 18-1. SERVICE_USAGE実装
+SERVICE_USAGEはD1に保存せず、EagleEye本体からCloudflare Queueへ送信する。
+
+実装:
+- `src/service-usage.js`
+- 15イベント定義
+- event_id = `crypto.randomUUID()`
+- occurred_at = UTC ISO8601
+- actor_user_id = `users.user_id` のみ
+- target_type = PLAYER / KINGDOM
+- target_id = PLAYERならgovernor_id、KINGDOMならkid
+- metadataはイベントごとのallow-list
+- PLAYER_SEARCHではraw search queryを保存しない
+- Queue送信失敗はユーザー操作を失敗させない
+
+15イベント:
+1. PLAYER_SEARCH
+2. PLAYER_VIEW
+3. PLAYER_REFRESH
+4. PLAYER_HISTORY_VIEW
+5. PLAYER_CHANGES_VIEW
+6. PLAYER_WATCHLIST_VIEW
+7. PLAYER_WATCHLIST_ADD
+8. PLAYER_WATCHLIST_REMOVE
+9. KINGDOM_WATCHLIST_VIEW
+10. KINGDOM_WATCHLIST_ADD
+11. KINGDOM_WATCHLIST_REMOVE
+12. KINGDOM_WATCHLIST_REFRESH
+13. KINGDOM_RANKING_VIEW
+14. PLAYER_EXPORT
+15. KINGDOM_EXPORT
+
+主要commit:
+- 336d4fbdb8fef882d7aeaed370ee2a5f27747812 — event schema / queue producer
+- ba79d6ea4c5e80a8f3209f6dbf519bf1dfe32954 — player events
+- bfd2f2d084ed046bdf319750fd5966ea76463df4 — kingdom watchlist events
+- d211e5746955aa26c61c268b2b1fdcce4483ae27 — kingdom target_id correction
+- 42df8fe48b26cb3658a3419dc20d28f8c6ca415e — view/export tracking
+
+### 18-2. Queue / R2 SERVICE_USAGE archive
+Queue:
+- `eagleeye-service-usage`
+- DLQ: `eagleeye-service-usage-dlq`
+- max_batch_size 100
+- max_batch_timeout 30s
+- max_retries 5
+- max_concurrency 1
+
+R2実装:
+- `src/service-usage-archive.js`
+- gzip NDJSON
+- JST基準のcanonical key:
+  - `service-events/YYYY/MM/DD/00-12.ndjson.gz`
+  - `service-events/YYYY/MM/DD/12-24.ndjson.gz`
+- event_idで重複排除
+- Consumer writeはserialize済み
+
+主要commit:
+- 0a48b27beaed84802426d18e17968dd1c1b25d2f
+- 6d778344a3cee09602cd93a4e094099c2b663333
+- 2b94a4758595d19907d6f1515b93b8c55cfb0c7a
+- ef5bf3ded7f28569a8913715e69860e815becf33
+
+本番deployについて:
+- Queue作成・Producer bindingはユーザー提供deploy logで確認済み。
+- 後続Consumerを含むdeploy成功も確認済み。
+- ただし **Queue → Consumer → R2の実データ処理が本番で成功したとはまだ扱わない。**
+
+### 18-3. SERVICE_USAGE設計上の正式ルール
+- SERVICE_USAGE本文をD1へ保存しない。
+- event_id + batch_idの二重idempotency。
+- event_idはQueue→Consumer→R2→Driveで同一値を維持。
+- 通常R2 archiveは12h単位。
+- Google Driveは長期・最終archive。
+- R2削除はDrive upload成功だけでは許可しない。verification後に判断。
+- DLQは5 retries後。
+- DLQ自動retryは6hごと、最大500 events。
+- 手動retryは個別または最大500件。「全件再処理」は作らない。
+- 6h自動retryでも失敗した場合はDrive emergency archiveを開始する設計。
+- DiscordはDLQ発生時即時通知、未解決時の再通知、recovery通知を行う設計。
+
+### 18-4. EagleEye Managementは別Project / 別repo
+SERVICE_USAGEの管制・分析を行う **EagleEye Management** はEagleEye本体とは分離する。
+
+本体:
+- repo: `kingshot-bj/kingshot-data-platform`
+- SERVICE_USAGE生成
+- Queue producer
+- EagleEye本体機能
+- MightPulse取得
+- Watchlist処理
+- 実際のGoogle Drive / Discord連携処理
+
+Management:
+- 新規repo予定: `kingshot-bj/eagleeye-management`
+- Dashboard
+- Usage Analytics
+- Queue / R2 / DLQ monitoring
+- Recovery control
+- Drive archive state monitoring
+- Collection Catalog
+- Management permissions
+- Audit
+
+重要:
+**ManagementはEagleEye本体を直接編集しない。**
+ただし本体の最新main branchは積極的に読む。連携仕様は古い資料ではなくmainの実装を正本として確認する。
+
+関連docs:
+- `docs/EAGLEEYE_MANAGEMENT_HANDOFF_2026-09-29.md`
+- `docs/EAGLEEYE_MANAGEMENT_INTEGRATION_REQUEST_2026-09-29.md`
+
+### 18-5. Google Drive連携 — 次の本体側作業
+ここからの本丸は **EagleEye本体のR2 → Google Drive連携**。
+
+既存:
+- `src/google-drive.js`
+- `uploadR2ObjectToGoogleDrive(env, { archiveBucket, key, fileName, mimeType, folderId })`
+
+環境変数:
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `GOOGLE_DRIVE_FOLDER_ID`
+
+既存準備doc:
+- `docs/EAGLEEYE_R2_GOOGLE_DRIVE_PREP.md`
+
+現在は:
+- `src/index.js` 未接続
+- cron未接続
+- retention未接続
+- R2自動削除なし
+- D1追加保存なし
+- 正本はR2
+
+次スレッドでは、まずmainの実コードを読み直してから実装する:
+1. `src/google-drive.js`
+2. `src/service-usage-archive.js`
+3. `wrangler.jsonc`
+4. 関連migration
+5. SERVICE_USAGE関連コード
+6. Google Drive関連docs
+
+目標:
+```
+SERVICE_USAGE
+  ↓
+Queue
+  ↓
+R2 canonical gzip NDJSON
+  ↓
+Google Drive
+  ↓
+verification
+  ├─ size
+  ├─ checksum
+  ├─ record count
+  ├─ batch_id
+  └─ duplicate prevention
+  ↓
+archive confirmed
+```
+
+重要:
+- Drive upload成功とverification済みを分離する。
+- verification失敗時はR2を保持。
+- **本番確認前にR2削除を実装しない。**
+- 1 event = 1 Drive fileは禁止。
+- gzip NDJSON batchを使用。
+- 大容量uploadが必要ならresumable uploadを検討。
+- D1へSERVICE_USAGE本文を保存しない。
+- D1 Free-tier row readを最優先。
+
+### 18-6. 本番確認ルール
+引き続き絶対条件:
+**「本番環境で確認できていないことは、確認済みとは言わない。」**
+
+特に未確認として扱う:
+- Queue → Consumer → R2実データ処理
+- R2 → Google Drive実アップロード
+- Drive verification
+- DLQ recovery
+- Discord notification
+- Management integration API
+
+deploy成功・build成功・コード存在だけではproduction-confirmedとしない。
+
+### 18-7. 次スレッド開始時の指示
+**「前スレの引き継ぎを読んだ。Google Drive連携を開始。まずmainの既存実装を全部確認してから進めて。」**
+
+なお、この引き継ぎはEagleEye本体側の継続資料であり、Management専用の引き継ぎではない。
