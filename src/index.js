@@ -1250,7 +1250,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
     .map(row => String(row.governor_id || "").trim())
     .filter(Boolean))];
   const playerGovernorCandidates = [...new Set(
-    topGovernorIds.flatMap(id => /^\\d+$/.test(id) ? [id, id + ".0"] : [id])
+    topGovernorIds.flatMap(id => /^\d+$/.test(id) ? [id, id + ".0"] : [id])
   )];
 
   let players = { results: [] };
