@@ -33,6 +33,7 @@ import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
+import { getUserPlayerLink, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId } from "./user-player-link.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -1392,6 +1393,131 @@ async function ensurePlayerWatchlistSchema(db) {
     playerWatchlistSchemaPromise = null;
     throw error;
   }
+}
+
+async function handleMyPlayerApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  const url = new URL(request.url);
+
+  try {
+    if (request.method === "GET") {
+      const link = await getUserPlayerLink(env.DB, auth.user_id);
+      let player = null;
+      if (link?.status === "ACTIVE") {
+        player = await env.DB.prepare(`
+          SELECT governor_id, nick_name, kid, power, town_center_level, vip,
+                 alliance_abbr, alliance_name, observed_at
+          FROM players
+          WHERE governor_id = ?
+          LIMIT 1
+        `).bind(link.governor_id).first();
+      }
+      return json({
+        ok: true,
+        link: link ? { ...link, verified: link.verification_method !== "SELF_CLAIM" } : null,
+        player: player || null
+      });
+    }
+
+    if (request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const governorId = validateGovernorId(body?.governor_id);
+      if (!governorId) return json({ ok: false, error: "INVALID_GOVERNOR_ID", message: "領主IDは7〜12桁の数字で入力してください。" }, 400);
+
+      const before = await getUserPlayerLink(env.DB, auth.user_id);
+      const link = await saveUserPlayerLink(env.DB, auth.user_id, governorId);
+      await trackServiceUsage(env, auth, before?.governor_id === governorId ? "KINGSHOT_ID_REGISTER" : "KINGSHOT_ID_CHANGE", {
+        targetType: "PLAYER",
+        targetId: governorId
+      });
+
+      const player = await env.DB.prepare(`
+        SELECT governor_id, nick_name, kid, power, town_center_level, vip,
+               alliance_abbr, alliance_name, observed_at
+        FROM players
+        WHERE governor_id = ?
+        LIMIT 1
+      `).bind(governorId).first();
+
+      return json({ ok: true, link, player: player || null }, 200);
+    }
+
+    if (request.method === "DELETE") {
+      const link = await getUserPlayerLink(env.DB, auth.user_id);
+      if (!link) return json({ ok: true, link: null });
+      const result = await disableUserPlayerLink(env.DB, auth.user_id);
+      await trackServiceUsage(env, auth, "KINGSHOT_ID_REMOVE", {
+        targetType: "PLAYER",
+        targetId: link.governor_id
+      });
+      return json({ ok: true, link: result.link });
+    }
+
+    return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  } catch (error) {
+    console.error("my_player_api_failed", error?.message || error);
+    return json({ ok: false, error: error?.code || "MY_PLAYER_API_FAILED", message: error?.message || "KingShot IDの処理に失敗しました。" }, 500);
+  }
+}
+
+async function renderMyPlayerPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title></head><body style="background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`);
+  }
+
+  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントと、自分のKingShot領主IDを紐づけます。現在は自己申告登録です。KingShot側の所有確認は行っていません。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
+(function(){
+  const app=document.getElementById("app");
+  function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+  async function load(){
+    const r=await fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+    render(d);
+  }
+  function render(d){
+    const link=d.link&&d.link.status==="ACTIVE"?d.link:null;
+    if(!link){
+      app.innerHTML='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">7〜12桁の数字を入力してください。登録後に王国・プレイヤー名などをEagleEyeの保存データから表示します。</div><div id="msg"></div></div>';
+      document.getElementById("save").onclick=save;
+      return;
+    }
+    const p=d.player||{};
+    app.innerHTML='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.verified?"認証済み":"自己申告・未認証")+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
+    document.getElementById("change").onclick=()=>showForm(link.governor_id);
+    document.getElementById("remove").onclick=remove;
+  }
+  function showForm(current){
+    app.innerHTML='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" maxlength="12" value="'+esc(current)+'"><button class="btn" id="save">保存する</button><button class="btn danger" id="cancel">キャンセル</button><div id="msg"></div></div>';
+    document.getElementById("save").onclick=save;
+    document.getElementById("cancel").onclick=load;
+  }
+  async function save(){
+    const input=document.getElementById("gid"), msg=document.getElementById("msg"), button=document.getElementById("save");
+    button.disabled=true; msg.textContent="";
+    try{
+      const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim()})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      await load();
+    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
+    finally{button.disabled=false;}
+  }
+  async function remove(){
+    if(!confirm("KingShot IDの登録を解除しますか？")) return;
+    const r=await fetch("/api/me/player",{method:"DELETE",credentials:"same-origin"});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
+    await load();
+  }
+  load().catch(e=>{app.innerHTML='<div class="card error">'+esc(e.message||String(e))+'</div>';});
+}());
+</script></body></html>`);
 }
 
 async function handlePlayerWatchlistApi(request, env) {
@@ -2837,11 +2963,13 @@ export default {
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
+      if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
+      if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
@@ -6528,7 +6656,7 @@ async function renderHome(request, env) {
         </div>
         <a class="logout" href="/api/auth/logout">ログアウト</a>
       </section>
-      <nav class="nav"><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
+      <nav class="nav"><a href="/my-player">マイKingShot</a><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
     : `
       <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
 
