@@ -1011,7 +1011,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var completionText=active?(w.last_success_at?lastSuccessText+"（現在更新中）":"更新中…"):lastSuccessText;
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>🕐 最終チェック: "+esc(completionText)+"</p><p class='ok'>✓ 最新チェック済み</p>"+jobProgressHtml(w)+errorHtml;
         var row=document.createElement("div"); row.className="row";
-        var refresh=document.createElement("button"); refresh.textContent=active?"更新中…":"今すぐ更新"; refresh.disabled=active; refresh.onclick=function(){refreshWatch(w.watchlist_id);};
+        var refresh=document.createElement("button"); refresh.textContent=active?"更新を中断":"今すぐ更新"; refresh.disabled=false; refresh.onclick=function(){active?cancelWatch(w.watchlist_id):refreshWatch(w.watchlist_id);}; if(active)refresh.className="danger";
         var view=document.createElement("button"); view.textContent="ランキングを見る"; view.disabled=active; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.disabled=active; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.disabled=active; del.onclick=function(){deleteWatch(w.watchlist_id);};
@@ -1090,6 +1090,23 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     setWatchCardBusy(id,true);
     el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
     return continueWatch(id);
+  }
+  function cancelWatch(id){
+    if(!confirm("現在実行中の更新を中断しますか？"))return;
+    return api("/api/kingdom-watchlist?action=cancel",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
+      .then(function(d){
+        try{
+          sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
+          sessionStorage.removeItem("eagleeye_watchlist_started_at_"+id);
+        }catch(e){}
+        running[id]=false;
+        el("msg").innerHTML="<span class='ok'>更新を中断しました。現在処理中の1回分が完了後、次の更新には進みません。</span>";
+        return load();
+      })
+      .catch(function(e){
+        el("msg").innerHTML="<span class='error'>更新の中断に失敗: "+esc(e.message)+"</span>";
+        return load();
+      });
   }
   function toggleWatch(id,enabled){
     return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
@@ -1918,7 +1935,20 @@ async function handleKingdomWatchlistApi(request, env) {
       let active = await env.DB.prepare(
         "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS') WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
       ).bind(watchlistId, auth.discord_id).first();
-      if (!active) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+      if (!active) {
+        const latestJob = await env.DB.prepare(
+          "SELECT status, last_error FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
+        ).bind(watchlistId).first();
+        if (latestJob?.status === "FAILED" && String(latestJob.last_error || "").startsWith("USER_CANCELLED:")) {
+          return json({
+            ok: true,
+            watchlist_id: watchlistId,
+            status: "CANCELLED",
+            result: { completed: false, cancelled: true, phase: "CANCELLED" }
+          });
+        }
+        return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+      }
       const watch = { watchlist_id: active.watchlist_id, kid: active.kid, top_n: active.top_n };
 
       const lockToken = await acquireKingdomWatchlistLock(env, watchlistId);
@@ -2003,6 +2033,35 @@ async function handleKingdomWatchlistApi(request, env) {
       console.error("kingdom_watchlist_refresh_internal_error", message);
       return json({ ok: false, error: "WATCHLIST_REFRESH_INTERNAL", message }, 500);
     }
+  }
+
+  if (request.method === "POST" && action === "cancel") {
+    const body = await request.json().catch(() => ({}));
+    const watchlistId = String(body.watchlist_id || "").trim();
+    if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
+
+    const now = Math.floor(Date.now() / 1000);
+    const cancelMessage = "USER_CANCELLED: ユーザーが更新を中断しました。";
+    const target = await env.DB.prepare(
+      "SELECT watchlist_id FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+    ).bind(watchlistId, auth.discord_id).first();
+    if (!target) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS')"
+      ).bind(cancelMessage, now, watchlistId),
+      env.DB.prepare(
+        "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
+      ).bind(now, cancelMessage, now, watchlistId, auth.discord_id)
+    ]);
+
+    return json({
+      ok: true,
+      watchlist_id: watchlistId,
+      cancelled: true,
+      message: "現在実行中の更新を中断しました。現在処理中の1回分が完了後、次のステップには進みません。"
+    });
   }
 
   if (request.method === "POST" && action === "toggle") {
