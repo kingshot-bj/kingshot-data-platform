@@ -8,7 +8,8 @@ const RETENTION_TABLES = Object.freeze([
   { key: "change_events_days", table: "change_events", column: "detected_at", keepLatestPerTarget: false },
   { key: "api_pool_usage_days", table: "api_pool_usage", column: "used_at", keepLatestPerTarget: false },
   { key: "login_history_days", table: "login_history", column: "logged_in_at", keepLatestPerTarget: false },
-  { key: "owner_audit_log_days", table: "owner_audit_log", column: "created_at", keepLatestPerTarget: false }
+  { key: "owner_audit_log_days", table: "owner_audit_log", column: "created_at", keepLatestPerTarget: false },
+  { key: "player_identity_history_days", table: "player_identity_history", column: "first_seen_at", keepLatestPerTarget: false }
 ]);
 
 export async function getRetentionSettings(db) {
@@ -74,7 +75,9 @@ export async function runRetentionCleanup(db, { batchSize = 1000, archiveBucket 
       "player_rank_snapshots",
       "change_events",
       "login_history",
-      "owner_audit_log"
+      "owner_audit_log",
+      "api_pool_usage",
+      "player_identity_history"
     ].includes(item.table);
 
     let selectSql;
