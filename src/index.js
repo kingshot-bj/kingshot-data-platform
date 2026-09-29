@@ -2713,6 +2713,27 @@ function collectMightPulseTimestampFields(value, path = "", depth = 0, output = 
   return output;
 }
 
+function getMightPulseProbePlayerActivity(payload) {
+  const player = payload?.player;
+  if (!player || typeof player !== "object") return null;
+  const result = {};
+  for (const key of ["last_active_at", "last_login", "online"]) {
+    if (!Object.prototype.hasOwnProperty.call(player, key)) {
+      result[key] = { present: false, raw: null, unix: null, iso: null };
+      continue;
+    }
+    const raw = player[key];
+    const unix = key === "online" ? null : normalizeMightPulseTimestamp(raw);
+    result[key] = {
+      present: true,
+      raw,
+      unix,
+      iso: unix !== null ? new Date(unix * 1000).toISOString() : null
+    };
+  }
+  return result;
+}
+
 function mightPulseProbeHeaders(headers) {
   const names = [
     "date", "age", "etag", "last-modified", "cache-control", "expires",
@@ -2823,6 +2844,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
 
     const cachedAt = normalizeMightPulseTimestamp(payload?.cached_at);
     const timestampFields = collectMightPulseTimestampFields(payload);
+    const playerActivity = getMightPulseProbePlayerActivity(payload);
     const headers = mightPulseProbeHeaders(result.headers);
 
     await recordApiPoolSuccess(env.DB, {
@@ -2859,6 +2881,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
         cached_at_unix: cachedAt,
         cached_at_iso: cachedAt ? new Date(cachedAt * 1000).toISOString() : null,
         age_seconds: payload?.age_seconds ?? null,
+        player_activity: playerActivity,
         headers,
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
         timestamp_like_fields: timestampFields,
@@ -2976,6 +2999,7 @@ async function renderMightPulseProbePage(request, env) {
   if(!items.length) items.push("明確な判定材料はありません。複数回の同条件Probeを継続してください。");
   return {title:"前回Probeとの比較",tone:"ok",items:items};
 }
+function renderPlayerActivity(a){if(!a)return '<span class="small">Player payloadなし</span>';function one(label,v){if(!v||!v.present)return '<div><b>'+label+'</b>: <span class="small">未提供</span></div>';return '<div><b>'+label+'</b>: '+esc(v.raw)+'<br><span class="small">'+esc(v.iso||'-')+'</span></div>';}return one('last_active_at',a.last_active_at)+one('last_login',a.last_login)+one('online',a.online);}
 function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.section_sha256||{};
   var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id)&&String(x.hash||"")!==String(p.response_sha256||"");})||rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);});
   var comparison=compareProbe(p,previous);var th=t.length?t.map(function(x){return '<div class=\"pill\"><b>'+esc(x.path)+'</b> = '+esc(x.raw)+'<br><span class=\"small\">'+esc(x.iso)+'</span></div>';}).join(''):'<span class=\"small\">候補なし</span>';var sh=Object.keys(s).length?Object.keys(s).map(function(k){return '<div class=\"pill\">'+esc(k)+': '+esc(String(s[k]).slice(0,20))+'…</div>';}).join(''):'<span class=\"small\">なし</span>';document.getElementById('latest').innerHTML='<div class=\"card\"><h2>最新Probe</h2><div class=\"kv\">'+
@@ -2988,6 +3012,7 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>fresh</b><span>'+esc(p.fresh==null?'-':p.fresh)+'</span>'+
   '<b>cached_at</b><span>'+esc(p.cached_at||'-')+' / '+esc(p.cached_at_iso||'-')+'</span>'+
   '<b>age_seconds</b><span>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</span>'+
+  '<b>Player activity</b><span>'+renderPlayerActivity(p.player_activity)+'</span>'+
   '<b>Payload keys</b><span class=\"mono\">'+esc((p.payload_keys||[]).join(', '))+'</span>'+
   '<b>HTTP headers</b><span class=\"mono\">'+esc(JSON.stringify(h,null,2))+'</span>'+
   '<b>Timestamp-like fields</b><span>'+th+'</span>'+
