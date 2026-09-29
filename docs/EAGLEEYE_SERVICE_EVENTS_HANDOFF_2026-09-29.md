@@ -1,98 +1,109 @@
-# EagleEye service_events 引き継ぎ — 2026-09-29
+# EagleEye SERVICE_USAGE 設計・引き継ぎ統合仕様 — 2026-09-29
 
 ## 目的
-EagleEyeの主要なユーザー操作を `SERVICE_USAGE` として収集し、D1を使わず、Cloudflare Queue → R2へバッチ保存する。
-将来的にR2からGoogle Driveへ長期アーカイブし、SERVICE_USAGE専用管理サイトで利用状況・保存状況を確認できるようにする。
 
-ユーザー希望:
-- 設計は1論点ずつ質問→回答→確定事項として固定。
-- 勝手に先回りして未確定事項を確定しない。
+EagleEyeの主要なユーザー操作を `SERVICE_USAGE` として収集し、D1を使わず Cloudflare Queue → R2 へバッチ保存する。
+R2は短期・中間・保険層、Google Driveは最終的な長期保管庫とする。
+SERVICE_USAGE専用の独立管理サイトから利用状況・保存基盤・障害復旧を管理できるようにする。
+
+### ユーザー運用ルール
+- 設計は原則1論点ずつ質問→回答→確定。
+- 未確定事項を勝手に確定しない。
 - 本番環境で確認できていないことを「確認済み」と言わない。
+- Free-tier-firstを基本方針とする。Paid $5は必要になった場合のフォールバックであり、現時点で有料前提とはしない。
 
-## 絶対条件
-- service_eventsはD1に書かない。
-- service_eventsはR2へ保存するイベントストリーム。
-- D1 Free-tierの行読み書きを増やさない。
-- 1イベント=1 R2 objectは避ける。
-- 単なるHTTPアクセス、内部API処理、MightPulse取得、D1処理、cron等は初期のSERVICE_USAGE対象にしない。
-- 明確な主要ユーザー操作だけを記録する。
-- 必要になったイベントは後から追加できる構成にする。
-- Google Driveへの長期退避はservice_eventsの一次保存とは分離し、後段処理として実装する。
+---
 
-## 確定アーキテクチャ
+# Q1〜Q6｜初期設計の確定事項
 
-### イベント保存経路
+## Q1｜保存経路
+
+確定:
+```
 ユーザーの明確な操作
-→ SERVICE_USAGEイベント生成
-→ Cloudflare Queue
-→ Consumerでバッチ化
-→ gzip NDJSON
-→ R2
+  ↓
+SERVICE_USAGE event
+  ↓
+Cloudflare Queue
+  ↓
+Consumerでバッチ化
+  ↓
+gzip NDJSON
+  ↓
+R2
+```
 
-R2は中間/保険層として使い、Google Driveは長期アーカイブ用途。
+理由:
+- 小さいユーザー操作を個別Queue messageとして受けられる。
+- 1イベント=1 R2 objectを避ける。
+- Queueのretryを利用できる。
+- 後段でGoogle Driveへ長期アーカイブしやすい。
 
-### SERVICE_USAGE専用管理サイト
-EagleEye本体の既存管理画面とは分離した、SERVICE_USAGE専用の管理サイトを用意する。
+## Q2｜初期の記録範囲
 
-主な役割:
-- 利用状況の集計・分析
-- 日別/期間別の利用状況
-- feature / operation別集計
-- ユーザー別利用状況
-- 人気プレイヤー・人気王国の集計
+記録する:
+- ユーザーが明確に実行した主要操作。
+
+初期対象外:
+- 単なるHTTPアクセス
+- 内部API処理
+- MightPulse取得
+- D1処理
+- cron
+- システム内部の細かい処理
+- 画面遷移を網羅する行動追跡
+
+必要になったユーザー操作だけ後から追加できる構成にする。
+
+## Q3｜service_eventsの目的
+
+採用する目的:
+- EagleEye全体の利用状況
+- 機能ごとの利用量
+- ユーザーごとの利用頻度
+- 人気プレイヤー
+- 人気王国
 - ウォッチリスト利用状況
 - Export等の利用状況
-- R2/Queueの保存状況
-- Queue滞留状況
-- エラー/リトライ/DLQ状況
-- 任意タイミングの手動Flush
-- 任意タイミングの手動アーカイブ
 
-SERVICE_USAGE管理サイト上で利用状況の集計表示と保存基盤の運用状態確認を行う。
+完全な行動経路追跡は初期実装では行わない。
 
-## service_eventsと既存ログの責務
-- SERVICE_USAGE → R2 service_events
-- LOGIN → D1 login_history
-- OWNER操作 → D1 owner_audit_log
-- DIAGNOSTIC → D1 diagnostic_events
-- API使用 → D1 api_pool_usage
+## Q4｜target
 
-service_eventsへ全HTTPアクセスや内部処理を入れない。
+基本フィールドとして `target_type` / `target_id` を持つ。
 
-## SERVICE_USAGE基本形
+- 対象あり: target_type / target_idを設定
+- 対象なし: NULL
+- PLAYER: target_id = governor_id
+- KINGDOM: target_id = kid
 
-```
-SERVICE_USAGE
-├─ event_id
-├─ occurred_at
-├─ actor_user_id
-├─ feature
-├─ operation
-├─ target_type
-├─ target_id
-└─ metadata
-```
+## Q5｜actor
 
-### actor
-- `actor_user_id` のみ保存。
-- Discord ID、username、global_name等はservice_eventsへ保存しない。
-- 必要ならD1 usersと後から照合する。
+`actor_user_id` のみ保存。
 
-### target
-- `target_type` / `target_id` を基本フィールドとして持つ。
-- 対象がないイベントではNULL。
-- 例: PLAYER_VIEW → target_type=PLAYER, target_id=governor_id
-- 例: KINGDOM_VIEW → target_type=KINGDOM, target_id=2102
+service_eventsには以下を保存しない:
+- Discord ID
+- username
+- global_name
+- その他不要なユーザー識別情報
 
-### metadata
-- JSON metadataを持つ。
-- ただし自由形式ではなく、イベントごとに許可項目を実装側で定義する。
-- 例: PLAYER_SEARCH → search_type
-- 例: PLAYER_EXPORT → format
-- 具体的な全metadata一覧は実装時に確定する。
+必要な場合はD1 users等と後から照合する。
 
-## 初期イベント種類（第7問・確定）
-main branchの実コードを棚卸しし、現在ユーザーが明確に行える主要操作を基準に以下を初期イベントとして採用する。
+## Q6｜metadata
+
+JSON metadataを持つ。
+
+ただし自由形式ではなく、**イベントごとに許可項目を実装側で定義する固定スキーマ方式**とする。
+
+例:
+- PLAYER_SEARCH → search_type
+- PLAYER_EXPORT → format
+
+---
+
+# Q7｜初期イベント種類
+
+main branchの実コードを棚卸しし、現在ユーザーが明確に行える主要操作として以下15種類を初期採用。
 
 1. PLAYER_SEARCH
 2. PLAYER_VIEW
@@ -110,38 +121,60 @@ main branchの実コードを棚卸しし、現在ユーザーが明確に行え
 14. PLAYER_EXPORT
 15. KINGDOM_EXPORT
 
-除外/整理:
-- PLAYER_RANK_HISTORY_VIEW: 現在APIは存在するが、ユーザー向けUI上の明確な操作として確認できないため初期イベントには含めない。
-- KINGDOM_RANK_HISTORY_VIEW: 同様に初期イベントには含めない。
-- GOOGLE_SHEETS_EXPORT: 独立イベントにはせず、PLAYER_EXPORT / KINGDOM_EXPORTのmetadata（例: format）で表現する。
-- RANKING_VIEWという曖昧な共通イベント名は使わず、KINGDOM_RANKING_VIEWに具体化する。
+除外:
+- PLAYER_RANK_HISTORY_VIEW: APIは存在するが、現時点で明確なユーザー向けUI操作として扱わない。
+- KINGDOM_RANK_HISTORY_VIEW: 同様。
+- GOOGLE_SHEETS_EXPORT: 独立イベントにせず PLAYER_EXPORT / KINGDOM_EXPORT の metadata.format で表現。
+- RANKING_VIEWという曖昧な共通イベント名は使わない。
 
-## 第8問：event_id / 重複排除（確定）
-- event_idはUUID v4。
-- 生成はユーザー操作をSERVICE_USAGEイベント化する時点で`crypto.randomUUID()`を1回だけ呼ぶ。
-- Queue投入後も同じevent_idを保持する。
-- Consumerのリトライ時にevent_idを再生成しない。
-- R2/後段処理でも同じevent_idを追跡キーとして使用する。
-- 既存コードのchange_eventsでもcrypto.randomUUID()を使用しているため、既存実装思想とも整合する。
+---
 
-## 第9問：Queue/R2バッチ条件（確定）
-### 通常保存
-- 12時間ごとにR2へバッチ保存。
-- 前半: 00:00〜11:59
-- 後半: 12:00〜23:59
-- gzip NDJSON。
-- Queueはイベント単位で受け付け、Consumer側でバッチ化する。
+# Q8｜event_id / 重複排除
 
-### 手動Flush
-SERVICE_USAGE専用管理サイトから任意タイミングでFlushできる。
+- UUID v4。
+- `crypto.randomUUID()` をユーザー操作をイベント化する時点で1回だけ生成。
+- Queue → Consumer → R2 → Driveまで同じevent_idを保持。
+- retryで再生成しない。
+- event_idをイベント単位の冪等性・重複排除キーとして利用する。
+
+---
+
+# Q9｜Queue / R2通常バッチ
+
+## 通常Flush
+
+12時間ごと:
+- 00:00〜11:59
+- 12:00〜23:59
+
+**12時間境界はJST**。
+
+eventの `occurred_at` 自体はUTCで保存する。
+
+形式:
+- gzip NDJSON
+- Queueはイベント単位
+- Consumerでバッチ化
+
+## 手動Flush
+
+SERVICE_USAGE専用管理サイトから任意タイミングで実行可能。
+
 - 通常の12時間スケジュールは変更しない。
-- Flushは未保存イベントを対象に即時保存する。
-- 同一イベントの二重保存を避けるためevent_idベースの冪等性を確保する。
-- R2側では12時間単位の正規ファイルとして整理できるようにする。
+- 未保存イベントを即時Flush。
+- event_idで冪等性を確保。
+- 手動Flushごとに無制限な小ファイルを作らない。
+- 対象12時間枠の正規データへ安全に統合できる形にする。
+- R2 objectへのappendを前提にしない。
+- 通常Consumerと手動Flushの競合を排他/世代管理等で防止する。
 
-## 第10問：R2 / Google Driveのファイル構成（確定）
-### R2
-R2は12時間単位の正規ファイルを基本とする。
+---
+
+# Q10｜R2 / Google Driveの役割と構造
+
+## R2
+
+R2は**短期・中間・保険層**。
 
 概念:
 ```
@@ -150,94 +183,607 @@ service-events/
   2026/09/29/12-24.ndjson.gz
 ```
 
-- R2では手動Flushごとに無制限に小ファイルを増やす設計にはしない。
-- 手動Flush分は対象12時間枠の正規データへ安全に統合できる形で扱う。
-- R2 objectへのappend前提にはしない。必要な場合は新しい完成済みobjectを書き換える/置換する方式を検討する。
-- 実装時は同時Flush/通常Consumerで競合しないよう冪等性・排他・世代管理を設計する。
+R2では12時間単位の正規ファイルを基本とし、手動Flushによる小ファイル乱立を避ける。
 
-### Google Drive
-Google Driveは長期アーカイブ時に日付単位で整理する。
-通常バッチと手動Flushの履歴を追跡できる構造にする。
+## Google Drive
 
-概念:
+Google Driveは**最終・長期保管庫**。
+
+通常時:
 ```
-SERVICE_USAGE/
-  2026/
-    09/
-      29/
-        00-12/
-          batch.ndjson.gz
-          flush-001.ndjson.gz
-        12-24/
-          batch.ndjson.gz
-          flush-001.ndjson.gz
-```
-
-Google Driveへの自動退避は後段フェーズで実装する。
-
-## 第11問：Queue/R2障害・retry・DLQ（確定）
-R2保存失敗時は「C方式」。
-
-```
-SERVICE_USAGE
+R2 12時間バッチ
   ↓
+翌日Google Driveへアーカイブ
+  ↓
+保存成功確認
+  ↓
+R2から削除
+```
+
+Drive側は最終的に通常バッチも緊急退避データも、整理された正式アーカイブ構造になることを目標とする。
+
+---
+
+# Q11｜Queue/R2障害・Retry・DLQ
+
+基本経路:
+```
 Queue
   ↓
 R2
   ├─ 成功 → 完了
   └─ 失敗
-      ↓
-    自動retry
-      ↓
-    規定回数失敗
-      ↓
-     DLQ
-      ↓
-SERVICE_USAGE管理サイトへエラー表示
-      ↓
-     手動再処理
+      ↓ Retry ×5
+      ↓ DLQ
 ```
 
-要件:
-- 一時的なR2障害はQueue retryで吸収する。
-- 規定回数失敗したイベント/バッチはDLQへ送る。
-- 管理サイトで失敗状態を確認できる。
-- 管理サイトから手動再処理できる。
-- SERVICE_USAGE保存失敗が本来のユーザー操作の失敗扱いにならないよう、イベント記録は非同期にする。
+確定:
+- Retryは5回。
+- 同じevent_idを保持。
+- DLQは捨て場ではなく未処理イベントの保留場所。
+- 保存失敗が本来のユーザー操作失敗にならないよう非同期処理。
+- 管理サイトでDLQ状態を確認できる。
+- 手動再処理可能。
 
-## 第12問：Google Driveアーカイブ頻度（確定）
-### 通常
+---
+
+# Q12｜Google Drive通常アーカイブ
+
 - R2: 12時間ごと
 - Google Drive: 1日1回
-- 前日のR2データをGoogle Driveへアーカイブする。
+- 前日分をアーカイブ。
+- Drive保存成功確認前にR2を削除しない。
+- Drive失敗時はR2を保持。
+- 管理サイトから手動アーカイブ可能。
+- Google Driveが最終保管庫、R2が短期保険層。
+
+---
+
+# Q13｜occurred_at
+
+`occurred_at` は **ISO 8601 UTC**。
+
+例:
+`2026-09-29T14:30:00.000Z`
+
+- 内部保存: UTC
+- 管理画面表示: JST
+- R2の12時間バッチ境界: JST
+
+---
+
+# Q14｜SERVICE_USAGE Collection Catalog
+
+収集項目は3層で管理する。
+
+## Layer 1: 必須Envelope
+- event_id
+- occurred_at
+- actor_user_id
+- feature
+- operation
+- target_type
+- target_id
+
+## Layer 2: 軽量分析metadata
+イベントごとに許可項目を定義。
+例:
+- PLAYER.POWER
+- PLAYER.TOWN_CENTER_LEVEL
+- PLAYER.VIP
+- PLAYER.KILLS
+- PLAYER.X
+- PLAYER.Y
+- PLAYER.ALLIANCE.ID
+- PLAYER.ALLIANCE.ABBR
+- PLAYER.ALLIANCE.NAME
+- PLAYER.ALLIANCE.RANK
+- PLAYER.ALLIANCE.POWER
+- PLAYER.RANKING.*
+- watchlist counts
+- result counts
+- observed_at等
+
+## Layer 3: 詳細ゲームsnapshot
+必要な調査期間だけ個別ON可能。
+例:
+- PLAYER.HEROES
+- PLAYER.HEROES.LEVEL
+- PLAYER.HEROES.STAR
+- PLAYER.HEROES.POWER
+- PLAYER.HEROES.SKILLS
+- PLAYER.GOV_GEAR
+- PLAYER.GOV_GEAR.SLOT
+- PLAYER.GOV_GEAR.TIER
+- PLAYER.GOV_GEAR.QUALITY
+- PLAYER.GOV_GEAR.STAR
+- PLAYER.GOV_GEAR.ENHANCEMENT
+- PLAYER.GOV_GEAR.SCORE
+- PLAYER.GOV_GEAR.POWER
+- PLAYER.GOV_GEAR.GEMS
+- PLAYER.RANKING.*各ランキング
+
+### イベント別collection方針
+
+PLAYER_SEARCH:
+- search_type
+- result_count
+- result_has_match
+- selected_result
+- direct_lookup
+- **raw search queryは保存しない**
+
+PLAYER_VIEW:
+- source
+- view_section
+- 必要に応じて軽量player state
+
+PLAYER_REFRESH:
+- source
+- refresh_reason
+- previous/new observed_at
+- previous/new source_observed_at
+- upstream_fresh
+- upstream_age_seconds
+- 必要に応じて詳細player state
+
+PLAYER_HISTORY_VIEW:
+- period
+- limit
+- history_type
+- display_mode
+- displayed snapshot count
+- oldest/newest observed_at
+
+PLAYER_CHANGES_VIEW:
+- period
+- change_type
+- field_name
+- result_count
+- change categories
+
+PLAYER_WATCHLIST_VIEW:
+- watchlist_count
+- enabled_count
+- disabled_count
+- max_limit
+- remaining_slots
+- sort/filter/page/display_count
+
+PLAYER_WATCHLIST_ADD/REMOVE:
+- source
+- watchlist size before/after
+- limit
+- remaining slots
+- enabled
+- target player state
+- 必要に応じてhero/ranking/gov_gear詳細
+
+KINGDOM_WATCHLIST_VIEW:
+- watchlist_count
+- enabled_count
+- top_n
+- interval_hours
+- page
+- sort
+
+KINGDOM_WATCHLIST_ADD/REMOVE:
+- kid
+- top_n
+- interval_hours
+- watchlist size before/after
+- enabled
+
+KINGDOM_WATCHLIST_REFRESH:
+- user actionのみ記録
+- source
+- refresh_scope
+- top_n
+- target kingdom
+- 内部job情報はservice_eventsに入れない
+
+KINGDOM_RANKING_VIEW:
+- kid
+- board
+- limit
+- page
+- sort
+- source
+- observed_at
+- source_observed_at
+- display_count/rank_range
+
+PLAYER_EXPORT:
+- format
+- section
+- row_count
+- column_count
+- target_player_count
+- success
+
+KINGDOM_EXPORT:
+- format
+- kid
+- board
+- limit
+- row_count
+- success
+
+---
+
+# Q15｜Queue Retry回数
+
+**5回 → DLQ**。
+
+- Free-tier-first。
+- Paid $5は必要になった場合のフォールバック。
+- 無限retryは禁止。
+
+---
+
+# Q16｜DLQ自動再処理間隔
+
+**6時間ごと**。
+
+高頻度のretryでFree-tier資源を消費しない。
+
+---
+
+# Q17｜DLQ自動再処理バッチサイズ
+
+**1回最大500イベント**。
+
+例:
+10,000件あっても一度に全部ではなく500件ずつ。
+
+---
+
+# Q18｜手動DLQ再処理
+
+**個別選択 + 最大500件の一括選択**。
+
+「全件再処理」は提供しない。
+
+手動再処理失敗時はDLQに残す。
+
+---
+
+# Q19｜DLQ保持
+
+Cloudflare Queue Freeの保持制約を前提に、長期DLQ保管はしない。
+
+**DLQは24時間以内に救出する設計**。
+
+- 即時Discord通知
+- 6時間ごとの自動再処理
+- 必要に応じてGoogle Driveへ緊急退避
+
+30日等の長期Queue保持は採用しない。
+
+---
+
+# Q20｜Google Drive緊急退避
+
+通常のR2→Driveアーカイブとは別に、DLQ救出用の緊急退避経路を持つ。
+
+確定フロー:
+```
+Queue失敗
+ ↓ Retry ×5
+ ↓ DLQ
+ ↓ Discord通知
+ ↓ 6時間後 自動再処理
+   ├─ 成功 → R2/通常アーカイブへ
+   └─ 失敗
+       ↓
+     Google Drive緊急退避
+```
+
+既存 `src/google-drive.js` のR2 object→Drive upload primitiveを拡張して利用する。
+現時点ではservice_events自動退避には未接続であり、実装・連携が必要。
+
+---
+
+# Q21｜Discord通知・復旧通知
+
+通知方針:
+
+1. DLQに1件でも入ったら**即時通知**
+2. 1時間経過して未解消なら**再通知**
+3. その後も未解消なら**6時間ごとに定期通知**
+4. 復旧したら**復旧通知**
+5. 復旧通知後は、その障害に対する定期通知状態をリセット
+
+通知内容には可能な範囲で:
+- DLQ件数
+- 最古のDLQ発生時刻
+- 最古イベントのevent_id
+- 最終自動再処理時刻
+- 再処理結果
+- Google Drive退避状態
+- 次回自動再処理予定
+- 復旧方法
+- 復旧までの経過時間
+
+を含める。
+
+同一障害で通知を無限に個別イベント単位発行しない。
+
+---
+
+# Q22｜Google Drive緊急退避の発動条件
+
+**6時間後の自動DLQ再処理が失敗した時点でGoogle Drive緊急退避を開始**。
+
+Drive保存結果に応じて通知:
+- 保存成功 → Drive退避完了通知
+- 保存失敗 → Drive退避失敗通知
+
+「保存できた」と確認する前に成功扱いにはしない。
+
+---
+
+# Q23｜Driveに退避されたデータの最終的な扱い
+
+Google Driveは単なる一時避難場所ではなく、**最終保管庫**。
+
+障害時:
+```
+R2/Queue障害
+ ↓
+Driveへ緊急退避
+ ↓
+Drive上で保管
+ ↓
+障害復旧後に正式アーカイブへ整理
+```
+
+DriveからR2へ戻すことを通常復旧の目的にはしない。
+
+---
+
+# Q24｜緊急退避データの正式アーカイブ化
+
+**C: 原則自動 + 異常時手動**。
+
+- 正常時は自動で正式アーカイブへ統合。
+- 統合・検証成功後、緊急退避用の一時的な重複ファイルを整理。
+- 問題がある場合のみSERVICE_USAGE管理サイトから手動整理。
+- 最終的なDriveは通常時と障害時で別体系にならず、綺麗な正式アーカイブ構造に揃える。
+
+---
+
+# Q25｜重複防止
+
+**C: event_id + batch_idの二重冪等性**。
+
+## event_id
+イベント単位の重複排除。
+Queue retry、DLQ、Drive緊急退避、通常アーカイブ、手動再処理を経ても同じevent_idは1回だけ正式保存。
+
+## batch_id
+12時間バッチ等のバッチ単位の重複排除。
+
+これにより、
+- 同じイベントの二重保存
+- 同じバッチの二重生成
+の両方を防ぐ。
+
+---
+
+# Q26｜SERVICE_USAGE管理サイトの認証
+
+EagleEye本体とは**別サイト**にする。
+
+認証方式:
+**Discordログイン + SERVICE_USAGE専用権限**。
+
+EagleEye本体のAdmin権限とSERVICE_USAGE管理権限を完全に同一視しない。
 
 概念:
 ```
-毎日
-SERVICE_USAGE
-  ↓
-Queue
-  ↓
-R2（12時間単位）
+EagleEye
+  └─ ゲーム情報・Watchlist等
 
-翌日
-前日のR2データ
-  ↓
-Google Drive
-  ↓
-保存成功を確認
-  ↓
-R2から削除
+SERVICE_USAGE管理サイト
+  └─ Discord認証
+  └─ SERVICE_USAGE専用権限
 ```
 
-### 重要な保全ルール
-- Google Driveへの保存成功を確認するまでR2を削除しない。
-- Drive側で失敗した場合、R2データは保持する。
-- R2削除は「Drive保存成功確認後」に限定する。
-- 管理サイトから任意タイミングで手動アーカイブ可能にする。
-- Google Driveは長期保管場所、R2は短期の中間/保険層とする。
+---
 
-## 全体像
+# Q27｜SERVICE_USAGE管理サイトの権限
+
+Owner専用画面から、Adminごとに**機能単位のON/OFF**を変更できる。
+
+基本:
+- Owner: 全権限
+- Admin: Ownerが許可した機能のみ
+
+例:
+```
+Admin権限              [ ON ]
+利用状況閲覧            [ ON ]
+詳細分析                [ ON ]
+手動Flush               [ OFF ]
+DLQ再処理               [ OFF ]
+Drive復旧・整理         [ OFF ]
+Collection設定          [ OFF ]
+権限管理                [ OFF ]
+```
+
+権限変更の監査情報:
+- 変更者
+- 対象ユーザー
+- 変更前→変更後
+- 変更日時
+
+現在Ownerはユーザー本人のみだが、将来Owner/Adminを追加できる構造にする。
+
+---
+
+# Q28｜Collection Catalog設定反映
+
+**C: 即時 + 予約**。
+
+- 保存直後から反映可能。
+- 開始日時・終了日時を指定可能。
+- 将来のON/OFFを予約可能。
+- 終了日時で自動OFF。
+- 設定履歴を保存。
+
+例:
+```
+PLAYER.POWER
+ON
+開始: 2026-10-01 00:00 JST
+終了: 2026-10-31 23:59 JST
+```
+
+これにより調査期間だけ詳細データを収集できる。
+
+---
+
+# Q29｜実装後のテスト方針
+
+**C: 本番環境で障害シナリオまで実施**。
+
+ただし、6時間待機等をそのまま実時間で行う必要はない。
+テストモード等を用意し、実際の連携先を使って一連の流れを確認する。
+
+必要な実連携:
+- Discord
+- Google Drive
+- Cloudflare Queue
+- R2
+
+確認する一連のシナリオ:
+```
+SERVICE_USAGE
+ ↓
+Queue
+ ↓
+R2
+ ↓
+意図的な保存障害
+ ↓
+Retry ×5
+ ↓
+DLQ
+ ↓
+Discord即時通知
+ ↓
+テスト用に短縮した自動再処理
+ ↓
+失敗させてDrive緊急退避
+ ↓
+Google Drive保存確認
+ ↓
+復旧
+ ↓
+正式アーカイブ化
+ ↓
+event_id / batch_id重複チェック
+ ↓
+最終状態確認
+```
+
+重要:
+- 実装・デプロイしただけでは「確認済み」としない。
+- 実際の本番環境で該当経路を確認したものだけ確認済みと報告する。
+- Discord/Google Driveの連携が未設定なら、その段階では本番確認不可と明示する。
+
+---
+
+# Collection Catalog 共通項目カタログ
+
+実装時に固定スキーマとして管理する。
+
+## Player
+- PLAYER.POWER
+- PLAYER.TOWN_CENTER_LEVEL
+- PLAYER.VIP
+- PLAYER.KILLS
+- PLAYER.X
+- PLAYER.Y
+- PLAYER.ALLIANCE.ID
+- PLAYER.ALLIANCE.ABBR
+- PLAYER.ALLIANCE.NAME
+- PLAYER.ALLIANCE.RANK
+- PLAYER.ALLIANCE.POWER
+- PLAYER.HEROES
+- PLAYER.HEROES.LEVEL
+- PLAYER.HEROES.STAR
+- PLAYER.HEROES.POWER
+- PLAYER.HEROES.SKILLS
+- PLAYER.GOV_GEAR
+- PLAYER.GOV_GEAR.SLOT
+- PLAYER.GOV_GEAR.TIER
+- PLAYER.GOV_GEAR.QUALITY
+- PLAYER.GOV_GEAR.STAR
+- PLAYER.GOV_GEAR.ENHANCEMENT
+- PLAYER.GOV_GEAR.SCORE
+- PLAYER.GOV_GEAR.POWER
+- PLAYER.GOV_GEAR.GEMS
+- PLAYER.RANKING.*（ranking-catalogの各board）
+
+---
+
+# SERVICE_USAGE管理サイトの予定機能
+
+- 日別/期間別利用量
+- feature / operation別集計
+- ユーザー別利用状況
+- 人気プレイヤー
+- 人気王国
+- Watchlist利用状況
+- Export利用状況
+- R2状態
+- Queue状態
+- Queue backlog
+- Retry
+- DLQ
+- エラー
+- 手動Flush
+- 手動アーカイブ
+- 手動DLQ再処理
+- Google Driveアーカイブ状態
+- Collection Catalog設定
+- Collection設定履歴
+- OwnerによるAdmin/機能権限管理
+
+---
+
+# 既存コードとの重要な整合条件
+
+- Cloudflare Workers + D1 + R2 + MightPulse API
+- GitHub repo: `kingshot-bj/kingshot-data-platform`
+- main branch
+- Worker: https://kingshot-data-platform.black-jack-kingshot.workers.dev
+- `ranking_snapshots` の広範な取得クエリは**絶対に復活させない**。
+- ranking readsは原則 `kingdom_ranking_current` に寄せる。
+- `getLatestPlayerHeroRankings()` もranking_snapshots直接読みを避け、current側への移行方針を維持。
+- 既存 `src/google-drive.js` はR2 object→Google Drive upload primitiveを持つが、SERVICE_USAGE自動退避には未接続。
+- `docs/EAGLEEYE_R2_GOOGLE_DRIVE_PREP.md` の思想を維持し、Drive保存成功確認前にR2を削除しない。
+- `wrangler.jsonc` に `CLOUDFLARE_MONITORING_PROFILE: "PAID_5USD"` が存在しても、これを実際の課金状態の証拠として扱わない。プロジェクト方針はFree-tier-first。
+- Google DriveのService Account運用は、実際の保存先/権限構成を確認してから本番接続する。
+- 5MB超のDriveアップロード等が必要になった場合はresumable uploadを検討する。
+
+---
+
+# 既存ログとの責務分離
+
+- SERVICE_USAGE → R2 service_events
+- LOGIN → D1 login_history
+- OWNER操作 → D1 owner_audit_log
+- DIAGNOSTIC → D1 diagnostic_events
+- API使用 → D1 api_pool_usage
+
+SERVICE_USAGEへ全HTTP/internal processingを入れない。
+
+---
+
+# 現時点の全体アーキテクチャ
 
 ```
 [EagleEyeユーザー操作]
@@ -246,52 +792,58 @@ R2から削除
         ↓
 [Cloudflare Queue]
         ↓
-[12時間単位 Consumer Batch]
+[Consumer]
         ↓
-[gzip NDJSON]
+[12h JST batch / gzip NDJSON]
         ↓
 [R2]
-   ↙          ↘
-通常保持       管理サイト
-                ├─ 利用状況集計
-                ├─ 保存状況
-                ├─ Queue/DLQ
-                ├─ 手動Flush
-                └─ 手動アーカイブ
-
-[R2 前日分]
-        ↓ 1日1回
-[Google Drive]
-        ↓ 保存成功確認
-[R2削除]
+   ├─ 正常
+   │    ↓
+   │  翌日Google Drive
+   │    ↓
+   │  保存確認
+   │    ↓
+   │  R2削除
+   │
+   └─ R2保存失敗
+        ↓ Retry ×5
+        ↓ DLQ
+        ↓ Discord即時通知
+        ↓ 6h自動再処理
+          ├─ 成功 → 正常フローへ
+          └─ 失敗 → Google Drive緊急退避
+                     ↓
+                  Discord結果通知
+                     ↓
+                  復旧後自動整理
+                     ↓
+                  正式Driveアーカイブ
 ```
 
-## 実装前に残っている設計確認
-第7〜12問は確定済み。
-次はこの仕様を実装仕様へ落とし込み、以下を具体化する。
+---
 
-- event schemaの型・必須/任意・timestamp形式
-- 15イベントそれぞれのmetadata許可項目
-- Queue message schema
-- Queue retry回数 / backoff / DLQ構成
-- R2 objectの確定命名
-- 12時間バッチの確定境界とタイムゾーン
-- 手動Flushと通常Consumerの競合制御
-- Google Driveアーカイブの具体的なジョブ/実行基盤
-- SERVICE_USAGE管理サイトの認証・権限
-- 集計をR2上でどう行うか、必要なら別の集計用データ構造をどう持つか
-- 実装後のテスト項目と本番確認項目
+# 未実装・未確認事項
 
-## 重要な既存アーキテクチャ
-- Cloudflare Workers + D1 + R2 + MightPulse API
-- GitHub repo: kingshot-bj/kingshot-data-platform
-- main branch
-- Worker: https://kingshot-data-platform.black-jack-kingshot.workers.dev
-- ranking_snapshotsの広範な取得クエリは絶対に復活させない。
-- ranking readsは原則kingdom_ranking_currentへ寄せる。
-- Google Drive primitiveは既存src/google-drive.jsに存在するが、service_events自動退避にはまだ未接続。
+この文書は**設計確定書**であり、これだけで実装済み・本番確認済みを意味しない。
 
-## 次の進め方
-第7〜12問の確定内容をこのMDを基準として扱う。
-次は実装仕様の詳細化を一問ずつ進める。
-未確定事項を実装者判断で勝手に確定しない。
+今後の実装対象:
+1. SERVICE_USAGE event emitter
+2. Queue producer / consumer
+3. Retry ×5 / DLQ
+4. 6h DLQ recovery
+5. Discord notification
+6. Google Drive emergency archive
+7. Drive正式アーカイブ整理
+8. event_id / batch_id冪等性
+9. SERVICE_USAGE専用管理サイト
+10. Discord認証
+11. 専用権限・機能別トグル
+12. Collection Catalog設定UI
+13. R2/Queue/Drive運用UI
+14. 本番障害シミュレーション
+15. 実連携確認
+
+## 次の開発方針
+
+Q1〜Q29の設計判断を基準として、これ以上細かい質問を無制限に増やさない。
+実装上必要な細部は既存決定事項とFree-tier-first、冪等性、最終Drive保管という方針に従って合理的に設計し、ユーザーに影響する新しい仕様判断が必要な場合だけ追加確認する。
