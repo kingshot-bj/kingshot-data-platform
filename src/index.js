@@ -707,11 +707,18 @@ async function processKingdomWatchlistJob(env, job) {
   return { completed: true, phase: job.status };
 }
 
+const WATCHLIST_MAX_API_CONCURRENCY = 26;
+
 async function getWatchlistApiConcurrency(env) {
   const row = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL') AND status = 'AVAILABLE'"
   ).first();
-  return Math.max(1, Math.min(4, Number(row?.count || 1)));
+
+  // The API Pool is designed to scale up to the 26 KingShot ranking boards.
+  // Do not hard-cap watchlist work at 4: that turns an automatic refresh into
+  // multiple Cron cycles and is why a 26-board refresh can appear stalled at
+  // 4/26. The actual concurrency remains bounded by currently AVAILABLE keys.
+  return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, Number(row?.count || 1)));
 }
 
 async function fetchWithConcurrency(items, concurrency, worker) {
