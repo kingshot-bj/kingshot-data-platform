@@ -2,13 +2,13 @@
 
 ## 1. Purpose
 
-R2 is the long-term raw/archive layer for EagleEye. It exists to prevent D1 from becoming a permanent historical warehouse while preserving enough raw data to support future research, analysis, reprocessing, and recovery.
+R2 is the archive/safety layer for EagleEye. Google Drive is the planned long-term/permanent archive layer once the transfer pipeline is implemented and verified. It exists to prevent D1 from becoming a permanent historical warehouse while preserving enough raw data to support future research, analysis, reprocessing, and recovery.
 
 The authoritative role split is:
 
 - **MightPulse**: external primary data source
 - **D1**: current/operational source of truth for EagleEye features
-- **R2**: long-term raw historical archive
+- **R2**: archive/safety layer for historical raw data\n- **Google Drive**: planned long-term/permanent archive
 - **Google Sheets**: human-facing research/analysis dataset
 
 R2 is not a replacement for D1 and Google Sheets is not a replacement for R2.
@@ -28,9 +28,7 @@ The following tables are currently archive-eligible:
 - 'player_snapshots'
 - 'ranking_snapshots'
 - 'player_rank_snapshots'
-- 'change_events'
-
-'api_pool_usage' remains ordinary retention-only operational data and is not currently archived to R2.
+- 'change_events'\n- 'api_pool_usage'\n- 'player_identity_history'\n- 'login_history'\n- 'owner_audit_log'
 
 ## 3. Archive safety contract
 
@@ -111,7 +109,7 @@ Keep in R2:
 - historical player snapshots
 - historical ranking snapshots
 - historical player ranking snapshots
-- historical Change Events after D1 retention
+- historical Change Events after D1 retention\n- API Pool usage history after D1 retention\n- player identity/name history after D1 retention\n- login history and OWNER audit history after D1 retention
 - future large research/raw datasets when approved
 
 ### Google Sheets
@@ -230,3 +228,12 @@ Any future R2 feature must review storage growth, operation count, execution tim
 - Discord R2 usage/cost alerts
 
 These are intentionally separated from the initial D1->R2 retention migration so the archive foundation can be validated before adding more moving parts.
+
+
+## 15. Long-term archive direction
+
+The intended final flow is:
+
+    D1 -> R2 -> Google Drive
+
+R2 is written and verified before destructive D1 retention deletion. Google Drive will become the long-term/permanent archive after its transfer is implemented and verified. R2 must remain as a safety buffer until the corresponding Google Drive object is confirmed. The current Worker already has an R2-to-Google-Drive upload primitive, but automatic transfer and R2 cleanup are not yet wired.
