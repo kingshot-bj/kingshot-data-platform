@@ -1239,9 +1239,27 @@ async function handleKingdomWatchlistDataApi(request, env) {
   ).bind(auth.discord_id).all();
   const watchedGovernorIds = new Set((watchedRows.results || []).map(row => normalizeGovernorId(row.governor_id)).filter(Boolean));
 
-  const players = await env.DB.prepare(
-    "WITH top_players AS (SELECT DISTINCT CASE WHEN governor_id LIKE '%.0' THEN substr(governor_id, 1, length(governor_id) - 2) ELSE governor_id END AS governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ?) SELECT p.governor_id, p.uid, p.nick_name, p.kid, p.power, p.town_center_level, p.vip, p.kills, p.x, p.y, p.alliance_abbr, p.alliance_name, p.online, p.last_active_at, p.observed_at FROM players p JOIN top_players t ON t.governor_id = CASE WHEN p.governor_id LIKE '%.0' THEN substr(p.governor_id, 1, length(p.governor_id) - 2) ELSE p.governor_id END ORDER BY p.power DESC, p.governor_id ASC"
+  // Ranking current normalizes numeric governor IDs (e.g. "123.0" -> "123").
+  // Build a small indexed candidate set instead of normalizing both sides of a
+  // players JOIN. The previous expression-based JOIN forced D1 to scan a large
+  // portion of players on every watchlist page load.
+  const topPlayerRows = await env.DB.prepare(
+    "SELECT governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ? ORDER BY rank ASC, governor_id ASC"
   ).bind(watch.kid, watch.top_n).all();
+  const topGovernorIds = [...new Set((topPlayerRows.results || [])
+    .map(row => String(row.governor_id || "").trim())
+    .filter(Boolean))];
+  const playerGovernorCandidates = [...new Set(
+    topGovernorIds.flatMap(id => /^\\d+$/.test(id) ? [id, id + ".0"] : [id])
+  )];
+
+  let players = { results: [] };
+  if (playerGovernorCandidates.length) {
+    const placeholders = playerGovernorCandidates.map(() => "?").join(",");
+    players = await env.DB.prepare(
+      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
+    ).bind(...playerGovernorCandidates).all();
+  }
 
   return json({
     ok: true,
