@@ -104,7 +104,7 @@ select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(
       <button id="export" class="secondary">SQL比較CSV保存</button>
     </div>
     <div id="summary" class="summary"></div>
-    <div class="hint">比較順：左から右へ時系列として扱います。基準ファイルは独立して変更できます。</div>
+    <div class="hint">比較順：左から右へ表示。基準を変更すると、差分・ランキング・CSVも基準ファイル起点に切り替わります。</div>
   </div>
 
   <h2>主要メトリクス</h2>
@@ -211,8 +211,8 @@ function renderMetrics(){
   const keys=Object.keys(all);
   $("mainMetrics").innerHTML=keys.map(k=>{
     const vals=state.data.map(extractMain).map(x=>x[k]);
-    const last=vals[vals.length-1],first=vals[0],d=typeof first==="number"&&typeof last==="number"?last-first:null;
-    return `<div class="metric-card"><div class="metric-title">${escapeHtml(k)}</div>${vals.map((v,i)=>`<div class="metric-line"><span>${i+1}. ${escapeHtml(state.files[i].name)}</span><span>${fmt(v)}</span></div>`).join("")}<div class="metric-line"><span>1 → ${vals.length} 差分</span><span class="${d===null?"":cls(d)}">${fmt(d)} (${pct(first,last)})</span></div></div>`;
+    const baseVal=vals[state.base],last=vals[vals.length-1],d=typeof baseVal==="number"&&typeof last==="number"?last-baseVal:null;
+    return `<div class="metric-card"><div class="metric-title">${escapeHtml(k)}</div>${vals.map((v,i)=>`<div class="metric-line"><span>${i+1}. ${escapeHtml(state.files[i].name)}</span><span>${fmt(v)}</span></div>`).join("")}<div class="metric-line"><span>基準 → 各ファイル</span><span class="${d===null?"":cls(d)}">${fmt(d)} (${pct(baseVal,last)})</span></div></div>`;
   }).join("");
 }
 function queryRows(){
@@ -223,7 +223,8 @@ function queryRows(){
   const rows=keys.map(key=>{
     const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0});
     const first=vals[0],last=vals[vals.length-1];
-    return {key,vals,dc:last.count-first.count,dr:last.rowsRead-first.rowsRead,dw:last.rowsWritten-first.rowsWritten,last:first.count+last.count+last.rowsRead+last.rowsWritten};
+    const base=vals[state.base];
+    return {key,vals,dc:last.count-base.count,dr:last.rowsRead-base.rowsRead,dw:last.rowsWritten-base.rowsWritten,last:last.count+last.rowsRead+last.rowsWritten};
   }).filter(r=>!search||r.key.toLowerCase().includes(search));
   const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="last"?"last":"dr";
   rows.sort((a,b)=>Math.abs(b[metric])-Math.abs(a[metric]));
@@ -234,7 +235,7 @@ function renderQueries(){
   $("queryList").innerHTML=rows.length?rows.map((r,idx)=>`
     <div class="query-card">
       <div class="query-head" data-q="${idx}">
-        <div class="query-sql">${escapeHtml(r.key)}</div>
+        <div class="query-sql" title="${escapeHtml(r.key)}">${escapeHtml(r.key.length>180?r.key.slice(0,180)+"…":r.key)}</div>
         <div class="query-summary">
           <span class="qbadge">Δ Read <b class="${cls(r.dr)}">${fmt(r.dr)}</b></span>
           <span class="qbadge">Δ Write <b class="${cls(r.dw)}">${fmt(r.dw)}</b></span>
@@ -262,10 +263,9 @@ function renderChanges(){
   const paths=[...new Set(arrays.flatMap(m=>[...m.keys()]))];
   const rows=paths.map(p=>{
     const vals=arrays.map(m=>m.get(p));
-    const nums=vals.filter(v=>typeof v==="number");
-    const first=nums[0],last=nums[nums.length-1];
-    if(typeof first!=="number"||typeof last!=="number"||first===last)return null;
-    return {p,vals,d:last-first};
+    const base=vals[state.base],last=vals[vals.length-1];
+    if(typeof base!=="number"||typeof last!=="number"||base===last)return null;
+    return {p,vals,d:last-base};
   }).filter(Boolean).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,100);
   $("changes").innerHTML=rows.length?rows.map(r=>`<div class="change-card"><div class="change-path">${escapeHtml(r.p)}<div class="small">${r.vals.map((v,i)=>`${i+1}:${fmt(v)}`).join(" → ")}</div></div><div class="change-values ${cls(r.d)}">Δ ${fmt(r.d)}<br><span class="small">${pct(r.vals[0],r.vals[r.vals.length-1])}</span></div></div>`).join(""):'<div class="empty">数値の変更はありません。</div>';
 }
@@ -301,8 +301,8 @@ $("export").onclick=()=>{
   const lines=[header];
   for(const k of keys){
     const vals=maps.map(m=>m.get(k)||{count:0,rowsRead:0,rowsWritten:0});
-    const first=vals[0],last=vals[vals.length-1];
-    lines.push([k,...vals.flatMap(v=>[v.count,v.rowsRead,v.rowsWritten]),last.count-first.count,last.rowsRead-first.rowsRead,last.rowsWritten-first.rowsWritten]);
+    const base=vals[state.base],last=vals[vals.length-1];
+    lines.push([k,...vals.flatMap(v=>[v.count,v.rowsRead,v.rowsWritten]),last.count-base.count,last.rowsRead-base.rowsRead,last.rowsWritten-base.rowsWritten]);
   }
   const csv="\ufeff"+lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");
   const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");
