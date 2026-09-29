@@ -1145,7 +1145,23 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }
     var payload={kid:Number(kidValue),top_n:Number(topValue),interval_hours:Number(intervalValue)};
     api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
-    .then(function(){el("kid").value="";el("msg").innerHTML="<span class='ok'>監視対象を登録しました。</span>";return load();})
+    .then(function(d){
+      el("kid").value="";
+      if(d.initial_refresh_status==="FAILED"){
+        el("msg").innerHTML="<span class='error'>監視対象を登録しましたが、初回取得に失敗しました。</span>";
+        return load();
+      }
+      if(d.watchlist_id && d.initial_refresh_status && d.initial_refresh_status!=="COMPLETED"){
+        try{
+          sessionStorage.setItem("eagleeye_watchlist_running_"+d.watchlist_id,"1");
+          sessionStorage.setItem("eagleeye_watchlist_started_at_"+d.watchlist_id,String(Date.now()));
+        }catch(e){}
+        el("msg").innerHTML="<span class='ok'>監視を登録しました。初回データを取得中です。</span>";
+        return load().then(function(){return continueWatch(d.watchlist_id);});
+      }
+      el("msg").innerHTML="<span class='ok'>監視を登録しました。初回データの取得が完了しました。</span>";
+      return load();
+    })
     .catch(function(e){
       el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
     });
@@ -1796,12 +1812,87 @@ async function handleKingdomWatchlistApi(request, env) {
       return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit: kingdomLimit, used }, 409);
     }
 
+    // Start the first watchlist fetch immediately after registration.
+    // Reuse the same job/processing path as "今すぐ更新" instead of waiting
+    // for the next Cron tick. The job remains resumable if one invocation
+    // does not finish all ranking/player phases.
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ?)"
     ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now).run();
-    return json({ ok: true, watchlist_id: id });
+
+    const lockToken = await acquireKingdomWatchlistLock(env, id);
+    if (!lockToken) {
+      return json({
+        ok: true,
+        watchlist_id: id,
+        initial_refresh_started: false,
+        initial_refresh_status: "LOCKED"
+      });
+    }
+
+    try {
+      const jobId = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
+      ).bind(jobId, id, kid, topN, now, now, now).run();
+
+      const job = {
+        job_id: jobId,
+        watchlist_id: id,
+        kid,
+        top_n: topN,
+        status: "RANKINGS",
+        board_index: 0,
+        player_cursor: 0,
+        player_ids_json: "[]",
+        observed_at: now,
+        source_first_at: null,
+        source_last_at: null,
+        ranking_rows: 0,
+        player_rows: 0,
+        created_at: now,
+        updated_at: now
+      };
+
+      try {
+        const result = await processKingdomWatchlistJob(env, job);
+        if (result.completed) {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(now, now, now, id).run();
+        }
+        return json({
+          ok: true,
+          watchlist_id: id,
+          job_id: jobId,
+          initial_refresh_started: true,
+          initial_refresh_status: result.phase,
+          result
+        });
+      } catch (error) {
+        const message = String(error?.message || error).slice(0, 1000);
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
+        ).bind(message, now, jobId).run();
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+        ).bind(message, now, id).run();
+        console.error("kingdom_watchlist_initial_refresh_failed", id, message);
+        return json({
+          ok: true,
+          watchlist_id: id,
+          job_id: jobId,
+          initial_refresh_started: true,
+          initial_refresh_status: "FAILED",
+          initial_refresh_error: message
+        });
+      }
+    } finally {
+      await releaseKingdomWatchlistLock(env, id, lockToken);
+    }
   }
 
   if (request.method === "POST" && action === "refresh") {
