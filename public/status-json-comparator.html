@@ -3,82 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
 <title>EagleEye Status JSON Comparator</title>
 <style>
-:root{color-scheme:dark;--bg:#0b0d10;--panel:#14181d;--line:#2a3139;--text:#eef2f6;--muted:#9aa5b1;--accent:#66b3ff}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:1200px;margin:auto;padding:18px}h1{font-size:21px;margin:0 0 6px}h2{font-size:16px;margin:24px 0 10px}.sub{color:var(--muted);margin-bottom:16px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-button,input{font:inherit}button{background:#1e6fb8;color:white;border:0;border-radius:8px;padding:9px 12px;cursor:pointer}button.secondary{background:#252b32}
-.drop{border:1px dashed #4b5968;border-radius:10px;padding:20px;text-align:center;color:var(--muted)}.drop.drag{border-color:var(--accent)}
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;word-break:break-word}th{color:#b9c3ce;position:sticky;top:0;background:var(--panel)}
-.pos{color:#7ddc9a}.neg{color:#ff9c9c}.zero{color:var(--muted)}.small{font-size:12px;color:var(--muted)}
-.badge{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:999px;margin:2px;font-size:12px}
-.scroll{overflow:auto;max-height:65vh}.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.files{margin-top:10px}
-select{background:#0f1216;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px}
+:root{color-scheme:dark;--bg:#0b0d10;--panel:#151a20;--panel2:#101419;--line:#2a333d;--text:#f2f5f8;--muted:#9da8b4;--accent:#62b4ff;--green:#70d99a;--red:#ff8f8f}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:min(1200px,100%);margin:auto;padding:16px 12px calc(40px + env(safe-area-inset-bottom))}
+h1{font-size:20px;line-height:1.25;margin:2px 0 6px}
+h2{font-size:17px;margin:22px 0 9px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+button,input,select{font:inherit}
+button{min-height:42px;background:#216fae;color:#fff;border:0;border-radius:10px;padding:9px 13px;font-weight:600}
+button.secondary{background:#252d36}
+button.ghost{background:#1b2229;color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.4}
+.drop{border:1px dashed #536272;border-radius:12px;padding:18px 12px;text-align:center;color:var(--muted)}
+.drop input{max-width:100%}
+.drop.drag{border-color:var(--accent)}
+.file-list{display:flex;flex-direction:column;gap:7px;margin-top:11px}
+.file-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:7px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:7px}
+.file-no{font-weight:700;text-align:center;color:var(--muted)}
+.file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-actions{display:flex;gap:5px}
+.file-actions button{min-height:36px;padding:5px 9px}
+.base-mark{font-size:11px;color:var(--accent);font-weight:700;margin-left:5px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.controls label{display:flex;align-items:center;gap:7px;min-width:0}
+select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 10px}
+.summary{color:var(--muted);font-size:12px;margin-top:9px}
+.hint{color:var(--muted);font-size:12px;margin-top:8px}
+.scroll{overflow:auto;-webkit-overflow-scrolling:touch}
+.table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:620px}
+.table th,.table td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top;white-space:nowrap}
+.table th:first-child,.table td:first-child{text-align:left;position:sticky;left:0;background:var(--panel);z-index:1}
+.table th{color:#bcc6d0;font-size:12px;position:sticky;top:0;z-index:2}
+.table th:first-child{z-index:3}
+.pos{color:var(--green)}.neg{color:var(--red)}.zero{color:var(--muted)}
+.metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.metric-card{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px}
+.metric-title{font-weight:700;margin-bottom:7px}
+.metric-line{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid #202830;font-variant-numeric:tabular-nums}
+.metric-line:last-child{border-bottom:0}
+.metric-line span:first-child{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.metric-line span:last-child{text-align:right;white-space:nowrap}
+.query-tools{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+.query-tools input{flex:1 1 220px;min-width:0;background:#0f1317;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px}
+.query-tools select{min-width:150px}
+.query-card{border:1px solid var(--line);border-radius:11px;background:var(--panel2);margin-bottom:8px;overflow:hidden}
+.query-head{padding:10px 11px;cursor:pointer}
+.query-sql{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word;color:#dfe7ee}
+.query-summary{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px}
+.qbadge{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted)}
+.query-detail{display:none;border-top:1px solid var(--line);padding:8px 11px}
+.query-card.open .query-detail{display:block}
+.qrow{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:8px;padding:6px 0;border-bottom:1px solid #202830;font-variant-numeric:tabular-nums;font-size:12px}
+.qrow:last-child{border-bottom:0}
+.qrow span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.change-list{display:flex;flex-direction:column;gap:7px}
+.change-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
+.change-path{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}
+.change-values{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.badge{display:inline-block;padding:4px 8px;border:1px solid var(--line);border-radius:999px;margin:2px;font-size:12px}
+.empty{color:var(--muted);padding:15px 4px;text-align:center}
+@media(max-width:600px){
+  main{padding:13px 9px calc(32px + env(safe-area-inset-bottom))}
+  h1{font-size:18px}
+  h2{font-size:16px;margin-top:19px}
+  .panel{border-radius:12px;padding:10px}
+  .metric-grid{grid-template-columns:1fr}
+  .controls{display:grid;grid-template-columns:1fr}
+  .controls label{display:grid;grid-template-columns:auto minmax(0,1fr)}
+  .controls button{width:100%}
+  .table{min-width:680px}
+  .file-row{grid-template-columns:30px minmax(0,1fr) auto}
+  .file-actions button{font-size:13px;padding:5px 7px}
+}
 </style>
 </head>
 <body>
 <main>
-<h1>KingShot Data Platform EagleEye — Status JSON Comparator</h1>
-<div class="sub">複数の status JSON をローカルで比較します。ファイルは外部へ送信しません。</div>
+<h1>KingShot Data Platform EagleEye</h1>
+<div class="sub">Status JSON Comparator — ファイルはブラウザ内だけで処理します。外部へアップロードしません。</div>
 
 <div class="panel">
   <div id="drop" class="drop">
     <input id="picker" type="file" accept=".json,application/json" multiple>
-    <div style="margin-top:8px">JSONファイルを選択（2個以上）またはここへドロップ</div>
+    <div style="margin-top:8px">status JSONを選択（2〜10個）</div>
+    <div class="hint">読み込んだ後、↑↓で比較順を変更できます。</div>
   </div>
-  <div id="files" class="files"></div>
+  <div id="files" class="file-list"></div>
 </div>
 
 <div id="app" hidden>
-<div class="panel">
-  <div class="controls">
-    <label>基準ファイル:
-      <select id="base"></select>
-    </label>
-    <button id="export" class="secondary">比較結果をCSV保存</button>
+  <div class="panel">
+    <div class="controls">
+      <label>基準ファイル<select id="base"></select></label>
+      <button id="export" class="secondary">SQL比較CSV保存</button>
+    </div>
+    <div id="summary" class="summary"></div>
+    <div class="hint">比較順：左から右へ時系列として扱います。基準ファイルは独立して変更できます。</div>
   </div>
-  <div id="summary" class="small" style="margin-top:10px"></div>
+
+  <h2>主要メトリクス</h2>
+  <div id="mainMetrics" class="metric-grid"></div>
+
+  <h2>Query Insights — D1負荷</h2>
+  <div class="panel">
+    <div class="query-tools">
+      <input id="querySearch" type="search" placeholder="SQLを検索…">
+      <select id="querySort">
+        <option value="rowsRead">Rows Read 増加</option>
+        <option value="rowsWritten">Rows Written 増加</option>
+        <option value="count">Query Count 増加</option>
+        <option value="last">最終値</option>
+      </select>
+    </div>
+    <div id="queryList"></div>
+  </div>
+
+  <h2>変更の大きい項目</h2>
+  <div class="panel">
+    <div id="changes" class="change-list"></div>
+  </div>
 </div>
-
-<h2>主要メトリクス</h2><div class="panel scroll"><table><thead><tr><th>項目</th><th>基準</th><th>比較</th><th>差分</th><th>増減率</th></tr></thead><tbody id="mainMetrics"></tbody></table></div>
-
-<h2>Query Insights — D1負荷比較</h2>
-<div class="panel scroll"><table><thead><tr><th>クエリ</th><th>基準 Count</th><th>比較 Count</th><th>Δ Count</th><th>基準 Rows Read</th><th>比較 Rows Read</th><th>Δ Rows Read</th><th>基準 Rows Written</th><th>比較 Rows Written</th><th>Δ Rows Written</th></tr></thead><tbody id="queries"></tbody></table></div>
-
-<h2>変更の大きい項目</h2><div class="panel scroll"><table><thead><tr><th>パス</th><th>基準</th><th>比較</th><th>差分</th><th>増減率</th></tr></thead><tbody id="changes"></tbody></table></div>
-</div>
+</main>
 
 <script>
+const MAX_FILES=10;
 const state={files:[],data:[],base:0};
 const $=id=>document.getElementById(id);
-function fmt(v){if(v===null||v===undefined)return "—";if(typeof v==="number")return v.toLocaleString("ja-JP",{maximumFractionDigits:4});return String(v)}
-function pct(a,b){if(typeof a!=="number"||typeof b!=="number"||a===0)return "—";return ((b-a)/Math.abs(a)*100).toFixed(2)+"%"}
-function cls(d){return d>0?"pos":d<0?"neg":"zero"}
-function keyOf(o){
-  const sql=o.sql||o.query||o.statement||o.queryText||o.name;
-  return typeof sql==="string"&&sql.trim()?sql.trim():null;
-}
-function walk(obj,path,out){
-  if(!obj||typeof obj!=="object")return;
-  if(Array.isArray(obj)){obj.forEach((x,i)=>walk(x,path+"["+i+"]",out));return}
-  for(const [k,v] of Object.entries(obj)){
-    const p=path?path+"."+k:k;
-    if(typeof v==="number" && Number.isFinite(v)) out.push([p,v]);
-    if(v&&typeof v==="object") walk(v,p,out);
-  }
-}
+const fmt=v=>v===null||v===undefined?"—":typeof v==="number"?v.toLocaleString("ja-JP",{maximumFractionDigits:4}):String(v);
+const pct=(a,b)=>typeof a==="number"&&typeof b==="number"&&a!==0?((b-a)/Math.abs(a)*100).toFixed(2)+"%":"—";
+const cls=d=>d>0?"pos":d<0?"neg":"zero";
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function keyOf(o){const sql=o.sql||o.query||o.statement||o.queryText||o.name;return typeof sql==="string"&&sql.trim()?sql.trim():null;}
 function findQueryObjects(root){
   const out=[];
-  function w(x,path=""){
+  function w(x){
     if(!x||typeof x!=="object")return;
-    if(Array.isArray(x)){x.forEach((v,i)=>w(v,path+"["+i+"]"));return}
+    if(Array.isArray(x)){x.forEach(w);return;}
     const hasMetric=["count","rowsRead","rowsWritten","rowsReturned"].some(k=>typeof x[k]==="number");
     const q=keyOf(x);
-    if(hasMetric && q) out.push({key:q,count:x.count||0,rowsRead:x.rowsRead||0,rowsWritten:x.rowsWritten||0,rowsReturned:x.rowsReturned||0,path});
-    for(const [k,v] of Object.entries(x)) if(v&&typeof v==="object") w(v,path?path+"."+k:k);
-  } w(root); return out;
+    if(hasMetric&&q)out.push({key:q,count:x.count||0,rowsRead:x.rowsRead||0,rowsWritten:x.rowsWritten||0,rowsReturned:x.rowsReturned||0});
+    Object.values(x).forEach(v=>{if(v&&typeof v==="object")w(v);});
+  }
+  w(root);return out;
 }
 function aggregateQueries(root){
   const map=new Map();
@@ -91,61 +163,151 @@ function aggregateQueries(root){
 }
 function extractMain(d){
   const vals={};
-  function search(x,path=""){
+  const wanted=/^(rowsRead|rowsWritten|readQueries|writeQueries|databaseSizeBytes|storagePercent|requests|subrequests|cpuTimeMs|errors)$/;
+  function search(x){
     if(!x||typeof x!=="object")return;
-    if(Array.isArray(x)){x.forEach((v,i)=>search(v,path+"["+i+"]"));return}
+    if(Array.isArray(x)){x.forEach(search);return;}
     for(const [k,v] of Object.entries(x)){
-      const p=path?path+"."+k:k;
-      if(typeof v==="number" && /^(rowsRead|rowsWritten|readQueries|writeQueries|databaseSizeBytes|storagePercent|requests|subrequests|cpuTimeMs|errors|count)$/.test(k)){
-        if(!vals[k]) vals[k]=v;
-      }
-      if(v&&typeof v==="object")search(v,p);
+      if(typeof v==="number"&&Number.isFinite(v)&&wanted.test(k)&&vals[k]===undefined)vals[k]=v;
+      if(v&&typeof v==="object")search(v);
     }
-  } search(d);
-  return vals;
+  }
+  search(d);return vals;
 }
-function render(){
-  const base=state.data[state.base];
-  const other=state.data.filter((_,i)=>i!==state.base)[0];
-  $("summary").textContent=state.files.length+"ファイル読み込み済み。基準="+state.files[state.base].name+" / 比較="+state.files[state.data.indexOf(other)].name;
-  const a=extractMain(base),b=extractMain(other);
-  $("mainMetrics").innerHTML=Object.keys({...a,...b}).map(k=>{
-    const d=(typeof a[k]==="number"&&typeof b[k]==="number")?b[k]-a[k]:null;
-    return "<tr><td>"+k+"</td><td>"+fmt(a[k])+"</td><td>"+fmt(b[k])+"</td><td class='"+(d===null?"":cls(d))+"'>"+fmt(d)+"</td><td>"+pct(a[k],b[k])+"</td></tr>";
-  }).join("");
-  const qa=aggregateQueries(base),qb=aggregateQueries(other),keys=[...new Set([...qa.keys(),...qb.keys()])];
-  $("queries").innerHTML=keys.map(k=>{
-    const x=qa.get(k)||{count:0,rowsRead:0,rowsWritten:0},y=qb.get(k)||{count:0,rowsRead:0,rowsWritten:0};
-    return "<tr><td>"+escapeHtml(k)+"</td><td>"+fmt(x.count)+"</td><td>"+fmt(y.count)+"</td><td class='"+cls(y.count-x.count)+"'>"+fmt(y.count-x.count)+"</td><td>"+fmt(x.rowsRead)+"</td><td>"+fmt(y.rowsRead)+"</td><td class='"+cls(y.rowsRead-x.rowsRead)+"'>"+fmt(y.rowsRead-x.rowsRead)+"</td><td>"+fmt(x.rowsWritten)+"</td><td>"+fmt(y.rowsWritten)+"</td><td class='"+cls(y.rowsWritten-x.rowsWritten)+"'>"+fmt(y.rowsWritten-x.rowsWritten)+"</td></tr>";
-  }).join("");
-  const pa=[],pb=[];walk(base,"",pa);walk(other,"",pb);
-  const ma=new Map(pa),mb=new Map(pb),rows=[];
-  for(const [p,v] of ma){const w=mb.get(p);if(typeof w==="number"&&w!==v)rows.push({p,a:v,b:w,d:w-v})}
-  for(const [p,w] of mb){if(!ma.has(p))rows.push({p,a:null,b:w,d:w})}
-  rows.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
-  $("changes").innerHTML=rows.slice(0,300).map(x=>"<tr><td>"+escapeHtml(x.p)+"</td><td>"+fmt(x.a)+"</td><td>"+fmt(x.b)+"</td><td class='"+cls(x.d)+"'>"+fmt(x.d)+"</td><td>"+pct(x.a,x.b)+"</td></tr>").join("");
+function filenameTime(name){
+  const m=name.match(/(\d{8})[-_](\d{6})/);
+  if(!m)return "";
+  const s=m[1],t=m[2];
+  return s.slice(0,4)+"/"+s.slice(4,6)+"/"+s.slice(6,8)+" "+t.slice(0,2)+":"+t.slice(2,4)+":"+t.slice(4,6);
 }
-function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function renderFileList(){
+  $("files").innerHTML=state.files.map((f,i)=>`
+    <div class="file-row">
+      <div class="file-no">${i+1}</div>
+      <div class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}${i===state.base?'<span class="base-mark">基準</span>':""}<div class="small">${filenameTime(f.name)}</div></div>
+      <div class="file-actions">
+        <button class="ghost" data-up="${i}" ${i===0?"disabled":""}>↑</button>
+        <button class="ghost" data-down="${i}" ${i===state.files.length-1?"disabled":""}>↓</button>
+        <button class="ghost" data-base="${i}" ${i===state.base?"disabled":""}>基準</button>
+      </div>
+    </div>`).join("");
+  $("files").querySelectorAll("[data-up]").forEach(b=>b.onclick=()=>move(+b.dataset.up,-1));
+  $("files").querySelectorAll("[data-down]").forEach(b=>b.onclick=()=>move(+b.dataset.down,1));
+  $("files").querySelectorAll("[data-base]").forEach(b=>b.onclick=()=>{state.base=+b.dataset.base;renderAll();});
+}
+function move(i,dir){
+  const j=i+dir;if(j<0||j>=state.files.length)return;
+  [state.files[i],state.files[j]]=[state.files[j],state.files[i]];
+  [state.data[i],state.data[j]]=[state.data[j],state.data[i]];
+  if(state.base===i)state.base=j;else if(state.base===j)state.base=i;
+  renderAll();
+}
+function renderBaseSelect(){
+  $("base").innerHTML=state.files.map((f,i)=>`<option value="${i}" ${i===state.base?"selected":""}>${i+1}. ${escapeHtml(f.name)}</option>`).join("");
+}
+function renderMetrics(){
+  const all={};
+  state.data.forEach(d=>Object.assign(all,extractMain(d)));
+  const keys=Object.keys(all);
+  $("mainMetrics").innerHTML=keys.map(k=>{
+    const vals=state.data.map(extractMain).map(x=>x[k]);
+    const last=vals[vals.length-1],first=vals[0],d=typeof first==="number"&&typeof last==="number"?last-first:null;
+    return `<div class="metric-card"><div class="metric-title">${escapeHtml(k)}</div>${vals.map((v,i)=>`<div class="metric-line"><span>${i+1}. ${escapeHtml(state.files[i].name)}</span><span>${fmt(v)}</span></div>`).join("")}<div class="metric-line"><span>1 → ${vals.length} 差分</span><span class="${d===null?"":cls(d)}">${fmt(d)} (${pct(first,last)})</span></div></div>`;
+  }).join("");
+}
+function queryRows(){
+  const maps=state.data.map(aggregateQueries);
+  const keys=[...new Set(maps.flatMap(m=>[...m.keys()]))];
+  const search=$("querySearch").value.trim().toLowerCase();
+  const sort=$("querySort").value;
+  const rows=keys.map(key=>{
+    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0});
+    const first=vals[0],last=vals[vals.length-1];
+    return {key,vals,dc:last.count-first.count,dr:last.rowsRead-first.rowsRead,dw:last.rowsWritten-first.rowsWritten,last:first.count+last.count+last.rowsRead+last.rowsWritten};
+  }).filter(r=>!search||r.key.toLowerCase().includes(search));
+  const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="last"?"last":"dr";
+  rows.sort((a,b)=>Math.abs(b[metric])-Math.abs(a[metric]));
+  return rows;
+}
+function renderQueries(){
+  const rows=queryRows();
+  $("queryList").innerHTML=rows.length?rows.map((r,idx)=>`
+    <div class="query-card">
+      <div class="query-head" data-q="${idx}">
+        <div class="query-sql">${escapeHtml(r.key)}</div>
+        <div class="query-summary">
+          <span class="qbadge">Δ Read <b class="${cls(r.dr)}">${fmt(r.dr)}</b></span>
+          <span class="qbadge">Δ Write <b class="${cls(r.dw)}">${fmt(r.dw)}</b></span>
+          <span class="qbadge">Δ Count <b class="${cls(r.dc)}">${fmt(r.dc)}</b></span>
+        </div>
+      </div>
+      <div class="query-detail">
+        <div class="qrow"><span>時点</span><b>Count</b><b>Read</b><b>Write</b></div>
+        ${r.vals.map((v,i)=>`<div class="qrow"><span>${i+1}. ${escapeHtml(state.files[i].name)}</span><span>${fmt(v.count)}</span><span>${fmt(v.rowsRead)}</span><span>${fmt(v.rowsWritten)}</span></div>`).join("")}
+      </div>
+    </div>`).join(""):'<div class="empty">該当するSQLがありません。</div>';
+  $("queryList").querySelectorAll(".query-head").forEach(h=>h.onclick=()=>h.parentElement.classList.toggle("open"));
+}
+function walkNumbers(obj,path,out){
+  if(!obj||typeof obj!=="object")return;
+  if(Array.isArray(obj)){obj.forEach((x,i)=>walkNumbers(x,path+"["+i+"]",out));return;}
+  for(const [k,v] of Object.entries(obj)){
+    const p=path?path+"."+k:k;
+    if(typeof v==="number"&&Number.isFinite(v))out.push([p,v]);
+    if(v&&typeof v==="object")walkNumbers(v,p,out);
+  }
+}
+function renderChanges(){
+  const arrays=state.data.map(d=>{const a=[];walkNumbers(d,"",a);return new Map(a);});
+  const paths=[...new Set(arrays.flatMap(m=>[...m.keys()]))];
+  const rows=paths.map(p=>{
+    const vals=arrays.map(m=>m.get(p));
+    const nums=vals.filter(v=>typeof v==="number");
+    const first=nums[0],last=nums[nums.length-1];
+    if(typeof first!=="number"||typeof last!=="number"||first===last)return null;
+    return {p,vals,d:last-first};
+  }).filter(Boolean).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,100);
+  $("changes").innerHTML=rows.length?rows.map(r=>`<div class="change-card"><div class="change-path">${escapeHtml(r.p)}<div class="small">${r.vals.map((v,i)=>`${i+1}:${fmt(v)}`).join(" → ")}</div></div><div class="change-values ${cls(r.d)}">Δ ${fmt(r.d)}<br><span class="small">${pct(r.vals[0],r.vals[r.vals.length-1])}</span></div></div>`).join(""):'<div class="empty">数値の変更はありません。</div>';
+}
+function renderAll(){
+  renderFileList();renderBaseSelect();renderMetrics();renderQueries();renderChanges();
+  $("summary").textContent=`${state.files.length}ファイル読み込み済み。比較順は1→${state.files.length}。基準=${state.files[state.base]?.name||"—"}`;
+}
 async function load(files){
-  state.files=[...files];state.data=[];
-  for(const f of state.files){try{state.data.push(JSON.parse(await f.text()))}catch(e){alert(f.name+" はJSONとして読み込めません: "+e.message);return}}
-  $("files").innerHTML=state.files.map((f,i)=>"<span class='badge'>"+(i+1)+". "+escapeHtml(f.name)+"</span>").join("");
-  $("base").innerHTML=state.files.map((f,i)=>"<option value='"+i+"'>"+escapeHtml(f.name)+"</option>").join("");
-  $("app").hidden=false;$("base").onchange=()=>{state.base=+$("base").value;render()};render();
+  const incoming=[...files].filter(f=>/\.json$/i.test(f.name));
+  if(incoming.length<2){alert("JSONファイルを2個以上選択してください。");return;}
+  if(incoming.length>MAX_FILES){alert("一度に比較できるのは最大10ファイルです。");return;}
+  const data=[];
+  for(const f of incoming){
+    try{data.push(JSON.parse(await f.text()));}
+    catch(e){alert(f.name+" はJSONとして読み込めません: "+e.message);return;}
+  }
+  state.files=incoming;state.data=data;state.base=0;
+  $("app").hidden=false;renderAll();
 }
 $("picker").onchange=e=>load(e.target.files);
-const drop=$("drop");["dragenter","dragover"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add("drag")}));
+$("base").onchange=e=>{state.base=+e.target.value;renderAll();};
+$("querySearch").oninput=renderQueries;
+$("querySort").onchange=renderQueries;
+const drop=$("drop");
+["dragenter","dragover"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add("drag")}));
 ["dragleave","drop"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.remove("drag")}));
-drop.addEventListener("drop",e=>load([...e.dataTransfer.files].filter(f=>f.name.toLowerCase().endsWith(".json"))));
+drop.addEventListener("drop",e=>load([...e.dataTransfer.files]));
+
 $("export").onclick=()=>{
-  const base=state.data[state.base], other=state.data.filter((_,i)=>i!==state.base)[0],qa=aggregateQueries(base),qb=aggregateQueries(other);
-  const keys=[...new Set([...qa.keys(),...qb.keys()])];
-  const lines=[["query","base_count","compare_count","delta_count","base_rowsRead","compare_rowsRead","delta_rowsRead","base_rowsWritten","compare_rowsWritten","delta_rowsWritten"]];
-  for(const k of keys){const a=qa.get(k)||{},b=qb.get(k)||{};lines.push([k,a.count||0,b.count||0,(b.count||0)-(a.count||0),a.rowsRead||0,b.rowsRead||0,(b.rowsRead||0)-(a.rowsRead||0),a.rowsWritten||0,b.rowsWritten||0,(b.rowsWritten||0)-(a.rowsWritten||0)])}
+  const maps=state.data.map(aggregateQueries);
+  const keys=[...new Set(maps.flatMap(m=>[...m.keys()]))];
+  const header=["query",...state.files.flatMap((f,i)=>[`${i+1}_${f.name}_count`,`${i+1}_${f.name}_rowsRead`,`${i+1}_${f.name}_rowsWritten`]),"delta_count_1_to_last","delta_rowsRead_1_to_last","delta_rowsWritten_1_to_last"];
+  const lines=[header];
+  for(const k of keys){
+    const vals=maps.map(m=>m.get(k)||{count:0,rowsRead:0,rowsWritten:0});
+    const first=vals[0],last=vals[vals.length-1];
+    lines.push([k,...vals.flatMap(v=>[v.count,v.rowsRead,v.rowsWritten]),last.count-first.count,last.rowsRead-first.rowsRead,last.rowsWritten-first.rowsWritten]);
+  }
   const csv="\ufeff"+lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");
-  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="eagleeye-status-query-diff.csv";a.click();URL.revokeObjectURL(a.href);
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="eagleeye-status-query-diff-multi.csv";a.click();URL.revokeObjectURL(a.href);
 };
 </script>
-</main>
 </body>
 </html>
