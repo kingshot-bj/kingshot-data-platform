@@ -33,7 +33,7 @@ import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
-import { getUserPlayerLink, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
+import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
 
 async function runDataRetentionJob(env) {
@@ -1515,37 +1515,68 @@ async function handleMyPlayerApi(request, env) {
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
 
-  const url = new URL(request.url);
-
   try {
     if (request.method === "GET") {
-      const link = await getUserPlayerLink(env.DB, auth.user_id);
-      let player = null;
-      if (link?.status === "ACTIVE") {
-        player = await env.DB.prepare(`
-          SELECT governor_id, nick_name, kid, power, town_center_level, vip,
-                 alliance_abbr, alliance_name, observed_at
-          FROM players
-          WHERE governor_id = ?
-          LIMIT 1
-        `).bind(link.governor_id).first();
+      const rows = await getUserPlayerLinksWithPlayers(env.DB, auth.user_id);
+      const links = rows.map(row => ({
+        link_id: row.link_id,
+        user_id: row.user_id,
+        governor_id: row.governor_id,
+        kingdom_id: Number(row.kingdom_id),
+        account_type: row.account_type,
+        status: row.status,
+        verification_method: row.verification_method,
+        verified: row.verification_method !== "SELF_CLAIM",
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        verified_at: row.verified_at,
+        official_verified_at: row.official_verified_at,
+        official_verified_by_user_id: row.official_verified_by_user_id,
+        player: row.nick_name == null && row.kid == null ? null : {
+          governor_id: row.governor_id,
+          nick_name: row.nick_name,
+          kid: row.kid,
+          power: row.power,
+          town_center_level: row.town_center_level,
+          vip: row.vip,
+          alliance_abbr: row.alliance_abbr,
+          alliance_name: row.alliance_name,
+          observed_at: row.observed_at
+        }
+      }));
+      const active = links.filter(row => row.status === "ACTIVE");
+      const kingdoms = new Set(active.map(row => Number(row.kingdom_id)));
+      const byKingdom = {};
+      for (const row of active) {
+        const key = String(row.kingdom_id);
+        byKingdom[key] = (byKingdom[key] || 0) + 1;
       }
       return json({
         ok: true,
-        link: link ? { ...link, verified: link.verification_method !== "SELF_CLAIM" } : null,
-        player: player || null
+        links,
+        link: links.find(row => row.account_type === "MAIN" && row.status === "ACTIVE") || active[0] || null,
+        limits: {
+          freeKingdoms: 2,
+          freeAccountsPerKingdom: 2,
+          freeSubAccountsPerKingdom: 1,
+          registeredKingdoms: kingdoms.size,
+          activeAccounts: active.length,
+          byKingdom
+        }
       });
     }
 
     if (request.method === "POST") {
       const body = await request.json().catch(() => null);
       const governorId = validateGovernorId(body?.governor_id);
+      const accountType = String(body?.account_type || "MAIN").toUpperCase() === "SUB" ? "SUB" : "MAIN";
       if (!governorId) return json({ ok: false, error: "INVALID_GOVERNOR_ID", message: "領主IDは7〜12桁の数字で入力してください。" }, 400);
 
-      const before = await getUserPlayerLink(env.DB, auth.user_id);
       let link;
       try {
-        link = await saveUserPlayerLink(env.DB, auth.user_id, governorId);
+        link = await saveUserPlayerLink(env.DB, auth.user_id, governorId, accountType, {
+          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true"
+        });
       } catch (error) {
         if (error?.code === "GOVERNOR_ID_ALREADY_LINKED") {
           const supportUrl = String(env.DISCORD_SUPPORT_URL || "").trim() || null;
@@ -1555,14 +1586,8 @@ async function handleMyPlayerApi(request, env) {
             conflictingUserId: error.owner?.user_id || null,
             discordSupportUrl: supportUrl
           });
-          await trackServiceUsage(env, auth, "KINGSHOT_ID_CONFLICT", {
-            targetType: "PLAYER",
-            targetId: governorId
-          });
-          await trackServiceUsage(env, auth, "KINGSHOT_ID_SUPPORT_REQUEST", {
-            targetType: "PLAYER",
-            targetId: governorId
-          });
+          await trackServiceUsage(env, auth, "KINGSHOT_ID_CONFLICT", { targetType: "PLAYER", targetId: governorId });
+          await trackServiceUsage(env, auth, "KINGSHOT_ID_SUPPORT_REQUEST", { targetType: "PLAYER", targetId: governorId });
           return json({
             ok: false,
             error: "GOVERNOR_ID_ALREADY_LINKED",
@@ -1573,11 +1598,16 @@ async function handleMyPlayerApi(request, env) {
             note: "本人である場合は、KingShotゲーム内で本人しか表示できない情報が確認できるスクリーンショットを添えてEagleEye専用サポートへ問い合わせてください。"
           }, 409);
         }
+        if (["PLAYER_NOT_FOUND","KINGDOM_LIMIT_REACHED","MAIN_ACCOUNT_ALREADY_EXISTS","SUB_ACCOUNT_LIMIT_REACHED","ACCOUNT_LIMIT_REACHED","GOVERNOR_ID_ALREADY_REGISTERED"].includes(error?.code)) {
+          return json({ ok: false, error: error.code, message: error.userMessage || error.message }, 409);
+        }
         throw error;
       }
-      await trackServiceUsage(env, auth, before?.governor_id === governorId ? "KINGSHOT_ID_REGISTER" : "KINGSHOT_ID_CHANGE", {
+
+      await trackServiceUsage(env, auth, "KINGSHOT_ID_REGISTER", {
         targetType: "PLAYER",
-        targetId: governorId
+        targetId: governorId,
+        metadata: { accountType }
       });
 
       const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);
@@ -1589,26 +1619,28 @@ async function handleMyPlayerApi(request, env) {
         });
       }
 
-      const player = await env.DB.prepare(`
-        SELECT governor_id, nick_name, kid, power, town_center_level, vip,
-               alliance_abbr, alliance_name, observed_at
-        FROM players
-        WHERE governor_id = ?
-        LIMIT 1
-      `).bind(governorId).first();
-
-      return json({ ok: true, link, player: player || null, advanced: { promoted: Boolean(eligibility.promoted), role: eligibility.role, hasPlayerLink: eligibility.hasPlayerLink, hasMightPulseKey: eligibility.hasMightPulseKey } }, 200);
+      const rows = await getUserPlayerLinksWithPlayers(env.DB, auth.user_id);
+      return json({
+        ok: true,
+        link,
+        links: rows,
+        advanced: {
+          promoted: Boolean(eligibility.promoted),
+          role: eligibility.role,
+          hasPlayerLink: eligibility.hasPlayerLink,
+          hasMightPulseKey: eligibility.hasMightPulseKey
+        }
+      }, 200);
     }
 
     if (request.method === "DELETE") {
-      const link = await getUserPlayerLink(env.DB, auth.user_id);
-      if (!link) return json({ ok: true, link: null });
-      const result = await disableUserPlayerLink(env.DB, auth.user_id);
-      await trackServiceUsage(env, auth, "KINGSHOT_ID_REMOVE", {
-        targetType: "PLAYER",
-        targetId: link.governor_id
-      });
-      return json({ ok: true, link: result.link });
+      const body = await request.json().catch(() => null);
+      const governorId = validateGovernorId(body?.governor_id);
+      if (!governorId) return json({ ok: false, error: "INVALID_GOVERNOR_ID", message: "解除対象の領主IDが必要です。" }, 400);
+      const result = await disableUserPlayerLink(env.DB, auth.user_id, governorId);
+      if (!result.changed) return json({ ok: false, error: "PLAYER_LINK_NOT_FOUND", message: "指定された登録が見つかりません。" }, 404);
+      await trackServiceUsage(env, auth, "KINGSHOT_ID_REMOVE", { targetType: "PLAYER", targetId: governorId });
+      return json({ ok: true, links: result.links });
     }
 
     return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
