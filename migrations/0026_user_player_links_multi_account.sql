@@ -3,6 +3,21 @@
 -- Free plan: up to 2 kingdoms, and 1 MAIN + 1 SUB per kingdom.
 -- The schema intentionally supports future paid expansion without exposing it yet.
 
+-- When migrations are applied to a fresh database, 0022 may not have created the table yet.
+-- Create the legacy shape first so the copy below is safe; the table is replaced by v2 immediately after.
+CREATE TABLE IF NOT EXISTS user_player_links (
+  link_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  governor_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'DISABLED')),
+  verification_method TEXT NOT NULL DEFAULT 'SELF_CLAIM' CHECK (verification_method IN ('SELF_CLAIM', 'ADMIN_VERIFIED', 'API_VERIFIED', 'GAME_CODE')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  verified_at INTEGER,
+  official_verified_at INTEGER,
+  official_verified_by_user_id TEXT
+);
+
 CREATE TABLE IF NOT EXISTS user_player_links_v2 (
   link_id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
