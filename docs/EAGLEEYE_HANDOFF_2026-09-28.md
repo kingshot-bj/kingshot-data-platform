@@ -593,3 +593,49 @@ Google Drive / My Drive
 - SERVICE_USAGE本文をD1へ保存しない。
 
 今回の変更は**認証・保存先の方針変更であり、現時点ではまだ実装変更を行っていない**。
+
+### 18-9. Google Drive OAuth接続実装開始（2026-09-29）
+
+方針転換に基づき、本体側に個人GoogleアカウントOAuth接続の初期実装を追加した。
+
+実装:
+- `src/google-drive.js` をService Account JWT方式からユーザーOAuth refresh token方式へ変更。
+- OAuth scopeは `https://www.googleapis.com/auth/drive.file`。
+- `/admin/google-drive` をOWNER専用の設定画面として追加。
+- `/api/admin/google-drive/authorize` をOWNER専用OAuth開始エンドポイントとして追加。
+- `/api/admin/google-drive/callback` をOWNER専用OAuth callbackとして追加。
+- OAuth stateは既存のEagleEye HMAC state tokenで検証。
+- 初回OAuth callback時、access tokenでEagleEyeフォルダを作成する。
+- callback画面でRefresh TokenとFolder IDを一度だけ表示し、Cloudflareへ手動登録する方式。
+- `GOOGLE_DRIVE_REFRESH_TOKEN` はCloudflare Secretとして扱う。
+- `GOOGLE_DRIVE_FOLDER_ID` はEagleEyeフォルダIDとして設定する。
+- `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` / `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` をOAuth設定に使用。
+- Admin ControlからGoogle Drive設定画面へ遷移できる。
+- System StatusのRuntime ConfigurationにもGoogle Drive OAuth設定状態を追加。
+
+R2→Drive transport:
+- R2 objectを取得。
+- `appProperties.eagleeyeSourceKey` で同一R2 objectの重複転送を検出。
+- Drive multipart upload。
+- source sizeとDrive sizeを比較しverificationする。
+- duplicate時もsizeを再確認する。
+- verification成功を `verified: true` として返す。
+
+まだ未実装:
+- cronからの自動R2→Drive転送。
+- retentionとのDrive連携。
+- Library Index。
+- 完全なchecksum verification。
+- record count verification。
+- batch_id。
+- R2自動削除。
+
+重要:
+- Google DriveはDB/search basisにしない。
+- R2がcanonical source。
+- Drive upload成功だけではR2削除条件を満たさない。
+- 本番R2→Drive実データ処理が確認されるまでproduction-confirmedとは言わない。
+- SERVICE_USAGE本文をD1へ保存しない。
+- Google OAuth同意画面がTestingの場合、refresh tokenが7日で失効するため長期運用前にGoogle Cloud側の公開状態を確認する。
+
+現時点ではコード実装まで。Google Cloud OAuth client作成、Cloudflare Secret/Variable設定、OAuth認証実行、R2→Drive本番実アップロードはまだ未確認。
