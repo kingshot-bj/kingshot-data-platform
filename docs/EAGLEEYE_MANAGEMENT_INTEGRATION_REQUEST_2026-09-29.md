@@ -295,3 +295,88 @@ When a main-side change is required:
 **Management → Integration Request MD → EagleEye main project → implementation / verification → Management re-check**
 
 This document is the shared development boundary between the two projects.
+
+## 18. Current-main inspection update — 2026-09-29
+
+Management inspected the current `main` branch after this request was created.
+
+### Confirmed from source
+
+- `wrangler.jsonc` currently binds:
+  - D1: `DB`
+  - R2: `ARCHIVE`
+  - R2 bucket: `eagleeye-archive`
+  - Queue Producer: `SERVICE_USAGE_QUEUE`
+  - Queue: `eagleeye-service-usage`
+  - Queue Consumer: `eagleeye-service-usage`
+  - DLQ: `eagleeye-service-usage-dlq`
+- Queue settings currently include:
+  - max batch size 100
+  - max batch timeout 30 seconds
+  - max retries 5
+  - max concurrency 1
+- `src/service-usage.js` currently creates `event_id` with `crypto.randomUUID()` and sends the event asynchronously to the Queue.
+- `src/service-usage-archive.js` currently deduplicates archive events by `event_id` and writes canonical 12-hour R2 objects.
+- `src/google-drive.js` contains `uploadR2ObjectToGoogleDrive(...)`.
+- The current main Worker already exposes EagleEye Admin routes including diagnostics and R2 archive object inspection.
+
+### Important finding: batch_id
+
+The inspected `src/service-usage.js` and `src/service-usage-archive.js` did not show a `batch_id` implementation.
+
+The formal Management design requires **event_id + batch_id double idempotency**.
+
+Therefore Management treats `batch_id` as a main-side requirement that still needs review / implementation. It is NOT considered implemented merely because the architecture document specifies it.
+
+### Important finding: Management authentication
+
+The current main Worker has its own Discord login/session and EagleEye Admin authorization.
+
+Management will not reuse the main application's session cookie.
+
+A separate Management-to-main authentication and authorization boundary is required for Management integration.
+
+### Important finding: existing Admin APIs
+
+Existing routes such as:
+
+- `/api/admin/diagnostics`
+- `/api/admin/r2-archive-objects`
+- API Pool administration routes
+
+are EagleEye Admin interfaces.
+
+They should not automatically be treated as Management APIs.
+
+Management requests an explicit, minimal integration API rather than direct reuse of broad Admin functionality.
+
+### Important finding: Google Drive
+
+The source contains the Google Drive upload primitive, but the implementation comments state that it is not wired to cron, retention, or automatic deletion.
+
+Therefore Management will not assume that automatic R2 → Drive lifecycle processing is active without production verification.
+
+## 19. Concrete integration requests
+
+Based on the current source inspection, Management requests the main project to review and, where necessary, implement:
+
+1. A dedicated Management authentication / authorization boundary.
+2. Read-only operational interfaces for Queue, backlog, DLQ, R2 archive, and Drive archive state.
+3. Controlled mutation interfaces for approved recovery operations.
+4. Stable request / response schemas for those interfaces.
+5. Operator identity and audit context for Management-triggered mutations.
+6. Idempotency handling for Management mutation requests.
+7. Review / implementation of `batch_id` so the formal event_id + batch_id idempotency requirement is actually satisfied.
+8. Explicit production verification of the integration path before calling it production-confirmed.
+
+These requests do not authorize Management to modify the main repository directly.
+
+## 20. Integration boundary principle
+
+Management should actively read the current main branch whenever integration logic depends on it.
+
+However:
+
+**read freely; edit only through the main project's own development process.**
+
+If the implementation changes after this document is reviewed, Management will re-check the main branch before relying on the previous contract.
