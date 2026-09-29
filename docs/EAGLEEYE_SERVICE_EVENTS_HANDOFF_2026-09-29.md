@@ -882,3 +882,56 @@ SERVICE_USAGEへ全HTTP/internal processingを入れない。
 
 Q1〜Q29の設計判断を基準として、これ以上細かい質問を無制限に増やさない。
 実装上必要な細部は既存決定事項とFree-tier-first、冪等性、最終Drive保管という方針に従って合理的に設計し、ユーザーに影響する新しい仕様判断が必要な場合だけ追加確認する。
+
+
+# 実装進捗追記（2026-09-29 21:xx JST）
+
+## Phase 2 — Queue → R2 骨格
+
+実装済み:
+- `src/service-usage-archive.js` を追加。
+- Queue ConsumerからSERVICE_USAGEを受け取り、R2へgzip NDJSON保存。
+- R2キーはJST基準の `service-events/YYYY/MM/DD/00-12.ndjson.gz` / `12-24.ndjson.gz`。
+- 同一時間枠の既存オブジェクトを読み込み、`event_id`で重複排除して再圧縮・更新。
+- Queue retry時に同じevent_idを維持。
+- R2書き込み失敗時は対象messageをretry。
+- 不正messageはackして無限retryを避ける。
+- WranglerにSERVICE_USAGE producer / consumer / DLQ設定を追加。
+- max_retries=5。
+- max_concurrency=1でR2同一オブジェクト更新を直列化。
+- consumer batchは最大100件、最大待機60秒。
+
+コミット:
+- `0a48b27beaed84802426d18e17968dd1c1b25d2f`
+- `6d778344a3cee09602cd93a4e094099c2b663333`
+- `2b94a4758595d19907d6f1515b93b8c55cfb0c7a`
+- `42df8fe48b26cb3658a3419dc20d28f8c6ca415e`
+- `ef5bf3ded7f28569a8913715e69860e815becf33`
+
+### 本番未確認
+- Queue本体がCloudflareアカウント上に存在すること
+- Queue bindingの本番publish
+- Queue → Consumerの実配信
+- R2への実gzip object生成
+- retry / DLQ実動作
+- 12時間運用でのR2使用量
+- Productionでの全15イベント収集
+
+### ユーザー操作が必要なもの
+Queue自体はアカウントリソースなので、Cloudflare認証済み環境から以下を実行する必要がある:
+`npx wrangler queues create eagleeye-service-usage`
+
+その後、mainをdeployしてQueue bindingを反映する。
+
+## Cloudflare仕様の再確認（2026-09-29）
+
+現行Cloudflare公式ドキュメントでは、Free tierのQueue message retentionは60〜86400秒（最大24時間）としてWranglerで設定可能。一方、DLQについては現在の公式DLQ説明で「consumerなしのDLQは4日後に削除」と記載されている。
+
+したがって、以前の「DLQは24時間」という前提は**DLQ固有の保持期間については現行公式情報と一致しないため撤回**。ただし、Free-tier Queue本体の未処理message retention上限24時間という制約は引き続き重要。
+
+また、現実の運用設計では「DLQに入ったら4日あるから放置」ではなく、早期通知・自動救済を前提にする。
+
+## 注意
+現Phase 2のConsumerは同じ12時間正規R2 objectをバッチ到着ごとに更新する方式。12時間境界ごとに1回だけR2 writeする「完全な12h flush」ではない。
+これはQueueからConsumerへ即時pushされるCloudflare仕様上、追加の一時バッファ層なしに厳密な12h flushを実現するための次段設計が必要なため。
+
