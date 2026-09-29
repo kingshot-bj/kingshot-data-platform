@@ -14,7 +14,10 @@
     "CLOUDFLARE_D1_DATABASE_ID": "0024b5df-4dcf-45f7-b9a7-6fa621cbb80a",
     "HISTORY_STORAGE_MODE": "R2_ONLY",
     "CLOUDFLARE_MONITORING_PROFILE": "PAID_5USD",
-    "CLOUDFLARE_USD_JPY_RATE": "157.50"
+    "CLOUDFLARE_USD_JPY_RATE": "157.50",
+    "GOOGLE_OAUTH_CLIENT_ID": "431040963469-pjv0mpc3ap509gm8st2mva0879l9pa27.apps.googleusercontent.com",
+    "GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback",
+    "GOOGLE_DRIVE_FOLDER_ID": "1w34yYvP7FswaOsDn1u4BD0jQtNrhmJXE"
   },
   "d1_databases": [
     {
