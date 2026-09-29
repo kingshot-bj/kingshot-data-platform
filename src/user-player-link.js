@@ -38,6 +38,18 @@ function normalizeGovernorId(value) {
   return raw;
 }
 
+function isUniqueGovernorConstraint(error) {
+  const message = String(error?.message || error || "");
+  return /UNIQUE constraint failed.*user_player_links\.governor_id/i.test(message);
+}
+
+function governorAlreadyLinkedError(owner = null) {
+  const error = new Error("GOVERNOR_ID_ALREADY_LINKED");
+  error.code = "GOVERNOR_ID_ALREADY_LINKED";
+  error.owner = owner;
+  return error;
+}
+
 export async function getUserPlayerLink(db, userId) {
   await ensureSchema(db);
   const row = await db.prepare(`
@@ -71,39 +83,48 @@ export async function saveUserPlayerLink(db, userId, governorId) {
     throw error;
   }
 
+  const normalizedUserId = String(userId);
   const now = Math.floor(Date.now() / 1000);
-  const existing = await getUserPlayerLink(db, userId);
+  const existing = await getUserPlayerLink(db, normalizedUserId);
   const owner = await findActiveGovernorOwner(db, normalized);
-  if (owner && owner.user_id !== String(userId) && (!existing || existing.governor_id !== normalized)) {
-    const error = new Error("GOVERNOR_ID_ALREADY_LINKED");
-    error.code = "GOVERNOR_ID_ALREADY_LINKED";
-    error.owner = owner;
-    throw error;
+  if (owner && owner.user_id !== normalizedUserId && (!existing || existing.governor_id !== normalized)) {
+    throw governorAlreadyLinkedError(owner);
   }
+
   if (existing) {
-    await db.prepare(`
-      UPDATE user_player_links
-      SET governor_id = ?,
-          status = 'ACTIVE',
-          verification_method = 'SELF_CLAIM',
-          official_verified_at = NULL,
-          official_verified_by_user_id = NULL,
-          updated_at = ?,
-          verified_at = NULL
-      WHERE user_id = ?
-    `).bind(normalized, now, String(userId)).run();
-    return getUserPlayerLink(db, userId);
+    try {
+      await db.prepare(`
+        UPDATE user_player_links
+        SET governor_id = ?,
+            status = 'ACTIVE',
+            verification_method = 'SELF_CLAIM',
+            official_verified_at = NULL,
+            official_verified_by_user_id = NULL,
+            updated_at = ?,
+            verified_at = NULL
+        WHERE user_id = ?
+      `).bind(normalized, now, normalizedUserId).run();
+    } catch (error) {
+      if (isUniqueGovernorConstraint(error)) throw governorAlreadyLinkedError();
+      throw error;
+    }
+    return getUserPlayerLink(db, normalizedUserId);
   }
 
   const linkId = crypto.randomUUID();
-  await db.prepare(`
-    INSERT INTO user_player_links (
-      link_id, user_id, governor_id, status, verification_method,
-      created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
-    ) VALUES (?, ?, ?, 'ACTIVE', 'SELF_CLAIM', ?, ?, NULL, NULL, NULL)
-  `).bind(linkId, String(userId), normalized, now, now).run();
+  try {
+    await db.prepare(`
+      INSERT INTO user_player_links (
+        link_id, user_id, governor_id, status, verification_method,
+        created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
+      ) VALUES (?, ?, ?, 'ACTIVE', 'SELF_CLAIM', ?, ?, NULL, NULL, NULL)
+    `).bind(linkId, normalizedUserId, normalized, now, now).run();
+  } catch (error) {
+    if (isUniqueGovernorConstraint(error)) throw governorAlreadyLinkedError();
+    throw error;
+  }
 
-  return getUserPlayerLink(db, userId);
+  return getUserPlayerLink(db, normalizedUserId);
 }
 
 export async function disableUserPlayerLink(db, userId) {
@@ -148,19 +169,32 @@ export async function verifyAndTransferPlayerLink(db, {
     error.code = "SUPPORT_REQUEST_NOT_FOUND";
     throw error;
   }
-  const now = Math.floor(Date.now() / 1000);
-  await db.prepare(`
-    UPDATE user_player_links
-    SET status = 'DISABLED', updated_at = ?
-    WHERE user_id = ? AND governor_id = ? AND status = 'ACTIVE'
-  `).bind(now, String(ownerUserId), request.governor_id).run();
 
-  const existingNew = await getUserPlayerLink(db, newUserId);
+  const normalizedNewUserId = String(newUserId);
+  const normalizedOwnerUserId = String(ownerUserId);
+  const currentOwner = await findActiveGovernorOwner(db, request.governor_id);
+  if (!currentOwner || currentOwner.user_id !== normalizedOwnerUserId) {
+    const error = new Error("CURRENT_GOVERNOR_OWNER_MISMATCH");
+    error.code = "CURRENT_GOVERNOR_OWNER_MISMATCH";
+    throw error;
+  }
+
+  // Precheck the destination before disabling the current owner. This prevents
+  // a partial transfer if the requester already owns a different player.
+  const existingNew = await getUserPlayerLink(db, normalizedNewUserId);
   if (existingNew && existingNew.governor_id !== request.governor_id) {
     const error = new Error("NEW_USER_ALREADY_HAS_DIFFERENT_PLAYER");
     error.code = "NEW_USER_ALREADY_HAS_DIFFERENT_PLAYER";
     throw error;
   }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  await db.prepare(`
+    UPDATE user_player_links
+    SET status = 'DISABLED', updated_at = ?
+    WHERE user_id = ? AND governor_id = ? AND status = 'ACTIVE'
+  `).bind(now, normalizedOwnerUserId, request.governor_id).run();
 
   if (existingNew) {
     await db.prepare(`
@@ -168,17 +202,29 @@ export async function verifyAndTransferPlayerLink(db, {
       SET status='ACTIVE', governor_id=?, verification_method='ADMIN_VERIFIED',
           verified_at=?, official_verified_at=?, official_verified_by_user_id=?, updated_at=?
       WHERE user_id=?
-    `).bind(request.governor_id, now, now, String(resolverUserId), now, String(newUserId)).run();
+    `).bind(request.governor_id, now, now, String(resolverUserId), now, normalizedNewUserId).run();
   } else {
-    await db.prepare(`
-      INSERT INTO user_player_links (
-        link_id, user_id, governor_id, status, verification_method,
-        created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
-      ) VALUES (?, ?, ?, 'ACTIVE', 'ADMIN_VERIFIED', ?, ?, ?, ?, ?)
-    `).bind(
-      crypto.randomUUID(), String(newUserId), request.governor_id,
-      now, now, now, now, String(resolverUserId)
-    ).run();
+    try {
+      await db.prepare(`
+        INSERT INTO user_player_links (
+          link_id, user_id, governor_id, status, verification_method,
+          created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
+        ) VALUES (?, ?, ?, 'ACTIVE', 'ADMIN_VERIFIED', ?, ?, ?, ?, ?)
+      `).bind(
+        crypto.randomUUID(), normalizedNewUserId, request.governor_id,
+        now, now, now, now, String(resolverUserId)
+      ).run();
+    } catch (error) {
+      if (isUniqueGovernorConstraint(error)) {
+        const conflict = await findActiveGovernorOwner(db, request.governor_id);
+        if (conflict && conflict.user_id !== normalizedNewUserId) {
+          const wrapped = governorAlreadyLinkedError(conflict);
+          wrapped.code = "TRANSFER_GOVERNOR_ID_ALREADY_LINKED";
+          throw wrapped;
+        }
+      }
+      throw error;
+    }
   }
 
   await db.prepare(`
@@ -190,5 +236,5 @@ export async function verifyAndTransferPlayerLink(db, {
     now, now, String(resolverUserId), requestId
   ).run();
 
-  return getUserPlayerLink(db, newUserId);
+  return getUserPlayerLink(db, normalizedNewUserId);
 }
