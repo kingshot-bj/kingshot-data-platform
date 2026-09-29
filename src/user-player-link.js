@@ -1,6 +1,6 @@
 let userPlayerLinkSchemaPromise = null;
 
-async function ensureSchema(db) {
+export async function ensureSchema(db) {
   if (userPlayerLinkSchemaPromise) return userPlayerLinkSchemaPromise;
   userPlayerLinkSchemaPromise = (async () => {
     await db.prepare(`
