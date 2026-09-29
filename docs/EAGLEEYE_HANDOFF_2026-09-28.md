@@ -722,3 +722,12 @@ Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `s
 - Commit: a8144cf573ee08fad84123fb4ed0dc602e8dfdaf / a54e4b5389e83e4a0aee5b81e066cbecca2aaee9
 - 本番でのAPIキー疎通確認・Pool登録成功は未確認。
 - 参考: MightPulse公式API仕様ではBearer認証、GET /v1/players/{id}?include=base、401=認証失敗、404=未知プレイヤー、429=レート制限。
+
+## 2026-09-30 / MightPulse APIキー検証仕様修正
+- APIキー登録はKingShot領主ID登録を前提にしない。APIキーだけ先にPoolへ提供する利用者を許容する。
+- ユーザー提供キーは、MightPulseの一般的な認証確認として GET /v1/kingdoms?page=1&size=1 を提供キーで実行し、成功した場合のみPoolへ暗号化保存する。
+- 401/403系は無効キーとして登録拒否、429はレート制限、5xx/timeout等は一時障害として登録せず再試行を促す。
+- 領主IDとAPIキーの両方が登録された時点でAdvanced昇格条件を評価する。APIキーだけの登録自体は可能。
+- APIキー本体はログ・レスポンスへ出さない。
+- 直前コミット a8144cf / a54e4b5 で一度「領主ID必須」の検証を入れたが、APIキーだけ先に登録する利用者を阻害するため修正。最終仕様コミット: f8fb7366e48f95f06e52e6aed806499bdb6364a1
+- 本番での疎通確認・Pool登録成功は未確認。
