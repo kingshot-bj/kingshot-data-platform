@@ -20,7 +20,8 @@ EagleEye Management は EagleEye 本体とは分離した独立管理システ�
 - Cloudflare Workers / D1 / R2 / Queues
 - R2 binding: ARCHIVE → eagleeye-archive
 - D1 binding: DB
-- MightPulse API / Google Drive / Discord
+- MightPulse API
+- Google Drive / Discord の実連携処理も EagleEye 本体側に存在する
 
 ## 3. SERVICE_USAGE 保存経路
 ```text
@@ -94,11 +95,30 @@ JST基準、gzip NDJSON。event_id で重複排除する。
 
 現在の実装は Consumer batch ごとに canonical 12h object を更新するため、厳密な意味で12時間に1回だけR2へ書く構成ではない。Free-tier / operation cost を考慮し、将来的に staging → 12h consolidation へ改善する余地がある。
 
-## 8. Google Drive
-既存 primitive: src/google-drive.js の uploadR2ObjectToGoogleDrive。
-環境変数: GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY / GOOGLE_DRIVE_FOLDER_ID
+## 8. Google Drive / Discord の責任分界
+**Google Drive / Discord の実際の連携処理は EagleEye 本体側が担当する。Management側へ移管する前提ではない。**
+
+既存の Google Drive primitive:
+- `src/google-drive.js`
+- `uploadR2ObjectToGoogleDrive(...)`
+
+環境変数:
+- GOOGLE_SERVICE_ACCOUNT_EMAIL
+- GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+- GOOGLE_DRIVE_FOLDER_ID
 
 Drive は最終 archive。R2 → Drive のアップロード成功を検証してから R2 を削除する。Drive 失敗時は R2 を残す。
+
+Management側は、Drive/Discordの実連携コードを持つのではなく、**EagleEye本体が行った連携の状態を監視・管制する**。
+
+Managementで必要になる例:
+- Drive archive status
+- 最終成功日時
+- 失敗状態
+- Emergency Archive の実行要求
+- Recovery 状態
+- Discord notification status
+
 Service Account の容量・権限・実アップロードは本番確認が必要。大容量 upload では resumable upload を検討する。
 
 ## 9. DLQ / Recovery
@@ -207,6 +227,8 @@ SERVICE_USAGE → Queue → R2 → intentional failure → retry ×5 → DLQ
 実際に確認できていないものを「本番確認済み」「正常動作確認済み」と表現しない。
 
 ## 17. EagleEye 本体側の重要注意
+- Google Drive / Discord の実連携処理は本体側に残す。Managementへ勝手に移管しない。
+- Managementからは必要な操作を明確なAPI/権限境界経由で要求する。
 - D1 Free-tier row read を最優先。
 - broad ranking_snapshots retrieval を絶対に復活させない。
 - current ranking は kingdom_ranking_current を優先。
@@ -266,14 +288,15 @@ Phase 6: production failure test。
 ## 22. 最重要伝言
 1. EagleEye Management は EagleEye 本体と別システム。
 2. SERVICE_USAGE は R2 を中心に運用する。
-3. Queue / R2 / DLQ / Drive を Management 側で管制する。
-4. EagleEye Admin と Management Admin を同一視しない。
-5. Free-tier を最優先する。
-6. event_id + batch_id の二重 idempotency を守る。
-7. Drive は最終 archive、R2 は短期/intermediate/insurance。
-8. Manual 操作には audit を残す。
-9. Owner が Admin 権限を制御する。
-10. 本番未確認事項を確認済みと断言しない。
+3. Queue / R2 / DLQ を Management 側で管制する。
+4. Google Drive / Discord の実連携処理は EagleEye 本体側に残す。Managementは状態監視・管制を担当する。
+5. EagleEye Admin と Management Admin を同一視しない。
+6. Free-tier を最優先する。
+7. event_id + batch_id の二重 idempotency を守る。
+8. Drive は最終 archive、R2 は短期/intermediate/insurance。
+9. Manual 操作には audit を残す。
+10. Owner が Admin 権限を制御する。
+11. 本番未確認事項を確認済みと断言しない。
 
 ---
 この文書を EagleEye Management の新規 ChatGPT Project に最初の引き継ぎ資料として使用する。
