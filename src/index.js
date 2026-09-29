@@ -1836,6 +1836,14 @@ async function handleKingdomWatchlistApi(request, env) {
       });
     }
 
+    await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_VIEW", {
+      metadata: {
+        watchlist_count: watchlists.length,
+        enabled_count: watchlists.filter(w => Number(w.enabled) === 1).length,
+        top_n: watchlists.length === 1 ? Number(watchlists[0]?.top_n || 0) || null : null,
+        interval_hours: watchlists.length === 1 ? Number(watchlists[0]?.interval_hours || 0) || null : null
+      }
+    });
     return json({ ok: true, watchlists });
   }
 
@@ -1923,6 +1931,15 @@ async function handleKingdomWatchlistApi(request, env) {
             "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
           ).bind(now, now, now, id).run();
         }
+        await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_ADD", {
+          targetType: "KINGDOM",
+          targetId: kid,
+          metadata: {
+            top_n: topN,
+            interval_hours: intervalHours,
+            enabled: true
+          }
+        });
         return json({
           ok: true,
           watchlist_id: id,
@@ -2048,6 +2065,15 @@ async function handleKingdomWatchlistApi(request, env) {
             // Intermediate continuation does not need a D1 write. The final
             // successful step clears last_error together with last_run_at.
           }
+          await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_REFRESH", {
+            targetType: "KINGDOM",
+            targetId: watch.kid,
+            metadata: {
+              source: "MANUAL",
+              refresh_scope: "WATCHLIST",
+              top_n: watch.top_n
+            }
+          });
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
           const message = String(error?.message || error).slice(0, 1000);
@@ -2118,6 +2144,11 @@ async function handleKingdomWatchlistApi(request, env) {
     await env.DB.prepare(
       "UPDATE kingdom_watchlists SET enabled = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
     ).bind(enabled, Math.floor(Date.now() / 1000), watchlistId, auth.discord_id).run();
+    await trackServiceUsage(env, auth, enabled === 1 ? "KINGDOM_WATCHLIST_ADD" : "KINGDOM_WATCHLIST_REMOVE", {
+      targetType: "KINGDOM",
+      targetId: watchlistId,
+      metadata: { enabled: enabled === 1 }
+    });
     return json({ ok: true });
   }
 
@@ -2133,6 +2164,10 @@ async function handleKingdomWatchlistApi(request, env) {
       env.DB.prepare("DELETE FROM kingdom_watchlist_locks WHERE watchlist_id = ?").bind(watchlistId),
       env.DB.prepare("DELETE FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ?").bind(watchlistId, auth.discord_id)
     ]);
+    await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_REMOVE", {
+      targetType: "KINGDOM",
+      targetId: watchlistId
+    });
     return json({ ok: true });
   }
 
