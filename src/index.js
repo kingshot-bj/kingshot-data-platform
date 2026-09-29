@@ -1580,6 +1580,15 @@ async function handleMyPlayerApi(request, env) {
         targetId: governorId
       });
 
+      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);
+      if (eligibility.promoted) {
+        await trackServiceUsage(env, auth, "ADVANCED_PROMOTED", {
+          targetType: "USER",
+          targetId: auth.user_id,
+          metadata: { reason: "PLAYER_LINK_AND_USER_CONTRIBUTED_MIGHTPULSE_KEY" }
+        });
+      }
+
       const player = await env.DB.prepare(`
         SELECT governor_id, nick_name, kid, power, town_center_level, vip,
                alliance_abbr, alliance_name, observed_at
@@ -1588,7 +1597,7 @@ async function handleMyPlayerApi(request, env) {
         LIMIT 1
       `).bind(governorId).first();
 
-      return json({ ok: true, link, player: player || null }, 200);
+      return json({ ok: true, link, player: player || null, advanced: { promoted: Boolean(eligibility.promoted), role: eligibility.role, hasPlayerLink: eligibility.hasPlayerLink, hasMightPulseKey: eligibility.hasMightPulseKey } }, 200);
     }
 
     if (request.method === "DELETE") {
