@@ -800,17 +800,23 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const rowsWrittenPercent = percent(databaseMetrics.rowsWritten, monitoring.d1.rowsWritten);
   const storagePercent = percent(databaseSizeBytes, monitoring.d1.storageBytes);
 
-  const d1WriteOverage = Math.max(0, databaseMetrics.rowsWritten - monitoring.d1.rowsWritten);
-  const d1ReadOverage = Math.max(0, databaseMetrics.rowsRead - monitoring.d1.rowsRead);
-  const workerRequestOverage = workers.available && monitoring.workers.requestsPerMonth
-    ? Math.max(0, workers.requests - monitoring.workers.requestsPerMonth)
+  // $5 Paid枠の「超過率」は、EagleEyeの90%安全監視ラインではなく、
+  // Cloudflareの実際の月間込み枠を基準に算出する。
+  // D1 / Workers の実測・推定課金対象を合算し、基本料金$5を超える
+  // 推定超過額が$5に対して何%かを表示する。
+  const d1WriteOverage = Math.max(0, databaseMetrics.rowsWritten - D1_PAID_INCLUDED.rowsWritten);
+  const d1ReadOverage = Math.max(0, databaseMetrics.rowsRead - D1_PAID_INCLUDED.rowsRead);
+  const d1StorageOverageBytes = Math.max(0, databaseSizeBytes - D1_PAID_INCLUDED.storageBytes);
+  const workerRequestOverage = workers.available && WORKERS_PAID_INCLUDED.requestsPerMonth
+    ? Math.max(0, workers.requests - WORKERS_PAID_INCLUDED.requestsPerMonth)
     : 0;
-  const workerCpuOverage = workers.available && monitoring.workers.cpuTimeMsPerMonth && Number.isFinite(workers.cpuTimeMs)
-    ? Math.max(0, workers.cpuTimeMs - monitoring.workers.cpuTimeMsPerMonth)
+  const workerCpuOverage = workers.available && WORKERS_PAID_INCLUDED.cpuTimeMsPerMonth && Number.isFinite(workers.cpuTimeMs)
+    ? Math.max(0, workers.cpuTimeMs - WORKERS_PAID_INCLUDED.cpuTimeMsPerMonth)
     : 0;
   const estimatedOverageUsd = paidMode
     ? (d1ReadOverage / 1_000_000) * 0.001
       + (d1WriteOverage / 1_000_000) * 1
+      + (d1StorageOverageBytes / (1024 ** 3)) * 0.75
       + (workerRequestOverage / 1_000_000) * 0.30
       + (workerCpuOverage / 1_000_000) * 0.02
     : 0;
