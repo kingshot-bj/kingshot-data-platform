@@ -1,6 +1,6 @@
 import { addApiPoolKey } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
-import { getMightPulseKingdoms } from "./mightpulse.js";
+import { mightPulseFetch } from "./mightpulse.js";
 
 const ADVANCED_ROLE = "ADVANCED";
 
@@ -33,10 +33,11 @@ export async function registerUserMightPulseApiKey(db, {
   // Validate the contributed key independently of the user's KingShot link.
   // A user may contribute an API key before registering any player account.
   try {
-    await getMightPulseKingdoms(env, {
-      page: 1,
-      size: 1,
-      apiKey: key
+    await mightPulseFetch(env, "/kingdoms", {
+      query: { page: 1, size: 1 },
+      apiKey: key,
+      timeoutMs: 15000,
+      maxRetries: 1
     });
   } catch (error) {
     const status = Number(error?.status || 0);
