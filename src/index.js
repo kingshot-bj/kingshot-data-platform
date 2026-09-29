@@ -6238,6 +6238,7 @@ async function renderPublicStatusPage(request, env) {
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
     ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
     ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
+    ["Google Drive OAuth", "OAuth Client / Refresh Token / Folder", Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID)],
     ["Gateway", "Read-only Status API", Boolean(env.EAGLEEYE_GATEWAY_TOKEN)]
   ];
   const runtimeConfigSection = canViewDetailedUsage ? `
