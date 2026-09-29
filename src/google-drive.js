@@ -37,6 +37,7 @@ async function googleTokenRequest(body) {
     const error = new Error(data?.error_description || data?.error || "GOOGLE_DRIVE_TOKEN_FAILED");
     error.code = "GOOGLE_DRIVE_TOKEN_FAILED";
     error.status = response.status;
+    error.googleError = data || null;
     throw error;
   }
   return data;
