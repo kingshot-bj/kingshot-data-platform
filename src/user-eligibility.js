@@ -1,4 +1,5 @@
 import { addApiPoolKey } from "./api-pool.js";
+import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 
 const ADVANCED_ROLE = "ADVANCED";
 
@@ -33,6 +34,7 @@ export async function registerUserMightPulseApiKey(db, {
 
 export async function getAdvancedEligibility(db, userId) {
   const normalizedUserId = String(userId || "").trim();
+  await ensureUserPlayerLinkSchema(db);
   if (!normalizedUserId) {
     return {
       eligible: false,
