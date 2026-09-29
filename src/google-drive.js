@@ -130,7 +130,7 @@ export async function getGoogleDriveConnectionStatus(env) {
 }
 
 async function findExistingArchive(accessToken, folderId, sourceKey) {
-  const escapedKey = String(sourceKey).slice(0, 124).replace(/\\/g, "\\\\").replace(/\x27/g, "\\x27");
+  const escapedKey = encodeURIComponent(String(sourceKey).slice(0, 124));
   const q = [
     "trashed = false",
     "'" + String(folderId).replace(/'/g, "\\'") + "' in parents",
@@ -199,7 +199,7 @@ export async function uploadR2ObjectToGoogleDrive(env, {
     parents: [parentFolderId],
     mimeType,
     appProperties: {
-      eagleeyeSourceKey: String(key).slice(0, 124),
+      eagleeyeSourceKey: encodeURIComponent(String(key).slice(0, 124)),
       eagleeyeSourceEtag: String(object.etag || "").slice(0, 124),
       eagleeyeArchive: "1"
     }
