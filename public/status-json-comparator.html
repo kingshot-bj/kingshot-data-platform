@@ -114,13 +114,23 @@ select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(
   <div class="panel">
     <div class="query-tools">
       <input id="querySearch" type="search" placeholder="SQLを検索…">
+      <select id="queryFilter">
+        <option value="changed">差分ありのみ</option>
+        <option value="all">すべて</option>
+        <option value="read">Rows Read に差分あり</option>
+        <option value="write">Rows Written に差分あり</option>
+        <option value="count">Query Count に差分あり</option>
+        <option value="increase">何かが増加</option>
+        <option value="decrease">何かが減少</option>
+      </select>
       <select id="querySort">
-        <option value="rowsRead">Rows Read 増加</option>
-        <option value="rowsWritten">Rows Written 増加</option>
-        <option value="count">Query Count 増加</option>
-        <option value="last">最終値</option>
+        <option value="rowsRead">Rows Read 差分</option>
+        <option value="rowsWritten">Rows Written 差分</option>
+        <option value="count">Query Count 差分</option>
+        <option value="total">差分合計</option>
       </select>
     </div>
+    <div id="queryResultSummary" class="summary"></div>
     <div id="queryList"></div>
   </div>
 
@@ -219,19 +229,38 @@ function queryRows(){
   const maps=state.data.map(aggregateQueries);
   const keys=[...new Set(maps.flatMap(m=>[...m.keys()]))];
   const search=$("querySearch").value.trim().toLowerCase();
+  const filter=$("queryFilter").value;
   const sort=$("querySort").value;
-  const rows=keys.map(key=>{
+  let rows=keys.map(key=>{
     const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0});
     const first=vals[0],last=vals[vals.length-1];
     const base=vals[state.base];
     return {key,vals,dc:last.count-base.count,dr:last.rowsRead-base.rowsRead,dw:last.rowsWritten-base.rowsWritten,last:last.count+last.rowsRead+last.rowsWritten};
   }).filter(r=>!search||r.key.toLowerCase().includes(search));
-  const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="last"?"last":"dr";
+  rows=rows.filter(r=>{
+    if(filter==="all")return true;
+    if(filter==="changed")return r.dc!==0||r.dr!==0||r.dw!==0;
+    if(filter==="read")return r.dr!==0;
+    if(filter==="write")return r.dw!==0;
+    if(filter==="count")return r.dc!==0;
+    if(filter==="increase")return r.dc>0||r.dr>0||r.dw>0;
+    if(filter==="decrease")return r.dc<0||r.dr<0||r.dw<0;
+    return true;
+  });
+  const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="total"?"last":"dr";
   rows.sort((a,b)=>Math.abs(b[metric])-Math.abs(a[metric]));
   return rows;
 }
 function renderQueries(){
   const rows=queryRows();
+  const allCount=(()=>{
+    const prev=$("queryFilter").value;
+    $("queryFilter").value="all";
+    const n=queryRows().length;
+    $("queryFilter").value=prev;
+    return n;
+  })();
+  $("queryResultSummary").textContent=`${rows.length.toLocaleString("ja-JP")}件表示 / 全${allCount.toLocaleString("ja-JP")}件`;
   $("queryList").innerHTML=rows.length?rows.map((r,idx)=>`
     <div class="query-card">
       <div class="query-head" data-q="${idx}">
@@ -288,6 +317,7 @@ async function load(files){
 $("picker").onchange=e=>load(e.target.files);
 $("base").onchange=e=>{state.base=+e.target.value;renderAll();};
 $("querySearch").oninput=renderQueries;
+$("queryFilter").onchange=renderQueries;
 $("querySort").onchange=renderQueries;
 const drop=$("drop");
 ["dragenter","dragover"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add("drag")}));
