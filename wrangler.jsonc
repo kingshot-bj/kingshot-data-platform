@@ -29,6 +29,24 @@
       "bucket_name": "eagleeye-archive"
     }
   ],
+
+  "queues": {
+    "producers": [
+      {
+        "binding": "SERVICE_USAGE_QUEUE",
+        "queue": "eagleeye-service-usage"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "eagleeye-service-usage",
+        "max_batch_size": 100,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "dead_letter_queue": "eagleeye-service-usage-dlq"
+      }
+    ]
+  },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
   },
