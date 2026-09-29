@@ -6601,7 +6601,7 @@ async function renderPublicStatusPage(request, env) {
   const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
   const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
-    ? "$5.00 Paid枠・推定超過率"
+    ? "最大使用率（CPU推定を含む）"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
     const item = cloudflareUsageLabel(stateValue);
@@ -6799,7 +6799,7 @@ async function renderPublicStatusPage(request, env) {
           </div>
           <div class="resource-note" id="monitoring-profile-message">現在: <b>${escapeHtml(monitoringProfile === "PAID_5USD" ? "Workers Paid $5" : "Workers Free")}</b> · ${escapeHtml(monitoringProfileSetting.source === "DB" ? "保存済み設定" : "環境変数の既定値")}</div>
           ` : ""}
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>監視プロファイル: PAID_5USD · 請求サイクルはCloudflare側を基準</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div>` : ""}
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>請求サイクル内のD1 / Workers / R2各使用率の最大値。CPUはRequests × CPU P50の推定値</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div><div class="resource-note">この割合は「$5を使った割合」ではありません。CPU使用率が最大値になった場合は、Workersの月間CPU安全上限に対する推定値（CPU P50基準）です。</div>` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
           ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
