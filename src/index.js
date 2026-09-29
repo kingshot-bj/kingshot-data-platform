@@ -2104,7 +2104,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const now = Math.floor(Date.now() / 1000);
     const cancelMessage = "USER_CANCELLED: ユーザーが更新を中断しました。";
     const target = await env.DB.prepare(
-      "SELECT watchlist_id FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+      "SELECT watchlist_id, kid FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
     ).bind(watchlistId, auth.discord_id).first();
     if (!target) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
@@ -2141,12 +2141,15 @@ async function handleKingdomWatchlistApi(request, env) {
         return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit, used }, 409);
       }
     }
+    const targetWatch = await env.DB.prepare(
+      "SELECT kid FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+    ).bind(watchlistId, auth.discord_id).first();
     await env.DB.prepare(
       "UPDATE kingdom_watchlists SET enabled = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
     ).bind(enabled, Math.floor(Date.now() / 1000), watchlistId, auth.discord_id).run();
     await trackServiceUsage(env, auth, enabled === 1 ? "KINGDOM_WATCHLIST_ADD" : "KINGDOM_WATCHLIST_REMOVE", {
       targetType: "KINGDOM",
-      targetId: watchlistId,
+      targetId: targetWatch?.kid ?? null,
       metadata: { enabled: enabled === 1 }
     });
     return json({ ok: true });
@@ -2166,7 +2169,7 @@ async function handleKingdomWatchlistApi(request, env) {
     ]);
     await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_REMOVE", {
       targetType: "KINGDOM",
-      targetId: watchlistId
+      targetId: target?.kid ?? null
     });
     return json({ ok: true });
   }
