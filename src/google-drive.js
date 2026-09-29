@@ -113,11 +113,6 @@ export async function createGoogleDriveArchiveFolder(accessToken, name = "EagleE
   });
 }
 
-export async function createGoogleDriveArchiveFolderWithToken(env, name = "EagleEye") {
-  const tokens = await exchangeGoogleDriveOAuthCode(env, "__NO_CODE__");
-  return createGoogleDriveArchiveFolder(tokens.access_token, name);
-}
-
 export async function getGoogleDriveConnectionStatus(env) {
   const configured = Boolean(
     env.GOOGLE_OAUTH_CLIENT_ID &&
