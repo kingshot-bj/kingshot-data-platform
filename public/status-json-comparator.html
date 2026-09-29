@@ -335,6 +335,7 @@ function renderAll(){
   renderFileList();renderBaseSelect();
   const timeline=$("compareMode").value==="timeline";
   $("baseWrap").style.display=timeline?"none":"";
+  $("export").style.display=timeline?"none":"";
   $("baseView").hidden=timeline;
   $("timelineView").hidden=!timeline;
   $("modeHint").textContent=timeline?"時系列比較：隣接区間（1→2、2→3…）と1→最終の累積差分を表示します。":"基準比較：選択した基準ファイルから最終ファイルまでを比較します。";
