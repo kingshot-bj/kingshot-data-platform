@@ -1476,6 +1476,7 @@ async function handleMyAdvancedApi(request, env) {
       if (!apiKey) return json({ ok: false, error: "MIGHTPULSE_API_KEY_REQUIRED", message: "MightPulse APIキーを入力してください。" }, 400);
 
       await registerUserMightPulseApiKey(env.DB, {
+        env,
         userId: auth.user_id,
         apiKey
       });
@@ -1505,8 +1506,20 @@ async function handleMyAdvancedApi(request, env) {
 
     return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   } catch (error) {
-    console.error("my_advanced_api_failed", error?.message || error);
-    return json({ ok: false, error: error?.code || "MY_ADVANCED_API_FAILED", message: error?.message || "Advanced昇格条件の処理に失敗しました。" }, 500);
+    console.error("my_advanced_api_failed", error?.code || error?.message || error);
+    const code = error?.code || "MY_ADVANCED_API_FAILED";
+    const userMessage = error?.userMessage || (
+      code === "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION"
+        ? "先にKingShot領主IDを登録してください。"
+        : "Advanced昇格条件の処理に失敗しました。"
+    );
+    const status = [
+      "MIGHTPULSE_API_KEY_INVALID",
+      "MIGHTPULSE_PLAYER_NOT_AVAILABLE",
+      "MIGHTPULSE_PLAYER_MISMATCH",
+      "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION"
+    ].includes(code) ? 400 : 500;
+    return json({ ok: false, error: code, message: userMessage }, status);
   }
 }
 
