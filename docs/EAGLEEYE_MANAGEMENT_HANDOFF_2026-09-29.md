@@ -300,3 +300,109 @@ Phase 6: production failure test。
 
 ---
 この文書を EagleEye Management の新規 ChatGPT Project に最初の引き継ぎ資料として使用する。
+
+---
+
+## 22. 2026-09-29 夜 — Google Drive連携へ移行
+
+次スレッドでは **EagleEye本体側のR2 → Google Drive連携実装** を開始する。
+
+### 現在確認済みの準備状態
+
+既存資料:
+- `docs/EAGLEEYE_R2_GOOGLE_DRIVE_PREP.md`
+- `src/google-drive.js`
+- `src/service-usage-archive.js`
+- `wrangler.jsonc`
+
+既存のGoogle Drive transport primitive:
+```
+uploadR2ObjectToGoogleDrive(env, {
+  archiveBucket,
+  key,
+  fileName,
+  mimeType,
+  folderId
+})
+```
+
+環境変数:
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `GOOGLE_DRIVE_FOLDER_ID`
+
+現時点では自動転送・cron・Retention・R2削除には未接続。
+現在の正本はR2。
+
+### 次スレッドで実施すること
+
+最初に main branch の実コードを再確認すること。
+
+1. `src/google-drive.js`
+2. `src/service-usage-archive.js`
+3. `wrangler.jsonc`
+4. 関連migration
+5. SERVICE_USAGE関連実装
+6. 既存Google Drive関連docs
+
+その後、既存コードを壊さずに以下を実装する。
+
+```
+SERVICE_USAGE
+  ↓
+Queue
+  ↓
+R2 canonical gzip NDJSON
+  ↓
+Google Drive
+  ↓
+verification
+  ├─ size
+  ├─ checksum
+  ├─ record count
+  ├─ batch_id
+  └─ duplicate prevention
+  ↓
+archive confirmed
+```
+
+重要:
+- Driveへのupload成功と「検証済み」を分離する。
+- 検証失敗時はR2を保持する。
+- **本番確認前にR2削除を実装しない。**
+- 1 event = 1 Drive fileは禁止。
+- gzip NDJSON batchを使用する。
+- 大容量uploadが必要ならresumable uploadを検討する。
+- D1へSERVICE_USAGE本文を保存しない。
+- D1 Free-tier row readを最優先する。
+
+### Managementとの責任分界
+
+Google Driveの**実際の連携処理はEagleEye本体**が担当する。
+
+Management側は:
+- Drive archive status
+- failure state
+- recovery state
+- emergency archive control
+- operational audit
+
+を担当する。
+
+ManagementへGoogle Drive実装を移さない。
+
+### 本番確認ルール
+
+以下はdeploy成功・build成功・コード存在だけでは「本番確認済み」と言わない。
+
+- R2 → Google Drive実アップロード
+- Drive側verification
+- DLQ recovery
+- Discord notification
+- Management integration API
+
+実際にproductionで確認してから確認済みとする。
+
+### 次スレ開始時の指示
+
+> 前スレの引き継ぎを読んだ。Google Drive連携を開始。まずmainの既存実装を全部確認してから進めて。
