@@ -6,7 +6,9 @@ const ARCHIVE_TABLES = new Set([
   "player_rank_snapshots",
   "change_events",
   "login_history",
-  "owner_audit_log"
+  "owner_audit_log",
+  "api_pool_usage",
+  "player_identity_history"
 ]);
 
 function archiveKey(table, rows) {
@@ -14,8 +16,8 @@ function archiveKey(table, rows) {
   const last = rows[rows.length - 1];
   const firstRowid = String(first?.rowid ?? "0");
   const lastRowid = String(last?.rowid ?? "0");
-  const firstObserved = String(first?.observed_at ?? first?.detected_at ?? first?.logged_in_at ?? first?.created_at ?? "0");
-  const lastObserved = String(last?.observed_at ?? last?.detected_at ?? last?.logged_in_at ?? last?.created_at ?? "0");
+  const firstObserved = String(first?.observed_at ?? first?.detected_at ?? first?.used_at ?? first?.logged_in_at ?? first?.first_seen_at ?? first?.created_at ?? "0");
+  const lastObserved = String(last?.observed_at ?? last?.detected_at ?? last?.used_at ?? last?.logged_in_at ?? last?.last_seen_at ?? last?.created_at ?? "0");
   return [
     "archive",
     ARCHIVE_VERSION,
