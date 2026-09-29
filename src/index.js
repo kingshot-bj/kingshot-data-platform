@@ -2374,6 +2374,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
+      if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
