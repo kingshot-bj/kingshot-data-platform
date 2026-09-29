@@ -814,19 +814,16 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       + (workerRequestOverage / 1_000_000) * 0.30
       + (workerCpuOverage / 1_000_000) * 0.02
     : 0;
-  const resourcePercents = [
-    rowsReadPercent,
-    rowsWrittenPercent,
-    storagePercent,
-    workers.available ? workers.requestsPercent : null,
-    workers.available ? workers.cpuTimeMsPercent : null,
-    r2.available ? r2.classAPercent : null,
-    r2.available ? r2.classBPercent : null,
-    r2.available ? r2.storagePercent : null
-  ].filter(value => Number.isFinite(value));
-  const budgetUtilizationPercent = resourcePercents.length ? Math.max(...resourcePercents) : null;
-  const budgetState = resourceState(budgetUtilizationPercent);
+  // PAID_5USDの「全体使用率」は、個別リソースの最大使用率ではなく、
+  // $5/月の基本枠を超えて発生する推定超過額を$5に対する割合として表示する。
+  // CPU P50など単一指標が「$5枠を50%使った」と誤認させない。
   const estimatedMonthlyCostUsd = monitoring.budgetUsd + estimatedOverageUsd;
+  const budgetUtilizationPercent = paidMode && monitoring.budgetUsd > 0
+    ? Math.max(0, (estimatedOverageUsd / monitoring.budgetUsd) * 100)
+    : null;
+  const budgetState = paidMode
+    ? resourceState(budgetUtilizationPercent)
+    : "UNKNOWN";
   const resourceStates = [
     resourceState(rowsReadPercent),
     resourceState(rowsWrittenPercent),
