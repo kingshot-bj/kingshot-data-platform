@@ -2718,7 +2718,7 @@ async function verifyDrive(){
   }
 }
 </script>
-\${authorizeReady ? '<a class="btn" href="/api/admin/google-drive/authorize">Googleアカウントを接続 / 再認証</a>' : '<div class="note">先にGoogle CloudでOAuthクライアントを作成し、Client ID / Client Secret / Redirect URIをCloudflareへ設定してください。</div>'}
+${authorizeReady ? '<a class="btn" href="/api/admin/google-drive/authorize">Googleアカウントを接続 / 再認証</a>' : '<div class="note">先にGoogle CloudでOAuthクライアントを作成し、Client ID / Client Secret / Redirect URIをCloudflareへ設定してください。</div>'}
 <div class="card"><b>この画面の注意</b><div class="note">認証後に表示されるRefresh TokenはCloudflare Secretへ登録します。画面・URL・GitHubへ保存しないでください。Google公式でもRefresh Tokenは安全な長期保存先で管理するよう案内されています。</div></div>
 ` : `<div class="card"><b>管理者向け閲覧専用</b><div class="note">ADMINはGoogle Driveの設定状態を確認できますが、接続検証・Googleアカウントの接続／再認証などの操作は実行できません。これらの操作はOWNERのみ利用できます。</div></div>`}</main></body></html>`);
 }
