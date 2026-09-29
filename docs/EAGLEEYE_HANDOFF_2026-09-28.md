@@ -556,3 +556,40 @@ deploy成功・build成功・コード存在だけではproduction-confirmedと�
 **「前スレの引き継ぎを読んだ。Google Drive連携を開始。まずmainの既存実装を全部確認してから進めて。」**
 
 なお、この引き継ぎはEagleEye本体側の継続資料であり、Management専用の引き継ぎではない。
+
+
+### 18-8. Google Drive認証方式の方針転換（2026-09-29）
+
+Google Drive連携について、当初のService Account方式から**個人GoogleアカウントのOAuth 2.0方式へ方針転換**する。
+
+背景:
+- EagleEyeではGoogle Workspaceを利用しない。
+- Google Driveの保存先はEagleEye専用として用意済みの個人Googleアカウントのマイドライブを使用する方針。
+- Service Accountはプログラム用のGoogle IDであり、個人ユーザーのマイドライブをそのまま所有者として利用する方式には制約がある。
+- Workspaceの共有ドライブを前提にする必要はない。
+- Google Drive APIの追加料金を目的としてWorkspaceを導入する方針ではない。
+
+新方針:
+```text
+EagleEye Worker
+  ↓
+Google OAuth 2.0
+  ↓
+EagleEye専用の個人Googleアカウント
+  ↓
+Google Drive / My Drive
+```
+
+設計上の重要事項:
+- `src/google-drive.js` のR2→Driveアップロード処理は再利用可能性を確認する。
+- Service Account固有の認証処理はOAuth方式へ置き換える対象。
+- Google OAuthのrefresh token等の秘密情報はCloudflare Secrets等へ安全に保存する。
+- GoogleアカウントのパスワードをWorkerへ保存しない。
+- OAuth認証・refresh token取得・Drive API権限・Worker無人運用の具体設計を確定してから実装する。
+- Google DriveをDBや検索基盤にはしない。R2をcanonical sourceとして維持する。
+- Drive upload成功とverification済みを分離する。
+- 本番でR2→Drive実アップロードが確認できるまでは「Drive連携確認済み」と扱わない。
+- 本番確認前にR2削除を実装しない。
+- SERVICE_USAGE本文をD1へ保存しない。
+
+今回の変更は**認証・保存先の方針変更であり、現時点ではまだ実装変更を行っていない**。
