@@ -1395,6 +1395,69 @@ async function ensurePlayerWatchlistSchema(db) {
   }
 }
 
+async function handleOwnerPlayerLinkSupportApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(`
+      SELECT s.*, u.discord_id AS requester_discord_id,
+             p.nick_name, p.kid, p.power,
+             owner.discord_id AS conflicting_discord_id
+      FROM user_player_link_support_requests s
+      LEFT JOIN users u ON u.user_id = s.requester_user_id
+      LEFT JOIN players p ON p.governor_id = s.governor_id
+      LEFT JOIN users owner ON owner.user_id = s.conflicting_user_id
+      WHERE s.status IN ('OPEN','UNDER_REVIEW')
+      ORDER BY s.created_at ASC
+      LIMIT 100
+    `).all();
+    return json({ ok: true, requests: rows.results || [] });
+  }
+
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    const requestId = String(body?.request_id || "").trim();
+    const action = String(body?.action || "").trim();
+    if (!requestId || !["VERIFY_TRANSFER","REJECT"].includes(action)) {
+      return json({ ok: false, error: "INVALID_REQUEST" }, 400);
+    }
+
+    const support = await env.DB.prepare(
+      "SELECT * FROM user_player_link_support_requests WHERE request_id = ? LIMIT 1"
+    ).bind(requestId).first();
+    if (!support) return json({ ok: false, error: "SUPPORT_REQUEST_NOT_FOUND" }, 404);
+    if (!["OPEN","UNDER_REVIEW"].includes(support.status)) {
+      return json({ ok: false, error: "SUPPORT_REQUEST_ALREADY_RESOLVED" }, 409);
+    }
+
+    if (action === "REJECT") {
+      const now = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(`
+        UPDATE user_player_link_support_requests
+        SET status='REJECTED', resolution_note=?, updated_at=?, resolved_at=?, resolved_by_user_id=?
+        WHERE request_id=?
+      `).bind(
+        String(body?.resolution_note || "本人確認を満たさないため登録移管を行いません。").slice(0,1000),
+        now, now, guard.auth.user_id, requestId
+      ).run();
+      return json({ ok: true, status: "REJECTED" });
+    }
+
+    const result = await verifyAndTransferPlayerLink(env.DB, {
+      requestId,
+      ownerUserId: support.conflicting_user_id,
+      newUserId: support.requester_user_id,
+      resolverUserId: guard.auth.user_id,
+      resolutionNote: body?.resolution_note || "ゲーム内情報による本人確認済み。正しい所有者へ移管し、EagleEye公式認証を付与。"
+    });
+    return json({ ok: true, status: "RESOLVED", link: result });
+  }
+
+  return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+}
+
 async function handleMyPlayerApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -2992,6 +3055,7 @@ export default {
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
+      if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
