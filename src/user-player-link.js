@@ -50,6 +50,18 @@ export async function getUserPlayerLink(db, userId) {
   return row || null;
 }
 
+export async function findActiveGovernorOwner(db, governorId) {
+  await ensureSchema(db);
+  return db.prepare(`
+    SELECT link_id, user_id, governor_id, status, verification_method,
+           official_verified_at, official_verified_by_user_id,
+           created_at, updated_at, verified_at
+    FROM user_player_links
+    WHERE governor_id = ? AND status = 'ACTIVE'
+    LIMIT 1
+  `).bind(normalizeGovernorId(governorId)).first();
+}
+
 export async function saveUserPlayerLink(db, userId, governorId) {
   await ensureSchema(db);
   const normalized = normalizeGovernorId(governorId);
@@ -61,12 +73,21 @@ export async function saveUserPlayerLink(db, userId, governorId) {
 
   const now = Math.floor(Date.now() / 1000);
   const existing = await getUserPlayerLink(db, userId);
+  const owner = await findActiveGovernorOwner(db, normalized);
+  if (owner && owner.user_id !== String(userId) && (!existing || existing.governor_id !== normalized)) {
+    const error = new Error("GOVERNOR_ID_ALREADY_LINKED");
+    error.code = "GOVERNOR_ID_ALREADY_LINKED";
+    error.owner = owner;
+    throw error;
+  }
   if (existing) {
     await db.prepare(`
       UPDATE user_player_links
       SET governor_id = ?,
           status = 'ACTIVE',
           verification_method = 'SELF_CLAIM',
+          official_verified_at = NULL,
+          official_verified_by_user_id = NULL,
           updated_at = ?,
           verified_at = NULL
       WHERE user_id = ?
@@ -78,8 +99,8 @@ export async function saveUserPlayerLink(db, userId, governorId) {
   await db.prepare(`
     INSERT INTO user_player_links (
       link_id, user_id, governor_id, status, verification_method,
-      created_at, updated_at, verified_at
-    ) VALUES (?, ?, ?, 'ACTIVE', 'SELF_CLAIM', ?, ?, NULL)
+      created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
+    ) VALUES (?, ?, ?, 'ACTIVE', 'SELF_CLAIM', ?, ?, NULL, NULL, NULL)
   `).bind(linkId, String(userId), normalized, now, now).run();
 
   return getUserPlayerLink(db, userId);
@@ -98,4 +119,76 @@ export async function disableUserPlayerLink(db, userId) {
 
 export function validateGovernorId(value) {
   return normalizeGovernorId(value);
+}
+
+export async function createOwnershipSupportRequest(db, {
+  requesterUserId, governorId, conflictingUserId = null, discordSupportUrl = null, note = null
+}) {
+  const now = Math.floor(Date.now() / 1000);
+  const requestId = crypto.randomUUID();
+  await db.prepare(`
+    INSERT INTO user_player_link_support_requests (
+      request_id, requester_user_id, governor_id, conflicting_user_id,
+      status, discord_support_url, note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
+  `).bind(
+    requestId, String(requesterUserId), normalizeGovernorId(governorId),
+    conflictingUserId ? String(conflictingUserId) : null,
+    discordSupportUrl, note ? String(note).slice(0, 1000) : null, now, now
+  ).run();
+  return db.prepare("SELECT * FROM user_player_link_support_requests WHERE request_id = ?").bind(requestId).first();
+}
+
+export async function verifyAndTransferPlayerLink(db, {
+  requestId, ownerUserId, newUserId, resolverUserId, resolutionNote = null
+}) {
+  const request = await db.prepare("SELECT * FROM user_player_link_support_requests WHERE request_id = ?").bind(requestId).first();
+  if (!request) {
+    const error = new Error("SUPPORT_REQUEST_NOT_FOUND");
+    error.code = "SUPPORT_REQUEST_NOT_FOUND";
+    throw error;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  await db.prepare(`
+    UPDATE user_player_links
+    SET status = 'DISABLED', updated_at = ?
+    WHERE user_id = ? AND governor_id = ? AND status = 'ACTIVE'
+  `).bind(now, String(ownerUserId), request.governor_id).run();
+
+  const existingNew = await getUserPlayerLink(db, newUserId);
+  if (existingNew && existingNew.governor_id !== request.governor_id) {
+    const error = new Error("NEW_USER_ALREADY_HAS_DIFFERENT_PLAYER");
+    error.code = "NEW_USER_ALREADY_HAS_DIFFERENT_PLAYER";
+    throw error;
+  }
+
+  if (existingNew) {
+    await db.prepare(`
+      UPDATE user_player_links
+      SET status='ACTIVE', governor_id=?, verification_method='ADMIN_VERIFIED',
+          verified_at=?, official_verified_at=?, official_verified_by_user_id=?, updated_at=?
+      WHERE user_id=?
+    `).bind(request.governor_id, now, now, String(resolverUserId), now, String(newUserId)).run();
+  } else {
+    await db.prepare(`
+      INSERT INTO user_player_links (
+        link_id, user_id, governor_id, status, verification_method,
+        created_at, updated_at, verified_at, official_verified_at, official_verified_by_user_id
+      ) VALUES (?, ?, ?, 'ACTIVE', 'ADMIN_VERIFIED', ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(), String(newUserId), request.governor_id,
+      now, now, now, now, String(resolverUserId)
+    ).run();
+  }
+
+  await db.prepare(`
+    UPDATE user_player_link_support_requests
+    SET status='RESOLVED', resolution_note=?, updated_at=?, resolved_at=?, resolved_by_user_id=?
+    WHERE request_id=?
+  `).bind(
+    resolutionNote ? String(resolutionNote).slice(0, 1000) : null,
+    now, now, String(resolverUserId), requestId
+  ).run();
+
+  return getUserPlayerLink(db, newUserId);
 }
