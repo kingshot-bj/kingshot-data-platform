@@ -693,3 +693,18 @@ Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `s
 - コミット：`6bb55f1b46ab364b9f008afdf32a8b076983fcef` / `378f37ac089db122b4b519339d1bba27425ee597`
 - GitHub mainへのコミット後はCloudflareへ自動デプロイされる。
 - 上記修正後の本番デプロイ成功・MyKingShot正常表示は未確認。
+
+### 2026-09-30 / マイKingShot 複数アカウント設計
+- サービス開始時の公開仕様：1王国につきメイン1＋サブ1、最大2王国まで。無料枠の最大は4アカウント。
+- 同一領主IDは複数EagleEyeアカウントへACTIVE登録不可。
+- 将来の有料版では、同一王国の追加サブ／王国数追加を拡張できるようDB/APIを複数リンク対応へ変更した。ただし現時点では有料機能を公開しない。
+- 将来拡張用の内部フラグ `KINGSHOT_EXTRA_ACCOUNTS_ENABLED` をAPIに用意。通常は未設定/falseで無料上限を適用。決済・課金機能自体は未実装。
+- migration: `migrations/0026_user_player_links_multi_account.sql`
+- `user_player_links` は user_id の単一UNIQUEを廃止し、`kingdom_id` / `account_type (MAIN/SUB)` を持つ複数リンク型へ変更。
+- DB制約：ACTIVE governor_id一意、ACTIVE user_id+governor_id一意、ACTIVE user_id+kingdom_idのMAIN一意。
+- アプリ制約：無料は最大2王国、1王国あたり最大2アカウント、SUBは1王国1件。将来有料拡張時に内部フラグ/課金資格判定へ差し替える。
+- MyKingShot API/UIは複数リンク一覧、王国・メイン/サブ区分、個別解除に対応。
+- Advanced昇格条件は変更なし：「領主IDを1つ以上登録」＋「MightPulse APIキーをPoolへ提供」。
+- 現時点で有料化をユーザー向けに告知しないUIへ調整済み。
+- main commits: `9ab352ae89729e4168ff435bba30f59a4fa61977` (migration), `0b7721ec10de759b53d9f34feb830d4731d9793e` (migration fresh DB safety), `f1f66abdb66f04377be5077c8647aa36aef4ff6a` (multi-account data/API core), `2712f61b526358bf592e2cc6f8730a1c49fc9ff6` (API), `415424c570c714a1002211df505b3ad29ab363f3` (UI), `dbe27fd99b631f05e31d991a2072b9956ec7531e` (hide future paid wording).
+- 本番migration適用・本番MyKingShot複数アカウント動作確認は未実施。
