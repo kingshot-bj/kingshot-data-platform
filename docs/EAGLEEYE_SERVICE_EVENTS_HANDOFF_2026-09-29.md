@@ -822,6 +822,41 @@ SERVICE_USAGEへ全HTTP/internal processingを入れない。
 
 ---
 
+# 実装進捗（2026-09-29）
+
+## Phase 1 完了
+
+実装済み:
+- `src/service-usage.js` を追加。
+- SERVICE_USAGE 15イベントの固定allow-listを定義。
+- event_id = `crypto.randomUUID()`。
+- occurred_at = ISO 8601 UTC。
+- actor_user_idのみ保存する設計。
+- target_type / target_idをPLAYER / KINGDOMで分離。
+- metadataをイベント別allow-listで制限。
+- raw search queryは収集しない。
+- Queue未接続時も元のユーザー操作を失敗させないfail-safeを実装。
+- Player Search / Player View / Player Refreshを接続。
+- Player Watchlist View / Add / Removeを接続。
+- Kingdom Watchlist View / Add / Remove / Refreshを接続。
+
+### Phase 1 コミット
+- `336d4fbdb8fef882d7aeaed370ee2a5f27747812` — SERVICE_USAGE event schema / queue producer
+- `ba79d6ea4c5e80a8f3209f6dbf519bf1dfe32954` — core player SERVICE_USAGE events
+- `bfd2f2d084ed046bdf319750fd5966ea76463df4` — kingdom watchlist SERVICE_USAGE events
+- `d211e5746955aa26c61c268b2b1fdcce4483ae27` — kingdom target_id correction
+
+### 現時点の未接続外部基盤
+- Cloudflare Queue本体の作成
+- Wrangler Queue producer binding
+- Queue consumer
+- R2 12時間canonical batch
+- DLQ / retry / Discord通知
+- Google Drive最終アーカイブ / emergency archive
+- SERVICE_USAGE専用管理サイト
+
+**重要:** Phase 1はコード実装のみ。Queue/R2/Discord/Google Driveの本番連携および本番動作確認はまだ行っていない。
+
 # 未実装・未確認事項
 
 この文書は**設計確定書**であり、これだけで実装済み・本番確認済みを意味しない。
