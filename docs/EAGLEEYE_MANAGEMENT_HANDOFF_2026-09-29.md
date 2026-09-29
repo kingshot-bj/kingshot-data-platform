@@ -4,6 +4,7 @@
 対象: EagleEye Management
 関連システム: KingShot Data Platform / EagleEye
 関連リポジトリ: kingshot-bj/kingshot-data-platform
+Management専用GitHubリポジトリ: **新規作成する（推奨名: `eagleeye-management`）**
 
 ## 1. 目的
 EagleEye Management は EagleEye 本体とは分離した独立管理システム。SERVICE_USAGE の利用状況分析、Queue/R2/DLQ/Google Drive の監視・復旧、Collection Catalog、Owner/Admin 権限、監査を担当する。
@@ -224,7 +225,28 @@ SERVICE_USAGE → Queue → R2 → intentional failure → retry ×5 → DLQ
 - ef5bf3ded7f28569a8913715e69860e815becf33 — serialized R2 consumer writes
 - 901fa4445acc36c6cf13485e2eff2db86872a595a — latest docs/progress
 
-## 19. Management Project の開始順
+## 19. Management のGitHub / Project構成
+EagleEye Management は EagleEye 本体と同じリポジトリに実装しない。**新規ChatGPT Project + 新規GitHub repository** で独立して開始する。
+
+推奨GitHub repository名:
+- `eagleeye-management`
+
+構成イメージ:
+```text
+kingshot-bj/
+├─ kingshot-data-platform   # EagleEye本体
+└─ eagleeye-management      # EagleEye Management
+```
+
+責任分界:
+- `kingshot-data-platform`: SERVICE_USAGEイベント生成・Queue送信、EagleEye本体機能。
+- `eagleeye-management`: SERVICE_USAGEの監視・分析、Queue/R2/DLQ/Drive管理、Recovery、Collection Catalog、Permissions、Audit。
+
+Management側からEagleEye本体を直接改造する前提にはしない。必要な連携はAPI / Cloudflare resource permissions等の明確な境界を設ける。
+
+**新規GitHub repositoryは、Management Project開始時に作成してから実装を開始する。**
+
+## 20. Management Project の開始順
 Phase 0: repository / architecture / auth / API boundary / permissions。
 Phase 1: read-only monitoring。Queue、backlog、R2、DLQ、Drive。
 Phase 2: usage analytics。
@@ -233,15 +255,15 @@ Phase 4: Collection Catalog。
 Phase 5: permissions / audit。
 Phase 6: production failure test。
 
-## 20. 新Projectで最初に確認すること
-1. Management repository 名。
+## 21. 新Projectで最初に確認すること
+1. **新規GitHub repository `eagleeye-management` を作成する。**
 2. Cloudflare Worker / Pages / domain 構成。
 3. Management Discord OAuth callback。
 4. EagleEye 本体から公開する API / endpoint。
 5. Queue / R2 / DLQ / Drive の read/write 権限。
 6. Management 側 D1 の用途。SERVICE_USAGE event 本体保存には使わない。
 
-## 21. 最重要伝言
+## 22. 最重要伝言
 1. EagleEye Management は EagleEye 本体と別システム。
 2. SERVICE_USAGE は R2 を中心に運用する。
 3. Queue / R2 / DLQ / Drive を Management 側で管制する。
