@@ -130,7 +130,7 @@ export async function getGoogleDriveConnectionStatus(env) {
 }
 
 async function findExistingArchive(accessToken, folderId, sourceKey) {
-  const escapedKey = String(sourceKey).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const escapedKey = String(sourceKey).slice(0, 124).replace(/\\/g, "\\\\").replace(/\x27/g, "\\x27");
   const q = [
     "trashed = false",
     "'" + String(folderId).replace(/'/g, "\\'") + "' in parents",
