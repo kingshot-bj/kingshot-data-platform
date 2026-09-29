@@ -731,3 +731,96 @@ Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `s
 - APIキー本体はログ・レスポンスへ出さない。
 - 直前コミット a8144cf / a54e4b5 で一度「領主ID必須」の検証を入れたが、APIキーだけ先に登録する利用者を阻害するため修正。最終仕様コミット: f8fb7366e48f95f06e52e6aed806499bdb6364a1
 - 本番での疎通確認・Pool登録成功は未確認。
+
+## 18. 2026-09-30 スレッド：MightPulse 最終活動調査 / Probe拡張
+
+### 18-1. 最終活動が「14日前」の原因調査
+ユーザー本人のKingShotアカウント（governor_id: 223636495）について、ゲームには当日ログインしているのにEagleEye上で「最終活動 14日前」と表示される問題を調査。
+
+EagleEyeの表示処理は `players.last_active_at` を相対時刻へ変換しているだけで、表示側が14日前へ書き換えている形ではない。
+MightPulse Probeで実際のAPIレスポンスを本番取得して確認した。
+
+2026-09-29/30のProbe結果：
+- HTTP: 200
+- fresh: true
+- cached_at: 2026-09-29 17:42:38 UTC
+- age_seconds: 1952（再取得時点）
+- player.last_active_at: 1789440490 = 2026-09-15 02:48:10 UTC
+- player.last_login: `Last active 14d ago`
+- online: false
+- Response SHA-256は再Probeで変化したが、activity値は14日前
+
+さらにユーザーがMightPulse公式Webで同じ governor_id を検索したスクリーンショットでも `Last active 14d ago` と表示されていた。
+
+現時点の結論：
+- EagleEyeが独自に14日前へ巻き戻している証拠はない。
+- MightPulse API自体が14日前のactivity情報を返していることを本番Probeで確認済み。
+- MightPulse Webでも14日前表示が確認されている。
+- よって現時点ではEagleEyeの表示バグとして修正しない。
+- ただし `last_active_at` の正式な意味と「実際の最終ログイン日時」を取得できる別フィールド/別endpointの有無は未確定。
+
+### 18-2. MightPulse Probeの拡張
+ProbeにPlayer activity表示を追加済み（本番画面で確認済み）。
+現在、以下をまとめて確認できる：
+- `last_active_at` のUnix秒 + JST/UTC表示
+- `last_login` の実レスポンス値
+- `online`
+
+Probeの説明は「APIキー本体や生レスポンスを表示・保存しない」という既存方針を維持する。
+
+次にMightPulse側の仕様を確認する場合は、API作者へ直接確認する。ユーザーは作者と思われるDiscordアカウントへ以下を質問済み：
+- 実際の最終ログイン日時を返す別APIフィールド/endpointがあるか
+- `last_active_at` が何を意味するか
+
+作者候補のGitHub: `darylreznov`。ユーザーが確認したDiscordプロフィールには同じ `darylreznov` のGitHub接続が表示され、GitHubとDiscordで同じプロフィール画像を使用している。
+ただし本人の実在人物としての身元までは断定しない。
+
+返信が来たら内容をそのまま根拠として仕様を確定し、推測でEagleEye側のactivity定義を変更しない。
+
+## 19. 2026-09-30 スレッド：$5 Paid監視の「50%」表示の正体
+
+ユーザーがSystem Status/PDFの「$5 Paid枠・安全上限の最大使用率 50.7%」について、D1/Workers Requests等が0.x%なのになぜ50%なのかを調査。
+
+`src/cloudflare-analytics.js` の現行コードでは、PAID_5USDの監視上限はPaid included allocationの90%。
+
+Paid included allocation（コード上の基準）：
+- D1 Rows Read: 25,000,000,000/月 → 安全上限 22,500,000,000
+- D1 Rows Written: 50,000,000/月 → 安全上限 45,000,000
+- D1 Storage: 5,000,000,000 bytes → 安全上限 4,500,000,000
+- Workers Requests: 10,000,000/月 → 安全上限 9,000,000
+- Workers CPU: 30,000,000 CPU-ms/月 → 安全上限 27,000,000
+- R2は別枠
+
+現在の `budgetUtilizationPercent` はD1 / Workers / R2各リソースの使用率の**最大値**を採用している。
+つまり「50.7%」は$5を50.7%消費した値ではなく、今回のケースではWorkers CPU推定使用率が最大だったため表示された値。
+
+Workers CPUは現行コードで、GraphQL Analyticsの `cpuTimeP50` を使い、概ね `requests × cpuTimeP50` で月間CPU-msを推定している。
+PDFの例ではWorkers Requests 5,616、CPU P50 2,439ms → 約13.69M CPU-ms。27M安全上限に対して約50.7%。
+
+重要：この50.7%はCloudflare Billingの実請求額に対する使用率ではない。また実CPU累計のauthoritative billing値そのものでもなく、P50ベースの推定値。
+
+### 19-1. ユーザーの要望：$5枠全体の使用率にしたい
+ユーザーは「CPUだけで50%と出るのではなく、**$5の枠を超える可能性を表す全体の使用率**として表示したい」と要望。
+
+次スレッドで実装方針を再確認すること。
+候補としては、Cloudflare Paid $5の実際の請求/超過判定に対応する形で、D1/Workers/R2等を単純に最大値だけで「$5使用率」と呼ばないことが重要。
+「枠全体の使用率」を表示する場合、何を分母・分子とするかを明確化し、Cloudflare Billingそのものではない推定値なら「推定」と明示する。
+
+現時点ではこの表示変更は**未実装・本番未確認**。
+既存のD1/R2最適化方針は変更しない。
+
+## 20. このスレッド終了時点の最重要ルール
+- 本番環境で確認できていないことを「確認済み」と言わない。
+- MightPulseのactivity定義が確定するまでは `last_active_at` の意味を勝手に変更しない。
+- D1の広範囲 `ranking_snapshots` 読み取りを絶対に復活させない。
+- $5 Paidは緊急運用。最終目標はFree枠で余裕を持って運用すること。
+- System Statusの「最大使用率」は現状、各リソース使用率の最大値。$5そのものの実請求使用率ではない。
+- GitHub main → Cloudflareデプロイは自動。手動deploy前提で案内しない。
+
+## 21. 次スレッドの開始時にやること
+1. GitHub mainの最新HEADを確認。
+2. `src/cloudflare-analytics.js` の最新コードを確認。
+3. Paid $5の「全体使用率」表示について、Cloudflareの料金/超過計算と現行推定ロジックを照合。
+4. ユーザーがMightPulse作者から受け取った返信があれば、それを根拠にactivity定義を確定。
+5. 必要な変更を実装し、commit hashを報告。
+6. 本番反映後、ユーザーが実際に確認したものだけを「本番確認済み」とする。
