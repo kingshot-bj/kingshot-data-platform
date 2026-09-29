@@ -685,3 +685,11 @@ Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `s
 - インデックス：provider, pool_type, contributed_by_user_id, contributed_at DESC
 - コミット：53c4a7b70582264072f429a916671c8b9642785d
 - 本番D1へのmigration適用・本番での効果確認は未実施。
+
+### 2026-09-30 / 本番 MyKingShot `user_player_links` 未作成エラー
+- 本番 `/my-player` を開くと `D1_ERROR: no such table: user_player_links` が発生した。
+- 原因：`renderMyPlayerPage()` が `/api/me/player` と `/api/me/advanced` を `Promise.all()` で同時取得する一方、`user_player_links` の `ensureSchema()` は `/api/me/player` 側にしか存在せず、`/api/me/advanced` の `getAdvancedEligibility()` は直接 `user_player_links` をSELECTしていた。D1 migration未適用環境ではAdvanced側が先に失敗する。
+- `user-player-link.js` の `ensureSchema()` をexportし、`user-eligibility.js` の `getAdvancedEligibility()` で先に `await ensureUserPlayerLinkSchema(db)` を実行するよう修正。
+- コミット：`6bb55f1b46ab364b9f008afdf32a8b076983fcef` / `378f37ac089db122b4b519339d1bba27425ee597`
+- GitHub mainへのコミット後はCloudflareへ自動デプロイされる。
+- 上記修正後の本番デプロイ成功・MyKingShot正常表示は未確認。
