@@ -363,10 +363,27 @@ async function ensureKingdomWatchlistFreshnessSchema(db) {
   }
 }
 
+const KINGDOM_WATCHLIST_JOB_RETENTION_SECONDS = 24 * 60 * 60;
+const KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH = 100;
+
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
   await ensureKingdomWatchlistFreshnessSchema(env.DB);
   const now = Math.floor(Date.now() / 1000);
+
+  // Job rows are runtime state, not durable ranking history. Keep completed,
+  // failed, and user-cancelled rows only long enough for troubleshooting/UI
+  // visibility, then remove them in a bounded batch. Run this at the first
+  // 5-minute Cron tick after each hour boundary so cleanup adds at most one
+  // lightweight D1 statement per hour instead of every Cron invocation.
+  const hourBucket = Math.floor(now / 3600);
+  const previousHourBucket = Math.floor((now - 300) / 3600);
+  if (hourBucket !== previousHourBucket) {
+    const cleanupBefore = now - KINGDOM_WATCHLIST_JOB_RETENTION_SECONDS;
+    await env.DB.prepare(
+      "DELETE FROM kingdom_watchlist_jobs WHERE status IN ('COMPLETED','FAILED') AND updated_at < ? LIMIT ?"
+    ).bind(cleanupBefore, KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH).run();
+  }
   const rows = await env.DB.prepare(
     "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
   ).all();
