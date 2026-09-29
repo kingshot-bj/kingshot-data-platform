@@ -34,6 +34,7 @@ import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
+import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -1458,6 +1459,57 @@ async function handleOwnerPlayerLinkSupportApi(request, env) {
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
 
+async function handleMyAdvancedApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  try {
+    if (request.method === "GET") {
+      const eligibility = await getAdvancedEligibility(env.DB, auth.user_id);
+      return json({ ok: true, ...eligibility });
+    }
+
+    if (request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const apiKey = String(body?.api_key || "").trim();
+      if (!apiKey) return json({ ok: false, error: "MIGHTPULSE_API_KEY_REQUIRED", message: "MightPulse APIキーを入力してください。" }, 400);
+
+      await registerUserMightPulseApiKey(env.DB, {
+        userId: auth.user_id,
+        apiKey
+      });
+
+      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);
+      await trackServiceUsage(env, auth, "MIGHTPULSE_API_KEY_CONTRIBUTE", {
+        targetType: "USER",
+        targetId: auth.user_id,
+        metadata: { pool_type: "USER_CONTRIBUTED" }
+      });
+      if (eligibility.promoted) {
+        await trackServiceUsage(env, auth, "ADVANCED_PROMOTED", {
+          targetType: "USER",
+          targetId: auth.user_id,
+          metadata: { reason: "PLAYER_LINK_AND_USER_CONTRIBUTED_MIGHTPULSE_KEY" }
+        });
+      }
+
+      return json({
+        ok: true,
+        promoted: Boolean(eligibility.promoted),
+        role: eligibility.role,
+        hasPlayerLink: eligibility.hasPlayerLink,
+        hasMightPulseKey: eligibility.hasMightPulseKey
+      });
+    }
+
+    return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  } catch (error) {
+    console.error("my_advanced_api_failed", error?.message || error);
+    return json({ ok: false, error: error?.code || "MY_ADVANCED_API_FAILED", message: error?.message || "Advanced昇格条件の処理に失敗しました。" }, 500);
+  }
+}
+
 async function handleMyPlayerApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -1564,27 +1616,47 @@ async function renderMyPlayerPage(request, env) {
   }
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントと、自分のKingShot領主IDを紐づけます。現在は自己申告登録です。KingShot側の所有確認は行っていません。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.warn{color:#fbbf24}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}.check{display:flex;align-items:center;gap:9px;margin:9px 0}.check-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#334155;font-size:12px;font-weight:900}.check-icon.ok{background:#14532d;color:#86efac}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントと、自分のKingShot領主IDを紐づけます。さらにMightPulse APIキーをPoolへ提供すると、Advanced昇格条件を満たせます。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-  async function load(){
-    const r=await fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-    render(d);
+  async function getData(){
+    const [playerRes, advancedRes]=await Promise.all([
+      fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"}),
+      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+    ]);
+    const player=await playerRes.json().catch(()=>({}));
+    const advanced=await advancedRes.json().catch(()=>({}));
+    if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
+    if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
+    return {player,advanced};
   }
+  async function load(){ render(await getData()); }
   function render(d){
-    const link=d.link&&d.link.status==="ACTIVE"?d.link:null;
+    const link=d.player.link&&d.player.link.status==="ACTIVE"?d.player.link:null;
+    const p=d.player.player||{};
+    const a=d.advanced||{};
+    let html="";
     if(!link){
-      app.innerHTML='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">7〜12桁の数字を入力してください。登録後に王国・プレイヤー名などをEagleEyeの保存データから表示します。</div><div id="msg"></div></div>';
-      document.getElementById("save").onclick=save;
-      return;
+      html+='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">7〜12桁の数字を入力してください。</div><div id="msg"></div></div>';
+    }else{
+      html+='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.official_verified_at?"✓ EagleEye公式認証":(link.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
     }
-    const p=d.player||{};
-    app.innerHTML='<div class="card"><div class="row"><span>領主ID</span><span class="value">'+esc(link.governor_id)+'</span></div><div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div><div class="row"><span>王国</span><span class="value">'+esc(p.kid??"未取得")+'</span></div><div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div><div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div><div class="row"><span>登録状態</span><span class="value ok">'+(link.official_verified_at?"✓ EagleEye公式認証":(link.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div><div class="muted" style="margin-top:12px">この登録はDiscordアカウントとKingShot領主IDの紐付けです。Player Watchlistとは別機能です。</div><button class="btn" id="change">KingShot IDを変更</button><button class="btn danger" id="remove">登録を解除</button></div>';
-    document.getElementById("change").onclick=()=>showForm(link.governor_id);
-    document.getElementById("remove").onclick=remove;
+
+    const role=String(a.role||"BASIC").toUpperCase();
+    const promoted=role==="ADVANCED"||role==="ADMIN"||role==="OWNER";
+    html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
+      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを登録</span></div>'+
+      '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーをPoolへ提供</span></div>'+
+      '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+
+      (a.hasMightPulseKey?'<div class="muted" style="margin-top:12px">APIキーは暗号化してPoolへ保存されています。画面にはキー本体を表示しません。</div>':'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">提供したキーはMightPulse API Poolで利用できるようになり、提供者としてあなたのEagleEyeユーザーIDが記録されます。生キーは画面やログには表示しません。</div>')+
+      '<div id="key-msg"></div></div>';
+
+    app.innerHTML=html;
+    if(document.getElementById("save")) document.getElementById("save").onclick=save;
+    if(document.getElementById("change")) document.getElementById("change").onclick=()=>showForm(link.governor_id);
+    if(document.getElementById("remove")) document.getElementById("remove").onclick=remove;
+    if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
   }
   function showForm(current){
     app.innerHTML='<div class="card"><label class="label" for="gid">KingShot 領主ID</label><input id="gid" class="input" inputmode="numeric" maxlength="12" value="'+esc(current)+'"><button class="btn" id="save">保存する</button><button class="btn danger" id="cancel">キャンセル</button><div id="msg"></div></div>';
@@ -1604,6 +1676,22 @@ async function renderMyPlayerPage(request, env) {
       }
       if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
       await load();
+    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
+    finally{button.disabled=false;}
+  }
+  async function registerKey(){
+    const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
+    const key=String(input?.value||"").trim();
+    if(!key){msg.className="error";msg.textContent="MightPulse APIキーを入力してください。";return;}
+    if(!confirm("このAPIキーをEagleEyeのMightPulse API Poolへ提供しますか？")) return;
+    button.disabled=true; msg.className="muted"; msg.textContent="登録しています…";
+    try{
+      const r=await fetch("/api/me/mightpulse-key",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({api_key:key})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      msg.className="ok"; msg.textContent=d.promoted?"APIキーを登録しました。Advancedへ昇格しました。":"APIキーを登録しました。領主ID登録後にAdvanced昇格条件を満たします。";
+      input.value="";
+      setTimeout(load,500);
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
     finally{button.disabled=false;}
   }
@@ -3064,6 +3152,7 @@ export default {
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
+      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
       if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
