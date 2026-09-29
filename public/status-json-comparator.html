@@ -60,7 +60,7 @@ select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(
 .query-detail{display:none;border-top:1px solid var(--line);padding:8px 11px}
 .query-card.open .query-detail{display:block}
 .qrow{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:8px;padding:6px 0;border-bottom:1px solid #202830;font-variant-numeric:tabular-nums;font-size:12px}
-.qrow:last-child{border-bottom:0}
+.qrow:last-child{border-bottom:0}.timeline-summary{display:flex;gap:7px;overflow:auto;padding-bottom:4px}.timeline-chip{min-width:125px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px}.timeline-chip strong{display:block;font-size:12px;margin-bottom:5px}.timeline-chip div{font-size:11px;color:var(--muted);white-space:nowrap}.timeline-total{border-color:#526477}.timeline-sql{border:1px solid var(--line);border-radius:11px;background:var(--panel2);margin-bottom:8px;overflow:hidden}.timeline-sql summary{padding:10px 11px;cursor:pointer}.timeline-sql-body{padding:8px 11px;border-top:1px solid var(--line)}
 .qrow span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .change-list{display:flex;flex-direction:column;gap:7px}
 .change-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px}
@@ -100,14 +100,14 @@ select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(
 <div id="app" hidden>
   <div class="panel">
     <div class="controls">
-      <label>基準ファイル<select id="base"></select></label>
+      <label>比較モード<select id="compareMode"><option value="base">基準比較</option><option value="timeline">時系列比較</option></select></label><label id="baseWrap">基準ファイル<select id="base"></select></label>
       <button id="export" class="secondary">SQL比較CSV保存</button>
     </div>
     <div id="summary" class="summary"></div>
-    <div class="hint">比較順：左から右へ表示。基準を変更すると、差分・ランキング・CSVも基準ファイル起点に切り替わります。</div>
+    <div id="modeHint" class="hint">基準比較：選択した基準ファイルから最終ファイルまでを比較します。</div>
   </div>
 
-  <h2>主要メトリクス</h2>
+  <div id="timelineView" hidden><h2>時系列比較</h2><div class="panel"><div id="timelineSummary" class="timeline-summary"></div></div><div class="panel"><div class="controls"><button id="timelineExport" class="secondary">時系列SQL比較CSV保存</button></div><div id="timelineQueries"></div></div></div><div id="baseView"><h2>主要メトリクス</h2>
   <div id="mainMetrics" class="metric-grid"></div>
 
   <h2>Query Insights — D1負荷</h2>
@@ -138,7 +138,7 @@ select{max-width:100%;background:#0f1317;color:var(--text);border:1px solid var(
   <div class="panel">
     <div id="changes" class="change-list"></div>
   </div>
-</div>
+</div></div>
 </main>
 
 <script>
@@ -298,10 +298,42 @@ function renderChanges(){
   }).filter(Boolean).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,100);
   $("changes").innerHTML=rows.length?rows.map(r=>`<div class="change-card"><div class="change-path">${escapeHtml(r.p)}<div class="small">${r.vals.map((v,i)=>`${i+1}:${fmt(v)}`).join(" → ")}</div></div><div class="change-values ${cls(r.d)}">Δ ${fmt(r.d)}<br><span class="small">${pct(r.vals[0],r.vals[r.vals.length-1])}</span></div></div>`).join(""):'<div class="empty">数値の変更はありません。</div>';
 }
-function renderAll(){
-  renderFileList();renderBaseSelect();renderMetrics();renderQueries();renderChanges();
-  $("summary").textContent=`${state.files.length}ファイル読み込み済み。比較順は1→${state.files.length}。基準=${state.files[state.base]?.name||"—"}`;
+function timelineIntervals(){
+  const a=[];
+  for(let i=0;i<state.data.length-1;i++)a.push({from:i,to:i+1,label:(i+1)+"→"+(i+2)});
+  if(state.data.length>2)a.push({from:0,to:state.data.length-1,label:"1→"+state.data.length,total:true});
+  return a;
 }
+function renderTimeline(){
+  const ints=timelineIntervals();
+  const main=state.data.map(extractMain);
+  $("timelineSummary").innerHTML=ints.map(x=>{
+    const rr=main[x.to].rowsRead-main[x.from].rowsRead;
+    const ww=main[x.to].rowsWritten-main[x.from].rowsWritten;
+    const rq=(main[x.to].readQueries||0)-(main[x.from].readQueries||0);
+    const wq=(main[x.to].writeQueries||0)-(main[x.from].writeQueries||0);
+    return "<div class=\"timeline-chip"+(x.total?" timeline-total":"")+"\"><strong>"+x.label+(x.total?"（累積）":"")+"</strong><div>Rows Read: <b class=\""+cls(rr)+"\">"+fmt(rr)+"</b></div><div>Rows Written: <b class=\""+cls(ww)+"\">"+fmt(ww)+"</b></div><div>Query Count: <b class=\""+cls(rq+wq)+"\">"+fmt(rq+wq)+"</b></div></div>";
+  }).join("");
+  const maps=state.data.map(aggregateQueries);
+  const keys=[...new Set(maps.flatMap(m=>[...m.keys()]))];
+  const rows=keys.map(key=>{
+    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0});
+    const ds=ints.map(x=>({label:x.label,total:x.total,count:vals[x.to].count-vals[x.from].count,rowsRead:vals[x.to].rowsRead-vals[x.from].rowsRead,rowsWritten:vals[x.to].rowsWritten-vals[x.from].rowsWritten}));
+    return {key,vals,ds,changed:ds.some(d=>d.count||d.rowsRead||d.rowsWritten),score:ds.reduce((n,d)=>n+Math.abs(d.count)+Math.abs(d.rowsRead)+Math.abs(d.rowsWritten),0)};
+  }).filter(x=>x.changed).sort((a,b)=>b.score-a.score);
+  $("timelineQueries").innerHTML=rows.length?rows.map(r=>"<details class=\"timeline-sql\"><summary><div class=\"query-sql\">"+escapeHtml(r.key.length>180?r.key.slice(0,180)+"…":r.key)+"</div><div class=\"query-summary\">"+r.ds.map(d=>"<span class=\"qbadge\">"+d.label+" Read <b class=\""+cls(d.rowsRead)+"\">"+fmt(d.rowsRead)+"</b></span><span class=\"qbadge\">"+d.label+" Write <b class=\""+cls(d.rowsWritten)+"\">"+fmt(d.rowsWritten)+"</b></span><span class=\"qbadge\">"+d.label+" Count <b class=\""+cls(d.count)+"\">"+fmt(d.count)+"</b></span>").join("")+"</div></summary><div class=\"timeline-sql-body\">"+r.ds.map(d=>"<div class=\"qrow\"><span>"+d.label+(d.total?"（累積）":"")+"</span><span class=\""+cls(d.count)+"\">"+fmt(d.count)+"</span><span class=\""+cls(d.rowsRead)+"\">"+fmt(d.rowsRead)+"</span><span class=\""+cls(d.rowsWritten)+"\">"+fmt(d.rowsWritten)+"</span></div>").join("")+"</div></details>").join(""):"<div class=\"empty\">差分のあるSQLはありません。</div>";
+}
+function exportTimelineCSV(){
+  const maps=state.data.map(aggregateQueries),keys=[...new Set(maps.flatMap(m=>[...m.keys()]))],ints=timelineIntervals();
+  const header=["query",...state.files.flatMap((f,i)=>[`${i+1}_${f.name}_count`,`${i+1}_${f.name}_rowsRead`,`${i+1}_${f.name}_rowsWritten`]),...ints.flatMap(x=>[`${x.label}_count`,`${x.label}_rowsRead`,`${x.label}_rowsWritten`])];
+  const lines=[header];
+  for(const k of keys){const v=maps.map(m=>m.get(k)||{count:0,rowsRead:0,rowsWritten:0});lines.push([k,...v.flatMap(x=>[x.count,x.rowsRead,x.rowsWritten]),...ints.flatMap(x=>[v[x.to].count-v[x.from].count,v[x.to].rowsRead-v[x.from].rowsRead,v[x.to].rowsWritten-v[x.from].rowsWritten])]);}
+  const csv="\ufeff"+lines.map(row=>row.map(v=>"\""+String(v).replaceAll("\"","\"\"")+"\"").join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="eagleeye-status-query-timeline.csv";a.click();URL.revokeObjectURL(a.href);
+}
+function renderAll(){
+  renderFileList();renderBaseSelect();
+  const timeline=$("compareMode").value==="timeline";
 async function load(files){
   const incoming=[...files].filter(f=>/\.json$/i.test(f.name));
   if(incoming.length<2){alert("JSONファイルを2個以上選択してください。");return;}
@@ -319,6 +351,8 @@ $("base").onchange=e=>{state.base=+e.target.value;renderAll();};
 $("querySearch").oninput=renderQueries;
 $("queryFilter").onchange=renderQueries;
 $("querySort").onchange=renderQueries;
+$("compareMode").onchange=renderAll;
+$("timelineExport").onclick=exportTimelineCSV;
 const drop=$("drop");
 ["dragenter","dragover"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add("drag")}));
 ["dragleave","drop"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.remove("drag")}));
