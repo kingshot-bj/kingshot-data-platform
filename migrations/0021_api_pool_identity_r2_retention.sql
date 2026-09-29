@@ -7,5 +7,5 @@ ALTER TABLE data_retention_settings
 CREATE INDEX IF NOT EXISTS idx_api_pool_usage_used_at
   ON api_pool_usage (used_at);
 
-CREATE INDEX IF NOT EXISTS idx_player_identity_history_first_seen
-  ON player_identity_history (first_seen_at);
+CREATE INDEX IF NOT EXISTS idx_player_identity_history_last_seen
+  ON player_identity_history (last_seen_at);
