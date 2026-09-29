@@ -639,3 +639,19 @@ R2→Drive transport:
 - Google OAuth同意画面がTestingの場合、refresh tokenが7日で失効するため長期運用前にGoogle Cloud側の公開状態を確認する。
 
 現時点ではコード実装まで。Google Cloud OAuth client作成、Cloudflare Secret/Variable設定、OAuth認証実行、R2→Drive本番実アップロードはまだ未確認。
+
+### 18-10. 実装確認（2026-09-29）
+
+最新main HEADは `9daee207726a57352e95e01ea37be4ceaf89f9ee`。
+Google Drive OAuth実装の構文確認を実施し、`src/google-drive.js` / `src/index.js` ともに構文エラーなし。
+
+主要コミット:
+- `e4d4ecd9f8355898d0765ba4d757e6d9ed3ff459` — Drive transportをUser OAuthへ変更
+- `0585e9f6fcadff93960649fdc94479d2366f0ec1` — OAuth setup flow
+- `76d7d5230ed64cd1e30296bebe5584c94b0ea6ee` — Admin ControlへDrive設定導線
+- `00aaa0f07e3df555b707736b1de95b806891fc86` — System StatusへOAuth設定状態
+- `aefe34f4f834c5d42e23459abe851dcb54655a89` — Drive prep更新
+- `f2e4d797e6c6e407361f4a45534b14fe4a1020d0` — handoff更新
+- `9daee207726a57352e95e01ea37be4ceaf89f9ee` — Drive duplicate key normalization
+
+注意: GitHub mainへのコード反映と構文確認はできているが、Cloudflare本番deploy、Google Cloud OAuth client設定、OAuth認証、Refresh Token設定、R2→Drive実データuploadは未確認。
