@@ -1223,6 +1223,11 @@ async function handleKingdomRankingHistoryApi(request, env) {
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
   if (!Number.isInteger(kid) || kid < 1 || !board || !targetId) return json({ ok: false, error: "KID_BOARD_TARGET_REQUIRED" }, 400);
   const history = await getRankingHistory(env.DB, { kid, board, targetId, limit, archiveBucket: env.ARCHIVE, historyMode: env.HISTORY_STORAGE_MODE });
+  await trackServiceUsage(env, auth, "KINGDOM_RANKING_VIEW", {
+    targetType: "KINGDOM",
+    targetId: kid,
+    metadata: { kid, board, limit, display_count: history.length }
+  });
   return json({ ok: true, kid, board, target_id: targetId, history });
 }
 
@@ -1319,6 +1324,18 @@ async function handleKingdomWatchlistDataApi(request, env) {
       "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
     ).bind(...playerGovernorCandidates).all();
   }
+
+  await trackServiceUsage(env, auth, "KINGDOM_RANKING_VIEW", {
+    targetType: "KINGDOM",
+    targetId: watch.kid,
+    metadata: {
+      kid: watch.kid,
+      board: board || "ALL",
+      limit,
+      display_count: (rankings.results || []).length,
+      observed_at: freshnessJob?.source_last_at ? Number(freshnessJob.source_last_at) : null
+    }
+  });
 
   return json({
     ok: true,
@@ -4234,6 +4251,11 @@ async function handlePlayerHistoryApi(request, env) {
   try {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const snapshots = await getPlayerHistory(env.DB, governorId, limit, env.ARCHIVE);
+    await trackServiceUsage(env, auth, "PLAYER_HISTORY_VIEW", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: { limit, displayed_snapshot_count: snapshots.length }
+    });
     const visibleSnapshots = snapshots.map(row => ({
       snapshot_id: row.snapshot_id,
       governor_id: row.governor_id,
@@ -4268,6 +4290,13 @@ async function handlePlayerChangesApi(request, env) {
        ORDER BY detected_at DESC, created_at DESC
        LIMIT ?`
     ).bind(governorId, limit).all();
+
+    const rawChangeRows = result.results || [];
+    await trackServiceUsage(env, auth, "PLAYER_CHANGES_VIEW", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: { limit, result_count: rawChangeRows.length }
+    });
 
     const changes = (result.results || []).map(row => {
       let oldValue = null;
@@ -4539,6 +4568,18 @@ async function handlePlayerSectionExport(request, env) {
     }
 
     const result = await exportToGoogleSheet(env, { sheetTitle, headers, rows });
+    await trackServiceUsage(env, guard.auth, "PLAYER_EXPORT", {
+      targetType: "PLAYER",
+      targetId: governorId,
+      metadata: {
+        format: "google_sheets",
+        section,
+        row_count: rows.length,
+        column_count: headers.length,
+        target_player_count: 1,
+        success: true
+      }
+    });
     return new Response(null, { status: 303, headers: { location: result.url, "cache-control": "no-store" } });
   } catch (error) {
     console.error("Player section Google Sheets export error:", error);
@@ -5291,6 +5332,18 @@ async function handleAdminKingdomRankingExport(request, env) {
     }));
     const result = await exportToGoogleSheet(env, {
       sheetTitle:"王国" + kid + "_" + label, headers, rows
+    });
+    await trackServiceUsage(env, guard.auth, "KINGDOM_EXPORT", {
+      targetType: "KINGDOM",
+      targetId: kid,
+      metadata: {
+        format: "google_sheets",
+        kid,
+        board,
+        limit,
+        row_count: rows.length,
+        success: true
+      }
     });
     return new Response(null,{status:303,headers:{location:result.url,"cache-control":"no-store"}});
   } catch (error) {
