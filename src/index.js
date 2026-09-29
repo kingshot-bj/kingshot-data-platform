@@ -3760,8 +3760,8 @@ async function renderDataRetentionPage(request, env) {
     field("ranking_snapshots_days","ランキングスナップショット","王国ランキングの順位・スコア履歴。") +
     field("player_rank_snapshots_days","プレイヤーランキング履歴","プレイヤー個人のランキング情報の履歴。") +
     field("change_events_days","変更イベント","順位変動・戦力変動などEagleEyeが検出した変更履歴。") +
-    field("api_pool_usage_days","API Pool使用履歴","APIキーの利用・残量・結果の監査ログ。") +
-    "<button type='submit'>保存期間を更新</button></div></form><div class='card'><b>推奨初期値</b><div class='hint'>API観測14日 / プレイヤー90日 / ランキング180日 / プレイヤーランキング180日 / 変更イベント2年 / API Pool使用90日。必要になったら後から延長できます。</div></div></main></body></html>";
+    field("api_pool_usage_days","API Pool使用履歴","APIキーの利用・残量・結果の監査ログ。") +\n    field("player_identity_history_days","プレイヤー名称履歴","プレイヤー名の初回確認・名称変更の履歴。R2へアーカイブして長期保存します。") +
+    "<button type='submit'>保存期間を更新</button></div></form><div class='card'><b>推奨初期値</b><div class='hint'>API観測14日 / プレイヤー90日 / ランキング180日 / プレイヤーランキング180日 / 変更イベント2年 / API Pool使用90日 / プレイヤー名称履歴90日。R2アーカイブ対象はD1削除前に退避されます。</div></div></main></body></html>";
 }
 
 async function renderApiPoolAdminPage(request, env) {
