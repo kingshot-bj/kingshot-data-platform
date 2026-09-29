@@ -6,7 +6,9 @@ const RETENTION_TABLES = Object.freeze([
   { key: "ranking_snapshots_days", table: "ranking_snapshots", column: "observed_at", keepLatestPerTarget: false },
   { key: "player_rank_snapshots_days", table: "player_rank_snapshots", column: "observed_at", keepLatestPerTarget: false },
   { key: "change_events_days", table: "change_events", column: "detected_at", keepLatestPerTarget: false },
-  { key: "api_pool_usage_days", table: "api_pool_usage", column: "used_at", keepLatestPerTarget: false }
+  { key: "api_pool_usage_days", table: "api_pool_usage", column: "used_at", keepLatestPerTarget: false },
+  { key: "login_history_days", table: "login_history", column: "logged_in_at", keepLatestPerTarget: false },
+  { key: "owner_audit_log_days", table: "owner_audit_log", column: "created_at", keepLatestPerTarget: false }
 ]);
 
 export async function getRetentionSettings(db) {
@@ -34,7 +36,7 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
   }
   const now = Math.floor(Date.now() / 1000);
   await db.prepare(
-    "UPDATE data_retention_settings SET api_observations_days = ?, player_snapshots_days = ?, ranking_snapshots_days = ?, player_rank_snapshots_days = ?, change_events_days = ?, api_pool_usage_days = ?, updated_at = ?, updated_by_user_id = ? WHERE settings_id = 1"
+    "UPDATE data_retention_settings SET api_observations_days = ?, player_snapshots_days = ?, ranking_snapshots_days = ?, player_rank_snapshots_days = ?, change_events_days = ?, api_pool_usage_days = ?, login_history_days = ?, owner_audit_log_days = ?, updated_at = ?, updated_by_user_id = ? WHERE settings_id = 1"
   ).bind(
     normalized.api_observations_days,
     normalized.player_snapshots_days,
@@ -42,6 +44,8 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
     normalized.player_rank_snapshots_days,
     normalized.change_events_days,
     normalized.api_pool_usage_days,
+    normalized.login_history_days,
+    normalized.owner_audit_log_days,
     now,
     updatedByUserId
   ).run();
