@@ -1503,6 +1503,14 @@ async function handleMyPlayerApi(request, env) {
             conflictingUserId: error.owner?.user_id || null,
             discordSupportUrl: supportUrl
           });
+          await trackServiceUsage(env, auth, "KINGSHOT_ID_CONFLICT", {
+            targetType: "PLAYER",
+            targetId: governorId
+          });
+          await trackServiceUsage(env, auth, "KINGSHOT_ID_SUPPORT_REQUEST", {
+            targetType: "PLAYER",
+            targetId: governorId
+          });
           return json({
             ok: false,
             error: "GOVERNOR_ID_ALREADY_LINKED",
