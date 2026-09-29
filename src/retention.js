@@ -37,7 +37,7 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
   }
   const now = Math.floor(Date.now() / 1000);
   await db.prepare(
-    "UPDATE data_retention_settings SET api_observations_days = ?, player_snapshots_days = ?, ranking_snapshots_days = ?, player_rank_snapshots_days = ?, change_events_days = ?, api_pool_usage_days = ?, login_history_days = ?, owner_audit_log_days = ?, updated_at = ?, updated_by_user_id = ? WHERE settings_id = 1"
+    "UPDATE data_retention_settings SET api_observations_days = ?, player_snapshots_days = ?, ranking_snapshots_days = ?, player_rank_snapshots_days = ?, change_events_days = ?, api_pool_usage_days = ?, login_history_days = ?, owner_audit_log_days = ?, player_identity_history_days = ?, updated_at = ?, updated_by_user_id = ? WHERE settings_id = 1"
   ).bind(
     normalized.api_observations_days,
     normalized.player_snapshots_days,
@@ -47,6 +47,7 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
     normalized.api_pool_usage_days,
     normalized.login_history_days,
     normalized.owner_audit_log_days,
+    normalized.player_identity_history_days,
     now,
     updatedByUserId
   ).run();
