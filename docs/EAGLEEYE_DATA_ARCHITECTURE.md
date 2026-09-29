@@ -80,3 +80,49 @@ MightPulse
 No phase may remove a D1 write or table solely because R2/Drive is planned.
 
 The replacement reader/writer must exist, be exercised, and preserve the existing user-visible behavior first.
+
+## 永久保管・アーカイブの大前提（2026-09-29確定）
+
+EagleEyeの履歴データは、D1に永久保存しない。D1はアプリケーションが高速に参照するための運用DBとして扱い、長期履歴はアーカイブ層へ移す。
+
+### 保存階層
+
+| 層 | 役割 | 方針 |
+|---|---|---|
+| D1 | 現行データ・直近履歴の高速参照 | テーブルごとのRetention期間を設定し、古い行を削除 |
+| R2 | アーカイブ中継・障害復旧用バックアップ | Google Driveへの転送が成功するまで保持し、成功後も一定期間保持 |
+| Google Drive | 長期・永久保管 | サービス開始時からの履歴を原則永久保存 |
+
+### 永久保管の原則
+
+- **Google Driveを最終的な永久保管先とする。**
+- R2はGoogle Driveへ正常に転送されたことを確認するまでの保護層、および一定期間の復旧用バックアップとして使用する。
+- R2上のアーカイブを削除するのは、Google Drive側への保存成功を確認した後のみとする。
+- Google Driveへの転送失敗・未確認の場合、R2上の対象データを削除してはならない。
+- D1からの履歴削除も、まずR2へのアーカイブが正常に完了していることを条件とする。
+- サービス開始時からの履歴を失わないことを最優先とし、D1のFree Tier消費を抑えるためにD1から長期履歴を段階的に外部保管へ移す。
+
+### 対象となる監査・ログ履歴
+
+少なくとも以下はサービス開始時からの履歴を永久保管対象とする。
+
+- `login_history`
+- `owner_audit_log`
+
+今後、他の履歴テーブルについても同じ原則を適用できるように設計する。
+
+### Google Drive連携時の処理順序
+
+`D1 → R2 → Google Drive` の順序を基本とする。
+
+1. D1のRetention対象行を取得
+2. R2へアーカイブ
+3. R2保存成功を確認
+4. D1から対象行を削除
+5. Google DriveへR2アーカイブを転送
+6. Google Drive側の保存成功を確認
+7. R2は設定されたバックアップ保持期間を経過するまで保持
+8. 保持期間経過後にR2上の対象アーカイブを削除可能とする
+
+Google Driveへの転送は冗長化・障害復旧を考慮し、**R2から直接削除することを成功条件にしてはならない**。
+
