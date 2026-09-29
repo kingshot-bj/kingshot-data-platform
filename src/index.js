@@ -21,6 +21,7 @@ import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
+import { handleServiceUsageQueue } from "./service-usage-archive.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -2606,6 +2607,9 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '</div></div>';}async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
 }
 export default {
+  async queue(batch, env, ctx) {
+    return await handleServiceUsageQueue(batch, env, ctx);
+  },
   async scheduled(controller, env, ctx) {
     if (env.DB && env.ARCHIVE) {
       try {
