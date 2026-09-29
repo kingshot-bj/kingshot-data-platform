@@ -6601,7 +6601,7 @@ async function renderPublicStatusPage(request, env) {
   const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
   const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
-    ? "$5.00 Paid枠・安全上限の最大使用率"
+    ? "$5.00 Paid枠・推定超過率"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
     const item = cloudflareUsageLabel(stateValue);
