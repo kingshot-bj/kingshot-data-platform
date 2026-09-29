@@ -3052,6 +3052,7 @@ export default {
       if (url.pathname === "/api/owner/users/login-history") return await handleOwnerLoginHistoryApi(request, env);
       if (url.pathname === "/api/owner/audit-log") return await handleOwnerAuditLogApi(request, env);
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
+      if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
       if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
       if (url.pathname === "/admin/google-drive") return await renderGoogleDriveSetupPage(request, env);
       if (url.pathname === "/admin/data-retention") return eagleEyeHtmlResponse(await renderDataRetentionPage(request, env));
@@ -5917,6 +5918,33 @@ async function handleOwnerAuditLogApi(request,env){
   const result=await env.DB.prepare("SELECT audit_id,actor_user_id,actor_discord_id,action,target_user_id,target_discord_id,details_json,created_at FROM owner_audit_log ORDER BY created_at DESC LIMIT ?").bind(limit).all();
   return json({ok:true,logs:result.results||[]});
 }
+async function renderOwnerPlayerLinkSupportPage(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return eagleEyeHtmlResponse(guard.error);
+  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KingShot所有権サポート | EagleEye</title><style>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.item{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30;margin-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.btn{padding:10px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}.danger{background:#7f1d1d;color:white}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}textarea{width:100%;min-height:70px;background:#0b1220;color:white;border:1px solid #334155;border-radius:9px;padding:9px}</style></head><body><main class="wrap"><a class="back" href="/owner">← OWNER CONTROL</a><h1>KingShot所有権サポート</h1><p class="muted">ゲーム内スクリーンショット等で本人確認した案件をここで処理します。移管時には旧リンクを解除し、申請者をADMIN_VERIFIEDとして公式認証します。不正利用が疑われる旧アカウントへの警告・停止判断は証拠を確認した上で別途行ってください。</p><div id="list" class="card">読み込み中…</div></main><script>
+(async function(){
+ const list=document.getElementById("list");
+ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+ async function load(){
+  const r=await fetch("/api/owner/player-link-support",{credentials:"same-origin",cache:"no-store"});
+  const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.message||d.error||"取得失敗");
+  if(!d.requests.length){list.innerHTML="<div class='muted'>未処理の所有権申請はありません。</div>";return;}
+  list.innerHTML=d.requests.map(x=>"<article class='item'><div class='row'><b>領主ID</b><b>"+esc(x.governor_id)+"</b></div><div class='row'><span>申請者 Discord ID</span><span>"+esc(x.requester_discord_id||"-")+"</span></div><div class='row'><span>既存登録 Discord ID</span><span>"+esc(x.conflicting_discord_id||"-")+"</span></div><div class='row'><span>プレイヤー</span><span>"+esc(x.nick_name||"-")+" / 王国 "+esc(x.kid||"-")+"</span></div><p class='muted'>問い合わせ番号: "+esc(x.request_id)+"</p><textarea id='note-"+esc(x.request_id)+"' placeholder='本人確認内容・判断理由'></textarea><div class='actions'><button class='btn' onclick='resolve(""+esc(x.request_id)+"","VERIFY_TRANSFER")'>本人確認済み・移管＋公式認証</button><button class='btn danger' onclick='resolve(""+esc(x.request_id)+"","REJECT")'>却下</button></div></article>").join("");
+ }
+ window.resolve=async function(id,action){
+  const note=document.getElementById("note-"+id)?.value||"";
+  if(action==="VERIFY_TRANSFER"&&!confirm("本人確認済みとして移管し、公式認証を付与しますか？"))return;
+  const r=await fetch("/api/owner/player-link-support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({request_id:id,action,resolution_note:note})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||!d.ok){alert(d.message||d.error||"処理に失敗しました");return;}
+  await load();
+ };
+ try{await load();}catch(e){list.textContent=e.message||String(e);}
+}());
+</script></body></html>`);
+}
+
 async function renderOwnerAdminPage(request,env){
   const guard=await requireOwner(request,env);
   if(guard.error)return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
