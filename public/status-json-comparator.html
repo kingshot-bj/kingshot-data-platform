@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EagleEye Status JSON Comparator</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d10;--panel:#14181d;--line:#2a3139;--text:#eef2f6;--muted:#9aa5b1;--accent:#66b3ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1200px;margin:auto;padding:18px}h1{font-size:21px;margin:0 0 6px}h2{font-size:16px;margin:24px 0 10px}.sub{color:var(--muted);margin-bottom:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+button,input{font:inherit}button{background:#1e6fb8;color:white;border:0;border-radius:8px;padding:9px 12px;cursor:pointer}button.secondary{background:#252b32}
+.drop{border:1px dashed #4b5968;border-radius:10px;padding:20px;text-align:center;color:var(--muted)}.drop.drag{border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:8px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}th:first-child,td:first-child{text-align:left;word-break:break-word}th{color:#b9c3ce;position:sticky;top:0;background:var(--panel)}
+.pos{color:#7ddc9a}.neg{color:#ff9c9c}.zero{color:var(--muted)}.small{font-size:12px;color:var(--muted)}
+.badge{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:999px;margin:2px;font-size:12px}
+.scroll{overflow:auto;max-height:65vh}.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.files{margin-top:10px}
+select{background:#0f1216;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>KingShot Data Platform EagleEye — Status JSON Comparator</h1>
+<div class="sub">複数の status JSON をローカルで比較します。ファイルは外部へ送信しません。</div>
+
+<div class="panel">
+  <div id="drop" class="drop">
+    <input id="picker" type="file" accept=".json,application/json" multiple>
+    <div style="margin-top:8px">JSONファイルを選択（2個以上）またはここへドロップ</div>
+  </div>
+  <div id="files" class="files"></div>
+</div>
+
+<div id="app" hidden>
+<div class="panel">
+  <div class="controls">
+    <label>基準ファイル:
+      <select id="base"></select>
+    </label>
+    <button id="export" class="secondary">比較結果をCSV保存</button>
+  </div>
+  <div id="summary" class="small" style="margin-top:10px"></div>
+</div>
+
+<h2>主要メトリクス</h2><div class="panel scroll"><table><thead><tr><th>項目</th><th>基準</th><th>比較</th><th>差分</th><th>増減率</th></tr></thead><tbody id="mainMetrics"></tbody></table></div>
+
+<h2>Query Insights — D1負荷比較</h2>
+<div class="panel scroll"><table><thead><tr><th>クエリ</th><th>基準 Count</th><th>比較 Count</th><th>Δ Count</th><th>基準 Rows Read</th><th>比較 Rows Read</th><th>Δ Rows Read</th><th>基準 Rows Written</th><th>比較 Rows Written</th><th>Δ Rows Written</th></tr></thead><tbody id="queries"></tbody></table></div>
+
+<h2>変更の大きい項目</h2><div class="panel scroll"><table><thead><tr><th>パス</th><th>基準</th><th>比較</th><th>差分</th><th>増減率</th></tr></thead><tbody id="changes"></tbody></table></div>
+</div>
+
+<script>
+const state={files:[],data:[],base:0};
+const $=id=>document.getElementById(id);
+function fmt(v){if(v===null||v===undefined)return "—";if(typeof v==="number")return v.toLocaleString("ja-JP",{maximumFractionDigits:4});return String(v)}
+function pct(a,b){if(typeof a!=="number"||typeof b!=="number"||a===0)return "—";return ((b-a)/Math.abs(a)*100).toFixed(2)+"%"}
+function cls(d){return d>0?"pos":d<0?"neg":"zero"}
+function keyOf(o){
+  const sql=o.sql||o.query||o.statement||o.queryText||o.name;
+  return typeof sql==="string"&&sql.trim()?sql.trim():null;
+}
+function walk(obj,path,out){
+  if(!obj||typeof obj!=="object")return;
+  if(Array.isArray(obj)){obj.forEach((x,i)=>walk(x,path+"["+i+"]",out));return}
+  for(const [k,v] of Object.entries(obj)){
+    const p=path?path+"."+k:k;
+    if(typeof v==="number" && Number.isFinite(v)) out.push([p,v]);
+    if(v&&typeof v==="object") walk(v,p,out);
+  }
+}
+function findQueryObjects(root){
+  const out=[];
+  function w(x,path=""){
+    if(!x||typeof x!=="object")return;
+    if(Array.isArray(x)){x.forEach((v,i)=>w(v,path+"["+i+"]"));return}
+    const hasMetric=["count","rowsRead","rowsWritten","rowsReturned"].some(k=>typeof x[k]==="number");
+    const q=keyOf(x);
+    if(hasMetric && q) out.push({key:q,count:x.count||0,rowsRead:x.rowsRead||0,rowsWritten:x.rowsWritten||0,rowsReturned:x.rowsReturned||0,path});
+    for(const [k,v] of Object.entries(x)) if(v&&typeof v==="object") w(v,path?path+"."+k:k);
+  } w(root); return out;
+}
+function aggregateQueries(root){
+  const map=new Map();
+  for(const q of findQueryObjects(root)){
+    const key=q.key.replace(/\s+/g," ").trim();
+    const x=map.get(key)||{key,count:0,rowsRead:0,rowsWritten:0,rowsReturned:0};
+    x.count+=q.count;x.rowsRead+=q.rowsRead;x.rowsWritten+=q.rowsWritten;x.rowsReturned+=q.rowsReturned;map.set(key,x);
+  }
+  return map;
+}
+function extractMain(d){
+  const vals={};
+  function search(x,path=""){
+    if(!x||typeof x!=="object")return;
+    if(Array.isArray(x)){x.forEach((v,i)=>search(v,path+"["+i+"]"));return}
+    for(const [k,v] of Object.entries(x)){
+      const p=path?path+"."+k:k;
+      if(typeof v==="number" && /^(rowsRead|rowsWritten|readQueries|writeQueries|databaseSizeBytes|storagePercent|requests|subrequests|cpuTimeMs|errors|count)$/.test(k)){
+        if(!vals[k]) vals[k]=v;
+      }
+      if(v&&typeof v==="object")search(v,p);
+    }
+  } search(d);
+  return vals;
+}
+function render(){
+  const base=state.data[state.base];
+  const other=state.data.filter((_,i)=>i!==state.base)[0];
+  $("summary").textContent=state.files.length+"ファイル読み込み済み。基準="+state.files[state.base].name+" / 比較="+state.files[state.data.indexOf(other)].name;
+  const a=extractMain(base),b=extractMain(other);
+  $("mainMetrics").innerHTML=Object.keys({...a,...b}).map(k=>{
+    const d=(typeof a[k]==="number"&&typeof b[k]==="number")?b[k]-a[k]:null;
+    return "<tr><td>"+k+"</td><td>"+fmt(a[k])+"</td><td>"+fmt(b[k])+"</td><td class='"+(d===null?"":cls(d))+"'>"+fmt(d)+"</td><td>"+pct(a[k],b[k])+"</td></tr>";
+  }).join("");
+  const qa=aggregateQueries(base),qb=aggregateQueries(other),keys=[...new Set([...qa.keys(),...qb.keys()])];
+  $("queries").innerHTML=keys.map(k=>{
+    const x=qa.get(k)||{count:0,rowsRead:0,rowsWritten:0},y=qb.get(k)||{count:0,rowsRead:0,rowsWritten:0};
+    return "<tr><td>"+escapeHtml(k)+"</td><td>"+fmt(x.count)+"</td><td>"+fmt(y.count)+"</td><td class='"+cls(y.count-x.count)+"'>"+fmt(y.count-x.count)+"</td><td>"+fmt(x.rowsRead)+"</td><td>"+fmt(y.rowsRead)+"</td><td class='"+cls(y.rowsRead-x.rowsRead)+"'>"+fmt(y.rowsRead-x.rowsRead)+"</td><td>"+fmt(x.rowsWritten)+"</td><td>"+fmt(y.rowsWritten)+"</td><td class='"+cls(y.rowsWritten-x.rowsWritten)+"'>"+fmt(y.rowsWritten-x.rowsWritten)+"</td></tr>";
+  }).join("");
+  const pa=[],pb=[];walk(base,"",pa);walk(other,"",pb);
+  const ma=new Map(pa),mb=new Map(pb),rows=[];
+  for(const [p,v] of ma){const w=mb.get(p);if(typeof w==="number"&&w!==v)rows.push({p,a:v,b:w,d:w-v})}
+  for(const [p,w] of mb){if(!ma.has(p))rows.push({p,a:null,b:w,d:w})}
+  rows.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
+  $("changes").innerHTML=rows.slice(0,300).map(x=>"<tr><td>"+escapeHtml(x.p)+"</td><td>"+fmt(x.a)+"</td><td>"+fmt(x.b)+"</td><td class='"+cls(x.d)+"'>"+fmt(x.d)+"</td><td>"+pct(x.a,x.b)+"</td></tr>").join("");
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+async function load(files){
+  state.files=[...files];state.data=[];
+  for(const f of state.files){try{state.data.push(JSON.parse(await f.text()))}catch(e){alert(f.name+" はJSONとして読み込めません: "+e.message);return}}
+  $("files").innerHTML=state.files.map((f,i)=>"<span class='badge'>"+(i+1)+". "+escapeHtml(f.name)+"</span>").join("");
+  $("base").innerHTML=state.files.map((f,i)=>"<option value='"+i+"'>"+escapeHtml(f.name)+"</option>").join("");
+  $("app").hidden=false;$("base").onchange=()=>{state.base=+$("base").value;render()};render();
+}
+$("picker").onchange=e=>load(e.target.files);
+const drop=$("drop");["dragenter","dragover"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.add("drag")}));
+["dragleave","drop"].forEach(x=>drop.addEventListener(x,e=>{e.preventDefault();drop.classList.remove("drag")}));
+drop.addEventListener("drop",e=>load([...e.dataTransfer.files].filter(f=>f.name.toLowerCase().endsWith(".json"))));
+$("export").onclick=()=>{
+  const base=state.data[state.base], other=state.data.filter((_,i)=>i!==state.base)[0],qa=aggregateQueries(base),qb=aggregateQueries(other);
+  const keys=[...new Set([...qa.keys(),...qb.keys()])];
+  const lines=[["query","base_count","compare_count","delta_count","base_rowsRead","compare_rowsRead","delta_rowsRead","base_rowsWritten","compare_rowsWritten","delta_rowsWritten"]];
+  for(const k of keys){const a=qa.get(k)||{},b=qb.get(k)||{};lines.push([k,a.count||0,b.count||0,(b.count||0)-(a.count||0),a.rowsRead||0,b.rowsRead||0,(b.rowsRead||0)-(a.rowsRead||0),a.rowsWritten||0,b.rowsWritten||0,(b.rowsWritten||0)-(a.rowsWritten||0)])}
+  const csv="\ufeff"+lines.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="eagleeye-status-query-diff.csv";a.click();URL.revokeObjectURL(a.href);
+};
+</script>
+</main>
+</body>
+</html>
