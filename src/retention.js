@@ -72,7 +72,9 @@ export async function runRetentionCleanup(db, { batchSize = 1000, archiveBucket 
       "player_snapshots",
       "ranking_snapshots",
       "player_rank_snapshots",
-      "change_events"
+      "change_events",
+      "login_history",
+      "owner_audit_log"
     ].includes(item.table);
 
     let selectSql;
