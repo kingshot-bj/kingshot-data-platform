@@ -9,7 +9,7 @@ const RETENTION_TABLES = Object.freeze([
   { key: "api_pool_usage_days", table: "api_pool_usage", column: "used_at", keepLatestPerTarget: false },
   { key: "login_history_days", table: "login_history", column: "logged_in_at", keepLatestPerTarget: false },
   { key: "owner_audit_log_days", table: "owner_audit_log", column: "created_at", keepLatestPerTarget: false },
-  { key: "player_identity_history_days", table: "player_identity_history", column: "first_seen_at", keepLatestPerTarget: false }
+  { key: "player_identity_history_days", table: "player_identity_history", column: "last_seen_at", keepLatestPerTarget: false }
 ]);
 
 export async function getRetentionSettings(db) {
