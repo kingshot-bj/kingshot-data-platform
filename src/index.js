@@ -2596,7 +2596,7 @@ async function handleKingdomWatchlistApi(request, env) {
           message,
           targetType: "WATCHLIST",
           targetId: id,
-          metadata: { jobId, kid }
+          metadata: { jobId, kid, poolAvailability: error?.poolAvailability || null }
         });
         console.error("kingdom_watchlist_initial_refresh_failed", id, message);
         return json({
@@ -2734,7 +2734,7 @@ async function handleKingdomWatchlistApi(request, env) {
             message,
             targetType: "WATCHLIST",
             targetId: watchlistId,
-            metadata: { jobId: job.job_id, source: "MANUAL" }
+            metadata: { jobId: job.job_id, source: "MANUAL", poolAvailability: error?.poolAvailability || null }
           });
           console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
           const responseError = error?.code === "NO_API_POOL_KEY_AVAILABLE"
