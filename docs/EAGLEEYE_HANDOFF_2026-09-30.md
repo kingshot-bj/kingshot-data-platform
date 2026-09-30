@@ -2006,3 +2006,77 @@ status-7には:
 
 **今回のログだけで原因を断定しない。**
 まずmainの `src/api-pool.js` と王国ウォッチリストの初回取得/手動更新/cron実行コードを確認し、status遷移と照合する。
+
+# 40. 2026-10-01 API Poolリース誤認防止・王国ウォッチリスト二重登録対策
+
+## 40-1. 実装済み
+
+今回のテスター事象を受け、mainへ以下を実装。
+
+### 王国ウォッチリスト二重登録
+- 登録ボタンを即時disabled
+- 「登録中…」表示
+- クライアント側の二重POSTを防止
+- サーバー側も INSERT ... SELECT ... WHERE NOT EXISTS で同一Discordユーザー＋同一王国の有効ウォッチリスト二重登録を原子的に防止
+- 二重POST競合時は KINGDOM_WATCHLIST_ALREADY_EXISTS / HTTP 409 を返す
+- 同一IDのrefresh lockだけに依存しない
+
+### API Poolの「NO_API_POOL_KEY_AVAILABLE」判定強化
+現在のAPI Poolでは、リース取得時にキーの status は AVAILABLE のまま、leased_until / lease_id 等で使用中を表現する。
+そのためstatusだけでは「利用可能キーなし」と「全キーがリース中」を区別できない。
+
+getApiPoolAvailability() を追加し、
+- available
+- leased
+- cooldown
+- disabled
+- error
+- revoked
+- total
+をPool別・合計で取得できるようにした。
+
+available=0 && leased>0 の場合は exhausted_by_lease=true として扱う。
+
+### Watchlist APIエラー表示
+Watchlist経由のPool取得で全候補Poolからlease取得できなかった場合、
+Pool状態を再確認して NO_API_POOL_KEY_AVAILABLE に診断情報を付加。
+
+リース枯渇時はユーザー向けに、
+「利用可能なAPIキーがすべて処理中（リース中）であり、キー自体の無効化とは限らない」
+と明示する。
+
+初回取得・手動更新のdiagnostic_eventsにも poolAvailability をmetadataとして保存する。
+
+### API Pool管理画面
+/admin/api-pool のキー一覧で leased_until が現在時刻より未来の場合、
+statusとは別に「🔒 リース中」と残り秒数、purpose、targetを表示する。
+
+### API Pool「更新」ボタン
+管理画面から個別キーを更新する際、対象キーが既にリース中なら外部APIへ再実行せず、
+API_POOL_KEY_LEASED / HTTP 409 を返し、
+「無効キーとは限らない。処理完了またはリース期限切れ後に再試行」
+と明示する。
+
+## 40-2. main反映commit
+
+- abd0508828208e80ae3d2ea61eda251a55f9bda — API Pool lease exhaustion diagnosis
+- a63e10520418bda1dc54815d9f71c9b91091a7a4 — duplicate Kingdom Watchlist registration prevention / pool exhaustion message
+- 94549473569f57fd5a438976a309a57eb9b91cd8 — expose active lease fields
+- e5305bb442196563172715c82bfacb648e0ea6a1 — health-check leased-key detection
+- 364e463392ef31c656ac1b96fcfdc2d8304d4442 — show active leases in API Pool admin UI
+- 630f7c869e343f0923a13fe705a8d27c6bb8afe0 — record pool availability in Watchlist diagnostics
+
+## 40-3. 注意
+
+上記はGitHub mainへのコード実装確認であり、本番Workerへのdeploy・本番E2E確認はこの時点では未確認。
+
+本番確認では最低限:
+1. 同一王国の登録ボタンを連打しても1件/1ジョブしか作成されないこと
+2. 同時登録時の2本目が409で安全に止まること
+3. API Poolで実際にリース中のキーを「更新」した際に API_POOL_KEY_LEASED と表示されること
+4. 全Poolがリース中の状態でWatchlist更新すると「リース中」と判定されること
+5. リース解放後に通常更新へ復帰すること
+6. diagnostic_eventsにpoolAvailabilityが記録されること
+7. D1 Rows Read/Writeの増加を確認すること
+
+本番で確認できるまでは「本番確認済み」と扱わない。
