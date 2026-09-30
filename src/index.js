@@ -129,12 +129,19 @@ async function runDiagnosticHealthChecks(env) {
     }
 
     if (due("google_sheets")) {
-      const configured = Boolean(env.GOOGLE_SHEETS_SPREADSHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+      const spreadsheetConfigured = Boolean(env.GOOGLE_SHEETS_SPREADSHEET_ID);
+      const serviceAccountConfigured = Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+      const appsScriptConfigured = Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET);
+      const configured = spreadsheetConfigured && (serviceAccountConfigured || appsScriptConfigured);
+      const transport = appsScriptConfigured ? "Apps Script Web App" : serviceAccountConfigured ? "Google Sheets API" : null;
       await write({
         service:"google_sheets",
         status:configured ? "SUCCESS" : "WARNING",
         errorCode:configured ? null : "GOOGLE_SHEETS_NOT_CONFIGURED",
-        message:configured ? "Google Sheets連携設定の診断確認成功" : "Google Sheets連携設定が未構成です。"
+        message:configured
+          ? "Google Sheets連携設定の診断確認成功"
+          : "Google Sheets連携設定が未構成です。",
+        metadata: transport ? { transport } : undefined
       });
     }
 
