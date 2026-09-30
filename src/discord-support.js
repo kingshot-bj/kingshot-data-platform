@@ -54,9 +54,11 @@ export async function getSupportIncidentContext(env) {
   if (now - supportIncidentCache.at < 30000) return supportIncidentCache.value;
   if (!env?.DB) return null;
   try {
+    const queryStartedAt = Date.now();
     const row = await env.DB.prepare(
       "SELECT service, feature, operation, status, error_code, message, created_at FROM diagnostic_events WHERE status IN ('FAILED','WARNING') ORDER BY created_at DESC LIMIT 1"
     ).first();
+    console.log("support_incident_context_query", { elapsed_ms: Date.now() - queryStartedAt, found: Boolean(row) });
     if (!row) { supportIncidentCache={at:now,value:null}; return null; }
     const age = Math.max(0, Math.floor(Date.now()/1000)-Number(row.created_at||0));
     const active = age <= 30 * 60;
