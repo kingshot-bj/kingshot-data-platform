@@ -1595,6 +1595,21 @@ async function handleMyPlayerApi(request, env) {
 
       let link;
       try {
+        // A new user cannot be expected to have an existing EagleEye record.
+        // If the player is absent from D1, resolve the ID through the normal
+        // API Pool path first, persist the observation, and materialize it.
+        const existingPlayer = await getPlayer(env.DB, governorId);
+        if (!existingPlayer) {
+          const fetched = await fetchPlayerThroughApiPool(env, governorId, "KINGSHOT_ID_REGISTER");
+          await materializePlayer(
+            env.DB,
+            fetched.observation,
+            null,
+            env.ARCHIVE,
+            env.HISTORY_STORAGE_MODE
+          );
+        }
+
         link = await saveUserPlayerLink(env.DB, auth.user_id, governorId, accountType, {
           allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true"
         });
@@ -1621,6 +1636,12 @@ async function handleMyPlayerApi(request, env) {
         }
         if (["PLAYER_NOT_FOUND","KINGDOM_LIMIT_REACHED","MAIN_ACCOUNT_ALREADY_EXISTS","SUB_ACCOUNT_LIMIT_REACHED","ACCOUNT_LIMIT_REACHED","GOVERNOR_ID_ALREADY_REGISTERED"].includes(error?.code)) {
           return json({ ok: false, error: error.code, message: error.userMessage || error.message }, 409);
+        }
+        if (error?.code === "NO_API_POOL_KEY_AVAILABLE" || error?.message === "NO_API_POOL_KEY_AVAILABLE") {
+          return json({ ok: false, error: "NO_API_POOL_KEY_AVAILABLE", message: "現在、プレイヤー情報を取得できるAPIが利用できません。しばらくしてから再度お試しください。" }, 503);
+        }
+        if (Number(error?.status) === 404 || error?.code === "MIGHTPULSE_NOT_FOUND") {
+          return json({ ok: false, error: "PLAYER_NOT_FOUND", message: "その領主IDのプレイヤー情報をMightPulseから取得できませんでした。領主IDをご確認ください。" }, 404);
         }
         throw error;
       }
