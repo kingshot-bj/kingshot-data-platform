@@ -231,6 +231,48 @@ function buildChannelName(ticketId, subject) {
   return normalized ? `ticket-${ticketId.toLowerCase()}-${normalized}`.slice(0, 100) : `ticket-${ticketId.toLowerCase()}`;
 }
 
+async function resolveSupportDiscordConfig(env, guildId) {
+  const configuredCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
+  const configuredRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
+  const configuredArchiveCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
+
+  // Explicit IDs remain the primary configuration. If one is missing, resolve
+  // it from the configured support server by its stable human-readable name.
+  if (configuredCategoryId && configuredRoleId && configuredArchiveCategoryId) {
+    return {
+      categoryId: configuredCategoryId,
+      supportRoleId: configuredRoleId,
+      archiveCategoryId: configuredArchiveCategoryId
+    };
+  }
+
+  const [channels, roles] = await Promise.all([
+    discordRequest(env, `/guilds/${guildId}/channels`),
+    discordRequest(env, `/guilds/${guildId}/roles`)
+  ]);
+
+  const channelList = Array.isArray(channels) ? channels : [];
+  const roleList = Array.isArray(roles) ? roles : [];
+  const categoryId = configuredCategoryId ||
+    normalizeDiscordId(channelList.find(channel =>
+      Number(channel?.type) === 4 && String(channel?.name || "") === "サポート窓口"
+    )?.id);
+  const archiveCategoryId = configuredArchiveCategoryId ||
+    normalizeDiscordId(channelList.find(channel =>
+      Number(channel?.type) === 4 && String(channel?.name || "") === "サポート窓口クローズ"
+    )?.id);
+  const supportRoleId = configuredRoleId ||
+    normalizeDiscordId(roleList.find(role =>
+      !role?.managed && String(role?.name || "") === "EagleEye Support"
+    )?.id);
+
+  if (!categoryId) throw new Error("DISCORD_SUPPORT_CATEGORY_ID_NOT_CONFIGURED");
+  if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
+  if (!archiveCategoryId) throw new Error("DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID_NOT_CONFIGURED");
+
+  return { categoryId, supportRoleId, archiveCategoryId };
+}
+
 function buildInitialMessage({ ticketId, user, category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident }) {
   const detailLines = Object.entries(details || {}).map(([key,value]) => `**${key}:** ${value}`);
   return [
@@ -248,15 +290,13 @@ export async function createSupportTicket(env, {
   user, category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident
 }) {
   const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
-  const categoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
-  const supportRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
   const botUserId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
   const discordUserId = normalizeDiscordId(user?.discord_id);
 
   if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
-  if (!categoryId) throw new Error("DISCORD_SUPPORT_CATEGORY_ID_NOT_CONFIGURED");
-  if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
   if (!botUserId) throw new Error("DISCORD_CLIENT_ID_NOT_CONFIGURED");
+  const supportConfig = await resolveSupportDiscordConfig(env, guildId);
+  const { categoryId, supportRoleId } = supportConfig;
   if (!discordUserId) throw new Error("DISCORD_USER_ID_REQUIRED");
 
   const member = await getGuildMember(env, guildId, discordUserId);
@@ -325,15 +365,15 @@ export async function closeSupportTicket(env, {
   channelId
 }) {
   const id = normalizeDiscordId(channelId);
-  const archiveCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
-  const supportRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
   if (!id) throw new Error("DISCORD_CHANNEL_ID_REQUIRED");
-  if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
+
+  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  if (!configuredGuildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+  const supportConfig = await resolveSupportDiscordConfig(env, configuredGuildId);
+  const { supportRoleId, categoryId: supportCategoryId, archiveCategoryId } = supportConfig;
 
   const channel = await discordRequest(env, `/channels/${id}`);
-  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
-  const supportCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
-  const archiveCategoryIdForCheck = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
+  const archiveCategoryIdForCheck = archiveCategoryId;
   const topic = String(channel?.topic || "");
   const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
   const topicUser = topic.match(/\buser=(\d{15,25})\b/);
@@ -379,15 +419,14 @@ export async function reopenSupportTicket(env, {
   channelId
 }) {
   const id = normalizeDiscordId(channelId);
-  const supportCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
-  const archiveCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
-  const supportRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
   if (!id) throw new Error("DISCORD_CHANNEL_ID_REQUIRED");
-  if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
-  if (!supportCategoryId) throw new Error("DISCORD_SUPPORT_CATEGORY_ID_NOT_CONFIGURED");
+
+  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  if (!configuredGuildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+  const supportConfig = await resolveSupportDiscordConfig(env, configuredGuildId);
+  const { supportRoleId, categoryId: supportCategoryId, archiveCategoryId } = supportConfig;
 
   const channel = await discordRequest(env, `/channels/${id}`);
-  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
   const topic = String(channel?.topic || "");
   const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
   const topicUser = topic.match(/\buser=(\d{15,25})\b/);
