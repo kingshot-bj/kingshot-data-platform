@@ -1644,3 +1644,112 @@ Discord Support関連を変更する場合、deploy前に必ず以下を確認�
 - Archive Category ID: 1554828896233332826
 
 ※これらの値は今後コード・公開ドキュメントへ再掲せず、必要な場合は既存の本番設定を参照すること。
+
+
+# 38. 診断ログ網羅性監査・Discord Support実行ログ追加 — 2026-09-30
+
+## 38-1. 目的
+
+「機能として実装されているのに、障害・成功・実行結果がdiagnostic_eventsへ残らず、/statusや/admin/diagnosticsから追跡できない」箇所がないかをmainコード全体で監査。
+
+CloudflareのWorker/D1自体のconsoleログとは別に、EagleEye内部の永続診断イベントとして追跡できることを基準とする。
+
+## 38-2. 今回追加した永続診断ログ
+
+### Discord Support
+
+以下をservice=`discord_support`として記録:
+
+- Guild自動参加
+  - feature=`guild_membership`
+  - operation=`GUILD_JOIN`
+  - SUCCESS / FAILED
+  - Discord HTTP status / Discord error codeをmetadataへ記録
+  - OAuth access token / Bot Tokenは記録しない
+- 問い合わせチケット作成
+  - operation=`CREATE_TICKET`
+  - SUCCESS / FAILED
+  - ticket ID / channel ID / category / subcategory
+- `/close`
+  - operation=`CLOSE_TICKET`
+  - SUCCESS / FAILED
+- `/reopen`
+  - operation=`REOPEN_TICKET`
+  - SUCCESS / FAILED
+- Slash command登録
+  - feature=`slash_commands`
+  - operation=`REGISTER_COMMANDS`
+  - SUCCESS / FAILED
+
+### Discord OAuth
+
+既存の`discord` serviceにも以下を追加:
+
+- OAuth token exchange failure
+- Discord user lookup failure
+- D1 user persistence failure
+
+## 38-3. その他の不足ログとして実装したもの
+
+- データ保持期間クリーンアップ
+  - service=`retention`
+  - feature=`data_retention`
+  - operation=`CLEANUP`
+  - SUCCESS / FAILED
+  - deleted / archived件数をmetadataへ記録
+- 履歴緊急バッファ排出
+  - service=`history_storage`
+  - feature=`history_emergency_buffer`
+  - operation=`DRAIN`
+  - SUCCESS / WARNING / FAILED
+  - attempted / archived / failed / remainingを記録
+
+## 38-4. 診断サービス一覧の拡張
+
+`src/diagnostics.js` のDIAGNOSTIC_SERVICESへ以下を追加:
+
+- `discord_support` — Discord Support
+- `retention` — データ保持
+- `history_storage` — 履歴ストレージ
+
+これにより、イベントが存在しない場合もUNKNOWNとして/admin/diagnosticsのサービス一覧から検知できる。
+
+## 38-5. 監査で確認した「永続diagnostic_eventsが不要なもの」
+
+以下は機能上のHTTP/UIエラーや管理画面操作ログであり、現時点ではサービスヘルス診断イベントへ機械的に全件投入しない方針。
+
+- プレイヤー/ランキング各画面のHTTPエラー
+- API Pool管理画面のCRUDエラー
+- diagnostics画面自身の表示エラー
+- 一般的なHTMLページ描画エラー
+- service usage queueの内部ログ
+
+これらは必要な場合、別途request/auditログとして設計する。
+
+## 38-6. 監査時点で残っている候補
+
+外部サービスを実際に操作する以下の処理は、設定確認だけではなく実処理結果まで別途記録する余地がある:
+
+- Google Sheets実データexport
+- Google Drive OAuth / Archive upload
+- 一部R2 read failure
+- 一般ユーザー向けPlayer/Ranking refreshの実行結果
+
+ただし、これらを`diagnostic_events`へ追加するか、別のrequest/audit/event系へ分離するかは、D1書き込み量との兼ね合いを確認してから決定する。
+
+## 38-7. 重要
+
+今回の変更はGitHub mainへ反映したコード上の実装であり、**本番Workerへdeployして実際にdiagnostic_eventsへ記録されることは、この時点では未確認**。
+
+本番確認時は最低限:
+
+1. Discordログアウト
+2. Discord再ログイン
+3. Support Guild自動参加
+4. /supportからticket作成
+5. /admin/diagnosticsでDiscord Supportイベント確認
+6. /close
+7. /reopen
+8. それぞれのSUCCESS/FAILEDイベントとtrace_id確認
+
+まで行う。
