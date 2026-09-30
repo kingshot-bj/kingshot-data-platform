@@ -3314,7 +3314,7 @@ html[data-eagle-theme="light"] .error{background:#fef2f2 !important;color:#b91c1
 html[data-eagle-theme="light"] .btn.secondary{background:#e2e8f0 !important;color:#172033 !important}
 html[data-eagle-theme="light"] .badge{background:#fff7ed !important;color:#b45309 !important}
 
-.eagle-theme-toggle{position:fixed;right:14px;top:14px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
+.eagle-preview-banner{display:none;position:fixed;left:12px;top:12px;z-index:10000;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;background:rgba(68,39,0,.96);color:#fde68a;font-size:11px;font-weight:900;letter-spacing:.04em;box-shadow:0 8px 22px rgba(0,0,0,.25);backdrop-filter:blur(8px)}html[data-eagle-preview="1"] .eagle-preview-banner{display:block}.eagle-theme-toggle{position:fixed;right:14px;top:14px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
 html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033;border-color:#cbd5e1}
 </style>`;
 
@@ -3325,6 +3325,17 @@ const EAGLEEYE_THEME_SCRIPT = `
     var saved=localStorage.getItem("eagleeye-theme");
     var theme=saved==="light"||saved==="dark"?saved:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
     document.documentElement.setAttribute("data-eagle-theme",theme);
+    var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
+    var isPreviewHost=window.location.hostname!==productionHost;
+    document.documentElement.setAttribute("data-eagleeye-env",isPreviewHost?"preview":"production");
+    if(isPreviewHost){
+      var previewBanner=document.createElement("div");
+      previewBanner.className="eagle-preview-banner";
+      previewBanner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
+      document.documentElement.setAttribute("data-eagle-preview","1");
+      function mountPreviewBanner(){ if(!document.querySelector(".eagle-preview-banner")) document.body.appendChild(previewBanner); }
+      if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",mountPreviewBanner); else mountPreviewBanner();
+    }
     function setup(){
       var existing=document.querySelector(".theme-toggle");
       var btn=document.querySelector(".eagle-theme-toggle");
