@@ -2197,3 +2197,27 @@ TTLはデフォルト180秒。期限切れロックは次回取得時に原子�
 9. D1 Rows Read/Writeの増加量確認
 
 本番で確認できるまでは「本番確認済み」と扱わない。
+
+## #42 Discord認証 / Discord Support 診断分離修正（2026-09-30）
+
+### 背景
+保存済み本番ステータスJSONでは、Discord OAuth設定のヘルスチェックがSUCCESSだった一方、Discord Supportのチケット作成失敗 `Missing Access` が `service="discord"` として記録され、「Discord認証」がFAILED表示になる事象を確認した。
+
+### 実装
+- `src/discord-support.js`
+  - `recordSupportDiagnostic()` の診断サービスを `discord` から `discord_support` に変更。
+  - SupportのCREATE_TICKET / CLOSE_TICKET / REOPEN_TICKET等は `Discord Support` サービスとして診断される。
+- `src/index.js`
+  - お問い合わせ画面の障害情報サービス表示に `discord_support: "Discord Support"` を追加。
+- `src/diagnostics.js`
+  - 既存の `discord = Discord認証` と `discord_support = Discord Support` のサービス定義を維持。
+
+### コミット
+- `2241acfde14ec5f54d80f591a6134b14095dfe55` — Support診断をDiscord Supportへ分離
+- `0e2b91b2c62f7420c217ab0286e4f434a5ef4dc7` — お問い合わせ画面のDiscord Support表示対応
+
+### 本番確認状況
+- mainへの実装反映は確認済み。
+- 本番Workerへのデプロイおよび本番E2E確認は、この時点では未確認。
+- したがって「本番で修正済み」とは扱わない。
+
