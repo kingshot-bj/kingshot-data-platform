@@ -2221,3 +2221,112 @@ TTLはデフォルト180秒。期限切れロックは次回取得時に原子�
 - 本番Workerへのデプロイおよび本番E2E確認は、この時点では未確認。
 - したがって「本番で修正済み」とは扱わない。
 
+
+
+---
+
+# 43. iPhone UI刷新 / プレイヤー比較 / KingShotアセット調査（2026-10-01）
+
+## 方針
+- BJにゃん画像素材は別スレで作成するため、本体実装ではBJ素材に依存しない。
+- UIはiPhoneファーストの日本人向けダークUIへ刷新していく。
+- 既存バックエンド/API/D1/R2/Watchlist/権限/認証を壊さず、まず機能面を実装。
+- グラフは画像ではなく、保存済み実データからブラウザ上で描画する。
+- D1の広域履歴スキャンは追加しない。Player履歴は通常R2_ONLYのR2履歴を優先し、D1は既存fallbackに限定。
+
+## 新規実装
+### Player Compare
+追加:
+- src/player-compare.js
+- /api/player-compare
+- /player/compare
+
+仕様:
+- 比較対象最大4人
+- governor_id または ids=... で指定
+- 現在値: 総合戦力 / 戦力順位 / 役場Lv. / VIP / 撃破数 / 撃破順位
+- 期間: 7日 / 30日 / 90日
+- 実データグラフ: 総合戦力推移 / 戦力順位推移
+- 履歴は getPlayerHistory() / getPlayerRankHistory() を使用。
+- HISTORY_STORAGE_MODE=R2_ONLY + ARCHIVE が通常構成なら、比較画面の時系列取得はR2を利用。
+- D1側は比較対象の現在 players を対象IDのIN検索で一括取得。
+
+Player Watchlist UI:
+- 比較チェックボックス追加
+- 最大4人まで選択
+- 2人以上で「選択したプレイヤーを比較」を有効化
+- /player/compare?ids=... へ遷移
+
+Player Detail:
+- 「他プレイヤーと比較」リンク追加。
+
+### KingShot画像/アセット
+src/player-compare.js に extractOptionalPlayerAssets() を追加。
+既知/将来提供される可能性のある:
+- プロフィールアイコン
+- プロフィールフレーム
+- 城/都市スキン
+- 行軍スキン
+- プロフィールスキン
+- skins / frames / cosmetics 内の画像URL
+を「レスポンスに実際に存在する場合のみ」検出し、Player詳細の「プロフィール・スキン」セクションへ表示する。
+
+既存の英雄データ:
+- hero icon
+- level
+- star/stars/star_label
+- quality
+- power
+- position
+- skill_levels
+- exclusive_gear
+- hero gear
+についても引き続き表示し、英雄星を ★★★... の視覚表現でも表示。
+
+既存の領主装備:
+- slot / quality / tier / star / strength / score / combat / gems / icon（payloadに存在する場合）を維持。
+
+## MightPulse仕様調査
+MightPulse公式API公開仕様ではPlayer endpointの公開includeとして base / heroes / ranks / gov_gear が確認できる。
+baseにはavatar_url等、heroesにはhero icon/star/gear/exclusive gear、gov_gearにはgear icon等が記載されている。プロフィールフレーム・城スキン・行軍スキンは現時点の公開Player API仕様には記載されていない。
+参照: https://api.mightpulse.com/
+
+KingShot公式ヘルプでは、プロフィール/行軍/都市スキンが存在し、装備しなくても所持スキンの追加ステータスが重複する仕様が確認できる。
+参照: https://centurygames.helpshift.com/hc/ja/140-kingshot/faq/9018-i-have-multiple-avatar-frames-marching-castle-skins-how-do-the-stat-bonuses-add-up/?s=account-issue
+
+## 未公開include候補のResearch拡張
+src/mightpulse-research.js の候補に追加:
+- avatar / avatar_frame / frame / frames
+- skin / skins / castle_skin / city_skin / marching_skin
+- profile / cosmetics
+
+Research Lab UIも固定20候補から MIGHTPULSE_RESEARCH_CANDIDATES を動的表示するよう変更。
+これは「未公開API仕様を突破する」ものではなく、既存認証済みPlayer APIの include に追加候補を指定してレスポンス構造を観測するだけ。
+まだ本番Researchを実行して、これらの候補が実際にデータを返すことは確認していない。
+
+## 重要な本番確認ルール
+- main実装はコミット済み。
+- Production deploy / Production E2Eはこの作業時点で確認していない。
+- よって「本番で比較機能が動作確認済み」「本番でフレーム/スキン取得済み」とは言わない。
+- Production確認時は最低限:
+  1. Watchlistから2〜4人選択
+  2. 比較画面表示
+  3. 7/30/90日切替
+  4. 戦力/順位グラフ表示
+  5. Player詳細の英雄星・既存画像確認
+  6. Research Labでasset include候補を必要な対象に対して個別検証
+  7. D1 Rows Read増加をstatus/queryInsightsで確認
+- ranking_snapshots の広域読み取りを比較機能のために追加しない。
+
+## Commits
+- d940f1fda9695c40db4658fffc2e96c56f22209d — src/player-compare.js
+- ce22403d3de2ad34f91cbc3a6e329b4f53f8cd0a — src/mightpulse-research.js
+- ed061368e04eed39f5d0e165ca391cf278ae4179 — src/index.js Player Compare / Watchlist / optional assets / hero stars
+- 1a29cb50edd739e281b53de3da81519abed00164 — Research UI dynamic candidate list
+
+## 次の候補
+1. iPhone共通UIテーマ（ネイビー/シアン/ブルー）を既存画面へ段階適用
+2. 比較画面に城Lv/VIP/撃破数等の時系列グラフを追加
+3. Watchlist比較からプレイヤー詳細へ戻る導線を整える
+4. Research実測結果をもとに、実際に存在するフレーム/スキン/その他画像を正式フィールドとして取り込む
+5. 画像/アセット表示の権限・URL安全性を本番確認
