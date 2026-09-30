@@ -45,7 +45,7 @@ async function runDiagnosticHealthChecks(env) {
       "SELECT service, MAX(created_at) AS created_at FROM diagnostic_events GROUP BY service"
     ).all();
     const lastByService = new Map((recent.results || []).map(row => [String(row.service), Number(row.created_at || 0)]));
-    const due = service => !lastByService.has(service) || now - lastByService.get(service) >= 900;
+    const due = service => !lastByService.has(service) || now - lastByService.get(service) >= 3600;
     const write = input => recordDiagnostic(env.DB, { ...input, feature: input.feature || "diagnostic_probe", operation: input.operation || "HEALTH_CHECK" });
 
     if (due("d1")) {
