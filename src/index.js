@@ -22,7 +22,7 @@ import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRa
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
-import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, releaseExpiredLeases } from "./api-pool.js";
+import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, releaseExpiredLeases } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
@@ -1369,7 +1369,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       h+='</div></div>';el("detail").innerHTML=h;
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
+  var creatingWatchlist=false;
   el("create").addEventListener("click",function(){
+    if(creatingWatchlist)return;
     var kidValue=String(el("kid").value||"").trim();
     var topValue=String(el("top").value||"").trim();
     var intervalValue=String(el("interval").value||"").trim();
@@ -1378,6 +1380,11 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       el("kid").focus();
       return;
     }
+    creatingWatchlist=true;
+    el("create").disabled=true;
+    var originalCreateText=el("create").textContent;
+    el("create").textContent="登録中…";
+    el("msg").innerHTML="<span class='muted'>監視対象を登録しています…</span>";
     var payload={kid:Number(kidValue),top_n:Number(topValue),interval_hours:Number(intervalValue)};
     api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
     .then(function(d){
@@ -1399,6 +1406,11 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     })
     .catch(function(e){
       el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
+    })
+    .finally(function(){
+      creatingWatchlist=false;
+      el("create").disabled=false;
+      el("create").textContent=originalCreateText;
     });
   });
   load();
@@ -2490,9 +2502,24 @@ async function handleKingdomWatchlistApi(request, env) {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
-    await env.DB.prepare(
-      "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ?)"
-    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now).run();
+    const inserted = await env.DB.prepare(
+      "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) " +
+      "SELECT ?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ? " +
+      "WHERE NOT EXISTS (SELECT 1 FROM kingdom_watchlists WHERE discord_id = ? AND kid = ? AND enabled = 1) " +
+      "RETURNING watchlist_id"
+    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now, auth.discord_id, kid).first();
+
+    if (!inserted?.watchlist_id) {
+      const existing = await env.DB.prepare(
+        "SELECT watchlist_id, kid, top_n, interval_hours FROM kingdom_watchlists WHERE discord_id = ? AND kid = ? AND enabled = 1 ORDER BY created_at DESC LIMIT 1"
+      ).bind(auth.discord_id, kid).first();
+      return json({
+        ok: false,
+        error: "KINGDOM_WATCHLIST_ALREADY_EXISTS",
+        message: "この王国はすでにウォッチリストへ登録されています。二重登録は実行されていません。",
+        watchlist_id: existing?.watchlist_id || null
+      }, 409);
+    }
 
     const lockToken = await acquireKingdomWatchlistLock(env, id);
     if (!lockToken) {
@@ -4811,7 +4838,20 @@ async function fetchThroughWatchlistApiPool(env, {
         lastNoKeyError = error;
       }
     }
-    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    if (!lease) {
+      const availability = await getApiPoolAvailability(env.DB, {
+        provider: "MIGHTPULSE",
+        poolTypes: automaticPoolTypes
+      });
+      const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
+      const error = lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+      error.code = "NO_API_POOL_KEY_AVAILABLE";
+      error.poolAvailability = availability;
+      error.userMessage = exhaustedByLease
+        ? "現在、利用可能なAPIキーがすべて処理中（リース中）のため更新できません。キー自体の無効化とは限りません。しばらく待ってから再試行してください。"
+        : "現在、利用可能なMightPulse APIキーを確保できません。キーの無効化・クールダウン等の状態を確認してください。";
+      throw error;
+    }
 
     const result = await mightPulseFetch(env, path, {
       query: query || (include ? { include } : undefined),
