@@ -274,7 +274,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
   if (visibilityEnabled(settings, "base_vip", role) && player.vip !== undefined) visible.vip = player.vip;
   if (visibilityEnabled(settings, "base_coordinates", role)) for (const key of ["x","y"]) if (player[key] !== undefined) visible[key] = player[key];
   if (visibilityEnabled(settings, "base_kills", role) && player.kills !== undefined) visible.kills = player.kills;
-  if (visibilityEnabled(settings, "base_activity", role)) for (const key of ["online","last_active_at","last_login"]) if (player[key] !== undefined) visible[key] = player[key];
+  if (visibilityEnabled(settings, "base_activity", role) && player.online !== undefined) visible.online = player.online;
   if (visibilityEnabled(settings, "base_profile", role)) for (const key of ["avatar_url","language","shield_endtime","burn_endtime","office"]) if (player[key] !== undefined) visible[key] = player[key];
 
   const alliance = player.alliance;
@@ -4928,7 +4928,7 @@ function changeTypeLabel(value) {
 }
 
 function changeFieldLabel(field) {
-  const labels = { power:"戦力", town_center_level:"役場", vip:"VIP", x:"X座標", y:"Y座標", kills:"撃破数", online:"オンライン", last_active_at:"最終活動", alliance_aid:"同盟ID", alliance_name:"同盟", alliance_rank:"同盟ランク", alliance_power:"同盟戦力", alliance_count:"同盟人数" };
+  const labels = { power:"戦力", town_center_level:"役場", vip:"VIP", x:"X座標", y:"Y座標", kills:"撃破数", online:"オンライン", alliance_aid:"同盟ID", alliance_name:"同盟", alliance_rank:"同盟ランク", alliance_power:"同盟戦力", alliance_count:"同盟人数" };
   return labels[field] || field || "不明";
 }
 
@@ -4937,7 +4937,6 @@ function formatChangeValue(field, value) {
   if (["power","kills","alliance_power","alliance_count","alliance_aid"].includes(field)) return formatNumber(value);
   if (field === "town_center_level") return formatTownCenterLevel(value);
   if (field === "online") return Number(value) ? "オンライン" : "オフライン";
-  if (field === "last_active_at") return formatRelativeActivity(value);
   if (field === "x" || field === "y") return formatNumber(value);
   return String(value);
 }
@@ -5045,7 +5044,7 @@ async function handlePlayerSectionExport(request, env) {
         "出力日時": exportedAt, "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,
         "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,
         "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",
-        "最終活動": p.last_active_at, "最終ログイン": p.last_login, "言語": p.language, "役職": p.office,
+        "言語": p.language, "役職": p.office,
         "シールド終了": p.shield_endtime, "炎上終了": p.burn_endtime
       }];
     } else if (section === "alliance") {
@@ -5193,7 +5192,9 @@ function filterPlayerForRole(player, role, payload = null, settings = null) {
   if (!visibilityEnabled(settings, "base_identity", role)) { delete visible.uid; delete visible.governor_id; delete visible.fid; delete visible.nick_name; delete visible.kid; }
   if (!visibilityEnabled(settings, "base_power", role)) { delete visible.power; delete visible.town_center_level; }
   if (!visibilityEnabled(settings, "base_kills", role)) delete visible.kills;
-  if (!visibilityEnabled(settings, "base_activity", role)) { delete visible.online; delete visible.last_active_at; delete visible.last_login; }
+  if (!visibilityEnabled(settings, "base_activity", role)) { delete visible.online; }
+  delete visible.last_active_at;
+  delete visible.last_login;
   if (!visibilityEnabled(settings, "base_profile", role)) { delete visible.avatar_url; delete visible.language; delete visible.shield_endtime; delete visible.burn_endtime; delete visible.office; }
   if (visible.alliance) {
     const a = { ...visible.alliance };
@@ -5219,7 +5220,6 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("撃破数", formatNumber(p.kills))}
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("オンライン", p.online ? "オンライン" : "オフライン")}
-      ${card("最終活動", formatRelativeActivity(p.last_active_at, p.last_login))}
       ${card("同盟", p.alliance_name || "-")}
     </div>
     ${noticeHtml}
