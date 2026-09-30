@@ -6968,12 +6968,12 @@ ${canViewDetailedUsage ? `<script>
 async function renderSupportPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return \`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
+    return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
     body{margin:0;background:#0f172a;color:#fff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:620px;margin:auto;padding:32px 18px}.card{background:#111c30;border:1px solid #334155;border-radius:20px;padding:24px}.muted{color:#94a3b8;line-height:1.7}a{color:#f59e0b;text-decoration:none;font-weight:800}
-    </style></head><body><main class="wrap"><div class="card"><h1>お問い合わせ</h1><p class="muted">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a></div></main></body></html>\`;
+    </style></head><body><main class="wrap"><div class="card"><h1>お問い合わせ</h1><p class="muted">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a></div></main></body></html>`;
   }
 
-  return \`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
+  return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
   *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.18)}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.field{margin-top:18px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field select,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:180px;resize:vertical;line-height:1.6}.submit{width:100%;margin-top:20px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px;cursor:pointer}.submit:disabled{opacity:.55;cursor:wait}.hint{font-size:11px;color:#64748b;margin-top:7px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.result a{color:#fbbf24;font-weight:900}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}
   </style></head><body><main class="wrap"><nav class="nav"><a href="/">‹ EagleEye</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card">
   <h1>お問い合わせ</h1><p>お問い合わせ内容はDiscordの専用非公開チャンネルへ送信されます。EagleEye本体には問い合わせ本文を保存しません。</p>
@@ -7008,7 +7008,7 @@ async function renderSupportPage(request, env) {
       }
     });
   })();
-  </script></body></html>\`;
+  </script></body></html>`;
 }
 
 async function renderHome(request, env) {
