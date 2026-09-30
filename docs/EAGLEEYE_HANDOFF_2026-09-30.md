@@ -1580,3 +1580,67 @@ console.log("support_incident_context_query", {
 - `support_incident_context_query` の本番実測値もまだ取得していない。
 
 **次スレッドでは、まずブラウザJS構文エラーを修正してから、Productionで実機確認すること。**
+
+
+# 37. Discord Support Secret消失防止・重要注意事項 — 2026-09-30
+
+今回、Discord SupportのSecretが本番環境から消える事故が発生した。
+
+## 37-1. 原因
+
+原因は、wrangler.jsonc の vars / previews.vars に以下のSupport設定を空文字で定義していたこと。
+
+- DISCORD_SUPPORT_GUILD_ID
+- DISCORD_SUPPORT_CATEGORY_ID
+- DISCORD_SUPPORT_ROLE_ID
+- DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID
+
+これらはCloudflare Secretとして設定していたにもかかわらず、deploy時の設定に空文字の同名変数が存在したため、Secret側の値を空文字設定で上書き・消失させる結果になった。
+
+これは今回実際に本番で発生した。
+
+## 37-2. 修正済み
+
+wrangler.jsonc から上記4項目の空文字設定を vars / previews.vars の両方から削除した。
+
+修正commit:
+- 2bd7287e4c399d3965ec5aff80a1734a06fdd459
+- message: fix: stop deploy config from overwriting Discord support secrets
+
+**今後、これら4項目を wrangler.jsonc の vars / previews.vars に再追加してはならない。**
+
+## 37-3. Secretとして扱うもの
+
+以下はSecret管理を前提とする。
+
+- DISCORD_CLIENT_SECRET
+- DISCORD_BOT_TOKEN
+- DISCORD_PUBLIC_KEY（現在はSecretとして設定済み）
+- DISCORD_SUPPORT_GUILD_ID
+- DISCORD_SUPPORT_CATEGORY_ID
+- DISCORD_SUPPORT_ROLE_ID
+- DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID
+- EAGLEEYE_SESSION_SECRET
+
+特に、**Secret名と同名の空文字 vars を作らないこと。**
+
+## 37-4. デプロイ前チェック
+
+Discord Support関連を変更する場合、deploy前に必ず以下を確認する。
+
+1. wrangler.jsonc にSupport Secret名が vars / previews.vars として存在しないこと。
+2. DISCORD_SUPPORT_* を空文字で定義していないこと。
+3. Secretをコード・MD・ログへ直接書かないこと。
+4. deploy後、EagleEyeの /admin/diagnostics → 「Discord Support 設定」で全項目が「設定済み」になっていることを本番で確認する。
+5. 1項目でも「未設定」になった場合、**SupportのE2Eテストへ進まず、Secret状態を復旧して原因を確認する。**
+
+## 37-5. 今回の復旧状態
+
+2026-09-30現在、ユーザーが以下4つをSecretとして再設定し、本番の /admin/diagnostics で全て「設定済み」を確認済み。
+
+- Support Server ID: 1554824550859153448
+- Support Category ID: 1554828614359318568
+- Support Role ID: 1554826025895206982
+- Archive Category ID: 1554828896233332826
+
+※これらの値は今後コード・公開ドキュメントへ再掲せず、必要な場合は既存の本番設定を参照すること。
