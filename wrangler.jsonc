@@ -8,6 +8,7 @@
     ]
   },
   "vars": {
+    "EAGLEEYE_ENV": "production",
     "DISCORD_CLIENT_ID": "1552660062063829093",
     "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback",
     "DISCORD_SUPPORT_GUILD_ID": "",
@@ -63,6 +64,7 @@
   },
   "previews": {
     "vars": {
+      "EAGLEEYE_ENV": "preview",
       "DISCORD_CLIENT_ID": "1552660062063829093",
       "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback",
       "DISCORD_SUPPORT_GUILD_ID": "",
