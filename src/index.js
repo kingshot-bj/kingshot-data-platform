@@ -3570,7 +3570,7 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("client_id", config.clientId);
   authorize.searchParams.set("response_type", "code");
   authorize.searchParams.set("redirect_uri", redirectUri);
-  authorize.searchParams.set("scope", "identify");
+  authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
   return new Response(null, {
@@ -3580,6 +3580,42 @@ async function startDiscordLogin(request, env) {
       "Cache-Control": "no-store"
     }
   });
+}
+
+async function joinDiscordSupportGuild(env, discordUserId, userAccessToken) {
+  const guildId = String(env.DISCORD_SUPPORT_GUILD_ID || "").trim();
+  const botToken = String(env.DISCORD_BOT_TOKEN || "").trim();
+  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+  if (!botToken) throw new Error("DISCORD_BOT_TOKEN_NOT_CONFIGURED");
+  if (!discordUserId) throw new Error("DISCORD_USER_ID_REQUIRED");
+  if (!userAccessToken) throw new Error("DISCORD_USER_ACCESS_TOKEN_REQUIRED");
+
+  const response = await fetch(
+    `https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bot ${botToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": "EagleEye/1.0 (support)"
+      },
+      body: JSON.stringify({
+        access_token: userAccessToken
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response.text();
+    let data = null;
+    try { data = body ? JSON.parse(body) : null; } catch {}
+    const error = new Error(data?.message || `Discord guild join failed (HTTP ${response.status})`);
+    error.status = response.status;
+    error.discord = data;
+    throw error;
+  }
+
+  return response.status === 201 ? "ADDED" : "ALREADY_MEMBER";
 }
 
 async function handleDiscordCallback(request, env) {
@@ -3626,6 +3662,24 @@ async function handleDiscordCallback(request, env) {
   }
 
   const discordUser = await userResponse.json();
+
+  // Support users are automatically added to the private EagleEye Support
+  // server after Discord OAuth approval. The OAuth access token is used only
+  // for this one-time guild join request and is never stored in the session.
+  try {
+    await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
+  } catch (error) {
+    console.error("discord_support_guild_join_failed", {
+      discord_id: String(discordUser.id),
+      status: error?.status || 0,
+      message: error?.message || String(error)
+    });
+    return json({
+      ok: false,
+      error: "DISCORD_SUPPORT_GUILD_JOIN_FAILED"
+    }, 502);
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const sessionPayload = {
     sub: String(discordUser.id),
