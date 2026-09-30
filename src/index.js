@@ -2580,7 +2580,7 @@ async function handleKingdomWatchlistApi(request, env) {
           result
         });
       } catch (error) {
-        const message = String(error?.message || error).slice(0, 1000);
+        const message = String(error?.userMessage || error?.message || error).slice(0, 1000);
         await env.DB.prepare(
           "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
         ).bind(message, now, jobId).run();
@@ -2718,7 +2718,7 @@ async function handleKingdomWatchlistApi(request, env) {
           });
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
-          const message = String(error?.message || error).slice(0, 1000);
+          const message = String(error?.userMessage || error?.message || error).slice(0, 1000);
           await env.DB.prepare(
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
           ).bind(message, now, job.job_id).run();
@@ -2737,7 +2737,10 @@ async function handleKingdomWatchlistApi(request, env) {
             metadata: { jobId: job.job_id, source: "MANUAL" }
           });
           console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
-          return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
+          const responseError = error?.code === "NO_API_POOL_KEY_AVAILABLE"
+            ? "NO_API_POOL_KEY_AVAILABLE"
+            : "WATCHLIST_REFRESH_FAILED";
+          return json({ ok: false, error: responseError, message, pool_availability: error?.poolAvailability || null }, responseError === "NO_API_POOL_KEY_AVAILABLE" ? 503 : 500);
         }
       } finally {
         await releaseKingdomWatchlistLock(env, watchlistId, lockToken);
@@ -4224,10 +4227,25 @@ async function handleApiPoolHealthCheck(request, env) {
       : Object.fromEntries((await request.formData()).entries());
     const keyId = String(body.key_id || "").trim();
     if (!keyId) return json({ ok: false, error: "KEY_ID_REQUIRED" }, 400);
-    const key = await env.DB.prepare("SELECT key_id, status, pool_type FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
+    const now = Math.floor(Date.now() / 1000);
+    const key = await env.DB.prepare("SELECT key_id, status, pool_type, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first();
     if (!key) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
-    if (key.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
-    if (key.status === "COOLDOWN") return json({ ok: false, error: "API_POOL_KEY_COOLDOWN" }, 409);
+    if (key.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED", message: "このAPIキーは手動で無効化されています。" }, 409);
+    if (key.status === "COOLDOWN") return json({ ok: false, error: "API_POOL_KEY_COOLDOWN", message: "このAPIキーは現在COOLDOWN中です。しばらく待ってから更新してください。" }, 409);
+    if (key.leased_until && Number(key.leased_until) > now) {
+      const remainingSeconds = Math.max(1, Number(key.leased_until) - now);
+      return json({
+        ok: false,
+        error: "API_POOL_KEY_LEASED",
+        message: "このAPIキーは現在リース中（処理中）です。無効キーとは限りません。処理完了またはリース期限切れ後に再度更新してください。",
+        leased_until: Number(key.leased_until),
+        remaining_seconds: remainingSeconds,
+        lease_job_id: key.lease_job_id || null,
+        lease_purpose: key.lease_purpose || null,
+        lease_target_type: key.lease_target_type || null,
+        lease_target_id: key.lease_target_id || null
+      }, 409);
+    }
 
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
     const probeGovernorId = String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582").trim();
