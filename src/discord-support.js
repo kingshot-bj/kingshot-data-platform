@@ -1,3 +1,5 @@
+import { recordDiagnostic } from "./diagnostics.js";
+
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const TICKET_ID_RE = /^EE-\d{8}-[A-Z0-9]{4}$/;
 
@@ -468,6 +470,15 @@ export async function reopenSupportTicket(env, {
   };
 }
 
+async function recordSupportDiagnostic(env, input = {}) {
+  if (!env?.DB) return null;
+  return recordDiagnostic(env.DB, {
+    service: "discord_support",
+    feature: input.feature || "support_ticket",
+    ...input
+  });
+}
+
 export async function handleSupportApi(request, env, auth) {
   if (!auth?.user_id || !auth?.discord_id) return supportJson({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (auth.status !== "ACTIVE") return supportJson({ ok: false, error: "ACCOUNT_INACTIVE" }, 403);
@@ -491,10 +502,25 @@ export async function handleSupportApi(request, env, auth) {
         subject: input.subject, message: input.message, details: input.details, qnaId: input.qnaId,
         incident: await getSupportIncidentContext(env)
       });
+      await recordSupportDiagnostic(env, {
+        operation: "CREATE_TICKET",
+        status: "SUCCESS",
+        targetType: "TICKET",
+        targetId: result.ticketId,
+        message: "Discord問い合わせチケット作成成功",
+        metadata: { channelId: result.channelId, category: input.category, subcategory: input.subcategory }
+      });
       return supportJson({ ok: true, ...result }, 201);
     } catch (error) {
       const status = Number(error?.status || 0);
       const code = String(error?.message || "SUPPORT_TICKET_CREATE_FAILED");
+      await recordSupportDiagnostic(env, {
+        operation: "CREATE_TICKET",
+        status: "FAILED",
+        errorCode: code.split(":")[0],
+        message: code.slice(0, 2000),
+        metadata: { httpStatus: status || null }
+      });
       console.error("support_ticket_create_failed", code);
       return supportJson({
         ok: false,
@@ -549,13 +575,37 @@ export async function handleSupportInteraction(request, env) {
 
   try {
     if (commandName === "close") {
-      await closeSupportTicket(env, { channelId });
+      const result = await closeSupportTicket(env, { channelId });
+      await recordSupportDiagnostic(env, {
+        operation: "CLOSE_TICKET",
+        status: "SUCCESS",
+        targetType: "TICKET",
+        targetId: result.ticketId,
+        message: "Discord問い合わせクローズ成功",
+        metadata: { channelId: result.channelId }
+      });
       return interactionJson(4, { content: "問い合わせをクローズしました。", flags: 64 });
     }
 
-    await reopenSupportTicket(env, { channelId });
+    const result = await reopenSupportTicket(env, { channelId });
+    await recordSupportDiagnostic(env, {
+      operation: "REOPEN_TICKET",
+      status: "SUCCESS",
+      targetType: "TICKET",
+      targetId: result.ticketId,
+      message: "Discord問い合わせリオープン成功",
+      metadata: { channelId: result.channelId }
+    });
     return interactionJson(4, { content: "問い合わせをリオープンしました。ユーザーが再び投稿できます。", flags: 64 });
   } catch (error) {
+    await recordSupportDiagnostic(env, {
+      operation: commandName === "close" ? "CLOSE_TICKET" : "REOPEN_TICKET",
+      status: "FAILED",
+      errorCode: String(error?.message || "SUPPORT_COMMAND_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000),
+      targetType: "CHANNEL",
+      targetId: channelId
+    });
     console.error(`support_${commandName}_failed`, error?.message || error);
     const message = commandName === "close"
       ? "問い合わせのクローズに失敗しました。"
