@@ -1,6 +1,44 @@
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const TICKET_ID_RE = /^EE-\d{8}-[A-Z0-9]{4}$/;
 
+
+function hexToBytes(value) {
+  const text = String(value || "").trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(text)) return null;
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(text.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+function hexSignatureToBytes(value) {
+  const text = String(value || "").trim();
+  if (!/^[0-9a-fA-F]{128}$/.test(text)) return null;
+  const bytes = new Uint8Array(64);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(text.slice(i * 2, i * 2 + 2), 16);
+  return bytes;
+}
+
+async function verifyDiscordInteractionSignature(request, rawBody, publicKeyHex) {
+  const publicKeyBytes = hexToBytes(publicKeyHex);
+  const signatureBytes = hexSignatureToBytes(request.headers.get("X-Signature-Ed25519"));
+  const timestamp = request.headers.get("X-Signature-Timestamp");
+  if (!publicKeyBytes || !signatureBytes || !timestamp) return false;
+  try {
+    const key = await crypto.subtle.importKey("raw", publicKeyBytes, { name: "Ed25519" }, false, ["verify"]);
+    const message = new TextEncoder().encode(String(timestamp) + rawBody);
+    return await crypto.subtle.verify({ name: "Ed25519" }, key, signatureBytes, message);
+  } catch {
+    return false;
+  }
+}
+
+function interactionJson(type, data = {}) {
+  return new Response(JSON.stringify({ type, data }), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" }
+  });
+}
+
 function supportJson(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -290,4 +328,74 @@ export async function handleSupportApi(request, env, auth) {
   }
 
   return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+}
+
+
+export async function handleSupportInteraction(request, env) {
+  if (request.method !== "POST") return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!env.DISCORD_PUBLIC_KEY) return supportJson({ ok: false, error: "DISCORD_PUBLIC_KEY_NOT_CONFIGURED" }, 503);
+
+  const rawBody = await request.text();
+  if (!(await verifyDiscordInteractionSignature(request, rawBody, env.DISCORD_PUBLIC_KEY))) {
+    return supportJson({ ok: false, error: "INVALID_DISCORD_SIGNATURE" }, 401);
+  }
+
+  let interaction;
+  try { interaction = JSON.parse(rawBody); } catch {
+    return supportJson({ ok: false, error: "INVALID_JSON" }, 400);
+  }
+
+  if (Number(interaction?.type) === 1) return interactionJson(1);
+
+  if (Number(interaction?.type) !== 2 || String(interaction?.data?.name || "") !== "close") {
+    return interactionJson(4, { content: "このコマンドはEagleEye Supportでは使用できません。", flags: 64 });
+  }
+
+  const supportRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  const channelId = normalizeDiscordId(interaction?.channel_id);
+  const actorRoles = Array.isArray(interaction?.member?.roles) ? interaction.member.roles.map(String) : [];
+
+  if (!supportRoleId || !guildId) {
+    return interactionJson(4, { content: "EagleEye SupportのDiscord設定が未完了です。", flags: 64 });
+  }
+  if (String(interaction?.guild_id || "") !== guildId) {
+    return interactionJson(4, { content: "このコマンドはEagleEye Supportサーバーでのみ使用できます。", flags: 64 });
+  }
+  if (!actorRoles.includes(supportRoleId)) {
+    return interactionJson(4, { content: "Support担当者のみ実行できます。", flags: 64 });
+  }
+  if (!channelId) {
+    return interactionJson(4, { content: "チャンネル情報を取得できませんでした。", flags: 64 });
+  }
+
+  try {
+    const result = await closeSupportTicket(env, { channelId });
+    return interactionJson(4, {
+      content: "問い合わせをクローズしました。",
+      flags: 64
+    });
+  } catch (error) {
+    console.error("support_close_failed", error?.message || error);
+    return interactionJson(4, {
+      content: "問い合わせのクローズに失敗しました。",
+      flags: 64
+    });
+  }
+}
+
+export async function registerSupportCloseCommand(env) {
+  const applicationId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  if (!applicationId) throw new Error("DISCORD_CLIENT_ID_NOT_CONFIGURED");
+  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+
+  return await discordRequest(env, "/applications/" + applicationId + "/guilds/" + guildId + "/commands", {
+    method: "POST",
+    body: JSON.stringify({
+      name: "close",
+      description: "EagleEyeの問い合わせをクローズします",
+      type: 1
+    })
+  });
 }
