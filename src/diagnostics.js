@@ -6,8 +6,11 @@ const DIAGNOSTIC_SERVICES = [
   ["watchlist", "王国ウォッチリスト", "DEGRADED"],
   ["d1", "D1 Database", "CRITICAL"],
   ["discord", "Discord認証", "DEGRADED"],
+  ["discord_support", "Discord Support", "DEGRADED"],
   ["google_sheets", "Google Sheets", "DEGRADED"],
-  ["notifications", "通知システム", "DEGRADED"]
+  ["notifications", "通知システム", "DEGRADED"],
+  ["retention", "データ保持", "DEGRADED"],
+  ["history_storage", "履歴ストレージ", "DEGRADED"]
 ];
 
 let diagnosticSchemaPromise = null;
