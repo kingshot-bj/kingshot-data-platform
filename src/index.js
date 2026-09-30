@@ -3265,10 +3265,6 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
 }
 
 async function handleMightPulseResearchApi(request, env) {
-  const apiLockKey = "ADMIN_MIGHTPULSE_RESEARCH:"+String(governorId)+":"+(all?"ALL":candidate);
-  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -3276,6 +3272,10 @@ async function handleMightPulseResearchApi(request, env) {
   const candidate = String(url.searchParams.get("candidate") || "").trim().toLowerCase();
   const all = url.searchParams.get("all") === "1";
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const apiLockKey = "ADMIN_MIGHTPULSE_RESEARCH:"+String(governorId)+":"+(all?"ALL":candidate);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   try {
     if (all) {
       const results = [];
@@ -3297,10 +3297,6 @@ async function handleMightPulseResearchApi(request, env) {
 }
 
 async function handleMightPulseProbeApi(request, env) {
-  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:"+type+":"+String(governorId||kid||"") + ":" + String(board||"") + ":" + include;
-  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -3309,6 +3305,10 @@ async function handleMightPulseProbeApi(request, env) {
   const kid = String(url.searchParams.get("kid") || "").trim();
   const board = String(url.searchParams.get("board") || "").trim();
   const include = String(url.searchParams.get("include") || "base").trim();
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:"+type+":"+String(governorId||kid||"")+":"+String(board||"")+":"+include;
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
 
   try {
     const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
@@ -4017,15 +4017,15 @@ async function handlePlayerRankHistoryApi(request, env) {
 }
 
 async function handleRankingPlayerTest(request, env) {
-  const apiLockKey = "ADMIN_RANKING_PLAYER:"+String(governorId);
-  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
   const governorId = url.searchParams.get("governor_id");
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const apiLockKey = "ADMIN_RANKING_PLAYER:"+String(governorId);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
 
   try {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
@@ -4060,16 +4060,16 @@ async function handleRankingPlayerTest(request, env) {
 }
 
 async function handleRankingBoardTest(request, env) {
-  const apiLockKey = "ADMIN_RANKING_BOARD:"+String(kid)+":"+String(board);
-  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
   const kid = url.searchParams.get("kid");
   const board = url.searchParams.get("board");
   if (!kid || !board) return json({ ok: false, error: "KID_AND_BOARD_REQUIRED" }, 400);
+  const apiLockKey = "ADMIN_RANKING_BOARD:"+String(kid)+":"+String(board);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
 
   try {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
@@ -4098,10 +4098,6 @@ async function handleRankingBoardTest(request, env) {
 }
 
 async function handleMightPulsePlayerTest(request, env) {
-  const apiLockKey = "ADMIN_MIGHTPULSE_PLAYER:"+String(governorId);
-  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (auth.status !== "ACTIVE") return json({ ok: false, error: "USER_DISABLED" }, 403);
@@ -4110,6 +4106,10 @@ async function handleMightPulsePlayerTest(request, env) {
   const url = new URL(request.url);
   const governorId = url.searchParams.get("governor_id");
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
+  const apiLockKey = "ADMIN_MIGHTPULSE_PLAYER:"+String(governorId);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
 
   try {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
