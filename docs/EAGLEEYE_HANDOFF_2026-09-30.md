@@ -1291,3 +1291,93 @@ Ticket IDは3層共通のstable identifierとして扱う。
 8. Management側Integration Requestと照合し、Management連携APIを設計。
 
 本番確認前は必ず「コード上実装」「deploy済み」「本番確認済み」を区別する。
+
+# 34. Discord問い合わせ接続実装 — 2026-09-30
+
+## 34-1. GitHub側で実装済み
+
+- `src/index.js`
+  - `/support` ユーザー向け問い合わせフォームを追加
+  - `POST /api/support` を `handleSupportApi` へ接続
+  - ホーム画面のログイン後ナビに「お問い合わせ」を追加
+  - `POST /api/discord/interactions` をDiscord Interaction endpointとして追加
+  - `POST /api/admin/discord-support/register-command` を追加
+    - ADMIN / OWNERのみ
+    - Discord Guildへ `/close` slash commandを登録
+- `src/discord-support.js`
+  - Discord Interaction署名検証
+  - Discord verification ping対応
+  - `/close` interaction処理
+  - Support Role以外のclose実行を拒否
+  - EagleEye Support Guild以外を拒否
+  - EagleEye Support ticket channel以外を拒否
+  - Support category / Archive category以外を拒否
+  - topicに記録したticket ID / user IDを基準にユーザー権限を停止
+  - close後もchannelは削除せず、CLOSED + archive category移動
+  - Guild-scoped `/close` command登録関数
+- `wrangler.jsonc`
+  - `DISCORD_PUBLIC_KEY` の非secret設定枠を追加
+
+## 34-2. Discord側でユーザーが設定するもの
+
+まだ本番設定・本番確認はしていない。
+
+必要:
+- Discord Application / Bot
+- Bot Token → Cloudflare Secret `DISCORD_BOT_TOKEN`
+- Application Public Key → `DISCORD_PUBLIC_KEY`
+- Support Guild ID → `DISCORD_SUPPORT_GUILD_ID`
+- Support Category ID → `DISCORD_SUPPORT_CATEGORY_ID`
+- Support Role ID → `DISCORD_SUPPORT_ROLE_ID`
+- Archive Category ID → `DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID`
+- BotをSupport Guildへ追加
+- Botに必要最小限の権限を付与
+- Discord Developer PortalのInteractions Endpoint URL:
+  `https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/discord/interactions`
+
+## 34-3. /close command
+
+GitHub側のcommand登録APIは実装済み。
+
+設定後:
+1. EagleEyeへBot Token / Public Key / Guild / Category / Role / Archive Category IDを投入
+2. Workerをdeploy
+3. ADMIN / OWNERで `POST /api/admin/discord-support/register-command` を実行
+4. Support Guildで `/close` が表示されることを確認
+5. Support Roleを持つ運営のみ実行可能
+6. close時:
+   - ユーザーの投稿権限停止
+   - topic status=CLOSED
+   - Archive Category設定時は移動
+   - channelは削除しない
+
+DiscordのApplication CommandsはHTTP APIで登録する仕様で、Guild commandは即時反映されるため、初期確認はGuild-scoped commandを使用する。 citeはhandoff内では使用しない運用のため、この文は実装方針としてのみ保持。
+
+## 34-4. D1方針
+
+問い合わせ本文・会話履歴はEagleEye D1へ保存しない。
+
+現在の問い合わせフロー:
+EagleEye /support
+→ POST /api/support
+→ Discord Bot
+→ private ticket channel
+
+Discordを初期会話履歴の本体とする。
+
+将来Managementで一覧・検索が必要になった場合は、Discord本文の複製ではなくManagement-owned metadata/indexを検討する。
+
+## 34-5. 未確認
+
+- Discord Bot Token設定後の本番ticket作成
+- Guild membership check
+- private channel permission
+- 初期メッセージ投稿
+- /close command登録
+- Discord Interaction endpoint verification
+- /closeによる権限停止
+- archive category移動
+- iPhone Safariでの問い合わせ送信
+- Discord側でユーザーとSupport Roleだけが閲覧できること
+
+したがって現時点では「コード実装済み」であり、「本番利用可能」「本番確認済み」ではない。
