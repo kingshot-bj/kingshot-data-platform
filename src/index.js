@@ -37,6 +37,120 @@ import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, s
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 
+async function runDiagnosticHealthChecks(env) {
+  if (!env?.DB) return;
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const recent = await env.DB.prepare(
+      "SELECT service, MAX(created_at) AS created_at FROM diagnostic_events GROUP BY service"
+    ).all();
+    const lastByService = new Map((recent.results || []).map(row => [String(row.service), Number(row.created_at || 0)]));
+    const due = service => !lastByService.has(service) || now - lastByService.get(service) >= 900;
+    const write = input => recordDiagnostic(env.DB, { ...input, feature: input.feature || "diagnostic_probe", operation: input.operation || "HEALTH_CHECK" });
+
+    if (due("d1")) {
+      const started = Date.now();
+      try {
+        await env.DB.prepare("SELECT 1 AS ok").first();
+        await write({ service:"d1", status:"SUCCESS", message:"D1診断プローブ成功", elapsedMs:Date.now()-started });
+      } catch (error) {
+        await write({ service:"d1", status:"FAILED", errorCode:"D1_HEALTH_CHECK_FAILED", message:error?.message || "D1診断に失敗しました。", elapsedMs:Date.now()-started });
+      }
+    }
+
+    if (due("api_pool") || due("mightpulse")) {
+      const started = Date.now();
+      configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+      const key = await env.DB.prepare(
+        "SELECT key_id, pool_type FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND status = 'AVAILABLE' AND (leased_until IS NULL OR leased_until <= ?) ORDER BY COALESCE(last_used_at, 0) ASC LIMIT 1"
+      ).bind(now).first();
+
+      if (!key) {
+        const message = "診断用に利用できるMightPulse APIキーがありません。";
+        if (due("api_pool")) await write({ service:"api_pool", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+        if (due("mightpulse")) await write({ service:"mightpulse", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+      } else {
+        let lease = null;
+        try {
+          lease = await leaseApiKeyForHealthCheck(env.DB, {
+            keyId: key.key_id,
+            purpose: "DIAGNOSTIC_HEALTH_CHECK",
+            targetType: "API_KEY",
+            targetId: String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582")
+          });
+          const result = await getMightPulsePlayer(env, String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"), {
+            include: "base",
+            apiKey: lease.api_key
+          });
+          await recordApiPoolSuccess(env.DB, {
+            keyId: lease.key_id,
+            leaseId: lease.lease_id,
+            poolType: lease.pool_type,
+            endpoint: "/players/:governor_id",
+            targetType: "API_KEY",
+            targetId: String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
+            purpose: "DIAGNOSTIC_HEALTH_CHECK",
+            httpStatus: result.status,
+            remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+            remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+          });
+          const elapsed = Date.now() - started;
+          if (due("api_pool")) await write({ service:"api_pool", status:"SUCCESS", message:"API Pool診断プローブ成功", provider:"MIGHTPULSE", targetType:"API_KEY", targetId:lease.key_id, elapsedMs:elapsed, metadata:{ poolType:lease.pool_type } });
+          if (due("mightpulse")) await write({ service:"mightpulse", status:"SUCCESS", message:"MightPulse API診断プローブ成功", provider:"MIGHTPULSE", targetType:"API_KEY", targetId:lease.key_id, elapsedMs:elapsed, metadata:{ httpStatus:result.status, poolType:lease.pool_type } });
+        } catch (error) {
+          if (lease) {
+            const status = Number(error?.status || 0);
+            const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+            const disable = status === 401 || status === 403;
+            const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+            await recordApiPoolFailure(env.DB, {
+              keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+              endpoint:"/players/:governor_id", targetType:"API_KEY", targetId:String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
+              purpose:"DIAGNOSTIC_HEALTH_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+              errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable
+            });
+          }
+          const message = error?.message || "MightPulse診断プローブに失敗しました。";
+          const code = error?.code || "MIGHTPULSE_HEALTH_CHECK_FAILED";
+          if (due("api_pool")) await write({ service:"api_pool", status:"FAILED", errorCode:code, message:"API Pool診断中のMightPulse接続に失敗: " + message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+          if (due("mightpulse")) await write({ service:"mightpulse", status:"FAILED", errorCode:code, message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+        }
+      }
+    }
+
+    if (due("discord")) {
+      const configured = Boolean(env.DISCORD_CLIENT_ID && env.EAGLEEYE_SESSION_SECRET);
+      await write({
+        service:"discord",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "DISCORD_AUTH_NOT_CONFIGURED",
+        message:configured ? "Discord認証設定の診断確認成功" : "Discord認証に必要な設定が未構成です。"
+      });
+    }
+
+    if (due("google_sheets")) {
+      const configured = Boolean(env.GOOGLE_SHEETS_SPREADSHEET_ID && env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+      await write({
+        service:"google_sheets",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "GOOGLE_SHEETS_NOT_CONFIGURED",
+        message:configured ? "Google Sheets連携設定の診断確認成功" : "Google Sheets連携設定が未構成です。"
+      });
+    }
+
+    if (due("notifications")) {
+      await write({
+        service:"notifications",
+        status:"WARNING",
+        errorCode:"NOTIFICATION_PROBE_NOT_CONFIGURED",
+        message:"通知送信経路の自動診断プローブは未構成です。"
+      });
+    }
+  } catch (error) {
+    console.error("diagnostic_health_check_failed", error?.message || error);
+  }
+}
+
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
   await ensureDiagnosticSchema(env.DB);
@@ -3197,6 +3311,7 @@ export default {
       }
     }
     await runKingdomWatchlistJobs(env);
+    await runDiagnosticHealthChecks(env);
     const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
     if (minute === 0) await runDataRetentionJob(env);
   },
