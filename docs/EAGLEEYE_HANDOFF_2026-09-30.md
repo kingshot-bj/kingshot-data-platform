@@ -1351,7 +1351,7 @@ GitHub側のcommand登録APIは実装済み。
    - Archive Category設定時は移動
    - channelは削除しない
 
-DiscordのApplication CommandsはHTTP APIで登録する仕様で、Guild commandは即時反映されるため、初期確認はGuild-scoped commandを使用する。 citeはhandoff内では使用しない運用のため、この文は実装方針としてのみ保持。
+DiscordのApplication CommandsはHTTP APIで登録し、初期確認はGuild-scoped commandを使用する。
 
 ## 34-4. D1方針
 
