@@ -262,11 +262,25 @@ export async function closeSupportTicket(env, {
   if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
 
   const channel = await discordRequest(env, `/channels/${id}`);
+  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  const supportCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
+  const archiveCategoryIdForCheck = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
+  const topic = String(channel?.topic || "");
+  const topicTicket = topic.match(/EagleEye Support (EE-\\d{8}-[A-Z0-9]{4})/);
+  const topicUser = topic.match(/\\buser=(\\d{15,25})\\b/);
+  if (!configuredGuildId || String(channel?.guild_id || "") !== configuredGuildId) throw new Error("SUPPORT_CHANNEL_WRONG_GUILD");
+  if (!topicTicket) throw new Error("NOT_EAGLEEYE_SUPPORT_CHANNEL");
+  if (![supportCategoryId, archiveCategoryIdForCheck].filter(Boolean).includes(String(channel?.parent_id || ""))) {
+    throw new Error("SUPPORT_CHANNEL_WRONG_CATEGORY");
+  }
+
   const overwrites = Array.isArray(channel?.permission_overwrites)
     ? channel.permission_overwrites.map(item => ({ ...item }))
     : [];
 
-  const userOverwrite = overwrites.find(item => item.type === 1 && item.id !== env.DISCORD_CLIENT_ID);
+  const userOverwrite = topicUser
+    ? overwrites.find(item => item.type === 1 && String(item.id) === topicUser[1])
+    : null;
   if (userOverwrite) {
     userOverwrite.allow = "0";
     userOverwrite.deny = "68608";
@@ -285,6 +299,7 @@ export async function closeSupportTicket(env, {
 
   return {
     channelId: id,
+    ticketId: topicTicket[1],
     status: "CLOSED",
     channelUrl: updated?.guild_id
       ? `https://discord.com/channels/${updated.guild_id}/${id}`
