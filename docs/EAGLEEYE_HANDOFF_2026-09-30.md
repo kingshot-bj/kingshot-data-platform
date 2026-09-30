@@ -1726,16 +1726,33 @@ CloudflareのWorker/D1自体のconsoleログとは別に、EagleEye内部の永�
 
 これらは必要な場合、別途request/auditログとして設計する。
 
-## 38-6. 監査時点で残っている候補
+## 38-6. 追加監査で対応したもの
 
-外部サービスを実際に操作する以下の処理は、設定確認だけではなく実処理結果まで別途記録する余地がある:
+追加確認の結果、以下もdiagnostic_eventsへ記録するよう修正済み:
 
 - Google Sheets実データexport
-- Google Drive OAuth / Archive upload
-- 一部R2 read failure
-- 一般ユーザー向けPlayer/Ranking refreshの実行結果
+  - PLAYER_EXPORT
+  - KINGDOM_EXPORT
+  - SUCCESS / FAILED
+- Player R2 history read failure
+- Player ranking R2 history read failure
+- Kingdom ranking R2 history read failure
 
-ただし、これらを`diagnostic_events`へ追加するか、別のrequest/audit/event系へ分離するかは、D1書き込み量との兼ね合いを確認してから決定する。
+これにより、設定確認だけでなく、実際の外部保存/読込処理の失敗も追跡可能になった。
+
+### 38-6-1. 現時点で意図的に対象外
+
+以下は「サービスヘルス」ではなく、ユーザー操作・管理画面操作・HTTPリクエスト単位の監査に近いため、diagnostic_eventsへ全件投入しない:
+
+- プレイヤー/ランキング各画面のHTTPエラー
+- API Pool管理画面のCRUDエラー
+- diagnostics画面自身の表示エラー
+- 一般的なHTMLページ描画エラー
+- service usage queue内部ログ
+- Google Drive OAuth/設定画面の操作ログ
+- 一般ユーザーのPlayer/Ranking refresh成功イベント
+
+これらは必要になった場合、diagnostic_eventsとは別のrequest/audit/event系で扱う。
 
 ## 38-7. 重要
 
