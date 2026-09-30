@@ -39,11 +39,6 @@ export const SUPPORT_CATALOG = [
     {key:"DISCORD",label:"Discord連携がおかしい"},
     {key:"OTHER",label:"その他"}
   ]},
-  { key:"BILLING", label:"料金・請求", children:[
-    {key:"USAGE",label:"利用料金"},
-    {key:"BILLING",label:"請求"},
-    {key:"OTHER",label:"その他"}
-  ]},
   { key:"OTHER", label:"その他", children:[{key:"OTHER",label:"その他"}]}
 ];
 
