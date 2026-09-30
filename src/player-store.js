@@ -429,7 +429,7 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     else if (field === "town_center_level") changeType = "TOWN_CENTER_CHANGED";
     else if (field === "alliance_aid" || field === "alliance_name") changeType = "ALLIANCE_CHANGED";
     else if (field === "x" || field === "y") changeType = "COORDINATES_CHANGED";
-    else if (field === "online" || field === "last_active_at") changeType = "ACTIVITY_CHANGED";
+    else if (field === "online") changeType = "ACTIVITY_CHANGED";
     else if (field === "kills") changeType = "KILLS_CHANGED";
 
     statements.push(db.prepare(
