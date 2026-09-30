@@ -128,6 +128,43 @@ async function runDiagnosticHealthChecks(env) {
       });
     }
 
+    if (due("discord_support")) {
+      const configured = Boolean(
+        env.DISCORD_SUPPORT_GUILD_ID &&
+        env.DISCORD_SUPPORT_CATEGORY_ID &&
+        env.DISCORD_SUPPORT_ROLE_ID &&
+        env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID &&
+        env.DISCORD_BOT_TOKEN &&
+        env.DISCORD_PUBLIC_KEY
+      );
+      await write({
+        service:"discord_support",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "DISCORD_SUPPORT_NOT_CONFIGURED",
+        message:configured ? "Discord Support設定の診断確認成功" : "Discord Supportに必要な設定が未構成です。"
+      });
+    }
+
+    if (due("retention")) {
+      await write({
+        service:"retention",
+        status:env.DB ? "SUCCESS" : "WARNING",
+        errorCode:env.DB ? null : "D1_NOT_CONFIGURED",
+        message:env.DB ? "データ保持機能の診断確認成功" : "データ保持機能にD1が必要です。"
+      });
+    }
+
+    if (due("history_storage")) {
+      const configured = Boolean(env.DB && env.ARCHIVE);
+      await write({
+        service:"history_storage",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "HISTORY_STORAGE_NOT_CONFIGURED",
+        message:configured ? "履歴ストレージ設定の診断確認成功" : "履歴ストレージに必要なD1/R2設定が未構成です。",
+        metadata: { mode: String(env.HISTORY_STORAGE_MODE || "R2_ONLY") }
+      });
+    }
+
     if (due("google_sheets")) {
       const spreadsheetConfigured = Boolean(env.GOOGLE_SHEETS_SPREADSHEET_ID);
       const serviceAccountConfigured = Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
