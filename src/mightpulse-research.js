@@ -26,7 +26,18 @@ export const MIGHTPULSE_RESEARCH_CANDIDATES = [
   "event",
   "events",
   "history",
-  "activity"
+  "activity",
+  "avatar",
+  "avatar_frame",
+  "frame",
+  "frames",
+  "skin",
+  "skins",
+  "castle_skin",
+  "city_skin",
+  "marching_skin",
+  "profile",
+  "cosmetics"
 ];
 
 function summarizePayload(payload) {
