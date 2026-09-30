@@ -3385,6 +3385,7 @@ export default {
       if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
       if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
+      if (url.pathname === "/api/admin/discord/roles") return await handleDiscordRolesLookupApi(request, env);
       if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
       if (url.pathname === "/api/admin/r2-archive-objects") return await handleR2ArchiveObjectsApi(request, env);
       if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
@@ -6181,6 +6182,36 @@ async function renderAdminControlPage(request, env) {
     "<div class=\"section\"><h2>権限について</h2><div class=\"notice\">ADMINは運用・データ管理を担当します。ユーザーのロール変更、ユーザー停止、ログイン履歴、OWNER監査ログなどのアカウント管理はOWNER CONTROLからOWNERのみが行います。</div></div>" + ownerLink +
     "</main></body></html>";
 }
+async function handleDiscordRolesLookupApi(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "GET") return json({ ok:false, error:"METHOD_NOT_ALLOWED" }, 405);
+  const guildId = String(new URL(request.url).searchParams.get("guild_id") || "").trim();
+  if (!/^\d{15,25}$/.test(guildId)) return json({ ok:false, error:"INVALID_GUILD_ID" }, 400);
+  if (!env.DISCORD_BOT_TOKEN) return json({ ok:false, error:"DISCORD_BOT_TOKEN_NOT_CONFIGURED" }, 500);
+  try {
+    const response = await fetch("https://discord.com/api/v10/guilds/" + encodeURIComponent(guildId) + "/roles", {
+      headers: {
+        "Authorization": "Bot " + env.DISCORD_BOT_TOKEN,
+        "User-Agent": "EagleEye/1.0 (admin)"
+      }
+    });
+    const body = await response.text();
+    let data = null;
+    try { data = body ? JSON.parse(body) : null; } catch { data = null; }
+    if (!response.ok) return json({ ok:false, error:"DISCORD_API_ERROR", status:response.status, message:data?.message || "Discord API error" }, response.status);
+    const roles = Array.isArray(data) ? data.map(role => ({
+      id: String(role.id),
+      name: String(role.name || ""),
+      position: Number(role.position || 0),
+      managed: Boolean(role.managed)
+    })).sort((a,b) => b.position - a.position) : [];
+    return json({ ok:true, guild_id:guildId, roles });
+  } catch (error) {
+    return json({ ok:false, error:"DISCORD_ROLE_LOOKUP_FAILED", message:String(error?.message || error) }, 500);
+  }
+}
+
 async function requireOwner(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
