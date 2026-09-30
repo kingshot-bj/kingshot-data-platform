@@ -473,7 +473,7 @@ export async function reopenSupportTicket(env, {
 async function recordSupportDiagnostic(env, input = {}) {
   if (!env?.DB) return null;
   return recordDiagnostic(env.DB, {
-    service: "discord_support",
+    service: "discord",
     feature: input.feature || "support_ticket",
     ...input
   });
