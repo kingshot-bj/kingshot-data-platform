@@ -1466,3 +1466,12 @@ CLOSED以外のticketを `/reopen` しても `SUPPORT_TICKET_NOT_CLOSED` で拒�
 - 既存のランキング/ウォッチリスト取得処理、`ranking_snapshots` 広域読み取り、service usage書き込み経路は変更していない。
 - 旧 `POST /api/support` はsubcategory省略時に `OTHER` へフォールバックし、既存category + subject + message クライアントとの互換性を維持。
 - 未確認：本番Support UI、本番Discordチケット作成、本番Discord permission overwrite `68608`、本番障害発生時の案内挙動、本番D1実測値。
+
+
+## 2026-09-30 Preview環境表示
+
+- Preview版の全HTMLページに共通テーマ経由で「🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません」バナーを表示する実装を追加。
+- Production Workerのホスト名（kingshot-data-platform.black-jack-kingshot.workers.dev）以外ではPreview表示として判定。
+- `wrangler.jsonc` に `EAGLEEYE_ENV=production` / Previewでは `EAGLEEYE_ENV=preview` を追加。
+- Previewは本番D1/R2を共有する現構成のため、Preview操作が本番データへ影響し得る点は継続注意。
+- 2026-09-30時点で、この変更後のPreview Build/実機動作は未確認。Build成功や本番動作確認済みとは扱わない。
