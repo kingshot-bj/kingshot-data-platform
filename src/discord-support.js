@@ -266,8 +266,8 @@ export async function closeSupportTicket(env, {
   const supportCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
   const archiveCategoryIdForCheck = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
   const topic = String(channel?.topic || "");
-  const topicTicket = topic.match(/EagleEye Support (EE-\\d{8}-[A-Z0-9]{4})/);
-  const topicUser = topic.match(/\\buser=(\\d{15,25})\\b/);
+  const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
+  const topicUser = topic.match(/\buser=(\d{15,25})\b/);
   if (!configuredGuildId || String(channel?.guild_id || "") !== configuredGuildId) throw new Error("SUPPORT_CHANNEL_WRONG_GUILD");
   if (!topicTicket) throw new Error("NOT_EAGLEEYE_SUPPORT_CHANNEL");
   if (![supportCategoryId, archiveCategoryIdForCheck].filter(Boolean).includes(String(channel?.parent_id || ""))) {
@@ -277,14 +277,13 @@ export async function closeSupportTicket(env, {
   const overwrites = Array.isArray(channel?.permission_overwrites)
     ? channel.permission_overwrites.map(item => ({ ...item }))
     : [];
-
   const userOverwrite = topicUser
     ? overwrites.find(item => item.type === 1 && String(item.id) === topicUser[1])
     : null;
-  if (userOverwrite) {
-    userOverwrite.allow = "0";
-    userOverwrite.deny = "68608";
-  }
+  if (!userOverwrite) throw new Error("SUPPORT_TICKET_USER_PERMISSION_NOT_FOUND");
+
+  userOverwrite.allow = "0";
+  userOverwrite.deny = "68608";
 
   const payload = {
     topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=CLOSED"),
@@ -301,6 +300,60 @@ export async function closeSupportTicket(env, {
     channelId: id,
     ticketId: topicTicket[1],
     status: "CLOSED",
+    channelUrl: updated?.guild_id
+      ? `https://discord.com/channels/${updated.guild_id}/${id}`
+      : null
+  };
+}
+
+export async function reopenSupportTicket(env, {
+  channelId
+}) {
+  const id = normalizeDiscordId(channelId);
+  const supportCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
+  const archiveCategoryId = normalizeDiscordId(env.DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID);
+  const supportRoleId = normalizeDiscordId(env.DISCORD_SUPPORT_ROLE_ID);
+  if (!id) throw new Error("DISCORD_CHANNEL_ID_REQUIRED");
+  if (!supportRoleId) throw new Error("DISCORD_SUPPORT_ROLE_ID_NOT_CONFIGURED");
+  if (!supportCategoryId) throw new Error("DISCORD_SUPPORT_CATEGORY_ID_NOT_CONFIGURED");
+
+  const channel = await discordRequest(env, `/channels/${id}`);
+  const configuredGuildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  const topic = String(channel?.topic || "");
+  const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
+  const topicUser = topic.match(/\buser=(\d{15,25})\b/);
+  const statusMatch = topic.match(/status=(OPEN|WAITING|CLOSED)/);
+  if (!configuredGuildId || String(channel?.guild_id || "") !== configuredGuildId) throw new Error("SUPPORT_CHANNEL_WRONG_GUILD");
+  if (!topicTicket) throw new Error("NOT_EAGLEEYE_SUPPORT_CHANNEL");
+  if (!statusMatch || statusMatch[1] !== "CLOSED") throw new Error("SUPPORT_TICKET_NOT_CLOSED");
+  if (![supportCategoryId, archiveCategoryId].filter(Boolean).includes(String(channel?.parent_id || ""))) {
+    throw new Error("SUPPORT_CHANNEL_WRONG_CATEGORY");
+  }
+
+  const overwrites = Array.isArray(channel?.permission_overwrites)
+    ? channel.permission_overwrites.map(item => ({ ...item }))
+    : [];
+  const userOverwrite = topicUser
+    ? overwrites.find(item => item.type === 1 && String(item.id) === topicUser[1])
+    : null;
+  if (!userOverwrite) throw new Error("SUPPORT_TICKET_USER_PERMISSION_NOT_FOUND");
+
+  userOverwrite.allow = "68608";
+  userOverwrite.deny = "0";
+
+  const updated = await discordRequest(env, `/channels/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=OPEN"),
+      parent_id: supportCategoryId,
+      permission_overwrites: overwrites
+    })
+  });
+
+  return {
+    channelId: id,
+    ticketId: topicTicket[1],
+    status: "OPEN",
     channelUrl: updated?.guild_id
       ? `https://discord.com/channels/${updated.guild_id}/${id}`
       : null
@@ -362,7 +415,8 @@ export async function handleSupportInteraction(request, env) {
 
   if (Number(interaction?.type) === 1) return interactionJson(1);
 
-  if (Number(interaction?.type) !== 2 || String(interaction?.data?.name || "") !== "close") {
+  const commandName = String(interaction?.data?.name || "");
+  if (Number(interaction?.type) !== 2 || !["close", "reopen"].includes(commandName)) {
     return interactionJson(4, { content: "このコマンドはEagleEye Supportでは使用できません。", flags: 64 });
   }
 
@@ -385,32 +439,80 @@ export async function handleSupportInteraction(request, env) {
   }
 
   try {
-    const result = await closeSupportTicket(env, { channelId });
-    return interactionJson(4, {
-      content: "問い合わせをクローズしました。",
-      flags: 64
-    });
+    if (commandName === "close") {
+      await closeSupportTicket(env, { channelId });
+      return interactionJson(4, { content: "問い合わせをクローズしました。", flags: 64 });
+    }
+
+    await reopenSupportTicket(env, { channelId });
+    return interactionJson(4, { content: "問い合わせをリオープンしました。ユーザーが再び投稿できます。", flags: 64 });
   } catch (error) {
-    console.error("support_close_failed", error?.message || error);
-    return interactionJson(4, {
-      content: "問い合わせのクローズに失敗しました。",
-      flags: 64
-    });
+    console.error(`support_${commandName}_failed`, error?.message || error);
+    const message = commandName === "close"
+      ? "問い合わせのクローズに失敗しました。"
+      : "問い合わせのリオープンに失敗しました。";
+    return interactionJson(4, { content: message, flags: 64 });
   }
 }
 
-export async function registerSupportCloseCommand(env) {
+async function registerOrUpdateSupportCommand(env, applicationId, guildId, command) {
+  const commands = await discordRequest(
+    env,
+    `/applications/${applicationId}/guilds/${guildId}/commands`
+  );
+  const existing = Array.isArray(commands)
+    ? commands.find(item => String(item?.name || "") === command.name && Number(item?.type || 1) === 1)
+    : null;
+
+  if (existing?.id) {
+    return await discordRequest(
+      env,
+      `/applications/${applicationId}/guilds/${guildId}/commands/${existing.id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(command)
+      }
+    );
+  }
+
+  return await discordRequest(
+    env,
+    `/applications/${applicationId}/guilds/${guildId}/commands`,
+    {
+      method: "POST",
+      body: JSON.stringify(command)
+    }
+  );
+}
+
+export async function registerSupportCommands(env) {
   const applicationId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
   const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
   if (!applicationId) throw new Error("DISCORD_CLIENT_ID_NOT_CONFIGURED");
   if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
 
-  return await discordRequest(env, "/applications/" + applicationId + "/guilds/" + guildId + "/commands", {
-    method: "POST",
-    body: JSON.stringify({
+  const commands = [
+    {
       name: "close",
       description: "EagleEyeの問い合わせをクローズします",
       type: 1
-    })
-  });
+    },
+    {
+      name: "reopen",
+      description: "EagleEyeのクローズ済み問い合わせを再開します",
+      type: 1
+    }
+  ];
+
+  const results = [];
+  for (const command of commands) {
+    results.push(await registerOrUpdateSupportCommand(env, applicationId, guildId, command));
+  }
+  return results;
+}
+
+// Backward-compatible export name for the existing admin route.
+export async function registerSupportCloseCommand(env) {
+  const results = await registerSupportCommands(env);
+  return results.find(command => String(command?.name || "") === "close") || results[0] || null;
 }
