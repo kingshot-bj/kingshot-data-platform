@@ -63,7 +63,7 @@
       "EAGLEEYE_ENV": "preview",
       "DISCORD_CLIENT_ID": "1552660062063829093",
       "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback",
-              "CLOUDFLARE_ACCOUNT_ID": "991e65e37de26f2e996fe296ab0d1a3a",
+      "CLOUDFLARE_ACCOUNT_ID": "991e65e37de26f2e996fe296ab0d1a3a",
       "CLOUDFLARE_D1_DATABASE_ID": "0024b5df-4dcf-45f7-b9a7-6fa621cbb80a",
       "HISTORY_STORAGE_MODE": "R2_ONLY",
       "CLOUDFLARE_MONITORING_PROFILE": "PAID_5USD",
@@ -96,5 +96,17 @@
     "version_metadata": {
       "binding": "CF_VERSION_METADATA"
     }
+  },
+  "secrets": {
+    "required": [
+      "DISCORD_CLIENT_SECRET",
+      "DISCORD_BOT_TOKEN",
+      "DISCORD_PUBLIC_KEY",
+      "DISCORD_SUPPORT_GUILD_ID",
+      "DISCORD_SUPPORT_CATEGORY_ID",
+      "DISCORD_SUPPORT_ROLE_ID",
+      "DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID",
+      "EAGLEEYE_SESSION_SECRET"
+    ]
   }
 }
