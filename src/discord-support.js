@@ -196,7 +196,8 @@ async function getGuildMember(env, guildId, discordUserId) {
 
 function validateTicketInput(body) {
   const category = String(body?.category || "").trim().toUpperCase();
-  const subcategory = String(body?.subcategory || "").trim().toUpperCase();
+  let subcategory = String(body?.subcategory || "").trim().toUpperCase();
+  if (!subcategory) subcategory = "OTHER";
   const selected = findSupportCategory(category, subcategory);
   const subject = String(body?.subject || "").trim();
   const message = String(body?.message || "").trim();
