@@ -1152,3 +1152,34 @@ $5を50.7%使ったという意味ではない。
 
 **$5 Paidは緊急避難。最終的にはD1/R2を最適化してFree枠へ戻す。**
 
+
+
+---
+
+# 31. MightPulse activity information removal — 2026-09-30
+
+Daryl (MightPulse developer) replied regarding the activity fields:
+
+> “The game removed the activity information about 2 weeks ago. So, that's why API returns an old data.”
+
+Confirmed interpretation:
+- KingShot removed the activity information approximately two weeks before the 2026-09-30 investigation.
+- MightPulse API is therefore returning the last available activity data.
+- `last_active_at` / `last_login` must not be interpreted as the player's current/latest login status.
+- The previously observed “14d ago” is not an EagleEye formatting bug.
+
+EagleEye implementation on 2026-09-30:
+- Removed `last_active_at` / `last_login` from normal player-facing output.
+- Removed them from normal player export output.
+- Removed them from the public player visibility response.
+- Stopped generating player change events from `last_active_at`.
+- Database columns are intentionally retained for compatibility; no migration/drop was performed.
+- MightPulse Probe retains the raw activity fields for diagnostic/research purposes only.
+- `online` remains user-facing temporarily.
+
+Pending confirmation from Daryl:
+- Whether the `online` field is still maintained and reliable/current.
+- Do not assume `online` is valid until this is clarified.
+
+User-facing rule:
+**Never present `last_active_at` / `last_login` as current activity or latest login information.**
