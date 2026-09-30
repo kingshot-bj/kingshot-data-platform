@@ -82,7 +82,7 @@ export async function getSupportIncidentContext(env) {
 export async function handleSupportContextApi(request, env, auth) {
   if (!auth?.user_id || auth.status !== "ACTIVE") return supportJson({ok:false,error:"UNAUTHORIZED"},401);
   if (request.method !== "GET") return supportJson({ok:false,error:"METHOD_NOT_ALLOWED"},405);
-  return supportJson({ok:true, incident:await getSupportIncidentContext(env), catalog:SUPPORT_CATALOG});
+  return supportJson({ok:true, incident:await getSupportIncidentContext(env)});
 }
 
 
