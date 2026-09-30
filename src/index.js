@@ -35,7 +35,7 @@ import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
-import { handleSupportApi, handleSupportInteraction, registerSupportCloseCommand } from "./discord-support.js";
+import { handleSupportApi, handleSupportInteraction, registerSupportCommands } from "./discord-support.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -6377,8 +6377,8 @@ async function handleDiscordSupportCommandRegistrationApi(request, env) {
   }
   if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   try {
-    const command = await registerSupportCloseCommand(env);
-    return json({ ok: true, command: { id: command?.id || null, name: command?.name || null, type: command?.type || null } });
+    const commands = await registerSupportCommands(env);
+    return json({ ok: true, commands: commands.map(command => ({ id: command?.id || null, name: command?.name || null, type: command?.type || null })) });
   } catch (error) {
     console.error("discord_support_command_registration_failed", error?.message || error);
     return json({ ok: false, error: String(error?.message || "DISCORD_SUPPORT_COMMAND_REGISTRATION_FAILED") }, Number(error?.status) || 503);
