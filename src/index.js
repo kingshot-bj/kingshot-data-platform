@@ -821,6 +821,17 @@ async function processKingdomWatchlistJob(env, job) {
       try {
         return { governorId, fetched: await fetchPlayerDetailThroughApiPool(env, governorId) };
       } catch (error) {
+        await recordDiagnostic(env.DB, {
+          service: "watchlist",
+          feature: "kingdom_watchlist",
+          operation: "PLAYER_FETCH",
+          status: "FAILED",
+          errorCode: String(error?.code || error?.message || "WATCHLIST_PLAYER_FETCH_FAILED").split(":")[0],
+          message: String(error?.message || error).slice(0, 2000),
+          provider: "MIGHTPULSE",
+          targetType: "PLAYER",
+          targetId: governorId
+        });
         console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
         return { governorId, error };
       }
@@ -2549,6 +2560,17 @@ async function handleKingdomWatchlistApi(request, env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
         ).bind(message, now, id).run();
+        await recordDiagnostic(env.DB, {
+          service: "watchlist",
+          feature: "kingdom_watchlist",
+          operation: "INITIAL_REFRESH",
+          status: "FAILED",
+          errorCode: String(error?.code || message || "WATCHLIST_INITIAL_REFRESH_FAILED").split(":")[0],
+          message,
+          targetType: "WATCHLIST",
+          targetId: id,
+          metadata: { jobId, kid }
+        });
         console.error("kingdom_watchlist_initial_refresh_failed", id, message);
         return json({
           ok: true,
@@ -2676,6 +2698,17 @@ async function handleKingdomWatchlistApi(request, env) {
           await env.DB.prepare(
             "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
           ).bind(message, now, watchlistId).run();
+          await recordDiagnostic(env.DB, {
+            service: "watchlist",
+            feature: "kingdom_watchlist",
+            operation: "MANUAL_REFRESH",
+            status: "FAILED",
+            errorCode: String(error?.code || message || "WATCHLIST_REFRESH_FAILED").split(":")[0],
+            message,
+            targetType: "WATCHLIST",
+            targetId: watchlistId,
+            metadata: { jobId: job.job_id, source: "MANUAL" }
+          });
           console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
           return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message }, 500);
         }
@@ -4251,6 +4284,16 @@ async function handleApiPoolHealthCheck(request, env) {
       }, 200);
     }
   } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "api_pool",
+      feature: "api_pool",
+      operation: "HEALTH_CHECK",
+      status: "FAILED",
+      errorCode: String(error?.code || error?.message || "API_POOL_HEALTH_CHECK_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000),
+      targetType: "API_KEY",
+      targetId: keyId
+    });
     console.error("API pool health check error:", error);
     return json({ ok: false, error: error?.message || "API_POOL_HEALTH_CHECK_FAILED" }, 400);
   }
