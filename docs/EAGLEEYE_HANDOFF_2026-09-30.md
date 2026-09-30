@@ -1475,3 +1475,108 @@ CLOSED以外のticketを `/reopen` しても `SUPPORT_TICKET_NOT_CLOSED` で拒�
 - `wrangler.jsonc` に `EAGLEEYE_ENV=production` / Previewでは `EAGLEEYE_ENV=preview` を追加。
 - Previewは本番D1/R2を共有する現構成のため、Preview操作が本番データへ影響し得る点は継続注意。
 - 2026-09-30時点で、この変更後のPreview Build/実機動作は未確認。Build成功や本番動作確認済みとは扱わない。
+
+# 36. Support v2 初期表示不具合の原因特定 — 2026-09-30 19時台
+
+## 36-1. 本番確認状況
+
+ユーザーがProductionの `/support` をiPhone Safariで確認。
+- f6eba51edecbb95afaed578d837cce135f3f57dd のデプロイ完了はユーザー側で確認済み。
+- しかし問い合わせ画面は、説明文の下にカテゴリ一覧が表示されず空白。
+- したがって Support v2 の本番UIはまだ「動作確認済み」ではない。
+
+重要:
+**本番で確認できたのは「f6eがデプロイされたこと」と「/supportの説明HTMLが表示されること」まで。カテゴリウィザードの動作は未確認かつ現状不具合。**
+
+## 36-2. 調査結果
+
+原因は障害情報APIの遅延ではなく、**問い合わせページ内のブラウザJavaScript構文エラー**。
+
+`src/index.js` の `renderSupportPage()` 内 `render3()` に、生成HTMLのinput value属性を組み立てる処理がある。
+
+```js
+html+="<div class='field'><label>"+labels[f]+"</label><input data-d='"+f+"' maxlength='1000' value=\""+(f==="governor_id"?esc(state.governorId):"")+"\"></div>";
+```
+
+この部分はWorker側のテンプレートリテラルから、さらにブラウザ側JavaScript文字列を生成している。そのためProductionで生成されたブラウザJSでは属性部分の引用符が崩れ、`render3()`を含むスクリプト全体がパースエラーになる。
+
+生成後のSupportページJavaScriptを実際に取り出して構文解析した結果:
+- `Unexpected string`
+- つまりIIFE自体が実行されない
+- `renderInitial()`にも到達しない
+- `/api/support/context` も呼ばれない
+
+このため画面は次の状態になる:
+
+```text
+サーバー生成HTML
+  ↓
+「お問い合わせ」の説明文は表示
+  ↓
+<script> のブラウザJSをパース
+  ↓
+❌ SyntaxError
+  ↓
+renderInitial() 実行されない
+  ↓
+カテゴリ一覧が表示されない
+```
+
+## 36-3. f6eで入れた「障害情報API非ブロッキング」は正しい
+
+f6eba51... で以下を実装済み:
+
+1. `renderInitial()` を `/api/support/context` より先に実行。
+2. `/api/support/context` はカテゴリ表示後にバックグラウンド取得。
+3. `diagnostic_events(status, created_at DESC)` 複合indexを追加:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_diagnostic_events_status_created
+  ON diagnostic_events(status, created_at DESC);
+```
+
+4. `getSupportIncidentContext()` に `elapsed_ms` 計測ログを追加:
+
+```js
+console.log("support_incident_context_query", {
+  elapsed_ms: Date.now() - queryStartedAt,
+  found: Boolean(row)
+});
+```
+
+ただしブラウザJSが構文エラーなので、今回の画面ではこの非ブロッキング化の効果まで到達していない。
+
+## 36-4. 次スレッドで最初にやること
+
+### 最優先: Support v2 JS修正
+
+`render3()` の生成HTMLでJavaScript文字列とHTML属性引用符が衝突しないよう修正する。
+
+推奨:
+- `value='...'` のように外側のJS文字列と衝突しない引用方式へ変更する。
+- あるいはDOM属性値生成を安全なescape/attribute helperへ切り出す。
+- 二重にテンプレートを生成する現在の構造を考慮する。
+
+### 修正後に必ず行う検証
+
+1. `src/index.js` Worker側の構文確認。
+2. **renderSupportPage() が生成する最終HTMLを生成し、内包される `<script>` を実際にJavaScript parserへ通す。**
+3. Preview Build確認。
+4. Preview `/support` をiPhone Safariで確認。
+5. mainへ反映。
+6. Production deploy完了確認。
+7. Production `/support` でカテゴリ一覧が表示されることをユーザー実機で確認。
+8. カテゴリ → サブカテゴリ → Q&A → 未解決 → 入力 → 送信まで確認。
+9. その後 `/api/support/context` の `support_incident_context_query elapsed_ms` を実測し、障害情報APIが本当に遅いのかを別途評価。
+
+**「カテゴリが表示された」ことと「障害情報APIが高速化された」ことは別々に確認する。**
+
+## 36-5. 未実施
+
+- この原因に対する修正コードはまだコミットしていない。
+- f6eの次の修正commitはまだ存在しない。
+- Production Support v2のカテゴリUIは未確認。
+- `0027_diagnostic_status_created_index.sql` がProduction D1へ適用済みかは、今回の調査では確認していない。
+- `support_incident_context_query` の本番実測値もまだ取得していない。
+
+**次スレッドでは、まずブラウザJS構文エラーを修正してから、Productionで実機確認すること。**
