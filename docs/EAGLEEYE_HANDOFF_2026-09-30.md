@@ -1381,3 +1381,72 @@ Discordを初期会話履歴の本体とする。
 - Discord側でユーザーとSupport Roleだけが閲覧できること
 
 したがって現時点では「コード実装済み」であり、「本番利用可能」「本番確認済み」ではない。
+
+# 35. Discord問い合わせリオープン対応 — 2026-09-30
+
+## 35-1. GitHub側で実装済み
+
+- `src/discord-support.js`
+  - `reopenSupportTicket()` を追加
+  - CLOSED状態のEagleEye Support ticketのみリオープン可能
+  - Support Roleのみ `/reopen` を実行可能
+  - アーカイブカテゴリから通常のSupportカテゴリへ戻す
+  - topicの `status=CLOSED` → `status=OPEN`
+  - ticket作成時に記録したユーザーのchannel permissionを復元
+    - allow: `68608`
+    - deny: `0`
+  - channel自体は削除せず、同じticket ID / channelを継続利用
+- Discord Interaction
+  - `/close`
+  - `/reopen`
+  の2コマンドを処理。
+- command登録処理
+  - `/close` / `/reopen` の両方をGuild-scopedで登録
+  - 既存commandがあればPATCH、なければPOST
+  - 既存commandを毎回重複作成しない方式へ変更。
+- `src/index.js`
+  - `/api/admin/discord-support/register-command` は両commandを登録し、結果を配列で返す。
+
+## 35-2. リオープンの状態遷移
+
+通常:
+`OPEN → CLOSED`
+
+再開:
+`CLOSED → OPEN`
+
+CLOSED時:
+- ユーザーのView/Send/History権限を停止
+- Archive Categoryへ移動
+
+REOPEN時:
+- ユーザーのView/Send/History権限を復元
+- Support Categoryへ移動
+- statusをOPENへ戻す
+
+会話履歴:
+- 同じDiscord channelを継続使用
+- EagleEye D1には保存しない
+
+## 35-3. 安全条件
+
+`/reopen` も `/close` と同じく:
+- Support Guild限定
+- Support Role限定
+- EagleEye Support ticket channel限定
+- Support / Archive category限定
+- topic内のticket ID / user IDを検証
+
+CLOSED以外のticketを `/reopen` しても `SUPPORT_TICKET_NOT_CLOSED` で拒否する。
+
+## 35-4. 未確認
+
+以下はまだ本番確認していない:
+- `/reopen` commandがDiscord Guildに正常登録されること
+- CLOSED → OPENでユーザー権限が正しく復元されること
+- Archive → Support Category移動が成功すること
+- リオープン後にユーザーが再びメッセージを投稿できること
+- `/close → /reopen → /close` の往復動作
+- iPhone Safari / Discord側での実運用確認
+
+したがって現時点では「コード実装済み」であり、「本番確認済み」ではない。
