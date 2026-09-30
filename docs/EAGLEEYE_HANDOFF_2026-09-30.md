@@ -1193,3 +1193,101 @@ User-facing rule:
 - /my-player のAdvanced条件UIは登録本数を n / 3 で表示し、3本未満なら追加入力欄を継続表示。
 - 既存のAdvanced昇格条件は「領主IDを1つ以上」＋「MightPulse APIキーを1本以上」で維持。2本目・3本目の提供はPool容量強化として扱い、昇格条件そのものは変更しない。
 - 直前の修正で /api/me/mightpulse-key に configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET) を追加済み。今回の複数キー対応でもこの暗号化保存経路を継続利用。
+
+
+---
+
+# 33. Discord問い合わせシステム実装開始 — 2026-09-30
+
+EagleEye本体側で、将来のEagleEye Management連携を前提としたDiscord問い合わせ基盤の実装を開始。
+
+## 33-1. 実装済み
+
+新規:
+- `src/discord-support.js`
+
+実装内容:
+- collision-resistant ticket ID:
+  - `EE-YYYYMMDD-XXXX`
+- Discord Bot API v10経由のprivate support channel作成
+- EagleEye Supportカテゴリへの配置
+- `@everyone` のView Channel拒否
+- 問い合わせユーザーへのchannel権限付与
+- Support Roleへの権限付与
+- Botへの権限付与
+- channel topicへのticket ID / user / OPEN状態記録
+- 初期問い合わせ本文の投稿
+- 問い合わせユーザーがSupport Guildに所属していない場合の拒否
+- 初期メッセージ投稿失敗時のchannel cleanup
+- close処理の基盤
+  - ユーザーの投稿権限を停止
+  - status=CLOSEDへ変更
+  - archive categoryが設定されていれば移動
+  - channel自体は削除しない
+- `POST /api/support` 用のhandler基盤
+- 入力:
+  - category
+  - subject
+  - message
+- category whitelist
+- subject/message length validation
+
+## 33-2. Runtime configuration
+
+`wrangler.jsonc` に以下の非secret設定枠を追加:
+- `DISCORD_SUPPORT_GUILD_ID`
+- `DISCORD_SUPPORT_CATEGORY_ID`
+- `DISCORD_SUPPORT_ROLE_ID`
+- `DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID`
+
+Secret:
+- `DISCORD_BOT_TOKEN`
+  - wrangler.jsoncへ書かない
+  - Cloudflare Secretとして設定する
+
+## 33-3. まだ未実装 / 未確認
+
+重要:
+- `src/discord-support.js` は基盤実装段階。
+- 本体Workerのroute dispatcherへの接続はまだ未完了。
+- ユーザー向け問い合わせフォームUIはまだ未実装。
+- Discord BotのGuild / Category / Support Role / Archive Categoryの本番IDは未設定。
+- Discord Bot tokenは未設定。
+- `/close` slash command / Discord interaction endpointは未実装。
+- Management側との実運用integrationは未実装。
+- D1への問い合わせ本文保存は行わない方針。
+
+したがって現時点で、問い合わせ機能を「実装済み」「本番利用可能」「本番確認済み」とは扱わない。
+
+## 33-4. 設計原則
+
+User:
+EagleEye問い合わせフォーム
+→ EagleEye main
+→ Discord Bot
+→ private Discord ticket channel
+
+Operator future:
+EagleEye Management
+→ explicit integration boundary / Discord Bot
+→ private Discord ticket channel
+→ User
+
+Discordを初期会話履歴の本体とし、EagleEye main D1へ会話本文を複製しない。
+
+Managementで将来検索が必要になった場合は、Discord本文を複製するのではなくManagement-owned metadata/indexを検討する。
+
+Ticket IDは3層共通のstable identifierとして扱う。
+
+## 33-5. 次の実装順
+
+1. 本体Workerのroute dispatcherへ`handleSupportApi`を接続。
+2. `/support` のiPhone Safari向け問い合わせフォームを実装。
+3. 送信成功時にticket ID / Discord channelへの導線を表示。
+4. Discord Bot本番設定を投入。
+5. Guild membership / private channel permissionを本番で確認。
+6. 初期ticket作成→会話→closeのproduction test。
+7. その後、Discord slash command `/close` を実装。
+8. Management側Integration Requestと照合し、Management連携APIを設計。
+
+本番確認前は必ず「コード上実装」「deploy済み」「本番確認済み」を区別する。
