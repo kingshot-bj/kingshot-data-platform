@@ -35,7 +35,7 @@ import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
-import { handleSupportApi } from "./discord-support.js";
+import { handleSupportApi, handleSupportInteraction, registerSupportCloseCommand } from "./discord-support.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -3199,6 +3199,8 @@ export default {
       if (url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);
       if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
+      if (url.pathname === "/api/discord/interactions") return await handleSupportInteraction(request, env);
+      if (url.pathname === "/api/admin/discord-support/register-command") return await handleDiscordSupportCommandRegistrationApi(request, env);
       if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); }
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
@@ -6365,6 +6367,22 @@ draw();
 drawAudit(initialLogs);
 })();
 </script></body></html>`;
+}
+
+
+async function handleDiscordSupportCommandRegistrationApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
+    return json({ ok: false, error: "FORBIDDEN" }, 403);
+  }
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  try {
+    const command = await registerSupportCloseCommand(env);
+    return json({ ok: true, command: { id: command?.id || null, name: command?.name || null, type: command?.type || null } });
+  } catch (error) {
+    console.error("discord_support_command_registration_failed", error?.message || error);
+    return json({ ok: false, error: String(error?.message || "DISCORD_SUPPORT_COMMAND_REGISTRATION_FAILED") }, Number(error?.status) || 503);
+  }
 }
 
 async function handleMe(request, env) {
