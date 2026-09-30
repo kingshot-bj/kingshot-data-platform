@@ -3351,8 +3351,23 @@ export default {
     if (env.DB && env.ARCHIVE) {
       try {
         const drained = await drainHistoryEmergencyBuffer(env.DB, env.ARCHIVE, { limit: 10 });
-        if (drained.attempted) console.log("history_emergency_buffer_drain", drained);
+        if (drained.attempted) {
+          await recordDiagnostic(env.DB, {
+            service: "history_storage", feature: "history_emergency_buffer", operation: "DRAIN",
+            status: Number(drained.failed || 0) > 0 ? "WARNING" : "SUCCESS",
+            errorCode: Number(drained.failed || 0) > 0 ? "HISTORY_EMERGENCY_BUFFER_DRAIN_PARTIAL" : null,
+            message: Number(drained.failed || 0) > 0 ? "履歴緊急バッファの排出で一部失敗しました。" : "履歴緊急バッファ排出成功",
+            rowsReceived: Number(drained.attempted || 0), rowsSaved: Number(drained.archived || 0),
+            metadata: { failed: Number(drained.failed || 0), remaining: Number(drained.remaining || 0) }
+          });
+          console.log("history_emergency_buffer_drain", drained);
+        }
       } catch (error) {
+        await recordDiagnostic(env.DB, {
+          service: "history_storage", feature: "history_emergency_buffer", operation: "DRAIN",
+          status: "FAILED", errorCode: String(error?.message || "HISTORY_EMERGENCY_BUFFER_DRAIN_FAILED").split(":")[0],
+          message: String(error?.message || error).slice(0, 2000)
+        });
         console.error("history_emergency_buffer_drain_failed", error?.message || error);
       }
     }
