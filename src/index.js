@@ -3704,6 +3704,29 @@ const EAGLEEYE_THEME_SCRIPT = `
       function mountPreviewBanner(){ if(!document.querySelector(".eagle-preview-banner")) document.body.appendChild(previewBanner); }
       if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",mountPreviewBanner); else mountPreviewBanner();
     }
+    // Global browser-side guard: do not allow the same mutating API request
+    // to be sent twice concurrently from one EagleEye page/tab.
+    // Server-side locks remain the authoritative protection for concurrent tabs/clients.
+    if(!window.__eagleEyeMutatingRequestGuardInstalled){
+      window.__eagleEyeMutatingRequestGuardInstalled=true;
+      var eagleEyePendingMutations=new Set();
+      var eagleEyeOriginalFetch=window.fetch.bind(window);
+      window.fetch=function(input,init){
+        var method=String((init&&init.method)||((input&&input.method)||"GET")).toUpperCase();
+        if(["POST","PUT","PATCH","DELETE"].indexOf(method)<0) return eagleEyeOriginalFetch(input,init);
+        var url=typeof input==="string"?input:(input&&input.url)||"";
+        var body=init&&init.body!=null?String(init.body):"";
+        var key=method+" "+url+" "+body;
+        if(eagleEyePendingMutations.has(key)){
+          var duplicateError=new Error("同じ操作が現在実行中です。処理完了を待ってください。");
+          duplicateError.code="CLIENT_REQUEST_IN_PROGRESS";
+          return Promise.reject(duplicateError);
+        }
+        eagleEyePendingMutations.add(key);
+        return eagleEyeOriginalFetch(input,init).finally(function(){eagleEyePendingMutations.delete(key);});
+      };
+    }
+
     function setup(){
       var existing=document.querySelector(".theme-toggle");
       var btn=document.querySelector(".eagle-theme-toggle");
