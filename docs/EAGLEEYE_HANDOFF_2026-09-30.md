@@ -1768,3 +1768,241 @@ CloudflareのWorker/D1自体のconsoleログとは別に、EagleEye内部の永�
 8. それぞれのSUCCESS/FAILEDイベントとtrace_id確認
 
 まで行う。
+
+# 39. 2026-09-30 テスター実運用・API Pool/王国ウォッチリスト障害ログ引き継ぎ
+
+## 39-1. 今回の実運用テスト
+
+ユーザーが複数のテスターへ以下を依頼して実際に触ってもらった。
+
+- MightPulse APIキーの提供
+- 王国ウォッチリスト等、既に利用可能な機能をあらかた実操作
+- その中で少なくとも1名について、王国ウォッチリスト登録時にエラー発生
+- API Pool内で相当数のキーが無効化/無効状態になった
+- 手動更新を行っても復旧できないキーが複数存在
+- OWNER権限で一部キーを無効化処理した
+
+今回の目的は「実ユーザーが雑に機能を触った際に、API Pool / Watchlistがどこで壊れるか」をログから洗い出すこと。
+
+## 39-2. 最新 status-7.json で確認できた事実
+
+最新の本番取得ログ `status-7.json`（2026-09-30 16:39:56Z作成）には、王国ウォッチリスト関連で複数の `NO_API_POOL_KEY_AVAILABLE` が記録されている。
+
+確認できた例:
+
+- `kingdom_watchlist / INITIAL_REFRESH / NO_API_POOL_KEY_AVAILABLE`
+- `kingdom_watchlist / MANUAL_REFRESH / NO_API_POOL_KEY_AVAILABLE`
+- `kingdom_watchlist / RUN / NO_API_POOL_KEY_AVAILABLE`
+
+特に `MANUAL_REFRESH` でも `NO_API_POOL_KEY_AVAILABLE` が出ているため、
+「手動更新すれば無効キーから自動復旧できる」という状態ではない。
+
+同時刻帯には `FETCH_COMPARE_SAVE` が `rows_received=100 / rows_saved=100` で成功している王国ランキング処理も存在する。
+
+したがって、**MightPulse全体が完全停止しているわけではなく、API Poolのキー割り当て/利用可能キー不足と、ランキング取得処理そのものを分離して調査する必要がある。**
+
+## 39-3. Watchlist障害の時系列として読めること
+
+status-7では、ウォッチリスト登録時の `INITIAL_REFRESH` だけでなく、その後の `MANUAL_REFRESH`、さらに定期/ジョブ系の `RUN` でも同じ `NO_API_POOL_KEY_AVAILABLE` が出ている。
+
+例:
+
+- 1790780317: `INITIAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780321: `MANUAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780375: `INITIAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780399: `INITIAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780413: `INITIAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780424: `MANUAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780443: `RUN` / `NO_API_POOL_KEY_AVAILABLE`
+- 1790780615: `INITIAL_REFRESH` / `NO_API_POOL_KEY_AVAILABLE`
+
+つまり今回の障害は単発の登録UIエラーではなく、**API PoolからWatchlist用途のキーを確保できない状態が継続していた**ことがログから確認できる。
+
+## 39-4. API Poolに関してログから見える重要ポイント
+
+status-7のQuery Insightsには以下がある。
+
+### A. API Poolキー状態の一覧取得
+
+`SELECT pool_type, status, label, last_success_at, last_error_at, last_error_code, last_error_message FROM api_pool_keys ...`
+
+- count: 213
+- rowsRead: 1098
+- rowsReturned: 213
+
+別クエリでは:
+
+`SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL') AND status = 'AVAILABLE'`
+
+- count: 299
+- rowsRead: 1042
+
+※これらはQuery Insightsの集計値であり、「299本のAPIキーが存在する」という意味ではない。クエリ実行回数/rowsRead/rowsReturnedとDB上のCOUNT結果を混同しない。
+
+### B. Lease取得処理
+
+status-7には以下のlease取得SQLが存在する。
+
+``UPDATE api_pool_keys
+ SET lease_id = ?,
+     leased_until = ?,
+     lease_job_id = NULL,
+     lease_purpose = ?,
+     lease_target_type = ?,
+     lease_target_id = ?,
+     updated_at = ?
+ WHERE key_id = ?
+   AND status IN ('AVAILABLE','ERROR','DISABLED')
+   AND (leased_until IS NULL OR leased_until <= ?)
+ RETURNING key_id, provider, pool_type, encrypted_key``
+
+- count: 8
+- rowsRead: 16
+- rowsReturned: 8
+- rowsWritten: 16
+
+ここは重要。
+**現在のlease取得SQLは `AVAILABLE` だけでなく `ERROR` / `DISABLED` も対象にしている。**
+
+これが意図した「復旧候補として再試行」なのか、
+「無効化済みキーまで実処理へ貸し出してしまう」危険な条件なのかは、mainコードを次スレッドで確認すること。
+
+### C. Lease release
+
+`UPDATE api_leases SET status = 'RELEASED' ...`
+
+- count: 1590
+- rowsRead: 3180
+- rowsWritten: 3180
+
+また、期限切れleaseを処理する:
+
+`UPDATE api_leases SET status = 'EXPIRED' WHERE status = 'ACTIVE' AND expires_at <= ?`
+
+- count: 2967
+- rowsRead: 2,306,267
+
+この `api_leases` の高い読み取りは、以前から確認対象だった箇所。
+今回のAPI Pool障害調査では、**「キー無効化」と「leaseの解放/期限切れ」と「次回選択条件」が正しく連動しているか**を重点確認する。
+
+## 39-5. APIキー大量無効化について、現時点で確定していないこと
+
+ユーザーの実運用報告として「相当数のキーが無効」「手動更新でも復旧できない」「OWNERで一部無効化」は事実として引き継ぐ。
+
+ただし、status-7だけからは以下はまだ断定できない。
+
+- 何本が実際にinvalidだったか
+- invalid判定のHTTP status / API error codeの内訳
+- invalidとquota/rate-limit/temporary failureの区別が正しいか
+- 「手動更新」がどのDBフィールドを更新したのか
+- OWNER無効化したキーが、その後のlease対象から完全に除外されるか
+- 同じキーが短時間に何度もエラー判定されていないか
+- キー提供者へ返すべき状態表示が正しいか
+
+このため次スレッドでは、**status-7のdiagnostic_eventsだけでなく、mainのAPI Pool実装をコード確認すること。**
+
+## 39-6. 今回、同時に確認できた別問題
+
+status-7では王国ランキング取得について:
+
+- `rows_received=100`
+- `rows_saved=100`
+- `FETCH_COMPARE_SAVE` は成功相当の処理結果
+- ただし `SOURCE_TIME_UNAVAILABLE` WARNING
+
+が複数発生している。
+
+つまり、
+
+**ランキング本体の取得・比較・保存は成功しているが、MightPulse基準時刻の取得だけ失敗している**
+
+ケースが存在する。
+
+これは今回の `NO_API_POOL_KEY_AVAILABLE` とは別系統として扱うべき。
+
+## 39-7. R2履歴保存について
+
+同じstatus-7には:
+
+`R2アーカイブ成功。R2_ONLYのためD1 ranking_snapshots INSERTをスキップしました。`
+
+が記録されている。
+
+今回のテスター操作中にも、
+
+- R2 archive SUCCESS
+- R2_ONLY
+- D1 ranking_snapshots INSERT skip
+
+が確認できる。
+
+これは現時点での履歴保存設計と整合している。
+
+## 39-8. D1負荷について今回見えていること
+
+status-7 Query Insightsには、今回のテスト期間中に以下が見える。
+
+- API Poolの状態取得/lease/releaseがかなり多い
+- diagnostic_events INSERTも多い
+- Watchlist JobのUPDATEも多数
+- `api_leases` EXPIRED更新のrowsReadが非常に大きい
+- `kingdom_ranking_current` の広いSELECTも存在
+- `ranking_snapshots` を読むクエリもまだ存在する
+
+特に最後は重要。
+
+status-7には:
+
+`SELECT target_id, rank, score, observed_at FROM ranking_snapshots WHERE kid = ? AND board = ? AND target_id IN (?,?,?,?) AND observed_at < ? ORDER BY target_id ASC, observed_at DESC`
+
+が確認されている。
+
+これは少なくとも「target_idを限定した過去順位取得」であり、禁止している「ranking_snapshots全体を広く取得」するクエリとは同一ではない。
+
+ただし、今回の実テストでこのqueryが何回実行され、何rowsReadになったかは、次スレッドでWatchlistのコードと合わせて評価する。
+
+## 39-9. 次スレッドで優先して調査する項目
+
+### 最優先: API Poolのinvalid / recovery / lease設計
+
+1. `src/api-pool.js` のキー取得関数
+2. `lease_id / leased_until / lease_job_id / lease_purpose`
+3. `status IN ('AVAILABLE','ERROR','DISABLED')` の意図
+4. MightPulse HTTP 401/403/429/5xx/timeoutの分類
+5. invalid判定後のstatus遷移
+6. 手動更新時のstatus復旧処理
+7. OWNER無効化時のstatus遷移
+8. DISABLEDキーが次回lease候補になる可能性
+9. lease期限切れ処理とキーstatusの整合性
+10. 同一キーの連続再利用/再エラー防止
+
+### 次点: 王国ウォッチリスト登録失敗
+
+1. `INITIAL_REFRESH`
+2. `MANUAL_REFRESH`
+3. `RUN`
+4. `NO_API_POOL_KEY_AVAILABLE` を投げる直前のpool_type/provider/候補数
+5. `SYSTEM_WATCHLIST` と `SYSTEM_GENERAL` のfallback仕様
+6. 「キー不足」と「全キーinvalid」をUI上で区別できているか
+7. 登録そのものを成功扱いにするのか、初回取得失敗なら登録をrollbackするのか
+8. 失敗したwatchlist jobが残り続けるか
+9. 同じ失敗をcronが何度も繰り返してD1 writesを増やしていないか
+
+### 次点: API Pool UI / 運用性
+
+1. invalid / cooldown / disabled / available の意味がユーザーに明確か
+2. 手動復旧ボタンが実際に復旧可能な状態だけを対象にしているか
+3. invalid keyを「再試行して復旧できるキー」と誤認させていないか
+4. OWNERによる無効化後に完全に処理対象外になるか
+5. 提供者本人が自分のキー状態を理解できる表示になっているか
+
+## 39-10. 次スレッド開始時の指示
+
+ユーザーが次スレッドで本件を再開したら、最初に:
+
+> 「EAGLEEYE_HANDOFF_2026-09-30.md の #39『2026-09-30 テスター実運用・API Pool/王国ウォッチリスト障害ログ引き継ぎ』から続き。status-7.jsonで発生した NO_API_POOL_KEY_AVAILABLE と大量invalidキーの原因調査から開始」
+
+と伝えれば、この文脈で再開する。
+
+**今回のログだけで原因を断定しない。**
+まずmainの `src/api-pool.js` と王国ウォッチリストの初回取得/手動更新/cron実行コードを確認し、status遷移と照合する。
