@@ -216,6 +216,61 @@ async function runDataRetentionJob(env) {
   }
 }
 
+const API_REQUEST_LOCK_TTL_SECONDS = 180;
+
+let apiRequestLockSchemaPromise = null;
+
+async function ensureApiRequestLockSchema(db) {
+  if (apiRequestLockSchemaPromise) return apiRequestLockSchemaPromise;
+  apiRequestLockSchemaPromise = db.prepare(`
+    CREATE TABLE IF NOT EXISTS api_request_locks (
+      lock_key TEXT PRIMARY KEY,
+      lock_token TEXT NOT NULL,
+      lock_until INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `).run().then(() => undefined);
+  try {
+    return await apiRequestLockSchemaPromise;
+  } catch (error) {
+    apiRequestLockSchemaPromise = null;
+    throw error;
+  }
+}
+
+async function acquireApiRequestLock(env, lockKey, ttlSeconds = API_REQUEST_LOCK_TTL_SECONDS) {
+  if (!env.DB) return null;
+  await ensureApiRequestLockSchema(env.DB);
+  const now = Math.floor(Date.now() / 1000);
+  const token = crypto.randomUUID();
+  const lockUntil = now + Math.max(30, Number(ttlSeconds) || API_REQUEST_LOCK_TTL_SECONDS);
+  const result = await env.DB.prepare(`
+    INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(lock_key) DO UPDATE SET
+      lock_token = excluded.lock_token,
+      lock_until = excluded.lock_until,
+      updated_at = excluded.updated_at
+    WHERE api_request_locks.lock_until <= ?
+  `).bind(lockKey, token, lockUntil, now, now).run();
+  return result?.meta?.changes === 1 ? token : null;
+}
+
+async function releaseApiRequestLock(env, lockKey, token) {
+  if (!env.DB || !lockKey || !token) return;
+  await env.DB.prepare(
+    "DELETE FROM api_request_locks WHERE lock_key = ? AND lock_token = ?"
+  ).bind(lockKey, token).run();
+}
+
+function apiRequestLockConflict(lockKey) {
+  const error = new Error("API_REQUEST_IN_PROGRESS");
+  error.code = "API_REQUEST_IN_PROGRESS";
+  error.status = 409;
+  error.lockKey = lockKey;
+  return error;
+}
+
 const WATCHLIST_LOCK_TTL_SECONDS = 600;
 
 async function acquireKingdomWatchlistLock(env, watchlistId) {
@@ -3210,6 +3265,10 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
 }
 
 async function handleMightPulseResearchApi(request, env) {
+  const apiLockKey = "ADMIN_MIGHTPULSE_RESEARCH:"+String(governorId)+":"+(all?"ALL":candidate);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -3231,9 +3290,17 @@ async function handleMightPulseResearchApi(request, env) {
   } catch (error) {
     return json({ ok:false, error:error?.code||"MIGHTPULSE_RESEARCH_FAILED", status:Number(error?.status||0), message:error?.message||null }, error?.status>=400&&error?.status<600?error.status:502);
   }
+
+  } finally {
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
+  }
 }
 
 async function handleMightPulseProbeApi(request, env) {
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:"+type+":"+String(governorId||kid||"") + ":" + String(board||"") + ":" + include;
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -3255,6 +3322,10 @@ async function handleMightPulseProbeApi(request, env) {
       message: error?.message || null,
       diagnostic: error?.details || null
     }, status >= 400 && status < 600 ? status : 502);
+  }
+
+  } finally {
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
 }
 
@@ -3946,6 +4017,10 @@ async function handlePlayerRankHistoryApi(request, env) {
 }
 
 async function handleRankingPlayerTest(request, env) {
+  const apiLockKey = "ADMIN_RANKING_PLAYER:"+String(governorId);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -3978,9 +4053,17 @@ async function handleRankingPlayerTest(request, env) {
       status: error?.status || 0
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
   }
+
+  } finally {
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
+  }
 }
 
 async function handleRankingBoardTest(request, env) {
+  const apiLockKey = "ADMIN_RANKING_BOARD:"+String(kid)+":"+String(board);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   const url = new URL(request.url);
@@ -4008,9 +4091,17 @@ async function handleRankingBoardTest(request, env) {
       status: error?.status || 0
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
   }
+
+  } finally {
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
+  }
 }
 
 async function handleMightPulsePlayerTest(request, env) {
+  const apiLockKey = "ADMIN_MIGHTPULSE_PLAYER:"+String(governorId);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
+  try {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (auth.status !== "ACTIVE") return json({ ok: false, error: "USER_DISABLED" }, 403);
@@ -4050,6 +4141,10 @@ async function handleMightPulsePlayerTest(request, env) {
         details: error?.details || null
       }
     }, error?.status && error.status >= 400 && error.status < 600 ? error.status : 502);
+  }
+
+  } finally {
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
 }
 
