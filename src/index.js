@@ -5458,6 +5458,11 @@ async function handlePlayerSectionExport(request, env) {
     }
 
     const result = await exportToGoogleSheet(env, { sheetTitle, headers, rows });
+    await recordDiagnostic(env.DB, {
+      service: "google_sheets", feature: "player_export", operation: "EXPORT", status: "SUCCESS",
+      message: "プレイヤーGoogle Sheets出力成功", rowsReceived: rows.length, rowsSaved: rows.length,
+      metadata: { section, columnCount: headers.length }
+    });
     await trackServiceUsage(env, guard.auth, "PLAYER_EXPORT", {
       targetType: "PLAYER",
       targetId: governorId,
@@ -5472,6 +5477,12 @@ async function handlePlayerSectionExport(request, env) {
     });
     return new Response(null, { status: 303, headers: { location: result.url, "cache-control": "no-store" } });
   } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "google_sheets", feature: "player_export", operation: "EXPORT", status: "FAILED",
+      errorCode: String(error?.code || error?.message || "PLAYER_EXPORT_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000),
+      metadata: { section }
+    });
     console.error("Player section Google Sheets export error:", error);
     if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED") return json({
       ok: false, error: "GOOGLE_SHEETS_NOT_CONFIGURED",
@@ -6224,6 +6235,12 @@ async function handleAdminKingdomRankingExport(request, env) {
     const result = await exportToGoogleSheet(env, {
       sheetTitle:"王国" + kid + "_" + label, headers, rows
     });
+    await recordDiagnostic(env.DB, {
+      service: "google_sheets", feature: "kingdom_export", operation: "EXPORT", status: "SUCCESS",
+      targetType: "KINGDOM", targetId: kid, message: "王国ランキングGoogle Sheets出力成功",
+      rowsReceived: rows.length, rowsSaved: rows.length,
+      metadata: { board, limit, columnCount: headers.length }
+    });
     await trackServiceUsage(env, guard.auth, "KINGDOM_EXPORT", {
       targetType: "KINGDOM",
       targetId: kid,
@@ -6238,6 +6255,12 @@ async function handleAdminKingdomRankingExport(request, env) {
     });
     return new Response(null,{status:303,headers:{location:result.url,"cache-control":"no-store"}});
   } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "google_sheets", feature: "kingdom_export", operation: "EXPORT", status: "FAILED",
+      errorCode: String(error?.code || error?.message || "KINGDOM_RANKING_EXPORT_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000), targetType: "KINGDOM", targetId: kid,
+      metadata: { board, limit }
+    });
     console.error("Admin kingdom ranking export error:", error);
     if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED" || error?.code === "GOOGLE_SHEETS_WEBAPP_NOT_CONFIGURED") {
       return json({ok:false,error:error.code,message:"Google Sheets連携が未設定です。"},503);
