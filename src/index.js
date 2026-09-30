@@ -744,13 +744,12 @@ const WATCHLIST_MAX_API_CONCURRENCY = 26;
 
 async function getWatchlistApiConcurrency(env) {
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL') AND status = 'AVAILABLE'"
+    "SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL','USER_CONTRIBUTED') AND status = 'AVAILABLE'"
   ).first();
 
-  // The API Pool is designed to scale up to the 26 KingShot ranking boards.
-  // Do not hard-cap watchlist work at 4: that turns an automatic refresh into
-  // multiple Cron cycles and is why a 26-board refresh can appear stalled at
-  // 4/26. The actual concurrency remains bounded by currently AVAILABLE keys.
+  // User-contributed keys are explicitly provided to the EagleEye API Pool,
+  // so they participate in automatic watchlist work without manual pool moves.
+  // Concurrency is bounded by the 26 KingShot ranking boards.
   return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, Number(row?.count || 1)));
 }
 
@@ -4457,25 +4456,26 @@ async function fetchThroughWatchlistApiPool(env, {
 }) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
-  let poolType = "SYSTEM_WATCHLIST";
+  let poolType = null;
+  const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
   try {
-    try {
-      lease = await leaseApiKey(env.DB, {
-        poolType: "SYSTEM_WATCHLIST",
-        purpose,
-        targetType,
-        targetId
-      });
-    } catch (error) {
-      if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-      poolType = "SYSTEM_GENERAL";
-      lease = await leaseApiKey(env.DB, {
-        poolType,
-        purpose,
-        targetType,
-        targetId
-      });
+    let lastNoKeyError = null;
+    for (const candidatePoolType of automaticPoolTypes) {
+      try {
+        lease = await leaseApiKey(env.DB, {
+          poolType: candidatePoolType,
+          purpose,
+          targetType,
+          targetId
+        });
+        poolType = candidatePoolType;
+        break;
+      } catch (error) {
+        if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
+        lastNoKeyError = error;
+      }
     }
+    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
 
     const result = await mightPulseFetch(env, path, {
       query: query || (include ? { include } : undefined),
@@ -4557,13 +4557,26 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
   }
 
   let lease = null;
+  let poolType = null;
   try {
-    lease = await leaseApiKey(env.DB, {
-      poolType: "SYSTEM_GENERAL",
-      purpose,
-      targetType: "PLAYER",
-      targetId: id
-    });
+    const automaticPoolTypes = ["SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+    let lastNoKeyError = null;
+    for (const candidatePoolType of automaticPoolTypes) {
+      try {
+        lease = await leaseApiKey(env.DB, {
+          poolType: candidatePoolType,
+          purpose,
+          targetType: "PLAYER",
+          targetId: id
+        });
+        poolType = candidatePoolType;
+        break;
+      } catch (error) {
+        if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
+        lastNoKeyError = error;
+      }
+    }
+    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
 
     const result = await getMightPulsePlayer(env, id, {
       include: "base,heroes,ranks,gov_gear",
