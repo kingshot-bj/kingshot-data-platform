@@ -36,6 +36,7 @@ import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, crea
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
+import { PLAYER_COMPARE_MAX, normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -499,7 +500,16 @@ function filterPlayerProfileForRole(payload, role, settings) {
   if (visibilityEnabled(settings, "base_coordinates", role)) for (const key of ["x","y"]) if (player[key] !== undefined) visible[key] = player[key];
   if (visibilityEnabled(settings, "base_kills", role) && player.kills !== undefined) visible.kills = player.kills;
   if (visibilityEnabled(settings, "base_activity", role) && player.online !== undefined) visible.online = player.online;
-  if (visibilityEnabled(settings, "base_profile", role)) for (const key of ["avatar_url","language","shield_endtime","burn_endtime","office"]) if (player[key] !== undefined) visible[key] = player[key];
+  if (visibilityEnabled(settings, "base_profile", role)) {
+    for (const key of [
+      "avatar_url","avatar_frame_url","frame_url","profile_frame_url",
+      "city_skin_url","castle_skin_url","marching_skin_url","march_skin_url","profile_skin_url",
+      "language","shield_endtime","burn_endtime","office"
+    ]) if (player[key] !== undefined) visible[key] = player[key];
+    for (const key of ["skins","frames","cosmetics","profile_skin","castle_skin","city_skin","marching_skin"]) {
+      if (source[key] !== undefined) visible[key] = source[key];
+    }
+  }
 
   const alliance = player.alliance;
   if (alliance && typeof alliance === "object") {
@@ -2323,6 +2333,133 @@ async function handlePlayerWatchlistApi(request, env) {
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
 
+async function handlePlayerCompareApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  const url = new URL(request.url);
+  const ids = normalizeCompareGovernorIds(url.searchParams.getAll("governor_id").concat(url.searchParams.get("ids") || ""));
+  if (ids.length < 2) return json({ ok: false, error: "TWO_PLAYERS_REQUIRED", max: PLAYER_COMPARE_MAX }, 400);
+  if (ids.length > PLAYER_COMPARE_MAX) return json({ ok: false, error: "TOO_MANY_PLAYERS", max: PLAYER_COMPARE_MAX }, 400);
+
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    "SELECT governor_id, nick_name, kid, power, town_center_level, vip, kills, alliance_abbr, alliance_name, avatar_url, observed_at FROM players WHERE governor_id IN (" + placeholders + ")"
+  ).bind(...ids).all();
+  const byId = new Map((rows.results || []).map(row => [String(row.governor_id), row]));
+  const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+  const days = Math.min(Math.max(Number(url.searchParams.get("days") || 30), 7), 90);
+  const fromUnix = Math.floor(Date.now() / 1000) - days * 86400;
+
+  const comparisons = await Promise.all(ids.map(async governorId => {
+    const player = byId.get(governorId) || null;
+    const [playerHistory, rankHistory] = await Promise.all([
+      getPlayerHistory(env.DB, governorId, 100, env.ARCHIVE, env.HISTORY_STORAGE_MODE),
+      getPlayerRankHistory(env.DB, {
+        governorId,
+        limit: 100,
+        archiveBucket: env.ARCHIVE,
+        historyMode: env.HISTORY_STORAGE_MODE
+      })
+    ]);
+    const series = buildPlayerCompareSeries({ playerHistory, rankHistory, fromUnix });
+    const latestRank = [...rankHistory].sort((a,b) => Number(b.observed_at||0) - Number(a.observed_at||0))[0] || null;
+    const visiblePlayer = filterPlayerForRole(player, auth.role, null, visibilitySettings);
+    return {
+      governor_id: governorId,
+      player: visiblePlayer,
+      current: {
+        power: visiblePlayer?.power ?? null,
+        town_center_level: visiblePlayer?.town_center_level ?? null,
+        vip: visiblePlayer?.vip ?? null,
+        kills: visiblePlayer?.kills ?? null,
+        power_rank: latestRank?.power_rank ?? null,
+        kills_rank: latestRank?.kills_rank ?? null
+      },
+      series
+    };
+  }));
+
+  await trackServiceUsage(env, auth, "PLAYER_COMPARE_VIEW", {
+    metadata: { player_count: comparisons.length, days, ids }
+  });
+
+  return json({ ok: true, days, max_players: PLAYER_COMPARE_MAX, players: comparisons });
+}
+
+async function renderPlayerComparePage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return applyEagleEyeTheme('<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body><main class="wrap"><h1>ログインが必要です</h1><a href="/api/auth/discord">Discordでログイン</a></main></body></html>');
+  }
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー比較｜EagleEye</title>
+<style>
+body{max-width:900px;margin:auto;padding:18px 14px 50px}.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.back{color:#94a3b8;text-decoration:none}.title{margin:7px 0 4px;font-size:27px}.sub{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.period{border:1px solid #334155;border-radius:9px;background:#0f172a;color:#cbd5e1;padding:9px 12px;font-weight:800;cursor:pointer}.period.active{background:#0ea5e9;color:#fff;border-color:#22d3ee}.card{margin-top:12px;padding:14px;border:1px solid #334155;border-radius:15px;background:#162238}.player-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.player{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155;min-width:0}.player .name{font-weight:900;overflow-wrap:anywhere}.player .meta{margin-top:3px;color:#94a3b8;font-size:10px}.table{overflow:auto;margin-top:10px}.table table{width:100%;border-collapse:collapse;min-width:520px}.table th,.table td{padding:9px 7px;border-bottom:1px solid #334155;text-align:left;font-size:11px}.table th{color:#94a3b8}.chart-wrap{margin-top:10px;overflow:hidden}.chart{width:100%;height:auto;display:block;background:#0b1220;border-radius:11px}.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.legend span{font-size:10px;color:#cbd5e1}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}.up{color:#86efac}.down{color:#fca5a5}.muted{color:#64748b}.empty{padding:18px;text-align:center;color:#94a3b8;border:1px dashed #475569;border-radius:12px;margin-top:12px}
+@media(max-width:600px){.head{display:block}.player-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.chart{min-height:190px}}
+</style></head><body><main>
+<div class="head"><div><a class="back" href="/player-watchlist">← プレイヤーウォッチリスト</a><h1 class="title">プレイヤー比較</h1><div class="sub">ウォッチリスト登録プレイヤーの実データを比較します（最大4人）</div></div></div>
+<div class="toolbar"><button class="period" data-days="7">7日</button><button class="period active" data-days="30">30日</button><button class="period" data-days="90">90日</button></div>
+<div id="app"><div class="empty">読み込み中…</div></div>
+</main>
+<script>
+(function(){
+  const ids=new URLSearchParams(location.search).get("ids")||"";
+  const root=document.getElementById("app");
+  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const num=v=>{const n=Number(v);return Number.isFinite(n)?n.toLocaleString("ja-JP"):"-";};
+  const compact=v=>{const n=Number(v);if(!Number.isFinite(n))return "-";const a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?0:1)+"B";if(a>=1e6)return (n/1e6).toFixed(a>=1e8?0:1)+"M";if(a>=1e3)return (n/1e3).toFixed(a>=1e5?0:1)+"K";return num(n);};
+  const colors=["#22d3ee","#60a5fa","#a78bfa","#34d399"];
+  function chart(seriesList, field, reverse=false){
+    const valueKey=field==="power"?"power":"power_rank";
+    const points=seriesList.flatMap(s=>(s.series?.[field]||[]).map(p=>Number(p[valueKey]))).filter(Number.isFinite);
+    if(!points.length)return '<div class="empty">この期間の履歴データがありません。</div>';
+    let min=Math.min(...points), max=Math.max(...points); if(min===max){min-=1;max+=1;}
+    const w=720,h=230,pad={l:42,r:12,t:16,b:30};
+    const allTimes=[...new Set(seriesList.flatMap(s=>(s.series?.[field]||[]).map(p=>Number(p.observed_at))))].sort((a,b)=>a-b);
+    const x=t=>pad.l+(allTimes.length<=1?0.5:(allTimes.indexOf(t)/(allTimes.length-1)))*(w-pad.l-pad.r);
+    const y=v=> reverse ? pad.t+((v-min)/(max-min))*(h-pad.t-pad.b) : h-pad.b-((v-min)/(max-min))*(h-pad.t-pad.b);
+    const lines=seriesList.map((s,i)=>{
+      const rows=s.series?.[field]||[]; if(!rows.length)return "";
+      const d=rows.map(p=>x(Number(p.observed_at))+","+y(Number(p[valueKey]))).join(" ");
+      return '<polyline fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" points="'+d+'"/>';
+    }).join("");
+    const labels=[min,(min+max)/2,max].map(v=>num(v));
+    const axis=labels.map((v,i)=>'<text x="4" y="'+(h-pad.b-i*(h-pad.t-pad.b)/2+4)+'" fill="#94a3b8" font-size="11">'+esc(v)+'</text>').join("");
+    return '<svg class="chart" viewBox="0 0 '+w+' '+h+'">'+axis+lines+'</svg>';
+  }
+  function render(d){
+    const ps=d.players||[];
+    if(ps.length<2){root.innerHTML='<div class="empty">比較には2人以上のプレイヤーが必要です。ウォッチリストから選択してください。</div>';return;}
+    const cards=ps.map(p=>'<div class="player"><div class="name">'+esc(p.player?.nick_name||p.governor_id)+'</div><div class="meta">#'+esc(p.player?.kid??"-")+' '+esc(p.player?.alliance_abbr||"")+'</div></div>').join("");
+    const metricRows=[
+      ["総合戦力",p=>compact(p.current.power)],
+      ["戦力順位",p=>p.current.power_rank==null?"-":num(p.current.power_rank)+"位"],
+      ["役場Lv.",p=>p.current.town_center_level==null?"-":String(p.current.town_center_level)],
+      ["VIP",p=>p.current.vip==null?"-":String(p.current.vip)],
+      ["撃破数",p=>compact(p.current.kills)],
+      ["撃破順位",p=>p.current.kills_rank==null?"-":num(p.current.kills_rank)+"位"]
+    ];
+    const table='<div class="table"><table><thead><tr><th>項目</th>'+ps.map(p=>'<th>'+esc(p.player?.nick_name||p.governor_id)+'</th>').join("")+'</tr></thead><tbody>'+metricRows.map(([label,fn])=>'<tr><th>'+esc(label)+'</th>'+ps.map(fn).map(v=>'<td>'+esc(v)+'</td>').join("")+'</tr>').join("")+'</tbody></table></div>';
+    const powerChart=chart(ps,"power",false);
+    const rankChart=chart(ps,"ranking",true);
+    const legend=ps.map((p,i)=>'<span><i class="dot" style="background:'+colors[i%colors.length]+'"></i>'+esc(p.player?.nick_name||p.governor_id)+'</span>').join("");
+    root.innerHTML='<div class="card"><div class="player-strip">'+cards+'</div></div><div class="card"><b>現在値の比較</b>'+table+'</div><div class="card"><b>総合戦力の推移</b><div class="chart-wrap">'+powerChart+'</div><div class="legend">'+legend+'</div></div><div class="card"><b>戦力順位の推移</b><div class="chart-wrap">'+rankChart+'</div><div class="legend">'+legend+'</div></div>';
+  }
+  async function load(days){
+    root.innerHTML='<div class="empty">データ取得中…</div>';
+    try{
+      const r=await fetch("/api/player-compare?ids="+encodeURIComponent(ids)+"&days="+days,{cache:"no-store"});
+      const d=await r.json(); if(!r.ok||!d.ok)throw new Error(d.message||d.error||("HTTP "+r.status));
+      render(d);
+    }catch(e){root.innerHTML='<div class="empty">'+esc(e.message||e)+'</div>';}
+  }
+  document.querySelectorAll(".period").forEach(b=>b.onclick=()=>{document.querySelectorAll(".period").forEach(x=>x.classList.remove("active"));b.classList.add("active");load(b.dataset.days);});
+  load(30);
+})();
+</script></body></html>`);
+}
+
 async function renderPlayerWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
@@ -2336,10 +2473,11 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
 .list{display:grid;gap:12px}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:14px;overflow-wrap:anywhere}
 .change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.ranking-changes{display:grid;gap:6px;margin-top:8px}.ranking-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#0f172a;border:1px solid #273449;font-size:11px}.ranking-row .label{color:#cbd5e1;min-width:0;overflow-wrap:anywhere}.ranking-row .value{font-weight:900;text-align:right;white-space:nowrap}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
-.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
+.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}.compare-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 12px;padding:10px 12px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#94a3b8;font-size:11px}.compare-check{width:20px;height:20px;accent-color:#22d3ee;flex:0 0 auto}
 @media(max-width:520px){.head{display:block}.head .action{margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style></head><body><main>
 <div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
+<div class="compare-toolbar"><span id="compare-count">比較対象 0 / 4</span><button id="compare-button" class="action primary" disabled>選択したプレイヤーを比較</button></div>
 <div id="watchlist" class="list"><div class="loading">読み込み中…</div></div>
 </main>
 <script>
@@ -2404,6 +2542,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           .join("") || '<div class="muted">ランキングデータなし</div>';
         return '<article class="item">'+
           '<div class="top">'+
+            '<input class="compare-check" type="checkbox" value="'+esc(x.governor_id)+'" aria-label="'+esc(x.nick_name||x.governor_id)+'と比較">'+
             (x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+
             '<div class="main"><div class="name">'+esc(x.nick_name||x.label||"Unknown Player")+'</div>'+
             '<div class="id">領主ID '+esc(x.governor_id)+'</div></div>'+
@@ -2427,6 +2566,15 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
         '</article>';
       }).join("");
+      function syncCompareSelection(){
+        const checks=[...root.querySelectorAll(".compare-check")];
+        const selected=checks.filter(x=>x.checked);
+        document.getElementById("compare-count").textContent="比較対象 "+selected.length+" / 4";
+        document.getElementById("compare-button").disabled=selected.length<2;
+        checks.forEach(x=>{if(!x.checked)x.disabled=selected.length>=4;});
+      }
+      root.querySelectorAll(".compare-check").forEach(x=>x.onchange=syncCompareSelection);
+      syncCompareSelection();
       root.querySelectorAll("[data-g]").forEach(b=>b.onclick=async()=>{
         if(!confirm("このプレイヤーをウォッチリストから削除しますか？"))return;
         b.disabled=true;
@@ -2438,6 +2586,11 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
       });
     }catch(e){root.innerHTML='<div class="error">'+esc(e.message)+'</div>';}
   }
+  document.getElementById("compare-button").onclick=()=>{
+    const ids=[...root.querySelectorAll(".compare-check:checked")].map(x=>x.value);
+    if(ids.length<2)return;
+    location.href="/player/compare?ids="+encodeURIComponent(ids.join(","));
+  };
   load();
 })();
 </script></body></html>`);
@@ -3553,7 +3706,9 @@ export default {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
+      if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
+      if (url.pathname === "/player/compare") return eagleEyeHtmlResponse(await renderPlayerComparePage(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
@@ -5818,7 +5973,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     ${noticeHtml}
     ${profile?.name_history?.length ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
-    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
+    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">最新情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a><a class="action" href="/player/compare?ids=${encodeURIComponent(governorId)}">他プレイヤーと比較</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
       <div><b>データ状態</b> ${freshness.fresh === true ? "最新" : "キャッシュ"}</div>
@@ -5998,6 +6153,15 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   const esc = escapeHtml;
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
+  const optionalAssets = extractOptionalPlayerAssets(p);
+  if (optionalAssets.length > 1) {
+    html += '<section class="profile-section"><div class="section-heading"><h2>プロフィール・スキン</h2></div><div class="mini-grid">';
+    for (const asset of optionalAssets.filter(item => item.type !== "avatar")) {
+      const assetUrl = normalizeProfileAssetUrl(asset.url);
+      html += '<div class="mini-card"><span>' + esc(asset.label) + '</span><img src="' + esc(assetUrl) + '" alt="" loading="lazy" style="display:block;width:72px;height:72px;margin-top:7px;object-fit:contain;border-radius:12px;background:#0f172a;border:1px solid #334155"></div>';
+    }
+    html += '</div></section>';
+  }
 
   if (p.alliance && typeof p.alliance === "object") {
     const a = p.alliance;
@@ -6037,7 +6201,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
         (heroIconUrl ? '<img class="hero-icon" src="' + esc(heroIconUrl) + '" alt="" loading="lazy">' : '<span class="hero-icon hero-icon-empty">?</span>') +
         '<div><strong>' + esc(heroName) + '</strong><div class="hero-level">Lv.' + esc(hero.level ?? "-") + '</div></div></div>' +
         '<span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div>' +
-        '<div class="hero-meta">' + esc(hero.star_label || ("星" + (hero.star ?? hero.stars ?? "-"))) + ' / 品質 ' + esc(hero.quality ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
+        '<div class="hero-meta">' + esc("★".repeat(Math.max(0, Math.min(10, Number(hero.star ?? hero.stars ?? 0) || 0))) || "星-") + ' ' + esc(hero.star_label || ("星" + (hero.star ?? hero.stars ?? "-"))) + ' / 品質 ' + esc(hero.quality ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
       if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map((s, i) => "スキル" + (i + 1) + " Lv." + (s.level ?? "-")).join(" / ")) + '</div>';
       if (hero.exclusive_gear || hero.exclusive_gear_level !== undefined) {
         const eg = hero.exclusive_gear || {};
@@ -6797,942 +6961,4 @@ function esc(s){
 }
 function fmt(t){
   return t ? new Date(Number(t)*1000).toLocaleString("ja-JP") : "-";
-}
-function button(label, action, id, extra, disabled, value){
-  var attr=value ? (action==="role" ? ' data-role="'+esc(value)+'"' : ' data-status="'+esc(value)+'"') : "";
-  return '<button type="button" class="'+(extra||"")+'" data-a="'+action+'" data-id="'+esc(id||"")+'"'+attr+(disabled?' disabled':'')+'>'+label+'</button>';
-}
-function draw(){
-  var q=(search.value||"").trim().toLowerCase();
-  var rows=users.filter(function(u){
-    return !q ||
-      String(u.discord_id||"").indexOf(q)>=0 ||
-      String(u.username||"").toLowerCase().indexOf(q)>=0 ||
-      String(u.global_name||"").toLowerCase().indexOf(q)>=0;
-  });
-  ue.innerHTML=rows.map(function(u){
-    var self=u.user_id===ownerId;
-    var actions=button("履歴","history",u.user_id,"secondary",false);
-    ["BASIC","ADVANCED","ADMIN","OWNER"].forEach(function(role){
-      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
-    });
-    if(u.status==="ACTIVE"){
-      actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER","DISABLED");
-    }else{
-      actions+=button("有効化","status",u.user_id,"secondary",false,"ACTIVE");
-    }
-    if(self){
-      actions+='<span class="muted">自分は対象外</span>';
-    }else{
-      actions+=button("監視管理","watchlists",u.user_id,"secondary",false);
-    }
-    var panel=activeWatchUserId===u.user_id
-      ? '<div class="watchlist-panel" data-watch-panel="'+esc(u.user_id)+'"><div class="muted">監視データを読み込み中…</div></div>'
-      : "";
-    return '<article class="user-card"><div class="user-head"><div class="user-name"><b>'+
-      esc(u.global_name||u.username||"Discord User")+
-      '</b><span class="muted">@'+esc(u.username||"")+
-      '</span><div class="user-id">'+esc(u.discord_id)+
-      '</div></div><div class="badges"><span class="role">'+esc(u.role)+
-      '</span><span class="status">'+esc(u.status)+
-      '</span></div></div><div class="user-stats">'+
-      '<div class="stat"><span>登録</span><b>'+fmt(u.created_at)+'</b></div>'+
-      '<div class="stat"><span>最終ログイン</span><b>'+fmt(u.last_login_at)+'</b></div>'+
-      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'</b></div>'+
-      '<div class="stat"><span>王国ウォッチ</span><b>'+esc(u.kingdom_watchlist_count||0)+'件</b></div>'+
-      '<div class="stat"><span>プレイヤーウォッチ</span><b>'+esc(u.player_watchlist_count||0)+'件</b></div>'+
-      '</div><div class="actions">'+actions+'</div>'+panel+'</article>';
-  }).join("") || '<div class="muted">該当ユーザーなし</div>';
-}
-function drawAudit(ls){
-  ae.innerHTML=(ls||[]).map(function(x){
-    return '<div class="audit-item"><b>'+esc(x.action)+
-      '</b> · target '+esc(x.target_discord_id||"-")+
-      '<br><small>'+fmt(x.created_at)+' · actor '+esc(x.actor_discord_id||"-")+
-      '<br>'+esc(x.details_json||"")+'</small></div>';
-  }).join("") || '<div class="muted">監査ログなし</div>';
-}
-function jsonFetch(url, options){
-  return fetch(url, options).then(function(r){
-    return r.json().catch(function(){return {ok:false,error:"INVALID_RESPONSE"};}).then(function(d){
-      if(!r.ok || d.ok===false) throw new Error(d.error||"リクエスト失敗");
-      return d;
-    });
-  });
-}
-function showHistory(id){
-  return jsonFetch("/api/owner/users/login-history?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"})
-    .then(function(d){
-      var text=(d.history||[]).map(function(x){
-        return fmt(x.logged_in_at)+" · "+esc(x.global_name||x.username||x.discord_id);
-      }).join("\\n") || "ログイン履歴なし";
-      alert("ログイン履歴\\n\\n"+text);
-    });
-}
-function findWatchPanel(id){
-  var panels=ue.querySelectorAll("[data-watch-panel]");
-  for(var i=0;i<panels.length;i++){
-    if(panels[i].getAttribute("data-watch-panel")===String(id)) return panels[i];
-  }
-  return null;
-}
-function loadWatchlists(id){
-  activeWatchUserId=id;
-  draw();
-  var panel=findWatchPanel(id);
-  if(!panel) return Promise.reject(new Error("監視パネルを表示できませんでした"));
-  return jsonFetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(id),{cache:"no-store",credentials:"same-origin"})
-    .then(function(d){
-      var items=[];
-      (d.kingdom_watchlists||[]).forEach(function(w){
-        items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>王国 '+esc(w.kid)+'</b><small>TOP '+esc(w.top_n)+' / '+esc(w.interval_hours)+'時間 / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="KINGDOM" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>');
-      });
-      (d.player_watchlists||[]).forEach(function(w){
-        items.push('<div class="watchlist-item"><div class="watchlist-meta"><b>プレイヤー '+esc(w.governor_id)+'</b><small>'+esc(w.label||"")+' / '+(w.enabled?"有効":"停止")+' / ID '+esc(w.watchlist_id)+'</small></div><button type="button" class="danger" data-wtype="PLAYER" data-wid="'+esc(w.watchlist_id)+'" data-uid="'+esc(id)+'">削除</button></div>');
-      });
-      panel.innerHTML='<div class="watchlist-head"><b>'+esc(d.user&& (d.user.global_name||d.user.username) || "ユーザー")+' の監視管理</b><button type="button" class="secondary" data-a="close-watch">閉じる</button></div><div class="muted" style="margin-top:6px">王国 '+(d.kingdom_watchlists||[]).length+'件 / プレイヤー '+(d.player_watchlists||[]).length+'件</div><div class="watchlist-list">'+(items.length?items.join(""):'<div class="muted">ウォッチリストはありません。</div>')+'</div>';
-    })
-    .catch(function(e){
-      panel.innerHTML='<div style="color:#fca5a5">読み込み失敗: '+esc(e.message||e)+'</div>';
-      throw e;
-    });
-}
-function deleteWatchlist(type,id,userId,buttonEl){
-  if(!confirm((type==="KINGDOM"?"王国":"プレイヤー")+"ウォッチリストを削除しますか？\\nこの操作はOWNERによる復旧操作です。")) return Promise.resolve();
-  buttonEl.disabled=true;
-  return jsonFetch("/api/owner/users/watchlists?user_id="+encodeURIComponent(userId)+"&type="+encodeURIComponent(type)+"&watchlist_id="+encodeURIComponent(id),{
-    method:"DELETE",credentials:"same-origin"
-  }).then(function(){
-    msg.textContent="ウォッチリストを削除しました。";
-    return refresh();
-  }).then(function(){
-    return loadWatchlists(userId);
-  }).catch(function(e){
-    msg.textContent="削除失敗: "+(e.message||e);
-    buttonEl.disabled=false;
-  });
-}
-function post(url,body){
-  return jsonFetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),credentials:"same-origin"});
-}
-function refresh(){
-  msg.textContent="更新中…";
-  var btn=document.getElementById("reload");
-  if(btn) btn.disabled=true;
-  return jsonFetch("/api/owner/users?limit=250",{cache:"no-store",credentials:"same-origin"})
-    .then(function(d){
-      users=d.users||[];
-      activeWatchUserId=null;
-      draw();
-      return jsonFetch("/api/owner/audit-log?limit=250",{cache:"no-store",credentials:"same-origin"}).then(function(a){
-        drawAudit(a.logs||[]);
-        msg.textContent="更新しました。 "+users.length+"ユーザー";
-      });
-    })
-    .catch(function(e){
-      msg.textContent="読み込み失敗: "+(e.message||e);
-    })
-    .then(function(){
-      if(btn) btn.disabled=false;
-    });
-}
-search.addEventListener("input",draw);
-ue.addEventListener("click",function(e){
-  var node=e.target;
-  while(node && node!==ue && node.tagName!=="BUTTON") node=node.parentNode;
-  if(!node || node===ue) return;
-  var action=node.getAttribute("data-a");
-  if(node.getAttribute("data-wtype")){
-    deleteWatchlist(node.getAttribute("data-wtype"),node.getAttribute("data-wid"),node.getAttribute("data-uid"),node);
-    return;
-  }
-  if(action==="watchlists"){
-    node.disabled=true;
-    node.textContent="読み込み中…";
-    loadWatchlists(node.getAttribute("data-id")).then(function(){
-      node.disabled=false;
-      node.textContent="監視管理";
-    }).catch(function(e){
-      msg.textContent="監視管理エラー: "+(e.message||e);
-      node.disabled=false;
-      node.textContent="監視管理";
-    });
-    return;
-  }
-  if(action==="close-watch"){
-    activeWatchUserId=null;
-    draw();
-    return;
-  }
-  if(action==="history"){
-    showHistory(node.getAttribute("data-id")).catch(function(e){msg.textContent=e.message||String(e);});
-    return;
-  }
-  if(action!=="role" && action!=="status") return;
-  var question=action==="role" ? "権限を "+node.getAttribute("data-role")+" に変更しますか？" : "状態を "+node.getAttribute("data-status")+" に変更しますか？";
-  if(!confirm(question)) return;
-  node.disabled=true;
-  var body=action==="role"
-    ? {user_id:node.getAttribute("data-id"),role:node.getAttribute("data-role")}
-    : {user_id:node.getAttribute("data-id"),status:node.getAttribute("data-status")};
-  post(action==="role"?"/api/owner/users/role":"/api/owner/users/status",body)
-    .then(function(){msg.textContent="保存しました。";return refresh();})
-    .catch(function(e){msg.textContent=e.message||String(e);node.disabled=false;});
-});
-document.getElementById("reload").addEventListener("click",refresh);
-draw();
-drawAudit(initialLogs);
-})();
-</script></body></html>`;
-}
-
-
-async function handleDiscordSupportCommandRegistrationApi(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
-    return json({ ok: false, error: "FORBIDDEN" }, 403);
-  }
-  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  try {
-    const commands = await registerSupportCommands(env);
-    return json({ ok: true, commands: commands.map(command => ({ id: command?.id || null, name: command?.name || null, type: command?.type || null })) });
-  } catch (error) {
-    console.error("discord_support_command_registration_failed", error?.message || error);
-    return json({ ok: false, error: String(error?.message || "DISCORD_SUPPORT_COMMAND_REGISTRATION_FAILED") }, Number(error?.status) || 503);
-  }
-}
-
-async function handleMe(request, env) {
-  const secret = env.EAGLEEYE_SESSION_SECRET;
-  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
-  if (!token || !secret) return json({ ok: true, authenticated: false });
-
-  const session = await verifyPayload(token, secret);
-  if (!session) return json({ ok: true, authenticated: false });
-
-  const dbUser = env.DB
-    ? await env.DB.prepare(
-        "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
-      ).bind(session.sub).first()
-    : null;
-
-  return json({
-    ok: true,
-    authenticated: true,
-    user: {
-      discord_id: session.sub,
-      username: session.username,
-      global_name: session.global_name,
-      avatar: session.avatar,
-      role: dbUser?.role || "BASIC",
-      status: dbUser?.status || "ACTIVE"
-    }
-  });
-}
-
-const RUNTIME_MONITORING_PROFILE_COOKIE = "EAGLEEYE_MONITORING_PROFILE";
-let runtimeMonitoringProfileCache = { profile: null, source: null, updatedAt: null, updatedBy: null, expiresAt: 0 };
-
-function normalizeMonitoringProfile(value, fallback = "FREE") {
-  const profile = String(value || "").trim().toUpperCase();
-  return profile === "PAID_5USD" || profile === "FREE" ? profile : fallback;
-}
-
-function getRuntimeMonitoringProfile(request, env) {
-  const cookies = parseCookie(request.headers.get("Cookie") || "");
-  const cookieProfile = normalizeMonitoringProfile(cookies[RUNTIME_MONITORING_PROFILE_COOKIE], "");
-  if (cookieProfile) return { profile: cookieProfile, source: "COOKIE", updatedAt: null, updatedBy: null };
-  return { profile: normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE"), source: "ENV", updatedAt: null, updatedBy: null };
-}
-
-async function handleMonitoringProfileApi(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
-    return json({ ok: false, error: "FORBIDDEN" }, 403);
-  }
-  if (request.method === "GET") {
-    const setting = getRuntimeMonitoringProfile(request, env);
-    return json({ ok: true, profile: setting.profile, source: setting.source });
-  }
-  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  let body;
-  try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
-  const profile = normalizeMonitoringProfile(body?.profile, "");
-  if (!profile) return json({ ok: false, error: "INVALID_PROFILE" }, 400);
-
-  const response = json({ ok: true, profile, source: "COOKIE" });
-  response.headers.set("Set-Cookie", serializeCookie(RUNTIME_MONITORING_PROFILE_COOKIE, profile, {
-    maxAge: 60 * 60 * 24 * 365, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
-  }));
-  return response;
-}
-async function handleR2ArchiveObjectsApi(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE" || !["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) {
-    return json({ ok: false, error: "FORBIDDEN" }, 403);
-  }
-  if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  if (!env.ARCHIVE) return json({ ok: false, error: "R2_ARCHIVE_NOT_CONFIGURED" }, 503);
-
-  const url = new URL(request.url);
-  const requestedLimit = Number(url.searchParams.get("limit") || 50);
-  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50, 1), 100);
-  const requestedPrefix = String(url.searchParams.get("prefix") || "").trim();
-  const prefixes = requestedPrefix ? [requestedPrefix.slice(0, 120)] : ["history/v1/", "archive/v1/"];
-  const checkedAt = Date.now();
-  const results = [];
-  const prefixStatus = [];
-
-  for (const prefix of prefixes) {
-    try {
-      const listed = await env.ARCHIVE.list({ prefix, limit });
-      const objects = (listed.objects || []).slice(0, limit).map(object => ({
-        key: object.key,
-        size: Number(object.size || 0),
-        uploaded: object.uploaded || null,
-        etag: object.etag || null,
-        httpEtag: object.httpEtag || null
-      }));
-      results.push(...objects);
-      prefixStatus.push({ prefix, listedCount: objects.length, truncated: Boolean(listed.truncated), cursorAvailable: Boolean(listed.cursor) });
-    } catch (error) {
-      prefixStatus.push({ prefix, listedCount: 0, truncated: false, cursorAvailable: false, error: String(error?.message || error).slice(0, 500) });
-    }
-  }
-
-  results.sort((a, b) => String(b.uploaded || "").localeCompare(String(a.uploaded || "")) || String(a.key).localeCompare(String(b.key)));
-  return json({ ok: true, bucket: "eagleeye-archive", checkedAt, limit, objectCountListed: results.length, prefixes: prefixStatus, objects: results.slice(0, limit) });
-}
-
-async function renderPublicStatusPage(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  const canViewDetailedUsage = Boolean(
-    auth &&
-    auth.status === "ACTIVE" &&
-    ["ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())
-  );
-
-  const monitoringProfileSetting = canViewDetailedUsage
-    ? await getRuntimeMonitoringProfile(request, env)
-    : { profile: normalizeMonitoringProfile(env.CLOUDFLARE_MONITORING_PROFILE, "FREE"), source: "ENV", updatedAt: null, updatedBy: null };
-
-  // Cloudflare Analytics is intentionally queried outside D1. If D1 has hit
-  // its free-tier row limit, this monitor must still be able to report usage.
-  const [usageResult, diagnosticsResult, operationalResult, historyStorageResult] = await Promise.allSettled([
-    canViewDetailedUsage
-      ? getCloudflareD1Usage(env, { includeQueryInsights: true, monitoringProfile: monitoringProfileSetting.profile })
-      : Promise.resolve({
-          configured: false,
-          status: "HIDDEN",
-          message: "Cloudflareの詳細使用量はADMIN / OWNERのみ確認できます。"
-        }),
-    getSystemDiagnostics(env.DB, { recentLimit: 100 }),
-    getOperationalStatus(env.DB),
-    canViewDetailedUsage
-      ? (async () => {
-          const mode = String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase();
-          if (!env.ARCHIVE) return { mode, archiveBindingConfigured: false, archiveReadProbe: "NOT_CONFIGURED", archiveReadOnly: true };
-          try {
-            await env.ARCHIVE.head("__eagleeye_runtime_probe__");
-            return { mode, archiveBindingConfigured: true, archiveReadProbe: "OK", archiveReadOnly: true };
-          } catch (error) {
-            return { mode, archiveBindingConfigured: true, archiveReadProbe: "FAILED", archiveReadOnly: true, archiveReadError: String(error?.message || error).slice(0, 500) };
-          }
-        })()
-      : Promise.resolve({ mode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(), archiveBindingConfigured: Boolean(env.ARCHIVE), archiveReadProbe: "HIDDEN", archiveReadOnly: true })
-  ]);
-
-  const usage = usageResult.status === "fulfilled" ? usageResult.value : {
-    configured: Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN),
-    status: "UNKNOWN",
-    message: usageResult.reason?.message || "Cloudflare Analytics APIの取得に失敗しました。"
-  };
-
-  const historyStorage = historyStorageResult.status === "fulfilled" ? historyStorageResult.value : {
-    mode: String(env.HISTORY_STORAGE_MODE || "UNSET").trim().toUpperCase(),
-    archiveBindingConfigured: Boolean(env.ARCHIVE),
-    archiveReadProbe: "UNKNOWN",
-    archiveReadOnly: true,
-    archiveReadError: historyStorageResult.reason?.message || "HISTORY_STORAGE_STATUS_UNAVAILABLE"
-  };
-
-  const operational = operationalResult.status === "fulfilled" ? operationalResult.value : {
-    apiPool: {
-      pools: {},
-      totals: { AVAILABLE: 0, COOLDOWN: 0, ERROR: 0, DISABLED: 0, REVOKED: 0 },
-      totalKeys: 0,
-      availableKeys: 0,
-      activeLeases: 0,
-      expiredActiveLeases: 0,
-      latestKey: null
-    },
-    watchlist: {
-      total: 0,
-      enabled: 0,
-      enabledErrors: 0,
-      latestSuccessAt: null,
-      latestUpdatedAt: null,
-      latestJob: null
-    }
-  };
-  if (operationalResult.status !== "fulfilled") {
-    console.error("public_status_operational_unavailable", operationalResult.reason?.message || operationalResult.reason);
-  }
-
-  let data;
-  if (diagnosticsResult.status === "fulfilled") {
-    data = diagnosticsResult.value;
-  } else {
-    const services = DIAGNOSTIC_SERVICES.map(([key, label, severity]) => ({
-      key,
-      label,
-      severity,
-      status: key === "d1" ? "FAILED" : "UNKNOWN",
-      last_event_at: null,
-      last_error_code: diagnosticsResult.reason?.code || "D1_DIAGNOSTICS_UNAVAILABLE",
-      last_message: key === "d1" ? "D1診断データを取得できません。" : null,
-      last_trace_id: null,
-      last_target_id: null
-    }));
-    data = {
-      overall: "CRITICAL",
-      counts: {
-        failed: 1,
-        criticalFailed: 1,
-        warning: 0,
-        unknown: services.filter(item => item.status === "UNKNOWN").length,
-        criticalUnknown: 0,
-        healthy: 0
-      },
-      services,
-      events: []
-    };
-    console.error("public_status_diagnostics_unavailable", diagnosticsResult.reason?.message || diagnosticsResult.reason);
-  }
-
-  const apiPoolCritical = operational.apiPool.totalKeys > 0 && operational.apiPool.availableKeys === 0;
-  const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
-  const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
-  const usageWarning = usage.status === "WARNING";
-  const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
-    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
-    : usageWarning || data.overall === "DEGRADED" || watchlistWarning
-      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
-      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
-
-  const rows = data.services.map(s => {
-    const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
-    return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
-  }).join("");
-
-  const usageLabel = cloudflareUsageLabel(usage.status);
-  const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
-  const formatBytes = value => {
-    const bytes = Number(value || 0);
-    if (!Number.isFinite(bytes) || bytes < 1024) return Math.round(bytes).toLocaleString("ja-JP") + " B";
-    const units = ["KB", "MB", "GB", "TB"];
-    let size = bytes;
-    let unit = -1;
-    while (size >= 1024 && unit < units.length - 1) {
-      size /= 1024;
-      unit += 1;
-    }
-    return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[unit];
-  };
-  const formatPercent = value => value == null ? "—" : Number(value).toFixed(1) + "%";
-  const formatYen = value => value == null ? "—" : "¥" + Math.round(Number(value)).toLocaleString("ja-JP");
-  const workerVersion = env.CF_VERSION_METADATA ? { id: env.CF_VERSION_METADATA.id || null, tag: env.CF_VERSION_METADATA.tag || null, timestamp: env.CF_VERSION_METADATA.timestamp || null } : null;
-  const monitoringProfile = usage.monitoring?.profile || monitoringProfileSetting.profile || "FREE";
-  const monitoringLabel = usage.monitoring?.label || "Workers Free";
-  const monitoringBudgetPercent = usage.monitoring?.budgetUtilizationPercent ?? null;
-  const monitoringBudgetState = usage.monitoring?.budgetState || "UNKNOWN";
-  const monitoringEstimatedCostUsd = usage.monitoring?.estimatedMonthlyCostUsd ?? null;
-  const monitoringEstimatedOverageUsd = usage.monitoring?.estimatedOverageUsd ?? null;
-  const monitoringEstimatedCostJpy = usage.monitoring?.estimatedMonthlyCostJpy ?? null;
-  const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
-  const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
-  const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
-    ? "最大使用率（CPU推定を含む）"
-    : "Freeプラン現行監視の最大使用率";
-  const resourceRow = (label, used, limit, percentValue, stateValue) => {
-    const item = cloudflareUsageLabel(stateValue);
-    return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
-  };
-
-  const formatUnixStatus = value => value ? new Date(Number(value) * 1000).toLocaleString("ja-JP") : "—";
-  const poolTypeLabel = type => ({
-    SYSTEM_GENERAL: "SYSTEM_GENERAL",
-    SYSTEM_WATCHLIST: "SYSTEM_WATCHLIST",
-    USER_CONTRIBUTED: "USER_CONTRIBUTED"
-  })[type] || type;
-  const poolRows = Object.entries(operational.apiPool.pools).map(([type, statuses]) => `
-    <div class="resource-row">
-      <div><b>${escapeHtml(poolTypeLabel(type))}</b><small>登録 ${formatInt(Object.values(statuses).reduce((a,b)=>a+Number(b||0),0))} · AVAILABLE / ERROR / COOLDOWN / DISABLED</small></div>
-      <strong>${formatInt(statuses.AVAILABLE)} / ${formatInt(statuses.ERROR + statuses.COOLDOWN + statuses.DISABLED + statuses.REVOKED)}</strong>
-    </div>`).join("") || '<div class="resource-note">APIキーが登録されていません。</div>';
-  const latestKey = operational.apiPool.latestKey;
-  const apiPoolSection = `
-    <section class="section">
-      <h2>API Pool Health</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>現在のPool状態</b><small>${formatInt(operational.apiPool.availableKeys)} / ${formatInt(operational.apiPool.totalKeys)} keys がAVAILABLE</small></div><span class="state ${apiPoolCritical ? "bad" : operational.apiPool.availableKeys > 0 ? "good" : "neutral"}">${apiPoolCritical ? "利用可能キーなし" : operational.apiPool.availableKeys > 0 ? "利用可能" : "未登録"}</span></div>
-        ${poolRows}
-        <div class="resource-row"><div><b>ACTIVE Lease</b><small>現在有効なAPIキー貸出</small></div><strong>${formatInt(operational.apiPool.activeLeases)}</strong></div>
-        <div class="resource-row"><div><b>Pool合計</b><small>AVAILABLE / COOLDOWN / ERROR / DISABLED / REVOKED</small></div><strong>${formatInt(operational.apiPool.totals.AVAILABLE)} / ${formatInt(operational.apiPool.totals.COOLDOWN)} / ${formatInt(operational.apiPool.totals.ERROR)} / ${formatInt(operational.apiPool.totals.DISABLED)} / ${formatInt(operational.apiPool.totals.REVOKED)}</strong></div>
-        ${latestKey ? `<div class="resource-row"><div><b>直近キー状態</b><small>${escapeHtml(latestKey.poolType || "—")} · ${escapeHtml(latestKey.label || "ラベルなし")}</small></div><strong>${escapeHtml(latestKey.status || "—")}</strong></div>` : ""}
-        ${latestKey?.lastErrorAt ? `<div class="resource-row"><div><b>直近エラー履歴</b><small>${formatUnixStatus(latestKey.lastErrorAt)} · ${escapeHtml(latestKey.lastErrorCode || "ERROR")}</small></div><strong>${escapeHtml(latestKey.lastErrorMessage || "メッセージなし")}</strong></div>` : ""}
-      </div>
-    </section>`;
-
-  const mightPulseService = data.services.find(item => item.key === "mightpulse");
-  const mightPulseSection = `
-    <section class="section">
-      <h2>MightPulse</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>MightPulse API</b><small>直近の診断イベントに基づく状態</small></div><span class="state ${mightPulseService?.status === "FAILED" ? "bad" : mightPulseService?.status === "SUCCESS" ? "good" : "warn"}">${mightPulseService?.status === "FAILED" ? "障害" : mightPulseService?.status === "SUCCESS" ? "正常" : mightPulseService?.status === "WARNING" ? "注意" : "未確認"}</span></div>
-        <div class="resource-row"><div><b>直近イベント</b><small>${formatUnixStatus(mightPulseService?.last_event_at)}</small></div><strong>${escapeHtml(mightPulseService?.last_error_code || mightPulseService?.last_message || "—")}</strong></div>
-      </div>
-    </section>`;
-
-  const watch = operational.watchlist;
-  const latestJob = watch.latestJob;
-  const watchlistSection = `
-    <section class="section">
-      <h2>ウォッチリスト</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>王国ウォッチリスト</b><small>有効 ${formatInt(watch.enabled)} / 登録 ${formatInt(watch.total)}</small></div><span class="state ${watch.enabled === 0 ? "neutral" : watch.enabledErrors > 0 ? "warn" : "good"}">${watch.enabled === 0 ? "監視なし" : watch.enabledErrors > 0 ? "注意" : "正常"}</span></div>
-        <div class="resource-row"><div><b>有効監視エラー</b><small>last_error が残っている有効監視</small></div><strong>${formatInt(watch.enabledErrors)}</strong></div>
-        ${latestJob ? `<div class="resource-row"><div><b>最新ジョブ</b><small>${formatUnixStatus(latestJob.updatedAt)} · ranking ${formatInt(latestJob.rankingRows)} / player ${formatInt(latestJob.playerRows)}</small></div><strong>${escapeHtml(latestJob.status || "—")}</strong></div>` : '<div class="resource-note">まだウォッチリストジョブはありません。</div>'}
-        ${latestJob?.lastError ? `<div class="resource-row"><div><b>最新ジョブエラー</b><small>${formatUnixStatus(latestJob.updatedAt)}</small></div><strong>${escapeHtml(latestJob.lastError)}</strong></div>` : ""}
-      </div>
-    </section>`;
-
-  const databaseSection = `
-    <section class="section">
-      <h2>Database</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : "good"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
-        <div class="resource-row"><div><b>D1 Storage</b><small>Cloudflare Analytics ${usage.database?.databaseSizeBytes != null ? "取得済み" : "未確認"}</small></div><strong>${usage.database?.databaseSizeBytes != null ? formatBytes(usage.database.databaseSizeBytes) : "—"}</strong></div>
-        <div class="resource-note">D1のRows Read / Rows Written / Storageの使用量はCloudflareリソース監視に表示しています。</div>
-      </div>
-    </section>`;
-
-  const r2Section = `
-    <section class="section">
-      <h2>R2 Archive</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>eagleeye-archive</b><small>D1履歴のアーカイブ先</small></div><span class="state ${env.ARCHIVE ? "good" : "bad"}">${env.ARCHIVE ? "接続済み" : "未設定"}</span></div>
-        <div class="resource-row"><div><b>アーカイブ対象</b><small>operational archive tables</small></div><strong>5 tables</strong></div>
-        <div class="resource-row"><div><b>対象</b><small>api_observations / player_snapshots / ranking_snapshots</small></div><strong>R2</strong></div>
-        <div class="resource-note">R2の月次使用量・オブジェクト数・OperationsはCloudflareリソース監視に表示しています。</div>
-      </div>
-    </section>`;
-
-  const r2ObjectInventorySection = canViewDetailedUsage ? `
-    <section class="section">
-      <h2>R2 実オブジェクト確認</h2>
-      <div class="card resource-card">
-        <div class="resource-head">
-          <div><b>eagleeye-archive</b><small>R2に実際に保存されているアーカイブオブジェクトを手動確認</small></div>
-          <button type="button" id="r2-object-check" class="monitoring-switch-btn" style="border:1px solid #d2d2d7;background:#f2f2f7">実オブジェクトを確認</button>
-        </div>
-        <div id="r2-object-check-result" class="resource-note">未確認。ボタンを押した時だけR2 LISTを実行します（D1は使用しません）。</div>
-      </div>
-    </section>` : "";
-  const googleModes = [
-    env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
-    env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account" : null
-  ].filter(Boolean);
-  const googleSection = `
-    <section class="section">
-      <h2>Google連携</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>Google Sheets</b><small>管理者向けエクスポート連携</small></div><span class="state ${googleModes.length ? "good" : "neutral"}">${googleModes.length ? "設定済み" : "未設定"}</span></div>
-        <div class="resource-row"><div><b>接続方式</b><small>利用可能な設定</small></div><strong>${escapeHtml(googleModes.join(" / ") || "未設定")}</strong></div>
-      </div>
-    </section>`;
-
-  const runtimeSection = `
-    <section class="section">
-      <h2>Runtime / Cron</h2>
-      <div class="card resource-card">
-        <div class="resource-row"><div><b>Worker</b><small>kingshot-data-platform</small></div><strong>稼働</strong></div>
-        <div class="resource-row"><div><b>Cron</b><small>Worker scheduled trigger</small></div><strong>5分ごと</strong></div>
-        <div class="resource-row"><div><b>Retention</b><small>毎時00分に実行</small></div><strong>設定済み</strong></div>
-      </div>
-    </section>`;
-
-  const runtimeConfigRows = [
-    ["Worker", "kingshot-data-platform", true],
-    ["Worker Version ID", workerVersion?.id || "未取得", Boolean(workerVersion?.id)],
-    ["Worker Version Tag", workerVersion?.tag || "未取得", Boolean(workerVersion?.tag)],
-    ["Worker Version Created", workerVersion?.timestamp ? new Date(workerVersion.timestamp).toLocaleString("ja-JP") : "未取得", Boolean(workerVersion?.timestamp)],
-    ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
-    ["DB Binding", "D1", Boolean(env.DB)],
-    ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
-    ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
-    ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
-    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_BASE_URL)],
-    ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
-    ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
-    ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
-    ["Google Drive OAuth", "OAuth Client / Refresh Token / Folder", Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID)],
-    ["Gateway", "Read-only Status API", Boolean(env.EAGLEEYE_GATEWAY_TOKEN)]
-  ];
-  const runtimeConfigSection = canViewDetailedUsage ? `
-    <section class="section">
-      <h2>Runtime / Configuration</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>実行時構成</b><small>秘密値そのものは表示しません</small></div><span class="state good">取得済み</span></div>
-        ${runtimeConfigRows.map(([label, detail, configured]) => `
-          <div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${escapeHtml(detail)}</small></div><strong class="${configured ? "good" : "neutral"}">${configured ? "設定済み" : "未設定"}</strong></div>
-        `).join("")}
-        <div class="resource-row"><div><b>Worker Version</b><small>Cloudflare Version Metadata · 本番で実行されたWorkerの版を識別</small></div><strong>${workerVersion?.id ? escapeHtml(workerVersion.id) : "未取得"}</strong></div>
-        <div class="resource-row"><div><b>R2 Runtime Probe</b><small>read-only HeadObject</small></div><strong class="${historyStorage.archiveReadProbe === "OK" ? "good" : historyStorage.archiveReadProbe === "FAILED" ? "bad" : "neutral"}">${escapeHtml(historyStorage.archiveReadProbe)}</strong></div>
-        ${historyStorage.archiveReadError ? `<div class="resource-note">${escapeHtml(historyStorage.archiveReadError)}</div>` : ""}
-      </div>
-    </section>` : "";
-
-  const workerDetailSection = canViewDetailedUsage && usage.workers?.available ? `
-    <section class="section">
-      <h2>Workers 詳細</h2>
-      <div class="card resource-card">
-        <div class="resource-row"><div><b>Requests</b><small>${monitoringProfile === "PAID_5USD" ? "請求サイクル内 / Paid込み枠安全上限" : "当日UTC / Free Tier 100,000"}</small></div><strong>${formatInt(usage.workers.requests)} · ${formatPercent(usage.workers.requestsPercent)}</strong></div>
-        <div class="resource-row"><div><b>Errors</b><small>当日UTC</small></div><strong>${formatInt(usage.workers.errors)}</strong></div>
-        <div class="resource-row"><div><b>Subrequests</b><small>平均 / invocation</small></div><strong>${formatInt(usage.workers.subrequests)} · avg ${Number(usage.workers.averageSubrequests || 0).toFixed(2)}</strong></div>
-        <div class="resource-row"><div><b>CPU P50 / P90 / P99</b><small>ms / invocation</small></div><strong>${Number(usage.workers.cpuTimeP50 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP90 || 0).toFixed(2)} / ${Number(usage.workers.cpuTimeP99 || 0).toFixed(2)} ms</strong></div>
-        <div class="resource-note">WorkersのFree Tier上限だけでなく、Errors・Subrequests・CPU分位点も同時表示しています。</div>
-      </div>
-    </section>` : "";
-
-  const r2DetailSection = canViewDetailedUsage && usage.r2?.available ? `
-    <section class="section">
-      <h2>R2 詳細</h2>
-      <div class="card resource-card">
-        <div class="resource-row"><div><b>Operations</b><small>Total / Success / Failed</small></div><strong>${formatInt(usage.r2.totalOperations)} / ${formatInt(usage.r2.successfulOperations)} / ${formatInt(usage.r2.failedOperations)}</strong></div>
-        <div class="resource-row"><div><b>Failed Rate</b><small>R2 operations</small></div><strong>${formatPercent(usage.r2.failedPercent)}</strong></div>
-        <div class="resource-row"><div><b>Upload / Download</b><small>Bandwidth</small></div><strong>${formatBytes(usage.r2.bytesUpload)} / ${formatBytes(usage.r2.bytesDownload)}</strong></div>
-        <div class="resource-row"><div><b>Payload / Metadata</b><small>latest aggregated storage</small></div><strong>${formatBytes(usage.r2.payloadBytes)} / ${formatBytes(usage.r2.metadataBytes)}</strong></div>
-        <div class="resource-row"><div><b>Objects / Upload Count</b><small>latest storage snapshot</small></div><strong>${formatInt(usage.r2.objectCount)} / ${formatInt(usage.r2.uploadCount)}</strong></div>
-        <div class="resource-row"><div><b>Storage Delta</b><small>first → latest Analytics sample</small></div><strong>${usage.r2.storageDeltaBytes == null ? "—" : formatBytes(usage.r2.storageDeltaBytes)} ${usage.r2.storageDeltaPercent == null ? "" : "(" + Number(usage.r2.storageDeltaPercent).toFixed(2) + "%)"}</strong></div>
-        <div class="resource-row"><div><b>Object Delta</b><small>first → latest Analytics sample</small></div><strong>${usage.r2.objectDelta == null ? "—" : formatInt(usage.r2.objectDelta)}</strong></div>
-        ${(usage.r2.buckets || []).map(b => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(b.bucketName || "(default)")}</span><span>${formatInt(b.operations)} ops</span></div><small>A ${formatInt(b.classAOperations)} · B ${formatInt(b.classBOperations)} · Free ${formatInt(b.freeOperations)} · Success ${formatInt(b.successfulOperations)} · Failed ${formatInt(b.failedOperations)}</small><small>Storage ${formatBytes(b.storageBytes)} · Objects ${formatInt(b.objectCount)} · Upload ${formatBytes(b.bytesUpload)} / Download ${formatBytes(b.bytesDownload)}</small></div>`).join("")}
-        <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全R2 Operation Group</summary>
-          <div class="insight-list">${(usage.r2.operations || []).map(op => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(op.actionType)} · ${escapeHtml(op.actionStatus)}</span><span>${formatInt(op.requests)}</span></div><small>${escapeHtml(op.bucketName || "(default)")}</small></div>`).join("") || '<div class="resource-note">Operation dataなし</div>'}</div>
-        </details>
-      </div>
-    </section>` : "";
-
-  const d1QueryDetailSection = canViewDetailedUsage && usage.queryInsights?.available ? `
-    <section class="section">
-      <h2>D1 Query Insights 詳細</h2>
-      <div class="card resource-card">
-        <div class="resource-row"><div><b>Unique Query Groups</b><small>全取得件数</small></div><strong>${formatInt(usage.queryInsights.queryCount)}</strong></div>
-        <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全Query Groupを見る</summary>
-          <div class="insight-list">${(usage.queryInsights.queries || []).map(q => `<div class="insight-query"><div class="insight-query-head"><span>${escapeHtml(q.category)}</span><span>${formatInt(q.count)} 回</span></div><small>Read ${formatInt(q.rowsRead)} · Written ${formatInt(q.rowsWritten)} · Returned ${formatInt(q.rowsReturned)} · Duration ${formatInt(q.durationMs)} ms</small><code>${escapeHtml(q.query)}</code></div>`).join("") || '<div class="resource-note">Query dataなし</div>'}</div>
-        </details>
-      </div>
-    </section>` : "";
-
-  const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
-    ? `
-      <section class="section">
-        <h2>Cloudflare リソース監視</h2>
-        <div class="card resource-card">
-          <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
-          ${canViewDetailedUsage ? `
-          <div class="resource-row monitoring-switch-row">
-            <div><b>監視プロファイル</b><small>監視基準だけを変更します。Cloudflareの契約・請求プランは変更しません。</small></div>
-            <div class="monitoring-switch" role="group" aria-label="Cloudflare監視プロファイル">
-              <button type="button" class="monitoring-switch-btn ${monitoringProfile === "FREE" ? "active" : ""}" data-monitoring-profile="FREE">🆓 Free枠</button>
-              <button type="button" class="monitoring-switch-btn ${monitoringProfile === "PAID_5USD" ? "active" : ""}" data-monitoring-profile="PAID_5USD">💰 $5枠</button>
-            </div>
-          </div>
-          <div class="resource-note" id="monitoring-profile-message">現在: <b>${escapeHtml(monitoringProfile === "PAID_5USD" ? "Workers Paid $5" : "Workers Free")}</b> · ${escapeHtml(monitoringProfileSetting.source === "DB" ? "保存済み設定" : "環境変数の既定値")}</div>
-          ` : ""}
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>請求サイクル内のD1 / Workers / R2各使用率の最大値。CPUはRequests × CPU P50の推定値</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div><div class="resource-note">この割合は「$5を使った割合」ではありません。CPU使用率が最大値になった場合は、Workersの月間CPU安全上限に対する推定値（CPU P50基準）です。</div>` : ""}
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
-          ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
-          ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
-          <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
-          <div class="resource-head"><div><b>${monitoringProfile === "PAID_5USD" ? "Workers Paid $5 Included" : "Workers Free Tier"}</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · ${monitoringProfile === "PAID_5USD" ? "請求サイクル内" : "当日UTC"}</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
-          ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerMonth ?? usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
-          <div class="resource-head"><div><b>R2 ${monitoringProfile === "PAID_5USD" ? "Included" : "Free Tier"}</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
-          ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
-          ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
-          ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
-          <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-note">PAID_5USD はCloudflare Workers Paidの月次込み枠を基準に、EagleEye側で90%を安全上限として監視します。無料へ戻す場合は <code>CLOUDFLARE_MONITORING_PROFILE=FREE</code> に切り替えて再デプロイすると、従来のFree監視へ戻せます。</div>` : `<div class="resource-note">現在はFree監視プロファイルです。Paid移行時は <code>CLOUDFLARE_MONITORING_PROFILE=PAID_5USD</code> に切り替えます。</div>`}
-        </div>
-      </section>
-    `
-    : `
-      <section class="section">
-        <h2>Cloudflare リソース監視</h2>
-        <div class="card resource-card">
-          <div class="resource-head"><div><b>Cloudflare Usage</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
-          <div class="resource-note">D1 / Workers / R2の詳細使用量とD1 Query InsightsはADMIN / OWNERのみ確認できます。</div>
-        </div>
-      </section>`;
-
-  const queryInsights = usage.queryInsights?.available ? usage.queryInsights : null;
-  const queryInsightCategories = (queryInsights?.categories || []).slice(0, 6);
-  const queryInsightsSection = queryInsights ? `
-    <section class="section">
-      <h2>D1 Query Insights</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>Database Query Insights</b><small>Cloudflare Analytics · 当日のクエリ集計</small></div><span class="state good">取得済み</span></div>
-        <div class="resource-row"><div><b>クエリ種類</b><small>集計されたユニーククエリ</small></div><strong>${formatInt(queryInsights.queryCount)}</strong></div>
-        ${queryInsightCategories.length ? `
-          <div class="insight-list">
-            ${queryInsightCategories.map(item => `
-              <div class="insight-query">
-                <div class="insight-query-head"><span>${escapeHtml(item.category)}</span><span>${formatInt(item.count)} 回</span></div>
-                <small>Rows Read ${formatInt(item.rowsRead)} · Rows Written ${formatInt(item.rowsWritten)}</small>
-              </div>
-            `).join("")}
-          </div>` : '<div class="resource-note">当日のクエリ集計はまだありません。</div>'}
-        <div class="resource-note">公開ステータスではSQL本文を表示せず、カテゴリ別の集計のみ表示します。詳細なSQL調査は管理者向け診断画面で行います。</div>
-      </div>
-    </section>` : "";
-
-  const diagnosticsDetailSection = canViewDetailedUsage ? `
-    <section class="section">
-      <h2>Diagnostics 詳細</h2>
-      <div class="card resource-card">
-        <div class="resource-head"><div><b>直近診断イベント</b><small>最大100件 · 最新→過去</small></div><span class="state good">${escapeHtml(data.overall)}</span></div>
-        <div class="resource-row"><div><b>Healthy / Warning / Failed / Unknown</b><small>サービス集計</small></div><strong>${formatInt(data.counts.healthy)} / ${formatInt(data.counts.warning)} / ${formatInt(data.counts.failed)} / ${formatInt(data.counts.unknown)}</strong></div>
-        <details open><summary style="padding:12px 17px;font-size:11px;font-weight:800;cursor:pointer">全診断イベント</summary>
-          <div class="insight-list">${(data.events || []).map(e => `
-            <div class="insight-query">
-              <div class="insight-query-head"><span>${escapeHtml(e.service || e.feature || "unknown")} · ${escapeHtml(e.status || "UNKNOWN")}</span><span>${formatUnixStatus(e.created_at)}</span></div>
-              <small>${escapeHtml(e.feature || "—")} / ${escapeHtml(e.operation || "—")} · ${escapeHtml(e.error_code || "—")}</small>
-              <small>trace ${escapeHtml(e.trace_id || "—")} · ${escapeHtml(e.provider || "—")} · ${escapeHtml((e.target_type || "—") + " " + (e.target_id || ""))}</small>
-              <small>elapsed ${e.elapsed_ms == null ? "—" : formatInt(e.elapsed_ms) + " ms"} · received ${e.rows_received == null ? "—" : formatInt(e.rows_received)} · saved ${e.rows_saved == null ? "—" : formatInt(e.rows_saved)}</small>
-              <div style="margin-top:5px;font-size:10px;line-height:1.45;word-break:break-word">${escapeHtml(e.message || "メッセージなし")}</div>
-            </div>`).join("") || '<div class="resource-note">診断イベントはありません。</div>'}</div>
-        </details>
-      </div>
-    </section>` : "";
-
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + r2ObjectInventorySection + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
-
-
-  return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.monitoring-switch{display:flex;gap:5px;padding:4px;background:#f2f2f7;border-radius:12px}.monitoring-switch-btn{border:0;border-radius:9px;padding:9px 10px;background:transparent;color:#6e6e73;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.monitoring-switch-btn.active{background:#fff;color:#1d1d1f;box-shadow:0 2px 8px rgba(0,0,0,.10)}.monitoring-switch-btn:disabled{opacity:.55;cursor:wait}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
-</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section" id="service-status"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
-
-${canViewDetailedUsage ? `<script>
-(function(){
-  document.querySelectorAll("[data-monitoring-profile]").forEach(function(btn){
-    btn.addEventListener("click", async function(){
-      var profile=btn.getAttribute("data-monitoring-profile");
-      var buttons=Array.from(document.querySelectorAll("[data-monitoring-profile]"));
-      buttons.forEach(function(b){b.disabled=true;});
-      var msg=document.getElementById("monitoring-profile-message");
-      if(msg) msg.textContent="監視プロファイルを切り替えています…";
-      try{
-        var res=await fetch("/api/admin/monitoring-profile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({profile:profile}),credentials:"same-origin"});
-        var data=await res.json().catch(function(){return {};});
-        if(!res.ok||!data.ok) throw new Error(data.error||"切替に失敗しました");
-        window.location.reload();
-      }catch(error){
-        if(msg) msg.textContent="切替失敗: "+(error.message||String(error));
-        buttons.forEach(function(b){b.disabled=false;});
-      }
-    });
-  });
-
-  var button=document.getElementById("r2-object-check");
-  var result=document.getElementById("r2-object-check-result");
-  if(button&&result){
-    button.addEventListener("click",async function(){
-      button.disabled=true;
-      button.textContent="確認中…";
-      result.textContent="R2実オブジェクトを取得しています…";
-      try{
-        var res=await fetch("/api/admin/r2-archive-objects?limit=50",{cache:"no-store",credentials:"same-origin"});
-        var data=await res.json().catch(function(){return {};});
-        if(!res.ok||!data.ok)throw new Error(data.error||("HTTP "+res.status));
-        var objects=data.objects||[];
-        var prefixText=(data.prefixes||[]).map(function(p){return p.prefix+" "+p.listedCount+"件"+(p.truncated?"（続きあり）":"");}).join(" / ");
-        var html="<div><b>確認時刻</b> "+new Date(data.checkedAt||Date.now()).toLocaleString("ja-JP")+" · <b>一覧取得</b> "+objects.length+"件</div>";
-        html+="<div style='margin-top:5px'>"+prefixText+"</div>";
-        if(objects.length){
-          html+="<div class='insight-list' style='margin:10px -17px -12px'>";
-          objects.forEach(function(o){
-            html+="<div class='insight-query'><div class='insight-query-head'><span>"+escapeHtml(o.key)+"</span><span>"+formatBytes(o.size)+"</span></div><small>"+(o.uploaded?new Date(o.uploaded).toLocaleString("ja-JP"):"—")+" · ETag "+escapeHtml(o.etag||o.httpEtag||"—")+"</small></div>";
-          });
-          html+="</div>";
-        }else{
-          html+="<div style='margin-top:6px'><b>実オブジェクトなし</b></div>";
-        }
-        result.innerHTML=html;
-      }catch(error){
-        result.textContent="R2実オブジェクト確認失敗: "+(error.message||String(error));
-      }finally{
-        button.disabled=false;
-        button.textContent="再確認";
-      }
-    });
-  }
-})();
-</script>` : ""}
-<style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}details>summary{display:none!important}details> :not(summary){display:block!important}}</style></main></body></html>`);
-}
-
-
-async function renderSupportPage(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return `<!doctype html><html lang="ja"><body style="margin:0;background:#0f172a;color:#fff;font-family:system-ui;padding:28px"><div style="max-width:620px;margin:auto"><h1>お問い合わせ</h1><p style="color:#94a3b8">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord" style="color:#f59e0b;font-weight:800">Discordでログイン</a></div></body></html>`;
-  const supportCatalogJson = JSON.stringify(SUPPORT_CATALOG).replace(/</g, "\\u003c");
-  return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
-  *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.choices{display:grid;gap:9px;margin-top:10px}.choice{width:100%;padding:14px;text-align:left;border:1px solid #334155;border-radius:13px;background:#0b1424;color:#f8fafc;font:inherit;cursor:pointer}.choice:hover{border-color:#f59e0b}.back{margin-top:10px;background:transparent;color:#94a3b8;border:0;padding:8px 0;cursor:pointer}.qa{margin-top:14px;padding:14px;border:1px solid #365314;border-radius:14px;background:#14210f;color:#d9f99d}.incident{margin-top:14px;padding:14px;border:1px solid #7f1d1d;border-radius:14px;background:#2a1114;color:#fecaca}.field{margin-top:14px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:100px;resize:vertical}.submit{width:100%;margin-top:18px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}.muted{font-size:12px;color:#94a3b8}
-  </style></head><body><main class="wrap"><nav class="nav"><a href="/">‹ EagleEye</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card"><h1>お問い合わせ</h1><p>カテゴリを選択すると、既知の解決方法や現在の障害状況を確認できます。解決しない場合だけ問い合わせへ進みます。</p><div id="incident"></div><div id="wizard"></div><div id="result" class="result"></div></section></main><script>
-(function(){var catalog=${supportCatalogJson},params=new URLSearchParams(location.search),state={category:(params.get("category")||"").toUpperCase()||null,subcategory:(params.get("subcategory")||"").toUpperCase()||null,child:null,incident:null,governorId:(params.get("governor_id")||"").trim()};var wizard=document.getElementById("wizard"),incident=document.getElementById("incident"),result=document.getElementById("result");
-function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
-function render1(){wizard.innerHTML="<strong>1. 何について困っていますか？</strong><div class='choices'>"+catalog.map(function(x){return "<button class='choice' data-c='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div>";wizard.querySelectorAll("[data-c]").forEach(function(b){b.onclick=function(){state.category=b.dataset.c;render2();};});}
-function render2(){var p=catalog.find(function(x){return x.key===state.category;});wizard.innerHTML="<strong>2. 具体的には？</strong><div class='choices'>"+p.children.map(function(x){return "<button class='choice' data-s='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div><button class='back' id='back1'>← カテゴリを戻す</button>";wizard.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){state.subcategory=b.dataset.s;state.child=p.children.find(function(x){return x.key===state.subcategory;});render3();};});document.getElementById("back1").onclick=render1;}
-function render3(){var p=catalog.find(function(x){return x.key===state.category}),c=p.children.find(function(x){return x.key===state.subcategory}),html="<strong>3. 確認</strong><div class='muted' style='margin-top:7px'>"+esc(p.label)+" → "+esc(c.label)+"</div>";if(c.qa)html+="<div class='qa'><b>まずはこちらをご確認ください</b><div style='margin-top:6px'>"+esc(c.qa)+"</div><button class='choice' id='qyes' style='margin-top:10px'>解決した</button><button class='choice' id='qno' style='margin-top:8px'>解決しなかった</button></div>";html+="<div id='intake' style='"+(c.qa?"display:none":"")+"'><div class='field'><label>件名</label><input id='subject' maxlength='120' placeholder='例：データが表示されない'></div>";var labels={governor_id:"領主ID",kid:"王国番号",field:"問題の項目",displayed_value:"EagleEyeの表示値",expected_value:"正しいと思う値",target:"対象・画面",board:"ランキングボード",message:"状況の補足"};(c.fields||[]).forEach(function(f){html+="<div class='field'><label>"+labels[f]+"</label><input data-d='"+f+"' maxlength='1000' value='"+(f==="governor_id"?esc(state.governorId):"")+"'></div>";});html+="<div class='field'><label>補足（任意）</label><textarea id='message' maxlength='4000' placeholder='必要な場合だけ補足してください'></textarea></div><button id='submit' class='submit'>問い合わせを送信</button></div><button class='back' id='back2'>← 症状を戻す</button>";wizard.innerHTML=html;var y=document.getElementById("qyes"),n=document.getElementById("qno");if(y)y.onclick=function(){wizard.innerHTML="<strong>解決しました。</strong><p class='muted'>お問い合わせは不要です。</p>";};if(n)n.onclick=function(){document.getElementById("intake").style.display="block";};document.getElementById("back2").onclick=render2;document.getElementById("submit").onclick=submit;}
-async function submit(){var b=document.getElementById("submit");b.disabled=true;b.textContent="送信中…";var c=state.child,details={};(c.fields||[]).forEach(function(f){var e=document.querySelector("[data-d='"+f+"']");if(e&&e.value.trim())details[f]=e.value.trim();});var subject=(document.getElementById("subject").value.trim()||catalog.find(function(x){return x.key===state.category;}).label+" / "+c.label);var message=document.getElementById("message").value.trim();try{var r=await fetch("/api/support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({category:state.category,subcategory:state.subcategory,subject:subject,message:message,details:details,qna_id:c.qa?state.category+"_"+state.subcategory:null})});var d=await r.json().catch(function(){return {}});if(!r.ok||!d.ok)throw new Error(d.error||("HTTP "+r.status));result.className="result ok";result.innerHTML="<div class='ticket'>"+esc(d.ticketId)+"</div><div>お問い合わせを受け付けました。Discordに専用の非公開チャンネルを作成しました。</div>"+(d.channelUrl?"<div style='margin-top:8px'><a href='"+esc(d.channelUrl)+"' target='_blank' rel='noopener'>Discordの問い合わせチャンネルを開く →</a></div>":"");wizard.innerHTML="<strong>送信完了</strong><p class='muted'>必要な情報はサポート担当者に引き継がれています。</p>";}catch(e){result.className="result error";result.textContent="送信できませんでした: "+(e.message||String(e));b.disabled=false;b.textContent="問い合わせを送信";}}
-function renderInitial(){var p=catalog.find(function(x){return x.key===state.category;}),ch=p&&p.children.find(function(x){return x.key===state.subcategory;});if(p&&ch){state.child=ch;render3();}else{render1();}}async function boot(){renderInitial();try{var r=await fetch("/api/support/context",{credentials:"same-origin",cache:"no-store"});var d=await r.json();if(!r.ok||!d.ok)throw new Error("context");state.incident=d.incident;if(state.incident&&state.incident.active){var incidentService={api_pool:"API Pool",mightpulse:"MightPulse API",ranking:"ランキング取得",player:"プレイヤー取得",watchlist:"王国ウォッチリスト",d1:"D1 Database",discord:"Discord認証",discord_support:"Discord Support",google_sheets:"Google Sheets",notifications:"通知システム"}[state.incident.service]||state.incident.service;var incidentStatus=state.incident.status==="FAILED"?"障害":"注意";var incidentTitle=state.incident.status==="FAILED"?"現在、EagleEyeで障害を検知しています":"現在、EagleEyeで注意状態を検知しています";incident.innerHTML="<div class='incident'><b>⚠ "+incidentTitle+"</b><div style='margin-top:6px'>"+esc(incidentService)+" / "+incidentStatus+"</div><div style='margin-top:6px'>同じ症状に関する問い合わせは、まず障害情報をご確認ください。</div><div style='margin-top:10px'><a href='\/status#service-status' style='color:#fecaca;font-weight:900;text-decoration:underline'>障害情報を確認する →</a></div></div>";}}catch(e){}}
-boot();})();</script></body></html>`;
-}
-
-async function renderHome(request, env) {
-  const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
-  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
-  const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
-
-  const auth = session ? await getAuthenticatedUser(request, env) : null;
-  const authUi = session
-    ? `
-      <section class="account">
-        <div class="account-avatar">${session.avatar ? `<img src="https://cdn.discordapp.com/avatars/${encodeURIComponent(session.sub)}/${encodeURIComponent(session.avatar)}.png?size=128" alt="">` : "<span>BJ</span>"}</div>
-        <div class="account-info">
-          <div class="account-label">DISCORD CONNECTED</div>
-          <div class="account-name">${escapeHtml(session.global_name || session.username || "Discord User")}</div>
-          <div class="account-tag">@${escapeHtml(session.username || "")}</div>
-        </div>
-        <a class="logout" href="/api/auth/logout">ログアウト</a>
-      </section>
-      <nav class="nav"><a href="/my-player">マイKingShot</a><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a><a href="/support">お問い合わせ</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
-    : `
-      <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
-
-  const note = configured ? "" : '<p class="note">Discord認証はCloudflare側の設定後に有効になります。</p>';
-
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>KingShot Data Platform — EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:white;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.container{text-align:center;padding:32px 24px;max-width:680px;width:100%}h1{font-size:clamp(28px,7vw,42px);line-height:1.15;margin:0 0 12px}.subtitle{font-size:18px;font-weight:800;letter-spacing:5px;color:#f59e0b;margin-bottom:24px;text-transform:uppercase}p{color:#94a3b8;font-size:16px;line-height:1.7}.status{display:inline-block;margin-top:20px;padding:10px 16px;border-radius:999px;background:#1e293b;color:#cbd5e1;font-weight:700;text-decoration:none;border:1px solid #334155}.status:hover{background:#334155}.login,.logout{display:inline-flex;align-items:center;justify-content:center;margin-top:28px;padding:13px 22px;border-radius:10px;color:white;text-decoration:none;font-weight:800}.login{background:#5865f2}.login:active,.logout:active{transform:translateY(1px)}.account{margin:28px auto 0;max-width:460px;padding:18px;display:flex;align-items:center;gap:14px;text-align:left;background:rgba(30,41,59,.78);border:1px solid #334155;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.account-avatar{width:58px;height:58px;flex:0 0 58px;border-radius:50%;overflow:hidden;background:#1e293b;display:flex;align-items:center;justify-content:center;color:#f59e0b;font-weight:900}.account-avatar img{width:100%;height:100%;object-fit:cover}.account-info{min-width:0;flex:1}.account-label{font-size:11px;letter-spacing:1.5px;color:#86efac;font-weight:800}.account-name{font-size:17px;font-weight:800;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.account-tag{font-size:13px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.logout{margin:0;padding:10px 14px;background:#334155;border:1px solid #475569;font-size:13px;flex:0 0 auto}.logout:hover{background:#475569}.nav{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}.nav a{padding:10px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.note{font-size:13px;margin-top:18px}
-  </style></head><body><main class="container"><h1>KingShot Data Platform</h1><div class="subtitle">EagleEye</div><p>KingShotのデータを集約・分析するプラットフォーム</p><a class="status" href="/status">● システム状況を確認</a>${authUi}${note}</main></body></html>`;
-}
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, char => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[char]);
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" }
-  });
-}
-
-function serializeCookie(name, value, options = {}) {
-  const parts = [name + "=" + encodeURIComponent(value)];
-  if (options.maxAge !== undefined) parts.push("Max-Age=" + options.maxAge);
-  if (options.httpOnly) parts.push("HttpOnly");
-  if (options.secure) parts.push("Secure");
-  if (options.sameSite) parts.push("SameSite=" + options.sameSite);
-  if (options.path) parts.push("Path=" + options.path);
-  return parts.join("; ");
-}
-
-function parseCookie(header) {
-  const result = {};
-  for (const part of header.split(";")) {
-    const index = part.indexOf("=");
-    if (index === -1) continue;
-    result[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
-  }
-  return result;
-}
-
-function base64url(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function base64urlEncodeText(text) {
-  return base64url(new TextEncoder().encode(text));
-}
-
-function base64urlDecodeText(text) {
-  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (text.length % 4)) % 4);
-  return new TextDecoder().decode(Uint8Array.from(atob(padded), char => char.charCodeAt(0)));
-}
-
-async function hmac(input, secret) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(input)));
-}
-
-async function signPayload(payload, secret) {
-  const body = base64urlEncodeText(JSON.stringify(payload));
-  return body + "." + base64url(await hmac(body, secret));
-}
-
-async function verifyPayload(token, secret) {
-  const parts = token.split(".");
-  if (parts.length !== 2) return null;
-  const body = parts[0];
-  const provided = decodeBase64Url(parts[1]);
-  const expected = await hmac(body, secret);
-  if (!constantTimeEqual(expected, provided)) return null;
-  try {
-    const payload = JSON.parse(base64urlDecodeText(body));
-    if (!payload.exp || payload.exp <= Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-async function createStateToken(secret) {
-  const body = Date.now() + "." + crypto.randomUUID();
-  return base64urlEncodeText(body) + "." + base64url(await hmac(body, secret));
-}
-
-async function verifyStateToken(token, secret) {
-  const parts = token.split(".");
-  if (parts.length !== 2) return false;
-  let body;
-  try {
-    body = base64urlDecodeText(parts[0]);
-  } catch {
-    return false;
-  }
-  const provided = decodeBase64Url(parts[1]);
-  const expected = await hmac(body, secret);
-  if (!constantTimeEqual(expected, provided)) return false;
-  const timestamp = Number(body.split(".")[0]);
-  return Number.isFinite(timestamp) && Date.now() - timestamp < 10 * 60 * 1000;
-}
-
-function decodeBase64Url(value) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
-  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
-}
-
-function constantTimeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
 }
