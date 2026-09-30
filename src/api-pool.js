@@ -185,6 +185,58 @@ export async function getPoolStats(db) {
   }));
 }
 
+export async function getApiPoolAvailability(db, {
+  provider = PROVIDER,
+  poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
+  now = Math.floor(Date.now() / 1000)
+} = {}) {
+  const types = Array.isArray(poolTypes) && poolTypes.length ? poolTypes : ["SYSTEM_GENERAL"];
+  const placeholders = types.map(() => "?").join(",");
+  const result = await db.prepare(
+    `SELECT pool_type,
+            COUNT(*) AS total,
+            SUM(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+                       AND (cooldown_until IS NULL OR cooldown_until <= ?)
+                       AND (leased_until IS NULL OR leased_until <= ?) THEN 1 ELSE 0 END) AS available,
+            SUM(CASE WHEN leased_until IS NOT NULL AND leased_until > ? THEN 1 ELSE 0 END) AS leased,
+            SUM(CASE WHEN status = 'COOLDOWN'
+                       AND cooldown_until IS NOT NULL AND cooldown_until > ?
+                       AND (leased_until IS NULL OR leased_until <= ?) THEN 1 ELSE 0 END) AS cooldown,
+            SUM(CASE WHEN status = 'DISABLED' THEN 1 ELSE 0 END) AS disabled,
+            SUM(CASE WHEN status = 'ERROR' THEN 1 ELSE 0 END) AS error,
+            SUM(CASE WHEN status = 'REVOKED' THEN 1 ELSE 0 END) AS revoked
+     FROM api_pool_keys
+     WHERE provider = ? AND pool_type IN (${placeholders})
+     GROUP BY pool_type
+     ORDER BY pool_type ASC`
+  ).bind(now, now, now, now, now, provider, ...types).all();
+
+  const byPool = (result.results || []).map(row => ({
+    pool_type: String(row.pool_type || ""),
+    total: Number(row.total || 0),
+    available: Number(row.available || 0),
+    leased: Number(row.leased || 0),
+    cooldown: Number(row.cooldown || 0),
+    disabled: Number(row.disabled || 0),
+    error: Number(row.error || 0),
+    revoked: Number(row.revoked || 0)
+  }));
+
+  const totals = byPool.reduce((acc, row) => {
+    for (const key of ["total","available","leased","cooldown","disabled","error","revoked"]) acc[key] += row[key];
+    return acc;
+  }, { total:0, available:0, leased:0, cooldown:0, disabled:0, error:0, revoked:0 });
+
+  return {
+    provider,
+    checked_at: now,
+    pool_types: types,
+    pools: byPool,
+    totals,
+    exhausted_by_lease: totals.available === 0 && totals.leased > 0
+  };
+}
+
 export async function recordUsage(db, { keyId, provider = PROVIDER, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = null, requestCount = 1, measuredQuota = null, measuredRemaining = null, estimated = 0 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const usageId = crypto.randomUUID();
