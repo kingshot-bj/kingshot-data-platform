@@ -3669,15 +3669,14 @@ async function handleDiscordCallback(request, env) {
   try {
     await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
   } catch (error) {
+    // Support guild auto-join is an auxiliary feature and must never block
+    // the primary Discord login/session issuance.
     console.error("discord_support_guild_join_failed", {
       discord_id: String(discordUser.id),
       status: error?.status || 0,
+      discord_code: error?.discord?.code || null,
       message: error?.message || String(error)
     });
-    return json({
-      ok: false,
-      error: "DISCORD_SUPPORT_GUILD_JOIN_FAILED"
-    }, 502);
   }
 
   const now = Math.floor(Date.now() / 1000);
