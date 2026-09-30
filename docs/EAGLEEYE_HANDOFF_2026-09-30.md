@@ -1183,3 +1183,13 @@ Pending confirmation from Daryl:
 
 User-facing rule:
 **Never present `last_active_at` / `last_login` as current activity or latest login information.**
+
+## 32. MightPulse APIキー複数提供対応 — 2026-09-30
+
+- ユーザーがMightPulse APIキーを最大3本までPoolへ提供できるよう実装。
+- registerUserMightPulseApiKey() にユーザー単位の未REVOKEDキー数上限3本を追加。
+- 同一キーの重複提供はSHA-256 fingerprintで検知し、MIGHTPULSE_API_KEY_ALREADY_REGISTERED として拒否。
+- /api/me/advanced GET は mightPulseKeyCount / mightPulseKeyLimit / apiKeys を返すよう変更。
+- /my-player のAdvanced条件UIは登録本数を n / 3 で表示し、3本未満なら追加入力欄を継続表示。
+- 既存のAdvanced昇格条件は「領主IDを1つ以上」＋「MightPulse APIキーを1本以上」で維持。2本目・3本目の提供はPool容量強化として扱い、昇格条件そのものは変更しない。
+- 直前の修正で /api/me/mightpulse-key に configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET) を追加済み。今回の複数キー対応でもこの暗号化保存経路を継続利用。
