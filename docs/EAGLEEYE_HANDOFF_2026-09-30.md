@@ -2080,3 +2080,120 @@ API_POOL_KEY_LEASED / HTTP 409 を返し、
 7. D1 Rows Read/Writeの増加を確認すること
 
 本番で確認できるまでは「本番確認済み」と扱わない。
+
+
+# 41. 2026-10-01 EagleEye全体の二重連打・二重実行防止強化
+
+## 41-1. 方針
+
+今後、EagleEyeでは「同じ操作を二重連打しても、外部API・D1/R2・ジョブを二重実行しない」を共通要件とする。
+
+特に外部APIを叩く処理は以下の3層で防御する。
+
+1. UI/ブラウザ層
+2. API/サーバー層
+3. Job/外部API実行層
+
+UIのdisabledだけを安全策とはしない。
+
+## 41-2. 今回の実装
+
+### A. 全EagleEye HTMLの共通mutating requestガード
+
+EAGLEEYE_THEME_SCRIPTへ共通ガードを追加。
+
+対象:
+- POST
+- PUT
+- PATCH
+- DELETE
+
+同一ページ/タブから同一method + URL + bodyのmutating requestが処理中の場合、2本目を送信せず CLIENT_REQUEST_IN_PROGRESS としてrejectする。
+
+GETは対象外。
+
+このブラウザガードは補助防御であり、別タブ・別端末・Cronには効かない。サーバー側ロックを正式な防御とする。
+
+### B. サーバー共通API request lock
+
+api_request_locks テーブルをlazy-createする共通ロック機構を追加。
+
+- lock_key
+- lock_token
+- lock_until
+- updated_at
+
+同一 lock_key に対して有効期限内のロックが存在する場合、2本目は API_REQUEST_IN_PROGRESS / HTTP 409 で停止。
+
+TTLはデフォルト180秒。期限切れロックは次回取得時に原子的に再取得可能。
+
+### C. 管理者向けMightPulse/Ranking APIへ適用
+
+以下へサーバー側ロックを適用:
+
+- /api/admin/rankings/player
+  - ADMIN_RANKING_PLAYER:<governor_id>
+- /api/admin/rankings/board
+  - ADMIN_RANKING_BOARD:<kid>:<board>
+- /api/admin/mightpulse/player
+  - ADMIN_MIGHTPULSE_PLAYER:<governor_id>
+- /api/admin/mightpulse-research
+  - ADMIN_MIGHTPULSE_RESEARCH:<governor_id>:<candidate|ALL>
+- /api/admin/mightpulse-probe
+  - ADMIN_MIGHTPULSE_PROBE:<type>:<target>:<board>:<include>
+
+認証・入力検証後にlockを取得するため、未認証/不正リクエストによってロックを消費しない。
+
+### D. 既存の王国ウォッチリスト防御
+
+王国ウォッチリストは既存の専用 kingdom_watchlist_locks を継続使用。
+
+- 登録二重実行防止
+- 初回refreshロック
+- 手動refreshロック
+- Cronとの競合防止
+- active jobとの整合
+
+を既存実装で防御する。
+
+## 41-3. main反映commit
+
+- 4ebb10fbbffd3ff471c69352706c4d8340714a86 — API request lock機構と管理者APIへの二重実行防止を追加
+- 87dc2ef5a89a8650d6a869265d14125029bbfadb — ロック取得位置を認証・入力検証後へ修正
+- f1ea50652b917e560e7da7fa49a8526c5da96eaf — 全EagleEye HTMLのmutating request共通ガード追加
+
+## 41-4. コード上の残調査対象
+
+今回、外部APIを直接/間接に叩く主要経路を確認し、上記の高リスクな管理者MightPulse/Ranking経路へロックを追加した。
+
+ただし、以下は今後も個別確認対象として残す。
+
+- handleGatewayApi 配下の外部API操作
+- Discord Supportの状態変更/外部Discord API操作
+- Google Drive OAuth/Archive操作
+- Google Sheets export
+- API Pool CRUD
+- その他POST/DELETE管理APIの「二重実行時に副作用が二重になるか」
+- Cronと手動操作の境界
+
+特に「外部APIを叩く処理」は、ブラウザガードだけでなくサーバー側の対象単位ロックを持つことを原則とする。
+
+## 41-5. 本番確認について
+
+今回の変更はGitHub mainへの実装確認まで。
+
+**本番Workerへのdeploy・本番E2E確認はまだ確認していない。**
+
+本番確認時は少なくとも:
+
+1. 管理者MightPulse Playerを同一対象へ二重実行
+2. Ranking Playerを二重実行
+3. Ranking Boardを二重実行
+4. MightPulse Probeを二重実行
+5. Researchを二重実行
+6. 同一ブラウザでmutating APIを二重連打
+7. 別タブ/別クライアントから同時実行
+8. lock期限切れ後に正常復帰
+9. D1 Rows Read/Writeの増加量確認
+
+本番で確認できるまでは「本番確認済み」と扱わない。
