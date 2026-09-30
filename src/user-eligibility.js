@@ -3,6 +3,7 @@ import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.j
 import { mightPulseFetch } from "./mightpulse.js";
 
 const ADVANCED_ROLE = "ADVANCED";
+export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
 
 export async function registerUserMightPulseApiKey(db, {
   env,
@@ -30,6 +31,17 @@ export async function registerUserMightPulseApiKey(db, {
     throw error;
   }
 
+  const existingKeys = await db.prepare(
+    "SELECT key_id, key_fingerprint, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+  ).bind(normalizedUserId).all();
+  const activeKeys = existingKeys.results || [];
+  if (activeKeys.length >= MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS) {
+    const error = new Error("MIGHTPULSE_API_KEY_LIMIT_REACHED");
+    error.code = "MIGHTPULSE_API_KEY_LIMIT_REACHED";
+    error.userMessage = "MightPulse APIキーは1ユーザーにつき最大3本まで提供できます。";
+    throw error;
+  }
+
   // Validate the contributed key independently of the user's KingShot link.
   // A user may contribute an API key before registering any player account.
   try {
@@ -54,6 +66,15 @@ export async function registerUserMightPulseApiKey(db, {
         ? "MightPulse APIがレート制限中です。少し時間を置いて再試行してください。"
         : "MightPulseへの疎通確認に失敗しました。APIキーは登録していません。しばらくしてから再試行してください。";
     throw wrapped;
+  }
+
+  const fingerprint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  const fingerprintHex = Array.from(new Uint8Array(fingerprint), b => b.toString(16).padStart(2, "0")).join("");
+  if (activeKeys.some(row => String(row.key_fingerprint || "") === fingerprintHex)) {
+    const error = new Error("MIGHTPULSE_API_KEY_ALREADY_REGISTERED");
+    error.code = "MIGHTPULSE_API_KEY_ALREADY_REGISTERED";
+    error.userMessage = "このMightPulse APIキーはすでに登録されています。";
+    throw error;
   }
 
   return addApiPoolKey(db, {
@@ -86,26 +107,30 @@ export async function getAdvancedEligibility(db, userId) {
       "SELECT user_id, governor_id, status, verification_method FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1"
     ).bind(normalizedUserId).first(),
     db.prepare(
-      "SELECT key_id, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at DESC LIMIT 1"
-    ).bind(normalizedUserId).first()
+      "SELECT key_id, key_fingerprint, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+    ).bind(normalizedUserId).all()
   ]);
 
+  const contributedKeys = apiKey?.results || [];
   const hasPlayerLink = Boolean(playerLink);
-  const hasMightPulseKey = Boolean(apiKey);
+  const hasMightPulseKey = contributedKeys.length > 0;
   const eligible = hasPlayerLink && hasMightPulseKey;
 
   return {
     eligible,
     hasPlayerLink,
     hasMightPulseKey,
+    mightPulseKeyCount: contributedKeys.length,
+    mightPulseKeyLimit: MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS,
     role: user?.role || null,
     userStatus: user?.status || null,
     playerLink: playerLink || null,
-    apiKey: apiKey ? {
-      key_id: apiKey.key_id,
-      status: apiKey.status,
-      contributed_at: apiKey.contributed_at
-    } : null
+    apiKeys: contributedKeys.map(row => ({
+      key_id: row.key_id,
+      key_fingerprint: row.key_fingerprint ? String(row.key_fingerprint).slice(-8) : null,
+      status: row.status,
+      contributed_at: row.contributed_at
+    }))
   };
 }
 
