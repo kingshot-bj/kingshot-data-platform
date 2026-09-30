@@ -1464,6 +1464,11 @@ async function handleMyAdvancedApi(request, env) {
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
 
+  // User-contributed MightPulse keys are encrypted by api-pool.js.
+  // Configure the pool encryption key before the contribution endpoint writes
+  // the submitted key; admin/probe paths already do this explicitly.
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+
   try {
     if (request.method === "GET") {
       const eligibility = await getAdvancedEligibility(env.DB, auth.user_id);
