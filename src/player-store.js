@@ -261,6 +261,11 @@ export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket
       limit: safeLimit
     });
   } catch (error) {
+    await recordDiagnostic(db, {
+      service: "player", feature: "history_storage", operation: "READ_R2", status: "FAILED",
+      errorCode: String(error?.code || error?.message || "R2_READ_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000), targetType: "PLAYER", targetId: String(governorId)
+    });
     console.error("player_history_r2_read_failed", {
       governorId: String(governorId),
       message: error?.message || String(error)
