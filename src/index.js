@@ -35,7 +35,7 @@ import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
-import { handleSupportApi, handleSupportInteraction, registerSupportCommands } from "./discord-support.js";
+import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
@@ -3201,7 +3201,7 @@ export default {
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
       if (url.pathname === "/api/discord/interactions") return await handleSupportInteraction(request, env);
       if (url.pathname === "/api/admin/discord-support/register-command") return await handleDiscordSupportCommandRegistrationApi(request, env);
-      if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); }
+      if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); } if (url.pathname === "/api/support/context") { const auth = await getAuthenticatedUser(request, env); return await handleSupportContextApi(request, env, auth); }
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
@@ -6967,49 +6967,18 @@ ${canViewDetailedUsage ? `<script>
 
 async function renderSupportPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") {
-    return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
-    body{margin:0;background:#0f172a;color:#fff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:620px;margin:auto;padding:32px 18px}.card{background:#111c30;border:1px solid #334155;border-radius:20px;padding:24px}.muted{color:#94a3b8;line-height:1.7}a{color:#f59e0b;text-decoration:none;font-weight:800}
-    </style></head><body><main class="wrap"><div class="card"><h1>お問い合わせ</h1><p class="muted">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a></div></main></body></html>`;
-  }
-
+  if (!auth || auth.status !== "ACTIVE") return `<!doctype html><html lang="ja"><body style="margin:0;background:#0f172a;color:#fff;font-family:system-ui;padding:28px"><div style="max-width:620px;margin:auto"><h1>お問い合わせ</h1><p style="color:#94a3b8">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord" style="color:#f59e0b;font-weight:800">Discordでログイン</a></div></body></html>`;
   return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
-  *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.18)}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.field{margin-top:18px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field select,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:180px;resize:vertical;line-height:1.6}.submit{width:100%;margin-top:20px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px;cursor:pointer}.submit:disabled{opacity:.55;cursor:wait}.hint{font-size:11px;color:#64748b;margin-top:7px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.result a{color:#fbbf24;font-weight:900}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}
-  </style></head><body><main class="wrap"><nav class="nav"><a href="/">‹ EagleEye</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card">
-  <h1>お問い合わせ</h1><p>お問い合わせ内容はDiscordの専用非公開チャンネルへ送信されます。EagleEye本体には問い合わせ本文を保存しません。</p>
-  <form id="support-form">
-    <div class="field"><label for="category">カテゴリ</label><select id="category" name="category"><option value="BUG">不具合</option><option value="ACCOUNT">アカウント</option><option value="DATA">データ</option><option value="API">API</option><option value="BILLING">料金・請求</option><option value="FEATURE">機能要望</option><option value="OTHER">その他</option></select></div>
-    <div class="field"><label for="subject">件名</label><input id="subject" name="subject" maxlength="120" required placeholder="お問い合わせの件名"></div>
-    <div class="field"><label for="message">お問い合わせ内容</label><textarea id="message" name="message" maxlength="4000" required placeholder="状況や確認したい内容を入力してください"></textarea><div class="hint">最大4,000文字</div></div>
-    <button id="submit" class="submit" type="submit">問い合わせを送信</button>
-  </form>
-  <div id="result" class="result"></div>
-  </section></main><script>
-  (function(){
-    var form=document.getElementById("support-form"),button=document.getElementById("submit"),result=document.getElementById("result");
-    form.addEventListener("submit",async function(event){
-      event.preventDefault(); button.disabled=true; button.textContent="送信中…"; result.className="result"; result.textContent="";
-      try{
-        var res=await fetch("/api/support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({
-          category:document.getElementById("category").value,
-          subject:document.getElementById("subject").value,
-          message:document.getElementById("message").value
-        })});
-        var data=await res.json().catch(function(){return {};});
-        if(!res.ok||!data.ok) throw new Error(data.error||("HTTP "+res.status));
-        result.className="result ok";
-        result.innerHTML="<div class='ticket'>"+data.ticketId+"</div><div>お問い合わせを受け付けました。Discordに専用の非公開チャンネルを作成しました。</div>"+(data.channelUrl?"<div style='margin-top:8px'><a href='"+data.channelUrl+"' target='_blank' rel='noopener'>Discordの問い合わせチャンネルを開く →</a></div>":"");
-        form.reset();
-      }catch(error){
-        result.className="result error";
-        result.textContent="送信できませんでした: "+(error.message||String(error));
-      }finally{
-        button.disabled=false; button.textContent="問い合わせを送信";
-      }
-    });
-  })();
-  </script></body></html>`;
-}
+  *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.choices{display:grid;gap:9px;margin-top:10px}.choice{width:100%;padding:14px;text-align:left;border:1px solid #334155;border-radius:13px;background:#0b1424;color:#f8fafc;font:inherit;cursor:pointer}.choice:hover{border-color:#f59e0b}.back{margin-top:10px;background:transparent;color:#94a3b8;border:0;padding:8px 0;cursor:pointer}.qa{margin-top:14px;padding:14px;border:1px solid #365314;border-radius:14px;background:#14210f;color:#d9f99d}.incident{margin-top:14px;padding:14px;border:1px solid #7f1d1d;border-radius:14px;background:#2a1114;color:#fecaca}.field{margin-top:14px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:100px;resize:vertical}.submit{width:100%;margin-top:18px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}.muted{font-size:12px;color:#94a3b8}
+  </style></head><body><main class="wrap"><nav class="nav"><a href="/">‹ EagleEye</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card"><h1>お問い合わせ</h1><p>カテゴリを選択すると、既知の解決方法や現在の障害状況を確認できます。解決しない場合だけ問い合わせへ進みます。</p><div id="incident"></div><div id="wizard"></div><div id="result" class="result"></div></section></main><script>
+(function(){var catalog=null,state={category:null,subcategory:null,child:null,incident:null};var wizard=document.getElementById("wizard"),incident=document.getElementById("incident"),result=document.getElementById("result");
+function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function render1(){wizard.innerHTML="<strong>1. 何について困っていますか？</strong><div class='choices'>"+catalog.map(function(x){return "<button class='choice' data-c='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div>";wizard.querySelectorAll("[data-c]").forEach(function(b){b.onclick=function(){state.category=b.dataset.c;render2();};});}
+function render2(){var p=catalog.find(function(x){return x.key===state.category;});wizard.innerHTML="<strong>2. 具体的には？</strong><div class='choices'>"+p.children.map(function(x){return "<button class='choice' data-s='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div><button class='back' id='back1'>← カテゴリを戻す</button>";wizard.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){state.subcategory=b.dataset.s;state.child=p.children.find(function(x){return x.key===state.subcategory;});render3();};});document.getElementById("back1").onclick=render1;}
+function render3(){var p=catalog.find(function(x){return x.key===state.category}),c=p.children.find(function(x){return x.key===state.subcategory}),html="<strong>3. 確認</strong><div class='muted' style='margin-top:7px'>"+esc(p.label)+" → "+esc(c.label)+"</div>";if(c.qa)html+="<div class='qa'><b>まずはこちらをご確認ください</b><div style='margin-top:6px'>"+esc(c.qa)+"</div><button class='choice' id='qyes' style='margin-top:10px'>解決した</button><button class='choice' id='qno' style='margin-top:8px'>解決しなかった</button></div>";html+="<div id='intake' style='"+(c.qa?"display:none":"")+"'><div class='field'><label>件名</label><input id='subject' maxlength='120' placeholder='例：データが表示されない'></div>";var labels={governor_id:"領主ID",kid:"王国番号",field:"問題の項目",displayed_value:"EagleEyeの表示値",expected_value:"正しいと思う値",target:"対象・画面",board:"ランキングボード",message:"状況の補足"};(c.fields||[]).forEach(function(f){html+="<div class='field'><label>"+labels[f]+"</label><input data-d='"+f+"' maxlength='1000'></div>";});html+="<div class='field'><label>補足（任意）</label><textarea id='message' maxlength='4000' placeholder='必要な場合だけ補足してください'></textarea></div><button id='submit' class='submit'>問い合わせを送信</button></div><button class='back' id='back2'>← 症状を戻す</button>";wizard.innerHTML=html;var y=document.getElementById("qyes"),n=document.getElementById("qno");if(y)y.onclick=function(){wizard.innerHTML="<strong>解決しました。</strong><p class='muted'>お問い合わせは不要です。</p>";};if(n)n.onclick=function(){document.getElementById("intake").style.display="block";};document.getElementById("back2").onclick=render2;document.getElementById("submit").onclick=submit;}
+async function submit(){var b=document.getElementById("submit");b.disabled=true;b.textContent="送信中…";var c=state.child,details={};(c.fields||[]).forEach(function(f){var e=document.querySelector("[data-d='"+f+"']");if(e&&e.value.trim())details[f]=e.value.trim();});var subject=(document.getElementById("subject").value.trim()||catalog.find(function(x){return x.key===state.category;}).label+" / "+c.label);var message=document.getElementById("message").value.trim();try{var r=await fetch("/api/support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({category:state.category,subcategory:state.subcategory,subject:subject,message:message,details:details,qna_id:c.qa?state.category+"_"+state.subcategory:null})});var d=await r.json().catch(function(){return {}});if(!r.ok||!d.ok)throw new Error(d.error||("HTTP "+r.status));result.className="result ok";result.innerHTML="<div class='ticket'>"+esc(d.ticketId)+"</div><div>お問い合わせを受け付けました。Discordに専用の非公開チャンネルを作成しました。</div>"+(d.channelUrl?"<div style='margin-top:8px'><a href='"+esc(d.channelUrl)+"' target='_blank' rel='noopener'>Discordの問い合わせチャンネルを開く →</a></div>":"");wizard.innerHTML="<strong>送信完了</strong><p class='muted'>必要な情報はサポート担当者に引き継がれています。</p>";}catch(e){result.className="result error";result.textContent="送信できませんでした: "+(e.message||String(e));b.disabled=false;b.textContent="問い合わせを送信";}}
+async function boot(){try{var r=await fetch("/api/support/context",{credentials:"same-origin",cache:"no-store"});var d=await r.json();if(!r.ok||!d.ok)throw new Error("context");catalog=d.catalog||[];state.incident=d.incident;render1();if(state.incident&&state.incident.active){incident.innerHTML="<div class='incident'><b>⚠ 現在、EagleEyeで障害を検知しています</b><div style='margin-top:6px'>"+esc(state.incident.service)+" / "+esc(state.incident.status)+"</div><div style='margin-top:6px'>同じ症状に関する問い合わせは、まず障害情報をご確認ください。</div></div>";}}catch(e){catalog=[];render1();}}
+boot();})();</script></body></html>`;
 
 async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
