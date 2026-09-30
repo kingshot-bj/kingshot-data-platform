@@ -163,8 +163,18 @@ async function runDataRetentionJob(env) {
   await ensureDiagnosticSchema(env.DB);
   try {
     const result = await runRetentionCleanup(env.DB, { batchSize: 1000, archiveBucket: env.ARCHIVE });
+    await recordDiagnostic(env.DB, {
+      service: "retention", feature: "data_retention", operation: "CLEANUP",
+      status: "SUCCESS", message: "データ保持期間クリーンアップ成功",
+      metadata: { deleted: Number(result.deleted || 0), archived: Number(result.archived || 0) }
+    });
     console.log("data_retention_cleanup_ok", result.deleted);
   } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "retention", feature: "data_retention", operation: "CLEANUP",
+      status: "FAILED", errorCode: String(error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000)
+    });
     console.error("data_retention_cleanup_failed", error?.message || error);
   }
 }
@@ -3647,6 +3657,11 @@ async function handleDiscordCallback(request, env) {
   });
 
   if (!tokenResponse.ok) {
+    if (env.DB) await recordDiagnostic(env.DB, {
+      service: "discord", feature: "oauth", operation: "TOKEN_EXCHANGE", status: "FAILED",
+      errorCode: "DISCORD_TOKEN_EXCHANGE_FAILED", message: `Discord token exchange failed (HTTP ${tokenResponse.status})`,
+      metadata: { httpStatus: tokenResponse.status }
+    });
     console.error("Discord token exchange failed:", tokenResponse.status);
     return json({ ok: false, error: "DISCORD_TOKEN_EXCHANGE_FAILED" }, 502);
   }
@@ -3657,6 +3672,11 @@ async function handleDiscordCallback(request, env) {
   });
 
   if (!userResponse.ok) {
+    if (env.DB) await recordDiagnostic(env.DB, {
+      service: "discord", feature: "oauth", operation: "USER_LOOKUP", status: "FAILED",
+      errorCode: "DISCORD_USER_LOOKUP_FAILED", message: `Discord user lookup failed (HTTP ${userResponse.status})`,
+      metadata: { httpStatus: userResponse.status }
+    });
     console.error("Discord user lookup failed:", userResponse.status);
     return json({ ok: false, error: "DISCORD_USER_LOOKUP_FAILED" }, 502);
   }
@@ -3667,10 +3687,21 @@ async function handleDiscordCallback(request, env) {
   // server after Discord OAuth approval. The OAuth access token is used only
   // for this one-time guild join request and is never stored in the session.
   try {
-    await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
+    const joinResult = await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
+    if (env.DB) await recordDiagnostic(env.DB, {
+      service: "discord_support", feature: "guild_membership", operation: "GUILD_JOIN", status: "SUCCESS",
+      message: joinResult === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
+      metadata: { result: joinResult }
+    });
   } catch (error) {
     // Support guild auto-join is an auxiliary feature and must never block
     // the primary Discord login/session issuance.
+    if (env.DB) await recordDiagnostic(env.DB, {
+      service: "discord_support", feature: "guild_membership", operation: "GUILD_JOIN", status: "FAILED",
+      errorCode: String(error?.message || "DISCORD_SUPPORT_GUILD_JOIN_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000),
+      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null }
+    });
     console.error("discord_support_guild_join_failed", {
       discord_id: String(discordUser.id),
       status: error?.status || 0,
@@ -3697,6 +3728,11 @@ async function handleDiscordCallback(request, env) {
     } catch (error) {
       // Keep Discord authentication usable during a temporary D1 outage.
       // The signed session is safe to issue, while DB-backed roles remain unavailable.
+      await recordDiagnostic(env.DB, {
+        service: "discord", feature: "oauth", operation: "USER_PERSIST", status: "FAILED",
+        errorCode: String(error?.message || "DISCORD_USER_PERSIST_FAILED").split(":")[0],
+        message: String(error?.message || error).slice(0, 2000)
+      });
       console.error("discord_user_persist_failed", error?.message || error);
     }
   }
