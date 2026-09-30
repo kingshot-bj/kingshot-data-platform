@@ -1450,3 +1450,28 @@ CLOSED以外のticketを `/reopen` しても `SUPPORT_TICKET_NOT_CLOSED` で拒�
 - iPhone Safari / Discord側での実運用確認
 
 したがって現時点では「コード実装済み」であり、「本番確認済み」ではない。
+
+
+## Support v2 実装（2026-09-30）
+
+- 目的：ユーザー負担と1人運営時のサポート負担を同時に削減。
+- 実装ブランチ：`feature/support-v2`
+- 問い合わせを「カテゴリ → サブカテゴリ → Q&A/解決案内 → 未解決時のみ問い合わせ」のウィザード化。
+- 必要な項目だけ追加収集し、自由記述を最小化。
+- Discordチケット作成時にカテゴリ階層、Q&A ID、追加情報、関連する異常検知情報を初期メッセージへ引き継ぐ。
+- 既存の `diagnostic_events` を参照し、直近30分以内の WARNING/FAILED をサポート画面へ表示。正式なIncidentテーブルは新設していない。
+- 問い合わせ履歴をD1へ保存しない設計は維持。Q&Aカタログもコード内定義。
+- サポート画面の異常コンテキストはWorker isolate内30秒キャッシュ。キャッシュミス時に `diagnostic_events` を1行参照するだけで、書き込みなし。
+- チケット作成は従来通りDiscord APIのみ。
+- 既存のランキング/ウォッチリスト取得処理、`ranking_snapshots` 広域読み取り、service usage書き込み経路は変更していない。
+- 旧 `POST /api/support` はsubcategory省略時に `OTHER` へフォールバックし、既存category + subject + message クライアントとの互換性を維持。
+- 未確認：本番Support UI、本番Discordチケット作成、本番Discord permission overwrite `68608`、本番障害発生時の案内挙動、本番D1実測値。
+
+
+## 2026-09-30 Preview環境表示
+
+- Preview版の全HTMLページに共通テーマ経由で「🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません」バナーを表示する実装を追加。
+- Production Workerのホスト名（kingshot-data-platform.black-jack-kingshot.workers.dev）以外ではPreview表示として判定。
+- `wrangler.jsonc` に `EAGLEEYE_ENV=production` / Previewでは `EAGLEEYE_ENV=preview` を追加。
+- Previewは本番D1/R2を共有する現構成のため、Preview操作が本番データへ影響し得る点は継続注意。
+- 2026-09-30時点で、この変更後のPreview Build/実機動作は未確認。Build成功や本番動作確認済みとは扱わない。

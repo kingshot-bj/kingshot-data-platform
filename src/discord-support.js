@@ -1,6 +1,92 @@
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const TICKET_ID_RE = /^EE-\d{8}-[A-Z0-9]{4}$/;
 
+export const SUPPORT_CATALOG = [
+  { key:"ACCOUNT", label:"アカウント", children:[
+    {key:"LOGIN",label:"ログインできない",qa:"Discordログイン後に戻れない場合は、まずEagleEyeを再読み込みしてください。解決しない場合は問い合わせへ進めます。"},
+    {key:"DISCORD",label:"Discord連携",qa:"Discord連携の状態を確認し、再ログインを試してください。"},
+    {key:"ROLE",label:"権限・ロール",qa:"権限はEagleEye側のアカウント状態で決まります。表示内容を確認しても解決しない場合は問い合わせへ進めます。"},
+    {key:"GOVERNOR_ID",label:"王国ID / 領主ID",qa:"マイKingShotから領主IDを登録できます。既に別アカウントに登録されている場合は専用サポートへ進めます。"},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"DATA", label:"データ", children:[
+    {key:"PLAYER",label:"プレイヤーデータ",qa:"対象の領主IDと、問題の項目を確認してください。最新取得時刻も自動診断に利用します。",fields:["governor_id","field","displayed_value","expected_value"]},
+    {key:"KINGDOM",label:"王国データ",qa:"王国番号と問題の内容を確認します。",fields:["kid"]},
+    {key:"RANKING",label:"ランキング",qa:"ランキングは取得時点・対象ボードによって表示が変わります。",fields:["kid","board"]},
+    {key:"WATCHLIST",label:"ウォッチリスト",qa:"ウォッチリストの登録状態と最終取得状態を確認します。",fields:["target"]},
+    {key:"STALE",label:"データが古い",qa:"EagleEyeの表示時刻と取得時刻を確認します。現在障害が検知されている場合は先に障害情報を案内します。",fields:["target"]},
+    {key:"INCORRECT",label:"データが間違っている",qa:"表示値と正しいと思われる値を入力すると、サポート側で比較できます。",fields:["governor_id","field","displayed_value","expected_value"]},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"API", label:"API", children:[
+    {key:"MIGHTPULSE",label:"MightPulse",qa:"MightPulse側の障害・応答状態を確認します。",fields:["message"]},
+    {key:"API_KEY",label:"APIキー",qa:"APIキーの登録状態やPool側の状態を確認します。キー本体は入力しないでください。"},
+    {key:"FETCH_ERROR",label:"データ取得エラー",qa:"EagleEyeが検知したエラー情報を確認してから問い合わせできます。",fields:["target"]},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"FEATURE", label:"機能・要望", children:[
+    {key:"PLAYER_SEARCH",label:"プレイヤー検索"},
+    {key:"PLAYER_WATCHLIST",label:"プレイヤーウォッチリスト"},
+    {key:"KINGDOM_WATCHLIST",label:"王国ウォッチリスト"},
+    {key:"MY_KINGSHOT",label:"マイKingShot"},
+    {key:"RANKING",label:"ランキング"},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"BUG", label:"不具合", children:[
+    {key:"PAGE",label:"画面が表示されない"},
+    {key:"BUTTON",label:"ボタンが動かない"},
+    {key:"DATA",label:"データ取得がおかしい"},
+    {key:"DISCORD",label:"Discord連携がおかしい"},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"BILLING", label:"料金・請求", children:[
+    {key:"USAGE",label:"利用料金"},
+    {key:"BILLING",label:"請求"},
+    {key:"OTHER",label:"その他"}
+  ]},
+  { key:"OTHER", label:"その他", children:[{key:"OTHER",label:"その他"}]}
+];
+
+function findSupportCategory(category, subcategory) {
+  const parent = SUPPORT_CATALOG.find(item => item.key === String(category || "").toUpperCase());
+  const child = parent?.children?.find(item => item.key === String(subcategory || "").toUpperCase());
+  return parent && child ? { parent, child } : null;
+}
+
+let supportIncidentCache = { at:0, value:null };
+export async function getSupportIncidentContext(env) {
+  const now = Date.now();
+  if (now - supportIncidentCache.at < 30000) return supportIncidentCache.value;
+  if (!env?.DB) return null;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT service, feature, operation, status, error_code, message, created_at FROM diagnostic_events WHERE status IN ('FAILED','WARNING') ORDER BY created_at DESC LIMIT 1"
+    ).first();
+    if (!row) { supportIncidentCache={at:now,value:null}; return null; }
+    const age = Math.max(0, Math.floor(Date.now()/1000)-Number(row.created_at||0));
+    const active = age <= 30 * 60;
+    const value = active ? {
+      active:true, service:row.service, feature:row.feature, operation:row.operation,
+      status:row.status, error_code:row.error_code || null, message:row.message || null,
+      detected_at:Number(row.created_at||0), age_seconds:age
+    } : null;
+    supportIncidentCache={at:now,value};
+    return value;
+  } catch (error) {
+    console.error("support_incident_context_failed", error?.message || error);
+    supportIncidentCache={at:now,value:null};
+    return null;
+  }
+}
+
+export async function handleSupportContextApi(request, env, auth) {
+  if (!auth?.user_id || auth.status !== "ACTIVE") return supportJson({ok:false,error:"UNAUTHORIZED"},401);
+  if (request.method !== "GET") return supportJson({ok:false,error:"METHOD_NOT_ALLOWED"},405);
+  return supportJson({ok:true, incident:await getSupportIncidentContext(env)});
+}
+
+
+
 
 function hexToBytes(value) {
   const text = String(value || "").trim();
@@ -109,31 +195,27 @@ async function getGuildMember(env, guildId, discordUserId) {
 }
 
 function validateTicketInput(body) {
-  const category = String(body?.category || "OTHER").trim().toUpperCase();
+  const category = String(body?.category || "").trim().toUpperCase();
+  let subcategory = String(body?.subcategory || "").trim().toUpperCase();
+  if (!subcategory) subcategory = "OTHER";
+  const selected = findSupportCategory(category, subcategory);
   const subject = String(body?.subject || "").trim();
   const message = String(body?.message || "").trim();
-
-  const allowedCategories = new Set([
-    "BUG",
-    "ACCOUNT",
-    "DATA",
-    "API",
-    "BILLING",
-    "FEATURE",
-    "OTHER"
-  ]);
-
-  if (!allowedCategories.has(category)) {
-    return { error: "INVALID_CATEGORY" };
-  }
+  const details = body?.details && typeof body.details === "object" ? body.details : {};
+  const qnaId = String(body?.qna_id || "").trim().slice(0,80);
+  if (!selected) return { error: "INVALID_CATEGORY_PATH" };
   if (!subject) return { error: "SUBJECT_REQUIRED" };
   if (subject.length > 120) return { error: "SUBJECT_TOO_LONG" };
-  if (!message) return { error: "MESSAGE_REQUIRED" };
   if (message.length > 4000) return { error: "MESSAGE_TOO_LONG" };
-
-  return { category, subject, message };
+  const fields = Array.isArray(selected.child.fields) ? selected.child.fields : [];
+  const normalizedDetails = {};
+  for (const field of fields) {
+    const value = String(details[field] ?? "").trim();
+    if (value.length > 1000) return { error: "DETAIL_TOO_LONG" };
+    if (value) normalizedDetails[field] = value;
+  }
+  return { category, subcategory, categoryLabel:selected.parent.label, subcategoryLabel:selected.child.label, subject, message, details:normalizedDetails, qnaId };
 }
-
 function permissionOverwrite(id, type, allow = "0", deny = "0") {
   return {
     id,
@@ -152,29 +234,21 @@ function buildChannelName(ticketId, subject) {
   return normalized ? `ticket-${ticketId.toLowerCase()}-${normalized}`.slice(0, 100) : `ticket-${ticketId.toLowerCase()}`;
 }
 
-function buildInitialMessage({ ticketId, user, category, subject, message }) {
+function buildInitialMessage({ ticketId, user, category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident }) {
+  const detailLines = Object.entries(details || {}).map(([key,value]) => `**${key}:** ${value}`);
   return [
-    `# EagleEye Support ${ticketId}`,
-    "",
-    "**Status:** OPEN",
-    `**User:** <@${user.discordId}>`,
-    `**Discord ID:** ${user.discordId}`,
-    `**Role:** ${user.role || "UNKNOWN"}`,
-    `**Category:** ${category}`,
-    `**Subject:** ${subject}`,
-    "",
-    "**Inquiry:**",
-    message,
-    "",
+    `# EagleEye Support ${ticketId}`, "", "**Status:** OPEN",
+    `**User:** <@${user.discordId}>`, `**Discord ID:** ${user.discordId}`, `**Role:** ${user.role || "UNKNOWN"}`,
+    `**Category:** ${categoryLabel} > ${subcategoryLabel}`, `**Category Key:** ${category} > ${subcategory}`,
+    `**Subject:** ${subject}`, qnaId ? `**Q&A:** ${qnaId}` : "**Q&A:** 未解決",
+    incident?.active ? `**Related Incident:** ${incident.service} / ${incident.status} / ${incident.error_code || "unknown"}` : "**Related Incident:** なし",
+    detailLines.length ? "" : null, ...detailLines, "", "**Inquiry:**", message || "（補足なし）", "",
     "_Reply in this channel. Support operators may use the channel's close workflow when the inquiry is resolved._"
-  ].join("\n");
+  ].filter(line => line !== null).join("\n");
 }
 
 export async function createSupportTicket(env, {
-  user,
-  category,
-  subject,
-  message
+  user, category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident
 }) {
   const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
   const categoryId = normalizeDiscordId(env.DISCORD_SUPPORT_CATEGORY_ID);
@@ -204,7 +278,7 @@ export async function createSupportTicket(env, {
       name: buildChannelName(ticketId, subject),
       type: 0,
       parent_id: categoryId,
-      topic: `EagleEye Support ${ticketId} | user=${discordUserId} | status=OPEN`,
+      topic: `EagleEye Support ${ticketId} | user=${discordUserId} | status=OPEN | category=${category} | subcategory=${subcategory}`,
       permission_overwrites: [
         permissionOverwrite(guildId, 0, "0", "1024"),
         permissionOverwrite(discordUserId, 1, "68608", "0"),
@@ -224,9 +298,7 @@ export async function createSupportTicket(env, {
             discordId: discordUserId,
             role: user.role
           },
-          category,
-          subject,
-          message
+          category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident
         }),
         allowed_mentions: {
           users: [discordUserId],
@@ -378,9 +450,10 @@ export async function handleSupportApi(request, env, auth) {
     try {
       const result = await createSupportTicket(env, {
         user: auth,
-        category: input.category,
-        subject: input.subject,
-        message: input.message
+        category: input.category, subcategory: input.subcategory,
+        categoryLabel: input.categoryLabel, subcategoryLabel: input.subcategoryLabel,
+        subject: input.subject, message: input.message, details: input.details, qnaId: input.qnaId,
+        incident: await getSupportIncidentContext(env)
       });
       return supportJson({ ok: true, ...result }, 201);
     } catch (error) {
