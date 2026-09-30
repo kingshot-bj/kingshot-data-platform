@@ -380,3 +380,84 @@ However:
 **read freely; edit only through the main project's own development process.**
 
 If the implementation changes after this document is reviewed, Management will re-check the main branch before relying on the previous contract.
+
+
+## 21. Future Support / Inquiry Management requirement — 2026-09-30
+
+Management has requested that the future EagleEye support system be designed as a cross-project capability.
+
+### Intended architecture
+
+EagleEye main:
+- user-facing support form
+- authenticated ticket creation
+- stable ticket ID issuance
+- Discord Bot integration
+- private Discord support channel creation
+- initial ticket message / user handoff
+
+Discord Bot:
+- private support channel per ticket
+- conversation history / archive
+- operator replies
+- close / lock operation
+
+EagleEye Management:
+- future inquiry list
+- ticket search / filtering
+- ticket status
+- user / ticket metadata
+- operator reply
+- close / reopen
+- Management-side audit
+
+### Storage constraint
+
+Do NOT copy the full Discord conversation history into EagleEye main D1.
+
+Discord is the initial conversation backend / archive.
+
+If Management later needs efficient indexing/searching, prefer a lightweight Management-owned ticket metadata/index store rather than duplicating message bodies.
+
+### Stable ticket ID
+
+The ticket ID must remain stable across:
+
+EagleEye main -> Discord support channel -> EagleEye Management
+
+Avoid requiring a sequential D1 counter for initial ticket creation. A collision-resistant ticket ID is acceptable.
+
+### Main-side integration requirements
+
+When implementation begins, EagleEye main should provide an explicit integration boundary for Management rather than exposing broad Admin routes.
+
+The design should account for:
+- Management authentication / authorization
+- ticket lookup by stable ticket ID
+- ticket metadata access
+- controlled operator reply
+- controlled close / reopen
+- operator identity / audit context
+- idempotency for Management-originated mutations
+
+### Important Discord consideration
+
+The EagleEye OAuth flow currently authenticates the Discord user but does not by itself establish that the user is a member of the support Discord Guild.
+
+Before creating a private ticket channel that grants access to the user, the implementation must define and verify the required Guild membership / permission path.
+
+### Abuse / operational controls
+
+The initial support implementation should consider:
+- active-ticket limit per user
+- request rate limiting / cooldown
+- input length limits
+- restricted operator permissions
+- no Administrator permission for the bot
+- closed tickets remain archived rather than being deleted
+
+### Status
+
+This is a future design / integration requirement only.
+
+It is **not production-confirmed** until the complete EagleEye -> Discord Bot -> private ticket -> operator reply -> close flow is actually verified in production.
