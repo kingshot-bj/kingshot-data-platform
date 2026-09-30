@@ -3741,7 +3741,7 @@ async function handleDiscordCallback(request, env) {
   try {
     const joinResult = await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
     if (env.DB) await recordDiagnostic(env.DB, {
-      service: "discord_support", feature: "guild_membership", operation: "GUILD_JOIN", status: "SUCCESS",
+      service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "SUCCESS",
       message: joinResult === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
       metadata: { result: joinResult }
     });
@@ -3749,7 +3749,7 @@ async function handleDiscordCallback(request, env) {
     // Support guild auto-join is an auxiliary feature and must never block
     // the primary Discord login/session issuance.
     if (env.DB) await recordDiagnostic(env.DB, {
-      service: "discord_support", feature: "guild_membership", operation: "GUILD_JOIN", status: "FAILED",
+      service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "FAILED",
       errorCode: String(error?.message || "DISCORD_SUPPORT_GUILD_JOIN_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000),
       metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null }
