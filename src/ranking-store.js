@@ -141,6 +141,11 @@ export async function getPlayerRankHistory(db, {
       limit: safeLimit
     });
   } catch (error) {
+    await recordDiagnostic(db, {
+      service: "ranking", feature: "player_history_storage", operation: "READ_R2", status: "FAILED",
+      errorCode: String(error?.code || error?.message || "R2_READ_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000), targetType: "PLAYER", targetId: String(governorId)
+    });
     console.error("player_rank_history_r2_read_failed", {
       governorId: String(governorId),
       message: error?.message || String(error)
@@ -442,6 +447,12 @@ export async function getRankingHistory(db, { kid, board, targetId, limit = 50, 
       limit: safeLimit
     });
   } catch (error) {
+    await recordDiagnostic(db, {
+      service: "ranking", feature: "history_storage", operation: "READ_R2", status: "FAILED",
+      errorCode: String(error?.code || error?.message || "R2_READ_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000), targetType: "KINGDOM", targetId: String(targetId),
+      metadata: { kid, board }
+    });
     console.error("ranking_history_r2_read_failed", {
       kid,
       board,
