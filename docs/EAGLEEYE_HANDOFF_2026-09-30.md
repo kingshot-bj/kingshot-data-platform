@@ -2330,3 +2330,91 @@ Research Lab UIも固定20候補から MIGHTPULSE_RESEARCH_CANDIDATES を動的�
 3. Watchlist比較からプレイヤー詳細へ戻る導線を整える
 4. Research実測結果をもとに、実際に存在するフレーム/スキン/その他画像を正式フィールドとして取り込む
 5. 画像/アセット表示の権限・URL安全性を本番確認
+
+
+---
+
+# 44. 大規模変更の段階分割・安全実装ルール（2026-10-01）
+
+## 背景
+
+Player Compare / KingShotアセット / iPhone UI等の大きな変更で、巨大な `src/index.js` を一括書き換えした際にファイル末尾が途中で切れ、Cloudflare deploy時に `Unexpected end of file` が発生した。
+
+今回の復旧では `src/index.js` を `2d0efbd82886228f9dad89adff487177f82e3eed` 相当へ戻し、復旧commit:
+
+- `97a923395624237e2a9d43c14fe66e316dcc53c9` — `fix: restore index.js after truncated player compare edit`
+
+をmainへ反映した。
+
+## 今後の原則
+
+大きな機能変更は**一気に実装せず、最初に段階へ分割してから1段階ずつ実装する。**
+
+基本フロー:
+
+1. 変更全体を複数段階に分解
+2. 最初に「今回は第1段階だけ」と明示
+3. 第1段階を実装
+4. diff / 変更ファイル / ファイル末尾 / 構文を確認
+5. build / testを実行
+6. 問題なければcommit
+7. 完了内容と未実装範囲を報告
+8. 次の段階へ進む
+
+**1段階が完了するまで、次段階をまとめて実装しない。**
+
+## 特に `src/index.js` について
+
+巨大な `src/index.js` に対して、
+
+- ファイル全体を取得
+- 文字列置換で大量編集
+- ファイル全体をそのまま書き戻す
+
+という方式は原則避ける。
+
+優先順位:
+
+1. 小さな局所変更
+2. 新規処理を別moduleへ切り出す
+3. `index.js` はrouting / 画面導線など必要最小限だけ変更
+4. どうしても全体更新が必要な場合は、書き戻す前に完全なファイル内容・末尾・diff・buildを確認する
+
+## Player Compare / アセット実装への適用
+
+現在はPlayer Compare関連の `index.js` 統合部分が復旧によりmainから外れている。
+
+したがって再実装する場合も、以下のように分割する。
+
+### 第1段階
+バックエンド/API・helperの確認と必要最小限のrouting追加。
+
+### 第2段階
+既存Watchlist / Player Detailから比較画面への導線。
+
+### 第3段階
+比較画面UI。
+
+### 第4段階
+MightPulseから取得できる実在アセット（avatar / frame / 城・都市スキン / 行軍スキン等）の個別取り込み。
+
+### 第5段階
+Research Lab等の補助UI・細部調整。
+
+各段階ごとにbuild確認とcommitを行う。
+
+## 本番確認ルール
+
+各段階について、
+
+- GitHub mainへ反映済み
+- build成功
+- Cloudflare deploy成功
+- Production E2E確認済み
+
+を別々に扱う。
+
+**mainに実装されただけでは本番確認済みとは言わない。**
+
+今回の復旧事故についても、deploy時build failureは確認済みだが、Production Workerでこの壊れたコードが稼働したことは確認していない。
+
