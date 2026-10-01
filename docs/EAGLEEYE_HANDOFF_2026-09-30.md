@@ -2606,3 +2606,67 @@ Player Compare API（第1段階）を利用する前段として、プレイヤ�
 ## 検証
 main上のソース確認済み。src/index.js 括弧数 3134 / 3134。比較ルート・リッチ情報処理・アセット表示処理を確認。
 **この3b変更の本番Workerデプロイ・実機表示は未確認。**
+
+# 49. Player Detail 3b（MightPulseリッチ情報・追加アセット表示）実装（2026-10-01）
+
+## 目的
+Player Compare 3bで追加したMightPulseリッチ情報・任意アセット表示を、比較画面だけでなく既存のプレイヤー詳細画面でも利用できるようにする。
+
+## 実装内容
+- `renderPlayerPage()` で既に取得している最新 `api_observations` payload から `extractOptionalPlayerAssets()` を実行。
+- 追加のMightPulse APIリクエストは行わない。
+- Player Detailに「プロフィール素材」セクションを追加。
+- payloadに実在する場合のみ以下の任意素材を表示:
+  - プロフィールフレーム
+  - 城 / 都市スキン
+  - 行軍スキン
+  - プロフィール素材
+  - その他 `skins / frames / cosmetics` 内で検出された画像
+- 素材画像は既存の `normalizeProfileAssetUrl()` を使用。
+- 既存の英雄:
+  - アイコン
+  - レベル
+  - 星 / star_label
+  - 品質
+  - 戦力
+  - スキル
+  - 専用装備
+  - 通常装備
+  をそのまま詳細画面で表示。
+- 既存の領主装備:
+  - アイコン
+  - slot
+  - quality
+  - tier
+  - star
+  - strength
+  - score
+  - combat
+  - gems
+  をそのまま維持。
+
+## D1 / API方針
+- Player Detailは元々最新 `api_observations` を取得しているため、今回のアセット表示追加のために新規D1観測取得を追加していない。
+- MightPulseへの追加直接リクエストも追加していない。
+- `ranking_snapshots` の広範囲読み取りは追加していない。
+- フレーム / 城スキン / 行軍スキンは公開API仕様で確定していないため、レスポンスに実際に存在する場合のみ表示する。
+
+## コミット
+- `cc32a919348000d7ac0c47a703b50735653d7acf`
+  - `feat: show MightPulse optional assets on player detail`
+
+## 検証
+- 7bb41a59bc768df1f9ccb740c127e7b76da14ff6 → cc32a919348000d7ac0c47a703b50735653d7acf の差分を確認。
+- 変更ファイル:
+  - `src/index.js`
+  - 本handoff
+- Player Detailへの任意アセット表示処理を確認。
+- 括弧数は編集前後で整合するよう検証済み。
+- **Cloudflare本番Workerへのdeploy成功は未確認。**
+- **本番Player Detailで追加アセットが表示されることは未確認。**
+- したがって「本番で確認済み」とは扱わない。
+
+## 次段階
+1. 本番deploy後にPlayer Detailを実機確認。
+2. 実際のpayloadでプロフィールフレーム / 城スキン / 行軍スキンが検出されるか確認。
+3. 検出されなかった場合はResearch結果を使って、実際に存在するフィールドだけ正式対応する。
