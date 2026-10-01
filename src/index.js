@@ -6263,7 +6263,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
         '<span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div>';
       const rawStar = hero.star ?? hero.stars;
       const parsedStar = Number(rawStar);
-      const labelMatch = String(hero.star_label ?? "").match(/\\d+/);
+      const labelMatch = String(hero.star_label ?? "").match(/\d+/);
       const starCount = Number.isFinite(parsedStar) ? Math.max(0, Math.floor(parsedStar)) : (labelMatch ? Number(labelMatch[0]) : 0);
       const starLabel = starCount > 0 ? (starCount + "-Star") : (hero.star_label || "Star -");
       const starIcons = starCount > 0 ? "★".repeat(Math.min(starCount, 10)) : "☆";
