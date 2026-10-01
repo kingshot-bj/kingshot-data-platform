@@ -2771,7 +2771,7 @@ Production確認時:
 
 ---
 
-# 52. 2026-10-02 OWNER / ADMIN 登録規模確認ページ【実装済み・本番未確認】
+# 52. 2026-10-02 OWNER / ADMIN 登録規模確認ページ【実装済み・本番UI確認済み】
 
 ## 要望
 
@@ -2866,35 +2866,61 @@ FROM kingdom_ranking_current
 
 mainには反映済み。
 
+### デプロイ障害と修正
+
+初回のデータ登録状況ページ実装では、`src/admin-data-coverage.js` のHTMLテンプレートリテラルに不要なエスケープが入り、Cloudflare buildで:
+
+```
+Syntax error "`"
+src/admin-data-coverage.js:7:12
+```
+
+となりデプロイに失敗した。
+
+修正コミット:
+- `bb8339ce613ee79a7cf296893de2b59b6c71cb4b`
+  - `fix: repair data coverage page template syntax`
+
+修正後、main上のファイルを再取得して:
+- \`\\` / \`\\${\` の誤エスケープ残存なし
+- 正しいJavaScript template literalであること
+を確認済み。
+
 ## 本番確認状況
 
-**未確認。**
+**本番UI表示確認済み（OWNER / iPhone実機）。**
 
-コード上の実装、routing、権限、schema、COUNT方式はmainで確認済み。
+2026-10-02、OWNERアカウントで本番Worker上の `/admin/data-coverage` をiPhone実機から開き、ページ表示を確認。
 
-ただし、現時点では:
-- Cloudflare本番Workerで `/admin/data-coverage` を開いた確認: 未確認
-- iPhone実機で表示確認: 未確認
-- 本番DBの実際の件数確認: 未確認
+スクリーンショットで確認できた本番表示:
+- ROLE: OWNER
+- 登録プレイヤー: **97人**
+- 登録王国: **15王国**
+- ランキングデータが存在する王国: **13王国**
+- 有効な王国ウォッチリスト: **3件**
 
-したがって、このページについて**「本番確認済み」とは扱わない。**
+これにより、少なくとも以下は本番実機で確認済み:
+- `/admin/data-coverage` のrouting
+- OWNER権限でのアクセス
+- データ登録状況ページUIの表示
+- 本番D1から件数を取得して表示できること
 
-ユーザーが実機で確認する予定。
+未確認:
+- ADMINロールでの実機表示
+- 各件数の独立したDB照合による数値正確性
+- ページ下部の「ウォッチ対象のユニーク王国」「取得時刻」「集計処理時間」まで含む全項目の実機確認
+
+したがって、**「OWNERで本番UI表示確認済み」までは確定**とし、ページ全項目・ADMIN権限・件数の独立照合まで「本番確認済み」とは扱わない。
 
 # 53. 次スレッド開始時の最優先タスク
 
 1. docs/EAGLEEYE_HANDOFF_2026-09-30.md（本書）と最新mainを基準にする。
-2. OWNER / ADMINページ構造を確認。
-3. D1 schemaを確認。
-4. 「登録プレイヤー数」「登録王国数」の正確な定義を確定。
-5. D1負荷を抑えたCOUNT queryを設計。
-6. OWNER / ADMIN専用の登録規模確認ページを実装。
-7. build / syntax / diff確認。
-8. mainへcommit。
-9. Cloudflare deployとproduction E2Eは別扱い。
-10. ユーザーが実機で確認していない限り、本番確認済みとは言わない。
-
----
+2. OWNER / ADMIN登録規模ページの本番確認残項目を整理。
+3. 必要ならADMINロールでの実機表示を確認。
+4. 必要なら本番D1件数との独立照合を行う。
+5. 次のEagleEye開発項目へ進む。
+6. main反映、deploy、production E2Eを別扱いで報告する。
+7. ユーザーが実機で確認していない項目は本番確認済みとは言わない。
 
 # 54. 最新状態の厳守事項
 
