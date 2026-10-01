@@ -5466,6 +5466,10 @@ async function handlePlayerCompareApi(request, env) {
   try {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const placeholders = governorIds.map(() => "?").join(",");
+    // Compare is a user-facing request. Keep R2 history reads bounded so a
+    // single page load does not fan out into hundreds of object reads.
+    // More players => fewer samples per player; the chart remains a trend view.
+    const historySampleLimit = governorIds.length === 2 ? 12 : governorIds.length === 3 ? 8 : 6;
     const [playersResult, ranksResult, historyResults] = await Promise.all([
       env.DB.prepare(
         "SELECT * FROM players WHERE governor_id IN (" + placeholders + ")"
@@ -5477,11 +5481,11 @@ async function handlePlayerCompareApi(request, env) {
         : Promise.resolve({ results: [] }),
       Promise.all(governorIds.map(async governorId => {
         const [playerHistory, rankHistory] = await Promise.all([
-          getPlayerHistory(env.DB, governorId, 100, env.ARCHIVE, env.HISTORY_STORAGE_MODE),
+          getPlayerHistory(env.DB, governorId, historySampleLimit, env.ARCHIVE, env.HISTORY_STORAGE_MODE),
           visibilityEnabled(visibilitySettings, "ranks_core", auth.role)
             ? getPlayerRankHistory(env.DB, {
                 governorId,
-                limit: 200,
+                limit: historySampleLimit,
                 archiveBucket: env.ARCHIVE,
                 historyMode: env.HISTORY_STORAGE_MODE
               })
