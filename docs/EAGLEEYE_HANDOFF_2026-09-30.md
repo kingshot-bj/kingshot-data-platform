@@ -2670,3 +2670,204 @@ Player Compare 3bで追加したMightPulseリッチ情報・任意アセット�
 1. 本番deploy後にPlayer Detailを実機確認。
 2. 実際のpayloadでプロフィールフレーム / 城スキン / 行軍スキンが検出されるか確認。
 3. 検出されなかった場合はResearch結果を使って、実際に存在するフィールドだけ正式対応する。
+
+# 50. 2026-10-02 追加監査・Player Compare / Diagnostics
+
+## Service Usage operation 定義監査
+
+コード上の trackServiceUsage 呼び出しと src/service-usage.js のoperation定義を照合した。
+不足していたoperationを追加。
+
+追加:
+- PLAYER_COMPARE_VIEW
+- ADVANCED_PROMOTED
+- MIGHTPULSE_API_KEY_CONTRIBUTE
+
+これらで使用される targetType=USER を許可。
+feature分類も PLAYER_* / KINGDOM_* / その他(Account) に整理。
+
+Commit:
+- 370d30766017f805d798c7b0e8d3a1a86731ae55
+
+## Player Compare timing telemetry
+
+PLAYER_COMPARE_VIEW に以下を記録するよう追加。
+- duration_ms
+- data_read_duration_ms
+- observation_duration_ms
+- history_sample_limit
+
+Commit:
+- 5d2f8931d3c7b89d23be82d11a01fb53af24d5f6
+
+注意:
+data_read_duration_ms はD1だけでなく、D1 + history取得を含むデータ読み込み時間。D1単独のdurationとは表現しない。
+
+## Status JSON Comparator / Query Duration
+
+Cloudflare D1 Query Insightsに存在するquery durationをComparatorでも扱えるよう修正。
+
+Commits:
+- e58842ccae56c023ae376b58fcec5758956cc52b
+  - duration capture / aggregation / diff / filter
+- 866fcec49833404702ae44b8d02c1df4b6daabda
+  - Query Duration 差分 sort
+- 6c90300a7151a1acf870e0869667f5893c0d7d35
+  - duration欠落時の0 fallback / NaN防止
+
+## JSON / Diagnosticsで追える範囲
+
+現在コード上で追跡可能:
+- D1 Rows Read / Written
+- D1 Query Count
+- D1 Query Insights / SQL
+- D1 Query Duration
+- Worker Requests / CPU / Errors
+- R2 Class A/B / storage / object inventory
+- API Pool
+- Watchlist Job
+- MightPulse / Player / Ranking diagnostics
+- History Storage
+- Google / Discord / Retention / Emergency Buffer
+- Player Compare Service Usage
+
+まだrequest-levelで直接追えない:
+- R2 individual GET duration
+- R2 LIST duration
+- exact end-to-end HTTP request duration
+- browser / iPhone UI rendering time
+- iPhone network wait
+- Compare全体のper-MightPulse request durationの統合trace
+
+必要になった場合も、R2 GETごとにD1へdiagnostic rowを書くのではなく、1 request内でin-memory集計して最後に1件へまとめる方向を優先する。
+
+---
+
+# 51. Player Compare R2負荷対策（2026-10-02）
+
+Player Compare APIは、Player HistoryとRank HistoryをR2_ONLY構成で取得する際、比較人数が少なくても多数のR2 object GETを発生させ得た。
+
+対策:
+
+const historySampleLimit =
+  governorIds.length === 2 ? 8 :
+  governorIds.length === 3 ? 6 : 4;
+
+Commit:
+- 3a876ae8b9bfb6cdd4c1ee80c6ecd89702736113
+
+これにより比較対象数に応じて履歴サンプル量を抑制する。
+
+mainへ反映済みだが、この変更のCloudflare本番E2Eはまだ確認していない。
+
+Production確認時:
+1. iPhoneで2〜4人比較
+2. 比較データが実際に表示されるか確認
+3. status JSON取得
+4. D1 Query Insights確認
+5. Service Usage timing確認
+
+必要ならブラウザ側にAbortController timeoutを追加し、API待ちのまま「比較データを読み込み中…」が永久表示されないようにする。
+
+---
+
+# 52. 2026-10-02 新規要望：OWNER / ADMIN 登録規模確認ページ
+
+## 要望
+
+OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデータ規模を確認できるページを追加する。
+
+最低限:
+- 登録プレイヤー数
+- 登録王国数
+
+をリアルタイムに近い現在値として確認できるようにする。
+
+## 実装前に必ず確認すること
+
+「登録プレイヤー」「登録王国」の定義を勝手に決めない。
+
+mainの実コード / DB schemaを確認し、以下を確定してから実装する。
+
+1. players の役割と一意キー
+2. 王国を管理する専用tableの有無
+3. players の kid / kingdom_id 等の実際のschema
+4. kingdom_ranking_current の位置付け
+5. 既存のOWNER / ADMIN routing・auth
+6. 既存index
+7. 現在「登録」として扱っているデータの実装上の定義
+
+## D1方針
+
+目的は件数確認なので、不要な一覧取得は行わない。
+
+基本候補:
+- COUNT(*)
+- 必要な場合のみ COUNT(DISTINCT ...)
+
+ただし、実schemaと既存データモデルを確認した上で最適なqueryを決定する。
+
+D1 Rows Readを抑えるため、全players一覧を取得してWorker側で数える方式は禁止。
+
+## UI案
+
+OWNER / ADMINページ内に例えば:
+
+- 「EagleEye 登録データ」
+- 「登録プレイヤー」
+- 「登録王国」
+- 最終集計時刻
+
+をカード形式で表示。
+
+必要性を確認した上で将来的に:
+- 王国別プレイヤー数
+- 王国ID
+- 最終観測日時
+- 増減履歴
+などへ拡張可能な構造にする。
+
+## 権限
+
+- OWNER: 閲覧可能
+- ADMIN: 閲覧可能
+- BASIC / ADVANCED: 閲覧不可
+
+既存OWNER / ADMIN認証・権限判定を再利用し、独自の弱い権限判定を追加しない。
+
+## 現在の状態
+
+未実装。
+
+まだDB schemaと既存管理画面構造の確認段階。
+
+次スレッドではまずmainのschema / routing / authを確認してから実装する。
+
+---
+
+# 53. 次スレッド開始時の最優先タスク
+
+1. docs/EAGLEEYE_HANDOFF_2026-09-30.md（本書）と最新mainを基準にする。
+2. OWNER / ADMINページ構造を確認。
+3. D1 schemaを確認。
+4. 「登録プレイヤー数」「登録王国数」の正確な定義を確定。
+5. D1負荷を抑えたCOUNT queryを設計。
+6. OWNER / ADMIN専用の登録規模確認ページを実装。
+7. build / syntax / diff確認。
+8. mainへcommit。
+9. Cloudflare deployとproduction E2Eは別扱い。
+10. ユーザーが実機で確認していない限り、本番確認済みとは言わない。
+
+---
+
+# 54. 最新状態の厳守事項
+
+- ranking_snapshots の広範囲取得を復活させない。
+- R2_ONLY方針を維持。
+- D1へ大量historyを戻さない。
+- SERVICE_USAGE event本体をD1へ保存しない。
+- R2 objectごとのdiagnostic D1 INSERTを増やさない。
+- 巨大な src/index.js を一括書き換えしない。
+- 大規模変更は段階分割し、各段階ごとに検証・commitする。
+- main反映、deploy、production E2Eを明確に分離して報告する。
+- API key / Refresh Token等のsecretをログ・UI・handoffへ出さない。
