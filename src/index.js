@@ -6190,36 +6190,40 @@ function normalizeProfileAssetUrl(value) {
 function renderSegmentedHeroStar(label, filledSegments = 0) {
   const aria = escapeHtml(label || "Star");
   const filled = Math.max(0, Math.min(6, Math.floor(Number(filledSegments) || 0)));
-  // ゲーム内の英雄ランク表示に合わせた「6分割の花形スター」。
-  // 各アイコンを6セグメントとして、取得した star 進捗を部分表示する。
+
+  // ゲーム内の英雄ランク表示に合わせた6方向の星形。
+  // 「花びら」に相当する6本の尖ったセグメントを完全に独立させ、
+  // 進捗に応じて1本ずつ塗り分ける。中央の円は常時表示する。
   const cx = 20;
   const cy = 20;
   const outer = 18;
   const inner = 6.5;
-  const half = Math.PI / 6;
-  const points = [];
+  const halfAngle = Math.PI / 14;
+  const rays = [];
+
   for (let i = 0; i < 6; i += 1) {
-    const a = -Math.PI / 2 + i * (Math.PI / 3);
-    const left = a - half * 0.72;
-    const right = a + half * 0.72;
-    points.push({
-      tip: [cx + Math.cos(a) * outer, cy + Math.sin(a) * outer],
+    const angle = -Math.PI / 2 + i * (Math.PI / 3);
+    const left = angle - halfAngle;
+    const right = angle + halfAngle;
+    rays.push({
+      tip: [cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer],
       left: [cx + Math.cos(left) * inner, cy + Math.sin(left) * inner],
       right: [cx + Math.cos(right) * inner, cy + Math.sin(right) * inner]
     });
   }
-  const petals = points.map((p, index) =>
+
+  const segments = rays.map((ray, index) =>
     '<polygon class="hero-star-petal ' + (index < filled ? 'is-filled' : 'is-empty') + '" points="' +
-    p.left.join(",") + " " + p.tip.join(",") + " " + p.right.join(",") +
+    ray.left.join(",") + " " + ray.tip.join(",") + " " + ray.right.join(",") +
     '"></polygon>'
   ).join("");
+
   return '<svg class="hero-star" viewBox="0 0 40 40" role="img" aria-label="' + aria + '" focusable="false">' +
-    petals +
+    segments +
     '<circle class="hero-star-center" cx="20" cy="20" r="6.5"></circle>' +
     '<path class="hero-star-divider" d="M20 13.5V26.5 M13.5 20H26.5"></path>' +
     '</svg>';
 }
-
 function renderPlayerOptionalAssets(assets, canExport = false) {
   const list = Array.isArray(assets) ? assets : [];
   if (!list.length) return "";
