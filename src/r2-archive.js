@@ -270,21 +270,23 @@ export async function listPlayerHistoryFromR2(bucket, {
 
   objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
 
-  const result = [];
-  for (const object of objects) {
-    if (result.length >= safeLimit) break;
+  // The object keys are already sorted newest-first above. Read only the
+  // bounded sample in parallel; the previous sequential GET loop made compare
+  // pages wait on one R2 object at a time.
+  const selectedObjects = objects.slice(0, safeLimit);
+  const rowsByObject = await Promise.all(selectedObjects.map(async object => {
     const response = await bucket.get(object.key);
-    if (!response?.body) continue;
+    if (!response?.body) return [];
     const stream = await ungzipBody(response.body);
     const text = await new Response(stream).text();
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      result.push(JSON.parse(line));
-      if (result.length >= safeLimit) break;
-    }
-  }
+    return text.split("\n")
+      .filter(line => line.trim())
+      .map(line => JSON.parse(line));
+  }));
 
-  return result.sort((a, b) => Number(b.observed_at) - Number(a.observed_at)).slice(0, safeLimit);
+  return rowsByObject.flat()
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, safeLimit);
 }
 
 
@@ -375,19 +377,21 @@ export async function listPlayerRankHistoryFromR2(bucket, {
 
   objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
 
-  const result = [];
-  for (const object of objects) {
-    if (result.length >= safeLimit) break;
+  // The object keys are already sorted newest-first above. Read only the
+  // bounded sample in parallel; the previous sequential GET loop made compare
+  // pages wait on one R2 object at a time.
+  const selectedObjects = objects.slice(0, safeLimit);
+  const rowsByObject = await Promise.all(selectedObjects.map(async object => {
     const response = await bucket.get(object.key);
-    if (!response?.body) continue;
+    if (!response?.body) return [];
     const stream = await ungzipBody(response.body);
     const text = await new Response(stream).text();
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      result.push(JSON.parse(line));
-      if (result.length >= safeLimit) break;
-    }
-  }
+    return text.split("\n")
+      .filter(line => line.trim())
+      .map(line => JSON.parse(line));
+  }));
 
-  return result.sort((a, b) => Number(b.observed_at) - Number(a.observed_at)).slice(0, safeLimit);
+  return rowsByObject.flat()
+    .sort((a, b) => Number(b.observed_at) - Number(a.observed_at))
+    .slice(0, safeLimit);
 }
