@@ -2812,6 +2812,29 @@ OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデ�
 - EagleEye登録アカウント数
 - OWNER / ADMIN / ADVANCED / BASIC の各ロール人数
 
+### 追加機能: OWNER専用王国並列負荷テスト
+
+API Pool管理内からOWNER専用の王国並列負荷テストへ移動できるようにした。
+
+- ページ: `/owner/kingdom-load-test`
+- API: `/api/owner/kingdom-load-test`
+- OWNERのみ実行可能
+- 王国番号をカンマ・改行・空白区切りで複数指定
+- 最大20王国
+- 同時実行数は1〜5、デフォルト3
+- 指定王国ごとにAPI PoolからリースしてMightPulse王国ランキングを取得
+- 成功/失敗、HTTP status、Pool、取得件数、各取得時間、全体時間を結果表示
+- API Poolのリース競合やMightPulse側の同時取得挙動を確認する用途
+- APIキー本体は画面・結果に表示しない
+- 本番負荷テストはまだ未実施
+
+実装コミット:
+- `20a554f06e9c5f50a6367770dbc716c13367ec15`
+- `f0d6fed367c59603ae2ee263ca24fa0ddf863981`
+- `9078c3c5af21d766fec5598ecc364aa25b9de4db`
+- `52d61cca79a4b01cd453ba84478a4b87982a19ea`
+
+
 - 登録プレイヤー数
 - 登録王国数
 - ランキングデータが存在する王国数
