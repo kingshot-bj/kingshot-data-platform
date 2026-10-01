@@ -2814,6 +2814,32 @@ OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデ�
 
 ### 追加機能: OWNER専用王国並列負荷テスト
 
+### 追加更新: 王国プリセット / status JSON機能カバレッジ
+
+- 王国並列負荷テストに1000〜3000を100刻みで選べるプルダウンを追加。
+- 選択した王国はチップ表示し、複数選択可能。直接入力も引き続き可能。
+- status JSONのD1 Query Insightsは全Query Groupを保持しているため、新機能追加後も生SQLの取得自体は可能。
+- ただし従来のカテゴリ分類が新機能を「Other」にまとめる可能性があったため、以下のfeature/categoryを追加:
+  - Data Coverage
+  - User Accounts
+  - Player Watchlist
+  - Kingdom Watchlist
+  - Current Ranking
+  - Player Compare
+  - Player DB
+  - API Pool
+  - Service Usage
+  - Support
+  - Retention
+- 各queryに`feature`を付与し、`queryInsights.featuresSeen`としてJSONにも出力。
+- 既存の全Query Group / rowsRead / rowsWritten / rowsReturned / durationMs は維持。
+- 本番JSONログでの新カテゴリ実データ確認は未確認。
+
+実装コミット:
+- `75f8e0651e33b0aff6087cdb8c80f3bf32449c9a`
+- `220787b2efb70c48e3ce6a6ee76f95b11285c963`
+
+
 API Pool管理内からOWNER専用の王国並列負荷テストへ移動できるようにした。
 
 - ページ: `/owner/kingdom-load-test`
