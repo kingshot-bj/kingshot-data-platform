@@ -239,22 +239,32 @@ query EagleEyeD1QueryInsights(
 
 function classifyD1Query(query) {
   const sql = String(query || "").toUpperCase().replace(/\s+/g, " ");
+  // Keep this mapping aligned with EagleEye feature areas so the machine-readable
+  // status JSON can tell which newly-added feature is consuming D1.
   const rules = [
-    ["Ranking Snapshot", ["RANKING_SNAPSHOTS", "PLAYER_RANK_SNAPSHOTS"]],
+    ["Data Coverage", ["COUNT(DISTINCT KID)", "KINGDOM_RANKING_CURRENT"]],
+    ["User Accounts", ["FROM USERS", "INTO USERS", "UPDATE USERS", "DELETE FROM USERS"]],
+    ["Player Watchlist", ["PLAYER_WATCHLIST", "PLAYER_WATCHLISTS"]],
+    ["Kingdom Watchlist", ["KINGDOM_WATCHLIST_JOBS", "KINGDOM_WATCHLIST_LOCKS", "KINGDOM_WATCHLISTS"]],
+    ["Current Ranking", ["KINGDOM_RANKING_CURRENT", "KINGDOM_RANKING_BOARD_STATE"]],
+    ["Player Compare", ["PLAYER_COMPARE"]],
     ["Player Observation", ["API_OBSERVATIONS", "PLAYER_OBSERVATIONS"]],
     ["Player Snapshot", ["PLAYER_SNAPSHOTS"]],
+    ["Player DB", ["FROM PLAYERS", "INTO PLAYERS", "UPDATE PLAYERS", "DELETE FROM PLAYERS"]],
     ["API Pool", ["API_POOL"]],
+    ["Service Usage", ["SERVICE_USAGE"]],
     ["Diagnostics", ["DIAGNOSTIC_EVENTS"]],
-    ["Watchlist Job", ["KINGDOM_WATCHLIST_JOBS", "KINGDOM_WATCHLIST_LOCKS", "KINGDOM_WATCHLISTS"]],
     ["Change Event", ["CHANGE_EVENTS", "CHANGE_EVENT"]],
+    ["Support", ["SUPPORT_"]],
+    ["Retention", ["RETENTION"]],
+    ["Ranking Snapshot", ["RANKING_SNAPSHOTS", "PLAYER_RANK_SNAPSHOTS"]],
   ];
   for (const [label, needles] of rules) {
     if (needles.some(needle => sql.includes(needle))) return label;
   }
-  if (/\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\b/.test(sql)) return "Other Write";
+  if (/\\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\\b/.test(sql)) return "Other Write";
   return "Other";
 }
-
 function summarizeD1QueryInsights(groups) {
   const queries = (groups || [])
     .map(group => {
@@ -267,7 +277,8 @@ function summarizeD1QueryInsights(groups) {
         rowsWritten: normalizeNumber(sum.rowsWritten),
         rowsReturned: normalizeNumber(sum.rowsReturned),
         durationMs: normalizeNumber(sum.queryDurationMs),
-        category: classifyD1Query(query)
+        category: classifyD1Query(query),
+        feature: classifyD1Query(query)
       };
     })
     .filter(item => item.query);
@@ -292,7 +303,9 @@ function summarizeD1QueryInsights(groups) {
     queries,
     topWriteQueries,
     topReadQueries,
-    categories: [...categories.values()].sort((a, b) => b.rowsWritten - a.rowsWritten)
+    categories: [...categories.values()].sort((a, b) => b.rowsWritten - a.rowsWritten),
+    // Feature coverage is derived from the complete query list; no query groups are dropped.
+    featuresSeen: [...new Set(queries.map(item => item.feature).filter(Boolean))].sort()
   };
 }
 
