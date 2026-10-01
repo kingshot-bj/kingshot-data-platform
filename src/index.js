@@ -6191,16 +6191,14 @@ function renderSegmentedHeroStar(label, filledSegments = 0) {
   const aria = escapeHtml(label || "Star");
   const filled = Math.max(0, Math.min(6, Math.floor(Number(filledSegments) || 0)));
 
-  // ゲーム内の英雄ランクアイコンを6枚の独立した花弁として再現する。
-  // 各花弁は中心から外側へ広がる六角形状で、1枚ずつ独立して
-  // 点灯/未点灯になる。中央に別の円や十字は描かない。
+  // ゲーム内の英雄ランク表示は「6個のダイヤ形パーツを中心で接続」
+  // した花形。各ダイヤを独立した1セグメントとして描画する。
   const cx = 20;
   const cy = 20;
-  const innerRadius = 2.6;
-  const shoulderRadius = 7.2;
-  const outerRadius = 16.8;
-  const innerHalfWidth = 2.0;
-  const outerHalfWidth = 4.3;
+  const innerRadius = 1.2;
+  const outerRadius = 17.2;
+  const sideRadius = 7.8;
+  const sideWidth = 4.2;
   const petals = [];
 
   for (let i = 0; i < 6; i += 1) {
@@ -6212,14 +6210,12 @@ function renderSegmentedHeroStar(label, filledSegments = 0) {
       cy + radial[1] * radius + tangent[1] * width
     ];
 
+    // 1枚のダイヤ：中心側の先端 → 左肩 → 外側の先端 → 右肩。
     petals.push([
-      point(innerRadius, -innerHalfWidth),
-      point(shoulderRadius, -outerHalfWidth),
-      point(outerRadius, -outerHalfWidth * 0.72),
-      point(outerRadius + 0.9, 0),
-      point(outerRadius, outerHalfWidth * 0.72),
-      point(shoulderRadius, outerHalfWidth),
-      point(innerRadius, innerHalfWidth)
+      point(innerRadius, 0),
+      point(sideRadius, -sideWidth),
+      point(outerRadius, 0),
+      point(sideRadius, sideWidth)
     ]);
   }
 
