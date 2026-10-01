@@ -6191,29 +6191,41 @@ function renderSegmentedHeroStar(label, filledSegments = 0) {
   const aria = escapeHtml(label || "Star");
   const filled = Math.max(0, Math.min(6, Math.floor(Number(filledSegments) || 0)));
 
-  // ゲーム内の英雄ランク表示に合わせた6方向の星形。
-  // 中央の円や十字は置かず、6本のセグメント自体が中心まで伸びる。
+  // ゲーム内の英雄ランクアイコンを6枚の独立した花弁として再現する。
+  // 各花弁は中心から外側へ広がる六角形状で、1枚ずつ独立して
+  // 点灯/未点灯になる。中央に別の円や十字は描かない。
   const cx = 20;
   const cy = 20;
-  const outer = 18;
-  const inner = 1.2;
-  const halfAngle = Math.PI / 14;
-  const rays = [];
+  const innerRadius = 2.6;
+  const shoulderRadius = 7.2;
+  const outerRadius = 16.8;
+  const innerHalfWidth = 2.0;
+  const outerHalfWidth = 4.3;
+  const petals = [];
 
   for (let i = 0; i < 6; i += 1) {
     const angle = -Math.PI / 2 + i * (Math.PI / 3);
-    const left = angle - halfAngle;
-    const right = angle + halfAngle;
-    rays.push({
-      tip: [cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer],
-      left: [cx + Math.cos(left) * inner, cy + Math.sin(left) * inner],
-      right: [cx + Math.cos(right) * inner, cy + Math.sin(right) * inner]
-    });
+    const radial = [Math.cos(angle), Math.sin(angle)];
+    const tangent = [-Math.sin(angle), Math.cos(angle)];
+    const point = (radius, width) => [
+      cx + radial[0] * radius + tangent[0] * width,
+      cy + radial[1] * radius + tangent[1] * width
+    ];
+
+    petals.push([
+      point(innerRadius, -innerHalfWidth),
+      point(shoulderRadius, -outerHalfWidth),
+      point(outerRadius, -outerHalfWidth * 0.72),
+      point(outerRadius + 0.9, 0),
+      point(outerRadius, outerHalfWidth * 0.72),
+      point(shoulderRadius, outerHalfWidth),
+      point(innerRadius, innerHalfWidth)
+    ]);
   }
 
-  const segments = rays.map((ray, index) =>
+  const segments = petals.map((points, index) =>
     '<polygon class="hero-star-petal ' + (index < filled ? 'is-filled' : 'is-empty') + '" points="' +
-    ray.left.join(",") + " " + ray.tip.join(",") + " " + ray.right.join(",") +
+    points.map(point => point.join(",")).join(" ") +
     '"></polygon>'
   ).join("");
 
