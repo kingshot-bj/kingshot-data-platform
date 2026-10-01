@@ -2809,6 +2809,9 @@ OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデ�
 
 現在表示する項目:
 
+- EagleEye登録アカウント数
+- OWNER / ADMIN / ADVANCED / BASIC の各ロール人数
+
 - 登録プレイヤー数
 - 登録王国数
 - ランキングデータが存在する王国数
@@ -2880,6 +2883,8 @@ src/admin-data-coverage.js:7:12
 修正コミット:
 - `bb8339ce613ee79a7cf296893de2b59b6c71cb4b`
   - `fix: repair data coverage page template syntax`
+- `d314870d80f036a3c05b0a09f08d912c1c7c9fd5`
+  - `feat: show registered accounts and role counts`
 
 修正後、main上のファイルを再取得して:
 - \`\\` / \`\\${\` の誤エスケープ残存なし
@@ -2904,6 +2909,8 @@ src/admin-data-coverage.js:7:12
 - OWNER権限でのアクセス
 - データ登録状況ページUIの表示
 - 本番D1から件数を取得して表示できること
+
+※ユーザー・ロール集計の追加実装はmain反映済みだが、追加後のCloudflare本番デプロイ・実機表示は未確認。
 
 未確認:
 - ADMINロールでの実機表示
