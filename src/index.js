@@ -5469,7 +5469,7 @@ async function handlePlayerCompareApi(request, env) {
     // Compare is a user-facing request. Keep R2 history reads bounded so a
     // single page load does not fan out into hundreds of object reads.
     // More players => fewer samples per player; the chart remains a trend view.
-    const historySampleLimit = governorIds.length === 2 ? 12 : governorIds.length === 3 ? 8 : 6;
+    const historySampleLimit = governorIds.length === 2 ? 8 : governorIds.length === 3 ? 6 : 4;
     const [playersResult, ranksResult, historyResults] = await Promise.all([
       env.DB.prepare(
         "SELECT * FROM players WHERE governor_id IN (" + placeholders + ")"
