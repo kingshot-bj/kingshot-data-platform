@@ -5207,9 +5207,24 @@ async function handlePlayerApi(request, env) {
     let player = await getPlayer(env.DB, governorId);
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     let source = "D1";
+    const now = Math.floor(Date.now() / 1000);
+    const PLAYER_LOOKUP_TTL_SECONDS = 24 * 60 * 60;
+    const observationAgeSeconds = observation?.observed_at == null
+      ? null
+      : Math.max(0, now - Number(observation.observed_at));
+    const staleObservation = observationAgeSeconds == null || observationAgeSeconds >= PLAYER_LOOKUP_TTL_SECONDS;
     const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
+    const refreshReason = refresh
+      ? "EXPLICIT_REFRESH"
+      : !observation
+        ? "NO_STORED_OBSERVATION"
+        : staleObservation
+          ? "OBSERVATION_OLDER_THAN_24H"
+          : needsRichProfile
+            ? "RICH_PROFILE_MISSING"
+            : null;
 
-    if (!observation || refresh || needsRichProfile) {
+    if (refresh || staleObservation || !observation || needsRichProfile) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
@@ -5244,7 +5259,9 @@ async function handlePlayerApi(request, env) {
         online: player?.online,
         observed_at: observation.observed_at,
         cached_at: observation.payload?.cached_at ?? null,
-        age_seconds: observation.payload?.age_seconds ?? null
+        age_seconds: observation.payload?.age_seconds ?? null,
+        eagleeye_observation_age_seconds: observationAgeSeconds,
+        refresh_reason: refreshReason
       }
     });
     return json({
