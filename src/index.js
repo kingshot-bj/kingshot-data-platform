@@ -5421,6 +5421,7 @@ async function handlePlayerHistoryApi(request, env) {
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 30), 1), 100);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   try {
+    const compareStartedAt = Date.now();
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const snapshots = await getPlayerHistory(env.DB, governorId, limit, env.ARCHIVE);
     await trackServiceUsage(env, auth, "PLAYER_HISTORY_VIEW", {
@@ -5470,6 +5471,7 @@ async function handlePlayerCompareApi(request, env) {
     // single page load does not fan out into hundreds of object reads.
     // More players => fewer samples per player; the chart remains a trend view.
     const historySampleLimit = governorIds.length === 2 ? 8 : governorIds.length === 3 ? 6 : 4;
+    const dataReadStartedAt = Date.now();
     const [playersResult, ranksResult, historyResults] = await Promise.all([
       env.DB.prepare(
         "SELECT * FROM players WHERE governor_id IN (" + placeholders + ")"
@@ -5495,14 +5497,17 @@ async function handlePlayerCompareApi(request, env) {
       }))
     ]);
 
+    const dataReadDurationMs = Date.now() - dataReadStartedAt;
     const playersById = new Map((playersResult.results || []).map(row => [String(row.governor_id), row]));
     const currentRanksById = new Map((ranksResult.results || []).map(row => [String(row.governor_id), row]));
     const historyById = new Map(historyResults.map(item => [String(item.governorId), item]));
 
+    const observationStartedAt = Date.now();
     const latestObservations = await Promise.all(governorIds.map(async governorId => ({
       governorId,
       observation: await getLatestPlayerObservation(env.DB, governorId)
     })));
+    const observationDurationMs = Date.now() - observationStartedAt;
     const observationById = new Map(latestObservations.map(item => [String(item.governorId), item.observation]));
 
     const players = governorIds.map(governorId => {
@@ -5540,7 +5545,15 @@ async function handlePlayerCompareApi(request, env) {
     await trackServiceUsage(env, auth, "PLAYER_COMPARE_VIEW", {
       targetType: "PLAYER",
       targetId: governorIds.join(","),
-      metadata: { player_count: players.length, days, from_unix: fromUnix }
+      metadata: {
+        player_count: players.length,
+        days,
+        from_unix: fromUnix,
+        history_sample_limit: historySampleLimit,
+        duration_ms: Date.now() - compareStartedAt,
+        data_read_duration_ms: dataReadDurationMs,
+        observation_duration_ms: observationDurationMs
+      }
     });
 
     return json({
