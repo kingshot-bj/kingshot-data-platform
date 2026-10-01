@@ -119,9 +119,8 @@ async function runKingdomLoad(env, kid, board) {
   }
 }
 
-export async function handleOwnerKingdomLoadTestApi(request, env) {
-  const auth = await getOwnerAuth(request, env);
-  if (auth.error) return auth.error;
+export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
+  if (!auth || auth.role !== "OWNER" || auth.status !== "ACTIVE") return new Response(JSON.stringify({ok:false,error:"OWNER_REQUIRED"}), {status:403,headers:{"content-type":"application/json"}});
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json"} });
 
   const url = new URL(request.url);
@@ -149,18 +148,6 @@ export async function handleOwnerKingdomLoadTestApi(request, env) {
     failed,
     results
   }), { headers:{ "content-type":"application/json; charset=UTF-8", "cache-control":"no-store" } });
-}
-
-async function getOwnerAuth(request, env) {
-  const cookie = String(request.headers.get("Cookie") || "");
-  const match = cookie.match(/(?:^|;\\s*)eagleeye_session=([^;]+)/);
-  if (!match || !env?.DB) return { error: new Response(JSON.stringify({ok:false,error:"UNAUTHORIZED"}), {status:401,headers:{"content-type":"application/json"}}) };
-  const { getAuthenticatedUser } = await import("./index-auth.js").catch(() => ({ getAuthenticatedUser:null }));
-  if (!getAuthenticatedUser) return { error: new Response(JSON.stringify({ok:false,error:"OWNER_AUTH_UNAVAILABLE"}), {status:500,headers:{"content-type":"application/json"}}) };
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return { error: new Response(JSON.stringify({ok:false,error:"UNAUTHORIZED"}), {status:401,headers:{"content-type":"application/json"}}) };
-  if (auth.role !== "OWNER") return { error: new Response(JSON.stringify({ok:false,error:"OWNER_REQUIRED"}), {status:403,headers:{"content-type":"application/json"}}) };
-  return { auth };
 }
 
 export function renderOwnerKingdomLoadTestPage() {
