@@ -157,7 +157,7 @@ function findQueryObjects(root){
     if(Array.isArray(x)){x.forEach(w);return;}
     const hasMetric=["count","rowsRead","rowsWritten","rowsReturned"].some(k=>typeof x[k]==="number");
     const q=keyOf(x);
-    if(hasMetric&&q)out.push({key:q,count:x.count||0,rowsRead:x.rowsRead||0,rowsWritten:x.rowsWritten||0,rowsReturned:x.rowsReturned||0});
+    if(hasMetric&&q)out.push({key:q,count:x.count||0,rowsRead:x.rowsRead||0,rowsWritten:x.rowsWritten||0,rowsReturned:x.rowsReturned||0,durationMs:x.durationMs||0});
     Object.values(x).forEach(v=>{if(v&&typeof v==="object")w(v);});
   }
   w(root);return out;
@@ -166,8 +166,8 @@ function aggregateQueries(root){
   const map=new Map();
   for(const q of findQueryObjects(root)){
     const key=q.key.replace(/\s+/g," ").trim();
-    const x=map.get(key)||{key,count:0,rowsRead:0,rowsWritten:0,rowsReturned:0};
-    x.count+=q.count;x.rowsRead+=q.rowsRead;x.rowsWritten+=q.rowsWritten;x.rowsReturned+=q.rowsReturned;map.set(key,x);
+    const x=map.get(key)||{key,count:0,rowsRead:0,rowsWritten:0,rowsReturned:0,durationMs:0};
+    x.count+=q.count;x.rowsRead+=q.rowsRead;x.rowsWritten+=q.rowsWritten;x.rowsReturned+=q.rowsReturned;x.durationMs+=q.durationMs;map.set(key,x);
   }
   return map;
 }
@@ -235,7 +235,7 @@ function queryRows(){
     const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0});
     const first=vals[0],last=vals[vals.length-1];
     const base=vals[state.base];
-    return {key,vals,dc:last.count-base.count,dr:last.rowsRead-base.rowsRead,dw:last.rowsWritten-base.rowsWritten,last:last.count+last.rowsRead+last.rowsWritten};
+    return {key,vals,dc:last.count-base.count,dr:last.rowsRead-base.rowsRead,dw:last.rowsWritten-base.rowsWritten,dt:last.durationMs-base.durationMs,last:last.count+last.rowsRead+last.rowsWritten};
   }).filter(r=>!search||r.key.toLowerCase().includes(search));
   rows=rows.filter(r=>{
     if(filter==="all")return true;
@@ -243,11 +243,12 @@ function queryRows(){
     if(filter==="read")return r.dr!==0;
     if(filter==="write")return r.dw!==0;
     if(filter==="count")return r.dc!==0;
+    if(filter==="duration")return r.dt!==0;
     if(filter==="increase")return r.dc>0||r.dr>0||r.dw>0;
     if(filter==="decrease")return r.dc<0||r.dr<0||r.dw<0;
     return true;
   });
-  const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="total"?"last":"dr";
+  const metric=sort==="rowsWritten"?"dw":sort==="count"?"dc":sort==="duration"?"dt":sort==="total"?"last":"dr";
   rows.sort((a,b)=>Math.abs(b[metric])-Math.abs(a[metric]));
   return rows;
 }
@@ -268,7 +269,7 @@ function renderQueries(){
         <div class="query-summary">
           <span class="qbadge">Δ Read <b class="${cls(r.dr)}">${fmt(r.dr)}</b></span>
           <span class="qbadge">Δ Write <b class="${cls(r.dw)}">${fmt(r.dw)}</b></span>
-          <span class="qbadge">Δ Count <b class="${cls(r.dc)}">${fmt(r.dc)}</b></span>
+          <span class="qbadge">Δ Count <b class="${cls(r.dc)}">${fmt(r.dc)}</b></span><span class="qbadge">Δ Duration <b class="${cls(r.dt)}">${fmt(r.dt)} ms</b></span>
         </div>
       </div>
       <div class="query-detail">
