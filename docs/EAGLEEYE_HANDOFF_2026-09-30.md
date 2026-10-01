@@ -2418,3 +2418,73 @@ Research Lab等の補助UI・細部調整。
 
 今回の復旧事故についても、deploy時build failureは確認済みだが、Production Workerでこの壊れたコードが稼働したことは確認していない。
 
+
+
+---
+
+# 45. Player Compare 第1段階（バックエンド/API）実装（2026-10-01）
+
+## 今回実装した範囲
+
+大規模変更を段階分割する方針に従い、今回は**第1段階のみ**実装。
+
+### 実装
+- `src/player-compare.js` の既存helperを利用。
+- `src/index.js` にPlayer Compare用APIを追加:
+  - `GET /api/player-compare`
+- 比較対象は2〜4人。
+- `governor_id=...` 複数指定 / `ids=...` 指定を正規化。
+- 期間は7 / 30 / 90日。
+- 現在プレイヤー情報は対象ID限定のD1 `players` IN検索。
+- 現在の個人総力順位は `kingdom_ranking_current` の `personal_power` を対象ID限定で取得。
+- 時系列Player履歴は既存 `getPlayerHistory()` を使用。
+- 時系列Rank履歴は既存 `getPlayerRankHistory()` を使用。
+- R2_ONLY構成では既存R2履歴を優先し、既存のD1 fallback仕様を利用。
+- 比較系列生成は `buildPlayerCompareSeries()` を利用。
+- ロール別公開設定を既存 `filterPlayerForRole()` / `ranks_core` 設定に合わせる。
+- `PLAYER_COMPARE_VIEW` のService Usageを記録。
+
+## D1 / ranking_snapshots方針
+
+今回追加したAPIは `ranking_snapshots` を直接検索しない。
+
+現在順位:
+- `kingdom_ranking_current` の対象Governor ID限定検索。
+
+過去順位:
+- 既存 `getPlayerRankHistory()` を利用。
+- R2_ONLY + ARCHIVE構成ではR2を優先。
+- R2失敗時の既存D1 fallbackはGovernor ID限定の `player_rank_snapshots` 検索。
+
+**広域 `ranking_snapshots` 読み取りは追加していない。**
+
+## 差分確認
+
+`ac31774e6eabc9c4b490152e7e72cf1414f0ce89` → `c94355c30742ee16ebe69f09261757dda387245b`
+
+- `src/index.js` のみ変更
+- additions: 102
+- deletions: 0
+- 1 commit
+- mainへ反映済み
+
+## 検証状況
+
+- GitHub上でファイル末尾が維持されていることを確認。
+- import / handler / route の配置を確認。
+- 括弧数チェックを実施し一致を確認。
+- ローカル `node --check` は実行環境からGitHubへネットワーク接続できず、リポジトリをcloneできなかったため未実施。
+- GitHub Actions workflow runはこのcommitについて返却なし。
+- Cloudflare本番deploy / Production E2Eは未確認。
+
+したがって、この段階は**main実装反映済み**であり、**build成功・本番動作確認済みとは扱わない。**
+
+## 次段階
+
+次は第2段階:
+- Player Watchlistから比較対象を選択するUI
+- Player Detailから比較へ入る導線
+
+のみを実装する。
+
+比較画面UI、アセット表示、Research UI、テーマ刷新はまだ実装しない。
