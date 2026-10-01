@@ -20,6 +20,7 @@
 - APIキー本体・Refresh Token等の秘密情報をログ、UI、handoffへ書かない。
 - ユーザーは主に iPhone Safari で運用するため、UIはモバイル優先。
 - GitHub main → Cloudflare deployment は自動。ユーザーに手動deployを繰り返し要求しない。
+- **既存機能と同じ目的・状態を表示するUIは、既存機能の実装仕様・見た目・進捗表現を確認して合わせる。機能ごとに独自UIを作って表示形式をバラバラにしない。特に進捗表示は、通常の王国ウォッチリストのプログレスバー（`.progress` / `.progress-track` / `.progress-fill`）を基準とする。**
 - ファイル名・ログ時刻を扱う場合、ユーザー指定のルールに従い、status JSON内部時刻を表示時刻として勝手に使わない。
 
 ---
@@ -3004,3 +3005,4 @@ src/admin-data-coverage.js:7:12
 - 大規模変更は段階分割し、各段階ごとに検証・commitする。
 - main反映、deploy、production E2Eを明確に分離して報告する。
 - API key / Refresh Token等のsecretをログ・UI・handoffへ出さない。
+- **既存機能との仕様重複がある新機能は、実装前に既存機能のコードを確認し、同じ仕様・状態遷移・UI表現に合わせる。既存と異なる表現を採用する場合は理由を明確にする。**
