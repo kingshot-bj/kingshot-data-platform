@@ -1,0 +1,67 @@
+name: Hero Gear Asset Collector
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Collection source'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - guide
+          - packs
+      metadata_only:
+        description: 'Only inspect image URLs; do not download images'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Collect Hero Gear assets
+        env:
+          SOURCE: ${{ inputs.source }}
+          METADATA_ONLY: ${{ inputs.metadata_only }}
+        run: |
+          mkdir -p artifacts/hero-gear-assets
+          if [ "$METADATA_ONLY" = "true" ]; then
+            node scripts/collect-hero-gear-assets.mjs --source "$SOURCE" --metadata-only
+          else
+            node scripts/collect-hero-gear-assets.mjs --source "$SOURCE"
+          fi
+
+      - name: Publish summary
+        if: always()
+        run: |
+          if [ -f artifacts/hero-gear-assets/summary.json ]; then
+            echo '## Hero Gear Asset Collection' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat artifacts/hero-gear-assets/summary.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload collection artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hero-gear-assets-${{ github.run_number }}
+          path: artifacts/hero-gear-assets/
+          if-no-files-found: warn
+          retention-days: 7
