@@ -6192,12 +6192,11 @@ function renderSegmentedHeroStar(label, filledSegments = 0) {
   const filled = Math.max(0, Math.min(6, Math.floor(Number(filledSegments) || 0)));
 
   // ゲーム内の英雄ランク表示に合わせた6方向の星形。
-  // 「花びら」に相当する6本の尖ったセグメントを完全に独立させ、
-  // 進捗に応じて1本ずつ塗り分ける。中央の円は常時表示する。
+  // 中央の円や十字は置かず、6本のセグメント自体が中心まで伸びる。
   const cx = 20;
   const cy = 20;
   const outer = 18;
-  const inner = 6.5;
+  const inner = 1.2;
   const halfAngle = Math.PI / 14;
   const rays = [];
 
@@ -6220,8 +6219,6 @@ function renderSegmentedHeroStar(label, filledSegments = 0) {
 
   return '<svg class="hero-star" viewBox="0 0 40 40" role="img" aria-label="' + aria + '" focusable="false">' +
     segments +
-    '<circle class="hero-star-center" cx="20" cy="20" r="6.5"></circle>' +
-    '<path class="hero-star-divider" d="M20 13.5V26.5 M13.5 20H26.5"></path>' +
     '</svg>';
 }
 function renderPlayerOptionalAssets(assets, canExport = false) {
