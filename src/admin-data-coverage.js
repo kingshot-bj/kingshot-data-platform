@@ -9,10 +9,11 @@ export async function renderAdminDataCoveragePage(env, auth) {
 
   const startedAt = Date.now();
   try {
-    const [playerCounts, rankingKingdomCount, watchlistCounts] = await Promise.all([
+    const [playerCounts, rankingKingdomCount, watchlistCounts, accountCounts] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS player_count, COUNT(DISTINCT kid) AS kingdom_count FROM players WHERE governor_id IS NOT NULL").first(),
       env.DB.prepare("SELECT COUNT(DISTINCT kid) AS count FROM kingdom_ranking_current").first(),
-      env.DB.prepare("SELECT COUNT(*) AS watchlist_count, COUNT(DISTINCT kid) AS kingdom_count FROM kingdom_watchlists WHERE enabled = 1").first()
+      env.DB.prepare("SELECT COUNT(*) AS watchlist_count, COUNT(DISTINCT kid) AS kingdom_count FROM kingdom_watchlists WHERE enabled = 1").first(),
+      env.DB.prepare("SELECT role, COUNT(*) AS count FROM users GROUP BY role").all()
     ]);
 
     const players = Number(playerCounts?.player_count || 0);
@@ -20,6 +21,9 @@ export async function renderAdminDataCoveragePage(env, auth) {
     const rankingKingdoms = Number(rankingKingdomCount?.count || 0);
     const watchedKingdoms = Number(watchlistCounts?.kingdom_count || 0);
     const activeWatchlists = Number(watchlistCounts?.watchlist_count || 0);
+    const accountRows = accountCounts?.results || [];
+    const accountByRole = new Map(accountRows.map(row => [String(row.role || "BASIC").toUpperCase(), Number(row.count || 0)]));
+    const totalAccounts = accountRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
     const elapsedMs = Date.now() - startedAt;
     const generatedAt = new Date().toLocaleString("ja-JP", {
       timeZone: "Asia/Tokyo",
@@ -38,6 +42,13 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="eyebrow">EAGLEEYE DATA COVERAGE</div><h1 class="title">データ登録状況</h1><p class="sub">現在のEagleEye D1に保持しているプレイヤー数と王国数を確認できます。件数はこの画面を開いた時点のD1集計値です。</p><div class="badge">ROLE: ${String(auth?.role || "ADMIN")}</div>
 <div class="grid"><div class="metric"><div class="metric-label">登録プレイヤー</div><div class="metric-value">${formatCount(players)}人</div><div class="metric-note">players テーブルの現在登録件数。governor_id単位で1件です。</div></div>
 <div class="metric"><div class="metric-label">登録王国</div><div class="metric-value">${formatCount(playerKingdoms)}王国</div><div class="metric-note">players テーブルに存在する kid のユニーク数。</div></div></div>
+<div class="section"><h2>ユーザー・ロール</h2><div class="grid">
+<div class="metric"><div class="metric-label">EagleEye登録アカウント</div><div class="metric-value">${formatCount(totalAccounts)}人</div><div class="metric-note">Discord認証で作成されたEagleEyeユーザーアカウント数。</div></div>
+<div class="metric"><div class="metric-label">OWNER</div><div class="metric-value">${formatCount(accountByRole.get("OWNER") || 0)}人</div></div>
+<div class="metric"><div class="metric-label">ADMIN</div><div class="metric-value">${formatCount(accountByRole.get("ADMIN") || 0)}人</div></div>
+<div class="metric"><div class="metric-label">ADVANCED</div><div class="metric-value">${formatCount(accountByRole.get("ADVANCED") || 0)}人</div></div>
+<div class="metric"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div></div>
+</div></div>
 <div class="section"><h2>関連データ</h2><div class="detail">
 <div class="row"><span>ランキングデータが存在する王国</span><b>${formatCount(rankingKingdoms)}王国</b></div>
 <div class="row"><span>有効な王国ウォッチリスト</span><b>${formatCount(activeWatchlists)}件</b></div>
