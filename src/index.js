@@ -5623,19 +5623,19 @@ body{max-width:1100px;margin:auto;padding:16px 12px 48px;font-family:system-ui,-
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 16px}.toolbar label{font-size:12px;color:#94a3b8}.toolbar select,.toolbar button{min-height:42px;border:1px solid #334155;border-radius:10px;background:#162238;color:#f8fafc;padding:8px 11px;font-size:14px}.toolbar button{cursor:pointer}
 .section{margin-top:18px}.section h2{font-size:18px;margin:0 0 9px}.section-note{font-size:11px;color:#64748b;margin:-4px 0 10px}
 .compare-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}.player-card{padding:13px;border:1px solid #334155;border-radius:14px;background:#162238}.player-top{display:flex;gap:10px;align-items:center}.avatar{width:48px;height:48px;border-radius:10px;object-fit:cover;background:#0b1220;border:1px solid #334155;flex:0 0 48px}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;overflow-wrap:anywhere}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:11px}.metric{padding:9px;border-radius:10px;background:#0f172a;min-width:0}.metric span{display:block;color:#94a3b8;font-size:10px}.metric b{display:block;margin-top:3px;font-size:16px;overflow-wrap:anywhere}.metric small{display:block;margin-top:2px;color:#64748b;font-size:9px}
-.chart-card{padding:12px;border:1px solid #334155;border-radius:14px;background:#111c30}.chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}.chart{display:block;width:100%;min-width:520px;height:230px}.chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:7px}.legend{display:inline-flex;align-items:center;gap:5px;color:#cbd5e1;font-size:11px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.chart-empty{padding:28px 8px;text-align:center;color:#94a3b8;font-size:12px}
-.compare-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #334155;border-radius:14px}.compare-table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px}.compare-table th,.compare-table td{padding:10px;border-bottom:1px solid #263449;text-align:right;white-space:nowrap}.compare-table th:first-child,.compare-table td:first-child{text-align:left;position:sticky;left:0;background:#111c30;z-index:1}.compare-table th{color:#94a3b8;background:#111c30;font-weight:700}.compare-table tr:last-child td{border-bottom:0}.delta-up{color:#86efac;font-weight:800}.delta-down{color:#fca5a5;font-weight:800}.muted{color:#64748b}
+.chart-card{padding:12px;border:1px solid #334155;border-radius:14px;background:#111c30}.chart-scroll{overflow:hidden;width:100%}.chart{display:block;width:100%;height:230px}.chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:7px}.legend{display:inline-flex;align-items:center;gap:5px;color:#cbd5e1;font-size:11px}.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.chart-empty{padding:28px 8px;text-align:center;color:#94a3b8;font-size:12px}
+.compare-table-wrap{overflow:hidden;border:1px solid #334155;border-radius:14px}.compare-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}.compare-table th,.compare-table td{padding:9px 6px;border-bottom:1px solid #263449;text-align:right;white-space:normal;overflow-wrap:anywhere}.compare-table th:first-child,.compare-table td:first-child{text-align:left;background:#111c30}.compare-table th{color:#94a3b8;background:#111c30;font-weight:700}.compare-table tr:last-child td{border-bottom:0}.delta-up{color:#86efac;font-weight:800}.delta-down{color:#fca5a5;font-weight:800}.muted{color:#64748b}
 .hero-compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.hero-panel{padding:12px;border:1px solid #334155;border-radius:14px;background:#162238}.hero-row{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #263449}.hero-row:last-child{border-bottom:0}.hero-icon{width:36px;height:36px;object-fit:contain;border-radius:8px;background:#0b1220;border:1px solid #334155}.hero-info{min-width:0}.hero-name{font-weight:800;font-size:12px;overflow-wrap:anywhere}.hero-meta{color:#94a3b8;font-size:10px;margin-top:2px}.hero-power{font-weight:800;font-size:12px;text-align:right}.asset-list{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.asset-item{display:flex;flex-direction:column;align-items:center;gap:3px;color:#94a3b8;font-size:9px}.asset{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#0b1220;border:1px solid #334155}
 .detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}.detail-card{padding:12px;border:1px solid #334155;border-radius:14px;background:#162238}.detail-card h3{font-size:14px;margin:0 0 9px}.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{padding:6px 8px;border-radius:8px;background:#0f172a;color:#cbd5e1;font-size:11px}
 .message{padding:13px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#94a3b8}
-@media(max-width:600px){body{padding:12px 10px 40px}.title{font-size:23px}.compare-head{display:block}.compare-grid{grid-template-columns:1fr}.section{margin-top:16px}.chart{height:210px}.compare-table{min-width:560px}.hero-compare{grid-template-columns:1fr}}
+@media(max-width:600px){body{padding:12px 10px 40px}.title{font-size:23px}.compare-head{display:block}.compare-grid{grid-template-columns:1fr}.section{margin-top:16px}.chart{height:210px}.compare-table{font-size:11px}.compare-table th,.compare-table td{padding:8px 4px}.hero-compare{grid-template-columns:1fr}}
 </style></head><body>
 <header class="compare-head"><div><a class="back" href="/player-watchlist">← プレイヤーウォッチリスト</a><h1 class="title">プレイヤー比較</h1><div class="sub">現在値 → 差分 → 推移の順で比較できます。</div></div></header>
 <div class="toolbar"><label for="days">期間</label><select id="days"><option value="7">7日</option><option value="30">30日</option><option value="90" selected>90日</option></select><button id="reload" type="button">↻ 再読み込み</button></div>
 <div id="message" class="message">比較データを読み込み中…</div>
 <section class="section"><h2>現在値</h2><div id="players" class="compare-grid"></div></section>
 <section class="section"><h2>戦力推移</h2><div class="chart-card"><div id="powerChart" class="chart-scroll"></div><div id="powerLegend" class="chart-legend"></div></div></section>
-<section class="section"><h2>比較表</h2><div class="section-note">横にスワイプできます。</div><div id="summaryTable" class="compare-table-wrap"></div></section>
+<section class="section"><h2>数値比較</h2><div class="section-note">横スクロールなしで全員を同時に確認できます。</div><div id="summaryTable" class="compare-table-wrap"></div></section>
 <section class="section"><h2>戦力ランキング推移</h2><div class="chart-card"><div id="rankChart" class="chart-scroll"></div><div id="rankLegend" class="chart-legend"></div></div></section>
 <section class="section"><h2>英雄比較</h2><div class="section-note">英雄ごとのレベル・星・戦力をプレイヤー単位で確認できます。</div><div id="heroes" class="hero-compare"></div></section>
 <section class="section"><h2>プロフィール素材</h2><div id="assets" class="detail-grid"></div></section>
@@ -5657,7 +5657,7 @@ body{max-width:1100px;margin:auto;padding:16px 12px 48px;font-family:system-ui,-
     var times=Array.from(rows.keys()).sort(function(a,b){return a-b;});
     if(!times.length){return '<div class="chart-empty">期間内の履歴データがありません。</div>';}
     var min=Math.min.apply(Math,all),max=Math.max.apply(Math,all),pad=(max-min)*.08||1,minY=min-pad,maxY=max+pad;
-    var W=Math.max(520,times.length*28),H=220,L=48,R=10,T=14,B=34,plotW=W-L-R,plotH=H-T-B;
+    var W=720,H=220,L=48,R=10,T=14,B=34,plotW=W-L-R,plotH=H-T-B;
     function x(i){return L+(times.length===1?plotW/2:i/(times.length-1)*plotW);}
     function y(v){var q=(v-minY)/(maxY-minY);return invert?T+q*plotH:T+(1-q)*plotH;}
     var grid="",labels="";
@@ -5674,7 +5674,14 @@ body{max-width:1100px;margin:auto;padding:16px 12px 48px;font-family:system-ui,-
     var rows=[["戦力","power_score",""],["戦力順位","power_rank","rank"],["役場","town_center_level",""],["VIP","vip",""]];
     var head=(players||[]).map(function(x){return '<th>'+esc((x.player||{}).nick_name||x.governor_id)+'</th>';}).join("");
     var body=rows.map(function(r){var cells=(players||[]).map(function(x){var p=x.player||{},c=x.current||{},v=r[1]==="power_score"?c.power_score:r[1]==="power_rank"?c.power_rank:p[r[1]];return '<td>'+num(v)+'</td>';}).join("");return '<tr><td>'+esc(r[0])+'</td>'+cells+'</tr>';}).join("");
-    if(players.length>=2){var base=players[0],bp=base.player||{},bc=base.current||{};var diffs=(players.slice(1).map(function(x){var p=x.player||{},c=x.current||{};return '<tr><td>'+esc((p.nick_name||x.governor_id)+' − '+(bp.nick_name||base.governor_id))+'</td><td colspan="'+players.length+'">戦力差 '+signed(n(c.power_score)-n(bc.power_score))+' / 順位差 '+signed(n(c.power_rank)-n(bc.power_rank))+'</td></tr>';}).join(""));body+=diffs;}
+    if(players.length>=2){
+      var base=players[0],bp=base.player||{},bc=base.current||{};
+      var diffs=players.slice(1).map(function(x){
+        var p=x.player||{},cc=x.current||{},powerDiff=n(cc.power_score)-n(bc.power_score),rankDiff=n(cc.power_rank)-n(bc.power_rank);
+        return '<tr><td>'+esc((p.nick_name||x.governor_id)+' − '+(bp.nick_name||base.governor_id))+'</td><td colspan="'+players.length+'">戦力差 <strong class="'+(powerDiff>0?"delta-up":powerDiff<0?"delta-down":"")+'">'+signed(powerDiff)+'</strong> / 順位差 <strong>'+signed(rankDiff)+'</strong></td></tr>';
+      }).join("");
+      body+=diffs;
+    }
     summaryEl.innerHTML='<table class="compare-table"><thead><tr><th>項目</th>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
   }
   function renderHeroes(players){
