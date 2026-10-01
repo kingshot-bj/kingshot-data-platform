@@ -36,6 +36,7 @@ import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, crea
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
+import { normalizeCompareGovernorIds, buildPlayerCompareSeries } from "./player-compare.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -3618,6 +3619,7 @@ export default {
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
+      if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
       if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
@@ -5388,6 +5390,106 @@ async function handlePlayerHistoryApi(request, env) {
   }
 }
 
+
+
+async function handlePlayerCompareApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+
+  const url = new URL(request.url);
+  const requestedIds = [
+    ...url.searchParams.getAll("governor_id"),
+    ...url.searchParams.getAll("ids")
+  ];
+  const governorIds = normalizeCompareGovernorIds(requestedIds);
+  if (governorIds.length < 2) return json({ ok: false, error: "AT_LEAST_TWO_PLAYERS_REQUIRED" }, 400);
+  if (governorIds.length > 4) return json({ ok: false, error: "MAX_FOUR_PLAYERS" }, 400);
+
+  const daysRaw = Number(url.searchParams.get("days") || 90);
+  const days = [7, 30, 90].includes(daysRaw) ? daysRaw : 90;
+  const fromUnix = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
+
+  try {
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const placeholders = governorIds.map(() => "?").join(",");
+    const [playersResult, ranksResult, historyResults] = await Promise.all([
+      env.DB.prepare(
+        "SELECT * FROM players WHERE governor_id IN (" + placeholders + ")"
+      ).bind(...governorIds).all(),
+      visibilityEnabled(visibilitySettings, "ranks_core", auth.role)
+        ? env.DB.prepare(
+            "SELECT governor_id, rank, score, observed_at, source_observed_at FROM kingdom_ranking_current WHERE board = 'personal_power' AND governor_id IN (" + placeholders + ")"
+          ).bind(...governorIds).all()
+        : Promise.resolve({ results: [] }),
+      Promise.all(governorIds.map(async governorId => {
+        const [playerHistory, rankHistory] = await Promise.all([
+          getPlayerHistory(env.DB, governorId, 100, env.ARCHIVE, env.HISTORY_STORAGE_MODE),
+          visibilityEnabled(visibilitySettings, "ranks_core", auth.role)
+            ? getPlayerRankHistory(env.DB, {
+                governorId,
+                limit: 200,
+                archiveBucket: env.ARCHIVE,
+                historyMode: env.HISTORY_STORAGE_MODE
+              })
+            : Promise.resolve([])
+        ]);
+        return { governorId, playerHistory, rankHistory };
+      }))
+    ]);
+
+    const playersById = new Map((playersResult.results || []).map(row => [String(row.governor_id), row]));
+    const currentRanksById = new Map((ranksResult.results || []).map(row => [String(row.governor_id), row]));
+    const historyById = new Map(historyResults.map(item => [String(item.governorId), item]));
+
+    const players = governorIds.map(governorId => {
+      const raw = playersById.get(governorId);
+      if (!raw) return null;
+      const visible = filterPlayerForRole(raw, auth.role, raw, visibilitySettings);
+      const currentRank = currentRanksById.get(governorId);
+      const history = historyById.get(governorId) || { playerHistory: [], rankHistory: [] };
+      const series = buildPlayerCompareSeries({
+        playerHistory: history.playerHistory,
+        rankHistory: history.rankHistory,
+        fromUnix
+      });
+      return {
+        governor_id: governorId,
+        player: visible,
+        current: {
+          power_rank: currentRank?.rank ?? null,
+          power_score: currentRank?.score ?? visible?.power ?? null
+        },
+        series
+      };
+    }).filter(Boolean);
+
+    if (players.length < 2) {
+      return json({ ok: false, error: "PLAYER_DATA_NOT_FOUND", requested_governor_ids: governorIds }, 404);
+    }
+
+    await trackServiceUsage(env, auth, "PLAYER_COMPARE_VIEW", {
+      targetType: "PLAYER",
+      targetId: governorIds.join(","),
+      metadata: { player_count: players.length, days, from_unix: fromUnix }
+    });
+
+    return json({
+      ok: true,
+      governor_ids: governorIds,
+      days,
+      from_unix: fromUnix,
+      players
+    });
+  } catch (error) {
+    console.error("Player compare API error:", error);
+    return json({
+      ok: false,
+      error: error?.code || "PLAYER_COMPARE_FAILED",
+      message: error?.message || null
+    }, Number(error?.status) >= 400 && Number(error?.status) < 600 ? Number(error.status) : 500);
+  }
+}
 
 async function handlePlayerChangesApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
