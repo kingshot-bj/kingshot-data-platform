@@ -6,6 +6,7 @@ export const SERVICE_USAGE_EVENTS = Object.freeze({
   PLAYER_REFRESH: "PLAYER_REFRESH",
   PLAYER_HISTORY_VIEW: "PLAYER_HISTORY_VIEW",
   PLAYER_CHANGES_VIEW: "PLAYER_CHANGES_VIEW",
+  PLAYER_COMPARE_VIEW: "PLAYER_COMPARE_VIEW",
   PLAYER_WATCHLIST_VIEW: "PLAYER_WATCHLIST_VIEW",
   PLAYER_WATCHLIST_ADD: "PLAYER_WATCHLIST_ADD",
   PLAYER_WATCHLIST_REMOVE: "PLAYER_WATCHLIST_REMOVE",
@@ -20,10 +21,12 @@ export const SERVICE_USAGE_EVENTS = Object.freeze({
   KINGSHOT_ID_CHANGE: "KINGSHOT_ID_CHANGE",
   KINGSHOT_ID_REMOVE: "KINGSHOT_ID_REMOVE",
   KINGSHOT_ID_CONFLICT: "KINGSHOT_ID_CONFLICT",
-  KINGSHOT_ID_SUPPORT_REQUEST: "KINGSHOT_ID_SUPPORT_REQUEST"
+  KINGSHOT_ID_SUPPORT_REQUEST: "KINGSHOT_ID_SUPPORT_REQUEST",
+  ADVANCED_PROMOTED: "ADVANCED_PROMOTED",
+  MIGHTPULSE_API_KEY_CONTRIBUTE: "MIGHTPULSE_API_KEY_CONTRIBUTE"
 });
 
-const TARGET_TYPES = new Set(["PLAYER", "KINGDOM"]);
+const TARGET_TYPES = new Set(["PLAYER", "KINGDOM", "USER"]);
 
 const METADATA_KEYS = Object.freeze({
   PLAYER_SEARCH: [
@@ -47,6 +50,10 @@ const METADATA_KEYS = Object.freeze({
   ],
   PLAYER_CHANGES_VIEW: [
     "period", "change_type", "field_name", "result_count", "change_categories"
+  ],
+  PLAYER_COMPARE_VIEW: [
+    "player_count", "days", "from_unix", "history_sample_limit",
+    "duration_ms", "d1_duration_ms", "history_duration_ms", "observation_duration_ms"
   ],
   PLAYER_WATCHLIST_VIEW: [
     "watchlist_count", "enabled_count", "disabled_count", "max_limit", "remaining_slots",
@@ -90,7 +97,9 @@ const METADATA_KEYS = Object.freeze({
   KINGSHOT_ID_CHANGE: [],
   KINGSHOT_ID_REMOVE: [],
   KINGSHOT_ID_CONFLICT: [],
-  KINGSHOT_ID_SUPPORT_REQUEST: []
+  KINGSHOT_ID_SUPPORT_REQUEST: [],
+  ADVANCED_PROMOTED: ["reason"],
+  MIGHTPULSE_API_KEY_CONTRIBUTE: ["pool_type"]
 });
 
 function assertString(value, name) {
@@ -157,7 +166,9 @@ export function createServiceUsageEvent({
     event_id: crypto.randomUUID(),
     occurred_at: new Date().toISOString(),
     actor_user_id: normalizedActor,
-    feature: normalizedOperation.startsWith("PLAYER_") ? "PLAYER" : "KINGDOM",
+    feature: normalizedOperation.startsWith("PLAYER_") ? "PLAYER"
+      : normalizedOperation.startsWith("KINGDOM_") ? "KINGDOM"
+      : "ACCOUNT",
     operation: normalizedOperation,
     target_type: targetType === null ? null : String(targetType),
     target_id: targetId === null || targetId === undefined ? null : String(targetId),
