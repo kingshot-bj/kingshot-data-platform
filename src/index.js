@@ -5574,14 +5574,14 @@ async function handlePlayerChangesApi(request, env) {
 async function renderPlayerComparePage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return applyEagleEyeTheme(\`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Compare</title></head><body><main class="wrap"><h1>ログインが必要です</h1><a href="/api/auth/discord">Discordでログイン</a></main></body></html>\`);
+    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Compare</title></head><body><main class="wrap"><h1>ログインが必要です</h1><a href="/api/auth/discord">Discordでログイン</a></main></body></html>`);
   }
   const url = new URL(request.url);
   const ids = url.searchParams.getAll("governor_id").map(v => String(v || "").trim()).filter(Boolean);
   if (ids.length < 2) {
-    return applyEagleEyeTheme(\`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー比較｜EagleEye</title></head><body><main class="wrap"><h1>プレイヤー比較</h1><div class="card">比較するプレイヤーを2人以上選択してください。</div><p><a href="/player-watchlist">プレイヤーウォッチリストへ戻る</a></p></main></body></html>\`);
+    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー比較｜EagleEye</title></head><body><main class="wrap"><h1>プレイヤー比較</h1><div class="card">比較するプレイヤーを2人以上選択してください。</div><p><a href="/player-watchlist">プレイヤーウォッチリストへ戻る</a></p></main></body></html>`);
   }
-  return applyEagleEyeTheme(\`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー比較｜EagleEye</title>
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー比較｜EagleEye</title>
 <style>
 body{max-width:1100px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.head{margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0}.toolbar select,.toolbar button{border:1px solid #334155;border-radius:10px;background:#162238;color:#f8fafc;padding:8px 10px}.toolbar button{cursor:pointer}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.card{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8}.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:10px;background:#0f172a}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px}.section{margin-top:18px}.table-wrap{overflow:auto;border:1px solid #334155;border-radius:14px}.series{width:100%;border-collapse:collapse;min-width:560px}.series th,.series td{padding:9px 10px;border-bottom:1px solid #334155;text-align:right;font-size:12px}.series th:first-child,.series td:first-child{text-align:left}.series th{color:#94a3b8;font-weight:700;background:#111c30}.empty{padding:16px;color:#94a3b8}.error{padding:14px;border:1px solid #7f1d1d;border-radius:12px;background:#2a1115;color:#fecaca}@media(max-width:600px){.title{font-size:23px}}
 </style></head><body>
@@ -5603,7 +5603,7 @@ body{max-width:1100px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-
   async function load(){reload.disabled=true;message.className="card";message.textContent="比較データを読み込み中…";try{var res=await fetch(query(),{cache:"no-store"}),data=await res.json();if(!res.ok||!data.ok)throw new Error(data.message||data.error||"比較データの取得に失敗しました。");renderCards(data);renderSeries(powerEl,data.players,"power","power");renderSeries(rankingEl,data.players,"ranking","power_rank");message.textContent="対象 "+((data.players||[]).length)+"人 / "+data.days+"日間";}catch(e){playersEl.innerHTML="";powerEl.innerHTML='<div class="empty">—</div>';rankingEl.innerHTML='<div class="empty">—</div>';message.className="error";message.textContent=e.message||"比較データの取得に失敗しました。";}finally{reload.disabled=false;}}
   daysEl.addEventListener("change",load);reload.addEventListener("click",load);load();
 })();
-</script></body></html>\`);
+</script></body></html>`);
 }
 
 async function renderPlayerChangesPage(request, env) {
