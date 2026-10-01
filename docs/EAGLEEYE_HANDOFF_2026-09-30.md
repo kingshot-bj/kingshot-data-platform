@@ -2582,3 +2582,27 @@ Player Compare API（第1段階）を利用する前段として、プレイヤ�
 - 比較画面の視認性・グラフ化
 - MightPulse由来の英雄星 / アイコン / 装備等の比較表示
 - 取得可能ならプロフィールフレーム / 城スキン / 行軍スキン等の任意アセット表示
+
+
+# 48. Player Compare 3b（MightPulseリッチ情報・アセット表示）実装（2026-10-01）
+
+## 実装内容
+比較APIに、保存済み最新MightPulse観測から取得できる情報を追加。
+- プロフィールアイコン
+- 英雄アイコン、名前、レベル、星、戦力
+- 既存の可視性設定を通したプロフィール情報
+- extractOptionalPlayerAssets() による任意アセット検出
+- 比較画面に「英雄・装備」セクションを追加。
+
+## 取得方針
+比較画面からMightPulseへ直接追加リクエストはしない。api_observations に保存済みの最新観測を利用する。APIレスポンスに実際に存在するフィールドだけ表示する。ranking_snapshots の広範囲取得は追加していない。
+
+## D1
+プレイヤーごとに保存済み最新観測を1件取得する。比較対象は最大4人なので最大4件の対象限定取得。api_observations の target_id 限定取得であり、ranking_snapshots の広範囲取得ではない。
+
+## コミット
+- 7bb41a59bc768df1f9ccb740c127e7b76da14ff6 — feat: add MightPulse player assets to compare
+
+## 検証
+main上のソース確認済み。src/index.js 括弧数 3134 / 3134。比較ルート・リッチ情報処理・アセット表示処理を確認。
+**この3b変更の本番Workerデプロイ・実機表示は未確認。**
