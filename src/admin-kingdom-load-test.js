@@ -20,14 +20,16 @@ function parseKids(raw) {
     .filter(value => value > 0))];
 }
 
-async function runWithConcurrency(items, concurrency, worker) {
+async function runWithConcurrency(items, concurrency, worker, onComplete = null) {
   const results = new Array(items.length);
   let cursor = 0;
   async function runner() {
     while (true) {
       const index = cursor++;
       if (index >= items.length) return;
-      results[index] = await worker(items[index], index);
+      const result = await worker(items[index], index);
+      results[index] = result;
+      if (onComplete) await onComplete(result, index);
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => runner()));
@@ -133,21 +135,79 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
   if (kids.length > MAX_KINGDOMS) return new Response(JSON.stringify({ ok:false, error:"TOO_MANY_KINGDOMS", max:MAX_KINGDOMS }), { status:400, headers:{"content-type":"application/json"} });
 
   const startedAt = Date.now();
-  const results = await runWithConcurrency(kids, concurrency, kid => runKingdomLoad(env, kid, board));
-  const elapsedMs = Date.now() - startedAt;
-  const success = results.filter(item => item.ok).length;
-  const failed = results.length - success;
+  const encoder = new TextEncoder();
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
 
-  return new Response(JSON.stringify({
-    ok: true,
-    target_count: kids.length,
-    concurrency,
-    board,
-    elapsed_ms: elapsedMs,
-    success,
-    failed,
-    results
-  }), { headers:{ "content-type":"application/json; charset=UTF-8", "cache-control":"no-store" } });
+  const send = async payload => {
+    await writer.write(encoder.encode(JSON.stringify(payload) + "\n"));
+  };
+
+  const run = (async () => {
+    try {
+      await send({
+        type: "start",
+        target_count: kids.length,
+        concurrency,
+        board,
+        completed: 0,
+        success: 0,
+        failed: 0
+      });
+
+      let completed = 0;
+      let success = 0;
+      let failed = 0;
+
+      const results = await runWithConcurrency(
+        kids,
+        concurrency,
+        kid => runKingdomLoad(env, kid, board),
+        async result => {
+          completed++;
+          if (result.ok) success++;
+          else failed++;
+          await send({
+            type: "progress",
+            target_count: kids.length,
+            completed,
+            success,
+            failed,
+            percent: Math.round((completed / kids.length) * 100),
+            result
+          });
+        }
+      );
+
+      await send({
+        type: "complete",
+        ok: true,
+        target_count: kids.length,
+        concurrency,
+        board,
+        elapsed_ms: Date.now() - startedAt,
+        success,
+        failed,
+        results
+      });
+    } catch (error) {
+      await send({
+        type: "error",
+        ok: false,
+        error: String(error?.message || error || "LOAD_TEST_FAILED").slice(0, 1000)
+      });
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(stream.readable, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=UTF-8",
+      "cache-control": "no-store, no-cache, must-revalidate",
+      "x-accel-buffering": "no"
+    }
+  });
 }
 
 export function renderOwnerKingdomLoadTestPage() {
@@ -155,6 +215,6 @@ export function renderOwnerKingdomLoadTestPage() {
 const run=document.getElementById("run"), result=document.getElementById("result"), preset=document.getElementById("kidPreset"), kidsInput=document.getElementById("kids"), selected=document.getElementById("selectedKids"); const selectedKids=new Set();
 function renderSelected(){selected.innerHTML=Array.from(selectedKids).map(function(kid){return "<button type=\"button\" data-kid=\""+kid+"\" style=\"margin:0;padding:7px 10px;background:#334155;color:#fff;border:1px solid #475569;border-radius:999px\">"+kid+" ×</button>";}).join("");selected.querySelectorAll("[data-kid]").forEach(function(button){button.addEventListener("click",function(){selectedKids.delete(Number(button.dataset.kid));renderSelected();});});kidsInput.value=Array.from(selectedKids).join(", ");}
 preset.addEventListener("change",function(){const kid=Number(preset.value);if(kid){selectedKids.add(kid);renderSelected();}preset.value="";});
-run.addEventListener("click",async()=>{const kids=kidsInput.value,board=document.getElementById("board").value,concurrency=document.getElementById("concurrency").value;run.disabled=true;run.textContent="実行中…";result.textContent="取得中…";try{const response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids)+"&board="+encodeURIComponent(board)+"&concurrency="+encodeURIComponent(concurrency),{cache:"no-store"});const data=await response.json();result.textContent=JSON.stringify(data,null,2);}catch(error){result.textContent="ERROR: "+error.message;}finally{run.disabled=false;run.textContent="並列取得テストを実行";}});
+run.addEventListener("click",async()=>{const kids=kidsInput.value,board=document.getElementById("board").value,concurrency=document.getElementById("concurrency").value;run.disabled=true;run.textContent="実行中…";result.textContent="取得開始…\\n";try{const response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids)+"&board="+encodeURIComponent(board)+"&concurrency="+encodeURIComponent(concurrency),{cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);if(!response.body)throw new Error("ストリーミング応答に対応していません。");const reader=response.body.getReader(),decoder=new TextDecoder();let buffer="";while(true){const chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});const lines=buffer.split("\\n");buffer=lines.pop()||"";for(const line of lines){if(!line.trim())continue;const data=JSON.parse(line);if(data.type==="start"){result.textContent="取得開始…\\n0% (0/"+data.target_count+")";}else if(data.type==="progress"){result.textContent="取得進捗\\n"+data.percent+"% ("+data.completed+"/"+data.target_count+")\\n成功: "+data.success+" / 失敗: "+data.failed+"\\n\\n直近: 王国 "+data.result.kid+" — "+(data.result.ok?"成功":"失敗");}else if(data.type==="complete"){result.textContent="取得完了\\n"+JSON.stringify(data,null,2);}else if(data.type==="error"){throw new Error(data.error||"LOAD_TEST_FAILED");}}}}catch(error){result.textContent="ERROR: "+error.message;}finally{run.disabled=false;run.textContent="並列取得テストを実行";}});
 </script></main></body></html>`;
 }
