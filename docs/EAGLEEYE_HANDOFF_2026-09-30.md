@@ -2771,79 +2771,115 @@ Production確認時:
 
 ---
 
-# 52. 2026-10-02 新規要望：OWNER / ADMIN 登録規模確認ページ
+# 52. 2026-10-02 OWNER / ADMIN 登録規模確認ページ【実装済み・本番未確認】
 
 ## 要望
 
-OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデータ規模を確認できるページを追加する。
+OWNER / ADMIN向け管理画面に、現在EagleEyeへ登録されているデータ規模を確認できるページを追加。
 
 最低限:
 - 登録プレイヤー数
 - 登録王国数
 
-をリアルタイムに近い現在値として確認できるようにする。
+を確認できるようにする。
 
-## 実装前に必ず確認すること
+## 実装済み
 
-「登録プレイヤー」「登録王国」の定義を勝手に決めない。
+### 新規module
 
-mainの実コード / DB schemaを確認し、以下を確定してから実装する。
+- `src/admin-data-coverage.js`
+- `renderAdminDataCoveragePage(env, auth)`
 
-1. players の役割と一意キー
-2. 王国を管理する専用tableの有無
-3. players の kid / kingdom_id 等の実際のschema
-4. kingdom_ranking_current の位置付け
-5. 既存のOWNER / ADMIN routing・auth
-6. 既存index
-7. 現在「登録」として扱っているデータの実装上の定義
+### Routing
 
-## D1方針
+`src/index.js` に追加済み:
 
-目的は件数確認なので、不要な一覧取得は行わない。
+- `/admin/data-coverage`
 
-基本候補:
-- COUNT(*)
-- 必要な場合のみ COUNT(DISTINCT ...)
-
-ただし、実schemaと既存データモデルを確認した上で最適なqueryを決定する。
-
-D1 Rows Readを抑えるため、全players一覧を取得してWorker側で数える方式は禁止。
-
-## UI案
-
-OWNER / ADMINページ内に例えば:
-
-- 「EagleEye 登録データ」
-- 「登録プレイヤー」
-- 「登録王国」
-- 最終集計時刻
-
-をカード形式で表示。
-
-必要性を確認した上で将来的に:
-- 王国別プレイヤー数
-- 王国ID
-- 最終観測日時
-- 増減履歴
-などへ拡張可能な構造にする。
-
-## 権限
-
-- OWNER: 閲覧可能
+既存の `requireAdmin()` を通すため、権限は:
 - ADMIN: 閲覧可能
+- OWNER: 閲覧可能
 - BASIC / ADVANCED: 閲覧不可
 
-既存OWNER / ADMIN認証・権限判定を再利用し、独自の弱い権限判定を追加しない。
+### ADMIN CONTROL
 
-## 現在の状態
+`/admin` に「データ登録状況」カードを追加済み。
 
-未実装。
+### 表示項目
 
-まだDB schemaと既存管理画面構造の確認段階。
+現在表示する項目:
 
-次スレッドではまずmainのschema / routing / authを確認してから実装する。
+- 登録プレイヤー数
+- 登録王国数
+- ランキングデータが存在する王国数
+- 有効な王国ウォッチリスト数
+- ウォッチ対象のユニーク王国数
+- 取得時刻（日本時間）
+- 集計処理時間
 
----
+### 「登録」の定義
+
+mainのschema / 実装を確認した上で以下の定義を採用。
+
+**登録プレイヤー**
+- `players` テーブルの現在行数
+- `governor_id` 単位で1プレイヤー
+- 実装上は `governor_id IS NOT NULL` を条件にCOUNT
+
+**登録王国**
+- `players` に存在する `kid` のユニーク数
+- ランキングだけ存在する王国とは分離して表示
+
+**ランキングデータが存在する王国**
+- `kingdom_ranking_current` の `kid` ユニーク数
+
+### D1方針
+
+一覧取得は行わず、COUNT系SQLで集計。
+
+主なquery:
+
+```sql
+SELECT COUNT(*) AS player_count,
+       COUNT(DISTINCT kid) AS kingdom_count
+FROM players
+WHERE governor_id IS NOT NULL
+```
+
+および:
+
+```sql
+SELECT COUNT(DISTINCT kid)
+FROM kingdom_ranking_current
+```
+
+ウォッチリストもCOUNT / COUNT(DISTINCT)で集計。
+
+全playersをWorkerへ読み出して数える方式は採用していない。
+
+### 実装コミット
+
+- `bff0ea01055c2ce0d7dd3f74f23b0ab4796f8786`
+  - `feat: add admin data coverage page`
+- `288484b02258b0aab34927238ffc1ec0d25142bb`
+  - `feat: add data coverage admin page`
+
+mainには反映済み。
+
+## 本番確認状況
+
+**未確認。**
+
+コード上の実装、routing、権限、schema、COUNT方式はmainで確認済み。
+
+ただし、現時点では:
+- Cloudflare本番Workerで `/admin/data-coverage` を開いた確認: 未確認
+- iPhone実機で表示確認: 未確認
+- 本番DBの実際の件数確認: 未確認
+
+したがって、このページについて**「本番確認済み」とは扱わない。**
+
+ユーザーが実機で確認する予定。
 
 # 53. 次スレッド開始時の最優先タスク
 
