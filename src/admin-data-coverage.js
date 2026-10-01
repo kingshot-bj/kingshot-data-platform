@@ -9,19 +9,17 @@ export async function renderAdminDataCoveragePage(env, auth) {
 
   const startedAt = Date.now();
   try {
-    const [playerCount, playerKingdomCount, rankingKingdomCount, watchlistKingdomCount, watchlistCount] = await Promise.all([
-      env.DB.prepare("SELECT COUNT(*) AS count FROM players").first(),
-      env.DB.prepare("SELECT COUNT(DISTINCT kid) AS count FROM players WHERE kid IS NOT NULL").first(),
+    const [playerCounts, rankingKingdomCount, watchlistCounts] = await Promise.all([
+      env.DB.prepare("SELECT COUNT(*) AS player_count, COUNT(DISTINCT kid) AS kingdom_count FROM players WHERE governor_id IS NOT NULL").first(),
       env.DB.prepare("SELECT COUNT(DISTINCT kid) AS count FROM kingdom_ranking_current").first(),
-      env.DB.prepare("SELECT COUNT(DISTINCT kid) AS count FROM kingdom_watchlists WHERE enabled = 1").first(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_watchlists WHERE enabled = 1").first()
+      env.DB.prepare("SELECT COUNT(*) AS watchlist_count, COUNT(DISTINCT kid) AS kingdom_count FROM kingdom_watchlists WHERE enabled = 1").first()
     ]);
 
-    const players = Number(playerCount?.count || 0);
-    const playerKingdoms = Number(playerKingdomCount?.count || 0);
+    const players = Number(playerCounts?.player_count || 0);
+    const playerKingdoms = Number(playerCounts?.kingdom_count || 0);
     const rankingKingdoms = Number(rankingKingdomCount?.count || 0);
-    const watchedKingdoms = Number(watchlistKingdomCount?.count || 0);
-    const activeWatchlists = Number(watchlistCount?.count || 0);
+    const watchedKingdoms = Number(watchlistCounts?.kingdom_count || 0);
+    const activeWatchlists = Number(watchlistCounts?.watchlist_count || 0);
     const elapsedMs = Date.now() - startedAt;
     const generatedAt = new Date().toLocaleString("ja-JP", {
       timeZone: "Asia/Tokyo",
