@@ -233,7 +233,7 @@ function queryRows(){
   const filter=$("queryFilter").value;
   const sort=$("querySort").value;
   let rows=keys.map(key=>{
-    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0});
+    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,rowsReturned:0,durationMs:0});
     const first=vals[0],last=vals[vals.length-1];
     const base=vals[state.base];
     return {key,vals,dc:last.count-base.count,dr:last.rowsRead-base.rowsRead,dw:last.rowsWritten-base.rowsWritten,dt:last.durationMs-base.durationMs,last:last.count+last.rowsRead+last.rowsWritten};
@@ -319,7 +319,7 @@ function renderTimeline(){
   const maps=state.data.map(aggregateQueries);
   const keys=[...new Set(maps.flatMap(m=>[...m.keys()]))];
   const rows=keys.map(key=>{
-    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0});
+    const vals=maps.map(m=>m.get(key)||{count:0,rowsRead:0,rowsWritten:0,durationMs:0});
     const ds=ints.map(x=>({label:x.label,total:x.total,count:vals[x.to].count-vals[x.from].count,rowsRead:vals[x.to].rowsRead-vals[x.from].rowsRead,rowsWritten:vals[x.to].rowsWritten-vals[x.from].rowsWritten}));
     return {key,vals,ds,changed:ds.some(d=>d.count||d.rowsRead||d.rowsWritten),score:ds.reduce((n,d)=>n+Math.abs(d.count)+Math.abs(d.rowsRead)+Math.abs(d.rowsWritten),0)};
   }).filter(x=>x.changed).sort((a,b)=>b.score-a.score);
