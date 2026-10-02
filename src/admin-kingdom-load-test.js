@@ -1,10 +1,67 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure } from "./api-pool.js";
+import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getApiPoolAvailability } from "./api-pool.js";
 import { recordServiceUsage } from "./service-usage.js";
 
 const MAX_KINGDOMS = 1000;
 const MAX_CONCURRENCY = 50;
 const DEFAULT_CONCURRENCY = 10;
+const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
+const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
+
+async function ensureLoadTestStateSchema(db) {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS api_request_locks (
+      lock_key TEXT PRIMARY KEY,
+      lock_token TEXT NOT NULL,
+      lock_until INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `).run();
+}
+
+async function acquireLoadTestState(db, runId) {
+  await ensureLoadTestStateSchema(db);
+  const now = Math.floor(Date.now() / 1000);
+  const lockUntil = now + LOAD_TEST_LOCK_TTL_SECONDS;
+  const result = await db.prepare(`
+    INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(lock_key) DO UPDATE SET
+      lock_token = excluded.lock_token,
+      lock_until = excluded.lock_until,
+      updated_at = excluded.updated_at
+    WHERE api_request_locks.lock_until <= ?
+  `).bind(LOAD_TEST_LOCK_KEY, runId, lockUntil, now, now).run();
+  return result?.meta?.changes === 1;
+}
+
+async function releaseLoadTestState(db, runId) {
+  if (!db || !runId) return;
+  await db.prepare(
+    "DELETE FROM api_request_locks WHERE lock_key = ? AND lock_token = ?"
+  ).bind(LOAD_TEST_LOCK_KEY, runId).run();
+}
+
+export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
+  if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
+  try {
+    await ensureLoadTestStateSchema(env.DB);
+    const now = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare(
+      "SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
+    ).bind(LOAD_TEST_LOCK_KEY, now).first();
+    return new Response(JSON.stringify({
+      ok: true,
+      active: Boolean(row),
+      run_id: row?.lock_token || null,
+      started_at: row?.updated_at || null,
+      expires_at: row?.lock_until || null
+    }), { headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
+  } catch (error) {
+    console.error("owner_kingdom_load_test_status_failed", error?.message || error);
+    return new Response(JSON.stringify({ ok:false, active:false, error:"LOAD_TEST_STATUS_UNAVAILABLE" }), { status:503, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
+  }
+}
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -134,7 +191,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
   const kids = parseKids(url.searchParams.get("kids"));
   const board = String(url.searchParams.get("board") || "").trim();
   const allRankings = url.searchParams.get("all_rankings") === "1";
-  const concurrency = Math.min(Math.max(Number(url.searchParams.get("concurrency") || DEFAULT_CONCURRENCY), 1), MAX_CONCURRENCY);
+  const requestedConcurrency = Math.min(Math.max(Number(url.searchParams.get("concurrency") || DEFAULT_CONCURRENCY), 1), MAX_CONCURRENCY);
 
   if (!allRankings && !board) return new Response(JSON.stringify({ ok:false, error:"BOARD_REQUIRED" }), { status:400, headers:{"content-type":"application/json"} });
   if (!kids.length) return new Response(JSON.stringify({ ok:false, error:"KINGDOMS_REQUIRED" }), { status:400, headers:{"content-type":"application/json"} });
@@ -142,6 +199,29 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 
   const startedAt = Date.now();
   const runId = crypto.randomUUID();
+
+  const poolAvailability = await getApiPoolAvailability(env.DB, {
+    poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL"]
+  });
+  const availablePoolKeys = Number(poolAvailability?.totals?.available || 0);
+  const maxTestConcurrency = Math.max(0, availablePoolKeys - 1);
+  if (maxTestConcurrency < 1) {
+    return new Response(JSON.stringify({
+      ok:false,
+      error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",
+      message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",
+      available_pool_keys: availablePoolKeys,
+      reserved_for_normal_use: 1
+    }), { status:409, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
+  }
+  const concurrency = Math.min(requestedConcurrency, maxTestConcurrency);
+  if (!await acquireLoadTestState(env.DB, runId)) {
+    return new Response(JSON.stringify({
+      ok:false,
+      error:"LOAD_TEST_ALREADY_RUNNING",
+      message:"現在、別の王国負荷テストが実行中です。"
+    }), { status:409, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
+  }
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -152,12 +232,15 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 
   const run = (async () => {
     try {
-      console.log("eagleeye_owner_kingdom_load_test_start", { run_id: runId, actor_user_id: auth.user_id, actor_role: auth.role, target_count: kids.length, start_kid: Math.min(...kids), end_kid: Math.max(...kids), board_mode: allRankings ? "ALL" : "SINGLE", board: allRankings ? "ALL" : board, concurrency });
+      console.log("eagleeye_owner_kingdom_load_test_start", { run_id: runId, actor_user_id: auth.user_id, actor_role: auth.role, target_count: kids.length, start_kid: Math.min(...kids), end_kid: Math.max(...kids), board_mode: allRankings ? "ALL" : "SINGLE", board: allRankings ? "ALL" : board, requested_concurrency: requestedConcurrency, concurrency, available_pool_keys: availablePoolKeys, reserved_for_normal_use: 1 });
       await send({
         type: "start",
         run_id: runId,
         target_count: kids.length,
         concurrency,
+        requested_concurrency: requestedConcurrency,
+        available_pool_keys: availablePoolKeys,
+        reserved_for_normal_use: 1,
         board: allRankings ? "ALL" : board,
         all_rankings: allRankings,
         completed: 0,
@@ -205,6 +288,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
         board_mode: allRankings ? "ALL" : "SINGLE",
         board: allRankings ? "ALL" : board,
         concurrency,
+        requested_concurrency: requestedConcurrency,
+        available_pool_keys: availablePoolKeys,
+        reserved_for_normal_use: 1,
         elapsed_ms: Date.now() - startedAt,
         success_count: success,
         failed_count: failed,
@@ -246,6 +332,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
         error: String(error?.message || error || "LOAD_TEST_FAILED").slice(0, 1000)
       });
     } finally {
+      await releaseLoadTestState(env.DB, runId).catch(error => console.error("owner_kingdom_load_test_state_release_failed", error?.message || error));
       await writer.close();
     }
   })();
