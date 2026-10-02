@@ -4123,3 +4123,14 @@ system-log-after.json
 - R2 PUT成功後にD1 DELETEが失敗した場合も、次回実行時に同じarchive keyへ再PUTされるため、同一batchの二重オブジェクト増殖を避けられる既存key設計を利用。
 - 24時間は「厳密に24時間経過した時点で即削除」ではなく、5分Cronによる最初の実行時点で24時間超過分を処理するため、実運用上の保持上限は約24時間+Cron間隔。
 - 本番Cron/R2実機確認は未実施。
+
+
+# 66. System Log JSON Phase 6実装状況（2026-10-02）
+
+- /api/gateway/v1/status のSystem Log取得は既存の1回の24時間D1読み取り結果を再利用し、整合性サマリー算出のための追加D1クエリを発行しない。
+- System Log summaryとして event_count / trace_count / services / statuses / metadata_parse_failures / oldest_created_at / newest_created_at / page_size / complete_window_read をJSONへ追加。
+- 取得処理はpageSize=500のkeyset paginationを継続し、24時間分をlimit=nullで最後まで取得する。
+- D1の過去ranking_snapshots等を横断取得する処理は追加していない。
+- metadata_jsonはSystem Log取得時にJSON化済みの値を利用し、実際のparse failureだけをカウントする。
+- System Logの大量化に対して、summary算出で追加readを発生させない構造を維持。
+- この段階でコード上のD1/R2整合性経路を確認済みだが、実本番での24時間イベント件数・JSON実サイズ・D1 row read/R2 operation実測は未実施。
