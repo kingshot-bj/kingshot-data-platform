@@ -50,9 +50,12 @@ async function claimApiPoolKey(db, {
     : [String(poolType || "SYSTEM_GENERAL")];
   const placeholders = eligiblePoolTypes.map(() => "?").join(",");
 
-  // Multiple pool types are treated as one shared lease pool. pool_type remains metadata.
-  const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?1, leased_until = ?2, lease_job_id = ?3, lease_purpose = ?4, lease_target_type = ?5, lease_target_id = ?6, updated_at = ?7 " +
-    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ?8 AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?9) AND (leased_until IS NULL OR leased_until <= ?10) ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
+  // Do not mix numbered SQLite placeholders (?1, ?8, ...) with anonymous
+  // placeholders generated for the dynamic pool-type IN list. D1/SQLite
+  // assigns anonymous parameters differently when numbered parameters are
+  // present, causing a binding-count error for multi-pool leases.
+  const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?, leased_until = ?, lease_job_id = ?, lease_purpose = ?, lease_target_type = ?, lease_target_id = ?, updated_at = ? " +
+    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
     "RETURNING key_id, provider, pool_type, encrypted_key";
   const row = await db.prepare(sql).bind(
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
