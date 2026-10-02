@@ -1,4 +1,3 @@
-import { runSystemOperation, createSystemTrace } from "./system-log.js";
 const ARCHIVE_VERSION = "v1";
 const ARCHIVE_TABLES = new Set([
   "api_observations",
@@ -42,7 +41,7 @@ async function gzipText(text) {
   return await new Response(compressed).arrayBuffer();
 }
 
-async function archiveD1RowsToR2Internal(bucket, { table, rows }) {
+export async function archiveD1RowsToR2(bucket, { table, rows }) {
   if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!ARCHIVE_TABLES.has(table)) throw new Error("R2_ARCHIVE_TABLE_NOT_ALLOWED");
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -397,13 +396,3 @@ export async function listPlayerRankHistoryFromR2(bucket, {
     .slice(0, safeLimit);
 }
 
-
-export async function archiveD1RowsToR2(bucket, options) {
-  const trace = createSystemTrace({ targetType: "R2_ARCHIVE", targetId: options?.table || null });
-  return runSystemOperation(null, trace, {
-    eventType: "R2_WRITE", service: "r2_archive", feature: "archive",
-    operation: "ARCHIVE_D1_ROWS_TO_R2", targetType: "R2_ARCHIVE",
-    targetId: trace.targetId,
-    metadata: { row_count: Array.isArray(options?.rows) ? options.rows.length : 0 }
-  }, () => archiveD1RowsToR2Internal(bucket, options));
-}
