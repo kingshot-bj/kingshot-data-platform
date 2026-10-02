@@ -214,8 +214,81 @@ export async function getMightPulseKingdomAllRankings(env, kid, {
   });
 }
 
+export async function getMightPulseTopKingdomAlliances(env, kid, {
+  limit = 10,
+  board = "alliance_power",
+  apiKey = null
+} = {}) {
+  const numericLimit = Number(limit);
+  if (!Number.isInteger(numericLimit) || numericLimit < 1 || numericLimit > 100) {
+    throw new MightPulseError("Alliance ranking limit must be between 1 and 100.", {
+      status: 400,
+      code: "INVALID_ALLIANCE_RANKING_LIMIT"
+    });
+  }
+
+  const ranking = await getMightPulseKingdomRanks(env, kid, {
+    board,
+    limit: numericLimit,
+    apiKey
+  });
+  const payload = ranking?.data || {};
+  const entries = Array.isArray(payload?.data) ? payload.data :
+    Array.isArray(payload?.rankings) ? payload.rankings :
+    Array.isArray(payload?.results) ? payload.results : [];
+
+  const alliances = entries.slice(0, numericLimit).map((entry, index) => ({
+    rank: Number(entry?.rank ?? entry?.ranking ?? index + 1),
+    aid: entry?.aid ?? entry?.alliance_id ?? entry?.alliance?.aid ?? null,
+    abbr: entry?.abbr ?? entry?.alliance_tag ?? entry?.tag ?? entry?.alliance?.abbr ?? null,
+    name: entry?.name ?? entry?.alliance_name ?? entry?.alliance?.name ?? null,
+    score: entry?.score ?? entry?.power ?? entry?.alliance_power ?? null
+  })).filter(entry => entry.abbr);
+
+  return {
+    ...ranking,
+    data: alliances
+  };
+}
+
+export async function getMightPulseTopKingdomAllianceRosters(env, kid, {
+  limit = 10,
+  board = "alliance_power",
+  include = "info,roster",
+  apiKey = null
+} = {}) {
+  const ranking = await getMightPulseTopKingdomAlliances(env, kid, {
+    limit,
+    board,
+    apiKey
+  });
+  const alliances = Array.isArray(ranking?.data) ? ranking.data : [];
+  const results = [];
+  for (const alliance of alliances) {
+    const roster = await getMightPulseAlliance(env, kid, alliance.abbr, { include, apiKey });
+    const payload = roster?.data || {};
+    const members = Array.isArray(payload?.members) ? payload.members :
+      Array.isArray(payload?.roster) ? payload.roster :
+      Array.isArray(payload?.data?.members) ? payload.data.members : [];
+    results.push({
+      ...alliance,
+      member_count: members.length,
+      members,
+      upstream_status: roster.status
+    });
+  }
+  return {
+    kingdom_id: String(kid),
+    board,
+    alliance_limit: alliances.length,
+    alliances: results,
+    ranking_status: ranking.status
+  };
+}
+
 export async function getMightPulseAlliance(env, kid, tag, {
-  include = "info"
+  include = "info",
+  apiKey = null
 } = {}) {
   const kingdomId = String(kid || "").trim();
   const allianceTag = String(tag || "").trim();
@@ -230,7 +303,7 @@ export async function getMightPulseAlliance(env, kid, tag, {
   return mightPulseFetch(
     env,
     `/alliances/${encodeURIComponent(kingdomId)}/${encodeURIComponent(allianceTag)}`,
-    { query: { include } }
+    { query: { include }, apiKey }
   );
 }
 
