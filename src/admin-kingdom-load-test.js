@@ -402,7 +402,7 @@ export function renderOwnerKingdomLoadTestPage() {
       run.textContent="実行中…";
       result.textContent="取得開始…\\n王国数: "+kids.length+" / 同時実行数: "+concurrency;
       var url="/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&board="+encodeURIComponent(board)+"&all_rankings="+(allRankings?"1":"0")+"&concurrency="+encodeURIComponent(concurrency);
-      var response=await fetch(url,{cache:"no-store",credentials:"same-origin"});
+      var response=await fetch(url,{cache:"no-store",credentials:"same-origin",headers:{"x-eagle-eye-trace-id":clientTraceId}});
       if(!response.ok){
         var detail="HTTP "+response.status;
         try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}
