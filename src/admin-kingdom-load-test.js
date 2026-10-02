@@ -91,7 +91,7 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       const phase=rawStatus==="FAILED"&&String(job.last_error||"")==="LOAD_TEST_CANCELLED"?"CANCELLED":rawStatus;
       return {job_id:job.job_id,kid:Number(job.kid),top_n:Number(job.top_n||0),phase,board_index:Number(job.board_index||0),total_boards:26,player_cursor:Number(job.player_cursor||0),player_count:playerCount,ranking_rows:Number(job.ranking_rows||0),player_rows:Number(job.player_rows||0),created_at:Number(job.created_at||0),updated_at:Number(job.updated_at||0),last_error:job.last_error||null,completed:["COMPLETED","FAILED","CANCELLED"].includes(phase)};
     });
-    const targetCount=Number(runMeta?.target_count||0);
+    const targetCount=Number(runMeta?.target_count||normalizedJobs.length);
     const completed=normalizedJobs.filter(j=>j.completed).length;
     const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
     const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
