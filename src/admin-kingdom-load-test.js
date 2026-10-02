@@ -1,7 +1,7 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure } from "./api-pool.js";
 
-const MAX_KINGDOMS = 20;
+const MAX_KINGDOMS = 1000;
 const MAX_CONCURRENCY = 50;
 const DEFAULT_CONCURRENCY = 10;
 
@@ -13,9 +13,9 @@ function esc(value) {
 
 function parseKids(raw) {
   return [...new Set(String(raw || "")
-    .split(/[\\s,、]+/)
+    .split(/[\s,、]+/)
     .map(value => value.trim())
-    .filter(value => /^\\d+$/.test(value))
+    .filter(value => /^\d+$/.test(value))
     .map(Number)
     .filter(value => value > 0))];
 }
@@ -68,6 +68,9 @@ async function runKingdomLoad(env, kid, board, allRankings = false) {
     const entries = Array.isArray(payload?.data) ? payload.data.length :
       Array.isArray(payload?.rankings) ? payload.rankings.length :
       Array.isArray(payload?.results) ? payload.results.length : null;
+    const boardCount = allRankings && payload?.boards && typeof payload.boards === "object" && !Array.isArray(payload.boards)
+      ? Object.keys(payload.boards).length
+      : null;
 
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
@@ -86,6 +89,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false) {
       status: result.status,
       pool_type: poolType,
       entry_count: entries,
+      board_count: boardCount,
       elapsed_ms: elapsedMs
     };
   } catch (error) {
