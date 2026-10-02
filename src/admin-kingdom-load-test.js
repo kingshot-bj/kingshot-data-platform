@@ -35,6 +35,16 @@ async function acquireLoadTestState(db, runId) {
   return result?.meta?.changes === 1;
 }
 
+async function refreshLoadTestState(db, runId) {
+  if (!db || !runId) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const lockUntil = now + LOAD_TEST_LOCK_TTL_SECONDS;
+  const result = await db.prepare(
+    "UPDATE api_request_locks SET lock_until = ?, updated_at = ? WHERE lock_key = ? AND lock_token = ? AND lock_until > ?"
+  ).bind(lockUntil, now, LOAD_TEST_LOCK_KEY, runId, now).run();
+  return result?.meta?.changes === 1;
+}
+
 async function releaseLoadTestState(db, runId) {
   if (!db || !runId) return;
   await db.prepare(
@@ -246,6 +256,9 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
   try {
     let iterations = 0;
     while (iterations++ < 200) {
+      // Long tests (up to 1000 kingdoms) must keep the global run lock alive.
+      // Without renewal, the fixed TTL could expire while the test is still running.
+      await refreshLoadTestState(env.DB, runId).catch(() => {});
       if (await isLoadTestCancelled(env.DB, runId)) {
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?").bind("LOAD_TEST_CANCELLED", Math.floor(Date.now()/1000), jobId).run().catch(() => {});
         return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, cancelled:true, status:"CANCELLED", error:"LOAD_TEST_CANCELLED", elapsed_ms:Date.now()-startedAt };
@@ -321,7 +334,20 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
-  const send=async payload=>writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
+  let streamClosed=false;
+  const send=async payload=>{
+    if(streamClosed)return false;
+    try{
+      await writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
+      return true;
+    }catch(error){
+      // The OWNER may reload/navigate away while the server-side Run continues.
+      // Client stream failure must not abort the D1/API load-test work.
+      streamClosed=true;
+      console.warn("owner_kingdom_load_test_stream_closed",runId,error?.message||String(error));
+      return false;
+    }
+  };
   let runFailed=false,runSummary=null;
   const run=(async()=>{try{
     await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0});
@@ -377,7 +403,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
     const finalNow=Math.floor(Date.now()/1000);
     await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
-    await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close();
+    await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
 }})();
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
