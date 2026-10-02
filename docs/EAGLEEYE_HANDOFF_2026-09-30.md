@@ -4623,3 +4623,73 @@ status-26では kingdom_load_test_runs は存在した一方、system_event_log 
 4. status-26で残っていたAPI Pool旧SQL 654回の発生元を新しいStatus JSONで再確認
 5. 通常Watchlist / Player Watchlistの本番E2E
 6. 完成判定・最終本番確認
+
+
+# 77. 2026-10-03 / Load TestのAPI同時実行をAPI Pool総数ベースへ統一
+
+## 設計変更
+
+これまでLoad Testは、
+
+- 外側: 王国Job同時実行数
+- 内側: 1 Jobあたりのランキング/API同時実行数
+
+を別々に持っていた。
+
+この構造では、外側Job数 × 内側API同時数でAPI Poolへの同時リース要求が膨らみ、実際の利用可能キー数を超えて `NO_API_POOL_KEY_AVAILABLE` が発生する余地があった。
+
+今回、Load Testの同時実行制御を次の1本のルールへ統一した。
+
+> **OWNERが指定するのは取得対象の王国数。API同時処理数は指定しない。実際のAPI Poolで現在AVAILABLEなキー数から通常利用保護1本を差し引いた値を、Load Test全体のAPI同時処理上限として自動利用する。**
+
+## 実装
+
+### 1. 通常WatchlistのAPI同時数計算をAPI Pool availabilityへ統一
+- `src/index.js`
+- `getWatchlistApiConcurrency()` が `api_pool_keys.status='AVAILABLE'` の単純COUNTではなく、`getApiPoolAvailability()` の実AVAILABLE数を利用するよう変更。
+- Load Testからは `reserveApiKeys: 1` を渡せるようにし、AVAILABLE数 - 1 を実効API同時数として利用。
+- 通常Watchlistは従来どおり最低1を維持。
+- Load Testは保護枠のため、実効値が0の場合はAPI処理を開始せず待機する。
+
+### 2. Load Testの王国Job並列を直列化
+- `src/admin-kingdom-load-test.js`
+- 王国Job同時実行数は常に1。
+- 各王国のランキング取得・プレイヤー取得で、同じLoad Test API枠を使用。
+- これにより「Job同時数 × Job内部API同時数」の二重拘束を廃止。
+- 初期AVAILABLEキー数が13本なら、Load Test API枠は12本。
+- 初期AVAILABLEキー数が5本なら、Load Test API枠は4本。
+- 26ランキングという上限があるため、API同時処理数は最大26。
+
+### 3. 通常利用保護中の待機
+- Load TestがAPI枠を使おうとした時点で、AVAILABLEキーが保護枠しか残っていない場合は即FAILEDにせず `API_POOL_LOAD_TEST_CAPACITY_WAIT` として待機。
+- 次の処理ループでAPI Pool availabilityを再確認する。
+- 通常利用のために予約した1本をLoad Testが取り崩さない。
+
+### 4. UIからJob同時実行数の手動指定を削除
+- OWNER画面では「王国番号」「上位プレイヤー取得数」のみ指定。
+- API同時処理数は「実際の利用可能キー数 − 通常利用保護1本」と明示。
+- 画面上の進捗にも自動決定されたAPI同時処理数を表示。
+
+### 5. Run metadataへAPI同時処理数を保存
+- `migrations/0030_kingdom_load_test_api_concurrency.sql`
+- `kingdom_load_test_runs.api_concurrency` を追加。
+- `concurrency` は互換性のため残し、王国Job同時実行数=1として保存。
+- `api_concurrency` がLoad Test開始時点の自動算出値。
+- status API / reload復元時にも表示可能。
+
+## コミット
+
+- `e453829c55fdf60cb811e0e51c28c34f22be29f9` — Watchlist API concurrencyをPool availabilityベースへ変更
+- `53f822cd0d0d1e793b7f289707627a2535afccce` — Load Test API concurrencyをPool総数ベースへ変更
+- `35a89f66c3b095c5341d238815148c83b8f84852` — Load Test API concurrency metadata保存
+- `793077431245a157e54656ad453f30c78484db2e` — Migration 0030追加
+
+## 次回の本番確認
+
+1. Migration 0030を本番D1へ適用。
+2. OWNER負荷テスト画面で対象王国数だけ指定。
+3. 開始時に「AVAILABLEキー数 - 1」がAPI同時処理数として表示されることを確認。
+4. 実行中にAPI Poolのleased数が保護枠を除いて推移することを確認。
+5. `NO_API_POOL_KEY_AVAILABLE` がLoad Test由来で発生しないことを確認。
+6. 20王国以上で全対象が順番に完了し、取得データが通常Watchlistと同じ保存経路へ残ることを確認。
+7. status JSON / Query Insightsで、旧「外側Job並列 × 内側API並列」の過剰リースが消えていることを確認。
