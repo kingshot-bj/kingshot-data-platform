@@ -126,7 +126,7 @@ export async function getSystemEventLog(db, {
 
     if (traceId) {
       sql = `WITH RECURSIVE trace_tree(trace_id,depth) AS (
-        SELECT ?1,0
+        SELECT ?,0
         UNION
         SELECT e.trace_id,trace_tree.depth+1
         FROM system_event_log e
