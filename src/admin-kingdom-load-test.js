@@ -93,10 +93,13 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       if(runMeta?.run_id) runId=String(runMeta.run_id);
     }
 
-    if(!runId || !runMeta){
+    if(!runId){
       return new Response(JSON.stringify({ok:true,active:false,run_id:null,jobs:[]}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
     }
 
+    // A startup failure can occur after the load-test lock is acquired but before
+    // kingdom_load_test_runs is inserted. Keep the lock visible so the OWNER can
+    // still cancel/recover it instead of seeing a false "nothing is running".
     const jobs=await env.DB.prepare("SELECT job_id,kid,top_n,status,board_index,player_cursor,player_ids_json,ranking_rows,player_rows,created_at,updated_at,last_error FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY kid ASC").bind("LOAD_TEST:"+runId).all();
     const normalizedJobs=(jobs.results||[]).map(job=>{
       let playerCount=0;try{playerCount=JSON.parse(job.player_ids_json||"[]").length;}catch{}
@@ -105,24 +108,25 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       return {job_id:job.job_id,kid:Number(job.kid),top_n:Number(job.top_n||0),phase,board_index:Number(job.board_index||0),total_boards:26,player_cursor:Number(job.player_cursor||0),player_count:playerCount,ranking_rows:Number(job.ranking_rows||0),player_rows:Number(job.player_rows||0),created_at:Number(job.created_at||0),updated_at:Number(job.updated_at||0),last_error:job.last_error||null,completed:["COMPLETED","FAILED","CANCELLED"].includes(phase)};
     });
 
-    const targetCount=Number(runMeta.target_count||0);
+    const targetCount=Number(runMeta?.target_count||normalizedJobs.length||0);
     const completed=normalizedJobs.filter(j=>j.completed).length;
     const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
     const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
     const cancelled=normalizedJobs.filter(j=>j.phase==="CANCELLED").length;
-    const runStatus=String(runMeta.status||"RUNNING");
+    const runStatus=String(runMeta?.status|| (lock ? "RUNNING" : "UNKNOWN"));
     const active=Boolean(lock)||runStatus==="RUNNING";
 
     return new Response(JSON.stringify({
       ok:true,active,run_id:runId,run_status:runStatus,
-      started_at:Number(runMeta.created_at||lock?.updated_at||0),
+      started_at:Number(runMeta?.created_at||lock?.updated_at||0),
       expires_at:lock?.lock_until||null,
       target_count:targetCount,
       completed,success,failed,cancelled,
-      requested_concurrency:Number(runMeta.requested_concurrency||0),
-      concurrency:Number(runMeta.concurrency||0),
-      top_n:Number(runMeta.top_n||0),
-      kids:runMeta.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
+      requested_concurrency:Number(runMeta?.requested_concurrency||0),
+      concurrency:Number(runMeta?.concurrency||0),
+      top_n:Number(runMeta?.top_n||0),
+      kids:runMeta?.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
+      recovery_mode:runMeta?"RUN_METADATA":"LOCK_ONLY",
       jobs:normalizedJobs
     }),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
@@ -272,7 +276,21 @@ function renderProgress(data,active){
   var rows=Object.keys(active).map(function(k){return active[k];}).filter(function(x){return !x.completed;}).sort(function(a,b){return Number(a.kid)-Number(b.kid);});
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
-window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getElementById("startKid").value||0)),count=Math.max(1,Number(document.getElementById("kidCount").value||20)),values=[];for(var i=0;i<count;i++)values.push(start+i);document.getElementById("kids").value=values.join(",");document.getElementById("selectedKids").textContent=values.join(", ");};window.__eagleEyeCancelLoadTest=async function(){try{var response=await fetch("/api/owner/kingdom-load-test/cancel",{method:"POST",credentials:"same-origin",cache:"no-store"});var data=await response.json();if(!response.ok)throw new Error(data.message||data.error||"CANCEL_FAILED");document.getElementById("result").textContent="中止要求を送信しました。現在のAPI処理完了後、安全に停止します。";document.getElementById("cancel").disabled=true;}catch(e){document.getElementById("result").textContent="中止要求失敗: "+e.message;}};window.__eagleEyeRunLoadTest=async function(){var trace=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"client-"+Date.now(),run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};try{var kids=parseKids(document.getElementById("kids").value);if(!kids.length){window.__eagleEyeBuildKids();kids=parseKids(document.getElementById("kids").value);}if(!kids.length)throw new Error("王国番号を入力してください。");var topN=document.getElementById("topN").value||"10",concurrency=document.getElementById("concurrency").value||"1";run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;result.textContent="処理開始…";document.getElementById("progress").style.display="block";document.getElementById("progressCount").textContent="0 / "+kids.length;document.getElementById("progressFill").style.width="0%";document.getElementById("activeJobs").innerHTML="";var response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&top_n="+topN+"&concurrency="+concurrency,{cache:"no-store",credentials:"same-origin",headers:{"x-eagle-eye-trace-id":trace}});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}var reader=response.body.getReader(),decoder=new TextDecoder(),buffer="";while(true){var chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});var lines=buffer.split("\\n");buffer=lines.pop()||"";for(var i=0;i<lines.length;i++){if(!lines[i].trim())continue;var data=JSON.parse(lines[i]);if(data.type==="start"){result.textContent="処理開始…\\n"+data.target_count+"王国 / Job同時 "+data.concurrency+" / 上位"+data.top_n+"人";renderProgress(data,active);}else if(data.type==="job_progress"){active[String(data.progress.kid)]=data.progress;renderProgress(data,active);}else if(data.type==="progress"){active[String(data.result.kid)]=Object.assign({},active[String(data.result.kid)]||{},data.result,{completed:true,phase:"COMPLETED"});renderProgress(data,active);result.textContent="処理中… "+data.percent+"%\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n直近: 王国"+data.result.kid+" / ranking "+data.result.ranking_rows+" / player "+data.result.player_rows;}else if(data.type==="cancelled"){result.textContent="負荷テスト中止\\n完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"王国\\n経過 "+data.elapsed_ms+"ms";var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="中止";document.getElementById("progressMeta").textContent="完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"　Job同時実行 "+data.concurrency;}else if(data.type==="complete"){result.textContent="処理完了\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n経過 "+data.elapsed_ms+"ms\\nランキング保存 "+data.ranking_rows_saved+" rows\\nプレイヤー保存 "+data.player_rows_saved+" rows\\n最大想定ランキング "+data.max_expected_ranking_rows+" rows\\n\\n"+JSON.stringify(data,null,2);var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="✓ 更新完了";document.getElementById("progressMeta").textContent="成功 "+data.success+" / 失敗 "+data.failed+"　Job同時実行 "+data.concurrency;}else if(data.type==="error")throw new Error(data.error||"LOAD_TEST_FAILED");}}}finally{run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.style.display="none";cancel.disabled=false;}};async function recoverRunningLoadTest(){
+window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getElementById("startKid").value||0)),count=Math.max(1,Number(document.getElementById("kidCount").value||20)),values=[];for(var i=0;i<count;i++)values.push(start+i);document.getElementById("kids").value=values.join(",");document.getElementById("selectedKids").textContent=values.join(", ");};window.__eagleEyeCancelLoadTest=async function(){try{var response=await fetch("/api/owner/kingdom-load-test/cancel",{method:"POST",credentials:"same-origin",cache:"no-store"});var data=await response.json();if(!response.ok)throw new Error(data.message||data.error||"CANCEL_FAILED");document.getElementById("result").textContent="中止要求を送信しました。現在のAPI処理完了後、安全に停止します。";document.getElementById("cancel").disabled=true;}catch(e){document.getElementById("result").textContent="中止要求失敗: "+e.message;}};window.__eagleEyeRunLoadTest=async function(){var trace=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"client-"+Date.now(),run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};try{var kids=parseKids(document.getElementById("kids").value);if(!kids.length){window.__eagleEyeBuildKids();kids=parseKids(document.getElementById("kids").value);}if(!kids.length)throw new Error("王国番号を入力してください。");var topN=document.getElementById("topN").value||"10",concurrency=document.getElementById("concurrency").value||"1";run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;result.textContent="処理開始…";document.getElementById("progress").style.display="block";document.getElementById("progressCount").textContent="0 / "+kids.length;document.getElementById("progressFill").style.width="0%";document.getElementById("activeJobs").innerHTML="";var response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&top_n="+topN+"&concurrency="+concurrency,{cache:"no-store",credentials:"same-origin",headers:{"x-eagle-eye-trace-id":trace}});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}var reader=response.body.getReader(),decoder=new TextDecoder(),buffer="";while(true){var chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});var lines=buffer.split("\\n");buffer=lines.pop()||"";for(var i=0;i<lines.length;i++){if(!lines[i].trim())continue;var data=JSON.parse(lines[i]);if(data.type==="start"){result.textContent="処理開始…\\n"+data.target_count+"王国 / Job同時 "+data.concurrency+" / 上位"+data.top_n+"人";renderProgress(data,active);}else if(data.type==="job_progress"){active[String(data.progress.kid)]=data.progress;renderProgress(data,active);}else if(data.type==="progress"){active[String(data.result.kid)]=Object.assign({},active[String(data.result.kid)]||{},data.result,{completed:true,phase:"COMPLETED"});renderProgress(data,active);result.textContent="処理中… "+data.percent+"%\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n直近: 王国"+data.result.kid+" / ranking "+data.result.ranking_rows+" / player "+data.result.player_rows;}else if(data.type==="cancelled"){result.textContent="負荷テスト中止\\n完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"王国\\n経過 "+data.elapsed_ms+"ms";var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="中止";document.getElementById("progressMeta").textContent="完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"　Job同時実行 "+data.concurrency;}else if(data.type==="complete"){result.textContent="処理完了\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n経過 "+data.elapsed_ms+"ms\\nランキング保存 "+data.ranking_rows_saved+" rows\\nプレイヤー保存 "+data.player_rows_saved+" rows\\n最大想定ランキング "+data.max_expected_ranking_rows+" rows\\n\\n"+JSON.stringify(data,null,2);var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="✓ 更新完了";document.getElementById("progressMeta").textContent="成功 "+data.success+" / 失敗 "+data.failed+"　Job同時実行 "+data.concurrency;}else if(data.type==="error")throw new Error(data.error||"LOAD_TEST_FAILED");}}}finally{
+  // Do not blindly hide the cancel button on an unexpected stream close.
+  // Re-check server state first; the server-side job may still be running.
+  try{
+    var stateResponse=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});
+    var state=stateResponse.ok?await stateResponse.json():null;
+    if(state&&state.active){
+      run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;
+      result.textContent="サーバー側で処理継続中…\\n"+Number(state.completed||0)+" / "+Number(state.target_count||0)+"王国\\n中止ボタンから安全に停止できます。";
+      recoverRunningLoadTest();
+      return;
+    }
+  }catch(e){}
+  run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.style.display="none";cancel.disabled=false;
+}};async function recoverRunningLoadTest(){
   try{
     var response=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});
     if(!response.ok)return;
