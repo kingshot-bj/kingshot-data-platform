@@ -1,7 +1,9 @@
 
 const PROVIDER = "MIGHTPULSE";
 const LEASE_SECONDS = 120;
-let poolSecret = null;\n\nimport { recordSystemEvent, systemTraceId } from "./system-log.js";
+let poolSecret = null;
+
+import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 export function configureApiPoolEncryption(secret) {
   poolSecret = String(secret || "");
