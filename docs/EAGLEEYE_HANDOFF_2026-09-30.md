@@ -3832,3 +3832,48 @@ System Status JSONに systemLog を追加。
 **「コード上で処理しているのにSystem Logから追えない処理」を新規機能で作らない。**
 
 なお、今回の実装はGitHub mainへの反映まで。Cloudflare本番deployおよび実機E2EでSystem Logが実際に負荷テストを捕捉することは、別途確認する。
+
+
+## 61-9. 2026-10-02 継続実装: OWNER負荷テストのSystem Log相関を実装
+
+2026-10-02、System LogからOWNER王国並列負荷テストの実行実態を追跡できるよう追加実装。
+
+### 実装済み（GitHub main）
+- `src/admin-kingdom-load-test.js`
+  - 負荷テスト開始時に `LOAD_TEST / START` をSystem Logへ記録。
+  - 各王国のMightPulse取得について `KINGDOM_REQUEST / COMPLETED|FAILED` を記録。
+  - 完了時に `LOAD_TEST / COMPLETE` を記録。
+  - 実行全体の例外時に `LOAD_TEST / RUN / FAILED` を記録。
+  - Worker HTTP入口から渡された `requestTraceId` を同じtraceとして各イベントへ伝播。
+  - run_idはAPI Pool lease/usageの既存相関にも継続使用。
+- `src/index.js`
+  - HTTP入口のSystem Logで実際のHTTP response statusを記録するよう修正。
+  - request elapsed_msも記録。
+  - 4xx/5xxの正常Responseは `HTTP_ERROR` として区別し、Worker例外は `FAILED` とする。
+- `src/admin-system-log.js`
+  - ADMIN/OWNER向け `/admin/system-log` UIを追加。
+  - `/api/admin/system-log` で最新イベント、trace_id指定、件数指定を取得可能。
+  - metadata / error / HTTP status / target / elapsedを時系列表示。
+- `src/api-pool.js`
+  - 現在のmainでは複数 `poolTypes` をSQLの `pool_type IN (...)` で1つの候補集合として原子的にLRU leaseする実装になっていることを再確認。
+  - したがってstatus-18で観測された単一 `pool_type = ?` SQLは、現在mainの実装そのものではなく、古い/別時点のtelemetryである可能性がある。実本番statusで再確認する必要がある。
+
+### 関連commit
+- `9ceb3ecc52937becb3dbe8809ef05ab51b5385af`: OWNER負荷テストSystem Logイベント追加
+- `971f3b17f4872ceb5fd9e2e571da14b7d30624cf`: request traceを王国単位イベントへ伝播
+- `e9cf3325c3963d865050031e09bf2666c2adaa37`: HTTP response status / elapsedをSystem Logへ追加
+- `bdf20dd78f04bbb3143af6fa600df1fb229c269c`: ADMIN System Log viewer
+- `9071153923336c379f0b0fce79d0b9202a74ff94`: System Log API / UI route追加
+
+### 本番確認状況
+- GitHub main反映: **済み**
+- Cloudflare本番deploy: **この時点では未確認**
+- 本番でOWNER負荷テストを実行し、`/admin/system-log` またはstatus JSONからSTART→KINGDOM_REQUEST→COMPLETEを確認: **未確認**
+- HTTP入口の実際のstatusがSystem Logへ保存されること: **未確認**
+
+### 次の作業
+1. System Logの主要実行経路を全コード横断で棚卸し。
+2. HTTP入口だけでなく、Watchlist / Player / Ranking / MightPulse / R2 / Google / Discord / Queue / Scheduler / Auth / Admin mutation等の主処理START/COMPLETE/FAILEDをSystem Logへ追加。
+3. System Log自身のD1消費量を監視し、必要なら保持期間/アーカイブ方針を追加。
+4. 本番deploy後にOWNER負荷テストを1回実行し、trace_idとrun_idで全経路を突合する。
+5. 本番確認済みの範囲と未確認範囲をhandoffへ追記する。
