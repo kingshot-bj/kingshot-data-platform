@@ -3389,3 +3389,52 @@ status JSONだけでは従来「activeLeases: 6 / expiredActiveLeases: 6」の�
 4. テスト後にleaseが解放され、不要なEXPIRED leaseが残らないことを確認。
 
 **コード実装済みと本番確認済みは分離して扱う。**
+
+
+## 58-2. 2026-10-02 王国ウォッチリスト所有者・対象王国をSystem Status JSONへ追加
+
+status JSONだけで「有効な王国ウォッチリスト3件が誰のものか／どの王国を対象にしているか」を追跡できるよう、getOperationalStatus() に以下を追加。
+
+### 追加JSON
+
+- watchlist.details[]
+  - watchlistId
+  - discordId
+  - kid
+  - topN
+  - intervalHours
+  - enabled
+  - lastRunAt
+  - lastSuccessAt
+  - lastError
+  - createdAt
+  - updatedAt
+- watchlist.byDiscordId
+  - Discord IDごとの登録watchlist数
+  - enabled数
+  - 登録王国一覧
+
+これにより、API Poolの leasePurpose / leaseTargetType / leaseTargetId と組み合わせて、王国ウォッチリスト処理について「誰の、どの王国の処理がAPI利用につながっているか」をstatus JSONから追跡できる。
+
+### セキュリティ・負荷
+
+- APIキー、encrypted_key、fingerprint等は出さない。
+- discordId は内部OWNER/ADMIN向けのSystem Status JSONで相関確認するために出す。
+- status JSONは既存どおりDB更新を行わずSELECTのみ。
+- 王国ウォッチリスト一覧は登録件数規模を前提とした1クエリ。
+- 大量のプレイヤー本体を取得する処理は追加しない。
+
+### 本番確認状況
+
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy完了: **未確認**。
+- 本番status JSONで watchlist.details / watchlist.byDiscordId が返ること: **未確認**。
+- 本番で実際の3件のDiscord ID・王国番号とAPI Pool lease情報を突合したこと: **未確認**。
+
+本番確認時は、status JSON取得時点で:
+1. enabled watchlist件数と details 件数が一致すること。
+2. 各 discordId と kid の対応を確認すること。
+3. API Pool leasePurpose / leaseTargetId と王国watchlistの対象を突合すること。
+4. D1 Rows Read/Writtenへの追加影響を確認すること。
+
+**実装済みと本番確認済みは分離して扱う。**
