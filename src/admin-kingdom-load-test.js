@@ -97,7 +97,6 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
   try {
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
     const poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-    let lease = null;
     let poolType = null;
     lease = await leaseApiKey(env.DB, {
       poolTypes,
