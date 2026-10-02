@@ -309,7 +309,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
     // The standard bounded retention cleanup removes terminal rows later.
   }
 }
-export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestTraceId = null, processJob = null) {
+export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestTraceId = null, processJob = null, executionContext = null) {
   if (!auth || auth.role !== "OWNER" || auth.status !== "ACTIVE") return new Response(JSON.stringify({ok:false,error:"OWNER_REQUIRED"}), {status:403,headers:{"content-type":"application/json"}});
   if (request.method !== "GET") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json"}});
   const url=new URL(request.url), kids=parseKids(url.searchParams.get("kids"));
@@ -405,6 +405,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
 }})();
+  // Keep the server-side Run alive when the iPhone Web App closes the stream on reload.
+  if (executionContext?.waitUntil) executionContext.waitUntil(run);
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
 export function renderOwnerKingdomLoadTestPage() {
