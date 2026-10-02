@@ -4600,26 +4600,26 @@ main全体を再確認し、今回のLoad Test周辺だけでなくSystem Log / 
 ## まだ未完了の監査項目
 
 ### Previewリソース分離
-現在の wrangler.jsonc ではPreviewのD1/R2が本番と同一リソースを参照している。
-
-- Production D1: eagleeye-db
-- Preview D1: 現状同じ database_id
-- Production R2: eagleeye-archive
-- Preview R2: 現状同じ bucket_name
-
-Cloudflareの現在のPreview仕様では、Previewは previews.d1_databases / preview_database_id とPreview用R2 bindingを別リソースへ向けることでデータを分離できる。
-
-ただし、現在のリポジトリからはPreview専用D1 UUID / R2 bucket名を確認できないため、存在しないリソースIDを推測して設定してはいけない。
+- 現在の wrangler.jsonc ではPreviewのD1/R2が本番と同一リソースを参照している。
+- これは現時点では完成を阻害する問題として扱わない。
+- ユーザー方針として、まず本番EagleEyeの完成・本番E2E確認を優先する。
+- Previewは実データ・実リソースを使った実機検証が必要な場合に現状のCloudflare Previewを利用する。
+- Preview専用D1/R2への分離は完成後の運用改善項目として保留する。
 
 ### 本番DB Migration整合性
 status-26では kingdom_load_test_runs は存在した一方、system_event_log が存在しないエラーが観測された。
 
 今回System Log側に自己修復を追加したが、D1の d1_migrations 実適用状態そのものは別途確認する。
 
+### Migrationファイル重複
+現在 migrations/ に 0008_data_retention.sql と 0008_kingdom_watchlist_jobs.sql の2ファイルが存在する。
+
+これは履歴上それぞれ別コミットで同時期に作成されたことまで確認済みだが、既存本番DBの d1_migrations 適用状況を確認せずに改名・削除してはいけない。
+
 ## 次の順番
-1. Preview専用D1/R2の実リソース確認
-2. 本番D1 d1_migrations の適用状況確認
-3. migrationsの重複・旧schema整理
-4. Load Test 20件等の本番E2E再実行
-5. status-26で残っていたAPI Pool旧SQL 654回の発生元を再確認
-6. 通常Watchlist / Player Watchlistの本番E2E
+1. 本番D1 d1_migrations の適用状況確認
+2. migrationsの重複・旧schemaを、実適用状況と照合して安全に整理
+3. Load Test 20件等の本番E2E再実行
+4. status-26で残っていたAPI Pool旧SQL 654回の発生元を新しいStatus JSONで再確認
+5. 通常Watchlist / Player Watchlistの本番E2E
+6. 完成判定・最終本番確認
