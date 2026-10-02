@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 const HISTORY_BUFFER_LIMIT = 50;
 const HISTORY_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -52,7 +53,7 @@ async function assertEmergencyCapacity(db, incomingBytes) {
   }
 }
 
-export async function enqueueHistoryEmergencyBuffer(db, {
+async function enqueueHistoryEmergencyBufferInternal(db, {
   historyType,
   kid = null,
   board = null,
@@ -124,7 +125,7 @@ async function archiveBufferedRow(bucket, row) {
   throw new Error("HISTORY_EMERGENCY_UNKNOWN_TYPE:" + row.history_type);
 }
 
-export async function drainHistoryEmergencyBuffer(db, bucket, { limit = 10 } = {}) {
+async function drainHistoryEmergencyBufferInternal(db, bucket, { limit = 10 } = {}) {
   if (!db || !bucket) return { attempted: 0, archived: 0, failed: 0, remaining: 0 };
   await ensureHistoryEmergencyBufferSchema(db);
 
@@ -184,3 +185,22 @@ export async function getHistoryEmergencyBufferStatus(db) {
 
 export const HISTORY_EMERGENCY_BUFFER_LIMIT = HISTORY_BUFFER_LIMIT;
 export const HISTORY_EMERGENCY_BUFFER_MAX_BYTES = HISTORY_BUFFER_MAX_BYTES;
+
+
+export async function enqueueHistoryEmergencyBuffer(db, options) {
+  const trace = createSystemTrace({ targetType: options?.historyType || "HISTORY", targetId: options?.governorId || options?.kid || null });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "history_emergency_buffer",
+    feature: "history_emergency_buffer", operation: "ENQUEUE_HISTORY_EMERGENCY",
+    targetType: trace.targetType, targetId: trace.targetId
+  }, () => enqueueHistoryEmergencyBufferInternal(db, options));
+}
+
+export async function drainHistoryEmergencyBuffer(db, bucket, options = {}) {
+  const trace = createSystemTrace({ targetType: "HISTORY_EMERGENCY_BUFFER" });
+  return runSystemOperation(db, trace, {
+    eventType: "STORAGE", service: "history_emergency_buffer",
+    feature: "history_emergency_buffer", operation: "DRAIN_HISTORY_EMERGENCY",
+    targetType: trace.targetType
+  }, () => drainHistoryEmergencyBufferInternal(db, bucket, options));
+}
