@@ -95,14 +95,90 @@ export async function runSystemOperation(db, trace, input = {}, handler) {
   }
 }
 
-export async function getSystemEventLog(db,{limit=200,traceId=null,since=null}={}) {
-  if (!db) return []; const safeLimit=Math.min(Math.max(Number(limit)||200,1),500);
-  let sql="SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,completed_at,elapsed_ms,error_code,message,metadata_json,created_at FROM system_event_log WHERE 1=1"; const binds=[];
-  if(traceId){
-    sql="WITH RECURSIVE trace_tree(trace_id,depth) AS (SELECT ?1,0 UNION SELECT e.trace_id,trace_tree.depth+1 FROM system_event_log e JOIN trace_tree ON e.parent_trace_id=trace_tree.trace_id WHERE trace_tree.depth<16) "+sql.replace("WHERE 1=1","WHERE (trace_id IN (SELECT trace_id FROM trace_tree) OR parent_trace_id IN (SELECT trace_id FROM trace_tree))");
-    binds.push(String(traceId));
+export async function getSystemEventLog(db, {
+  limit = 200,
+  traceId = null,
+  since = null,
+  until = null,
+  pageSize = 500
+} = {}) {
+  if (!db) return [];
+
+  const requestedLimit = limit == null ? null : Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 1), 500);
+
+  const events = [];
+  let cursorCreatedAt = null;
+  let cursorEventId = null;
+
+  while (true) {
+    if (requestedLimit != null && events.length >= requestedLimit) break;
+
+    const batchLimit = requestedLimit == null
+      ? safePageSize
+      : Math.min(safePageSize, requestedLimit - events.length);
+
+    let sql = `SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,
+      actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,
+      completed_at,elapsed_ms,error_code,message,metadata_json,created_at
+      FROM system_event_log WHERE 1=1`;
+    const binds = [];
+
+    if (traceId) {
+      sql = `WITH RECURSIVE trace_tree(trace_id,depth) AS (
+        SELECT ?1,0
+        UNION
+        SELECT e.trace_id,trace_tree.depth+1
+        FROM system_event_log e
+        JOIN trace_tree ON e.parent_trace_id=trace_tree.trace_id
+        WHERE trace_tree.depth<16
+      ) ` + sql.replace(
+        "WHERE 1=1",
+        "WHERE (trace_id IN (SELECT trace_id FROM trace_tree) OR parent_trace_id IN (SELECT trace_id FROM trace_tree))"
+      );
+      binds.push(String(traceId));
+    }
+
+    if (since != null) {
+      sql += " AND created_at>=?";
+      binds.push(Number(since));
+    }
+
+    if (until != null) {
+      sql += " AND created_at<=?";
+      binds.push(Number(until));
+    }
+
+    if (cursorCreatedAt != null) {
+      sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
+      binds.push(cursorCreatedAt, cursorCreatedAt, cursorEventId);
+    }
+
+    sql += " ORDER BY created_at DESC, event_id DESC LIMIT ?";
+    binds.push(batchLimit);
+
+    const result = await db.prepare(sql).bind(...binds).all();
+    const rows = result.results || [];
+    if (!rows.length) break;
+
+    for (const row of rows) {
+      events.push({
+        ...row,
+        metadata: row.metadata_json
+          ? (() => {
+              try { return JSON.parse(row.metadata_json); }
+              catch { return null; }
+            })()
+          : null
+      });
+    }
+
+    if (rows.length < batchLimit) break;
+
+    const last = rows[rows.length - 1];
+    cursorCreatedAt = Number(last.created_at);
+    cursorEventId = String(last.event_id);
   }
-  if(since!=null){sql+=" AND created_at>=?";binds.push(Number(since));} sql+=" ORDER BY created_at DESC LIMIT ?";binds.push(safeLimit);
-  const result=await db.prepare(sql).bind(...binds).all();
-  return (result.results||[]).map(row=>({...row,metadata:row.metadata_json?(()=>{try{return JSON.parse(row.metadata_json);}catch{return null;}})():null}));
+
+  return requestedLimit == null ? events : events.slice(0, requestedLimit);
 }
