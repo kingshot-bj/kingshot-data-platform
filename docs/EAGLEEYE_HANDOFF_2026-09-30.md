@@ -4093,3 +4093,19 @@ system-log-after.json
 - R2 ArchiveそのものはD1 System Logの親traceを確実に渡せる形にする必要があるため、Phase 4でSystem Log R2 archiveと併せて接続する。ダミーのSystem Logは生成しない。
 - 低レベルD1 SELECT単位のイベント大量生成は行わない。
 - 次工程: 4/7 System Log R2 archival。
+
+
+# 64. System Log JSON Phase 4実装状況（2026-10-02）
+
+- 4/7「System Log R2 archival」を実装。
+- `system_event_log` を既存の共通 `archiveD1RowsToR2()` のアーカイブ対象へ追加。
+- 24時間を超えたSystem EventをRetention CronからR2へ退避。
+- アーカイブ順序を **R2 PUT成功 → D1 DELETE** に固定。
+- R2保存失敗時はD1削除を実行せず、次回Cronで再試行可能な状態を維持。
+- 1回のCronでは最大1000件を処理し、残件数を結果へ返す。
+- R2 object keyは既存のarchive形式を利用し、source table / row count / rowid範囲をmetadataへ記録。
+- System Log自身のarchive operationも共通Traceで記録。ただし現在の実行直後のイベントは24時間未満なので同じ処理で即削除されない。
+- 既存の他テーブルRetention設定とは分離し、System Logだけは固定24時間保持として扱う。
+- 低レベルSELECTごとのSystem Event生成は追加していない。
+- 本番deploy / R2実機保存確認は未実施。
+- 次工程: 5/7 System Log retentionの運用整合性確認・Cron処理の整理。
