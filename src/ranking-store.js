@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
 import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
@@ -34,7 +35,7 @@ export function buildPlayerRankSnapshotStatement(db, { governorId, uid = null, k
 }
 
 
-export async function savePlayerRankSnapshot(db, options) {
+async function savePlayerRankSnapshotInternal(db, options) {
   const { id, statement } = buildPlayerRankSnapshotStatement(db, options);
   const r2Only = String(options?.historyMode || "").toUpperCase() === "R2_ONLY";
   let archived = false;
@@ -279,7 +280,7 @@ async function insertRankingStatements(db, statements) {
   }
 }
 
-export async function saveKingdomRankingBoard(db, {
+async function saveKingdomRankingBoardInternal(db, {
   kid, board, entries, observedAt, sourceObservedAt = null, sourceObservationId = null,
   entriesAlreadyFiltered = false, removedTargets = [], checkedAt = Math.floor(Date.now() / 1000), archiveBucket = null,
   historyMode = "DUAL"
@@ -482,3 +483,23 @@ export async function getRankingHistory(db, { kid, board, targetId, limit = 50, 
     .slice(0, safeLimit);
 }
 
+
+
+export async function savePlayerRankSnapshot(db, options) {
+  const trace = createSystemTrace({ targetType: "PLAYER", targetId: options?.governorId || null });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "ranking_store",
+    feature: "player_rank", operation: "SAVE_PLAYER_RANK_SNAPSHOT",
+    targetType: "PLAYER", targetId: trace.targetId
+  }, () => savePlayerRankSnapshotInternal(db, options));
+}
+
+export async function saveKingdomRankingBoard(db, options) {
+  const trace = createSystemTrace({ targetType: "KINGDOM", targetId: options?.kid || null });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "ranking_store",
+    feature: "kingdom_ranking", operation: "SAVE_KINGDOM_RANKING_BOARD",
+    targetType: "KINGDOM", targetId: trace.targetId,
+    metadata: { board: options?.board || null }
+  }, () => saveKingdomRankingBoardInternal(db, options));
+}
