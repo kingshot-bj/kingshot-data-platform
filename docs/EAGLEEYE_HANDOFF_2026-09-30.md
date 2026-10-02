@@ -3109,3 +3109,17 @@ MightPulse本体Webサイトには「Name or governor ID…」「Search by name,
 
 外部APIの仕様に存在しない検索エンドポイントを、Web UIの動作から推測して実装しない。
 
+
+
+# 56. 2026-10-02 王国取得時の同盟TOP10→Roster収集実装準備
+
+- プレイヤー検索の補完策として、王国取得時に「同盟戦力ランキングTOP10を特定 → 各同盟のRosterを取得」できる共通API層を追加した。
+- MightPulse公式API仕様に基づき、alliance_power の王国ランキングを最大10件取得し、各同盟の abbr を使って /alliances/{kid}/{tag}?include=info,roster を呼び出す。
+- src/mightpulse.js に追加したもの:
+  - getMightPulseTopKingdomAlliances()
+  - getMightPulseTopKingdomAllianceRosters()
+  - getMightPulseAlliance() に apiKey 引数を追加
+- 現時点では**本番でTOP10同盟Roster取得を実行・検証したとは扱わない**。今回の変更は共通取得ロジックの実装のみ。
+- 取得結果を players / D1へ大量保存する処理はまだ追加していない。先に既存の複数王国・上位100位取得負荷テストでCloudflare/D1/API Pool消費量を実測し、その結果を基準に保存方式を決める。
+- TOP10同盟取得を実際の王国取得フローへ組み込む際も、同盟ごとの個別API呼び出し数、重複プレイヤー、D1 write/read、API Pool消費を計測可能にすること。
+- 公式API仕様上、王国ランキングは limit 最大100、同盟ランキングには aid/abbr/name/score が含まれ、同盟Rosterには governor_id/nick_name/power/town_center_level/kills 等が含まれる。
