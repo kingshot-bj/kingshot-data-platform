@@ -97,25 +97,25 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
   try {
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
     let poolType = "SYSTEM_WATCHLIST";
-    try {
-      lease = await leaseApiKey(env.DB, {
-        poolType,
-        jobId: runId,
-        purpose: "OWNER_LOAD_TEST",
-        targetType: "KINGDOM",
-        targetId: String(kid)
-      });
-    } catch (error) {
-      if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-      poolType = "SYSTEM_GENERAL";
-      lease = await leaseApiKey(env.DB, {
-        poolType,
-        jobId: runId,
-        purpose: "OWNER_LOAD_TEST",
-        targetType: "KINGDOM",
-        targetId: String(kid)
-      });
+    const poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+    let lastPoolError = null;
+    for (const candidatePoolType of poolTypes) {
+      try {
+        lease = await leaseApiKey(env.DB, {
+          poolType: candidatePoolType,
+          jobId: runId,
+          purpose: "OWNER_LOAD_TEST",
+          targetType: "KINGDOM",
+          targetId: String(kid)
+        });
+        poolType = candidatePoolType;
+        break;
+      } catch (error) {
+        if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
+        lastPoolError = error;
+      }
     }
+    if (!lease) throw lastPoolError || new Error("NO_API_POOL_KEY_AVAILABLE");
 
     const startedAt = Date.now();
     const result = allRankings
@@ -229,7 +229,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
   const runId = crypto.randomUUID();
 
   const poolAvailability = await getApiPoolAvailability(env.DB, {
-    poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL"]
+    poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
   });
   const availablePoolKeys = Number(poolAvailability?.totals?.available || 0);
   const maxTestConcurrency = Math.max(0, availablePoolKeys - 1);
