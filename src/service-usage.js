@@ -23,7 +23,8 @@ export const SERVICE_USAGE_EVENTS = Object.freeze({
   KINGSHOT_ID_CONFLICT: "KINGSHOT_ID_CONFLICT",
   KINGSHOT_ID_SUPPORT_REQUEST: "KINGSHOT_ID_SUPPORT_REQUEST",
   ADVANCED_PROMOTED: "ADVANCED_PROMOTED",
-  MIGHTPULSE_API_KEY_CONTRIBUTE: "MIGHTPULSE_API_KEY_CONTRIBUTE"
+  MIGHTPULSE_API_KEY_CONTRIBUTE: "MIGHTPULSE_API_KEY_CONTRIBUTE",
+  OWNER_KINGDOM_LOAD_TEST: "OWNER_KINGDOM_LOAD_TEST"
 });
 
 const TARGET_TYPES = new Set(["PLAYER", "KINGDOM", "USER"]);
@@ -99,7 +100,12 @@ const METADATA_KEYS = Object.freeze({
   KINGSHOT_ID_CONFLICT: [],
   KINGSHOT_ID_SUPPORT_REQUEST: [],
   ADVANCED_PROMOTED: ["reason"],
-  MIGHTPULSE_API_KEY_CONTRIBUTE: ["pool_type"]
+  MIGHTPULSE_API_KEY_CONTRIBUTE: ["pool_type"],
+  OWNER_KINGDOM_LOAD_TEST: [
+    "run_id", "kingdom_count", "start_kid", "end_kid", "board_mode", "board", "concurrency",
+    "elapsed_ms", "success_count", "failed_count", "http_status_counts", "failure_codes",
+    "latency_min_ms", "latency_max_ms", "latency_avg_ms", "result_sample", "peak_in_flight"
+  ]
 });
 
 function assertString(value, name) {
