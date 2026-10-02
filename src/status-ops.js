@@ -1,7 +1,7 @@
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, jobResult, latestKeyResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -14,6 +14,9 @@ export async function getOperationalStatus(db) {
     db.prepare(
       "SELECT COUNT(*) AS total_count, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled_count, SUM(CASE WHEN enabled = 1 AND last_error IS NOT NULL THEN 1 ELSE 0 END) AS enabled_error_count, MAX(last_success_at) AS latest_success_at, MAX(updated_at) AS latest_updated_at FROM kingdom_watchlists"
     ).first(),
+    db.prepare(
+      "SELECT watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists ORDER BY created_at ASC"
+    ).all(),
     db.prepare(
       "SELECT status, last_error, updated_at, completed_at, source_last_at, ranking_rows, player_rows FROM kingdom_watchlist_jobs ORDER BY created_at DESC LIMIT 1"
     ).first(),
@@ -60,6 +63,29 @@ export async function getOperationalStatus(db) {
   }
 
   const watch = watchResult || {};
+  const watchDetails = (watchDetailResult.results || []).map(row => ({
+    watchlistId: row.watchlist_id,
+    discordId: row.discord_id || null,
+    kid: row.kid !== null && row.kid !== undefined ? Number(row.kid) : null,
+    topN: row.top_n !== null && row.top_n !== undefined ? Number(row.top_n) : null,
+    intervalHours: row.interval_hours !== null && row.interval_hours !== undefined ? Number(row.interval_hours) : null,
+    enabled: Boolean(row.enabled),
+    lastRunAt: row.last_run_at ? Number(row.last_run_at) : null,
+    lastSuccessAt: row.last_success_at ? Number(row.last_success_at) : null,
+    lastError: row.last_error || null,
+    createdAt: row.created_at ? Number(row.created_at) : null,
+    updatedAt: row.updated_at ? Number(row.updated_at) : null
+  }));
+  const watchByDiscord = {};
+  for (const item of watchDetails) {
+    const id = item.discordId || "UNKNOWN";
+    if (!watchByDiscord[id]) watchByDiscord[id] = { watchlistCount: 0, enabledCount: 0, kingdoms: [] };
+    watchByDiscord[id].watchlistCount += 1;
+    if (item.enabled) watchByDiscord[id].enabledCount += 1;
+    if (item.kid !== null && !watchByDiscord[id].kingdoms.includes(item.kid)) {
+      watchByDiscord[id].kingdoms.push(item.kid);
+    }
+  }
   const job = jobResult || null;
 
   // Load-test state is intentionally read-only here. The table is created lazily
@@ -120,6 +146,8 @@ export async function getOperationalStatus(db) {
       enabledErrors: Number(watch.enabled_error_count || 0),
       latestSuccessAt: watch.latest_success_at ? Number(watch.latest_success_at) : null,
       latestUpdatedAt: watch.latest_updated_at ? Number(watch.latest_updated_at) : null,
+      details: watchDetails,
+      byDiscordId: watchByDiscord,
       latestJob: job ? {
         status: job.status,
         lastError: job.last_error || null,
