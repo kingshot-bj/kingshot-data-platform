@@ -182,7 +182,7 @@ async function handleGatewayStatus(request, env) {
       if (event?.trace_id) {
         traceIds.add(String(event.trace_id));
       }
-      if (event?.metadata_json && event?.metadata == null) {
+      if (event?.metadata_json && event?.metadata == null && event.metadata_json !== "null") {
         metadataParseFailures += 1;
       }
     }
