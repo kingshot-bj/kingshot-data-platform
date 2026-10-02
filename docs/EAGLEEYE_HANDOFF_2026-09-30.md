@@ -3184,3 +3184,63 @@ API Poolの実キー数・lease可能数が実効並列数を制約するため�
 - 直接入力の王国番号パーサーも空白・カンマ・読点区切りを正しく扱うよう修正。
 - 全ランキングモードの結果に `board_count` を記録できるよう追加。
 - 実装コミット: `1079fe2cef108e14dc951a9429e49038a7b0ecff`
+
+
+### 57-2. テスター利用時の実行者・挙動追跡ログを追加（2026-10-02）
+
+テスターがOWNER王国負荷テストを実行するため、「誰が・何を・どの条件で実行し・どういう結果になったか」を後から相関できるようにした。
+
+#### 追加した追跡情報
+- 1回のテストごとに `run_id`（UUID）を発行。
+- NDJSONの `start / progress / complete / error` に `run_id` を付与。
+- 各王国結果にも `run_id` を付与。
+- Workerログに以下を構造化出力:
+  - `actor_user_id`
+  - `actor_role`
+  - `run_id`
+  - 対象王国数 / 開始王国 / 終了王国
+  - 全ランキング / 単一ランキング
+  - board
+  - concurrency
+  - 完了時の成功数 / 失敗数
+  - HTTP status集計
+  - failure code集計
+  - latency min / max / avg
+  - 失敗王国のサンプル（最大50件）
+
+#### SERVICE_USAGEとの連携
+`OWNER_KINGDOM_LOAD_TEST` イベントを追加し、テスト完了時にQueueへ非同期送信する。
+
+保存する主体:
+- `actor_user_id` = 実行者のusers.user_id
+- `target_type` = USER
+- `target_id` = 実行者のusers.user_id
+- metadata = run_id / 条件 / 実行時間 / 成功失敗 / HTTP status / failure code / latency / 失敗サンプル等
+
+**SERVICE_USAGE event本体はD1へ保存しない。** 既存のQueue→R2アーカイブ経路を利用する。
+
+これにより、後からR2のSERVICE_USAGEログとWorkerログを `run_id` で突合し、テスターごとの負荷テスト実行履歴と挙動を追跡できる。
+
+#### セキュリティ
+- APIキー本体、refresh token、secretはログへ出さない。
+- `actor_user_id` は実行者を特定するための内部IDであり、APIキーとは別物。
+- API Poolの既存 `OWNER_LOAD_TEST` 記録と `run_id` を直接DBで結び付ける変更はまだ行っていないため、API Pool詳細とSERVICE_USAGE/Workerログの相関は現時点では `purpose=OWNER_LOAD_TEST` + 実行時刻 + 対象王国を併用する。
+
+#### 実装コミット
+- d3cd72d874c60402e46b6382f1fc75c2122acfcd
+  - feat: track owner kingdom load tests in service usage
+- b9a2fb4c3f55f408546dbb6ce5fbba06f9cfab14
+  - feat: add actor and run correlation to kingdom load test logs
+
+#### 本番確認状況
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy完了: **未確認**。
+- テスター実行による本番E2E: **未確認**。
+- SERVICE_USAGE Queue→R2でこの新イベントが実際に保存されたこと: **未確認**。
+
+本番でテストを実施した後、必ず以下を確認する:
+1. `run_id` がstart→progress→completeで一貫していること。
+2. 実行者が正しい `actor_user_id` として記録されること。
+3. SERVICE_USAGEの `OWNER_KINGDOM_LOAD_TEST` がQueue→R2へ到達すること。
+4. status JSONのD1/Workers/R2/API Pool実測と、同一run_idのテスト条件・結果を突合できること。
+5. APIキー本体等のsecretが一切出ていないこと。
