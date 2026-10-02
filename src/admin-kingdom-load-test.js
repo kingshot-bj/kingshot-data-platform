@@ -77,21 +77,22 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
 }
 
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
-  if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
+  if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
     const now = Math.floor(Date.now() / 1000);
-    const row = await env.DB.prepare(
-      "SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
-    ).bind(LOAD_TEST_LOCK_KEY, now).first();
-    return new Response(JSON.stringify({
-      ok: true,
-      active: Boolean(row),
-      started_at: row?.updated_at || null,
-      expires_at: row?.lock_until || null
-    }), { headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
-  } catch (error) {
-    console.error("owner_kingdom_load_test_status_failed", error?.message || error);
-    return new Response(JSON.stringify({ ok:false, active:false, error:"LOAD_TEST_STATUS_UNAVAILABLE" }), { status:503, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
+    const row = await env.DB.prepare("SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1").bind(LOAD_TEST_LOCK_KEY, now).first();
+    if (!row) return new Response(JSON.stringify({ok:true,active:false,jobs:[]}), {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    const runId=String(row.lock_token);
+    const jobs=await env.DB.prepare("SELECT job_id,kid,top_n,status,board_index,player_cursor,player_ids_json,ranking_rows,player_rows,created_at,updated_at,last_error FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY kid ASC").bind("LOAD_TEST:"+runId).all();
+    const normalizedJobs=(jobs.results||[]).map(job=>{
+      let playerCount=0; try{playerCount=JSON.parse(job.player_ids_json||"[]").length;}catch{}
+      const phase=String(job.status||"RANKINGS");
+      return {job_id:job.job_id,kid:Number(job.kid),top_n:Number(job.top_n||0),phase,board_index:Number(job.board_index||0),total_boards:26,player_cursor:Number(job.player_cursor||0),player_count:playerCount,ranking_rows:Number(job.ranking_rows||0),player_rows:Number(job.player_rows||0),created_at:Number(job.created_at||0),updated_at:Number(job.updated_at||0),last_error:job.last_error||null,completed:["COMPLETED","FAILED","CANCELLED"].includes(phase)};
+    });
+    return new Response(JSON.stringify({ok:true,active:true,run_id:runId,started_at:row.updated_at||null,expires_at:row.lock_until||null,target_count:normalizedJobs.length,completed:normalizedJobs.filter(j=>j.completed).length,success:normalizedJobs.filter(j=>j.phase==="COMPLETED").length,failed:normalizedJobs.filter(j=>j.phase==="FAILED").length,cancelled:normalizedJobs.filter(j=>j.phase==="CANCELLED").length,jobs:normalizedJobs}), {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  } catch(error) {
+    console.error("owner_kingdom_load_test_status_failed",error?.message||error);
+    return new Response(JSON.stringify({ok:false,active:false,error:"LOAD_TEST_STATUS_UNAVAILABLE"}), {status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
 }
 
@@ -139,6 +140,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
     let iterations = 0;
     while (iterations++ < 200) {
       if (await isLoadTestCancelled(env.DB, runId)) {
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'CANCELLED', last_error = ?, updated_at = ? WHERE job_id = ?").bind("LOAD_TEST_CANCELLED", Math.floor(Date.now()/1000), jobId).run().catch(() => {});
         return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, cancelled:true, status:"CANCELLED", error:"LOAD_TEST_CANCELLED", elapsed_ms:Date.now()-startedAt };
       }
       const job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1").bind(jobId).first();
@@ -168,7 +170,8 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
   } catch (error) {
     return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, status:"FAILED", error:String(error?.message||error||"KINGDOM_WATCHLIST_JOB_FAILED").slice(0,1000), elapsed_ms:Date.now()-startedAt };
   } finally {
-    await env.DB.prepare("DELETE FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).run().catch(error => console.error("owner_kingdom_load_test_job_cleanup_failed", {jobId,kid,message:error?.message||String(error)}));
+    // Keep the job row durable exactly like the normal Kingdom Watchlist job.
+    // The standard bounded retention cleanup removes terminal rows later.
   }
 }
 export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestTraceId = null, processJob = null) {
@@ -233,17 +236,22 @@ window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getEl
     var response=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});
     if(!response.ok)return;
     var data=await response.json();
-    if(data.active){
-      var run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result");
-      run.disabled=true;
-      run.textContent="実行中…";
-      cancel.style.display="inline-block";
-      cancel.disabled=false;
-      result.textContent="負荷テストは実行中です。ページを再読み込みしたため、ストリーム上の詳細進捗は表示できませんが、サーバー側では処理が継続しています。\n中止する場合は「負荷テストを中止」を押してください。";
-      document.getElementById("progress").style.display="block";
-      document.getElementById("progressTitle").textContent="実行中";
-      document.getElementById("progressMeta").textContent="ページ再読み込み後のため詳細進捗は再接続されていません。中止ボタンは使用できます。";
-    }
+    if(!data.active)return;
+    var run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};
+    run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;
+    (data.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
+    document.getElementById("progress").style.display="block";
+    renderProgress(Object.assign({},data,{concurrency:0}),active);
+    result.textContent="実行中…\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
+    window.__eagleEyeLoadTestStatusTimer=setInterval(async function(){
+      try{
+        var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});if(!r.ok)return;
+        var d=await r.json();if(!d.active){clearInterval(window.__eagleEyeLoadTestStatusTimer);return;}
+        active={};(d.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
+        renderProgress(Object.assign({},d,{concurrency:0}),active);
+        result.textContent="実行中…\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの進捗を表示中";
+      }catch(e){}
+    },2000);
   }catch(e){}
 }
 window.__eagleEyeBuildKids();
