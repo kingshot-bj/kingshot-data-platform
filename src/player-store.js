@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
 import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
@@ -56,7 +57,7 @@ export async function getLatestPlayerObservation(db, governorId) {
   return { ...row, payload };
 }
 
-export async function materializePlayer(db, observation, existingPlayer = undefined, archiveBucket = null, historyMode = "DUAL") {
+async function materializePlayerInternal(db, observation, existingPlayer = undefined, archiveBucket = null, historyMode = "DUAL") {
   const player = observation?.payload?.player;
   if (!player || typeof player !== "object") {
     throw new Error("MightPulse player payload is missing player data.");
@@ -456,4 +457,14 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
   for (let offset = 0; offset < statements.length; offset += 50) {
     await db.batch(statements.slice(offset, offset + 50));
   }
+}
+
+
+export async function materializePlayer(db, observation, existingPlayer = undefined, archiveBucket = null, historyMode = "DUAL") {
+  const targetId = observation?.payload?.player?.governor_id ?? observation?.payload?.governor_id ?? null;
+  const trace = createSystemTrace({ targetType: "PLAYER", targetId });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "player_store", feature: "player",
+    operation: "MATERIALIZE_PLAYER", targetType: "PLAYER", targetId: trace.targetId
+  }, () => materializePlayerInternal(db, observation, existingPlayer, archiveBucket, historyMode));
 }
