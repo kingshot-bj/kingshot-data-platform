@@ -3543,9 +3543,23 @@ async function handleGoogleDriveOAuthCallback(request, env) {
 
 export default {
   async queue(batch, env, ctx) {
-    return await handleServiceUsageQueue(batch, env, ctx);
+    const traceId = systemTraceId("queue");
+    const startedAt = Date.now();
+    try {
+      await recordSystemEvent(env.DB, { traceId, eventType:"START", service:"queue", feature:"service_usage_archive", operation:"QUEUE_BATCH", status:"STARTED", targetType:"QUEUE_BATCH", targetId:String(batch?.messages?.length || 0), metadata:{ messageCount:batch?.messages?.length || 0 } });
+      const result = await handleServiceUsageQueue(batch, env, ctx);
+      await recordSystemEvent(env.DB, { traceId, eventType:"COMPLETE", service:"queue", feature:"service_usage_archive", operation:"QUEUE_BATCH", status:"SUCCESS", targetType:"QUEUE_BATCH", targetId:String(batch?.messages?.length || 0), elapsedMs:Date.now()-startedAt, metadata:{ messageCount:batch?.messages?.length || 0 } });
+      return result;
+    } catch(error) {
+      await recordSystemEvent(env.DB, { traceId, eventType:"ERROR", service:"queue", feature:"service_usage_archive", operation:"QUEUE_BATCH", status:"FAILED", targetType:"QUEUE_BATCH", targetId:String(batch?.messages?.length || 0), elapsedMs:Date.now()-startedAt, errorCode:error?.code||"QUEUE_BATCH_FAILED", message:error?.message||String(error) });
+      throw error;
+    }
   },
   async scheduled(controller, env, ctx) {
+    const traceId = systemTraceId("cron");
+    const startedAt = Date.now();
+    await recordSystemEvent(env.DB, { traceId, eventType:"START", service:"scheduler", feature:"scheduled", operation:"SCHEDULED_RUN", status:"STARTED", targetType:"CRON", targetId:String(controller?.scheduledTime || "") });
+    try {
     if (env.DB && env.ARCHIVE) {
       try {
         const drained = await drainHistoryEmergencyBuffer(env.DB, env.ARCHIVE, { limit: 10 });
@@ -3573,8 +3587,13 @@ export default {
     await runDiagnosticHealthChecks(env);
     const minute = new Date(controller.scheduledTime || Date.now()).getUTCMinutes();
     if (minute === 0) await runDataRetentionJob(env);
+    await recordSystemEvent(env.DB, { traceId, eventType:"COMPLETE", service:"scheduler", feature:"scheduled", operation:"SCHEDULED_RUN", status:"SUCCESS", targetType:"CRON", targetId:String(controller?.scheduledTime || ""), elapsedMs:Date.now()-startedAt });
+    } catch(error) {
+      await recordSystemEvent(env.DB, { traceId, eventType:"ERROR", service:"scheduler", feature:"scheduled", operation:"SCHEDULED_RUN", status:"FAILED", targetType:"CRON", targetId:String(controller?.scheduledTime || ""), elapsedMs:Date.now()-startedAt, errorCode:error?.code||"SCHEDULED_RUN_FAILED", message:error?.message||String(error) });
+      throw error;
+    }
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
