@@ -33,6 +33,7 @@ export async function listApiPoolKeys(db) {
 async function claimApiPoolKey(db, {
   provider = PROVIDER,
   poolType = "SYSTEM_GENERAL",
+  poolTypes = null,
   jobId = null,
   purpose = "GENERAL",
   targetType = null,
@@ -42,38 +43,18 @@ async function claimApiPoolKey(db, {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
   const leaseId = crypto.randomUUID();
+  const eligiblePoolTypes = Array.isArray(poolTypes) && poolTypes.length
+    ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
+    : [String(poolType || "SYSTEM_GENERAL")];
+  const placeholders = eligiblePoolTypes.map(() => "?").join(",");
 
-  // Claim the least-recently-used eligible key in the same write statement that
-  // establishes the lease. This removes the old SELECT -> INSERT race window.
-  const row = await db.prepare(
-    `UPDATE api_pool_keys
-     SET status = 'AVAILABLE',
-         cooldown_until = NULL,
-         lease_id = ?1,
-         leased_until = ?2,
-         lease_job_id = ?3,
-         lease_purpose = ?4,
-         lease_target_type = ?5,
-         lease_target_id = ?6,
-         updated_at = ?7
-     WHERE key_id = (
-       SELECT key_id
-       FROM api_pool_keys
-       WHERE provider = ?8
-         AND pool_type = ?9
-         AND status IN ('AVAILABLE','COOLDOWN')
-         AND (cooldown_until IS NULL OR cooldown_until <= ?10)
-         AND (leased_until IS NULL OR leased_until <= ?11)
-       ORDER BY
-         CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END,
-         COALESCE(last_used_at, 0) ASC,
-         created_at ASC
-       LIMIT 1
-     )
-     RETURNING key_id, provider, pool_type, encrypted_key`
-  ).bind(
+  // Multiple pool types are treated as one shared lease pool. pool_type remains metadata.
+  const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?1, leased_until = ?2, lease_job_id = ?3, lease_purpose = ?4, lease_target_type = ?5, lease_target_id = ?6, updated_at = ?7 " +
+    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ?8 AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?9) AND (leased_until IS NULL OR leased_until <= ?10) ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
+    "RETURNING key_id, provider, pool_type, encrypted_key";
+  const row = await db.prepare(sql).bind(
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
-    provider ?? PROVIDER, poolType ?? "SYSTEM_GENERAL", now, now
+    provider ?? PROVIDER, ...eligiblePoolTypes, now, now
   ).first();
 
   if (!row) throw new Error("NO_API_POOL_KEY_AVAILABLE");
@@ -87,7 +68,6 @@ async function claimApiPoolKey(db, {
     expires_at: expiresAt
   };
 }
-
 export async function leaseApiKey(db, options = {}) {
   return claimApiPoolKey(db, options);
 }
