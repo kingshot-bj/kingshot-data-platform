@@ -202,7 +202,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
   }
 }
 
-export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
+export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestTraceId = null) {
   if (!auth || auth.role !== "OWNER" || auth.status !== "ACTIVE") return new Response(JSON.stringify({ok:false,error:"OWNER_REQUIRED"}), {status:403,headers:{"content-type":"application/json"}});
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json"} });
 
@@ -218,7 +218,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 
   const startedAt = Date.now();
   const runId = crypto.randomUUID();
-  const traceId = systemTraceId("load");
+  const traceId = requestTraceId || systemTraceId("load");
 
   const poolAvailability = await getApiPoolAvailability(env.DB, {
     poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
