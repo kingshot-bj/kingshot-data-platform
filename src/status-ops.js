@@ -113,7 +113,8 @@ export async function getOperationalStatus(db) {
       leaseDetails,
       leaseByPurpose
     },
-    loadTest,\n    watchlist: {
+    loadTest,
+    watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
       enabledErrors: Number(watch.enabled_error_count || 0),
