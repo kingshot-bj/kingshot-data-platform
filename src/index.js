@@ -3595,6 +3595,8 @@ export default {
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const requestTraceId = systemTraceId("req");
+    let requestFailed = null;
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
@@ -3681,8 +3683,24 @@ export default {
       if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
       return eagleEyeHtmlResponse(await renderHome(request, env));
     } catch (error) {
+      requestFailed = error;
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
+    } finally {
+      const eventPromise = recordSystemEvent(env.DB, {
+        traceId: requestTraceId,
+        eventType: requestFailed ? "REQUEST_ERROR" : "REQUEST",
+        service: "http",
+        feature: "request",
+        operation: request.method + " " + url.pathname,
+        status: requestFailed ? "FAILED" : "COMPLETED",
+        httpMethod: request.method,
+        httpPath: url.pathname,
+        errorCode: requestFailed?.code || (requestFailed ? "INTERNAL_ERROR" : null),
+        message: requestFailed?.message || null,
+        metadata: { queryKeys: [...url.searchParams.keys()] }
+      });
+      if (ctx?.waitUntil) ctx.waitUntil(eventPromise); else await eventPromise;
     }
   }
 };
