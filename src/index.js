@@ -767,12 +767,18 @@ async function runKingdomWatchlistJobs(env) {
   }
 }
 
-async function processKingdomWatchlistJob(env, job) {
+async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
+  const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const concurrency = await getWatchlistApiConcurrency(env);
+    const concurrency = await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    if (concurrency < 1) {
+      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      throw error;
+    }
     const endIndex = Math.min(startIndex + concurrency, KINGDOM_RANKING_BOARDS.length);
     const boards = KINGDOM_RANKING_BOARDS.slice(startIndex, endIndex);
     let rankingRows = Number(job.ranking_rows || 0);
@@ -926,7 +932,12 @@ async function processKingdomWatchlistJob(env, job) {
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
-    const concurrency = await getWatchlistApiConcurrency(env);
+    const concurrency = await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    if (concurrency < 1) {
+      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      throw error;
+    }
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
         return { governorId, fetched: await fetchPlayerDetailThroughApiPool(env, governorId) };
@@ -1031,15 +1042,23 @@ async function processKingdomWatchlistJob(env, job) {
 
 const WATCHLIST_MAX_API_CONCURRENCY = 26;
 
-async function getWatchlistApiConcurrency(env) {
-  const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS count FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type IN ('SYSTEM_WATCHLIST','SYSTEM_GENERAL','USER_CONTRIBUTED') AND status = 'AVAILABLE'"
-  ).first();
+async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
+  const availability = await getApiPoolAvailability(env.DB, {
+    provider: "MIGHTPULSE",
+    poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
+  });
+  const available = Number(availability?.totals?.available || 0);
+  const reserve = Math.max(0, Number(reserveApiKeys) || 0);
+  const usable = Math.max(0, available - reserve);
 
-  // User-contributed keys are explicitly provided to the EagleEye API Pool,
-  // so they participate in automatic watchlist work without manual pool moves.
-  // Concurrency is bounded by the 26 KingShot ranking boards.
-  return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, Number(row?.count || 1)));
+  // Normal Watchlist processing keeps the historical minimum of one.
+  // Load Test processing can explicitly reserve one key for normal users and
+  // therefore returns zero when there is no safe capacity instead of violating
+  // the reservation.
+  if (reserve > 0) {
+    return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable);
+  }
+  return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable));
 }
 
 async function fetchWithConcurrency(items, concurrency, worker) {
