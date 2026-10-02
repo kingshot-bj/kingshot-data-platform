@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archiveD1RowsToR2 } from "./r2-archive.js";
 
 const RETENTION_TABLES = Object.freeze([
@@ -54,7 +55,7 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
   return getRetentionSettings(db);
 }
 
-export async function runRetentionCleanup(db, { batchSize = 1000, archiveBucket = null } = {}) {
+async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket = null } = {}) {
   const settings = await getRetentionSettings(db);
   const now = Math.floor(Date.now() / 1000);
   const result = {};
@@ -156,4 +157,14 @@ export async function runRetentionCleanup(db, { batchSize = 1000, archiveBucket 
   }
 
   return { settings, deleted: result, archived };
+}
+
+
+export async function runRetentionCleanup(db, options = {}) {
+  const trace = createSystemTrace({ targetType: "RETENTION" });
+  return runSystemOperation(db, trace, {
+    eventType: "RETENTION", service: "retention",
+    feature: "retention", operation: "RUN_RETENTION_CLEANUP",
+    targetType: "RETENTION"
+  }, () => runRetentionCleanupInternal(db, options));
 }
