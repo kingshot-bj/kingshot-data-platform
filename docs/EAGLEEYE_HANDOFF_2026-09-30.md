@@ -4693,3 +4693,94 @@ status-26では kingdom_load_test_runs は存在した一方、system_event_log 
 5. `NO_API_POOL_KEY_AVAILABLE` がLoad Test由来で発生しないことを確認。
 6. 20王国以上で全対象が順番に完了し、取得データが通常Watchlistと同じ保存経路へ残ることを確認。
 7. status JSON / Query Insightsで、旧「外側Job並列 × 内側API並列」の過剰リースが消えていることを確認。
+
+
+# 78. 2026-10-03 / Load Testを「王国直列」からグローバルAPIセマフォ方式へ修正
+
+## 重要: #77の直列化案を撤回
+
+#77で一度「王国Jobを直列実行する」設計へ変更したが、これはユーザー意図と異なるため撤回。
+
+ユーザーが求めているのは、
+
+> 王国Jobを大量に並列で進めながら、Load Test全体で使用するAPIリクエスト数だけを「実際のAVAILABLE API Poolキー数 − 通常利用保護1本」に厳密に制御する方式。
+
+である。
+
+## 最終設計
+
+### Global API Semaphore
+
+Load Test開始時:
+
+- AVAILABLE API Poolキー数を取得
+- 通常利用保護として1本を確保
+- apiConcurrency = availablePoolKeys - 1
+- この値をLoad Test全体のAPI同時実行上限とする
+- 26でグローバル上限を切らない
+  - 26は1王国のランキングボード数
+  - apiConcurrencyは全王国合計のAPI同時実行枠
+
+例:
+
+- Available 13 → Load Test API枠 12
+- Available 5 → Load Test API枠 4
+- Available 31 → Load Test API枠 30
+
+### 王国Job
+
+王国Jobは、
+
+min(取得対象王国数, apiConcurrency)
+
+件を同時に進める。
+
+各王国は最大26件のランキングAPIリクエストを生成できるが、実際に外部APIへ飛ぶ瞬間はGlobal API Semaphoreを1枠取得する。
+
+そのため、
+
+- KID Aが5枠
+- KID Bが3枠
+- KID Cが2枠
+- KID Dが2枠
+
+のように、全王国でAPI枠を動的に共有できる。
+
+1リクエストが完了した瞬間に枠を返却し、待機中の別王国/別リクエストへ即時再配布する。
+
+### API Pool競合
+
+Load Test側のAPI取得で NO_API_POOL_KEY_AVAILABLE が発生した場合は、最大20回まで500ms間隔で再試行する。
+
+これにより、Load Test開始後に通常ユーザーが予約枠以外も一時的に使用した場合でも、一時的なPool競合を即失敗へ変換しない。
+
+通常Watchlist側にはこのLoad Test用セマフォ/Retryを適用しない。
+
+## 実装コミット
+
+- 6838cfcbe2ab33e56e4f96e7cfff4b09af1d8642 — Load Test global API semaphore
+- 6cff17613e83c3931643efbf69c7a889f87d85d6 — Watchlist pipeline API limiter integration
+- 9a980188343742063fd32d64e571208a19fa49ed — semaphore wiring correction
+
+## 変更後の確認ポイント
+
+1. 王国Jobが直列ではなく複数同時進行すること。
+2. API Poolの実際のAVAILABLE数から1本を通常利用保護として除外すること。
+3. 全王国合計の外部APIリクエストがGlobal API枠を超えないこと。
+4. API完了後、待機中の別リクエストへ即座に枠が再利用されること。
+5. 通常ユーザーのWatchlist処理はLoad Testセマフォの影響を受けないこと。
+6. NO_API_POOL_KEY_AVAILABLEの一時競合がRetryで吸収されること。
+7. 取得・比較・D1/R2保存経路は通常Kingdom Watchlistと同一であること。
+8. 実機で20王国以上を実行し、処理時間・Pool lease数・D1 Rows Read/Writeを比較すること。
+
+## Cloudflare実行上の注意
+
+Cloudflare Workersでは1 invocationあたりの同時open connectionに制約があり、初期レスポンス待ち中の接続は最大6本まで同時に待機し、それを超える接続はランタイム側でキューされる。したがってAPIセマフォの値が6を超えても、コード上の共有API枠を6へ人為的に制限しない。
+
+実測では、MightPulse応答時間・API Pool lease取得・D1保存時間を含めて最適な実効値を確認する。
+
+## 本番確認状況
+
+この変更はGitHub mainへの実装まで。
+
+本番Worker deploy / 本番E2Eは未確認。
