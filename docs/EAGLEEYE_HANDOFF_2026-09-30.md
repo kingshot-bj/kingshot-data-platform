@@ -4406,3 +4406,37 @@ OWNER負荷テストは、各対象王国について実際の processKingdomWat
 - テスト後に通常の王国Watchlist検索が保存済みデータを再利用できること
 
 次の実機テストでは、まず少数王国（例: 1〜3王国）で本番Watchlistと同一処理経路・保存結果を確認してから、100王国へ拡大する。
+
+
+---
+
+## 69. OWNER王国Watchlist実処理負荷テストの進捗可視化修正（2026-10-02）
+
+### 背景
+OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処理と同じ `processKingdomWatchlistJob()` を実行する設計になっている。一方、負荷テスト画面は従来、王国単位の処理が完了した時点でのみ `progress` を返していたため、通常の王国Watchlist画面にある「ランキング 何 / 26」「プレイヤー 何 / N」のような途中進捗を表示できなかった。
+
+### 実装
+- `src/admin-kingdom-load-test.js` を更新。
+- 各一時王国Jobの `processKingdomWatchlistJob()` 1ステップ完了ごとに `job_progress` をNDJSONストリームへ送信。
+- 進捗データ:
+  - 王国番号
+  - phase（RANKINGS / PLAYERS / COMPLETED）
+  - `board_index / total_boards`（ランキングは26ボード）
+  - `player_cursor / player_count`
+  - ranking_rows
+  - player_rows
+- OWNER画面に全体進捗バーを追加:
+  - `完了王国数 / 対象王国数`
+  - 全体%
+  - 成功 / 失敗
+  - Job同時実行数
+- 同時実行中の王国について、通常Watchlistと同様に「ランキング X / 26」「プレイヤー X / N」を表示。
+- 王国単位の完了イベントと合わせて全体進捗を更新。
+- 完了時は最終結果を維持。
+
+### コミット
+- `52d2ebc157d938804cb69ca2d0f47b88d26bb926`
+- `feat: show kingdom load test progress like watchlist`
+
+### 注意
+この修正は新しいデプロイ後の負荷テストから有効。既に実行中の100王国テストには遡及しない。
