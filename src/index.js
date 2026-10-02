@@ -770,10 +770,11 @@ async function runKingdomWatchlistJobs(env) {
 async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
   const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
+  const apiLimiter = options?.apiLimiter || null;
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const concurrency = await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    const concurrency = apiLimiter ? WATCHLIST_MAX_API_CONCURRENCY : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
       error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
@@ -790,9 +791,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const traceId = diagnosticTraceId("ranking");
       const startedAtMs = Date.now();
       try {
-        const fetched = await fetchKingdomRankingThroughApiPool(
+        const fetched = await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
-        );
+        ));
         return { board, traceId, startedAtMs, fetched };
       } catch (error) {
         error.rankingBoard = board;
@@ -932,7 +933,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
-    const concurrency = await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    const concurrency = apiLimiter ? Math.min(WATCHLIST_MAX_API_CONCURRENCY, batchIds.length) : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
       error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
@@ -940,7 +941,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     }
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
-        return { governorId, fetched: await fetchPlayerDetailThroughApiPool(env, governorId) };
+        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId)) };
       } catch (error) {
         await recordDiagnostic(env.DB, {
           service: "watchlist",
@@ -1075,6 +1076,24 @@ async function fetchWithConcurrency(items, concurrency, worker) {
   for (let i = 0; i < Math.min(concurrency, items.length); i++) workers.push(runWorker());
   await Promise.all(workers);
   return results;
+}
+
+async function fetchWithLoadTestApiLimiter(apiLimiter, worker) {
+  if (!apiLimiter) return worker();
+  const maxRetries = 20;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const release = await apiLimiter.acquire();
+    try {
+      return await worker();
+    } catch (error) {
+      const code = String(error?.code || error?.message || "");
+      if (code !== "NO_API_POOL_KEY_AVAILABLE" || attempt >= maxRetries) throw error;
+    } finally {
+      release();
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  throw new Error("LOAD_TEST_API_RETRY_EXHAUSTED");
 }
 
 function describeRankingPayloadShape(payload) {
