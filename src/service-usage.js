@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 const SERVICE_USAGE_VERSION = 1;
 
 export const SERVICE_USAGE_EVENTS = Object.freeze({
@@ -184,7 +185,7 @@ export function createServiceUsageEvent({
   return Object.freeze(event);
 }
 
-export async function enqueueServiceUsage(env, event) {
+async function enqueueServiceUsageInternal(env, event) {
   if (!event || typeof event !== "object") {
     throw new Error("SERVICE_USAGE: event is required");
   }
@@ -215,4 +216,21 @@ export async function recordServiceUsage(env, input) {
 
 export function getServiceUsageMetadataKeys(operation) {
   return [...(METADATA_KEYS[operation] || [])];
+}
+
+
+export async function enqueueServiceUsage(env, event) {
+  const db = env?.DB || null;
+  const trace = createSystemTrace({
+    actorType: "USER",
+    actorId: event?.actor_user_id || null,
+    targetType: event?.target_type || null,
+    targetId: event?.target_id || null
+  });
+  return runSystemOperation(db, trace, {
+    eventType: "QUEUE", service: "service_usage",
+    feature: event?.feature || "SERVICE_USAGE",
+    operation: event?.operation || "SERVICE_USAGE_ENQUEUE",
+    targetType: trace.targetType, targetId: trace.targetId
+  }, () => enqueueServiceUsageInternal(env, event));
 }
