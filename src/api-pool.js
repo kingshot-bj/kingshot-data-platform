@@ -170,7 +170,9 @@ export async function getApiPoolAvailability(db, {
   poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
   now = Math.floor(Date.now() / 1000)
 } = {}) {
-  const types = Array.isArray(poolTypes) && poolTypes.length ? poolTypes : ["SYSTEM_GENERAL"];
+  const types = Array.isArray(poolTypes) && poolTypes.length
+    ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
+    : ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
   const placeholders = types.map(() => "?").join(",");
   const result = await db.prepare(
     `SELECT pool_type,
