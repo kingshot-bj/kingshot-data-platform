@@ -4784,3 +4784,43 @@ Cloudflare Workersでは1 invocationあたりの同時open connectionに制約�
 この変更はGitHub mainへの実装まで。
 
 本番Worker deploy / 本番E2Eは未確認。
+
+
+# 79. 2026-10-03 / OWNER Load Test履歴表示とRun復元の分離
+
+## 実装
+
+OWNERの王国Watchlist実処理負荷テストについて、現在のRun表示と過去Run履歴を分離。
+
+### 現在Run
+- Load Test実行中は現在のrun_idをUI側へ保持。
+- ページ移動後に戻ってきても、保持したrun_idで同一Runを復元。
+- 実行していないページ初期表示では、過去の最新Runを現在進捗として表示しない。
+- これにより、過去Runの「20/20」などが新規ページ表示へ混入する問題を防止。
+
+### 過去Run履歴
+- `/api/owner/kingdom-load-test/history` を追加。
+- OWNER認証で過去最大50件を取得可能。UIは直近20件を表示。
+- 既存の `kingdom_load_test_runs` を履歴の基礎とし、新規履歴テーブルは作らない。
+- migration 0031で以下の集計値をRun単位で永続化:
+  - success_count
+  - failed_count
+  - ranking_rows_saved
+  - player_rows_saved
+  - elapsed_ms
+- UIには実施日時、対象王国数、成功/失敗、API同時処理数、Pool Available、Top N、保存rows、所要時間、結果状態を表示。
+- `COMPLETED` かつ `failed_count > 0` のRunは「一部失敗」と表示。
+
+## コミット
+- 866e8dd44982573eddc785afe31d238db2cb437f — Run復元/Navigation対応
+- ce71d3e1726eae5b9f75f71b7eb7d222419c83b6 — History API + Run summary persistence
+- 7a6e9ecf670f4e269184982b2f24d95bb7ecf886 — migration 0031 history metrics
+- 8d8125f0693ad1b3f5614d98e80495ce6b68abbb — History API route
+- d9f2b52b38e7cef1f58483f4355da809bb1e49a9 — History UI
+- 90faa54d00f0daa34c6e567cd4264e2bcdcd3d1c — partial failure label correction
+
+## 確認事項
+- 本番Worker deploy後にmigration 0031適用を確認。
+- Load Test実行→別ページへ移動→Load Testページへ戻ることで同一Run復元を確認。
+- 未実行状態でページを開いた場合、過去Runが現在進捗へ混入しないことを確認。
+- 過去履歴に成功/失敗/一部失敗が正しく表示されることを確認。
