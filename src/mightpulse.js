@@ -236,7 +236,9 @@ export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null 
 export async function getMightPulseKingdomRanks(env, kid, {
   board = null,
   limit = 100,
-  apiKey = null
+  apiKey = null,
+  traceId = null,
+  parentTraceId = null
 } = {}) {
   const kingdomId = String(kid || "").trim();
   if (!kingdomId) {
@@ -259,13 +261,20 @@ export async function getMightPulseKingdomRanks(env, kid, {
 
   return mightPulseFetch(env, `/kingdoms/${encodeURIComponent(kingdomId)}/ranks`, {
     query,
-    apiKey
+    apiKey,
+    traceId,
+    parentTraceId,
+    operation: "GET_KINGDOM_RANKING",
+    targetType: "KINGDOM",
+    targetId: kingdomId
   });
 }
 
 export async function getMightPulseKingdomAllRankings(env, kid, {
   limit = 100,
-  apiKey = null
+  apiKey = null,
+  traceId = null,
+  parentTraceId = null
 } = {}) {
   const kingdomId = String(kid || "").trim();
   if (!kingdomId) {
@@ -278,7 +287,9 @@ export async function getMightPulseKingdomAllRankings(env, kid, {
   return getMightPulseKingdom(env, kingdomId, {
     include: "boards",
     limit,
-    apiKey
+    apiKey,
+    traceId,
+    parentTraceId
   }).then(result => {
     if (!result || !result.data) {
       throw new MightPulseError("MightPulse returned no kingdom ranking payload.", {
