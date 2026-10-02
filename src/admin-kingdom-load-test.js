@@ -94,11 +94,13 @@ async function runWithConcurrency(items, concurrency, worker, onComplete = null)
 
 async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob) {
   const startedAt = Date.now();
-  if (typeof processJob !== "function") throw new Error("KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE");
+  if (typeof processJob !== "function") return { run_id:runId, kid:Number(kid), ok:false, error:"KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE", elapsed_ms:Date.now()-startedAt };
+
   const jobId = crypto.randomUUID();
   const watchlistId = "LOAD_TEST:" + runId;
   const now = Math.floor(Date.now() / 1000);
   await env.DB.prepare("INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)").bind(jobId, watchlistId, Number(kid), Number(topN), now, now, now).run();
+
   try {
     let iterations = 0;
     while (iterations++ < 200) {
@@ -109,6 +111,8 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob) {
       await processJob(env, job);
     }
     throw new Error("KINGDOM_WATCHLIST_LOAD_TEST_ITERATION_LIMIT");
+  } catch (error) {
+    return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, status:"FAILED", error:String(error?.message||error||"KINGDOM_WATCHLIST_JOB_FAILED").slice(0,1000), elapsed_ms:Date.now()-startedAt };
   } finally {
     await env.DB.prepare("DELETE FROM kingdom_watchlist_jobs WHERE job_id = ?").bind(jobId).run().catch(error => console.error("owner_kingdom_load_test_job_cleanup_failed", {jobId,kid,message:error?.message||String(error)}));
   }
