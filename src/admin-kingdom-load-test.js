@@ -1,6 +1,7 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, recordUsage, getApiPoolAvailability } from "./api-pool.js";
 import { recordServiceUsage } from "./service-usage.js";
+import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const MAX_KINGDOMS = 1000;
 const MAX_CONCURRENCY = 50;
@@ -217,6 +218,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 
   const startedAt = Date.now();
   const runId = crypto.randomUUID();
+  const traceId = systemTraceId("load");
 
   const poolAvailability = await getApiPoolAvailability(env.DB, {
     poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
