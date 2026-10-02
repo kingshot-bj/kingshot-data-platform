@@ -92,7 +92,23 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
     const url = new URL(request.url);
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 20)));
     const rows = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
-    return new Response(JSON.stringify({ok:true,runs:(rows.results||[]).map(row=>({run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:Number(row.success_count||0),failed_count:Number(row.failed_count||0),ranking_rows_saved:Number(row.ranking_rows_saved||0),player_rows_saved:Number(row.player_rows_saved||0),elapsed_ms:row.elapsed_ms==null?null:Number(row.elapsed_ms)})))}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    const rawRuns=rows.results||[];
+    const legacyRuns=rawRuns.filter(row=>String(row.status||"")!=="RUNNING"&&Number(row.success_count||0)===0&&Number(row.failed_count||0)===0);
+    const legacySummary=new Map();
+    if(legacyRuns.length){
+      const placeholders=legacyRuns.map(()=>"?").join(",");
+      const summaryRows=await env.DB.prepare("SELECT watchlist_id,SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS success_count,SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_count,SUM(ranking_rows) AS ranking_rows_saved,SUM(player_rows) AS player_rows_saved FROM kingdom_watchlist_jobs WHERE watchlist_id IN ("+placeholders+") GROUP BY watchlist_id").bind(...legacyRuns.map(row=>"LOAD_TEST:"+String(row.run_id))).all();
+      for(const summary of (summaryRows.results||[])) legacySummary.set(String(summary.watchlist_id),summary);
+    }
+    return new Response(JSON.stringify({ok:true,runs:rawRuns.map(row=>{
+      const fallback=legacySummary.get("LOAD_TEST:"+String(row.run_id));
+      const successCount=Number(row.success_count||0)||Number(fallback?.success_count||0);
+      const failedCount=Number(row.failed_count||0)||Number(fallback?.failed_count||0);
+      const rankingRows=Number(row.ranking_rows_saved||0)||Number(fallback?.ranking_rows_saved||0);
+      const playerRows=Number(row.player_rows_saved||0)||Number(fallback?.player_rows_saved||0);
+      const elapsed=row.elapsed_ms==null?((row.completed_at&&row.created_at)?(Number(row.completed_at)-Number(row.created_at))*1000:null):Number(row.elapsed_ms);
+      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed};
+    })}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
     console.error("owner_kingdom_load_test_history_failed",error?.message||error);
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_HISTORY_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
