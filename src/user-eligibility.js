@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { addApiPoolKey } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
@@ -5,7 +6,7 @@ import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
 export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
 
-export async function registerUserMightPulseApiKey(db, {
+async function registerUserMightPulseApiKeyInternal(db, {
   env,
   userId,
   apiKey,
@@ -134,7 +135,7 @@ export async function getAdvancedEligibility(db, userId) {
   };
 }
 
-export async function evaluateAdvancedEligibility(db, userId) {
+async function evaluateAdvancedEligibilityInternal(db, userId) {
   const normalizedUserId = String(userId || "").trim();
   const eligibility = await getAdvancedEligibility(db, normalizedUserId);
 
@@ -155,4 +156,21 @@ export async function evaluateAdvancedEligibility(db, userId) {
     role: result?.meta?.changes === 1 ? ADVANCED_ROLE : eligibility.role,
     promoted: result?.meta?.changes === 1
   };
+}
+
+
+export async function registerUserMightPulseApiKey(db, options) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: options?.userId || null, targetType: "API_KEY" });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_eligibility", feature: "api_key_contribution",
+    operation: "REGISTER_USER_MIGHTPULSE_API_KEY", targetType: "API_KEY"
+  }, () => registerUserMightPulseApiKeyInternal(db, options));
+}
+
+export async function evaluateAdvancedEligibility(db, userId) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: userId, targetType: "USER", targetId: userId });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_eligibility", feature: "eligibility",
+    operation: "EVALUATE_ADVANCED_ELIGIBILITY", targetType: "USER", targetId: userId
+  }, () => evaluateAdvancedEligibilityInternal(db, userId));
 }
