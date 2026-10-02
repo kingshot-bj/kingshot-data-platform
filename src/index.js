@@ -40,6 +40,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
+import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -3621,7 +3622,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/api/admin/api-pool/test-ranking") return await handleApiPoolTestRanking(request, env);
       if (url.pathname === "/api/owner/kingdom-load-test/status") return await handleOwnerKingdomLoadTestStatusApi(request, env);
-      if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth); }
+      if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId); }
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
       if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
