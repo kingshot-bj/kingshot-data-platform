@@ -45,7 +45,6 @@ async function releaseLoadTestState(db, runId) {
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
   try {
-    await ensureLoadTestStateSchema(env.DB);
     const now = Math.floor(Date.now() / 1000);
     const row = await env.DB.prepare(
       "SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
@@ -53,7 +52,6 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
     return new Response(JSON.stringify({
       ok: true,
       active: Boolean(row),
-      run_id: row?.lock_token || null,
       started_at: row?.updated_at || null,
       expires_at: row?.lock_until || null
     }), { headers:{"content-type":"application/json; charset=UTF-8","cache-control":"public, max-age=5"} });
