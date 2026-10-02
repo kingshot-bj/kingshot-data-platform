@@ -164,6 +164,46 @@ async function handleGatewayStatus(request, env) {
     ? sanitizeDiagnosticText(systemLogResult.reason?.message || String(systemLogResult.reason))
     : null;
 
+  // The 24h log is already fully materialized by getSystemEventLog().
+  // Build integrity/load metadata from that same result so /status does not
+  // issue additional D1 reads just to calculate the summary.
+  const systemLogSummary = (() => {
+    const services = {};
+    const statuses = {};
+    let metadataParseFailures = 0;
+    let traceCount = 0;
+    const traceIds = new Set();
+
+    for (const event of systemLogEvents) {
+      const service = String(event?.service || "unknown");
+      const status = String(event?.status || "unknown");
+      services[service] = (services[service] || 0) + 1;
+      statuses[status] = (statuses[status] || 0) + 1;
+      if (event?.trace_id) {
+        traceIds.add(String(event.trace_id));
+      }
+      if (event?.metadata_json && event?.metadata == null) {
+        metadataParseFailures += 1;
+      }
+    }
+
+    return {
+      event_count: systemLogEvents.length,
+      trace_count: traceIds.size,
+      services,
+      statuses,
+      metadata_parse_failures: metadataParseFailures,
+      oldest_created_at: systemLogEvents.length
+        ? systemLogEvents[systemLogEvents.length - 1]?.created_at ?? null
+        : null,
+      newest_created_at: systemLogEvents.length
+        ? systemLogEvents[0]?.created_at ?? null
+        : null,
+      page_size: 500,
+      complete_window_read: systemLogResult.status === "fulfilled"
+    };
+  })();
+
   return jsonResponse({
     ok: true,
     gateway: {
@@ -209,6 +249,7 @@ async function handleGatewayStatus(request, env) {
         duration_seconds: 24 * 60 * 60
       },
       event_count: systemLogEvents.length,
+      summary: systemLogSummary,
       events: systemLogEvents,
       error: systemLogError
     },
