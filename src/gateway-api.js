@@ -2,6 +2,7 @@ import { DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
 import { getOperationalStatus } from "./status-ops.js";
 import { getHistoryEmergencyBufferStatus } from "./history-emergency-buffer.js";
+import { getSystemEventLog } from "./system-log.js";
 
 const GATEWAY_VERSION = "v1";
 
@@ -140,17 +141,36 @@ async function handleGatewayStatus(request, env) {
   if (!String(env.EAGLEEYE_GATEWAY_TOKEN || "").trim()) return jsonResponse({ ok: false, error: "GATEWAY_NOT_CONFIGURED" }, 503);
   if (!isGatewayAuthorized(request, env)) return jsonResponse({ ok: false, error: "UNAUTHORIZED" }, 401);
 
-  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult] = await Promise.allSettled([
+  const retrievedAt = new Date();
+  const retrievedAtUnix = Math.floor(retrievedAt.getTime() / 1000);
+  const systemLogFromUnix = retrievedAtUnix - 24 * 60 * 60;
+
+  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult, systemLogResult] = await Promise.allSettled([
     getReadOnlyDiagnostics(env.DB, { recentLimit: 100 }),
     getCloudflareD1Usage(env),
     getHistoryStorageStatus(env),
     getOperationalStatus(env.DB),
-    getHistoryEmergencyBufferStatus(env.DB)
+    getHistoryEmergencyBufferStatus(env.DB),
+    getSystemEventLog(env.DB, {
+      limit: null,
+      since: systemLogFromUnix,
+      until: retrievedAtUnix,
+      pageSize: 500
+    })
   ]);
+
+  const systemLogEvents = systemLogResult.status === "fulfilled" ? systemLogResult.value : [];
+  const systemLogError = systemLogResult.status === "rejected"
+    ? sanitizeDiagnosticText(systemLogResult.reason?.message || String(systemLogResult.reason))
+    : null;
 
   return jsonResponse({
     ok: true,
-    gateway: { version: GATEWAY_VERSION, read_only: true, retrieved_at: new Date().toISOString() },
+    gateway: {
+      version: GATEWAY_VERSION,
+      read_only: true,
+      retrieved_at: retrievedAt.toISOString()
+    },
     system: {
       overall: diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value.overall : "CRITICAL",
       diagnostics: diagnosticsResult.status === "fulfilled" ? diagnosticsResult.value : { overall: "CRITICAL", counts: { failed: 1, criticalFailed: 1, warning: 0, unknown: 0, criticalUnknown: 0, healthy: 0 }, services: [], events: [], error: "DIAGNOSTICS_UNAVAILABLE" },
@@ -181,6 +201,16 @@ async function handleGatewayStatus(request, env) {
             maxBytes: null,
             error: "HISTORY_EMERGENCY_BUFFER_STATUS_UNAVAILABLE"
           }
+    },
+    systemLog: {
+      range: {
+        from: new Date(systemLogFromUnix * 1000).toISOString(),
+        to: retrievedAt.toISOString(),
+        duration_seconds: 24 * 60 * 60
+      },
+      event_count: systemLogEvents.length,
+      events: systemLogEvents,
+      error: systemLogError
     },
     runtime: {
       workerName: String(env.CLOUDFLARE_WORKER_NAME || "kingshot-data-platform"),
