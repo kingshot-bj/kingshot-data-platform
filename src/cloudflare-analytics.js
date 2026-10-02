@@ -242,7 +242,7 @@ function classifyD1Query(query) {
   // Keep this mapping aligned with EagleEye feature areas so the machine-readable
   // status JSON can tell which newly-added feature is consuming D1.
   const rules = [
-    ["Data Coverage", ["COUNT(DISTINCT KID)", "KINGDOM_RANKING_CURRENT"]],
+    ["Data Coverage", ["COUNT(DISTINCT KID)"]],
     ["User Accounts", ["FROM USERS", "INTO USERS", "UPDATE USERS", "DELETE FROM USERS"]],
     ["Player Watchlist", ["PLAYER_WATCHLIST", "PLAYER_WATCHLISTS"]],
     ["Kingdom Watchlist", ["KINGDOM_WATCHLIST_JOBS", "KINGDOM_WATCHLIST_LOCKS", "KINGDOM_WATCHLISTS"]],
