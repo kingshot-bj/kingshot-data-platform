@@ -105,6 +105,7 @@ export async function getOperationalStatus(db) {
     loadTest = {
       schemaAvailable: true,
       active: Boolean(loadTestRow),
+      runId: loadTestRow?.lock_token || null,
       startedAt: loadTestRow?.updated_at ? Number(loadTestRow.updated_at) : null,
       expiresAt: loadTestRow?.lock_until ? Number(loadTestRow.lock_until) : null
     };
@@ -114,6 +115,7 @@ export async function getOperationalStatus(db) {
     loadTest = {
       schemaAvailable: false,
       active: false,
+      runId: null,
       startedAt: null,
       expiresAt: null
     };
