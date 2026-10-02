@@ -38,6 +38,37 @@ export async function getOperationalStatus(db) {
   const watch = watchResult || {};
   const job = jobResult || null;
 
+  // Load-test state is intentionally read-only here. The table is created lazily
+  // by the OWNER load-test path, so status JSON must remain usable before the
+  // first load test has ever run.
+  let loadTest = {
+    schemaAvailable: false,
+    active: false,
+    startedAt: null,
+    expiresAt: null
+  };
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const loadTestRow = await db.prepare(
+      "SELECT lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
+    ).bind("OWNER_KINGDOM_LOAD_TEST", now).first();
+    loadTest = {
+      schemaAvailable: true,
+      active: Boolean(loadTestRow),
+      startedAt: loadTestRow?.updated_at ? Number(loadTestRow.updated_at) : null,
+      expiresAt: loadTestRow?.lock_until ? Number(loadTestRow.lock_until) : null
+    };
+  } catch (error) {
+    // The table may not exist until the first load-test invocation. Do not make
+    // the whole operational status fail just because this optional state is absent.
+    loadTest = {
+      schemaAvailable: false,
+      active: false,
+      startedAt: null,
+      expiresAt: null
+    };
+  }
+
   return {
     apiPool: {
       pools,
@@ -56,7 +87,7 @@ export async function getOperationalStatus(db) {
         lastErrorMessage: latestKey.last_error_message || null
       } : null
     },
-    watchlist: {
+    loadTest,\n    watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
       enabledErrors: Number(watch.enabled_error_count || 0),
