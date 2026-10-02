@@ -160,6 +160,75 @@ async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket
 }
 
 
+const SYSTEM_LOG_RETENTION_SECONDS = 24 * 60 * 60;
+
+async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000) {
+  if (!db || !archiveBucket) {
+    return { selected: 0, archived: 0, deleted: 0, pending: null, skipped: true };
+  }
+
+  const cutoff = Math.floor(Date.now() / 1000) - SYSTEM_LOG_RETENTION_SECONDS;
+  const safeBatchSize = Math.min(Math.max(Number(batchSize) || 1000, 1), 1000);
+  const rows = (await db.prepare(
+    `SELECT rowid, event_id, trace_id, parent_trace_id, event_type, service, feature,
+      operation, status, actor_type, actor_id, target_type, target_id,
+      http_method, http_path, http_status, started_at, completed_at, elapsed_ms,
+      error_code, message, metadata_json, created_at
+     FROM system_event_log
+     WHERE created_at < ?
+     ORDER BY created_at ASC, rowid ASC
+     LIMIT ?`
+  ).bind(cutoff, safeBatchSize).all()).results || [];
+
+  if (!rows.length) {
+    return { selected: 0, archived: 0, deleted: 0, pending: 0, cutoff };
+  }
+
+  // IMPORTANT: never delete before R2 confirms the object write.
+  const archiveResult = await archiveD1RowsToR2(archiveBucket, {
+    table: "system_event_log",
+    rows
+  });
+
+  const rowids = rows.map(row => Number(row.rowid)).filter(Number.isFinite);
+  if (rowids.length !== rows.length) {
+    throw new Error("SYSTEM_LOG_ARCHIVE_ROWID_MISSING");
+  }
+
+  const placeholders = rowids.map(() => "?").join(",");
+  const deleted = await db.prepare(
+    `DELETE FROM system_event_log WHERE rowid IN (${placeholders})`
+  ).bind(...rowids).run();
+
+  const remaining = await db.prepare(
+    "SELECT COUNT(*) AS count FROM system_event_log WHERE created_at < ?"
+  ).bind(cutoff).first();
+
+  return {
+    selected: rows.length,
+    archived: Number(archiveResult?.rowCount || rows.length),
+    deleted: Number(deleted?.meta?.changes || 0),
+    pending: Number(remaining?.count || 0),
+    cutoff
+  };
+}
+
+export async function archiveSystemEventLog(db, archiveBucket, options = {}) {
+  const trace = createSystemTrace({ targetType: "SYSTEM_EVENT_LOG" });
+  return runSystemOperation(db, trace, {
+    eventType: "RETENTION",
+    service: "system_log",
+    feature: "system_log_archive",
+    operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
+    targetType: "SYSTEM_EVENT_LOG"
+  }, () => archiveExpiredSystemEventLog(
+    db,
+    archiveBucket,
+    options.batchSize
+  ));
+}
+
+
 export async function runRetentionCleanup(db, options = {}) {
   const trace = createSystemTrace({ targetType: "RETENTION" });
   return runSystemOperation(db, trace, {
