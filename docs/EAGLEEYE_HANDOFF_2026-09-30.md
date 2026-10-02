@@ -3438,3 +3438,56 @@ status JSONだけで「有効な王国ウォッチリスト3件が誰のもの�
 4. D1 Rows Read/Writtenへの追加影響を確認すること。
 
 **実装済みと本番確認済みは分離して扱う。**
+
+
+## 58-3. 2026-10-02 OWNER負荷テストとAPI Poolのrun_id相関を強化
+
+### 実装
+OWNER王国負荷テストの `run_id` を API Pool lease / usage まで引き継ぐよう修正。
+
+- `src/admin-kingdom-load-test.js`
+  - `leaseApiKey()` に `jobId: runId` を渡す。
+  - SYSTEM_WATCHLIST → SYSTEM_GENERAL のフォールバック時も同じ `runId` を渡す。
+  - 成功時の `recordApiPoolSuccess()` に `jobId: runId` を渡す。
+  - 失敗時の `recordApiPoolFailure()` に `jobId: runId` を渡す。
+  - 既存の `api_pool_usage` へOWNER負荷テスト1リクエスト単位の使用記録を追加し、`job_id=run_id` で突合可能にした。
+  - 記録項目は既存API Pool usage schemaを使用し、APIキー本体やsecretは保存・出力しない。
+
+### 相関方法
+同一負荷テストについて:
+
+`run_id`
+→ Worker NDJSON / console log
+→ API Pool `lease_job_id`
+→ API Pool usage `job_id`
+→ SERVICE_USAGE `metadata.run_id`
+
+という追跡経路を持つ。
+
+System Status JSONの `apiPool.leaseDetails[].leaseJobId` でも、負荷テスト実行中のleaseについて `run_id` を確認できる。
+
+System Status JSONの `loadTest.runId` には実行中ロックのrun_idを出す。
+
+### D1負荷
+負荷テストの各王国リクエストについてAPI Pool usageを1件記録するため、テスト対象王国数と同程度のD1 writeが追加される。
+これは通常のユーザー処理へ常時追加するものではなく、OWNER負荷テスト時だけ発生する。
+負荷テスト自身のD1消費をstatus JSONで実測する。
+
+### セキュリティ
+- APIキー本体 / encrypted_key / fingerprint / refresh token / secretはJSON・Workerログ・SERVICE_USAGE metadataへ出さない。
+- `run_id` は相関用UUID。
+- `leaseJobId` は処理相関用IDであり、APIキー本体ではない。
+
+### 本番確認状況
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy: **未確認**。
+- 本番負荷テストで `run_id` → API Pool lease → API Pool usage → SERVICE_USAGE/R2 が一貫して追跡できること: **未確認**。
+- 本番status JSONで `loadTest.runId` / `apiPool.leaseDetails[].leaseJobId` が同じrun_idになること: **未確認**。
+
+本番確認時:
+1. テスト開始前status JSONを保存。
+2. 負荷テストを実行し、NDJSONのrun_idを記録。
+3. テスト中status JSONで `loadTest.active=true` と `loadTest.runId` を確認。
+4. 同時刻の `apiPool.leaseDetails[].leaseJobId` とrun_idが一致することを確認。
+5. テスト後、API Pool usageの `job_id` とSERVICE_USAGE/R2の `metadata.run_id` が一致することを確認。
+6. D1 Rows Read/Written増分を確認。
