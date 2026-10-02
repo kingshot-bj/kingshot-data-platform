@@ -266,20 +266,6 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
 
   const run = (async () => {
     try {
-      await recordSystemEvent(env.DB, {
-        traceId,
-        eventType: "LOAD_TEST",
-        service: "load_test",
-        feature: "owner_kingdom_load_test",
-        operation: "START",
-        status: "STARTED",
-        actorType: "OWNER",
-        actorId: auth.user_id,
-        targetType: "KINGDOM_BATCH",
-        targetId: String(kids.length),
-        message: "OWNER王国並列負荷テスト開始",
-        metadata: { runId, targetCount: kids.length, startKid: Math.min(...kids), endKid: Math.max(...kids), board: allRankings ? "ALL" : board, allRankings, requestedConcurrency, concurrency, availablePoolKeys, reservedForNormalUse: 1 }
-      });
       console.log("eagleeye_owner_kingdom_load_test_start", { run_id: runId, actor_user_id: auth.user_id, actor_role: auth.role, target_count: kids.length, start_kid: Math.min(...kids), end_kid: Math.max(...kids), board_mode: allRankings ? "ALL" : "SINGLE", board: allRankings ? "ALL" : board, requested_concurrency: requestedConcurrency, concurrency, available_pool_keys: availablePoolKeys, reserved_for_normal_use: 1 });
       await send({
         type: "start",
