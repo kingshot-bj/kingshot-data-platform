@@ -677,8 +677,10 @@ async function runKingdomWatchlistJobs(env) {
       }
 
       try {
+        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"START", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(row.kid), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, status:job.status } });
         const result = await processKingdomWatchlistJob(env, job);
         if (result.completed) {
+          await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"COMPLETE", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(row.kid), message:"王国ウォッチリスト更新完了", metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, rankingRows:Number(result.rankingRows||0), playerRows:Number(result.playerRows||0) } });
           await recordDiagnostic(env.DB, {
             service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
             status: "SUCCESS", targetType: "KINGDOM", targetId: row.kid,
@@ -701,6 +703,7 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
         ).bind(now, String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
           status: "FAILED", errorCode: String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
