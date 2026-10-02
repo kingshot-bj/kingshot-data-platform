@@ -1,13 +1,16 @@
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, watchResult, jobResult, latestKeyResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, jobResult, latestKeyResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
     db.prepare(
       "SELECT COUNT(*) AS active_count, SUM(CASE WHEN leased_until <= ? THEN 1 ELSE 0 END) AS expired_active_count FROM api_pool_keys WHERE leased_until IS NOT NULL"
     ).bind(Math.floor(Date.now() / 1000)).first(),
+    db.prepare(
+      "SELECT key_id, pool_type, status, label, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, updated_at FROM api_pool_keys WHERE leased_until IS NOT NULL ORDER BY leased_until DESC, pool_type, key_id"
+    ).all(),
     db.prepare(
       "SELECT COUNT(*) AS total_count, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled_count, SUM(CASE WHEN enabled = 1 AND last_error IS NOT NULL THEN 1 ELSE 0 END) AS enabled_error_count, MAX(last_success_at) AS latest_success_at, MAX(updated_at) AS latest_updated_at FROM kingdom_watchlists"
     ).first(),
@@ -34,6 +37,27 @@ export async function getOperationalStatus(db) {
   }
 
   const latestKey = latestKeyResult || null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const leaseDetails = (leaseDetailResult.results || []).map(row => ({
+    keyId: row.key_id,
+    poolType: row.pool_type,
+    status: row.status,
+    label: row.label || null,
+    leaseState: Number(row.leased_until || 0) > now ? "ACTIVE" : "EXPIRED",
+    leasedUntil: row.leased_until ? Number(row.leased_until) : null,
+    leaseJobId: row.lease_job_id || null,
+    leasePurpose: row.lease_purpose || null,
+    leaseTargetType: row.lease_target_type || null,
+    leaseTargetId: row.lease_target_id || null,
+    updatedAt: row.updated_at ? Number(row.updated_at) : null
+  }));
+
+  const leaseByPurpose = {};
+  for (const lease of leaseDetails) {
+    const purpose = lease.leasePurpose || "UNKNOWN";
+    leaseByPurpose[purpose] = (leaseByPurpose[purpose] || 0) + 1;
+  }
 
   const watch = watchResult || {};
   const job = jobResult || null;
@@ -85,7 +109,9 @@ export async function getOperationalStatus(db) {
         lastErrorAt: latestKey.last_error_at ? Number(latestKey.last_error_at) : null,
         lastErrorCode: latestKey.last_error_code || null,
         lastErrorMessage: latestKey.last_error_message || null
-      } : null
+      } : null,
+      leaseDetails,
+      leaseByPurpose
     },
     loadTest,\n    watchlist: {
       total: Number(watch.total_count || 0),
