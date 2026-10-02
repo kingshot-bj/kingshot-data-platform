@@ -97,7 +97,7 @@ function traceIdForRun(runId) {
   return runId ? "load-" + runId : systemTraceId("load");
 }
 
-async function runKingdomLoad(env, kid, board, allRankings = false, runId = null) {
+async function runKingdomLoad(env, kid, board, allRankings = false, runId = null, traceId = null) {
   let lease = null;
   try {
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
@@ -151,7 +151,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
     });
 
     await recordSystemEvent(env.DB, {
-      traceId: traceIdForRun(runId),
+      traceId: traceId || traceIdForRun(runId),
       eventType: "KINGDOM_REQUEST",
       service: "load_test",
       feature: "owner_kingdom_load_test",
@@ -323,7 +323,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
       const results = await runWithConcurrency(
         kids,
         concurrency,
-        kid => runKingdomLoad(env, kid, board, allRankings, runId),
+        kid => runKingdomLoad(env, kid, board, allRankings, runId, traceId),
         async result => {
           completed++;
           if (result.ok) success++;
