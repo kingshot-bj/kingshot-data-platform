@@ -216,7 +216,10 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
     }
     throw new Error("KINGDOM_WATCHLIST_LOAD_TEST_ITERATION_LIMIT");
   } catch (error) {
-    return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, status:"FAILED", error:String(error?.message||error||"KINGDOM_WATCHLIST_JOB_FAILED").slice(0,1000), elapsed_ms:Date.now()-startedAt };
+    const message = String(error?.message || error || "KINGDOM_WATCHLIST_JOB_FAILED").slice(0,1000);
+    await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status <> 'COMPLETED'")
+      .bind(message, Math.floor(Date.now()/1000), jobId).run().catch(() => {});
+    return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, status:"FAILED", error:message, elapsed_ms:Date.now()-startedAt };
   } finally {
     // Keep the job row durable exactly like the normal Kingdom Watchlist job.
     // The standard bounded retention cleanup removes terminal rows later.
