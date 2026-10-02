@@ -4440,3 +4440,16 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 
 ### 注意
 この修正は新しいデプロイ後の負荷テストから有効。既に実行中の100王国テストには遡及しない。
+
+
+---
+
+# 70. 2026-10-02 / 王国Watchlist実処理負荷テストの進捗UIを通常Watchlistと同一化
+
+- ユーザー要求：「数字・中身は負荷テスト用に異なってよいが、通常の王国Watchlist取得と同じUIで進捗を可視化する」。
+- 直前実装では、通常Watchlistと同じ進捗情報（ランキング X/26、プレイヤー X/N、保存件数）を独自UIで表示していたが、見た目・DOM構造・CSSは完全一致ではなかった。
+- 2026-10-02、src/admin-kingdom-load-test.js を修正し、通常Watchlistの進捗UIと同じ .progress / .progress-track / .progress-fill 構造・サイズ・表示形式を使用するよう変更。
+- 王国ごとの進捗も通常Watchlistと同じ形式で、ランキング時は「更新中：ランキング」「X / 26」「ランキング取得 X件」、プレイヤー時は「更新中：プレイヤー」「X / N」「プレイヤーデータ取得 X件」を表示。
+- 負荷テスト固有の「全体進捗」「成功 / 失敗」「Job同時実行数」は同じprogressコンポーネント内に追加表示するが、通常Watchlistの進捗カード自体の見た目を別物にしない。
+- コミット: 7bd4b80bf2171208b2e4c1955bfb37cb45633b17 / fix: reuse watchlist progress UI for kingdom load test
+- 本番デプロイ・実機表示は未確認。GitHub mainへの実装反映まで確認済み。
