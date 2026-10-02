@@ -3244,3 +3244,56 @@ API Poolの実キー数・lease可能数が実効並列数を制約するため�
 3. SERVICE_USAGEの `OWNER_KINGDOM_LOAD_TEST` がQueue→R2へ到達すること。
 4. status JSONのD1/Workers/R2/API Pool実測と、同一run_idのテスト条件・結果を突合できること。
 5. APIキー本体等のsecretが一切出ていないこと。
+
+
+### 57-3. 通常利用保護 + テスト中表示（2026-10-02）
+
+OWNER王国負荷テストが、Poolキーの少ない環境で通常ユーザーの利用を圧迫しないよう安全装置を追加。
+
+#### API Pool保護
+- テスト開始時に `getApiPoolAvailability()` で `SYSTEM_WATCHLIST` + `SYSTEM_GENERAL` の現在利用可能キー数を取得。
+- ロードテストの最大実効並列数を **利用可能キー数 - 1** に制限。
+- 1本しか利用可能キーがない場合はテスト開始を拒否。
+- UIで50並列を選んでも、Pool実態が10本なら最大9並列までに自動制限。
+- これは「テストが使えるキー数」を制限するものであり、通常ユーザーが同時にキーを使用している場合は実効的な空き数がさらに変動する。
+- ロードテストの実行条件には `requested_concurrency` / 実効 `concurrency` / `available_pool_keys` / `reserved_for_normal_use=1` を記録。
+
+#### テスト状態の共有
+- 既存の `api_request_locks` を利用し、`OWNER_KINGDOM_LOAD_TEST` の実行中状態をD1上で共有。
+- 同時に複数のOWNERロードテストを起動することを防止。
+- 通常完了/エラー時は状態を削除。
+- 異常終了時にも最大2時間で期限切れになる。
+
+#### テスター向け表示
+一般ユーザー向けホーム画面に、ロードテスト中だけ以下の警告を表示:
+
+> ⚠ 現在、システム負荷テストを実施しています
+> 一部の機能で通常より応答が遅くなる場合があります。テスト終了後は通常速度に戻ります。
+
+- 30秒ごとに状態を確認。
+- 一般ユーザーには実行者・run_id・対象王国等の内部情報を表示しない。
+- 状態APIは公開情報として `active / started_at / expires_at` のみ返す。
+- 状態APIレスポンスは短時間キャッシュ可能にして、毎回のD1負荷を抑える。
+
+#### 実装コミット
+- `acf6451ff7e0c386eacfaaedd7c6d4003315b256`
+  - feat: protect one API pool key during owner load tests
+- `f8ab8ceb902c6807398c032e3e28dca662ffc067`
+  - fix: keep public load test status read-only
+- `6e4685e866a07c8e8f33e79ce02ea701245db691`
+  - fix: repair load test status route formatting
+
+#### 本番確認状況
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy完了: **未確認**。
+- 本番でPool数→実効並列数-1の制限が動作したこと: **未確認**。
+- 本番一般ユーザー画面で負荷テスト中バナーが表示されたこと: **未確認**。
+- 本番でテスト終了後にバナーが消えること: **未確認**。
+
+本番確認時は、少なくとも以下を確認する:
+1. 利用可能Poolキー数を確認。
+2. OWNERがそれより1少ない並列数で実行されることを確認。
+3. 1本しかない場合にテスト開始が拒否されることを確認。
+4. テスト中に一般ユーザー画面へ警告が表示されることを確認。
+5. テスト完了後に警告が消えることを確認。
+6. status JSONでD1 / Workers / API Poolの負荷を確認する。
