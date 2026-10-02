@@ -3192,26 +3192,17 @@ function mightPulseProbeRequestSpec(type, { governorId, kid, board, include }) {
 async function fetchMightPulseProbeThroughPool(env, spec) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
-  let poolType = spec.targetType === "KINGDOM" ? "SYSTEM_WATCHLIST" : "SYSTEM_GENERAL";
+  let poolType = null;
 
   try {
-    try {
-      lease = await leaseApiKey(env.DB, {
-        poolType,
-        purpose: "MIGHTPULSE_PROBE",
-        targetType: spec.targetType,
-        targetId: spec.targetId
-      });
-    } catch (error) {
-      if (poolType !== "SYSTEM_WATCHLIST" || error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-      poolType = "SYSTEM_GENERAL";
-      lease = await leaseApiKey(env.DB, {
-        poolType,
-        purpose: "MIGHTPULSE_PROBE",
-        targetType: spec.targetType,
-        targetId: spec.targetId
-      });
-    }
+    const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+    lease = await leaseApiKey(env.DB, {
+      poolTypes: automaticPoolTypes,
+      purpose: "MIGHTPULSE_PROBE",
+      targetType: spec.targetType,
+      targetId: spec.targetId
+    });
+    poolType = lease.pool_type;
 
     const requestStartedAt = Date.now();
     const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key });
@@ -4555,7 +4546,7 @@ async function handleApiPoolTestPlayer(request, env) {
   try {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
     lease = await leaseApiKey(env.DB, {
-      poolType: "SYSTEM_GENERAL",
+      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
       purpose: "ADMIN_TEST",
       targetType: "PLAYER",
       targetId: governorId
@@ -4647,24 +4638,14 @@ async function handleApiPoolTestRanking(request, env) {
   let lease = null;
   try {
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
-    let testPoolType = "SYSTEM_WATCHLIST";
-    try {
-      lease = await leaseApiKey(env.DB, {
-        poolType: testPoolType,
-        purpose: "ADMIN_TEST",
-        targetType: "KINGDOM",
-        targetId: kid
-      });
-    } catch (error) {
-      if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-      testPoolType = "SYSTEM_GENERAL";
-      lease = await leaseApiKey(env.DB, {
-        poolType: testPoolType,
-        purpose: "ADMIN_TEST",
-        targetType: "KINGDOM",
-        targetId: kid
-      });
-    }
+    const testPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+    const lease = await leaseApiKey(env.DB, {
+      poolTypes: testPoolTypes,
+      purpose: "ADMIN_TEST",
+      targetType: "KINGDOM",
+      targetId: kid
+    });
+    const testPoolType = lease.pool_type;
     const startedAt = Date.now();
     const result = await getMightPulseKingdomRanks(env, kid, {
       board,
@@ -5009,29 +4990,20 @@ async function fetchThroughWatchlistApiPool(env, {
   let poolType = null;
   const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
   try {
-    let lastNoKeyError = null;
-    for (const candidatePoolType of automaticPoolTypes) {
-      try {
-        lease = await leaseApiKey(env.DB, {
-          poolType: candidatePoolType,
-          purpose,
-          targetType,
-          targetId
-        });
-        poolType = candidatePoolType;
-        break;
-      } catch (error) {
-        if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-        lastNoKeyError = error;
-      }
-    }
+    lease = await leaseApiKey(env.DB, {
+      poolTypes: automaticPoolTypes,
+      purpose,
+      targetType,
+      targetId
+    });
+    poolType = lease.pool_type;
     if (!lease) {
       const availability = await getApiPoolAvailability(env.DB, {
         provider: "MIGHTPULSE",
         poolTypes: automaticPoolTypes
       });
       const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
-      const error = lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+      const error = new Error("NO_API_POOL_KEY_AVAILABLE");
       error.code = "NO_API_POOL_KEY_AVAILABLE";
       error.poolAvailability = availability;
       error.userMessage = exhaustedByLease
@@ -5122,24 +5094,14 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
   let lease = null;
   let poolType = null;
   try {
-    const automaticPoolTypes = ["SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-    let lastNoKeyError = null;
-    for (const candidatePoolType of automaticPoolTypes) {
-      try {
-        lease = await leaseApiKey(env.DB, {
-          poolType: candidatePoolType,
-          purpose,
-          targetType: "PLAYER",
-          targetId: id
-        });
-        poolType = candidatePoolType;
-        break;
-      } catch (error) {
-        if (error?.message !== "NO_API_POOL_KEY_AVAILABLE") throw error;
-        lastNoKeyError = error;
-      }
-    }
-    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+    lease = await leaseApiKey(env.DB, {
+      poolTypes: automaticPoolTypes,
+      purpose,
+      targetType: "PLAYER",
+      targetId: id
+    });
+    poolType = lease.pool_type;
 
     const result = await getMightPulsePlayer(env, id, {
       include: "base,heroes,ranks,gov_gear",
