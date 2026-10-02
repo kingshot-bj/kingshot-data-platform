@@ -4497,3 +4497,18 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 - これにより、リロードしてもサーバー側の進捗表示をD1から再構築でき、通常Watchlistと同じ永続状態ベースの運用になる。
 - コミット: `f7f8ac2f526c4038a29890c8040277d84a164878`。
 - 本番デプロイ・実機確認は未実施。
+
+
+---
+
+# 74. 2026-10-02 / 負荷テスト全体進捗のrun単位永続化
+
+- D1 Job復元だけでは、完了済み王国Jobが存在しない場合に対象数を誤復元する問題が判明。
+- `migrations/0029_kingdom_load_test_runs.sql` を追加し、負荷テストrun単位で対象数、対象王国一覧、top_n、並列数、状態、開始・完了時刻をD1に永続化。
+- status APIはrun metadataを正本として全体対象数を復元し、個別 `kingdom_watchlist_jobs` から各王国の現在進捗・完了状態を復元する。
+- 完了済みJobがcleanupされても、run全体の対象母数を失わない。
+- 既存のJobテーブルの制約を壊さないため、中止Jobは `FAILED + last_error=LOAD_TEST_CANCELLED` として保存し、status API上で `CANCELLED` に正規化する。
+- 旧runでmetadataが存在しない場合は残存Job件数をfallbackとして使用するため、過去runの消失済み完了Jobの元々の総数までは復元できない。
+- コミット: `96b9bbf19892d84af0c95c5dd827b0e818b6a20a`。
+- Migration: `0029_kingdom_load_test_runs.sql`。
+- 本番デプロイ・実機確認は未実施。
