@@ -375,13 +375,155 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 }
 
 export function renderOwnerKingdomLoadTestPage() {
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国並列負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><h1>王国並列負荷テスト</h1><p class="hint">指定した複数王国へMightPulse王国ランキング取得を並列実行します。API Poolのリース・MightPulse応答・Worker処理時間を確認するためのOWNER専用テストです。</p><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500" placeholder="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" id="buildKids" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"></div><label>王国番号（直接入力も可・カンマ/改行/空白区切り）<input id="kids" placeholder="1500,1501,1502"></label><label>ランキング<select id="boardMode"><option value="all" selected>全ランキング（boards）</option><option value="single">単一ランキング</option></select></label><label id="boardLabel" style="display:none">ランキング<select id="board"><option value="personal_power">個人総力</option><option value="kills">個人撃破</option><option value="town_center">役場Lv.</option><option value="hero_total">英雄全体総力</option><option value="troop_power">部隊総力</option></select></label><label>同時実行数<select id="concurrency"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button id="run">並列取得テストを実行</button><div id="result">結果はここに表示されます。</div></div><script>
-const run=document.getElementById("run"), result=document.getElementById("result"), kidsInput=document.getElementById("kids"), selected=document.getElementById("selectedKids"), startKid=document.getElementById("startKid"), kidCount=document.getElementById("kidCount"), buildKids=document.getElementById("buildKids"), boardMode=document.getElementById("boardMode"), boardLabel=document.getElementById("boardLabel"); const selectedKids=new Set();
-function esc(value){const text=String(value ?? "");const map={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"};return text.replace(/[&<>"']/g,function(char){return map[char];});}
-function renderSelected(){selected.innerHTML=Array.from(selectedKids).map(function(kid){return "<button type=\"button\" data-kid=\""+kid+"\" style=\"margin:0;padding:7px 10px;background:#334155;color:#fff;border:1px solid #475569;border-radius:999px\">"+kid+" ×</button>";}).join("");selected.querySelectorAll("[data-kid]").forEach(function(button){button.addEventListener("click",function(){selectedKids.delete(Number(button.dataset.kid));renderSelected();});});kidsInput.value=Array.from(selectedKids).join(", ");}
-buildKids.addEventListener("click",function(){const start=Math.max(1,Number(startKid.value||0));const count=Math.max(1,Number(kidCount.value||20));selectedKids.clear();for(let i=0;i<count;i++)selectedKids.add(start+i);renderSelected();});
-boardMode.addEventListener("change",function(){boardLabel.style.display=boardMode.value==="single"?"block":"none";});
-function renderLoadProgress(data){const target=Number(data.target_count||0);const completed=Math.min(target,Number(data.completed||0));const pct=Math.max(0,Math.min(100,Number(data.percent??(target?Math.round(completed/target*100):0))));const label=data.type==="complete"?"取得完了":"取得進捗";const latest=data.result?("直近: 王国 "+esc(data.result.kid)+" — "+(data.result.ok?"成功":"失敗")):"";result.innerHTML="<div class=\"progress\"><b>"+label+"</b><span>"+pct+"%</span><div class=\"progress-track\"><div class=\"progress-fill\" style=\"width:"+pct+"%\"></div></div><small>"+completed+" / "+target+" 王国　成功: "+esc(data.success??0)+" / 失敗: "+esc(data.failed??0)+(latest?"<br>"+latest:"")+"</small></div>";}
-run.addEventListener("click",async()=>{let kids=kidsInput.value.trim();if(!kids){const start=Math.max(1,Number(startKid.value||0));const count=Math.max(1,Number(kidCount.value||20));selectedKids.clear();for(let i=0;i<count;i++)selectedKids.add(start+i);renderSelected();kids=kidsInput.value.trim();}if(!kids){result.innerHTML="<div class=\"progress\"><b>実行できません</b><small>王国番号を入力するか、王国範囲を生成してください。</small></div>";return;}const board=document.getElementById("board").value,allRankings=boardMode.value==="all",concurrency=document.getElementById("concurrency").value;run.disabled=true;run.textContent="実行中…";result.textContent="取得開始…";try{const response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids)+"&board="+encodeURIComponent(board)+"&all_rankings="+(allRankings?"1":"0")+"&concurrency="+encodeURIComponent(concurrency),{cache:"no-store",credentials:"same-origin"});if(!response.ok){let detail="HTTP "+response.status;try{const body=await response.json();detail=body.message||body.error||detail;}catch{}throw new Error(detail);}if(!response.body)throw new Error("ストリーミング応答に対応していません。");const reader=response.body.getReader(),decoder=new TextDecoder();let buffer="";while(true){const chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});const lines=buffer.split("\n");buffer=lines.pop()||"";for(const line of lines){if(!line.trim())continue;const data=JSON.parse(line);if(data.type==="start"){renderLoadProgress(data);}else if(data.type==="progress"){renderLoadProgress(data);}else if(data.type==="complete"){renderLoadProgress(data);result.innerHTML+="<details style=\"margin-top:10px\"><summary>最終結果JSON</summary><pre>"+esc(JSON.stringify(data,null,2))+"</pre></details>";}else if(data.type==="error"){throw new Error(data.error||"LOAD_TEST_FAILED");}}}}catch(error){result.innerHTML="<div class=\"progress\"><b>取得停止</b><small>ERROR: "+esc(error.message)+"</small></div>";}finally{run.disabled=false;run.textContent="並列取得テストを実行";}});
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国並列負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><h1>王国並列負荷テスト</h1><p class="hint">指定した複数王国へMightPulse王国ランキング取得を並列実行します。API Poolのリース・MightPulse応答・Worker処理時間を確認するためのOWNER専用テストです。</p><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500" placeholder="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" id="buildKids" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"></div><label>王国番号（直接入力も可・カンマ/改行/空白区切り）<input id="kids" placeholder="1500,1501,1502"></label><label>ランキング<select id="boardMode"><option value="all" selected>全ランキング（boards）</option><option value="single">単一ランキング</option></select></label><label id="boardLabel" style="display:none">ランキング<select id="board"><option value="personal_power">個人総力</option><option value="kills">個人撃破</option><option value="town_center">役場Lv.</option><option value="hero_total">英雄全体総力</option><option value="troop_power">部隊総力</option></select></label><label>同時実行数<select id="concurrency"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button type="button" id="run">並列取得テストを実行</button><div id="result">結果はここに表示されます。</div></div><script>
+(function(){
+  const ids=["run","result","kids","selectedKids","startKid","kidCount","buildKids","boardMode","boardLabel","board","concurrency"];
+  const el={};
+  function stamp(){return new Date().toLocaleTimeString("ja-JP",{hour12:false});}
+  function diag(message){
+    const line="[LOAD TEST DIAG "+stamp()+"] "+message;
+    console.log(line);
+    const box=document.getElementById("result");
+    if(box){
+      const current=box.dataset.diag||"";
+      const lines=(current?current+"\n":"")+line;
+      box.dataset.diag=lines;
+      box.textContent=lines;
+    }
+  }
+  function esc(value){
+    const text=String(value ?? "");
+    const map={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"};
+    return text.replace(/[&<>"']/g,function(char){return map[char];});
+  }
+  function renderSelected(){
+    el.selected.innerHTML=Array.from(selectedKids).map(function(kid){
+      return "<button type=\"button\" data-kid=\""+kid+"\" style=\"margin:0;padding:7px 10px;background:#334155;color:#fff;border:1px solid #475569;border-radius:999px\">"+kid+" ×</button>";
+    }).join("");
+    el.selected.querySelectorAll("[data-kid]").forEach(function(button){
+      button.addEventListener("click",function(){
+        selectedKids.delete(Number(button.dataset.kid));
+        renderSelected();
+      });
+    });
+    el.kidsInput.value=Array.from(selectedKids).join(", ");
+  }
+  function renderLoadProgress(data){
+    const target=Number(data.target_count||0);
+    const completed=Math.min(target,Number(data.completed||0));
+    const pct=Math.max(0,Math.min(100,Number(data.percent??(target?Math.round(completed/target*100):0))));
+    const label=data.type==="complete"?"取得完了":"取得進捗";
+    const latest=data.result?("直近: 王国 "+esc(data.result.kid)+" — "+(data.result.ok?"成功":"失敗")):"";
+    el.result.dataset.diag="";
+    el.result.innerHTML="<div class=\"progress\"><b>"+label+"</b><span>"+pct+"%</span><div class=\"progress-track\"><div class=\"progress-fill\" style=\"width:"+pct+"%\"></div></div><small>"+completed+" / "+target+" 王国　成功: "+esc(data.success??0)+" / 失敗: "+esc(data.failed??0)+(latest?"<br>"+latest:"")+"</small></div>";
+  }
+
+  function boot(){
+    diag("BOOT_START");
+    ids.forEach(function(id){el[id]=document.getElementById(id);});
+    const missing=ids.filter(function(id){return !el[id];});
+    if(missing.length){
+      diag("DOM_MISSING: "+missing.join(","));
+      return;
+    }
+    diag("DOM_READY");
+    const selectedKids=new Set();
+
+    el.run.type="button";
+    el.buildKids.type="button";
+    el.buildKids.addEventListener("click",function(){
+      diag("BUILD_KIDS_CLICK");
+      const start=Math.max(1,Number(el.startKid.value||0));
+      const count=Math.max(1,Number(el.kidCount.value||20));
+      selectedKids.clear();
+      for(let i=0;i<count;i++)selectedKids.add(start+i);
+      renderSelected();
+    });
+
+    el.boardMode.addEventListener("change",function(){
+      el.boardLabel.style.display=el.boardMode.value==="single"?"block":"none";
+      diag("BOARD_MODE_CHANGE: "+el.boardMode.value);
+    });
+
+    el.run.addEventListener("click",async function(){
+      diag("CLICK_FIRED");
+      let kids="";
+      try{
+        kids=el.kids.value.trim();
+        if(!kids){
+          const start=Math.max(1,Number(el.startKid.value||0));
+          const count=Math.max(1,Number(el.kidCount.value||20));
+          selectedKids.clear();
+          for(let i=0;i<count;i++)selectedKids.add(start+i);
+          renderSelected();
+          kids=el.kids.value.trim();
+        }
+        if(!kids){
+          diag("STOP_NO_KIDS");
+          el.result.innerHTML="<div class=\"progress\"><b>実行できません</b><small>王国番号を入力するか、王国範囲を生成してください。</small></div>";
+          return;
+        }
+        const boardElement=el.board;
+        const concurrencyElement=el.concurrency;
+        const board=boardElement ? boardElement.value : "";
+        const allRankings=el.boardMode.value==="all";
+        const concurrency=concurrencyElement ? concurrencyElement.value : "10";
+        el.run.disabled=true;
+        el.run.textContent="実行中…";
+        el.result.textContent="取得開始…";
+        diag("FETCH_START kids="+kids+" board="+(allRankings?"ALL":board)+" concurrency="+concurrency);
+        const url="/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids)+"&board="+encodeURIComponent(board)+"&all_rankings="+(allRankings?"1":"0")+"&concurrency="+encodeURIComponent(concurrency);
+        const response=await fetch(url,{cache:"no-store",credentials:"same-origin"});
+        diag("FETCH_RESPONSE HTTP "+response.status);
+        if(!response.ok){
+          let detail="HTTP "+response.status;
+          try{const body=await response.json();detail=body.message||body.error||detail;}catch{}
+          throw new Error(detail);
+        }
+        diag("STREAM_READY");
+        if(!response.body)throw new Error("ストリーミング応答に対応していません。");
+        const reader=response.body.getReader(),decoder=new TextDecoder();
+        let buffer="";
+        while(true){
+          const chunk=await reader.read();
+          if(chunk.done)break;
+          buffer+=decoder.decode(chunk.value,{stream:true});
+          const lines=buffer.split("\n");
+          buffer=lines.pop()||"";
+          for(const line of lines){
+            if(!line.trim())continue;
+            const data=JSON.parse(line);
+            diag("NDJSON_"+String(data.type||"UNKNOWN").toUpperCase());
+            if(data.type==="start")renderLoadProgress(data);
+            else if(data.type==="progress")renderLoadProgress(data);
+            else if(data.type==="complete"){
+              renderLoadProgress(data);
+              el.result.innerHTML+="<details style=\"margin-top:10px\"><summary>最終結果JSON</summary><pre>"+esc(JSON.stringify(data,null,2))+"</pre></details>";
+            }else if(data.type==="error")throw new Error(data.error||"LOAD_TEST_FAILED");
+          }
+        }
+        diag("STREAM_DONE");
+      }catch(error){
+        diag("ERROR "+(error?.stack||error?.message||error));
+        el.result.innerHTML="<div class=\"progress\"><b>取得停止</b><small>ERROR: "+esc(error?.message||error)+"</small></div>";
+      }finally{
+        el.run.disabled=false;
+        el.run.textContent="並列取得テストを実行";
+      }
+    });
+    diag("RUN_HANDLER_BOUND");
+  }
+
+  window.addEventListener("error",function(event){
+    diag("WINDOW_ERROR "+(event.message||"unknown"));
+  });
+  window.addEventListener("unhandledrejection",function(event){
+    diag("UNHANDLED_REJECTION "+(event.reason?.message||event.reason||"unknown"));
+  });
+
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});
+  else boot();
+})();
+</script>
 </script></main></body></html>`;
 }
