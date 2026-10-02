@@ -205,26 +205,66 @@ async function runDiagnosticHealthChecks(env) {
 async function runDataRetentionJob(env) {
   if (!env.DB) return;
   await ensureDiagnosticSchema(env.DB);
+
   try {
-    const result = await runRetentionCleanup(env.DB, { batchSize: 1000, archiveBucket: env.ARCHIVE });
-    const systemLogArchive = await archiveSystemEventLog(env.DB, env.ARCHIVE, { batchSize: 1000 });
+    const result = await runRetentionCleanup(env.DB, {
+      batchSize: 1000,
+      archiveBucket: env.ARCHIVE
+    });
     await recordDiagnostic(env.DB, {
-      service: "retention", feature: "data_retention", operation: "CLEANUP",
-      status: "SUCCESS", message: "データ保持期間クリーンアップ成功",
+      service: "retention",
+      feature: "data_retention",
+      operation: "CLEANUP",
+      status: "SUCCESS",
+      message: "データ保持期間クリーンアップ成功",
       metadata: {
         deleted: result.deleted,
-        archived: result.archived,
-        systemLogArchive
+        archived: result.archived
       }
     });
-    console.log("data_retention_cleanup_ok", result.deleted, systemLogArchive);
+    console.log("data_retention_cleanup_ok", result.deleted);
   } catch (error) {
     await recordDiagnostic(env.DB, {
-      service: "retention", feature: "data_retention", operation: "CLEANUP",
-      status: "FAILED", errorCode: String(error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
+      service: "retention",
+      feature: "data_retention",
+      operation: "CLEANUP",
+      status: "FAILED",
+      errorCode: String(error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("data_retention_cleanup_failed", error?.message || error);
+  }
+
+  // System Log retention is intentionally independent from the configurable
+  // data-retention tables. A failure in another retention target must not
+  // prevent the 24h System Log archive from running.
+  try {
+    const systemLogArchive = await archiveSystemEventLog(
+      env.DB,
+      env.ARCHIVE,
+      { batchSize: 1000 }
+    );
+    await recordDiagnostic(env.DB, {
+      service: "system_log",
+      feature: "system_log_archive",
+      operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
+      status: systemLogArchive?.skipped ? "WARNING" : "SUCCESS",
+      message: systemLogArchive?.skipped
+        ? "System Log R2アーカイブを実行できませんでした。D1のイベントは削除していません。"
+        : "System Logの24時間Retention処理成功",
+      metadata: systemLogArchive
+    });
+    console.log("system_log_archive_ok", systemLogArchive);
+  } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "system_log",
+      feature: "system_log_archive",
+      operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
+      status: "FAILED",
+      errorCode: String(error?.message || "SYSTEM_LOG_ARCHIVE_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000)
+    });
+    console.error("system_log_archive_failed", error?.message || error);
   }
 }
 
