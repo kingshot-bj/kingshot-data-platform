@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -218,7 +219,7 @@ async function appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, 
   };
 }
 
-export async function exportToGoogleSheet(env, { sheetTitle, headers, rows }) {
+async function exportToGoogleSheetInternal(env, { sheetTitle, headers, rows }) {
   const spreadsheetId = String(env.GOOGLE_SHEETS_SPREADSHEET_ID || "").trim();
   if (!spreadsheetId) {
     const error = new Error("GOOGLE_SHEETS_NOT_CONFIGURED");
@@ -237,4 +238,15 @@ export async function exportToGoogleSheet(env, { sheetTitle, headers, rows }) {
     url: "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(spreadsheetId) + "/edit",
     transport: "google-sheets-api"
   };
+}
+
+
+export async function exportToGoogleSheet(env, options) {
+  const trace = createSystemTrace({ targetType: "GOOGLE_SHEET", targetId: options?.sheetTitle || null });
+  return runSystemOperation(env?.DB || null, trace, {
+    eventType: "EXTERNAL_API", service: "google_sheets", feature: "export",
+    operation: "EXPORT_TO_GOOGLE_SHEET", targetType: "GOOGLE_SHEET",
+    targetId: options?.sheetTitle || null,
+    metadata: { row_count: Array.isArray(options?.rows) ? options.rows.length : 0 }
+  }, () => exportToGoogleSheetInternal(env, options));
 }
