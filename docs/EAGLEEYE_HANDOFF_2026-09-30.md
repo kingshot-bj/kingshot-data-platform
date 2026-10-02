@@ -3123,3 +3123,57 @@ MightPulse本体Webサイトには「Name or governor ID…」「Search by name,
 - 取得結果を players / D1へ大量保存する処理はまだ追加していない。先に既存の複数王国・上位100位取得負荷テストでCloudflare/D1/API Pool消費量を実測し、その結果を基準に保存方式を決める。
 - TOP10同盟取得を実際の王国取得フローへ組み込む際も、同盟ごとの個別API呼び出し数、重複プレイヤー、D1 write/read、API Pool消費を計測可能にすること。
 - 公式API仕様上、王国ランキングは limit 最大100、同盟ランキングには aid/abbr/name/score が含まれ、同盟Rosterには governor_id/nick_name/power/town_center_level/kills 等が含まれる。
+
+
+# 57. 2026-10-02 OWNER王国負荷テスト拡張（実装済み・本番未実施）
+
+## 目的
+20王国を起点に、MightPulseの王国「全ランキング（boards）」取得を実際に負荷テストできるよう、OWNER専用王国並列負荷テストを拡張。
+
+## 実装
+- 開始王国番号を指定可能。
+- 王国数プリセット:
+  - 20 / 40 / 60 / 80 / 100
+  - 200〜1000を100刻み
+- 王国範囲を自動生成し、従来の個別王国チップ/直接入力も維持。
+- 「全ランキング（boards）」モードを追加。
+- 全ランキングモードでは既存の `getMightPulseKingdomAllRankings()` を使用し、1王国につき `/kingdoms/:kid?include=boards&limit=100` を1リクエストとして取得する。
+- 単一ランキング取得モードも従来どおり残す。
+- 同時実行数を1〜50へ拡張。
+- 選択肢: 1 / 2 / 3 / 5 / 10 / 15 / 20 / 26 / 30 / 40 / 50。
+- デフォルト同時実行数: 10。
+- OWNER専用・APIキー本体は画面/結果に表示しない。
+- 既存のNDJSONストリーミング進捗表示を維持。
+
+## 重要な負荷テスト定義
+
+今回の全ランキングモードは、ランキング結果を `kingdom_ranking_current` へ保存しない。
+目的はまず、**MightPulse upstream取得負荷 / API Pool lease競合 / Worker処理時間 / 応答量**を分離して測ること。
+
+20王国 × 全ランキングの場合、APIリクエスト数は「1王国1リクエスト」の実装なので20リクエスト。
+レスポンス内部には複数のランキングboardが含まれるため、board数に応じてレスポンスデータ量は増える。
+
+「26ランキング × 20王国 = 520 HTTP requests」の負荷を測る方式とは別物。
+必要になった場合は、26 boardを個別選択して各boardを個別endpointで取得するモードを追加する。
+
+## 実装コミット
+- `6c1cf177d5794b46f736a0c867811405390b504a`
+  - feat: expand kingdom load test for range, all rankings, and concurrency
+
+## 本番確認状況
+- GitHub main反映: 済み。
+- Cloudflare本番deploy: main→自動deploy対象だが、この変更のdeploy完了はこの時点では未確認。
+- 本番20王国・全ランキング負荷テスト: **未実施**。
+- 本番D1 / Workers / API Pool / MightPulse使用量への影響: **未実測**。
+
+## 次の実機テスト
+最初の実測は安全側から:
+1. 20王国
+2. 全ランキング（boards）
+3. 同時実行数 5
+4. 結果・失敗数・各王国elapsed_msを確認
+5. status JSONでD1 Rows Read/Written、Workers Requests/CPU、API Poolを取得
+6. 問題なければ10 → 20 → 26…と段階的に同時実行数を上げる
+
+API Poolの実キー数・lease可能数が実効並列数を制約するため、「設定値50 = 実効50」とは扱わない。
+実効並列数は実測結果で判断する。
