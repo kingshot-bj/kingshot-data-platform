@@ -4228,3 +4228,85 @@ Phase 4以前の主要コミットは #64およびそれ以前の引き継ぎ内
 ## 次スレ開始時の一言
 
 `#66の引き継ぎから続き。System Log JSONの6/7 D1/R2負荷・整合性確認を開始して、7/7本番E2Eまで進める。`
+
+# 67. System Log JSON Phase 6/7 実施状況（2026-10-02）
+
+## Phase 6/7 D1/R2負荷・整合性確認
+
+### GitHub mainで確認できたこと
+- latest main HEAD: `19b2f7385b05bb5d047fa15a67cebb2437d661d3`
+- Phase 6 implementation commits:
+- `14e8bc82031a488aa34ca15f6bb6d0e688d312e3`: getSystemEventLog() keyset pagination, pageSize 500, since/until, limit=null complete read.
+- `3130e2adc86e3d4f77700a7ac41d617be22854cd`: /api/gateway/v1/status system log summary from already materialized events; no summary-only D1 reads.
+- `87c7371c78ee8a7f5d6d085c3d96f92c09c017e1`: metadata parse failure count corrected.
+
+### 実装上のD1/R2評価
+- System Log取得は最大500件単位のkeyset pagination。
+- summary算出のための追加COUNT queryなし。
+- 1論理Operation=terminal event 1件を基本としSTART/COMPLETE二重書き込みを避ける。
+- retentionはR2 PUT成功後のみD1 DELETE。
+- 1回のSystem Log retention batchは最大1000件。
+- R2 metadataにsourceTable / rowCount / firstRowid / lastRowidを保持。
+- R2保存失敗時はD1削除しない。
+- ranking_snapshotsの広範囲取得は追加していない。
+
+### 本番実測値
+GitHub接続だけでは以下の本番実測は取得できないため未確認。
+- 24h event_count
+- response JSON byte size
+- status 1回のD1 Rows Read差分
+- System Log記録によるD1 Rows Written差分
+- 本番R2 object数
+- 本番archive metadata実値
+- 1000件超の複数Cron消化実績
+- R2 failure時のD1保持実機結果
+- 本番Trace tree実データ
+
+### Phase 6判定
+- [✓] コード構造
+- [✓] keyset pagination
+- [✓] summary追加readなし
+- [✓] R2 PUT→D1 DELETE
+- [✓] R2 failure時D1保持
+- [✓] 1000件batch上限
+- [✓] secret/token秘匿設計
+- [ ] 本番D1/R2メトリクス実測
+- [ ] 本番R2 object整合性実測
+
+**Phase 6 = コード検証完了・本番実測未完了。**
+
+## Phase 7/7 本番E2E
+
+既存iPhone Shortcutは変更しない。
+
+1. 本番テスト前に既存Shortcutで `GET /api/gateway/v1/status` を取得しbefore JSONを保存。
+2. OWNER権限で対象操作を1回実行。推奨対象はOWNER王国負荷テスト。
+3. 終了後、同じShortcutでafter JSONを取得。
+4. before/afterの `gateway.systemLog.events` と `gateway.systemLog.summary` を比較。
+5. 実行操作のSystem Event増加を確認。
+6. `trace_id` / `parent_trace_id` から親子処理とAPI Pool等の追跡を確認。
+7. `gateway.systemLog.range.from/to` の24時間窓を確認。
+8. 既存Status項目が維持されていることを確認。
+9. API key / token / raw body等のsecret漏洩がないことを確認。
+10. 可能な範囲でR2 archive metadataとD1削除件数を照合。
+11. 本番で確認できた項目だけを本番確認済みとして更新。
+
+### Phase 7完了条件
+- [ ] before JSON取得
+- [ ] 本番操作実行
+- [ ] after JSON取得
+- [ ] System Event差分確認
+- [ ] Trace親子関係確認
+- [ ] status既存情報維持確認
+- [ ] secret漏洩なし確認
+- [ ] R2/D1 retention実機確認
+- [ ] handoffへ本番確認結果追記
+
+## 現時点の最終ステータス
+- Phase 1/7: ✓
+- Phase 2/7: ✓
+- Phase 3/7: ✓
+- Phase 4/7: ✓（コード）
+- Phase 5/7: ✓（コード）
+- Phase 6/7: △ コード検証完了 / 本番メトリクス未実測
+- Phase 7/7: 未完了 / 本番E2E待ち
