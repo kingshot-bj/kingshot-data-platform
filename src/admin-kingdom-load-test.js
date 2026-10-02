@@ -110,6 +110,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
       poolType = "SYSTEM_GENERAL";
       lease = await leaseApiKey(env.DB, {
         poolType,
+        jobId: runId,
         purpose: "OWNER_LOAD_TEST",
         targetType: "KINGDOM",
         targetId: String(kid)
