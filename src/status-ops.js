@@ -100,7 +100,7 @@ export async function getOperationalStatus(db) {
   try {
     const now = Math.floor(Date.now() / 1000);
     const loadTestRow = await db.prepare(
-      "SELECT lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
+      "SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
     ).bind("OWNER_KINGDOM_LOAD_TEST", now).first();
     loadTest = {
       schemaAvailable: true,
