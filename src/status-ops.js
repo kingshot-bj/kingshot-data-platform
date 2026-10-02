@@ -122,6 +122,20 @@ export async function getOperationalStatus(db) {
     };
   }
 
+  const recentLoadTestEvents = systemLogResult.filter(event => event.feature === "owner_kingdom_load_test" || event.operation === "GET /api/owner/kingdom-load-test").slice(0, 100);
+  const latestLoadTestEvent = recentLoadTestEvents[0] || null;
+  loadTest.lastRun = latestLoadTestEvent ? {
+    traceId: latestLoadTestEvent.trace_id || null,
+    eventType: latestLoadTestEvent.event_type || null,
+    status: latestLoadTestEvent.status || null,
+    operation: latestLoadTestEvent.operation || null,
+    runId: latestLoadTestEvent.target_id || latestLoadTestEvent.metadata?.runId || null,
+    createdAt: latestLoadTestEvent.created_at || null,
+    errorCode: latestLoadTestEvent.error_code || null,
+    message: latestLoadTestEvent.message || null,
+    metadata: latestLoadTestEvent.metadata || null
+  } : null;
+
   return {
     apiPool: {
       pools,
