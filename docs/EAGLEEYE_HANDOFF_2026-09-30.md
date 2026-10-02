@@ -25,6 +25,43 @@
 
 ---
 
+# 0-1. 2026-10-02 コード全体仕様統一・重複監査
+
+2026-10-02にmain全体を横断確認。今後の実装判断基準として以下を固定する。
+
+## 確認・修正済み
+- OWNER王国並列負荷テストの進捗UIは、通常の王国ウォッチリストの進捗表示仕様を確認したうえで統一。独自形式を増やさない。
+- src/cloudflare-analytics.js のD1 Query Insights分類で、KINGDOM_RANKING_CURRENT を含むクエリがData Coverageへ誤分類される問題を確認。Data Coverage判定から KINGDOM_RANKING_CURRENT を除去し、Current Ranking分類へ流れるよう修正。
+- 修正コミット: d9eeb0d14a02fdb93848595c959036ed6319ec15
+
+## 横断監査で確認した統合候補
+1. ランキング定義が複数箇所に存在
+   - KINGDOM_RANKING_BOARDS
+   - RANKING_BOARD_LABELS
+   - src/ranking-catalog.js の RANKING_CATALOG
+   - 特に日本語ラベルが一致していない箇所があるため、今後は「ランキングのキー・表示名」の正本を一つに寄せる候補。変更前に現在の画面・CSV・APIで期待される名称を確認する。
+2. プレイヤーウォッチリストのスキーマ定義がmigrationとruntimeの両方に存在
+   - migrations/0012_player_watchlist.sql
+   - src/index.js の ensurePlayerWatchlistSchema()
+   - migrationが正本となる構成へ寄せ、runtime DDLは互換対応として必要な場合だけ残す候補。いきなり削除せず、本番DBのmigration適用状態を確認してから整理する。
+3. src/index.js が非常に大きく、同一目的のUIヘルパー・inline CSS/JSが複数ページに分散
+   - esc() は複数の独立HTML script内に存在。
+   - .card .row .btn .status 等の汎用CSS名もページごとに重複。
+   - ページごとの完全分離が必要な箇所もあるため、単純削除はしない。共有可能なフォーマッタ・進捗UI・共通CSSのみ段階的に抽出する候補。
+4. Query Insightsの category と feature は現在同一値
+   - 後方互換のため即削除しない。
+   - UI/API利用箇所を確認したうえで、どちらか一方を正本にする候補。
+5. migration間の重複定義は原則として履歴なので削除しない
+   - 例: 0008_kingdom_watchlist_jobs → 0019_watchlist_runtime_schema
+   - 0022_user_player_links → 0026_user_player_links_multi_account
+   - これらは既存DBへの適用履歴を壊さないため、現行コード側の重複だけを整理対象とする。
+
+## 今後のルール
+- 新機能を追加するとき、同じデータ・状態・UIを既存機能が持っていないか先にコード検索する。
+- 同じ意味の項目・ラベル・状態・進捗表示を新規追加しない。既存の正本を再利用する。
+- 統合候補は「実装済み」「main反映済み」「deploy済み」「本番確認済み」を混同しない。
+- D1削減のための統合であっても、既存機能の仕様を壊さないことを優先する。
+
 # 1. 基本情報
 
 - Repository: `kingshot-bj/kingshot-data-platform`
