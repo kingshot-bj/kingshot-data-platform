@@ -4070,3 +4070,26 @@ system-log-after.json
 7. System Log自身によるD1負荷が過剰にならない。
 8. 既存ショートカットを変更せず、1回の取得で完結する。
 9. GitHub main反映・deploy・production E2E確認をそれぞれ別々に記録する。
+
+
+# 63. System Log JSON Phase 3実装状況（2026-10-02）
+
+- 3/7「EagleEye主要処理のTrace接続」を実装。
+- 既存の `runSystemOperation()` / `createSystemTrace()` を利用し、論理処理単位でterminal eventを記録する方式を維持。
+- 接続済み主要処理:
+  - API Observation保存
+  - Player materialization
+  - Player Rank Snapshot保存
+  - Kingdom Ranking Board保存
+  - History Emergency Buffer enqueue / drain
+  - Retention Cleanup
+  - SERVICE_USAGE Queue enqueue
+  - User Player Link登録 / 無効化
+  - Ownership Support Request作成 / Player Link transfer
+  - User提供MightPulse API Key登録 / Advanced Eligibility評価
+  - Google Sheets export
+  - Discord Support ticket create / close / reopen
+- 既存接続済みのMightPulse / API Pool / OWNER Kingdom Load Test / HTTP / Watchlist / Queue / CronのTrace設計は維持。
+- R2 ArchiveそのものはD1 System Logの親traceを確実に渡せる形にする必要があるため、Phase 4でSystem Log R2 archiveと併せて接続する。ダミーのSystem Logは生成しない。
+- 低レベルD1 SELECT単位のイベント大量生成は行わない。
+- 次工程: 4/7 System Log R2 archival。
