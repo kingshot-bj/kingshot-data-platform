@@ -125,8 +125,8 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
 
       const startedAt = Date.now();
       const result = allRankings
-        ? await getMightPulseKingdomAllRankings(env, String(kid), { limit: 100, apiKey: lease.api_key })
-        : await getMightPulseKingdomRanks(env, String(kid), { board, limit: 100, apiKey: lease.api_key });
+        ? await getMightPulseKingdomAllRankings(env, String(kid), { limit: 100, apiKey: lease.api_key, traceId: trace.traceId, parentTraceId: trace.parentTraceId })
+        : await getMightPulseKingdomRanks(env, String(kid), { board, limit: 100, apiKey: lease.api_key, traceId: trace.traceId, parentTraceId: trace.parentTraceId });
       const elapsedMs = Date.now() - startedAt;
       const payload = result?.data || {};
       const entries = Array.isArray(payload?.data) ? payload.data.length :
