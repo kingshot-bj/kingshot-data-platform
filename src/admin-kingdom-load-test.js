@@ -294,7 +294,44 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0});
     const apiLimiter=createLoadTestApiLimiter(apiConcurrency);
     let completed=0,success=0,failed=0;
-    const results=await runWithConcurrency(kids,concurrency,kid=>runKingdomWatchlistLoad(env,kid,topN,runId,processJob,async progress=>{await send({type:"job_progress",target_count:kids.length,completed,success,failed,percent:Math.round(completed/kids.length*100),progress},apiLimiter),async result=>{completed++;if(result.ok)success++;else failed++;await send({type:"progress",run_id:runId,target_count:kids.length,completed,success,failed,percent:Math.round(completed/kids.length*100),result});});
+    const results=await runWithConcurrency(
+      kids,
+      concurrency,
+      kid => runKingdomWatchlistLoad(
+        env,
+        kid,
+        topN,
+        runId,
+        processJob,
+        async progress => {
+          await send({
+            type:"job_progress",
+            target_count:kids.length,
+            completed,
+            success,
+            failed,
+            percent:Math.round(completed/kids.length*100),
+            progress
+          });
+        },
+        apiLimiter
+      ),
+      async result => {
+        completed++;
+        if(result.ok) success++;
+        else failed++;
+        await send({
+          type:"progress",
+          run_id:runId,
+          target_count:kids.length,
+          completed,
+          success,
+          failed,
+          percent:Math.round(completed/kids.length*100),
+          result
+        });
+      }
+    );
     const successfulResults=results.filter(item=>item?.ok),failedResults=results.filter(item=>!item?.ok),cancelledResults=results.filter(item=>item?.cancelled);
     const rankingRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.ranking_rows||0),0),playerRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.player_rows||0),0);
     const latencies=successfulResults.map(item=>Number(item.elapsed_ms)).filter(Number.isFinite),failureCodes={};
