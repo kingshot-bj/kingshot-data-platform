@@ -1,6 +1,53 @@
 const SYSTEM_LOG_MAX_MESSAGE = 2000;
 const SYSTEM_LOG_MAX_METADATA_BYTES = 12000;
 
+let systemLogSchemaPromise = null;
+
+async function ensureSystemLogSchema(db) {
+  if (!db) return;
+  if (systemLogSchemaPromise) return systemLogSchemaPromise;
+  systemLogSchemaPromise = (async () => {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS system_event_log (
+        event_id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        parent_trace_id TEXT,
+        event_type TEXT NOT NULL,
+        service TEXT NOT NULL,
+        feature TEXT,
+        operation TEXT,
+        status TEXT NOT NULL,
+        actor_type TEXT,
+        actor_id TEXT,
+        target_type TEXT,
+        target_id TEXT,
+        http_method TEXT,
+        http_path TEXT,
+        http_status INTEGER,
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        elapsed_ms INTEGER,
+        error_code TEXT,
+        message TEXT,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `).run();
+    await db.batch([
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_system_event_log_created ON system_event_log(created_at DESC)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_system_event_log_trace ON system_event_log(trace_id, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_system_event_log_operation ON system_event_log(operation, created_at DESC)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_system_event_log_status ON system_event_log(status, created_at DESC)")
+    ]);
+  })();
+  try {
+    return await systemLogSchemaPromise;
+  } catch (error) {
+    systemLogSchemaPromise = null;
+    throw error;
+  }
+}
+
 export function systemTraceId(prefix = "ee") { return prefix + "-" + crypto.randomUUID(); }
 function safeJson(value) {
   if (value == null) return null;
@@ -11,6 +58,12 @@ function clean(value, max = SYSTEM_LOG_MAX_MESSAGE) { return value == null ? nul
 
 export async function recordSystemEvent(db, input = {}) {
   if (!db) return null;
+  try {
+    await ensureSystemLogSchema(db);
+  } catch (error) {
+    console.error("system_event_log_schema_ensure_failed", error?.message || error);
+    return null;
+  }
   const now = Math.floor(Date.now()/1000);
   const startedAt = Number(input.startedAt || now);
   const completedAt = input.completedAt == null ? now : Number(input.completedAt);
