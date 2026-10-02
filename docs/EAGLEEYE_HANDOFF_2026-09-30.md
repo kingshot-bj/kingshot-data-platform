@@ -997,7 +997,6 @@ Player history:
 - change_events
 
 R2への移行を進めている。
-
 ---
 
 # 24. Retention
@@ -1998,7 +1997,6 @@ status-7には:
 これは少なくとも「target_idを限定した過去順位取得」であり、禁止している「ranking_snapshots全体を広く取得」するクエリとは同一ではない。
 
 ただし、今回の実テストでこのqueryが何回実行され、何rowsReadになったかは、次スレッドでWatchlistのコードと合わせて評価する。
-
 ## 39-9. 次スレッドで優先して調査する項目
 
 ### 最優先: API Poolのinvalid / recovery / lease設計
@@ -2998,7 +2996,6 @@ src/admin-data-coverage.js:7:12
 **本番UI表示確認済み（OWNER / iPhone実機）。**
 
 2026-10-02、OWNERアカウントで本番Worker上の `/admin/data-coverage` をiPhone実機から開き、ページ表示を確認。
-
 スクリーンショットで確認できた本番表示:
 - ROLE: OWNER
 - 登録プレイヤー: **97人**
@@ -3920,3 +3917,156 @@ HTTP request
 8. D1書き込み量を測定し、必要な保持・アーカイブ設計を決定。
 9. deploy後にOWNER負荷テストで1本のTraceを実機検証。
 
+# 62. System Log JSONの統合取得仕様（2026-10-02・最重要固定仕様）
+
+## 62-1. 既存の「システムログJSON」を取得口として継続利用する
+EagleEyeでは、現在運用しているショートカットが `GET /api/gateway/v1/status` を手動取得し、そのJSONを「システムログ」としてテスト前後に保存・比較している。
+
+この取得方法を変更しない。
+
+**新しいSystem Log専用取得URLを追加して、ショートカット側で2つのJSONを取得させる設計にはしない。**
+
+今後も以下を唯一の取得口とする。
+
+```
+/api/gateway/v1/status
+        ↓
+既存のシステムログJSON
+```
+
+## 62-2. 1回の取得で「現在状態＋過去24時間の全System Log」を返す
+`/api/gateway/v1/status` のレスポンスを拡張し、現在のStatus情報を維持したまま、**取得時点を基準に過去24時間のSystem Logを同じJSONへ統合する。**
+
+最終的な1ファイルには少なくとも以下を含める。
+
+- 現在のシステム状態
+- Diagnostics
+- Cloudflare使用量
+- API Pool状態
+- Watchlist状態
+- Load Test状態
+- R2 / History Storage状態
+- Emergency Buffer状態
+- Runtime / binding / configuration情報（secret値は除外）
+- 過去24時間に発生したSystem Event
+- `trace_id` / `parent_trace_id`
+- event_type / service / feature / operation / status
+- actor / target
+- HTTP method / path / status
+- elapsed time
+- error code / message
+- 安全なmetadata
+
+したがって、ユーザーのショートカットは**URL変更なし・取得操作変更なし**で、取得できる情報だけが増える。
+
+## 62-3. 24時間の基準
+「過去24時間」は固定日付ではなく、**JSON取得リクエストを受けた時刻を終端**とする。
+
+例:
+- 2026-10-02 23:00に取得 → 2026-10-01 23:00以降を対象
+- 取得ごとに対象期間は動的に決まる
+
+レスポンスには、解析時に範囲を明確にできるよう `retrieved_at` と `systemLog.range.from / to` 相当の情報を持たせる。
+
+## 62-4. 「EagleEye全体」の定義
+System Log JSONはhealth checkだけを対象にしない。
+
+24時間範囲内のEagleEyeの主要な実行経路を、共通Traceで追跡できることを完成条件とする。
+
+対象例:
+- HTTP request
+- OWNER王国負荷テスト
+- MightPulse API通信
+- API Pool lease / success / failure
+- Player取得・保存
+- Ranking取得・保存
+- API Observation
+- Watchlist / Player Watchlist
+- D1を伴う主要処理
+- R2 archive
+- History Emergency Buffer
+- Queue producer / consumer / DLQ関連処理
+- SERVICE_USAGE
+- Cron / Scheduler
+- Google Drive / Google Sheets
+- Discord Support
+- Auth / OAuth
+- User Player Link / User Eligibility
+- Admin / Owner mutation
+- Research
+- その他EagleEye内部Operation
+
+ただし、D1の低レベルSELECTを無差別に1クエリ1イベントとして記録する設計にはしない。
+**「システム全体の論理Operationを後から復元できること」と「System Log自身が大量のD1 Rows Writtenを発生させないこと」を両立する。**
+
+## 62-5. Trace設計
+既存のTrace基盤を全機能へ拡張する。
+
+```
+HTTP request
+  trace_id
+    ├─ logical operation
+    │    ├─ child operation
+    │    │    ├─ external API
+    │    │    ├─ API Pool
+    │    │    └─ storage / queue
+    │    └─ ...
+    └─ ...
+```
+
+- 1つの論理Operationは原則1終端イベント。
+- 子処理は `parent_trace_id` で接続。
+- `run_id` 等の既存業務相関IDは維持。
+- secret / token / raw body等はログへ出さない。
+
+## 62-6. 長期保存とJSON取得は役割を分離する
+System Log JSONの手動取得と、長期アーカイブは同じものとして扱わない。
+
+- `/api/gateway/v1/status`: ユーザーがテスト前後に1回取得する「現在状態＋直近24時間」のJSON。
+- 長期アーカイブ: 既存のR2 → Google Drive構想を維持し、必要な履歴を長期保存する。
+- 24時間JSONを5年・10年分まとめてD1へ保持する設計にはしない。
+
+**取得するJSONは1個のまま、保存基盤だけを長期運用向けに分離する。**
+
+## 62-7. テスト前後比較の完成形
+既存運用:
+
+```
+テスト前
+  ↓
+/api/gateway/v1/status を手動取得
+  ↓
+system-log-before.json
+  ↓
+テスト実行
+  ↓
+/api/gateway/v1/status を手動取得
+  ↓
+system-log-after.json
+```
+
+この運用を変更しない。
+
+アップデート後は、before / afterの各1ファイルに、現在状態だけでなく取得時点から過去24時間のEagleEye実行履歴が含まれるため、**テストによって何が起きたかを同じJSONで前後比較できる**状態を目標とする。
+
+## 62-8. 実装時の禁止事項
+- 新しいSystem Log専用URLを作ってショートカットを2本化しない。
+- 既存 `/api/gateway/v1/status` の現在Status情報を削除・縮小しない。
+- 「System Log = diagnostics」としない。
+- OWNERロードテスト等の実処理をstatus JSONから追えない状態に戻さない。
+- 全D1クエリを機械的に1件ずつSystem Eventへ変換しない。
+- 24時間範囲を固定時刻で決めない。
+- 本番未確認の内容を確認済みと記載しない。
+
+## 62-9. 完成条件
+以下をすべて満たした時点をこのアップデートの完成とする。
+
+1. `/api/gateway/v1/status` が従来のStatus情報を維持する。
+2. 同じレスポンスに取得時点から過去24時間のSystem Eventを含む。
+3. EagleEye主要機能の論理OperationがTraceで追跡できる。
+4. OWNER王国負荷テストの実行・各王国処理・外部API・API Pool等を同じTrace系統から追える。
+5. 成功・失敗・例外を追跡できる。
+6. secret / token等がJSONへ漏れない。
+7. System Log自身によるD1負荷が過剰にならない。
+8. 既存ショートカットを変更せず、1回の取得で完結する。
+9. GitHub main反映・deploy・production E2E確認をそれぞれ別々に記録する。
