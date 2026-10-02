@@ -464,6 +464,7 @@ export function renderOwnerKingdomLoadTestPage() {
     document.getElementById("boardLabel").style.display=mode==="single"?"block":"none";
   };
   window.__eagleEyeRunLoadTest=async function(){
+    var clientTraceId=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"client-"+Date.now()+"-"+Math.random().toString(36).slice(2);
     var run=document.getElementById("run");
     var result=document.getElementById("result");
     try{
