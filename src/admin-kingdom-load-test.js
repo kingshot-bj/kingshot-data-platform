@@ -406,7 +406,7 @@ export function renderOwnerKingdomLoadTestPage() {
         renderSelected();
       });
     });
-    el.kidsInput.value=Array.from(selectedKids).join(", ");
+    el.kids.value=Array.from(selectedKids).join(", ");
   }
   function renderLoadProgress(data){
     const target=Number(data.target_count||0);
@@ -524,6 +524,5 @@ export function renderOwnerKingdomLoadTestPage() {
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});
   else boot();
 })();
-</script>
 </script></main></body></html>`;
 }
