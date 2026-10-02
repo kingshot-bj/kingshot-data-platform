@@ -3688,3 +3688,67 @@ E. fetch後のstream処理で失敗。
 - 84b8905370b22dcfdc5f022d1342f679be2916e3: NDJSON split修正
 
 最新実機事実: 7198 deploy済み、84b890 deploy済みだが、ユーザー実機でボタン操作時の挙動は変化なし。次スレは59-8から再開。
+
+
+## 60. API Poolの基本原則：Pool Typeは「属性」であり、通常取得時の利用プールを分断しない（2026-10-02）
+
+### 60-1. 原則確定
+EagleEyeのMightPulse APIキーについて、以下を基本原則とする。
+
+- `SYSTEM_GENERAL`
+- `SYSTEM_WATCHLIST`
+- `USER_CONTRIBUTED`
+
+は、**通常のMightPulse取得リソースとしては分けて考えない**。
+3つの `pool_type` は、キーの管理・出所・用途を識別するための**属性（メタデータ）**であり、利用可能なAPIキーを機能ごとに分断するための壁ではない。
+
+通常のMightPulse取得・テスト・研究・診断等では、原則として上記3種類を**1つの共有API Poolとして扱い、利用可能なキーを横断してリースする**。
+
+### 60-2. 運用ルール
+- キー選択時は3種類を横断して `AVAILABLE` / 利用可能な `COOLDOWN` を選択する。
+- `last_used_at` を基準とした既存のLRU選択ロジックを維持する。
+- リース後は実際に選択されたキーの `pool_type` を記録する。
+- `USER_CONTRIBUTED` だから通常取得から除外する、という実装は禁止。
+- `SYSTEM_WATCHLIST` → `SYSTEM_GENERAL` → `USER_CONTRIBUTED` のような優先順位付きfallbackも原則禁止。3種類を最初から同一候補集合として扱う。
+- `pool_type` による集計・表示・監査・所有者管理は維持してよい。これは「属性の可視化」であり、取得リソースの分断ではない。
+
+### 60-3. 例外
+以下は「取得リソースを分断する」こととは意味が異なるため、現状のまま維持する。
+
+- `USER_CONTRIBUTED` の登録者ごとの登録本数上限・同意情報・出所管理。
+- 個別APIキーのHealth Checkなど、特定の1キーを対象にする操作。
+- API Pool管理画面での `pool_type` 表示・監査情報。
+- `recordApiPoolSuccess/Failure` 等で、実際に使ったキーの `pool_type` を履歴へ記録すること。
+
+これらはキーの「属性・管理情報」であり、通常のAPI取得可能数を制限する目的ではない。
+
+### 60-4. 2026-10-02の修正
+以下を共有Pool利用へ統一した。
+
+- `src/api-pool.js`
+  - `leaseApiKey()` が `poolTypes` を受け取り、複数Pool Typeを1つの候補集合として原子的にLRU leaseできるよう変更。
+- `src/admin-kingdom-load-test.js`
+  - OWNERロードテストを3 Pool Type横断の共有Poolへ変更。
+  - 容量計算も3種類のAVAILABLE合計を使用。
+- `src/index.js`
+  - MightPulse probe
+  - Admin player test
+  - Admin kingdom ranking test
+  - Watchlist系API取得
+  - Player lookup
+  を3 Pool Type横断へ変更。
+- `src/mightpulse-research.js`
+  - MightPulse Researchも3 Pool Type横断へ変更。
+
+関連コミット:
+- `82fedb1f0e081206c2061a70baec01114f6bb141` — shared API pool leasing
+- `e5b81d4fd1c0aee4f415be8fe060a45d7da3b2b1` — OWNER load test shared pool
+- `bd44fca0d66e839fae9588273534c4b23d440452` — all normal MightPulse retrievals shared pool
+- `b3e4602355552fbcba84c1538276747a4bfa04eb` — research shared pool
+
+### 60-5. 再確認ルール
+今後MightPulse取得機能を追加・修正する際は、`leaseApiKey()` に単一の `poolType` を渡して利用可能キーを限定していないか確認すること。
+
+**「USER_CONTRIBUTEDはユーザー提供であることを示す属性であり、利用可能なAPIリソースとして分けない」ことをEagleEye本体の設計原則とする。**
+
+なお、2026-10-02時点では上記変更の本番E2E確認は未実施。デプロイ済みと本番確認済みを混同しない。
