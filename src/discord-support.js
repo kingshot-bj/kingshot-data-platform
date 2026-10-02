@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
@@ -288,7 +289,7 @@ function buildInitialMessage({ ticketId, user, category, subcategory, categoryLa
   ].filter(line => line !== null).join("\n");
 }
 
-export async function createSupportTicket(env, {
+async function createSupportTicketInternal(env, {
   user, category, subcategory, categoryLabel, subcategoryLabel, subject, message, details, qnaId, incident
 }) {
   const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
@@ -363,7 +364,7 @@ export async function createSupportTicket(env, {
   }
 }
 
-export async function closeSupportTicket(env, {
+async function closeSupportTicketInternal(env, {
   channelId
 }) {
   const id = normalizeDiscordId(channelId);
@@ -417,7 +418,7 @@ export async function closeSupportTicket(env, {
   };
 }
 
-export async function reopenSupportTicket(env, {
+async function reopenSupportTicketInternal(env, {
   channelId
 }) {
   const id = normalizeDiscordId(channelId);
@@ -674,4 +675,29 @@ export async function registerSupportCommands(env) {
 export async function registerSupportCloseCommand(env) {
   const results = await registerSupportCommands(env);
   return results.find(command => String(command?.name || "") === "close") || results[0] || null;
+}
+
+
+export async function createSupportTicket(env, options) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: options?.user?.discordId || null, targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null });
+  return runSystemOperation(env?.DB || null, trace, {
+    eventType: "EXTERNAL_API", service: "discord_support", feature: "support",
+    operation: "CREATE_SUPPORT_TICKET", targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null
+  }, () => createSupportTicketInternal(env, options));
+}
+
+export async function closeSupportTicket(env, options) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: options?.userId || null, targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null });
+  return runSystemOperation(env?.DB || null, trace, {
+    eventType: "EXTERNAL_API", service: "discord_support", feature: "support",
+    operation: "CLOSE_SUPPORT_TICKET", targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null
+  }, () => closeSupportTicketInternal(env, options));
+}
+
+export async function reopenSupportTicket(env, options) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: options?.userId || null, targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null });
+  return runSystemOperation(env?.DB || null, trace, {
+    eventType: "EXTERNAL_API", service: "discord_support", feature: "support",
+    operation: "REOPEN_SUPPORT_TICKET", targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null
+  }, () => reopenSupportTicketInternal(env, options));
 }
