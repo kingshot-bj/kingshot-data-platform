@@ -2,6 +2,7 @@ const DEFAULT_BASE_URL = "https://api.mightpulse.com/v1";
 const DEFAULT_TIMEOUT_MS = 100_000;
 const DEFAULT_MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [2_000, 5_000, 15_000];
+import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 export class MightPulseError extends Error {
   constructor(message, { status = 0, code = "MIGHTPULSE_ERROR", retryable = false, details = null } = {}) {
@@ -19,7 +20,12 @@ export async function mightPulseFetch(env, path, {
   query = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
   maxRetries = DEFAULT_MAX_RETRIES,
-  apiKey: providedApiKey = null
+  apiKey: providedApiKey = null,
+  traceId = null,
+  parentTraceId = null,
+  operation = "MIGHTPULSE_REQUEST",
+  targetType = null,
+  targetId = null
 } = {}) {
   const apiKey = providedApiKey || env.MIGHTPULSE_API_KEY;
   if (!apiKey) {
@@ -38,8 +44,12 @@ export async function mightPulseFetch(env, path, {
   }
 
   let lastError = null;
+  const systemTrace = traceId || systemTraceId("mp");
+  const startedAt = Date.now();
+  let attempts = 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    attempts = attempt + 1;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -65,6 +75,20 @@ export async function mightPulseFetch(env, path, {
             details: { content_type: response.headers.get("content-type") || null }
           });
         }
+        await recordSystemEvent(env.DB, {
+          traceId: systemTrace,
+          parentTraceId,
+          eventType: "EXTERNAL_API",
+          service: "mightpulse",
+          feature: "mightpulse",
+          operation,
+          status: "COMPLETED",
+          targetType: targetType || "MIGHTPULSE",
+          targetId: targetId || path,
+          httpStatus: response.status,
+          elapsedMs: Date.now() - startedAt,
+          metadata: { path, method, attempts }
+        });
         return {
           data: body,
           status: response.status,
@@ -81,6 +105,22 @@ export async function mightPulseFetch(env, path, {
       });
 
       if (!retryable || attempt >= maxRetries) {
+        await recordSystemEvent(env.DB, {
+          traceId: systemTrace,
+          parentTraceId,
+          eventType: "EXTERNAL_API",
+          service: "mightpulse",
+          feature: "mightpulse",
+          operation,
+          status: "FAILED",
+          targetType: targetType || "MIGHTPULSE",
+          targetId: targetId || path,
+          httpStatus: response.status,
+          elapsedMs: Date.now() - startedAt,
+          errorCode: lastError.code,
+          message: lastError.message,
+          metadata: { path, method, attempts }
+        });
         throw lastError;
       }
 
@@ -89,7 +129,25 @@ export async function mightPulseFetch(env, path, {
     } catch (error) {
       if (error instanceof MightPulseError) {
         lastError = error;
-        if (!error.retryable || attempt >= maxRetries) throw error;
+        if (!error.retryable || attempt >= maxRetries) {
+          await recordSystemEvent(env.DB, {
+            traceId: systemTrace,
+            parentTraceId,
+            eventType: "EXTERNAL_API",
+            service: "mightpulse",
+            feature: "mightpulse",
+            operation,
+            status: "FAILED",
+            targetType: targetType || "MIGHTPULSE",
+            targetId: targetId || path,
+            httpStatus: Number(error.status || 0) || null,
+            elapsedMs: Date.now() - startedAt,
+            errorCode: error.code || "MIGHTPULSE_REQUEST_FAILED",
+            message: error.message,
+            metadata: { path, method, attempts }
+          });
+          throw error;
+        }
         await sleep(retryDelay(attempt));
         continue;
       }
@@ -110,7 +168,25 @@ export async function mightPulseFetch(env, path, {
         }
       );
 
-      if (attempt >= maxRetries) throw lastError;
+      if (attempt >= maxRetries) {
+        await recordSystemEvent(env.DB, {
+          traceId: systemTrace,
+          parentTraceId,
+          eventType: "EXTERNAL_API",
+          service: "mightpulse",
+          feature: "mightpulse",
+          operation,
+          status: "FAILED",
+          targetType: targetType || "MIGHTPULSE",
+          targetId: targetId || path,
+          httpStatus: Number(lastError?.status || 0) || null,
+          elapsedMs: Date.now() - startedAt,
+          errorCode: lastError?.code || "MIGHTPULSE_REQUEST_FAILED",
+          message: lastError?.message || null,
+          metadata: { path, method, attempts }
+        });
+        throw lastError;
+      }
       await sleep(retryDelay(attempt));
     } finally {
       clearTimeout(timer);
