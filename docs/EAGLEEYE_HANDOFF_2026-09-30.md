@@ -4134,3 +4134,97 @@ system-log-after.json
 - metadata_jsonはSystem Log取得時にJSON化済みの値を利用し、実際のparse failureだけをカウントする。
 - System Logの大量化に対して、summary算出で追加readを発生させない構造を維持。
 - この段階でコード上のD1/R2整合性経路を確認済みだが、実本番での24時間イベント件数・JSON実サイズ・D1 row read/R2 operation実測は未実施。
+
+
+# 66. 次スレッド引き継ぎ（2026-10-02・Phase 5完了後）
+
+## 現在地点
+
+System Log JSON統合仕様の実装は **5/7まで完了**。
+
+- [✓] 1/7 System Log取得基盤
+- [✓] 2/7 `/api/gateway/v1/status` への24時間System Log統合
+- [✓] 3/7 EagleEye主要処理Trace接続
+- [✓] 4/7 System Log R2アーカイブ
+- [✓] 5/7 System Log retention
+- [ ] 6/7 D1/R2負荷・整合性確認
+- [ ] 7/7 本番E2E
+
+## 次スレッドで開始する内容
+
+**6/7から開始し、7/7まで進める。**
+
+### 6/7 D1/R2負荷・整合性確認
+
+確認対象：
+
+1. `/api/gateway/v1/status` が返す24時間System Logの件数・JSONサイズ。
+2. System Log取得時のD1 read量。
+3. System Log記録によるD1 write量。
+4. 24時間分のイベント取得が200件などの旧上限に戻っていないこと。
+5. keyset pagingが正常に機能すること。
+6. System Logのtrace_id / parent_trace_idによる追跡整合性。
+7. R2 archive objectのrowCount / firstRowid / lastRowidとD1削除件数の整合性。
+8. R2保存失敗時にD1イベントが残ること。
+9. 1000件を超えるexpired System Logが複数Cron回で正常に消化されること。
+10. 既存のD1/R2負荷に対してSystem Log追加分が許容範囲か確認すること。
+11. secrets / token / raw request bodyがSystem Log JSONへ混入していないこと。
+
+※ D1の無料枠・read消費を重視する既存方針を維持する。低レベルSELECTをSystem Logへ大量記録する設計には戻さない。
+
+### 7/7 本番E2E
+
+既存のiPhone Shortcutを**変更しない**。
+
+既存取得経路：
+
+`GET /api/gateway/v1/status`
+
+テスト手順：
+
+1. テスト前に既存ShortcutでSystem Log JSON取得 → before JSON。
+2. EagleEye上で対象操作を実行。
+3. テスト後に同じShortcutでSystem Log JSON取得 → after JSON。
+4. before / afterを比較。
+5. 実行した操作がSystem Logに記録されていることを確認。
+6. trace_id / parent_trace_idから処理経路を追跡。
+7. `/status`の既存status情報が維持されていることを確認。
+8. R2 archive対象イベントについて、R2保存成功→D1削除の実挙動を確認。
+9. R2保存失敗ケースではD1イベントが削除されないことを確認できる範囲で検証。
+10. Watchlist / Player Watchlist / MightPulse / Player Store / Ranking Store / API Observation / Queue等、主要処理のtraceが実際に残ることを確認。
+11. 実機・本番で確認できた項目だけを「本番確認済み」として記録する。
+
+## 重要な固定仕様
+
+- System Logの取得URLは `/api/gateway/v1/status` のまま。
+- iPhone Shortcutは変更しない。
+- System Log専用の第二取得Endpointは作らない。
+- 1つのJSONに「現在のシステム状態」と「直近24時間の論理System Event履歴」を同居させる。
+- 24時間範囲は取得時刻を `to`、そこから24時間前を `from` とする。
+- 「全ログ」は低レベルD1 SELECTを全部記録する意味ではなく、EagleEyeの主要な論理処理・実行経路を追跡できることを意味する。
+- System Log D1 retentionは固定24時間。
+- 24時間超過分はR2へアーカイブし、**R2保存成功後のみD1から削除**。
+- R2失敗時はD1を残す。
+- System Log retentionは通常Retentionと独立して実行する。
+- 1回最大1000件、残件は次回Cronへ繰り越す。
+- 既存Cronは5分間隔。
+- 長期保管はR2 / Google Drive側の既存方針に従う。
+- 本番確認していない項目を推測で「確認済み」としない。
+
+## 直近コミット
+
+Phase 5関連：
+
+- `da4aa72372c01a7783205262a97e05696a27bbf4`
+  - `fix: isolate system log retention from other cleanup failures`
+  - 通常Retention失敗がSystem Log Retentionを停止させないよう分離。
+
+- `2f5615f9198e6eadb16944450d60142a5b996e46`
+  - `docs: record system log phase 5 retention`
+  - 本セクションを含む引き継ぎ更新。
+
+Phase 4以前の主要コミットは #64およびそれ以前の引き継ぎ内容を参照。
+
+## 次スレ開始時の一言
+
+`#66の引き継ぎから続き。System Log JSONの6/7 D1/R2負荷・整合性確認を開始して、7/7本番E2Eまで進める。`
