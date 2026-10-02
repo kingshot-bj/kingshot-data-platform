@@ -28,11 +28,31 @@ export async function mightPulseFetch(env, path, {
   targetId = null
 } = {}) {
   const apiKey = providedApiKey || env.MIGHTPULSE_API_KEY;
+  const systemTrace = traceId || systemTraceId("mp");
+  const startedAt = Date.now();
+  let attempts = 0;
   if (!apiKey) {
-    throw new MightPulseError("MightPulse API key is not configured.", {
+    const error = new MightPulseError("MightPulse API key is not configured.", {
       code: "MIGHTPULSE_NOT_CONFIGURED",
       status: 503
     });
+    await recordSystemEvent(env.DB, {
+      traceId: systemTrace,
+      parentTraceId,
+      eventType: "EXTERNAL_API",
+      service: "mightpulse",
+      feature: "mightpulse",
+      operation,
+      status: "FAILED",
+      targetType: targetType || "MIGHTPULSE",
+      targetId: targetId || path,
+      httpStatus: 503,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: error.code,
+      message: error.message,
+      metadata: { path, method, attempts }
+    });
+    throw error;
   }
 
   const baseUrl = env.MIGHTPULSE_API_BASE_URL || DEFAULT_BASE_URL;
@@ -44,10 +64,6 @@ export async function mightPulseFetch(env, path, {
   }
 
   let lastError = null;
-  const systemTrace = traceId || systemTraceId("mp");
-  const startedAt = Date.now();
-  let attempts = 0;
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     attempts = attempt + 1;
     const controller = new AbortController();
