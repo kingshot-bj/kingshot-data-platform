@@ -3297,3 +3297,54 @@ OWNER王国負荷テストが、Poolキーの少ない環境で通常ユーザ�
 4. テスト中に一般ユーザー画面へ警告が表示されることを確認。
 5. テスト完了後に警告が消えることを確認。
 6. status JSONでD1 / Workers / API Poolの負荷を確認する。
+
+
+# 58. 2026-10-02 System Status JSONへのOWNER負荷テスト状態追加
+
+## 実装
+
+System Statusの運用JSONに、OWNER王国負荷テストの現在状態を追加した。
+
+`getOperationalStatus()` の返却値に以下の `loadTest` を追加:
+
+- `schemaAvailable`
+- `active`
+- `startedAt`
+- `expiresAt`
+
+ロードテスト実行中の場合、同じD1ロック状態を参照して:
+- 実行中か
+- 開始時刻
+- ロック期限
+をstatus JSONから確認できる。
+
+### セキュリティ
+- `lock_token` はstatus JSONへ出さない。
+- APIキー、secret、refresh tokenは出さない。
+- status側はSELECTのみで、ロック作成・更新・削除を行わない。
+- 初回ロードテスト前など `api_request_locks` テーブルがまだ存在しない場合でも、System Status全体を失敗させず `schemaAvailable=false / active=false` とする。
+
+### JSONログ解析上の意味
+
+これにより、同じstatus JSONで取得できるCloudflare/D1/Workers/API Pool等の実測値と、「その時点でOWNER王国負荷テストが実行中だったか」を突合できる。
+
+ただし、テスト完了後は実行ロックが削除されるため、status JSONだけから過去のロードテスト履歴を復元するものではない。過去の実行条件・結果は `run_id` 付きのWorkerログ / SERVICE_USAGE → R2側で追跡する。
+
+## 実装コミット
+- `af0c09b4342632b5f0f9e01c160c11a42cbcffab`
+  - feat: expose load test state in operational status
+
+## 本番確認状況
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy: **未確認**。
+- 本番status JSONで `loadTest` が実際に返ること: **未確認**。
+- 本番ロードテスト実行中に `active=true` となること: **未確認**。
+
+本番で確認する際は、既存の負荷テスト確認と合わせて:
+1. テスト開始前のstatus JSONを保存。
+2. テスト実行中のstatus JSONを保存し、`loadTest.active=true` と `startedAt/expiresAt` を確認。
+3. テスト完了後のstatus JSONを保存し、`active=false` を確認。
+4. 同じrun_idのSERVICE_USAGE / Workerログとstatus JSONを突合する。
+5. D1 Rows Read/Written、Workers CPU、API Poolの値を同じ時系列で比較する。
+
+**コード実装済みと本番確認済みは分離して扱う。**
