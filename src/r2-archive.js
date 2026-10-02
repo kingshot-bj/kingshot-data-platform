@@ -8,7 +8,8 @@ const ARCHIVE_TABLES = new Set([
   "login_history",
   "owner_audit_log",
   "api_pool_usage",
-  "player_identity_history"
+  "player_identity_history",
+  "system_event_log"
 ]);
 
 function archiveKey(table, rows) {
