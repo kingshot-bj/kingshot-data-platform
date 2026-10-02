@@ -67,6 +67,16 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
     ).bind(LOAD_TEST_LOCK_KEY, now).first();
     if (!row?.lock_token) return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_NOT_RUNNING"}), {status:409,headers:{"content-type":"application/json"}});
     const runId = String(row.lock_token);
+    const runMeta = await env.DB.prepare(
+      "SELECT run_id FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1"
+    ).bind(runId).first().catch(() => null);
+    if(!runMeta){
+      await env.DB.prepare(
+        "DELETE FROM api_request_locks WHERE lock_key = ? AND lock_token = ?"
+      ).bind(LOAD_TEST_LOCK_KEY, runId).run();
+      await clearLoadTestCancellation(env.DB, runId);
+      return new Response(JSON.stringify({ok:true,run_id:runId,status:"STALE_STARTUP_CANCELLED"}), {headers:{"content-type":"application/json","cache-control":"no-store"}});
+    }
     await env.DB.prepare(
       "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at"
     ).bind("LOAD_TEST_CANCEL", "CANCEL:" + runId, now + 60 * 60 * 2, now).run();
@@ -228,8 +238,13 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   const concurrency=Math.min(requestedConcurrency,Math.max(1,Math.min(MAX_CONCURRENCY,availablePoolKeys-1)));
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const runNow=Math.floor(Date.now()/1000);
-  await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
-    .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,requestedConcurrency,concurrency,availablePoolKeys,runNow,runNow).run();
+  try{
+    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
+      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,requestedConcurrency,concurrency,availablePoolKeys,runNow,runNow).run();
+  }catch(error){
+    await releaseLoadTestState(env.DB,runId).catch(()=>{});
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   const send=async payload=>writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
   const run=(async()=>{try{
