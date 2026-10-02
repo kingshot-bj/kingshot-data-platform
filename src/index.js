@@ -3595,7 +3595,7 @@ export default {
   },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const requestTraceId = systemTraceId("req");
+    const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("req");
     let requestFailed = null;
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
