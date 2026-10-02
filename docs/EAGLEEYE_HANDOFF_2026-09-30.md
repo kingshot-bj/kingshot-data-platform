@@ -4481,3 +4481,19 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 - 実行中なら「負荷テストを中止」ボタンを再表示し、再実行ボタンを無効化する。
 - コミット: `35733970118d43cf6592ebc435075c12b9fc956d`。
 - なお、ed16c1a のページ内JavaScript構文修正を含む最新mainが本番へデプロイされているかは別途確認が必要。
+
+
+---
+
+# 73. 2026-10-02 / 負荷テスト進捗を通常王国Watchlistと同じD1永続Job方式へ修正
+
+- ユーザー要求どおり、負荷テストの進捗状態も通常の王国Watchlistと同じく `kingdom_watchlist_jobs` を正本とする方式へ変更。
+- 以前は負荷テストJobを完了時に即DELETEしており、ブラウザのNDJSONストリームが切れると進捗表示を復元できなかった。これは通常Watchlistと異なるため修正。
+- 負荷テストJobは `LOAD_TEST:<run_id>` の `watchlist_id` でD1に保持し、`board_index`、`player_cursor`、`player_ids_json`、`ranking_rows`、`player_rows`、`status`、`updated_at` 等を通常Watchlistと同様に永続化。
+- 終了時に即DELETEせず、通常の bounded retention cleanup に任せる。
+- 中止時はJobを `CANCELLED` に更新して状態を残す。
+- `/api/owner/kingdom-load-test/status` は実行ロックだけでなく、該当runの `kingdom_watchlist_jobs` を読み、各王国の現在フェーズ・ランキング進捗・プレイヤー進捗・保存件数を返す。
+- ページリロード時はstatus APIからD1のJob状態を復元し、その後2秒間隔で再取得して表示を更新する。ブラウザのストリームに依存しない。
+- これにより、リロードしてもサーバー側の進捗表示をD1から再構築でき、通常Watchlistと同じ永続状態ベースの運用になる。
+- コミット: `f7f8ac2f526c4038a29890c8040277d84a164878`。
+- 本番デプロイ・実機確認は未実施。
