@@ -1,5 +1,5 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, getApiPoolAvailability } from "./api-pool.js";
+import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, recordUsage, getApiPoolAvailability } from "./api-pool.js";
 import { recordServiceUsage } from "./service-usage.js";
 
 const MAX_KINGDOMS = 1000;
@@ -100,6 +100,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
     try {
       lease = await leaseApiKey(env.DB, {
         poolType,
+        jobId: runId,
         purpose: "OWNER_LOAD_TEST",
         targetType: "KINGDOM",
         targetId: String(kid)
@@ -128,15 +129,29 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
       ? Object.keys(payload.boards).length
       : null;
 
+    const endpoint = allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks";
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
       poolType: lease.pool_type,
-      endpoint: allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks",
+      endpoint,
       targetType: "KINGDOM",
       targetId: String(kid),
+      jobId: runId,
       purpose: "OWNER_LOAD_TEST",
       httpStatus: result.status
+    });
+    await recordUsage(env.DB, {
+      keyId: lease.key_id,
+      provider: lease.provider,
+      poolType: lease.pool_type,
+      endpoint,
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      jobId: runId,
+      purpose: "OWNER_LOAD_TEST",
+      httpStatus: result.status,
+      requestCount: 1
     });
 
     return {
@@ -155,13 +170,15 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
       const disable = status === 401 || status === 403;
       const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      const endpoint = allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks";
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
         poolType: lease.pool_type,
-        endpoint: allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks",
+        endpoint,
         targetType: "KINGDOM",
         targetId: String(kid),
+        jobId: runId,
         purpose: "OWNER_LOAD_TEST",
         httpStatus: status,
         errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
@@ -169,6 +186,18 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+      });
+      await recordUsage(env.DB, {
+        keyId: lease.key_id,
+        provider: lease.provider,
+        poolType: lease.pool_type,
+        endpoint,
+        targetType: "KINGDOM",
+        targetId: String(kid),
+        jobId: runId,
+        purpose: "OWNER_LOAD_TEST",
+        httpStatus: status,
+        requestCount: 1
       });
     }
     return {
