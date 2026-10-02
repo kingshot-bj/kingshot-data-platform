@@ -383,9 +383,24 @@ export function renderOwnerKingdomLoadTestPage() {
     if(!run||!result)return;
     result.dataset.bootstrap="1";
     result.textContent="[BOOTSTRAP_SCRIPT_EXECUTED]";
-    run.addEventListener("click",function(){
-      result.textContent="[BOOTSTRAP_CLICK_HANDLER_FIRED]";
-    });
+    var lines=[];
+    function probe(name, event){
+      lines.push("["+name+"] target="+(event&&event.target?event.target.id||event.target.tagName:"?")+" current="+(event&&event.currentTarget?event.currentTarget.id||event.currentTarget.tagName:"?"));
+      result.textContent=lines.join("\n");
+    }
+    run.onclick=function(event){
+      lines.push("[ONCLICK_PROPERTY]");
+      result.textContent=lines.join("\n");
+    };
+    run.addEventListener("pointerdown",function(e){probe("POINTERDOWN",e);},{capture:true});
+    run.addEventListener("touchstart",function(e){probe("TOUCHSTART",e);},{capture:true});
+    run.addEventListener("mousedown",function(e){probe("MOUSEDOWN",e);},{capture:true});
+    run.addEventListener("mouseup",function(e){probe("MOUSEUP",e);},{capture:true});
+    run.addEventListener("click",function(e){probe("CLICK_LISTENER",e);},{capture:true});
+    document.addEventListener("click",function(e){
+      if(e.target===run) probe("DOCUMENT_CLICK",e);
+    },true);
+    window.__eagleEyeLoadTestProbe={run:run,result:result,identity:run};
   };
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",window.__eagleEyeLoadTestBootstrap,{once:true});
   else window.__eagleEyeLoadTestBootstrap();
