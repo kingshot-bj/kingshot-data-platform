@@ -458,4 +458,5 @@ export function renderOwnerKingdomLoadTestPage() {
   };
   window.__eagleEyeToggleBoardMode();
 })();
-</script></main></body></html>
+</script></main></body></html>`;
+}
