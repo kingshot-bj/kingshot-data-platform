@@ -4109,3 +4109,17 @@ system-log-after.json
 - 低レベルSELECTごとのSystem Event生成は追加していない。
 - 本番deploy / R2実機保存確認は未実施。
 - 次工程: 5/7 System Log retentionの運用整合性確認・Cron処理の整理。
+
+
+# 65. System Log JSON Phase 5実装状況（2026-10-02）
+
+- 5/7「System Log retention」を運用面まで整理。
+- System Logの保持期間は設定可能な他テーブルとは分離し、固定24時間。
+- 5分Cronの各実行で24時間超過分を最大1000件ずつR2へ退避。
+- **R2保存成功前のD1削除は禁止**。
+- R2未設定時はskip扱いとし、D1 System Logは削除しない。
+- 通常のデータRetentionが失敗してもSystem Log Retentionは独立して実行する。
+- System Log Retention自身の診断結果を `diagnostic_events` に記録。
+- R2 PUT成功後にD1 DELETEが失敗した場合も、次回実行時に同じarchive keyへ再PUTされるため、同一batchの二重オブジェクト増殖を避けられる既存key設計を利用。
+- 24時間は「厳密に24時間経過した時点で即削除」ではなく、5分Cronによる最初の実行時点で24時間超過分を処理するため、実運用上の保持上限は約24時間+Cron間隔。
+- 本番Cron/R2実機確認は未実施。
