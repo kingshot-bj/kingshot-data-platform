@@ -375,184 +375,87 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 }
 
 export function renderOwnerKingdomLoadTestPage() {
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国並列負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><div id="loadTestBuildMarker" style="margin-top:10px;padding:8px 10px;border:1px solid #334155;border-radius:8px;color:#94a3b8;font-size:11px;font-family:ui-monospace,monospace">LOAD TEST DIAG 28f4e13</div><h1>王国並列負荷テスト</h1><p class="hint">指定した複数王国へMightPulse王国ランキング取得を並列実行します。API Poolのリース・MightPulse応答・Worker処理時間を確認するためのOWNER専用テストです。</p><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500" placeholder="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" id="buildKids" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"></div><label>王国番号（直接入力も可・カンマ/改行/空白区切り）<input id="kids" placeholder="1500,1501,1502"></label><label>ランキング<select id="boardMode"><option value="all" selected>全ランキング（boards）</option><option value="single">単一ランキング</option></select></label><label id="boardLabel" style="display:none">ランキング<select id="board"><option value="personal_power">個人総力</option><option value="kills">個人撃破</option><option value="town_center">役場Lv.</option><option value="hero_total">英雄全体総力</option><option value="troop_power">部隊総力</option></select></label><label>同時実行数<select id="concurrency"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button type="button" id="run" onclick="document.getElementById('result').textContent += '\n[INLINE_CLICK_FIRED]';">並列取得テストを実行</button><div id="result">結果はここに表示されます。</div></div><script>
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国並列負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><div id="loadTestBuildMarker" style="margin-top:10px;padding:8px 10px;border:1px solid #334155;border-radius:8px;color:#94a3b8;font-size:11px;font-family:ui-monospace,monospace">LOAD TEST DIAG 28f4e13</div><h1>王国並列負荷テスト</h1><p class="hint">指定した複数王国へMightPulse王国ランキング取得を並列実行します。API Poolのリース・MightPulse応答・Worker処理時間を確認するためのOWNER専用テストです。</p><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500" placeholder="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" id="buildKids" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px"></div><label>王国番号（直接入力も可・カンマ/改行/空白区切り）<input id="kids" placeholder="1500,1501,1502"></label><label>ランキング<select id="boardMode" onchange="window.__eagleEyeToggleBoardMode()"><option value="all" selected>全ランキング（boards）</option><option value="single">単一ランキング</option></select></label><label id="boardLabel" style="display:none">ランキング<select id="board"><option value="personal_power">個人総力</option><option value="kills">個人撃破</option><option value="town_center">役場Lv.</option><option value="hero_total">英雄全体総力</option><option value="troop_power">部隊総力</option></select></label><label>同時実行数<select id="concurrency"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10" selected>10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button type="button" id="run" onclick="document.getElementById('result').textContent += '\n[INLINE_CLICK_FIRED]';">並列取得テストを実行</button><div id="result">結果はここに表示されます。</div></div><script>
 (function(){
-  window.__eagleEyeLoadTestBootstrap = function(){
+  function parseKids(raw){
+    return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];
+  }
+  window.__eagleEyeBuildKids=function(){
+    var start=Math.max(1,Number(document.getElementById("startKid").value||0));
+    var count=Math.max(1,Number(document.getElementById("kidCount").value||20));
+    var values=[];
+    for(var i=0;i<count;i++) values.push(start+i);
+    document.getElementById("kids").value=values.join(",");
+    document.getElementById("selectedKids").textContent=values.join(", ");
+  };
+  window.__eagleEyeToggleBoardMode=function(){
+    var mode=document.getElementById("boardMode").value;
+    document.getElementById("boardLabel").style.display=mode==="single"?"block":"none";
+  };
+  window.__eagleEyeRunLoadTest=async function(){
     var run=document.getElementById("run");
     var result=document.getElementById("result");
-    if(!run||!result)return;
-    result.dataset.bootstrap="1";
-    result.textContent="[BOOTSTRAP_SCRIPT_EXECUTED]";
-    var lines=[];
-    function probe(name, event){
-      lines.push("["+name+"] target="+(event&&event.target?event.target.id||event.target.tagName:"?")+" current="+(event&&event.currentTarget?event.currentTarget.id||event.currentTarget.tagName:"?"));
-      result.textContent="[EVENT_PROBE]\n"+lines.join("\n");
-    }
-    run.onclick=function(event){
-      lines.push("[ONCLICK_PROPERTY]");
-      result.textContent=lines.join("\n");
-    };
-    run.addEventListener("pointerdown",function(e){probe("POINTERDOWN",e);},{capture:true});
-    run.addEventListener("touchstart",function(e){probe("TOUCHSTART",e);},{capture:true});
-    run.addEventListener("mousedown",function(e){probe("MOUSEDOWN",e);},{capture:true});
-    run.addEventListener("mouseup",function(e){probe("MOUSEUP",e);},{capture:true});
-    run.addEventListener("click",function(e){probe("CLICK_LISTENER",e);},{capture:true});
-    document.addEventListener("click",function(e){
-      if(e.target===run) probe("DOCUMENT_CLICK",e);
-    },true);
-    window.__eagleEyeLoadTestProbe={run:run,result:result,identity:run};
-  };
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",window.__eagleEyeLoadTestBootstrap,{once:true});
-  else window.__eagleEyeLoadTestBootstrap();
-})();
-</script><script>
-(function(){
-  const ids=["run","result","kids","selectedKids","startKid","kidCount","buildKids","boardMode","boardLabel","board","concurrency"];
-  const el={};
-  function stamp(){return new Date().toLocaleTimeString("ja-JP",{hour12:false});}
-  function diag(message){
-    const line="[LOAD TEST DIAG "+stamp()+"] "+message;
-    console.log(line);
-    const box=document.getElementById("result");
-    if(box){
-      const current=box.dataset.diag||"";
-      const lines=(current?current+"\n":"")+line;
-      box.dataset.diag=lines;
-      box.textContent=lines;
-    }
-  }
-  function esc(value){
-    const text=String(value ?? "");
-    const map={"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"};
-    return text.replace(/[&<>"']/g,function(char){return map[char];});
-  }
-  function renderSelected(){
-    el.selected.innerHTML=Array.from(selectedKids).map(function(kid){
-      return "<button type=\"button\" data-kid=\""+kid+"\" style=\"margin:0;padding:7px 10px;background:#334155;color:#fff;border:1px solid #475569;border-radius:999px\">"+kid+" ×</button>";
-    }).join("");
-    el.selected.querySelectorAll("[data-kid]").forEach(function(button){
-      button.addEventListener("click",function(){
-        selectedKids.delete(Number(button.dataset.kid));
-        renderSelected();
-      });
-    });
-    el.kids.value=Array.from(selectedKids).join(", ");
-  }
-  function renderLoadProgress(data){
-    const target=Number(data.target_count||0);
-    const completed=Math.min(target,Number(data.completed||0));
-    const pct=Math.max(0,Math.min(100,Number(data.percent??(target?Math.round(completed/target*100):0))));
-    const label=data.type==="complete"?"取得完了":"取得進捗";
-    const latest=data.result?("直近: 王国 "+esc(data.result.kid)+" — "+(data.result.ok?"成功":"失敗")):"";
-    el.result.dataset.diag="";
-    el.result.innerHTML="<div class=\"progress\"><b>"+label+"</b><span>"+pct+"%</span><div class=\"progress-track\"><div class=\"progress-fill\" style=\"width:"+pct+"%\"></div></div><small>"+completed+" / "+target+" 王国　成功: "+esc(data.success??0)+" / 失敗: "+esc(data.failed??0)+(latest?"<br>"+latest:"")+"</small></div>";
-  }
-
-  function boot(){
-    diag("BOOT_START");
-    ids.forEach(function(id){el[id]=document.getElementById(id);});
-    const missing=ids.filter(function(id){return !el[id];});
-    if(missing.length){
-      diag("DOM_MISSING: "+missing.join(","));
-      return;
-    }
-    diag("DOM_READY");
-    const selectedKids=new Set();
-
-    el.run.type="button";
-    el.buildKids.type="button";
-    el.buildKids.addEventListener("click",function(){
-      diag("BUILD_KIDS_CLICK");
-      const start=Math.max(1,Number(el.startKid.value||0));
-      const count=Math.max(1,Number(el.kidCount.value||20));
-      selectedKids.clear();
-      for(let i=0;i<count;i++)selectedKids.add(start+i);
-      renderSelected();
-    });
-
-    el.boardMode.addEventListener("change",function(){
-      el.boardLabel.style.display=el.boardMode.value==="single"?"block":"none";
-      diag("BOARD_MODE_CHANGE: "+el.boardMode.value);
-    });
-
-    el.run.addEventListener("click",async function(){
-      diag("CLICK_FIRED");
-      let kids="";
-      try{
-        kids=el.kids.value.trim();
-        if(!kids){
-          const start=Math.max(1,Number(el.startKid.value||0));
-          const count=Math.max(1,Number(el.kidCount.value||20));
-          selectedKids.clear();
-          for(let i=0;i<count;i++)selectedKids.add(start+i);
-          renderSelected();
-          kids=el.kids.value.trim();
-        }
-        if(!kids){
-          diag("STOP_NO_KIDS");
-          el.result.innerHTML="<div class=\"progress\"><b>実行できません</b><small>王国番号を入力するか、王国範囲を生成してください。</small></div>";
-          return;
-        }
-        const boardElement=el.board;
-        const concurrencyElement=el.concurrency;
-        const board=boardElement ? boardElement.value : "";
-        const allRankings=el.boardMode.value==="all";
-        const concurrency=concurrencyElement ? concurrencyElement.value : "10";
-        el.run.disabled=true;
-        el.run.textContent="実行中…";
-        el.result.textContent="取得開始…";
-        diag("FETCH_START kids="+kids+" board="+(allRankings?"ALL":board)+" concurrency="+concurrency);
-        const url="/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids)+"&board="+encodeURIComponent(board)+"&all_rankings="+(allRankings?"1":"0")+"&concurrency="+encodeURIComponent(concurrency);
-        const response=await fetch(url,{cache:"no-store",credentials:"same-origin"});
-        diag("FETCH_RESPONSE HTTP "+response.status);
-        if(!response.ok){
-          let detail="HTTP "+response.status;
-          try{const body=await response.json();detail=body.message||body.error||detail;}catch{}
-          throw new Error(detail);
-        }
-        diag("STREAM_READY");
-        if(!response.body)throw new Error("ストリーミング応答に対応していません。");
-        const reader=response.body.getReader(),decoder=new TextDecoder();
-        let buffer="";
-        while(true){
-          const chunk=await reader.read();
-          if(chunk.done)break;
-          buffer+=decoder.decode(chunk.value,{stream:true});
-          const lines=buffer.split("\n");
-          buffer=lines.pop()||"";
-          for(const line of lines){
-            if(!line.trim())continue;
-            const data=JSON.parse(line);
-            diag("NDJSON_"+String(data.type||"UNKNOWN").toUpperCase());
-            if(data.type==="start")renderLoadProgress(data);
-            else if(data.type==="progress")renderLoadProgress(data);
-            else if(data.type==="complete"){
-              renderLoadProgress(data);
-              el.result.innerHTML+="<details style=\"margin-top:10px\"><summary>最終結果JSON</summary><pre>"+esc(JSON.stringify(data,null,2))+"</pre></details>";
-            }else if(data.type==="error")throw new Error(data.error||"LOAD_TEST_FAILED");
+    try{
+      var kidsInput=document.getElementById("kids");
+      var kids=parseKids(kidsInput.value);
+      if(!kids.length){
+        window.__eagleEyeBuildKids();
+        kids=parseKids(kidsInput.value);
+      }
+      if(!kids.length) throw new Error("王国番号を入力するか、王国範囲を生成してください。");
+      var allRankings=document.getElementById("boardMode").value==="all";
+      var board=allRankings?"":document.getElementById("board").value;
+      var concurrency=document.getElementById("concurrency").value||"10";
+      run.disabled=true;
+      run.textContent="実行中…";
+      result.textContent="取得開始…\\n王国数: "+kids.length+" / 同時実行数: "+concurrency;
+      var url="/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&board="+encodeURIComponent(board)+"&all_rankings="+(allRankings?"1":"0")+"&concurrency="+encodeURIComponent(concurrency);
+      var response=await fetch(url,{cache:"no-store",credentials:"same-origin"});
+      if(!response.ok){
+        var detail="HTTP "+response.status;
+        try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}
+        throw new Error(detail);
+      }
+      if(!response.body) throw new Error("ストリーミング応答に対応していません。");
+      var reader=response.body.getReader();
+      var decoder=new TextDecoder();
+      var buffer="";
+      var completed=0,success=0,failed=0,target=kids.length;
+      while(true){
+        var chunk=await reader.read();
+        if(chunk.done) break;
+        buffer+=decoder.decode(chunk.value,{stream:true});
+        var lines=buffer.split("\\n");
+        buffer=lines.pop()||"";
+        for(var i=0;i<lines.length;i++){
+          if(!lines[i].trim()) continue;
+          var data=JSON.parse(lines[i]);
+          if(data.type==="start"){
+            target=Number(data.target_count||target);
+            result.textContent="取得開始…\\n王国数: "+target+" / 同時実行数: "+data.concurrency;
+          }else if(data.type==="progress"){
+            completed=Number(data.completed||0);
+            success=Number(data.success||0);
+            failed=Number(data.failed||0);
+            result.textContent="取得中… "+(data.percent||0)+"%\\n"+completed+" / "+target+" 王国\\n成功: "+success+" / 失敗: "+failed+(data.result?"\\n直近: 王国 "+data.result.kid+" — "+(data.result.ok?"成功":"失敗"):"");
+          }else if(data.type==="complete"){
+            result.textContent="取得完了\\n成功: "+data.success+" / 失敗: "+data.failed+"\\n経過時間: "+data.elapsed_ms+" ms\\n\\n"+JSON.stringify(data,null,2);
+          }else if(data.type==="error"){
+            throw new Error(data.error||"LOAD_TEST_FAILED");
           }
         }
-        diag("STREAM_DONE");
-      }catch(error){
-        diag("ERROR "+(error?.stack||error?.message||error));
-        el.result.innerHTML="<div class=\"progress\"><b>取得停止</b><small>ERROR: "+esc(error?.message||error)+"</small></div>";
-      }finally{
-        el.run.disabled=false;
-        el.run.textContent="並列取得テストを実行";
       }
-    });
-    diag("RUN_HANDLER_BOUND");
-  }
-
-  window.addEventListener("error",function(event){
-    diag("WINDOW_ERROR "+(event.message||"unknown"));
-  });
-  window.addEventListener("unhandledrejection",function(event){
-    diag("UNHANDLED_REJECTION "+(event.reason?.message||event.reason||"unknown"));
-  });
-
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot,{once:true});
-  else boot();
+      if(buffer.trim()){
+        var last=JSON.parse(buffer);
+        if(last.type==="complete") result.textContent="取得完了\\n成功: "+last.success+" / 失敗: "+last.failed+"\\n経過時間: "+last.elapsed_ms+" ms\\n\\n"+JSON.stringify(last,null,2);
+      }
+    }catch(error){
+      result.textContent="取得停止\\nERROR: "+(error&&error.message?error.message:String(error));
+    }finally{
+      run.disabled=false;
+      run.textContent="並列取得テストを実行";
+    }
+  };
+  window.__eagleEyeToggleBoardMode();
 })();
-</script></main></body></html>`;
-}
+</script></main></body></html>
