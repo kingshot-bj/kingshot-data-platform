@@ -3043,3 +3043,69 @@ src/admin-data-coverage.js:7:12
 - main反映、deploy、production E2Eを明確に分離して報告する。
 - API key / Refresh Token等のsecretをログ・UI・handoffへ出さない。
 - **既存機能との仕様重複がある新機能は、実装前に既存機能のコードを確認し、同じ仕様・状態遷移・UI表現に合わせる。既存と異なる表現を採用する場合は理由を明確にする。**
+
+# 55. 2026-10-02 プレイヤー検索のAPI仕様確認
+
+## 調査結果
+
+本番iPhone実機で「プレイヤー検索」に名前（例: たぬき）を入力しても「該当するプレイヤーが見つかりません」と表示される件をコードとMightPulse API仕様で再確認した。
+
+現在の /players?q=... は EagleEye D1 の players テーブルを検索する実装。
+
+検索対象:
+- governor_id
+- nick_name
+- kid
+- alliance_name
+
+D1に該当行がない場合、名前・王国・同盟名についてMightPulse APIへフォールバックする処理は現時点では存在しない。
+
+一方、領主IDの直接検索は既にAPI取得へ接続済み。
+
+既存実装:
+- fetchPlayerThroughApiPool()
+- API PoolからSYSTEM_GENERALキーをlease
+- MightPulse GET /v1/players/{governor_id}?include=base
+- Observation保存
+- materializePlayer()
+- Player Detail表示
+
+関連コミット:
+- d15adfc50bfd355e9022842c9720ae3aa63aa5b2
+  - connect player search to pooled data display
+- ca1d8666357b8553013568287067f3d865c072c8
+  - fix player search detail fetch persistence
+- 7e0db530d127510c6681e5f12a1f4e4a2acbf09e
+  - Make numeric player ID search direct
+
+## MightPulse APIの現在の公開仕様
+
+2026-10-02時点のMightPulse API公式ドキュメントで確認できるPlayer APIは:
+
+GET /v1/players/{id}?include=base
+GET /v1/players/{id}?include=base,heroes,ranks,gov_gear
+GET /v1/players/{id}?id_type=uid
+
+公式APIドキュメントには、名前・キーワード・同盟名からプレイヤーを検索する公開APIエンドポイントは記載されていない。
+
+MightPulse本体Webサイトには「Name or governor ID…」「Search by name, governor ID, or keyword」という検索UI自体は存在するが、これは公開API仕様とは別であり、EagleEyeから未公開のWeb内部エンドポイントを推測して直接叩く実装は採用しない。
+
+## 結論
+
+現時点では:
+
+- 領主ID検索 → 実装可能・既存実装済み
+- D1保存済みの名前/王国/同盟検索 → 実装済み
+- D1に存在しない名前/キーワードをMightPulse公開APIで検索 → 公開API仕様上は実装根拠なし
+- MightPulse Webの未公開検索エンドポイントを推測して利用 → 採用しない
+
+したがって、今回の「たぬき」がD1に存在しないケースを、MightPulse APIへ名前検索フォールバックさせる変更は、現時点では安全に実装可能とは判断しない。
+
+今後MightPulse側が名前検索APIを公開した場合は、既存のAPI Pool / Observation / materializePlayerフローを再利用して統合する。
+
+## 重要な再発防止ルール
+
+「MightPulse APIを使う」と「MightPulse Webサイトが検索できる」は同義ではない。
+
+外部APIの仕様に存在しない検索エンドポイントを、Web UIの動作から推測して実装しない。
+
