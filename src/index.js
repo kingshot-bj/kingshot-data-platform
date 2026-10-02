@@ -3597,7 +3597,10 @@ export default {
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("req");
     let requestFailed = null;
+    let response = null;
+    const requestStartedAt = Date.now();
     try {
+      response = await (async () => {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
@@ -3682,10 +3685,13 @@ export default {
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
       if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
       return eagleEyeHtmlResponse(await renderHome(request, env));
+      })();
+      return response;
     } catch (error) {
       requestFailed = error;
       console.error("EagleEye request error:", error);
-      return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
+      response = json({ ok: false, error: "INTERNAL_ERROR" }, 500);
+      return response;
     } finally {
       const eventPromise = recordSystemEvent(env.DB, {
         traceId: requestTraceId,
@@ -3693,8 +3699,10 @@ export default {
         service: "http",
         feature: "request",
         operation: request.method + " " + url.pathname,
-        status: requestFailed ? "FAILED" : "COMPLETED",
+        status: requestFailed ? "FAILED" : ((response?.status || 200) >= 400 ? "HTTP_ERROR" : "COMPLETED"),
         httpMethod: request.method,
+        httpStatus: response?.status ?? null,
+        elapsedMs: Date.now() - requestStartedAt,
         httpPath: url.pathname,
         errorCode: requestFailed?.code || (requestFailed ? "INTERNAL_ERROR" : null),
         message: requestFailed?.message || null,
