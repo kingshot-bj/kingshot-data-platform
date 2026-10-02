@@ -3752,3 +3752,83 @@ EagleEyeのMightPulse APIキーについて、以下を基本原則とする。
 **「USER_CONTRIBUTEDはユーザー提供であることを示す属性であり、利用可能なAPIリソースとして分けない」ことをEagleEye本体の設計原則とする。**
 
 なお、2026-10-02時点では上記変更の本番E2E確認は未実施。デプロイ済みと本番確認済みを混同しない。
+
+
+# 61. System Logを「システム全体の実行履歴」として再設計（2026-10-02）
+
+## 61-1. 基本原則
+EagleEyeのSystem Logは、単なるhealth checkや障害一覧ではない。
+
+**「その時点でシステム全体で何が起きたのかを、後から時系列・相関ID付きで追跡できること」**を目的とする。
+
+したがって、ボタン/APIが呼ばれたか、どの処理が開始したか、どの対象を処理したか、成功したか、失敗したか、どのエラーコードだったか、どのrun_id / trace_idでつながるか、スケジュール処理・Queue処理で何が起きたか、OWNER負荷テストの各王国リクエストがどうなったかをSystem Logから確認できる設計とする。
+
+## 61-2. diagnostic_eventsとの役割分離
+- diagnostic_events: サービスの健康状態・heartbeat・障害状態の要約。
+- system_event_log: 実行履歴・操作履歴・処理開始/進捗/完了/失敗の時系列ログ。
+
+SUCCESSのhealth checkを間引く既存throttleはSystem Logには適用しない。System Logは監査・相関用の履歴であり、「同じ成功だから省略する」ものではない。
+
+## 61-3. System Log schema
+追加:
+- migrations/0028_system_event_log.sql
+- src/system-log.js
+
+主な項目:
+- event_id
+- trace_id / parent_trace_id
+- event_type
+- service / feature / operation
+- status
+- actor_type / actor_id
+- target_type / target_id
+- http_method / http_path / http_status
+- started_at / completed_at / elapsed_ms
+- error_code / message
+- metadata_json
+- created_at
+
+APIキー、encrypted_key、fingerprint、cookie、token、refresh token、raw request body等のsecretは記録しない。
+
+## 61-4. 全HTTPリクエスト
+WorkerのHTTP入口でrequest traceを生成し、System Logへ記録する。
+
+これにより、負荷テストページを開いた、status JSONを取得した、負荷テストAPIを叩いた等のHTTP入口到達自体を後から確認できる。
+
+## 61-5. OWNER王国負荷テスト
+負荷テストはHTTP request traceをrun traceとして引き継ぐ。
+
+相関:
+HTTP request → trace_id → OWNER_KINGDOM_LOAD_TEST START → KINGDOM_REQUEST PROGRESS → OWNER_KINGDOM_LOAD_TEST COMPLETE/ERROR → API Pool lease (lease_job_id) → API Pool usage (job_id) → SERVICE_USAGE (metadata.run_id)
+
+これにより「ボタンを押したのにシステム側で何も起きていない」のか、「APIまで到達したが途中で失敗した」のかをSystem Logから切り分ける。
+
+## 61-6. Scheduler / Queue
+HTTP以外の主要実行経路もSystem Logへ記録する。
+- Scheduled/cron開始・完了・失敗
+- Queue batch開始・完了・失敗
+
+## 61-7. System Status JSON
+System Status JSONに systemLog を追加。
+- 最新200イベント
+- trace_id
+- event_type
+- service
+- feature
+- operation
+- status
+- actor / target
+- HTTP情報
+- error
+- metadata
+
+さらに loadTest.lastRun を追加し、負荷テストの最新System Logイベントから直近実行の相関情報を確認できる。
+
+これにより、負荷テスト完了後に active=false / runId=null だけを見て「実行されていない」と誤判定しない。
+
+## 61-8. 運用ルール
+今後新機能を追加するときは、HTTP入口、主処理START、対象単位のPROGRESS、COMPLETE、ERROR、外部API / Queue / Scheduler / 非同期処理との相関をSystem Logへ記録する。
+
+**「コード上で処理しているのにSystem Logから追えない処理」を新規機能で作らない。**
+
+なお、今回の実装はGitHub mainへの反映まで。Cloudflare本番deployおよび実機E2EでSystem Logが実際に負荷テストを捕捉することは、別途確認する。
