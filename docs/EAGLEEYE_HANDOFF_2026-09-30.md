@@ -4512,3 +4512,31 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 - コミット: `96b9bbf19892d84af0c95c5dd827b0e818b6a20a`。
 - Migration: `0029_kingdom_load_test_runs.sql`。
 - 本番デプロイ・実機確認は未実施。
+
+
+## 75. 2026-10-02 — Load Test reload後に進捗が消える問題を修正
+
+### 発生事象
+- 0029で `kingdom_load_test_runs` に対象王国数・対象KID一覧を保存するようにした後、新規テストを開始してリロード確認を実施。
+- リロード後に画面が初期状態へ戻り、進捗が消えた。
+- 原因は進捗保存そのものではなく、`/api/owner/kingdom-load-test/status` が `api_request_locks` の実行中ロックだけを見ており、テスト完了時にロックを解放すると、保存済みの `kingdom_load_test_runs` を参照せず `active:false` を返していたこと。
+
+### 修正
+- Commit: `369a5fbe908f5d840a298c56b81711d4d1499e4e`
+- `handleOwnerKingdomLoadTestStatusApi()` を修正。
+  - 実行中ロックがある場合は従来どおりそのrunを取得。
+  - ロックがない場合も `kingdom_load_test_runs ORDER BY created_at DESC LIMIT 1` から直近runを復元。
+  - `run_status` を返却し、`RUNNING` の場合はロックが無くても実行中として復元可能。
+  - 完了後も保存済みJobから `X / target_count` を再構成できる。
+- ページ側の `recoverRunningLoadTest()` も、`active:true` のときだけでなく、直近の完了/中止runも復元するよう修正。
+  - 完了済みなら「✓ 更新完了」
+  - 中止済みなら「中止」
+  - 実行中なら従来どおり2秒間隔でD1保存済み進捗を再取得。
+- 併せて画面上の説明文を、実装と一致する「テスト用Jobも通常Jobと同じくD1へ保存し、24時間保持後に通常の保持期限処理で削除」に修正。
+
+### 次回確認
+1. 新規テストを開始。
+2. 実行中にリロード → `X / 元の対象王国数` と各王国の `26` ボード進捗が復元されること。
+3. テスト完了後にリロード → 完了状態と `X / 元の対象王国数` が残ること。
+4. その後、新規テスト開始時に直前の完了run表示が新runの進捗表示を邪魔しないこと。
+
