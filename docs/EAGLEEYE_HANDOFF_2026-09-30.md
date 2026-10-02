@@ -4540,3 +4540,86 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 3. テスト完了後にリロード → 完了状態と `X / 元の対象王国数` が残ること。
 4. その後、新規テスト開始時に直前の完了run表示が新runの進捗表示を邪魔しないこと。
 
+
+
+# 76. 2026-10-02 / 全体コード監査後の第一段階修正
+
+## 監査結果
+main全体を再確認し、今回のLoad Test周辺だけでなくSystem Log / Status / Route / Job状態まで横断確認した。
+
+第一段階で修正対象とした項目：
+
+1. System Log trace検索のD1 binding混在
+2. Operational StatusのSystem Log参照欠落
+3. Load Test status APIのOWNER認証抜け
+4. Load Test run異常終了時のFAILED状態欠落
+5. Load Test Job例外時のJob状態不整合
+6. 本番でsystem_event_logが存在しない場合のSystem Log自己修復
+
+## 実装済み
+
+### 1. System Log binding修正
+- src/system-log.js
+- trace tree開始SQLを SELECT ?1,0 から匿名placeholder SELECT ?,0 に変更。
+- 後続の匿名placeholderと同一binding方式へ統一。
+- Commit: e268b11678ccf15548930262bade418e78c73503
+
+### 2. Operational Status修正
+- src/status-ops.js
+- Promise.all() の8番目として getSystemEventLog(db, { limit: 100 }) を明示的に取得。
+- これまで未定義だった systemLogResult.filter(...) を実データへ接続。
+- Commit: a3f4020f24f015b258df4160fc3828c691b91f16
+
+### 3. Load Test status API OWNER認証
+- src/index.js
+- /api/owner/kingdom-load-test/status に requireOwner() を追加。
+- status / cancel / start のOWNER境界を統一。
+- Commit: 7489e0c11496e8a83e0cc721c0a73411c474bab1
+
+### 4. Load Test run FAILED状態
+- src/admin-kingdom-load-test.js
+- run全体の予期せぬ例外を runFailed として保持。
+- terminal metadata更新時に CANCELLED → FAILED → COMPLETED の順で状態を判定。
+- 個別王国の通常FAILEDはrun全体のFAILEDとはせず、既存の「一部失敗ありで全体継続」仕様を維持。
+- Commit: c029ff4402b6a67d33ad42bd24740f61d864c6f0
+
+### 5. Load Test Job例外状態
+- src/admin-kingdom-load-test.js
+- processKingdomWatchlistJob() の例外時に、該当 kingdom_watchlist_jobs を FAILED + last_error へ永続化。
+- COMPLETED済みJobを例外処理でFAILEDへ戻さない条件を追加。
+- Commit: 520c6073c97cef728dc3dcd88292d7d8695b5f02
+
+### 6. system_event_log自己修復
+- src/system-log.js
+- system_event_logが未作成の本番DBでも、最初のSystem Log read/write時に CREATE TABLE IF NOT EXISTS と必要indexを一度だけ実行する互換層を追加。
+- recordSystemEvent() / getSystemEventLog() の双方でschema ensure。
+- Migration 0028_system_event_log.sql の定義と同一schema/indexを使用。
+- Commit: 5a055a9c0b62154db1fd3a4bff4defa7f136b50c
+- Commit: b762904bf5632de5ec330a758a1f6a63f8f7afd7
+
+## まだ未完了の監査項目
+
+### Previewリソース分離
+現在の wrangler.jsonc ではPreviewのD1/R2が本番と同一リソースを参照している。
+
+- Production D1: eagleeye-db
+- Preview D1: 現状同じ database_id
+- Production R2: eagleeye-archive
+- Preview R2: 現状同じ bucket_name
+
+Cloudflareの現在のPreview仕様では、Previewは previews.d1_databases / preview_database_id とPreview用R2 bindingを別リソースへ向けることでデータを分離できる。
+
+ただし、現在のリポジトリからはPreview専用D1 UUID / R2 bucket名を確認できないため、存在しないリソースIDを推測して設定してはいけない。
+
+### 本番DB Migration整合性
+status-26では kingdom_load_test_runs は存在した一方、system_event_log が存在しないエラーが観測された。
+
+今回System Log側に自己修復を追加したが、D1の d1_migrations 実適用状態そのものは別途確認する。
+
+## 次の順番
+1. Preview専用D1/R2の実リソース確認
+2. 本番D1 d1_migrations の適用状況確認
+3. migrationsの重複・旧schema整理
+4. Load Test 20件等の本番E2E再実行
+5. status-26で残っていたAPI Pool旧SQL 654回の発生元を再確認
+6. 通常Watchlist / Player Watchlistの本番E2E
