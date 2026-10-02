@@ -79,20 +79,38 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const row = await env.DB.prepare("SELECT lock_token, lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1").bind(LOAD_TEST_LOCK_KEY, now).first();
-    if (!row) return new Response(JSON.stringify({ok:true,active:false,jobs:[]}), {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    const now=Math.floor(Date.now()/1000);
+    const row=await env.DB.prepare("SELECT lock_token,lock_until,updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1").bind(LOAD_TEST_LOCK_KEY,now).first();
+    if(!row)return new Response(JSON.stringify({ok:true,active:false,jobs:[]}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
     const runId=String(row.lock_token);
+    const runMeta=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
     const jobs=await env.DB.prepare("SELECT job_id,kid,top_n,status,board_index,player_cursor,player_ids_json,ranking_rows,player_rows,created_at,updated_at,last_error FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY kid ASC").bind("LOAD_TEST:"+runId).all();
     const normalizedJobs=(jobs.results||[]).map(job=>{
-      let playerCount=0; try{playerCount=JSON.parse(job.player_ids_json||"[]").length;}catch{}
-      const phase=String(job.status||"RANKINGS");
+      let playerCount=0;try{playerCount=JSON.parse(job.player_ids_json||"[]").length;}catch{}
+      const rawStatus=String(job.status||"RANKINGS");
+      const phase=rawStatus==="FAILED"&&String(job.last_error||"")==="LOAD_TEST_CANCELLED"?"CANCELLED":rawStatus;
       return {job_id:job.job_id,kid:Number(job.kid),top_n:Number(job.top_n||0),phase,board_index:Number(job.board_index||0),total_boards:26,player_cursor:Number(job.player_cursor||0),player_count:playerCount,ranking_rows:Number(job.ranking_rows||0),player_rows:Number(job.player_rows||0),created_at:Number(job.created_at||0),updated_at:Number(job.updated_at||0),last_error:job.last_error||null,completed:["COMPLETED","FAILED","CANCELLED"].includes(phase)};
     });
-    return new Response(JSON.stringify({ok:true,active:true,run_id:runId,started_at:row.updated_at||null,expires_at:row.lock_until||null,target_count:normalizedJobs.length,completed:normalizedJobs.filter(j=>j.completed).length,success:normalizedJobs.filter(j=>j.phase==="COMPLETED").length,failed:normalizedJobs.filter(j=>j.phase==="FAILED").length,cancelled:normalizedJobs.filter(j=>j.phase==="CANCELLED").length,jobs:normalizedJobs}), {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    const targetCount=Number(runMeta?.target_count||0);
+    const completed=normalizedJobs.filter(j=>j.completed).length;
+    const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
+    const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
+    const cancelled=normalizedJobs.filter(j=>j.phase==="CANCELLED").length;
+    return new Response(JSON.stringify({
+      ok:true,active:true,run_id:runId,
+      started_at:Number(runMeta?.created_at||row.updated_at||0),
+      expires_at:row.lock_until||null,
+      target_count:targetCount,
+      completed,success,failed,cancelled,
+      requested_concurrency:Number(runMeta?.requested_concurrency||0),
+      concurrency:Number(runMeta?.concurrency||0),
+      top_n:Number(runMeta?.top_n||0),
+      kids:runMeta?.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
+      jobs:normalizedJobs
+    }),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
     console.error("owner_kingdom_load_test_status_failed",error?.message||error);
-    return new Response(JSON.stringify({ok:false,active:false,error:"LOAD_TEST_STATUS_UNAVAILABLE"}), {status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    return new Response(JSON.stringify({ok:false,active:false,error:"LOAD_TEST_STATUS_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
 }
 
@@ -140,7 +158,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
     let iterations = 0;
     while (iterations++ < 200) {
       if (await isLoadTestCancelled(env.DB, runId)) {
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'CANCELLED', last_error = ?, updated_at = ? WHERE job_id = ?").bind("LOAD_TEST_CANCELLED", Math.floor(Date.now()/1000), jobId).run().catch(() => {});
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?").bind("LOAD_TEST_CANCELLED", Math.floor(Date.now()/1000), jobId).run().catch(() => {});
         return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, cancelled:true, status:"CANCELLED", error:"LOAD_TEST_CANCELLED", elapsed_ms:Date.now()-startedAt };
       }
       const job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1").bind(jobId).first();
@@ -189,6 +207,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   if(availablePoolKeys<2)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:1}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const concurrency=Math.min(requestedConcurrency,Math.max(1,Math.min(MAX_CONCURRENCY,availablePoolKeys-1)));
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  const runNow=Math.floor(Date.now()/1000);
+  await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
+    .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,requestedConcurrency,concurrency,availablePoolKeys,runNow,runNow).run();
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   const send=async payload=>writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
   const run=(async()=>{try{
@@ -203,7 +224,11 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await recordServiceUsage(env,{operation:"OWNER_KINGDOM_LOAD_TEST",actorUserId:auth.user_id,targetType:"USER",targetId:auth.user_id,metadata:summary});
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",metadata:summary});
     await send({type:cancelledResults.length?"cancelled":"complete",run_id:runId,ok:true,cancelled:Boolean(cancelledResults.length),target_count:kids.length,concurrency,top_n:topN,elapsed_ms:summary.elapsed_ms,success,failed,cancelled_count:cancelledResults.length,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:summary.max_expected_ranking_rows,results});
-  }catch(error){await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||error));await writer.close();}})();
+  }catch(error){await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
+    const finalNow=Math.floor(Date.now()/1000);
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' ELSE 'COMPLETED' END, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,finalNow,finalNow,runId).run().catch(()=>{});
+    await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close();
+}})();
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
 export function renderOwnerKingdomLoadTestPage() {
