@@ -1,5 +1,6 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure } from "./api-pool.js";
+import { recordServiceUsage } from "./service-usage.js";
 
 const MAX_KINGDOMS = 1000;
 const MAX_CONCURRENCY = 50;
@@ -36,7 +37,7 @@ async function runWithConcurrency(items, concurrency, worker, onComplete = null)
   return results;
 }
 
-async function runKingdomLoad(env, kid, board, allRankings = false) {
+async function runKingdomLoad(env, kid, board, allRankings = false, runId = null) {
   let lease = null;
   try {
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
@@ -84,6 +85,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false) {
     });
 
     return {
+      run_id: runId,
       kid: Number(kid),
       ok: true,
       status: result.status,
@@ -115,6 +117,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false) {
       });
     }
     return {
+      run_id: runId,
       kid: Number(kid),
       ok: false,
       status: Number(error?.status || 0),
@@ -138,6 +141,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
   if (kids.length > MAX_KINGDOMS) return new Response(JSON.stringify({ ok:false, error:"TOO_MANY_KINGDOMS", max:MAX_KINGDOMS }), { status:400, headers:{"content-type":"application/json"} });
 
   const startedAt = Date.now();
+  const runId = crypto.randomUUID();
   const encoder = new TextEncoder();
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
@@ -148,8 +152,10 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
 
   const run = (async () => {
     try {
+      console.log("eagleeye_owner_kingdom_load_test_start", { run_id: runId, actor_user_id: auth.user_id, actor_role: auth.role, target_count: kids.length, start_kid: Math.min(...kids), end_kid: Math.max(...kids), board_mode: allRankings ? "ALL" : "SINGLE", board: allRankings ? "ALL" : board, concurrency });
       await send({
         type: "start",
+        run_id: runId,
         target_count: kids.length,
         concurrency,
         board: allRankings ? "ALL" : board,
@@ -166,13 +172,14 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
       const results = await runWithConcurrency(
         kids,
         concurrency,
-        kid => runKingdomLoad(env, kid, board, allRankings),
+        kid => runKingdomLoad(env, kid, board, allRankings, runId),
         async result => {
           completed++;
           if (result.ok) success++;
           else failed++;
           await send({
             type: "progress",
+            run_id: runId,
             target_count: kids.length,
             completed,
             success,
@@ -183,14 +190,50 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
         }
       );
 
+      const successfulResults = results.filter(item => item?.ok);
+      const failedResults = results.filter(item => !item?.ok);
+      const latencies = successfulResults.map(item => Number(item.elapsed_ms)).filter(Number.isFinite);
+      const httpStatusCounts = {};
+      for (const item of results) { const status = String(item?.status ?? 0); httpStatusCounts[status] = (httpStatusCounts[status] || 0) + 1; }
+      const failureCodes = {};
+      for (const item of failedResults) { const code = String(item?.error || "UNKNOWN"); failureCodes[code] = (failureCodes[code] || 0) + 1; }
+      const summary = {
+        run_id: runId,
+        kingdom_count: kids.length,
+        start_kid: Math.min(...kids),
+        end_kid: Math.max(...kids),
+        board_mode: allRankings ? "ALL" : "SINGLE",
+        board: allRankings ? "ALL" : board,
+        concurrency,
+        elapsed_ms: Date.now() - startedAt,
+        success_count: success,
+        failed_count: failed,
+        http_status_counts: httpStatusCounts,
+        failure_codes: failureCodes,
+        latency_min_ms: latencies.length ? Math.min(...latencies) : null,
+        latency_max_ms: latencies.length ? Math.max(...latencies) : null,
+        latency_avg_ms: latencies.length ? Math.round(latencies.reduce((a,b) => a+b, 0) / latencies.length) : null,
+        peak_in_flight: concurrency,
+        result_sample: failedResults.slice(0, 50).map(item => ({ kid:item.kid, status:item.status, error:item.error }))
+      };
+      await recordServiceUsage(env, {
+        operation: "OWNER_KINGDOM_LOAD_TEST",
+        actorUserId: auth.user_id,
+        targetType: "USER",
+        targetId: auth.user_id,
+        metadata: summary
+      });
+      console.log("eagleeye_owner_kingdom_load_test_complete", { actor_user_id: auth.user_id, actor_role: auth.role, ...summary });
+
       await send({
         type: "complete",
+        run_id: runId,
         ok: true,
         target_count: kids.length,
         concurrency,
         board: allRankings ? "ALL" : board,
         all_rankings: allRankings,
-        elapsed_ms: Date.now() - startedAt,
+        elapsed_ms: summary.elapsed_ms,
         success,
         failed,
         results
@@ -198,6 +241,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth) {
     } catch (error) {
       await send({
         type: "error",
+        run_id: runId,
         ok: false,
         error: String(error?.message || error || "LOAD_TEST_FAILED").slice(0, 1000)
       });
