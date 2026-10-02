@@ -76,7 +76,7 @@ export async function runMightPulseResearch(env, { governorId, candidate }) {
 
   try {
     lease = await leaseApiKey(env.DB, {
-      poolType: "SYSTEM_GENERAL",
+      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
       purpose: "MIGHTPULSE_RESEARCH",
       targetType: "PLAYER",
       targetId: id
