@@ -255,8 +255,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const runNow=Math.floor(Date.now()/1000);
   try{
-    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
-      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,requestedConcurrency,concurrency,availablePoolKeys,runNow,runNow).run();
+    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
+      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,1,concurrency,apiConcurrency,availablePoolKeys,runNow,runNow).run();
   }catch(error){
     await releaseLoadTestState(env.DB,runId).catch(()=>{});
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
@@ -349,7 +349,7 @@ window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getEl
           }else{
             result.textContent=(d.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの最終状態を表示中";
             document.getElementById("progressTitle").textContent=d.run_status==="CANCELLED"?"中止":"✓ 更新完了";
-            document.getElementById("progressMeta").textContent="成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"　Job同時実行 "+Number(d.api_concurrency||0);
+            document.getElementById("progressMeta").textContent="成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"　API同時処理 "+Number(d.api_concurrency||0);
             clearInterval(window.__eagleEyeLoadTestStatusTimer);
             run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.disabled=true;
           }
