@@ -86,6 +86,19 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
   }
 }
 
+export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
+  if (request.method !== "GET") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json; charset=UTF-8"}});
+  try {
+    const url = new URL(request.url);
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 20)));
+    const rows = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+    return new Response(JSON.stringify({ok:true,runs:(rows.results||[]).map(row=>({run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:Number(row.success_count||0),failed_count:Number(row.failed_count||0),ranking_rows_saved:Number(row.ranking_rows_saved||0),player_rows_saved:Number(row.player_rows_saved||0),elapsed_ms:row.elapsed_ms==null?null:Number(row.elapsed_ms)})))}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  } catch(error) {
+    console.error("owner_kingdom_load_test_history_failed",error?.message||error);
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_HISTORY_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
+}
+
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
@@ -293,7 +306,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   }
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   const send=async payload=>writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
-  let runFailed=false;
+  let runFailed=false,runSummary=null;
   const run=(async()=>{try{
     await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0});
     const apiLimiter=createLoadTestApiLimiter(apiConcurrency);
@@ -341,12 +354,13 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     const latencies=successfulResults.map(item=>Number(item.elapsed_ms)).filter(Number.isFinite),failureCodes={};
     for(const item of failedResults){const code=String(item?.error||"UNKNOWN");failureCodes[code]=(failureCodes[code]||0)+1;}
     const summary={run_id:runId,kingdom_count:kids.length,start_kid:Math.min(...kids),end_kid:Math.max(...kids),mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,elapsed_ms:Date.now()-startedAt,success_count:success,failed_count:failed,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:kids.length*26*100,latency_min_ms:latencies.length?Math.min(...latencies):null,latency_max_ms:latencies.length?Math.max(...latencies):null,latency_avg_ms:latencies.length?Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length):null,failure_codes:failureCodes,result_sample:failedResults.slice(0,50).map(item=>({kid:item.kid,error:item.error}))};
+    runSummary=summary;
     await recordServiceUsage(env,{operation:"OWNER_KINGDOM_LOAD_TEST",actorUserId:auth.user_id,targetType:"USER",targetId:auth.user_id,metadata:summary});
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",metadata:summary});
     await send({type:cancelledResults.length?"cancelled":"complete",run_id:runId,ok:true,cancelled:Boolean(cancelledResults.length),target_count:kids.length,concurrency,api_concurrency:apiConcurrency,top_n:topN,elapsed_ms:summary.elapsed_ms,success,failed,cancelled_count:cancelledResults.length,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:summary.max_expected_ranking_rows,results});
   }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
     const finalNow=Math.floor(Date.now()/1000);
-    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,finalNow,finalNow,runId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close();
 }})();
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
