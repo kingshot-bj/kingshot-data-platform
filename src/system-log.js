@@ -156,6 +156,7 @@ export async function getSystemEventLog(db, {
   pageSize = 500
 } = {}) {
   if (!db) return [];
+  await ensureSystemLogSchema(db);
 
   const requestedLimit = limit == null ? null : Math.min(Math.max(Number(limit) || 200, 1), 500);
   const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 1), 500);
