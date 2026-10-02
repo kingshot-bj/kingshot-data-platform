@@ -93,10 +93,6 @@ async function runWithConcurrency(items, concurrency, worker, onComplete = null)
   return results;
 }
 
-function traceIdForRun(runId) {
-  return runId ? "load-" + runId : systemTraceId("load");
-}
-
 async function runKingdomLoad(env, kid, board, allRankings = false, runId = null, parentTraceId = null) {
   const trace = childSystemTrace(parentTraceId ? { traceId: parentTraceId } : null, {
     targetType: "KINGDOM",
@@ -150,7 +146,8 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
         targetId: String(kid),
         jobId: runId,
         purpose: "OWNER_LOAD_TEST",
-        httpStatus: result.status
+        httpStatus: result.status,
+        traceId: trace.traceId
       });
       await recordUsage(env.DB, {
         keyId: lease.key_id,
@@ -196,7 +193,8 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
           errorMessage: error?.message || null,
           cooldownSeconds: cooldown,
           disable,
-          keepAvailable
+          keepAvailable,
+          traceId: trace.traceId
         });
         await recordUsage(env.DB, {
           keyId: lease.key_id,
