@@ -80,10 +80,23 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
     const now=Math.floor(Date.now()/1000);
-    const row=await env.DB.prepare("SELECT lock_token,lock_until,updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1").bind(LOAD_TEST_LOCK_KEY,now).first();
-    if(!row)return new Response(JSON.stringify({ok:true,active:false,jobs:[]}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
-    const runId=String(row.lock_token);
-    const runMeta=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
+    const lock=await env.DB.prepare("SELECT lock_token,lock_until,updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1").bind(LOAD_TEST_LOCK_KEY,now).first();
+
+    // Reload recovery must work even after the stream has already completed.
+    // The run metadata is the authoritative source for the original target set.
+    let runId=lock?.lock_token ? String(lock.lock_token) : null;
+    let runMeta=null;
+    if(runId){
+      runMeta=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
+    }else{
+      runMeta=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT 1").first();
+      if(runMeta?.run_id) runId=String(runMeta.run_id);
+    }
+
+    if(!runId || !runMeta){
+      return new Response(JSON.stringify({ok:true,active:false,run_id:null,jobs:[]}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+    }
+
     const jobs=await env.DB.prepare("SELECT job_id,kid,top_n,status,board_index,player_cursor,player_ids_json,ranking_rows,player_rows,created_at,updated_at,last_error FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY kid ASC").bind("LOAD_TEST:"+runId).all();
     const normalizedJobs=(jobs.results||[]).map(job=>{
       let playerCount=0;try{playerCount=JSON.parse(job.player_ids_json||"[]").length;}catch{}
@@ -91,21 +104,25 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       const phase=rawStatus==="FAILED"&&String(job.last_error||"")==="LOAD_TEST_CANCELLED"?"CANCELLED":rawStatus;
       return {job_id:job.job_id,kid:Number(job.kid),top_n:Number(job.top_n||0),phase,board_index:Number(job.board_index||0),total_boards:26,player_cursor:Number(job.player_cursor||0),player_count:playerCount,ranking_rows:Number(job.ranking_rows||0),player_rows:Number(job.player_rows||0),created_at:Number(job.created_at||0),updated_at:Number(job.updated_at||0),last_error:job.last_error||null,completed:["COMPLETED","FAILED","CANCELLED"].includes(phase)};
     });
-    const targetCount=Number(runMeta?.target_count||normalizedJobs.length);
+
+    const targetCount=Number(runMeta.target_count||0);
     const completed=normalizedJobs.filter(j=>j.completed).length;
     const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
     const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
     const cancelled=normalizedJobs.filter(j=>j.phase==="CANCELLED").length;
+    const runStatus=String(runMeta.status||"RUNNING");
+    const active=Boolean(lock)||runStatus==="RUNNING";
+
     return new Response(JSON.stringify({
-      ok:true,active:true,run_id:runId,
-      started_at:Number(runMeta?.created_at||row.updated_at||0),
-      expires_at:row.lock_until||null,
+      ok:true,active,run_id:runId,run_status:runStatus,
+      started_at:Number(runMeta.created_at||lock?.updated_at||0),
+      expires_at:lock?.lock_until||null,
       target_count:targetCount,
       completed,success,failed,cancelled,
-      requested_concurrency:Number(runMeta?.requested_concurrency||0),
-      concurrency:Number(runMeta?.concurrency||0),
-      top_n:Number(runMeta?.top_n||0),
-      kids:runMeta?.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
+      requested_concurrency:Number(runMeta.requested_concurrency||0),
+      concurrency:Number(runMeta.concurrency||0),
+      top_n:Number(runMeta.top_n||0),
+      kids:runMeta.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
       jobs:normalizedJobs
     }),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
@@ -113,7 +130,6 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
     return new Response(JSON.stringify({ok:false,active:false,error:"LOAD_TEST_STATUS_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
 }
-
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
@@ -232,7 +248,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
 export function renderOwnerKingdomLoadTestPage() {
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用の一時Jobだけ終了後に削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><label>王国Job同時実行数<select id="concurrency"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" style="display:none;background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">全体進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div></div><script>(function(){function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}</style></head><body><main class="wrap"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用Jobも通常の王国Watchlist Jobと同じくD1へ保存し、終了後24時間の保持期間を経て通常の保持期限処理で削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><label>王国Job同時実行数<select id="concurrency"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="26">26</option><option value="30">30</option><option value="40">40</option><option value="50">50</option></select></label><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" style="display:none;background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">全体進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div></div><script>(function(){function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
 function renderJobProgress(j){
   var boardTotal=Number(j.total_boards||26);
   var board=Number(j.board_index||0);
@@ -261,22 +277,39 @@ window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getEl
     var response=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});
     if(!response.ok)return;
     var data=await response.json();
-    if(!data.active)return;
+    if(!data.run_id)return;
+
     var run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};
-    run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;
     (data.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
     document.getElementById("progress").style.display="block";
-    renderProgress(Object.assign({},data,{concurrency:0}),active);
-    result.textContent="実行中…\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
-    window.__eagleEyeLoadTestStatusTimer=setInterval(async function(){
-      try{
-        var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});if(!r.ok)return;
-        var d=await r.json();if(!d.active){clearInterval(window.__eagleEyeLoadTestStatusTimer);return;}
-        active={};(d.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
-        renderProgress(Object.assign({},d,{concurrency:0}),active);
-        result.textContent="実行中…\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの進捗を表示中";
-      }catch(e){}
-    },2000);
+    renderProgress(Object.assign({},data,{concurrency:data.concurrency||0}),active);
+
+    if(data.active){
+      run.disabled=true;run.textContent="実行中…";cancel.style.display="inline-block";cancel.disabled=false;
+      result.textContent="実行中…\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
+      window.__eagleEyeLoadTestStatusTimer=setInterval(async function(){
+        try{
+          var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});if(!r.ok)return;
+          var d=await r.json();
+          if(!d.run_id){clearInterval(window.__eagleEyeLoadTestStatusTimer);return;}
+          active={};(d.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
+          renderProgress(Object.assign({},d,{concurrency:d.concurrency||0}),active);
+          if(d.active){
+            result.textContent="実行中…\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの進捗を表示中";
+          }else{
+            result.textContent=(d.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの最終状態を表示中";
+            document.getElementById("progressTitle").textContent=d.run_status==="CANCELLED"?"中止":"✓ 更新完了";
+            document.getElementById("progressMeta").textContent="成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"　Job同時実行 "+Number(d.concurrency||0);
+            clearInterval(window.__eagleEyeLoadTestStatusTimer);
+            run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.style.display="none";cancel.disabled=false;
+          }
+        }catch(e){}
+      },2000);
+    }else{
+      result.textContent=(data.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの最終状態を表示中";
+      document.getElementById("progressTitle").textContent=data.run_status==="CANCELLED"?"中止":"✓ 更新完了";
+      document.getElementById("progressMeta").textContent="成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"　Job同時実行 "+Number(data.concurrency||0);
+    }
   }catch(e){}
 }
 window.__eagleEyeBuildKids();
