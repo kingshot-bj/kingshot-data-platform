@@ -39,7 +39,7 @@ import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, re
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
-import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
+import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleOwnerKingdomLoadTestCancelApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { archiveSystemEventLog } from "./retention.js";
@@ -3697,6 +3697,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/api/admin/api-pool/test-ranking") return await handleApiPoolTestRanking(request, env);
       if (url.pathname === "/api/owner/kingdom-load-test/status") return await handleOwnerKingdomLoadTestStatusApi(request, env);
+      if (url.pathname === "/api/owner/kingdom-load-test/cancel") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestCancelApi(request, env, guard.auth); }
       if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId, processKingdomWatchlistJob); }
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
