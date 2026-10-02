@@ -40,6 +40,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
+import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 async function runDiagnosticHealthChecks(env) {
@@ -3635,6 +3636,7 @@ export default {
       if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
       if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
+      if (url.pathname === "/api/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleAdminSystemLogApi(request, env, guard.auth); }
       if (url.pathname === "/api/admin/discord/roles") return await handleDiscordRolesLookupApi(request, env);
       if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
       if (url.pathname === "/api/admin/r2-archive-objects") return await handleR2ArchiveObjectsApi(request, env);
@@ -3666,6 +3668,7 @@ export default {
       if (url.pathname === "/support") return eagleEyeHtmlResponse(await renderSupportPage(request, env));
       if (url.pathname === "/status") return await renderPublicStatusPage(request, env);
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
+      if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-raw-data") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderApiRawDataPage(guard.auth)); }
