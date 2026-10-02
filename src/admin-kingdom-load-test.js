@@ -1,7 +1,7 @@
 import { getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
 import { configureApiPoolEncryption, leaseApiKey, recordApiPoolSuccess, recordApiPoolFailure, recordUsage, getApiPoolAvailability } from "./api-pool.js";
 import { recordServiceUsage } from "./service-usage.js";
-import { recordSystemEvent, systemTraceId } from "./system-log.js";
+import { childSystemTrace, runSystemOperation, systemTraceId } from "./system-log.js";
 
 const MAX_KINGDOMS = 1000;
 const MAX_CONCURRENCY = 50;
@@ -97,92 +97,51 @@ function traceIdForRun(runId) {
   return runId ? "load-" + runId : systemTraceId("load");
 }
 
-async function runKingdomLoad(env, kid, board, allRankings = false, runId = null, traceId = null) {
+async function runKingdomLoad(env, kid, board, allRankings = false, runId = null, parentTraceId = null) {
+  const trace = childSystemTrace(parentTraceId ? { traceId: parentTraceId } : null, {
+    targetType: "KINGDOM",
+    targetId: String(kid)
+  });
   let lease = null;
-  try {
-    configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
-    const poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-    let poolType = null;
-    lease = await leaseApiKey(env.DB, {
-      poolTypes,
-      jobId: runId,
-      purpose: "OWNER_LOAD_TEST",
-      targetType: "KINGDOM",
-      targetId: String(kid)
-    });
-    poolType = lease.pool_type;
+  return runSystemOperation(env.DB, trace, {
+    eventType: "KINGDOM_REQUEST",
+    service: "load_test",
+    feature: "owner_kingdom_load_test",
+    operation: "MIGHTPULSE_KINGDOM_RANKING",
+    actorType: "OWNER",
+    targetType: "KINGDOM",
+    targetId: String(kid),
+    message: "王国ランキング取得完了",
+    successStatus: "COMPLETED",
+    failureStatus: "FAILED",
+    metadata: { runId, board: allRankings ? "ALL" : board, allRankings }
+  }, async () => {
+    try {
+      configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+      const poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+      lease = await leaseApiKey(env.DB, {
+        poolTypes,
+        jobId: runId,
+        purpose: "OWNER_LOAD_TEST",
+        targetType: "KINGDOM",
+        targetId: String(kid)
+      });
 
-    const startedAt = Date.now();
-    const result = allRankings
-      ? await getMightPulseKingdomAllRankings(env, String(kid), { limit: 100, apiKey: lease.api_key })
-      : await getMightPulseKingdomRanks(env, String(kid), { board, limit: 100, apiKey: lease.api_key });
-    const elapsedMs = Date.now() - startedAt;
-    const payload = result?.data || {};
-    const entries = Array.isArray(payload?.data) ? payload.data.length :
-      Array.isArray(payload?.rankings) ? payload.rankings.length :
-      Array.isArray(payload?.results) ? payload.results.length : null;
-    const boardCount = allRankings && payload?.boards && typeof payload.boards === "object" && !Array.isArray(payload.boards)
-      ? Object.keys(payload.boards).length
-      : null;
-
-    const endpoint = allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks";
-    await recordApiPoolSuccess(env.DB, {
-      keyId: lease.key_id,
-      leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-      endpoint,
-      targetType: "KINGDOM",
-      targetId: String(kid),
-      jobId: runId,
-      purpose: "OWNER_LOAD_TEST",
-      httpStatus: result.status
-    });
-    await recordUsage(env.DB, {
-      keyId: lease.key_id,
-      provider: lease.provider,
-      poolType: lease.pool_type,
-      endpoint,
-      targetType: "KINGDOM",
-      targetId: String(kid),
-      jobId: runId,
-      purpose: "OWNER_LOAD_TEST",
-      httpStatus: result.status,
-      requestCount: 1
-    });
-
-    await recordSystemEvent(env.DB, {
-      traceId: traceId || traceIdForRun(runId),
-      eventType: "KINGDOM_REQUEST",
-      service: "load_test",
-      feature: "owner_kingdom_load_test",
-      operation: "MIGHTPULSE_KINGDOM_RANKING",
-      status: "COMPLETED",
-      actorType: "OWNER",
-      targetType: "KINGDOM",
-      targetId: String(kid),
-      elapsedMs,
-      httpStatus: result.status,
-      message: "王国ランキング取得完了",
-      metadata: { runId, poolType: lease.pool_type, board: allRankings ? "ALL" : board, allRankings, entryCount: entries, boardCount }
-    });
-    return {
-      run_id: runId,
-      kid: Number(kid),
-      ok: true,
-      status: result.status,
-      pool_type: poolType,
-      entry_count: entries,
-      board_count: boardCount,
-      elapsed_ms: elapsedMs
-    };
-  } catch (error) {
-    if (lease) {
-      const status = Number(error?.status || 0);
-      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
-      const disable = status === 401 || status === 403;
-      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      const startedAt = Date.now();
+      const result = allRankings
+        ? await getMightPulseKingdomAllRankings(env, String(kid), { limit: 100, apiKey: lease.api_key })
+        : await getMightPulseKingdomRanks(env, String(kid), { board, limit: 100, apiKey: lease.api_key });
+      const elapsedMs = Date.now() - startedAt;
+      const payload = result?.data || {};
+      const entries = Array.isArray(payload?.data) ? payload.data.length :
+        Array.isArray(payload?.rankings) ? payload.rankings.length :
+        Array.isArray(payload?.results) ? payload.results.length : null;
+      const boardCount = allRankings && payload?.boards && typeof payload.boards === "object" && !Array.isArray(payload.boards)
+        ? Object.keys(payload.boards).length
+        : null;
       const endpoint = allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks";
-      await recordApiPoolFailure(env.DB, {
+
+      await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
         poolType: lease.pool_type,
@@ -191,12 +150,7 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
         targetId: String(kid),
         jobId: runId,
         purpose: "OWNER_LOAD_TEST",
-        httpStatus: status,
-        errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
-        errorMessage: error?.message || null,
-        cooldownSeconds: cooldown,
-        disable,
-        keepAvailable
+        httpStatus: result.status
       });
       await recordUsage(env.DB, {
         keyId: lease.key_id,
@@ -207,33 +161,59 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
         targetId: String(kid),
         jobId: runId,
         purpose: "OWNER_LOAD_TEST",
-        httpStatus: status,
+        httpStatus: result.status,
         requestCount: 1
       });
+
+      return {
+        run_id: runId,
+        kid: Number(kid),
+        ok: true,
+        status: result.status,
+        pool_type: lease.pool_type,
+        entry_count: entries,
+        board_count: boardCount,
+        elapsed_ms: elapsedMs
+      };
+    } catch (error) {
+      if (lease) {
+        const status = Number(error?.status || 0);
+        const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+        const disable = status === 401 || status === 403;
+        const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+        const endpoint = allRankings ? "/kingdoms/:kid?include=boards" : "/kingdoms/:kid/ranks";
+        await recordApiPoolFailure(env.DB, {
+          keyId: lease.key_id,
+          leaseId: lease.lease_id,
+          poolType: lease.pool_type,
+          endpoint,
+          targetType: "KINGDOM",
+          targetId: String(kid),
+          jobId: runId,
+          purpose: "OWNER_LOAD_TEST",
+          httpStatus: status,
+          errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+          errorMessage: error?.message || null,
+          cooldownSeconds: cooldown,
+          disable,
+          keepAvailable
+        });
+        await recordUsage(env.DB, {
+          keyId: lease.key_id,
+          provider: lease.provider,
+          poolType: lease.pool_type,
+          endpoint,
+          targetType: "KINGDOM",
+          targetId: String(kid),
+          jobId: runId,
+          purpose: "OWNER_LOAD_TEST",
+          httpStatus: status,
+          requestCount: 1
+        });
+      }
+      throw error;
     }
-    await recordSystemEvent(env.DB, {
-      traceId: traceIdForRun(runId),
-      eventType: "KINGDOM_REQUEST",
-      service: "load_test",
-      feature: "owner_kingdom_load_test",
-      operation: "MIGHTPULSE_KINGDOM_RANKING",
-      status: "FAILED",
-      actorType: "OWNER",
-      targetType: "KINGDOM",
-      targetId: String(kid),
-      httpStatus: Number(error?.status || 0) || null,
-      errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
-      message: error?.message || "王国ランキング取得失敗",
-      metadata: { runId, poolType: lease?.pool_type || null, board: allRankings ? "ALL" : board, allRankings }
-    });
-    return {
-      run_id: runId,
-      kid: Number(kid),
-      ok: false,
-      status: Number(error?.status || 0),
-      error: error?.code || error?.message || "MIGHTPULSE_RANKING_REQUEST_FAILED"
-    };
-  }
+  });
 }
 
 export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestTraceId = null) {
