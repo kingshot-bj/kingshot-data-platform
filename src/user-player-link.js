@@ -1,3 +1,4 @@
+import { runSystemOperation, createSystemTrace } from "./system-log.js";
 let userPlayerLinkSchemaPromise = null;
 
 export const KINGSHOT_FREE_KINGDOM_LIMIT = 2;
@@ -132,7 +133,7 @@ export async function findActiveGovernorOwner(db, governorId) {
   `).bind(normalizeGovernorId(governorId)).first();
 }
 
-export async function saveUserPlayerLink(db, userId, governorId, accountType = "MAIN", { allowExtraAccounts = false } = {}) {
+async function saveUserPlayerLinkInternal(db, userId, governorId, accountType = "MAIN", { allowExtraAccounts = false } = {}) {
   await ensureSchema(db);
   const normalized = normalizeGovernorId(governorId);
   if (!normalized) {
@@ -203,7 +204,7 @@ export async function saveUserPlayerLink(db, userId, governorId, accountType = "
   return db.prepare("SELECT * FROM user_player_links WHERE link_id = ?").bind(linkId).first();
 }
 
-export async function disableUserPlayerLink(db, userId, governorId = null) {
+async function disableUserPlayerLinkInternal(db, userId, governorId = null) {
   await ensureSchema(db);
   const now = Math.floor(Date.now() / 1000);
   const query = governorId
@@ -219,7 +220,7 @@ export function validateGovernorId(value) {
   return normalizeGovernorId(value);
 }
 
-export async function createOwnershipSupportRequest(db, {
+async function createOwnershipSupportRequestInternal(db, {
   requesterUserId, governorId, conflictingUserId = null, discordSupportUrl = null, note = null
 }) {
   const now = Math.floor(Date.now() / 1000);
@@ -237,7 +238,7 @@ export async function createOwnershipSupportRequest(db, {
   return db.prepare("SELECT * FROM user_player_link_support_requests WHERE request_id = ?").bind(requestId).first();
 }
 
-export async function verifyAndTransferPlayerLink(db, {
+async function verifyAndTransferPlayerLinkInternal(db, {
   requestId, ownerUserId, newUserId, resolverUserId, resolutionNote = null
 }) {
   const request = await db.prepare("SELECT * FROM user_player_link_support_requests WHERE request_id = ?").bind(requestId).first();
@@ -292,4 +293,37 @@ export async function verifyAndTransferPlayerLink(db, {
   ).run();
 
   return getUserPlayerLink(db, normalizedNewUserId);
+}
+
+
+export async function saveUserPlayerLink(db, userId, governorId, accountType = "MAIN", options = {}) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: userId, targetType: "PLAYER", targetId: governorId });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_player_link", feature: "account_link",
+    operation: "SAVE_USER_PLAYER_LINK", targetType: "PLAYER", targetId: governorId
+  }, () => saveUserPlayerLinkInternal(db, userId, governorId, accountType, options));
+}
+
+export async function disableUserPlayerLink(db, userId, governorId = null) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: userId, targetType: "PLAYER", targetId: governorId });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_player_link", feature: "account_link",
+    operation: "DISABLE_USER_PLAYER_LINK", targetType: "PLAYER", targetId: governorId
+  }, () => disableUserPlayerLinkInternal(db, userId, governorId));
+}
+
+export async function createOwnershipSupportRequest(db, options) {
+  const trace = createSystemTrace({ actorType: "USER", actorId: options?.requesterUserId || null, targetType: "PLAYER", targetId: options?.governorId || null });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_player_link", feature: "ownership_support",
+    operation: "CREATE_OWNERSHIP_SUPPORT_REQUEST", targetType: "PLAYER", targetId: options?.governorId || null
+  }, () => createOwnershipSupportRequestInternal(db, options));
+}
+
+export async function verifyAndTransferPlayerLink(db, options) {
+  const trace = createSystemTrace({ actorType: "ADMIN", actorId: options?.resolverUserId || null, targetType: "PLAYER", targetId: options?.requestId || null });
+  return runSystemOperation(db, trace, {
+    eventType: "D1_WRITE", service: "user_player_link", feature: "ownership_support",
+    operation: "VERIFY_AND_TRANSFER_PLAYER_LINK", targetType: "PLAYER", targetId: options?.requestId || null
+  }, () => verifyAndTransferPlayerLinkInternal(db, options));
 }
