@@ -3347,4 +3347,45 @@ System Statusの運用JSONに、OWNER王国負荷テストの現在状態を追�
 4. 同じrun_idのSERVICE_USAGE / Workerログとstatus JSONを突合する。
 5. D1 Rows Read/Written、Workers CPU、API Poolの値を同じ時系列で比較する。
 
+## 58-1. 2026-10-02 API Pool lease詳細をSystem Status JSONへ追加
+
+status JSONだけでは従来「activeLeases: 6 / expiredActiveLeases: 6」の件数までしか分からず、どの処理がキーをleaseしているかを特定できなかったため、api_pool_keys のleaseメタデータをJSONへ追加。
+
+追加:
+- apiPool.leaseDetails[]
+  - keyId
+  - poolType
+  - status
+  - label
+  - leaseState: ACTIVE / EXPIRED
+  - leasedUntil
+  - leaseJobId
+  - leasePurpose
+  - leaseTargetType
+  - leaseTargetId
+  - updatedAt
+- apiPool.leaseByPurpose
+  - purpose別のlease本数集計
+
+これにより、status JSON取得時点で「どの用途（watchlist / general / health check / OWNER負荷テスト等）がどのleaseを保持しているか」を、APIキー本体を露出せず追跡できる。
+
+重要:
+- APIキー本体、encrypted_key、fingerprint等のsecret情報は出さない。
+- contributed_by_user_id は「キー提供者」であり現在の利用者ではないため、このJSONには出さない。
+- leaseJobId / leasePurpose / leaseTargetType / leaseTargetId は処理主体・対象を特定するための相関情報。
+- status JSON取得自体はSELECTのみで、leaseの作成・更新・解放は行わない。
+- D1追加readはlease metadataの一覧1クエリ。キー数規模に応じた小規模readで、APIキー本体取得はしない。
+
+## 本番確認状況
+- GitHub main反映: **済み**。
+- Cloudflare本番deploy: **未確認**。
+- 本番status JSONで apiPool.leaseDetails / leaseByPurpose が実際に返ること: **未確認**。
+- 本番で「誰が/何の処理がleaseしているか」をこのJSONだけで相関できること: **未確認**。
+
+本番確認時は、テスト前status JSONを保存し、
+1. leaseDetails のACTIVE/EXPIREDを確認。
+2. leasePurpose / leaseJobId / target情報から利用処理を特定。
+3. OWNER負荷テスト実行時は OWNER_LOAD_TEST 等のpurposeとrun_idログを突合。
+4. テスト後にleaseが解放され、不要なEXPIRED leaseが残らないことを確認。
+
 **コード実装済みと本番確認済みは分離して扱う。**
