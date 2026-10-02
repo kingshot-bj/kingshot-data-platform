@@ -93,6 +93,10 @@ async function runWithConcurrency(items, concurrency, worker, onComplete = null)
   return results;
 }
 
+function traceIdForRun(runId) {
+  return runId ? "load-" + runId : systemTraceId("load");
+}
+
 async function runKingdomLoad(env, kid, board, allRankings = false, runId = null) {
   let lease = null;
   try {
@@ -146,6 +150,21 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
       requestCount: 1
     });
 
+    await recordSystemEvent(env.DB, {
+      traceId: traceIdForRun(runId),
+      eventType: "KINGDOM_REQUEST",
+      service: "load_test",
+      feature: "owner_kingdom_load_test",
+      operation: "MIGHTPULSE_KINGDOM_RANKING",
+      status: "COMPLETED",
+      actorType: "OWNER",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      elapsedMs,
+      httpStatus: result.status,
+      message: "王国ランキング取得完了",
+      metadata: { runId, poolType: lease.pool_type, board: allRankings ? "ALL" : board, allRankings, entryCount: entries, boardCount }
+    });
     return {
       run_id: runId,
       kid: Number(kid),
@@ -192,6 +211,21 @@ async function runKingdomLoad(env, kid, board, allRankings = false, runId = null
         requestCount: 1
       });
     }
+    await recordSystemEvent(env.DB, {
+      traceId: traceIdForRun(runId),
+      eventType: "KINGDOM_REQUEST",
+      service: "load_test",
+      feature: "owner_kingdom_load_test",
+      operation: "MIGHTPULSE_KINGDOM_RANKING",
+      status: "FAILED",
+      actorType: "OWNER",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      httpStatus: Number(error?.status || 0) || null,
+      errorCode: error?.code || "MIGHTPULSE_RANKING_REQUEST_FAILED",
+      message: error?.message || "王国ランキング取得失敗",
+      metadata: { runId, poolType: lease?.pool_type || null, board: allRankings ? "ALL" : board, allRankings }
+    });
     return {
       run_id: runId,
       kid: Number(kid),
@@ -252,6 +286,20 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
 
   const run = (async () => {
     try {
+      await recordSystemEvent(env.DB, {
+        traceId,
+        eventType: "LOAD_TEST",
+        service: "load_test",
+        feature: "owner_kingdom_load_test",
+        operation: "START",
+        status: "STARTED",
+        actorType: "OWNER",
+        actorId: auth.user_id,
+        targetType: "KINGDOM_BATCH",
+        targetId: String(kids.length),
+        message: "OWNER王国並列負荷テスト開始",
+        metadata: { runId, targetCount: kids.length, startKid: Math.min(...kids), endKid: Math.max(...kids), board: allRankings ? "ALL" : board, allRankings, requestedConcurrency, concurrency, availablePoolKeys, reservedForNormalUse: 1 }
+      });
       console.log("eagleeye_owner_kingdom_load_test_start", { run_id: runId, actor_user_id: auth.user_id, actor_role: auth.role, target_count: kids.length, start_kid: Math.min(...kids), end_kid: Math.max(...kids), board_mode: allRankings ? "ALL" : "SINGLE", board: allRankings ? "ALL" : board, requested_concurrency: requestedConcurrency, concurrency, available_pool_keys: availablePoolKeys, reserved_for_normal_use: 1 });
       await send({
         type: "start",
@@ -329,6 +377,21 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         targetId: auth.user_id,
         metadata: summary
       });
+      await recordSystemEvent(env.DB, {
+        traceId,
+        eventType: "LOAD_TEST",
+        service: "load_test",
+        feature: "owner_kingdom_load_test",
+        operation: "COMPLETE",
+        status: failed ? "COMPLETED_WITH_ERRORS" : "COMPLETED",
+        actorType: "OWNER",
+        actorId: auth.user_id,
+        targetType: "KINGDOM_BATCH",
+        targetId: String(kids.length),
+        elapsedMs: summary.elapsed_ms,
+        message: failed ? "OWNER王国並列負荷テスト完了（一部失敗あり）" : "OWNER王国並列負荷テスト完了",
+        metadata: summary
+      });
       console.log("eagleeye_owner_kingdom_load_test_complete", { actor_user_id: auth.user_id, actor_role: auth.role, ...summary });
 
       await send({
@@ -345,6 +408,22 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         results
       });
     } catch (error) {
+      await recordSystemEvent(env.DB, {
+        traceId,
+        eventType: "LOAD_TEST",
+        service: "load_test",
+        feature: "owner_kingdom_load_test",
+        operation: "RUN",
+        status: "FAILED",
+        actorType: "OWNER",
+        actorId: auth.user_id,
+        targetType: "KINGDOM_BATCH",
+        targetId: String(kids.length),
+        elapsedMs: Date.now() - startedAt,
+        errorCode: error?.code || "LOAD_TEST_FAILED",
+        message: error?.message || "王国並列負荷テスト失敗",
+        metadata: { runId, targetCount: kids.length }
+      });
       await send({
         type: "error",
         run_id: runId,
