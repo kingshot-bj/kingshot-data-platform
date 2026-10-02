@@ -26,6 +26,75 @@ export async function recordSystemEvent(db, input = {}) {
   } catch(error) { console.error("system_event_log_write_failed",error?.message||error); return null; }
 }
 
+export function createSystemTrace({ traceId = null, parentTraceId = null, actorType = null, actorId = null, targetType = null, targetId = null, metadata = null } = {}) {
+  return {
+    traceId: traceId || systemTraceId("op"),
+    parentTraceId: parentTraceId || null,
+    actorType: actorType || null,
+    actorId: actorId || null,
+    targetType: targetType || null,
+    targetId: targetId || null,
+    metadata: metadata || null
+  };
+}
+
+export function childSystemTrace(parent, input = {}) {
+  const base = parent || {};
+  return createSystemTrace({
+    traceId: input.traceId || systemTraceId("op"),
+    parentTraceId: base.traceId || input.parentTraceId || null,
+    actorType: input.actorType ?? base.actorType ?? null,
+    actorId: input.actorId ?? base.actorId ?? null,
+    targetType: input.targetType ?? base.targetType ?? null,
+    targetId: input.targetId ?? base.targetId ?? null,
+    metadata: input.metadata ?? base.metadata ?? null
+  });
+}
+
+/**
+ * Execute one logical operation and emit exactly one terminal System Log event.
+ * This is intentionally terminal-only to avoid doubling D1 writes with START/COMPLETE pairs.
+ * Nested operations receive childSystemTrace(parent) and therefore remain queryable as one trace tree.
+ */
+export async function runSystemOperation(db, trace, input = {}, handler) {
+  const startedAt = Date.now();
+  const context = trace || createSystemTrace();
+  try {
+    const result = await handler(context);
+    await recordSystemEvent(db, {
+      ...input,
+      traceId: context.traceId,
+      parentTraceId: context.parentTraceId,
+      actorType: input.actorType ?? context.actorType,
+      actorId: input.actorId ?? context.actorId,
+      targetType: input.targetType ?? context.targetType,
+      targetId: input.targetId ?? context.targetId,
+      startedAt: Math.floor(startedAt / 1000),
+      completedAt: Math.floor(Date.now() / 1000),
+      elapsedMs: Date.now() - startedAt,
+      status: input.successStatus || "COMPLETED"
+    });
+    return result;
+  } catch (error) {
+    await recordSystemEvent(db, {
+      ...input,
+      traceId: context.traceId,
+      parentTraceId: context.parentTraceId,
+      actorType: input.actorType ?? context.actorType,
+      actorId: input.actorId ?? context.actorId,
+      targetType: input.targetType ?? context.targetType,
+      targetId: input.targetId ?? context.targetId,
+      startedAt: Math.floor(startedAt / 1000),
+      completedAt: Math.floor(Date.now() / 1000),
+      elapsedMs: Date.now() - startedAt,
+      status: input.failureStatus || "FAILED",
+      errorCode: error?.code || input.errorCode || "OPERATION_FAILED",
+      message: error?.message || input.message || "Operation failed"
+    });
+    throw error;
+  }
+}
+
 export async function getSystemEventLog(db,{limit=200,traceId=null,since=null}={}) {
   if (!db) return []; const safeLimit=Math.min(Math.max(Number(limit)||200,1),500);
   let sql="SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,completed_at,elapsed_ms,error_code,message,metadata_json,created_at FROM system_event_log WHERE 1=1"; const binds=[];
