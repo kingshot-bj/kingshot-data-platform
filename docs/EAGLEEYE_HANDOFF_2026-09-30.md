@@ -4453,3 +4453,19 @@ OWNERの王国Watchlist実処理負荷テストは、実際の王国Watchlist処
 - 負荷テスト固有の「全体進捗」「成功 / 失敗」「Job同時実行数」は同じprogressコンポーネント内に追加表示するが、通常Watchlistの進捗カード自体の見た目を別物にしない。
 - コミット: 7bd4b80bf2171208b2e4c1955bfb37cb45633b17 / fix: reuse watchlist progress UI for kingdom load test
 - 本番デプロイ・実機表示は未確認。GitHub mainへの実装反映まで確認済み。
+
+
+---
+
+# 71. 2026-10-02 / 王国Watchlist実処理負荷テストに安全な中止機能を追加
+
+- OWNER負荷テスト実行中に途中中止できるよう実装。
+- 実行中のみ「負荷テストを中止」ボタンを表示。
+- 中止API: `/api/owner/kingdom-load-test/cancel`。OWNER認証必須。
+- 中止要求は `LOAD_TEST_CANCEL` のキャンセルフラグとしてD1へ保存し、各王国Jobの次の処理ループ開始前に検知。
+- 現在進行中のAPIリクエストを強制終了せず、次の処理へ進まない安全停止方式。
+- 中止された一時 `kingdom_watchlist_jobs` は既存finally処理でcleanup。
+- すでに保存されたランキング・プレイヤー・Change Event・R2履歴などの本番利用可能データは削除しない。
+- ロードテストの実行ロックとキャンセルフラグは終了時にcleanup。
+- コミット: `f3eff57271f11d5927cdb045e56f038de7dd0e3c`（中止機能本体）、`76d6ec94f0a95b7c4eb0f1e049735a037b1d0d04`（キャンセルフラグ参照修正）、`a7deb3b50779e62d6b83f636bbb185cee675011a`（index.jsへcancel route追加）。
+- 本番デプロイ・実機での中止確認は未実施。
