@@ -121,22 +121,6 @@ export async function mightPulseFetch(env, path, {
       });
 
       if (!retryable || attempt >= maxRetries) {
-        await recordSystemEvent(env.DB, {
-          traceId: systemTrace,
-          parentTraceId,
-          eventType: "EXTERNAL_API",
-          service: "mightpulse",
-          feature: "mightpulse",
-          operation,
-          status: "FAILED",
-          targetType: targetType || "MIGHTPULSE",
-          targetId: targetId || path,
-          httpStatus: response.status,
-          elapsedMs: Date.now() - startedAt,
-          errorCode: lastError.code,
-          message: lastError.message,
-          metadata: { path, method, attempts }
-        });
         throw lastError;
       }
 
