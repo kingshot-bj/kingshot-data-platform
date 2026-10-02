@@ -3834,46 +3834,89 @@ System Status JSONに systemLog を追加。
 なお、今回の実装はGitHub mainへの反映まで。Cloudflare本番deployおよび実機E2EでSystem Logが実際に負荷テストを捕捉することは、別途確認する。
 
 
-## 61-9. 2026-10-02 継続実装: OWNER負荷テストのSystem Log相関を実装
+## 61-9. 2026-10-02 継続実装: System Logトレース基盤の再設計へ移行
 
-2026-10-02、System LogからOWNER王国並列負荷テストの実行実態を追跡できるよう追加実装。
+2026-10-02、System Logを既存イベントの継ぎ足しではなく、EagleEye全体で共通利用する実行トレース基盤として再設計する方針を確定。
 
-### 実装済み（GitHub main）
+### 設計原則
+- System Logはhealth check一覧ではなく、システム全体の実行履歴・相関情報を追跡する。
+- 既存イベントを無秩序に追加せず、共通Trace Contextを中心に各処理を接続する。
+- 同一処理についてSTART/COMPLETEの2行を機械的に書く方式は、D1書き込み増加と重複を招くため基本採用しない。
+- 1つの論理Operationは原則として終端イベント1件（COMPLETED / FAILED）を記録する。
+- 子処理は `childSystemTrace()` で親Traceと接続する。
+- 外部API、API Pool、D1、R2、Queue、Google、Discord等のイベントも、可能な限り親Operationから辿れるTraceとして記録する。
+- 既存のrun_id等の業務相関IDは削除せず、Traceとは役割を分離して併用する。
+- 過去のSystem Logデータは削除せず、コード上の重複するイベント生成を整理する。
+
+### 2026-10-02時点の新基盤実装
+- `src/system-log.js`
+  - `createSystemTrace()` を追加。
+  - `childSystemTrace()` を追加。
+  - `runSystemOperation()` を追加。
+  - `runSystemOperation()` は論理Operationを実行し、成功時または失敗時に終端イベントを1件記録する。
+  - System Log書き込み失敗は本処理を壊さない既存方針を維持。
 - `src/admin-kingdom-load-test.js`
-  - 負荷テスト開始時に `LOAD_TEST / START` をSystem Logへ記録。
-  - 各王国のMightPulse取得について `KINGDOM_REQUEST / COMPLETED|FAILED` を記録。
-  - 完了時に `LOAD_TEST / COMPLETE` を記録。
-  - 実行全体の例外時に `LOAD_TEST / RUN / FAILED` を記録。
-  - Worker HTTP入口から渡された `requestTraceId` を同じtraceとして各イベントへ伝播。
-  - run_idはAPI Pool lease/usageの既存相関にも継続使用。
-- `src/index.js`
-  - HTTP入口のSystem Logで実際のHTTP response statusを記録するよう修正。
-  - request elapsed_msも記録。
-  - 4xx/5xxの正常Responseは `HTTP_ERROR` として区別し、Worker例外は `FAILED` とする。
-- `src/admin-system-log.js`
-  - ADMIN/OWNER向け `/admin/system-log` UIを追加。
-  - `/api/admin/system-log` で最新イベント、trace_id指定、件数指定を取得可能。
-  - metadata / error / HTTP status / target / elapsedを時系列表示。
+  - 王国単位処理を共通 `runSystemOperation()` へ移行。
+  - 王国ごとに親Traceから子Traceを生成。
+  - 旧 `LOAD_TEST / START` の重複System Logイベントを削除。
+  - 王国単位の `KINGDOM_REQUEST` は終端イベントとして1件記録。
+  - API Pool Success/Failureへ王国単位Traceを渡す。
 - `src/api-pool.js`
-  - 現在のmainでは複数 `poolTypes` をSQLの `pool_type IN (...)` で1つの候補集合として原子的にLRU leaseする実装になっていることを再確認。
-  - したがってstatus-18で観測された単一 `pool_type = ?` SQLは、現在mainの実装そのものではなく、古い/別時点のtelemetryである可能性がある。実本番statusで再確認する必要がある。
+  - `recordApiPoolSuccess()` / `recordApiPoolFailure()` に任意の `traceId` を追加。
+  - 指定されたTraceを優先してSystem Logへ記録できるよう変更。
+  - 既存の `jobId` 相関はSERVICE_USAGE/API Pool用途のため維持。
 
-### 関連commit
-- `9ceb3ecc52937becb3dbe8809ef05ab51b5385af`: OWNER負荷テストSystem Logイベント追加
-- `971f3b17f4872ceb5fd9e2e571da14b7d30624cf`: request traceを王国単位イベントへ伝播
-- `e9cf3325c3963d865050031e09bf2666c2adaa37`: HTTP response status / elapsedをSystem Logへ追加
-- `bdf20dd78f04bbb3143af6fa600df1fb229c269c`: ADMIN System Log viewer
-- `9071153923336c379f0b0fce79d0b9202a74ff94`: System Log API / UI route追加
+### 現在のTrace構造
+
+```
+HTTP request
+  trace_id = requestTrace
+      |
+      +-- OWNER load test
+      |      |
+      |      +-- KINGDOM_REQUEST(kid=XXXX)
+      |      |      +-- API_POOL success/failure
+      |      |
+      |      +-- KINGDOM_REQUEST(kid=YYYY)
+      |             +-- API_POOL success/failure
+      |
+      +-- その他の内部Operation
+```
+
+### まだ移行していない主要処理
+以下はコード上の明示的System Log接続が未整備であり、今後共通Traceへ移行する対象。
+
+- MightPulse本体 / Research
+- Player Store
+- Ranking Store
+- API Observation
+- R2 Archive
+- History Emergency Buffer
+- Retention
+- SERVICE_USAGE / Service Usage Archive
+- Google Drive / Google Sheets
+- Discord Support
+- User Player Link
+- User Eligibility
+- Gateway API
+- 各Admin / Owner mutation
+- Watchlist / Player Watchlist内部処理
+- Auth / OAuth内部処理
 
 ### 本番確認状況
 - GitHub main反映: **済み**
-- Cloudflare本番deploy: **この時点では未確認**
-- 本番でOWNER負荷テストを実行し、`/admin/system-log` またはstatus JSONからSTART→KINGDOM_REQUEST→COMPLETEを確認: **未確認**
-- HTTP入口の実際のstatusがSystem Logへ保存されること: **未確認**
+- Cloudflare本番deploy: **未確認**
+- OWNER負荷テスト実機E2E: **未確認**
+- 新しいTrace基盤での本番Trace相関: **未確認**
 
 ### 次の作業
-1. System Logの主要実行経路を全コード横断で棚卸し。
-2. HTTP入口だけでなく、Watchlist / Player / Ranking / MightPulse / R2 / Google / Discord / Queue / Scheduler / Auth / Admin mutation等の主処理START/COMPLETE/FAILEDをSystem Logへ追加。
-3. System Log自身のD1消費量を監視し、必要なら保持期間/アーカイブ方針を追加。
-4. 本番deploy後にOWNER負荷テストを1回実行し、trace_idとrun_idで全経路を突合する。
-5. 本番確認済みの範囲と未確認範囲をhandoffへ追記する。
+1. 全HTTP route→内部Operationの呼び出し関係を確定。
+2. MightPulseを共通Trace対応。
+3. Player / Ranking / Observation / R2 / Emergency Bufferを共通Trace対応。
+4. SERVICE_USAGE / Queue / Archiveを共通Trace対応。
+5. Google / Discord / Auth / User Player Link / Admin mutationを共通Trace対応。
+6. 既存の重複System Logを整理。
+7. System Log UIをTrace treeとして確認できる形へ整理。
+8. D1書き込み量を測定し、必要な保持・アーカイブ設計を決定。
+9. deploy後にOWNER負荷テストで1本のTraceを実機検証。
+
