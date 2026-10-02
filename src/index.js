@@ -42,6 +42,7 @@ import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
+import { archiveSystemEventLog } from "./retention.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -206,12 +207,17 @@ async function runDataRetentionJob(env) {
   await ensureDiagnosticSchema(env.DB);
   try {
     const result = await runRetentionCleanup(env.DB, { batchSize: 1000, archiveBucket: env.ARCHIVE });
+    const systemLogArchive = await archiveSystemEventLog(env.DB, env.ARCHIVE, { batchSize: 1000 });
     await recordDiagnostic(env.DB, {
       service: "retention", feature: "data_retention", operation: "CLEANUP",
       status: "SUCCESS", message: "データ保持期間クリーンアップ成功",
-      metadata: { deleted: Number(result.deleted || 0), archived: Number(result.archived || 0) }
+      metadata: {
+        deleted: result.deleted,
+        archived: result.archived,
+        systemLogArchive
+      }
     });
-    console.log("data_retention_cleanup_ok", result.deleted);
+    console.log("data_retention_cleanup_ok", result.deleted, systemLogArchive);
   } catch (error) {
     await recordDiagnostic(env.DB, {
       service: "retention", feature: "data_retention", operation: "CLEANUP",
