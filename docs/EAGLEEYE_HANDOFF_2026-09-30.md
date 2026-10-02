@@ -3491,3 +3491,200 @@ System Status JSONの `loadTest.runId` には実行中ロックのrun_idを出�
 4. 同時刻の `apiPool.leaseDetails[].leaseJobId` とrun_idが一致することを確認。
 5. テスト後、API Pool usageの `job_id` とSERVICE_USAGE/R2の `metadata.run_id` が一致することを確認。
 6. D1 Rows Read/Written増分を確認。
+
+
+# 59. 2026-10-02 OWNER王国並列負荷テスト「実行ボタンが反応しない」継続調査
+
+## 59-1. 実機事象
+
+OWNER Control / ADMIN Controlから開ける「王国並列負荷テスト」ページで、「並列取得テストを実行」を押しても、ユーザー実機では期待する進捗表示・取得処理が始まらない。
+
+重要:
+- ユーザーから7198まで本番deploy済みと明示された。
+- 84b890も本番deploy完了をユーザー実機で確認済み。
+- よって今回の調査では「最新コードがdeployされていない」を原因の前提にしない。
+- 本番で挙動が変化していないことはユーザー実機で確認済み。
+- ただし、ブラウザから負荷テストAPIへ実際にGETが送信されたかは未確認。
+
+## 59-2. 7198での修正
+
+コミット: 71986c64257f44a917ef2367b65d6dde0c447bb5
+
+内容:
+- kids入力が空なら開始王国番号 + 王国数から自動生成。
+- それでも空なら画面にエラー表示。
+- fetchにcredentials: same-originを追加。
+- HTTP非200時にJSONのmessage/errorを画面表示。
+
+7198のdeploy後も実機挙動は変化なし。
+
+## 59-3. 84b890で発見した不具合
+
+コミット: 84b8905370b22dcfdc5f022d1342f679be2916e3
+message: fix: parse kingdom load test NDJSON stream correctly
+
+ブラウザ側NDJSON解析が、実際の改行文字ではなく文字列の\\nを分割対象にしていたため、Workerからのstart/progress/complete行を正しく処理できない可能性があった。
+
+修正後:
+- buffer.split("\\n")
+
+ユーザーは84b890のdeploy完了を確認したが、実機挙動は変化なし。
+したがって84b890は実在する不具合候補を修正したものの、今回の症状の唯一の原因ではない。
+
+## 59-4. 現在mainのブラウザコードを再読した結果
+
+src/admin-kingdom-load-test.jsをmainから再取得して確認済み。
+
+存在を確認したもの:
+- run / result / kids / selectedKids / startKid / kidCount / buildKids / boardMode / boardLabelのDOM取得。
+- buildKidsのclick handler。
+- boardModeのchange handler。
+- runのclick handler。
+- esc関数。未定義ではない。
+- kids空欄時の自動生成。
+- クリック後のrun disabled。
+- クリック後の「取得開始…」表示。
+- fetch URL /api/owner/kingdom-load-test。
+- credentials same-origin。
+- HTTPエラー表示。
+- response.body.getReader()。
+- NDJSONのbuffer.split("\\n")。
+- start/progress/complete/error処理。
+- finallyでボタン再有効化。
+
+現時点の未確認点:
+- 本番HTMLが本当に現在mainのrender結果を返しているか。
+- production browserでscript parse errorがないか。
+- DOM取得時にnullが発生していないか。
+- click handlerが実際に発火しているか。
+- fetchが実際に発生しているか。
+- fetchが発生した場合のHTTP status / response stream。
+
+## 59-5. サーバー側API確認結果
+
+handleOwnerKingdomLoadTestApiはmainに存在。
+
+OWNERかつACTIVEであることを要求。
+入力:
+- kidsをparse。
+- boardを取得。
+- all_rankings=1で全ランキング。
+- concurrencyを1〜50にclamp。
+- kidsなしは400 KINGDOMS_REQUIRED。
+- 1000王国超は400。
+- 単一ランキングでboardなしは400 BOARD_REQUIRED。
+
+開始処理:
+1. SYSTEM_WATCHLIST + SYSTEM_GENERALのavailable API key数を取得。
+2. 通常利用保護としてavailable - 1を最大テスト並列数にする。
+3. 1本以下なら409 API_POOL_TEST_CAPACITY_INSUFFICIENT。
+4. api_request_locksで二重実行防止。
+5. runIdをUUID発行。
+6. NDJSON TransformStream開始。
+7. start / progress / complete / errorを返す。
+
+各王国:
+- SYSTEM_WATCHLISTを優先lease。
+- 枯渇時SYSTEM_GENERALへfallback。
+- leaseにjobId=runId、purpose=OWNER_LOAD_TEST、targetType=KINGDOM、targetId=王国番号。
+- all rankingsではgetMightPulseKingdomAllRankingsを1王国1HTTP requestとして実行。
+- API Pool success/failureを記録。
+- api_pool_usageにも1王国1件のusageを記録。
+
+## 59-6. status-15.jsonの最新事実
+
+ユーザー提供status-15.jsonを解析済み。
+retrieved_at: 2026-10-02T05:01:49.373Z
+
+loadTest:
+- active=false
+- runId=null
+- startedAt=null
+- expiresAt=null
+- schemaAvailable=false
+
+API Pool:
+- SYSTEM_GENERAL AVAILABLE 0 / REVOKED 1
+- USER_CONTRIBUTED AVAILABLE 13 / REVOKED 5
+- total AVAILABLE 13 / REVOKED 6
+- activeLeases 6
+- expiredActiveLeases 6
+- leaseDetailsにはOWNER_LOAD_TESTのleaseは確認できない。
+- 既存leaseはKINGDOM_WATCHLIST_RANKING、target 1526、expired/revoked。
+
+Query Insightsカテゴリ:
+- Current Ranking: 176,285 queries / rowsRead 607,600 / rowsWritten 174,967
+- API Pool: 10,460 / rowsRead 110,149 / rowsWritten 27,940
+- Diagnostics: 2,593 / 1,454,432 / 10,415
+- Player Observation: 625 / 69 / 3,138
+- Player DB: 1,280 / 4,660 / 2,999
+- Change Event: 427 / 2 / 2,550
+- Kingdom Watchlist: 1,704 / 8,740 / 1,325
+- Other: 1,337 / 2,654 / 36
+- User Accounts: 557 / 2,541 / 14
+- Player Watchlist: 370 / 628,013 / 8
+- Data Coverage: 9 / 134,306 / 0
+- Ranking Snapshot: 187 / 85 / 0
+- Retention: 32 / 32 / 0
+
+注意: status JSONのloadTest.active=falseだけでは、過去に完了した負荷テストがなかったとは断定できない。ロックは完了時に削除される。ただし今回のstatus-15にはOWNER_LOAD_TESTの明確な相関痕跡は確認できていない。
+
+## 59-7. 次スレでの原因切り分け優先順位
+
+A. ブラウザ側click handlerが実行されていない。
+- 現在のコードにはinline scriptがありDOMContentLoadedによる遅延bindではない。
+- script parse/binding/DOM取得失敗の可能性を確認する。
+
+B. 本番HTMLが想定したmainのrender結果と異なる。
+- deploy済みでもbrowser cache/CDN cache等を含め、実際のHTML取得内容を比較する。
+
+C. clickは発火するがfetch前に例外。
+- kidsInput.value、startKid、kidCount、renderSelected、board、boardMode等のnull/例外を確認。
+
+D. fetchは発生しているがAPIが即時拒否。
+- Networkで403 OWNER_REQUIRED、400 BOARD_REQUIRED、400 KINGDOMS_REQUIRED、409 API_POOL_TEST_CAPACITY_INSUFFICIENT、409 LOAD_TEST_ALREADY_RUNNING等を確認。
+
+E. fetch後のstream処理で失敗。
+- response.body、reader、JSON.parse、renderLoadProgressを確認。
+- NDJSON splitは84b890で修正済み。
+
+## 59-8. 次スレで必ず実施する調査
+
+1. 本番 /owner/kingdom-load-test の実HTMLを取得してmainのrender結果と比較。
+2. ブラウザConsoleのparse error / runtime error有無を確認。
+3. click handlerの最初に診断用の画面表示を置き、click発火を確認。
+4. fetch直前の診断表示を置く。
+5. NetworkでGET /api/owner/kingdom-load-testの有無を確認。
+6. GETがあればHTTP statusとresponseを確認。
+7. response stream受信開始を診断。
+8. start/progress/complete/error各段階を診断。
+9. 必要ならDOMContentLoaded安全化とrunボタンへのtype=button明示を実施。
+10. 修正後はmain commit → deploy → production E2Eの順で確認。
+11. production E2Eで確認していないものは確認済みと表現しない。
+
+## 59-9. 再発防止
+
+- ページ全体のHTML/script/event binding/route/APIを通しで確認してから「修正済み」と判断する。
+- NDJSON等のescapeを含むコードはGitHub上の表現とブラウザ実行時の意味を区別する。
+- status JSONは完了済みテストの履歴ではなく、その取得時点の状態なのでactive=falseだけで過去実行を否定しない。
+- deploy済みとproduction E2E verifiedを分離する。
+
+## 59-10. 関連コミット
+
+- 6c1cf177d5794b46f736a0c867811405390b504a: 王国範囲/全ランキング/並列数拡張
+- 1079fe2cef108e14dc951a9429e49038a7b0ecff: 1000王国上限、parser、board_count
+- d3cd72d874c60402e46b6382f1fc75c2122acfcd: OWNER_KINGDOM_LOAD_TEST SERVICE_USAGE
+- b9a2fb4c3f55f408546db6bce5fbba06f9cfab14: actor/run correlation
+- acf6451ff7e0c386eacfaaedd7c6d4003315b256: API Pool保護
+- f8ab8ceb902c6807398c032e3e28dca662ffc067: public load test status read-only
+- af0c09b4342632b5f0f9e01c160c11a42cbcffab: status JSON loadTest
+- cc889db4e0640c0c1d793cfb0cbceb62d0a3e: API Pool leaseDetails JSON
+- 53b21ccf242d579e23ee282d8b6e8385e811937d: watchlist details JSON
+- 7e1095ed95879d34b24ea60f5d2b9569d5baee4e: API Pool usage run_id correlation初回
+- 4fb4f421cd55e1bfc9a4afb401152fc4faf18607: API Pool fallback側run_id修正
+- c36b68a5153ad5332eff2462b92e5800fb512a1c: loadTest runId status追加
+- 8c8811e386e196c936c12e3a4963c07f9bfe60cd: status側lock_token select修正
+- 71986c64257f44a917ef2367b65d6dde0c447bb5: click handler自動kids生成/HTTPエラー表示
+- 84b8905370b22dcfdc5f022d1342f679be2916e3: NDJSON split修正
+
+最新実機事実: 7198 deploy済み、84b890 deploy済みだが、ユーザー実機でボタン操作時の挙動は変化なし。次スレは59-8から再開。
