@@ -4310,3 +4310,99 @@ GitHub接続だけでは以下の本番実測は取得できないため未確�
 - Phase 5/7: ✓（コード）
 - Phase 6/7: △ コード検証完了 / 本番メトリクス未実測
 - Phase 7/7: 未完了 / 本番E2E待ち
+
+
+
+# 68. OWNER王国負荷テスト再設計（2026-10-02）
+
+## 背景
+
+2026-10-02の実機テストで、旧OWNER王国並列負荷テストが「複数王国へMightPulseランキングAPIを並列実行するだけ」であり、実際の王国Watchlist利用時に発生する比較・保存・履歴化・上位プレイヤー取得まで含む本番負荷を再現していないことが判明した。
+
+旧実装は getMightPulseKingdomAllRankings() を使って王国単位のbulk responseを取得し、レスポンス件数を数えてAPI Pool/Worker負荷を測るだけだった。
+
+これは「MightPulse取得負荷テスト」であり、「EagleEyeでユーザーが王国Watchlistを利用した場合の負荷テスト」ではないため、設計を変更した。
+
+## 新しい固定仕様
+
+OWNER負荷テストは、各対象王国について実際の processKingdomWatchlistJob() をそのまま実行する。
+
+テスト用の一時 kingdom_watchlist_jobs 行を作成し、以下の本番処理を同じコード経路へ通す。
+
+1. 王国ランキング26ボード取得
+2. API Pool lease / MightPulse応答
+3. ランキングレスポンス解析
+4. getKingdomRankingChanges() による前回値比較
+5. saveKingdomRankingBoard() による kingdom_ranking_current 更新
+6. Change Event生成
+7. R2履歴アーカイブ（R2_ONLY時はranking_snapshotsへの通常履歴INSERTを行わない）
+8. personal_power上位プレイヤー抽出
+9. 実際の王国Watchlistと同じPlayer取得
+10. api_observations保存
+11. materializePlayer()
+12. Player rank snapshot保存
+13. Job完了
+
+テスト終了後に削除するのは負荷テスト用の一時Job行だけとする。
+
+ランキング、Player、Observation、Current、Change Event、R2履歴等の実データは削除しない。
+
+したがって、テストで取得されたデータは、その後ユーザーが同じ王国を検索・利用した際に通常データとして再利用できる。
+
+## テストUI
+
+- 開始王国番号
+- 取得王国数（最大1000）
+- 上位プレイヤー取得数（5 / 10）
+- 王国Job同時実行数（1〜50）
+
+旧「全ランキングbulk取得 / 単一ランキング」モードは廃止。
+
+同時実行数の意味も変更し、APIリクエスト数ではなく、王国Watchlist Jobを何件同時に処理するかを表す。
+
+各Job内部のランキング26ボード並列数は、本番Watchlistと同じ getWatchlistApiConcurrency() に委譲する。
+
+## 負荷の意味
+
+100王国・26ボード・各100件の場合、理論最大ランキング行は
+
+100 × 26 × 100 = 260,000 rows
+
+となる。
+
+ただし毎回260,000行を必ずD1へINSERTするわけではない。
+
+本番と同じ比較ロジックを通すため、
+
+- 初回取得: 新規Current / R2履歴等の保存が発生
+- 再取得: 変更分中心の更新
+- 変更なし: 不要な保存を抑制
+
+となる。
+
+この性質を維持することで、負荷テスト自体がデータウォームアップとして機能し、ユーザーによる「初回検索・初回取得」の発生を減らせる。
+
+## 実装コミット
+
+- c82eabc56c33bbb2c62aede4d702a6e11a565cba
+  - OWNER王国負荷テストを王国Watchlist実処理へ接続する再設計
+- 02ea1798b698318514045e8e2c5d60d9243327ff
+  - OWNER負荷テストから本番 processKingdomWatchlistJob を受け取る接続
+- cd5c482bb71d63c1bacc4a898f0ab5b32910e22c
+  - 1王国の失敗を全体テスト中断にせず、王国単位FAILEDとして継続
+
+## 未確認
+
+コード変更はmainへ反映済みだが、以下は本番E2E未確認。
+
+- 100王国での実機実行
+- 26ボード×100件の実受信/保存量
+- 上位プレイヤー取得の実件数
+- D1 rowsRead / rowsWritten増加量
+- R2 object / payload増加量
+- API Pool最大同時lease
+- Worker CPU / subrequests
+- 初回実行と2回目実行の差
+- テスト後に通常の王国Watchlist検索が保存済みデータを再利用できること
+
+次の実機テストでは、まず少数王国（例: 1〜3王国）で本番Watchlistと同一処理経路・保存結果を確認してから、100王国へ拡大する。
