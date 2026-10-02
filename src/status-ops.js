@@ -23,7 +23,8 @@ export async function getOperationalStatus(db) {
     ).first(),
     db.prepare(
       "SELECT pool_type, status, label, last_success_at, last_error_at, last_error_code, last_error_message FROM api_pool_keys ORDER BY COALESCE(last_error_at, 0) DESC, updated_at DESC LIMIT 1"
-    ).first()
+    ).first(),
+    getSystemEventLog(db, { limit: 100 })
   ]);
 
   const poolRows = poolResult.results || [];
