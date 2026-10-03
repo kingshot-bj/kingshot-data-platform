@@ -4887,3 +4887,11 @@ Load Test実行中に「進捗が止まっている」のか「API枠待ちで�
 6. ページリロード後もRun復元時に待機メトリクスが表示されることを確認。
 7. 完了後、履歴に待機時間・待ち発生回数・Pool待ち回数が残ることを確認。
 8. D1 Query Insightsで、メトリクス保存による過剰なRows Read/Writeが発生していないことを確認。
+
+### #80 追記 / D1 migration正式化
+- 実行時 `ALTER TABLE` は撤去し、正式なD1 migrationへ変更。
+- `migrations/0032_kingdom_load_test_api_wait_metrics.sql` を追加。
+- migration commit: `5d305e6b6c7e03fe57edcb16146ae092315d5a49`。
+- `src/admin-kingdom-load-test.js` の実行時スキーマ変更処理を撤去。
+- migration 0032を本番D1へ適用してから本番Worker/E2E確認を行うこと。
+- Cloudflare公式仕様上、D1 migrationは `wrangler d1 migrations apply <DATABASE> --remote` で未適用分を適用する運用。
