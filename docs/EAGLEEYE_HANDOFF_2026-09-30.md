@@ -4895,3 +4895,42 @@ Load Test実行中に「進捗が止まっている」のか「API枠待ちで�
 - `src/admin-kingdom-load-test.js` の実行時スキーマ変更処理を撤去。
 - migration 0032を本番D1へ適用してから本番Worker/E2E確認を行うこと。
 - Cloudflare公式仕様上、D1 migrationは `wrangler d1 migrations apply <DATABASE> --remote` で未適用分を適用する運用。
+
+
+# 81. 2026-10-03 / OWNER Load Test待機時間の最小・最大・分布・CSV Export
+
+## 目的
+#80で累計待機時間と待ち発生回数を可視化したが、累計値だけでは「実際に1リクエストがどの程度待ったか」を判断できないため、待機時間の最小・最大・分布をRun単位で保存・表示・Exportできるようにした。
+
+## 実装
+- Global API Limiterで待機リクエストごとの待機時間を計測。
+- Run単位で以下を保持:
+  - api_wait_min_ms
+  - api_wait_max_ms
+  - api_wait_buckets_json
+- 分布バケット:
+  - 0〜5秒
+  - 5〜10秒
+  - 10〜20秒
+  - 20〜30秒
+  - 30〜60秒
+  - 60秒以上
+- Status API / Progress streamへ最小・最大・分布を反映。
+- OWNER画面の進捗・履歴に最小/最大待機時間を表示。
+- 過去Runごとに「CSVエクスポート」ボタンを追加。
+- /api/owner/kingdom-load-test/export?run_id=... はOWNER認証下でRun集計と待機分布をCSVとして出力。
+- CSVにはRun条件、成功/失敗、保存rows、所要時間、待ち発生回数、Pool待ち、累計待機、最小/最大、各分布バケットを含める。
+
+## コミット
+- 5f75f399086f65b21854947b721fd373ddcad031 — Load Test待機統計・CSV Export
+- fc7ab72aad02efe32de89949f6896793faec316d — Export route
+- 641e4236a31291235b610afb758605d6c25a823a — Status/Progressへ最小・最大・分布を反映
+- 633998bd6b35e9ffd1fb5480ae450ba7be569390 — migration 0033
+
+## E2E確認
+次回本番Deploy後、Load Testを実行して以下を確認:
+1. 実行中に最小/最大待機時間が更新される。
+2. 完了後、履歴のCSVエクスポートからRun集計を取得できる。
+3. CSVの分布合計が待ち発生回数と一致する。
+4. 12並列などAPI枠を使い切る条件で分布が実測できる。
+5. D1 Rows Read/Write増加が許容範囲であることを確認。
