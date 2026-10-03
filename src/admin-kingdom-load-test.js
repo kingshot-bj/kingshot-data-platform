@@ -186,6 +186,16 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
     const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
     const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
     const cancelled=normalizedJobs.filter(j=>j.phase==="CANCELLED").length;
+    const topN=Number(runMeta?.top_n||0)||10;
+    let questCompleted=0,questTotal=0;
+    for(const job of normalizedJobs){
+      const playerCount=Number(job.player_count||0);
+      const playerExpected=(job.phase==="RANKINGS"&&playerCount===0)?topN:playerCount;
+      questCompleted+=Math.min(26,Math.max(0,Number(job.board_index||0)))+Math.max(0,Number(job.player_cursor||0));
+      questTotal+=26+playerExpected;
+    }
+    if(!normalizedJobs.length&&targetCount) questTotal=targetCount*(26+topN);
+    const questPercent=questTotal?Math.min(100,Math.round(questCompleted/questTotal*100)):0;
     const runStatus=String(runMeta?.status|| (lock ? "RUNNING" : "UNKNOWN"));
     const active=Boolean(lock)||runStatus==="RUNNING";
 
@@ -195,6 +205,7 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       expires_at:lock?.lock_until||null,
       target_count:targetCount,
       completed,success,failed,cancelled,
+      quest_completed:questCompleted,quest_total:questTotal,quest_percent:questPercent,
       requested_concurrency:Number(runMeta?.requested_concurrency||0),
       concurrency:Number(runMeta?.concurrency||0),
       api_concurrency:Number(runMeta?.api_concurrency||0),
