@@ -1083,15 +1083,23 @@ async function fetchWithLoadTestApiLimiter(apiLimiter, worker) {
   const maxRetries = 20;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const release = await apiLimiter.acquire();
+    let poolWaitStartedAt = null;
     try {
       return await worker();
     } catch (error) {
       const code = String(error?.code || error?.message || "");
       if (code !== "NO_API_POOL_KEY_AVAILABLE" || attempt >= maxRetries) throw error;
+      poolWaitStartedAt = typeof apiLimiter.markPoolWaitStart === "function" ? apiLimiter.markPoolWaitStart() : null;
     } finally {
       release();
     }
-    await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } finally {
+      if (poolWaitStartedAt !== null && typeof apiLimiter.markPoolWaitEnd === "function") {
+        apiLimiter.markPoolWaitEnd(poolWaitStartedAt);
+      }
+    }
   }
   throw new Error("LOAD_TEST_API_RETRY_EXHAUSTED");
 }
