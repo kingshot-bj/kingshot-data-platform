@@ -380,7 +380,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   };
   let runFailed=false,runSummary=null;
   const run=(async()=>{try{
-    await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0});
+    await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0,quest_completed:0,quest_total:kids.length*(26+topN),quest_percent:0});
     const apiLimiter=createLoadTestApiLimiter(apiConcurrency);
     let completed=0,success=0,failed=0;
     const metricsTimer=setInterval(()=>{persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});},2000);
