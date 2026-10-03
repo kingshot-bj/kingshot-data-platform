@@ -4824,3 +4824,66 @@ OWNERの王国Watchlist実処理負荷テストについて、現在のRun表示
 - Load Test実行→別ページへ移動→Load Testページへ戻ることで同一Run復元を確認。
 - 未実行状態でページを開いた場合、過去Runが現在進捗へ混入しないことを確認。
 - 過去履歴に成功/失敗/一部失敗が正しく表示されることを確認。
+
+# 80. 2026-10-03 / OWNER Load TestのAPI待機状況可視化
+
+## 実装目的
+
+Load Test実行中に「進捗が止まっている」のか「API枠待ちで正常に待機している」のかをOWNER画面から判別できるようにした。
+
+## 実装内容
+
+### API Limiterメトリクス
+- `src/admin-kingdom-load-test.js` のGlobal API Limiterへ以下を追加。
+- API使用中数 / Limiter待機数 / Limiter待ち発生回数 / Limiter待ち累計時間 / 最大Limiter待ち時間
+- 実API Pool枯渇待ち数 / 実API Pool枯渇待ち発生回数 / 実API Pool枯渇待ち累計時間
+- `src/index.js` の `NO_API_POOL_KEY_AVAILABLE` RetryでPool待機開始/終了を記録。
+- 既存の最大20回・500ms間隔Retry仕様は維持。
+
+### Run metadata
+`kingdom_load_test_runs` に以下のメトリクス列を追加する仕組みを実装。
+- `api_active_count`
+- `api_waiting_count`
+- `api_pool_waiting_count`
+- `api_wait_events`
+- `api_pool_wait_events`
+- `api_wait_ms`
+- `api_pool_wait_ms`
+- `last_activity_at`
+
+既存DBへの互換性を考慮し、Load Test状態スキーマ初期化時に不足列を追加する方式。メトリクス更新は約3秒間隔に抑え、D1への細かい進捗書き込みを避ける。
+
+### Status API / History API
+- `/api/owner/kingdom-load-test/status` で現在のAPI使用・待機状況を取得可能。
+- `/api/owner/kingdom-load-test/history` でも各Runの待機統計を確認可能。
+- Run終了時には最終メトリクスを強制保存。
+
+### OWNER UI
+実行中の全体進捗に `API使用 X / Y`、`待ち X`、`Pool待ち X`、`累計待機 X秒/分`、通常利用保護1本を表示。
+過去Run履歴にはAPI待機時間、待ち発生回数、Pool待ち発生回数を表示。
+
+## 重要な意味
+
+- `待ち > 0` はGlobal API Semaphoreの枠が埋まっており、次のリクエストが順番待ちしている状態。
+- `Pool待ち > 0` はSemaphore枠を取得した後の実API Pool lease取得で一時的に `NO_API_POOL_KEY_AVAILABLE` が発生し、500ms Retry待機している状態。
+- したがって、画面上で進捗数が一時停止していても、API使用中/待機数が動いていれば「処理停止」ではなくAPI枠待ちと判断できる。
+- `api_wait_ms` は各待機リクエストの待機時間を累計した値であり、全体経過時間そのものではない。
+
+## コミット
+- `3705c0d7ec93546ac5c7f09560228a186ffcf9bb` — OWNER Load Test UI/API wait metrics
+- `9ed293deea4b635af414e9454b3aaf61bf0c4a52` — API Pool wait retry metrics
+
+## 本番確認
+
+現時点ではGitHub mainへの実装・コード確認まで。Cloudflare本番WorkerへのDeploy完了、および実機Load Testで実際の待機数が表示されることは未確認。
+
+## 次回E2E確認
+
+1. 本番Deploy後、OWNERでLoad Test画面を開く。
+2. 20王国程度で実行。
+3. 実行中に `API使用 / 待ち / Pool待ち / 累計待機` が表示されることを確認。
+4. API枠が埋まる条件で `待ち` が0より大きくなることを確認。
+5. 通常利用側のPool使用が重なる条件で `Pool待ち` が発生する場合、その後自動復帰することを確認。
+6. ページリロード後もRun復元時に待機メトリクスが表示されることを確認。
+7. 完了後、履歴に待機時間・待ち発生回数・Pool待ち回数が残ることを確認。
+8. D1 Query Insightsで、メトリクス保存による過剰なRows Read/Writeが発生していないことを確認。
