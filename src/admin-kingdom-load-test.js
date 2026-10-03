@@ -8,9 +8,7 @@ const LOAD_TEST_NORMAL_RESERVE = 1;
 const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
 const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
 
-async function ensureLoadTestRunMetricsSchema(db){const columns=[["api_active_count","INTEGER DEFAULT 0"],["api_waiting_count","INTEGER DEFAULT 0"],["api_pool_waiting_count","INTEGER DEFAULT 0"],["api_wait_events","INTEGER DEFAULT 0"],["api_pool_wait_events","INTEGER DEFAULT 0"],["api_wait_ms","INTEGER DEFAULT 0"],["api_pool_wait_ms","INTEGER DEFAULT 0"],["last_activity_at","INTEGER DEFAULT 0"]];for(const [name,definition] of columns)await db.prepare("ALTER TABLE kingdom_load_test_runs ADD COLUMN "+name+" "+definition).run().catch(()=>{});}
 async function ensureLoadTestStateSchema(db) {
-  await ensureLoadTestRunMetricsSchema(db);
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS api_request_locks (
       lock_key TEXT PRIMARY KEY,
