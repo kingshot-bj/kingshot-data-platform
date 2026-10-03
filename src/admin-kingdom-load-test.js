@@ -424,7 +424,6 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         completed++;
         if(result.ok) success++;
         else failed++;
-        if(result.ok) questProgressByKid.set(Number(result.kid),{completed:Number(result.board_index||26)+Number(result.player_rows||0)});
         const q=getQuestProgress();
         await send({
           type:"progress",
