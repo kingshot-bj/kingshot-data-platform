@@ -819,34 +819,38 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
 
       const rankingPayloadShape = describeRankingPayloadShape(payload);
 
+      const upstreamStatus = Number(fetched.result?.status ?? 200);
       if (!entries.length) {
-        // A successful 2xx ranking response with no entries can be a normal
-        // kingdom-state condition: some rankings are unavailable until the
-        // corresponding game content is unlocked. Do not fail the whole
-        // watchlist job or erase previously stored current data in that case.
-        // Keep a diagnostic warning so a genuinely unexpected empty response
-        // remains visible for investigation.
-        await recordDiagnostic(env.DB, {
-          traceId, service: "ranking", feature: "kingdom_watchlist",
-          operation: "FETCH_PARSE", status: "WARNING",
-          errorCode: "RANKING_ENTRIES_EMPTY_SKIPPED",
-          message: "ランキング配列が空のため、このランキングをスキップして次へ進みます。未解放コンテンツの可能性があります。",
-          provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
-          startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
-          elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
-          rowsReceived: 0, rowsSaved: 0,
-          metadata: {
-            board,
-            skipped: true,
-            reason: "EMPTY_RANKING_RESPONSE",
-            upstreamStatus: fetched.result?.status ?? 200,
-            payloadType: Array.isArray(payload) ? "array" : typeof payload,
-            payloadKeys,
-            rankingPayloadShape,
-            poolType: fetched.pool_type
-          }
-        });
-        continue;
+        if (upstreamStatus >= 200 && upstreamStatus < 300) {
+          // A successful 2xx ranking response with no entries can be a normal
+          // kingdom-state condition: some rankings are unavailable until the
+          // corresponding game content is unlocked. Do not fail the whole
+          // watchlist job or erase previously stored current data in that case.
+          // Keep a diagnostic warning so a genuinely unexpected empty response
+          // remains visible for investigation.
+          await recordDiagnostic(env.DB, {
+            traceId, service: "ranking", feature: "kingdom_watchlist",
+            operation: "FETCH_PARSE", status: "WARNING",
+            errorCode: "RANKING_ENTRIES_EMPTY_SKIPPED",
+            message: "ランキング配列が空のため、このランキングをスキップして次へ進みます。未解放コンテンツの可能性があります。",
+            provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
+            startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
+            elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
+            rowsReceived: 0, rowsSaved: 0,
+            metadata: {
+              board,
+              skipped: true,
+              reason: "EMPTY_RANKING_RESPONSE",
+              upstreamStatus,
+              payloadType: Array.isArray(payload) ? "array" : typeof payload,
+              payloadKeys,
+              rankingPayloadShape,
+              poolType: fetched.pool_type
+            }
+          });
+          continue;
+        }
+        throw new Error("RANKING_ENTRIES_EMPTY:" + board);
       }
 
       const rankingComparison = await getKingdomRankingChanges(env.DB, {
