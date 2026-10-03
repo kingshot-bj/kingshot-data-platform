@@ -198,7 +198,7 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       requested_concurrency:Number(runMeta?.requested_concurrency||0),
       concurrency:Number(runMeta?.concurrency||0),
       api_concurrency:Number(runMeta?.api_concurrency||0),
-      api_active_count:Number(runMeta?.api_active_count||0),api_waiting_count:Number(runMeta?.api_waiting_count||0),api_pool_waiting_count:Number(runMeta?.api_pool_waiting_count||0),api_wait_events:Number(runMeta?.api_wait_events||0),api_pool_wait_events:Number(runMeta?.api_pool_wait_events||0),api_wait_ms:Number(runMeta?.api_wait_ms||0),api_pool_wait_ms:Number(runMeta?.api_pool_wait_ms||0),last_activity_at:Number(runMeta?.last_activity_at||runMeta?.updated_at||0),
+      api_active_count:Number(runMeta?.api_active_count||0),api_waiting_count:Number(runMeta?.api_waiting_count||0),api_pool_waiting_count:Number(runMeta?.api_pool_waiting_count||0),api_wait_events:Number(runMeta?.api_wait_events||0),api_pool_wait_events:Number(runMeta?.api_pool_wait_events||0),api_wait_ms:Number(runMeta?.api_wait_ms||0),api_pool_wait_ms:Number(runMeta?.api_pool_wait_ms||0),api_wait_min_ms:Number(runMeta?.api_wait_min_ms||0),api_wait_max_ms:Number(runMeta?.api_wait_max_ms||0),api_wait_buckets_json:String(runMeta?.api_wait_buckets_json||"{}"),last_activity_at:Number(runMeta?.last_activity_at||runMeta?.updated_at||0),
       top_n:Number(runMeta?.top_n||0),
       kids:runMeta?.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
       recovery_mode:runMeta?"RUN_METADATA":"LOCK_ONLY",
@@ -392,7 +392,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
             success,
             failed,
             percent:Math.round(completed/kids.length*100),
-            progress,api_active_count:apiMetrics.active,api_waiting_count:apiMetrics.waiting,api_pool_waiting_count:apiMetrics.pool_waiting,api_wait_events:apiMetrics.wait_events,api_pool_wait_events:apiMetrics.pool_wait_events,api_wait_ms:apiMetrics.total_wait_ms,api_pool_wait_ms:apiMetrics.pool_wait_ms
+            progress,api_active_count:apiMetrics.active,api_waiting_count:apiMetrics.waiting,api_pool_waiting_count:apiMetrics.pool_waiting,api_wait_events:apiMetrics.wait_events,api_pool_wait_events:apiMetrics.pool_wait_events,api_wait_ms:apiMetrics.total_wait_ms,api_pool_wait_ms:apiMetrics.pool_wait_ms,api_wait_min_ms:apiMetrics.min_wait_ms,api_wait_max_ms:apiMetrics.max_wait_ms,api_wait_buckets_json:JSON.stringify(apiMetrics.wait_buckets||{})
           });
         },
         apiLimiter
