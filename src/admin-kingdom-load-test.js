@@ -8,7 +8,9 @@ const LOAD_TEST_NORMAL_RESERVE = 1;
 const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
 const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
 
+async function ensureLoadTestRunMetricsSchema(db){const columns=[["api_active_count","INTEGER DEFAULT 0"],["api_waiting_count","INTEGER DEFAULT 0"],["api_pool_waiting_count","INTEGER DEFAULT 0"],["api_wait_events","INTEGER DEFAULT 0"],["api_pool_wait_events","INTEGER DEFAULT 0"],["api_wait_ms","INTEGER DEFAULT 0"],["api_pool_wait_ms","INTEGER DEFAULT 0"],["last_activity_at","INTEGER DEFAULT 0"]];for(const [name,definition] of columns)await db.prepare("ALTER TABLE kingdom_load_test_runs ADD COLUMN "+name+" "+definition).run().catch(()=>{});}
 async function ensureLoadTestStateSchema(db) {
+  await ensureLoadTestRunMetricsSchema(db);
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS api_request_locks (
       lock_key TEXT PRIMARY KEY,
@@ -52,6 +54,7 @@ async function releaseLoadTestState(db, runId) {
   ).bind(LOAD_TEST_LOCK_KEY, runId).run();
 }
 
+async function persistLoadTestMetrics(db,runId,apiLimiter,force=false){if(!db||!runId||!apiLimiter)return;const nowMs=Date.now(),snapshot=apiLimiter.snapshot(),last=Number(apiLimiter.__lastPersistAt||0);if(!force&&nowMs-last<3000)return;apiLimiter.__lastPersistAt=nowMs;const now=Math.floor(nowMs/1000);await db.prepare("UPDATE kingdom_load_test_runs SET api_active_count=?,api_waiting_count=?,api_pool_waiting_count=?,api_wait_events=?,api_pool_wait_events=?,api_wait_ms=?,api_pool_wait_ms=?,last_activity_at=?,updated_at=? WHERE run_id=?").bind(Number(snapshot.active||0),Number(snapshot.waiting||0),Number(snapshot.pool_waiting||0),Number(snapshot.wait_events||0),Number(snapshot.pool_wait_events||0),Number(snapshot.total_wait_ms||0),Number(snapshot.pool_wait_ms||0),now,now,runId).run().catch(()=>{});}
 async function isLoadTestCancelled(db, runId) {
   if (!db || !runId) return false;
   const row = await db.prepare(
@@ -101,7 +104,7 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
   try {
     const url = new URL(request.url);
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 20)));
-    const rows = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+    const rows = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms,api_active_count,api_waiting_count,api_pool_waiting_count,api_wait_events,api_pool_wait_events,api_wait_ms,api_pool_wait_ms,last_activity_at FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
     const rawRuns=rows.results||[];
     const legacyRuns=rawRuns.filter(row=>String(row.status||"")!=="RUNNING"&&Number(row.success_count||0)===0&&Number(row.failed_count||0)===0);
     const legacySummary=new Map();
@@ -117,7 +120,7 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
       const rankingRows=Number(row.ranking_rows_saved||0)||Number(fallback?.ranking_rows_saved||0);
       const playerRows=Number(row.player_rows_saved||0)||Number(fallback?.player_rows_saved||0);
       const elapsed=row.elapsed_ms==null?((row.completed_at&&row.created_at)?(Number(row.completed_at)-Number(row.created_at))*1000:null):Number(row.elapsed_ms);
-      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed};
+      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed,api_active_count:Number(row.api_active_count||0),api_waiting_count:Number(row.api_waiting_count||0),api_pool_waiting_count:Number(row.api_pool_waiting_count||0),api_wait_events:Number(row.api_wait_events||0),api_pool_wait_events:Number(row.api_pool_wait_events||0),api_wait_ms:Number(row.api_wait_ms||0),api_pool_wait_ms:Number(row.api_pool_wait_ms||0),last_activity_at:Number(row.last_activity_at||0)};
     })}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
     console.error("owner_kingdom_load_test_history_failed",error?.message||error);
@@ -178,6 +181,7 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       requested_concurrency:Number(runMeta?.requested_concurrency||0),
       concurrency:Number(runMeta?.concurrency||0),
       api_concurrency:Number(runMeta?.api_concurrency||0),
+      api_active_count:Number(runMeta?.api_active_count||0),api_waiting_count:Number(runMeta?.api_waiting_count||0),api_pool_waiting_count:Number(runMeta?.api_pool_waiting_count||0),api_wait_events:Number(runMeta?.api_wait_events||0),api_pool_wait_events:Number(runMeta?.api_pool_wait_events||0),api_wait_ms:Number(runMeta?.api_wait_ms||0),api_pool_wait_ms:Number(runMeta?.api_pool_wait_ms||0),last_activity_at:Number(runMeta?.last_activity_at||runMeta?.updated_at||0),
       top_n:Number(runMeta?.top_n||0),
       kids:runMeta?.kids_json?JSON.parse(runMeta.kids_json):normalizedJobs.map(j=>j.kid),
       recovery_mode:runMeta?"RUN_METADATA":"LOCK_ONLY",
@@ -221,26 +225,24 @@ async function runWithConcurrency(items, concurrency, worker, onComplete = null)
 
 function createLoadTestApiLimiter(capacity) {
   const limit = Math.max(1, Math.floor(Number(capacity) || 1));
-  let active = 0;
   const waiters = [];
+  let active = 0, waitEvents = 0, totalWaitMs = 0, maxWaitMs = 0;
+  let poolWaitEvents = 0, poolWaitMs = 0, poolWaitActive = 0;
   return {
     capacity: limit,
     async acquire() {
-      if (active < limit) {
-        active += 1;
-        return () => this.release();
-      }
+      if (active < limit) { active += 1; return () => this.release(); }
+      waitEvents += 1; const startedAt = Date.now();
       await new Promise(resolve => waiters.push(resolve));
-      active += 1;
-      return () => this.release();
+      const waitedMs = Math.max(0, Date.now() - startedAt);
+      totalWaitMs += waitedMs; maxWaitMs = Math.max(maxWaitMs, waitedMs);
+      active += 1; return () => this.release();
     },
-    release() {
-      if (active > 0) active -= 1;
-      const next = waiters.shift();
-      if (next) next();
-    },
-    get active() { return active; },
-    get waiting() { return waiters.length; }
+    release() { if(active>0)active-=1; const next=waiters.shift(); if(next)next(); },
+    markPoolWaitStart(){poolWaitActive+=1;poolWaitEvents+=1;return Date.now();},
+    markPoolWaitEnd(startedAt){poolWaitActive=Math.max(0,poolWaitActive-1);if(startedAt)poolWaitMs+=Math.max(0,Date.now()-startedAt);},
+    snapshot(){return {capacity:limit,active,waiting:waiters.length,wait_events:waitEvents,total_wait_ms:totalWaitMs,max_wait_ms:maxWaitMs,pool_waiting:poolWaitActive,pool_wait_events:poolWaitEvents,pool_wait_ms:poolWaitMs};},
+    get active(){return active;},get waiting(){return waiters.length;}
   };
 }
 
@@ -353,6 +355,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0});
     const apiLimiter=createLoadTestApiLimiter(apiConcurrency);
     let completed=0,success=0,failed=0;
+    const metricsTimer=setInterval(()=>{persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});},2000);
     const results=await runWithConcurrency(
       kids,
       concurrency,
@@ -363,6 +366,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         runId,
         processJob,
         async progress => {
+          await persistLoadTestMetrics(env.DB,runId,apiLimiter);
+          const apiMetrics=apiLimiter.snapshot();
           await send({
             type:"job_progress",
             target_count:kids.length,
@@ -370,7 +375,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
             success,
             failed,
             percent:Math.round(completed/kids.length*100),
-            progress
+            progress,api_active_count:apiMetrics.active,api_waiting_count:apiMetrics.waiting,api_pool_waiting_count:apiMetrics.pool_waiting,api_wait_events:apiMetrics.wait_events,api_pool_wait_events:apiMetrics.pool_wait_events,api_wait_ms:apiMetrics.total_wait_ms,api_pool_wait_ms:apiMetrics.pool_wait_ms
           });
         },
         apiLimiter
@@ -387,7 +392,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
           success,
           failed,
           percent:Math.round(completed/kids.length*100),
-          result
+          result,api_active_count:apiLimiter.active,api_waiting_count:apiLimiter.waiting,api_pool_waiting_count:apiLimiter.snapshot().pool_waiting,api_wait_events:apiLimiter.snapshot().wait_events,api_pool_wait_events:apiLimiter.snapshot().pool_wait_events,api_wait_ms:apiLimiter.snapshot().total_wait_ms,api_pool_wait_ms:apiLimiter.snapshot().pool_wait_ms
         });
       }
     );
@@ -401,6 +406,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",metadata:summary});
     await send({type:cancelledResults.length?"cancelled":"complete",run_id:runId,ok:true,cancelled:Boolean(cancelledResults.length),target_count:kids.length,concurrency,api_concurrency:apiConcurrency,top_n:topN,elapsed_ms:summary.elapsed_ms,success,failed,cancelled_count:cancelledResults.length,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:summary.max_expected_ranking_rows,results});
   }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
+    clearInterval(metricsTimer);
+    await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     const finalNow=Math.floor(Date.now()/1000);
     await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
@@ -411,6 +418,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
 }
 export function renderOwnerKingdomLoadTestPage() {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}.back{color:#94a3b8;text-decoration:none}.reload-btn{margin:0;padding:8px 12px;border:1px solid #475569;border-radius:9px;background:#111827;color:#e2e8f0;font-weight:800;font-size:13px}.reload-btn:active{transform:scale(.98)}.reload-btn:disabled{opacity:.58}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}.history{margin-top:18px;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220}.history h2{margin:0 0 10px;font-size:16px}.history-list{display:grid;gap:9px}.history-item{padding:11px;border:1px solid #334155;border-radius:10px;background:#111b2d}.history-main{display:flex;justify-content:space-between;gap:8px;font-weight:800}.history-meta{margin-top:5px;color:#94a3b8;font-size:12px;line-height:1.6}.history-ok{color:#86efac}.history-failed{color:#fca5a5}.history-running{color:#fbbf24}</style></head><body><main class="wrap"><div class="toolbar"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><button type="button" id="reloadPage" class="reload-btn" onclick="window.__eagleEyeReloadPage()">↻ 再読み込み</button></div><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用Jobも通常の王国Watchlist Jobと同じくD1へ保存し、終了後24時間の保持期間を経て通常の保持期限処理で削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><div class="hint" style="margin:8px 0">API同時処理数は自動決定：実際の利用可能キー数 − 通常利用保護1本。複数の王国Jobが同時に進み、ランキング・プレイヤーのAPIリクエストは全王国でこのAPI枠を共有します。空いた枠は完了したリクエストから即座に次の取得へ回します。</div><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" disabled style="background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">全体進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div><div class="history"><h2>過去の負荷テスト</h2><div id="historyList" class="history-list"><div class="history-meta">履歴を取得中…</div></div></div></div><script>(function(){window.__eagleEyeLoadTestUiToken=0;function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
+function formatWaitMs(ms){ms=Number(ms||0);if(ms<1000)return ms+"ms";var sec=Math.round(ms/1000);if(sec<60)return sec+"秒";var min=Math.floor(sec/60),rest=sec%60;return min+"分"+(rest?rest+"秒":"");}
+function apiMetricsText(data){var cap=Number(data.api_concurrency||0),active=Number(data.api_active_count||0),waiting=Number(data.api_waiting_count||0),poolWaiting=Number(data.api_pool_waiting_count||0);var totalWait=Number(data.api_wait_ms||0)+Number(data.api_pool_wait_ms||0);return "API使用 "+active+" / "+cap+"　待ち "+waiting+"　Pool待ち "+poolWaiting+"　累計待機 "+formatWaitMs(totalWait);}
 function renderJobProgress(j){
   var boardTotal=Number(j.total_boards||26);
   var board=Number(j.board_index||0);
@@ -430,12 +439,12 @@ function renderProgress(data,active){
   count.textContent=done+" / "+total;
   fill.style.width=pct+"%";
   title.textContent="全体進捗";
-  meta.textContent="成功 "+Number(data.success||0)+" / 失敗 "+Number(data.failed||0)+"　API同時処理 "+Number(data.api_concurrency||0)+"　通常利用保護 "+LOAD_TEST_NORMAL_RESERVE+"本";
+  meta.textContent="成功 "+Number(data.success||0)+" / 失敗 "+Number(data.failed||0)+"　"+apiMetricsText(data)+"　通常利用保護 "+LOAD_TEST_NORMAL_RESERVE+"本";
   var rows=Object.keys(active).map(function(k){return active[k];}).filter(function(x){return !x.completed;}).sort(function(a,b){return Number(a.kid)-Number(b.kid);});
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
 function formatHistoryTime(ts){if(!ts)return "-";try{return new Date(Number(ts)*1000).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});}catch(e){return "-";}}
-function renderLoadTestHistory(runs){var list=document.getElementById("historyList");if(!list)return;if(!runs||!runs.length){list.innerHTML='<div class="history-meta">過去の負荷テストはありません。</div>';return;}list.innerHTML=runs.map(function(run){var status=String(run.status||"UNKNOWN"),label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'</div></div>';}).join("");}
+function renderLoadTestHistory(runs){var list=document.getElementById("historyList");if(!list)return;if(!runs||!runs.length){list.innerHTML='<div class="history-meta">過去の負荷テストはありません。</div>';return;}list.innerHTML=runs.map(function(run){var status=String(run.status||"UNKNOWN"),label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回</div></div>';}).join("");}
 async function loadLoadTestHistory(){try{var response=await fetch("/api/owner/kingdom-load-test/history?limit=20",{cache:"no-store",credentials:"same-origin"});if(!response.ok)throw new Error("HTTP "+response.status);var data=await response.json();renderLoadTestHistory(data.runs||[]);}catch(e){var list=document.getElementById("historyList");if(list)list.innerHTML='<div class="history-meta">履歴を取得できませんでした。</div>';}}
 window.__eagleEyeReloadPage=function(){var button=document.getElementById("reloadPage");if(button){button.disabled=true;button.textContent="↻ 読み込み中…";}window.location.reload();};window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getElementById("startKid").value||0)),count=Math.max(1,Number(document.getElementById("kidCount").value||20)),values=[];for(var i=0;i<count;i++)values.push(start+i);document.getElementById("kids").value=values.join(",");document.getElementById("selectedKids").textContent=values.join(", ");};window.__eagleEyeCancelLoadTest=async function(){try{var response=await fetch("/api/owner/kingdom-load-test/cancel",{method:"POST",credentials:"same-origin",cache:"no-store"});var data=await response.json();if(!response.ok)throw new Error(data.message||data.error||"CANCEL_FAILED");document.getElementById("result").textContent="中止要求を送信しました。現在のAPI処理完了後、安全に停止します。";document.getElementById("cancel").disabled=true;}catch(e){document.getElementById("result").textContent="中止要求失敗: "+e.message;}};window.__eagleEyeRunLoadTest=async function(){window.__eagleEyeLoadTestUiToken++;if(window.__eagleEyeLoadTestStatusTimer){clearInterval(window.__eagleEyeLoadTestStatusTimer);window.__eagleEyeLoadTestStatusTimer=null;}var trace=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"client-"+Date.now(),run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};try{var kids=parseKids(document.getElementById("kids").value);if(!kids.length){window.__eagleEyeBuildKids();kids=parseKids(document.getElementById("kids").value);}if(!kids.length)throw new Error("王国番号を入力してください。");var topN=document.getElementById("topN").value||"10";try{localStorage.setItem("eagleEye.loadTest.runId","");}catch(e){}run.disabled=true;run.textContent="実行中…";cancel.disabled=false;result.textContent="処理開始…";document.getElementById("progress").style.display="block";document.getElementById("progressCount").textContent="0 / "+kids.length;document.getElementById("progressFill").style.width="0%";document.getElementById("activeJobs").innerHTML="";var response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&top_n="+topN,{cache:"no-store",credentials:"same-origin",headers:{"x-eagle-eye-trace-id":trace}});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}var reader=response.body.getReader(),decoder=new TextDecoder(),buffer="";while(true){var chunk=await reader.read();if(chunk.done)break;buffer+=decoder.decode(chunk.value,{stream:true});var lines=buffer.split("\\n");buffer=lines.pop()||"";for(var i=0;i<lines.length;i++){if(!lines[i].trim())continue;var data=JSON.parse(lines[i]);if(data.type==="start"){try{localStorage.setItem("eagleEye.loadTest.runId",String(data.run_id||""));}catch(e){}result.textContent="処理開始…\\n"+data.target_count+"王国 / API同時 "+data.api_concurrency+" / 通常保護1本 / 上位"+data.top_n+"人";renderProgress(data,active);}else if(data.type==="job_progress"){active[String(data.progress.kid)]=data.progress;renderProgress(data,active);}else if(data.type==="progress"){active[String(data.result.kid)]=Object.assign({},active[String(data.result.kid)]||{},data.result,{completed:true,phase:"COMPLETED"});renderProgress(data,active);result.textContent="処理中… "+data.percent+"%\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n直近: 王国"+data.result.kid+" / ranking "+data.result.ranking_rows+" / player "+data.result.player_rows;}else if(data.type==="cancelled"){result.textContent="負荷テスト中止\\n完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"王国\\n経過 "+data.elapsed_ms+"ms";var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="中止";document.getElementById("progressMeta").textContent="完了 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled_count+"　API同時処理 "+Number(data.api_concurrency||0)+"　通常利用保護1本";}else if(data.type==="complete"){result.textContent="処理完了\\n成功 "+data.success+" / 失敗 "+data.failed+"\\n経過 "+data.elapsed_ms+"ms\\nランキング保存 "+data.ranking_rows_saved+" rows\\nプレイヤー保存 "+data.player_rows_saved+" rows\\n最大想定ランキング "+data.max_expected_ranking_rows+" rows\\n\\n"+JSON.stringify(data,null,2);var finalData=Object.assign({},data,{completed:data.target_count,success:data.success,failed:data.failed,concurrency:data.concurrency});renderProgress(finalData,active);document.getElementById("progressTitle").textContent="✓ 更新完了";document.getElementById("progressMeta").textContent="成功 "+data.success+" / 失敗 "+data.failed+"　API同時処理 "+Number(data.api_concurrency||0)+"　通常利用保護1本";}else if(data.type==="error")throw new Error(data.error||"LOAD_TEST_FAILED");}}}finally{
   // Do not blindly hide the cancel button on an unexpected stream close.
