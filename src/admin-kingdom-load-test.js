@@ -401,7 +401,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
           const boardCompleted=Math.min(26,Math.max(0,Number(progress.board_index||0)));
           const playerCompleted=Math.max(0,Number(progress.player_cursor||0));
           const playerCount=Number(progress.player_count);
-          if(Number.isFinite(playerCount)&&playerCount>=0) questTotalByKid.set(kidNumber,26+playerCount);
+          if(progress.phase!=="RANKINGS"&&Number.isFinite(playerCount)&&playerCount>=0) questTotalByKid.set(kidNumber,26+playerCount);
           questProgressByKid.set(kidNumber,{completed:boardCompleted+playerCompleted});
           await persistLoadTestMetrics(env.DB,runId,apiLimiter);
           const apiMetrics=apiLimiter.snapshot(),q=getQuestProgress();
