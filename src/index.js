@@ -34,6 +34,7 @@ import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 import { collectMightPulseThroughGuards, collectKingdomRanking, collectPlayerDetail } from "./data-collection-engine.js";
 import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
+import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -3818,6 +3819,7 @@ export default {
       if (safety.allowed) {
         await runKingdomCatalogDiscovery(env);
         await runKingdomSeeder(env, { maxTargets: 2 });
+        await runKingdomRankingRoller(env, { kingdomsPerRun: 1, boardsPerRun: 2 });
       } else {
         await recordSystemEvent(env.DB, {
           traceId: systemTraceId("kingdom-catalog"),
