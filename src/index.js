@@ -30,6 +30,7 @@ import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analyti
 import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
 import { buildSafetySnapshot } from "./safety-gate.js";
+import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -1102,16 +1103,20 @@ async function fetchWithLoadTestApiLimiter(apiLimiter, worker) {
   if (!apiLimiter) return worker();
   const maxRetries = 20;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const release = await apiLimiter.acquire();
+    let release = null;
     let poolWaitStartedAt = null;
     try {
+      release = await apiLimiter.acquire();
       return await worker();
     } catch (error) {
       const code = String(error?.code || error?.message || "");
-      if (code !== "NO_API_POOL_KEY_AVAILABLE" || attempt >= maxRetries) throw error;
-      poolWaitStartedAt = typeof apiLimiter.markPoolWaitStart === "function" ? apiLimiter.markPoolWaitStart() : null;
+      if (code !== "NO_API_POOL_KEY_AVAILABLE" && code !== "GLOBAL_COLLECTION_SEMAPHORE_FULL") throw error;
+      if (attempt >= maxRetries) throw error;
+      if (code === "NO_API_POOL_KEY_AVAILABLE") {
+        poolWaitStartedAt = typeof apiLimiter.markPoolWaitStart === "function" ? apiLimiter.markPoolWaitStart() : null;
+      }
     } finally {
-      release();
+      if (release) await Promise.resolve(release()).catch(() => {});
     }
     try {
       await new Promise(resolve => setTimeout(resolve, 500));
