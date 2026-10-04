@@ -8707,3 +8707,23 @@ commit:
 - 完了後にAPI Poolが解放されることを確認
 
 この時点では負荷テスト本番E2E成功とは扱わない。
+
+
+# 112. 2026-10-05 Load Test UI起動失敗の可視化修正
+
+本番画面で「中止」ボタンが開始直後だけ有効になり、その後消えて「APIクエスト 0 / 720」「処理開始…」へ戻る事象を確認。
+
+コード上、Load Test APIがHTTP非2xxを返した場合、UIの `try/finally` にcatchがなく、開始失敗理由を表示しないままfinallyでボタン状態だけ初期化する構造だった。
+
+修正:
+- `src/admin-kingdom-load-test.js`
+- Load Test開始失敗時にHTTP/preflightエラーを「負荷テスト開始失敗」として画面表示
+- Safety Gate / API Pool / D1等のJSONエラー本文も可能な範囲で表示
+- Load Test履歴取得失敗時もHTTPステータス/エラー理由を表示
+
+commit:
+- d5c64cd082a7f0600f85a5da
+
+これにより次回実機テストでは「なぜ開始できなかったか」を画面上で特定できる。
+
+なお、Load Test本体の開始成功はこの時点では未確認。
