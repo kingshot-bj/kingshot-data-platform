@@ -8583,3 +8583,55 @@ commit:
 5. 本番E2E
 
 を明確に分離して確認する。
+
+
+# 109. 2026-10-04 Player Roller監査・診断計測修正
+
+## 109-1. 監査結果
+
+Player Roller (`src/player-roller.js`) を横断監査。
+
+確認済み:
+- 候補発見は `kingdom_ranking_current` の `personal_power` のみを使用
+- `ranking_snapshots` の広範囲読み取りは使用していない
+- `governor_id` は `r.governor_id` 優先、欠落時 `r.target_id` fallback
+- Player Currentが3600秒以内なら候補から除外し不要な再取得を抑制
+- MightPulse Player Detailは `base,heroes,ranks,gov_gear` を1 requestで取得
+- API Pool / Global Collection Semaphore経由
+- `api_observations` 保存後にPlayer Currentをmaterialize
+- R2_ONLYではPlayer履歴をR2へ保存し、R2失敗時はEmergency Bufferへ退避
+- Player identity history / change_eventsを保存経路で維持
+- cursor/stateは `kid + governor_id` で永続化
+- System Log / Diagnostics / Status JSONに状態を公開
+
+## 109-2. 発見した問題
+
+Alliance Roller監査時に発見したものと同種の時間計測バグがPlayer Rollerにも存在。
+
+`startedAt` はUnix秒だったため、Diagnosticsの `Date.now() - startedAt` が秒とミリ秒の単位不一致になっていた。
+
+## 109-3. 修正
+
+`startedAtMs = Date.now()` を追加し、Player Roller Diagnosticsの `elapsedMs` は `Date.now() - startedAtMs` を使用するよう修正。
+
+commit:
+- `70bec1df09f03986d36d2d1f8ff56ccffa0d16db`
+
+## 109-4. リソース面の確認
+
+Player Rollerは最大26件を `Promise.allSettled` で処理するが、各MightPulse requestはGlobal Collection Semaphoreで制御されるため、単純な無制限同時実行にはならない。
+
+また、定期候補抽出は `players.observed_at` による3600秒Freshness判定があり、直近取得済みPlayerの不要再取得を抑制する。
+
+Current更新自体は観測ごとにsource observation / observed_atを更新する設計だが、これはAPI observationを資産として保持する既存設計との整合性があるため、今回の監査では変更しない。
+
+## 109-5. Phase 2次段階
+
+Player Rollerのコード監査・修正は完了。
+
+次:
+1. commit `70bec1df...` のCloudflare本番deploy確認
+2. Alliance / Player Rollerをまとめた本番E2E
+3. Background実行時の実API/D1/R2リソース消費確認
+4. System Status / System JSON / Diagnosticsの実値確認
+5. Phase 2横断監査完了
