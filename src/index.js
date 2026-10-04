@@ -1041,7 +1041,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     }
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
-        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId)) };
+        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: apiLimiter?.globalLimiter || null })) };
       } catch (error) {
         await recordDiagnostic(env.DB, {
           service: "watchlist",
