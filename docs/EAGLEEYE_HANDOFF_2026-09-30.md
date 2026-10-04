@@ -7272,3 +7272,46 @@ Status JSONへ:
 Seederも1回の実行でbounded target数だけ処理し、D1 current state / R2 history / System Log / Status JSONを一体で更新する。
 
 ---
+
+
+---
+# 100. 2026-10-04 Phase 2 — Kingdom Seeder foundation
+
+## 100-1. 実装
+
+追加:
+- `src/kingdom-seeder.js`
+
+SeederはCatalogから最大2王国/実行だけを対象にし、各王国について公式API:
+- `/kingdoms/{kid}`
+
+をCommon Data Collection Engine経由で取得。
+
+取得したcurrent stateは `kingdom_catalog.raw_json` 等へ更新し、API Pool / Global Semaphore / Safety制御を共通化。
+
+## 100-2. リソース設計
+
+- 1実行最大2王国
+- 1王国1 API request
+- API Pool lease共通化
+- Global Semaphore共通化
+- D1 current state保存
+- System Log START / COMPLETE / ERROR
+- Diagnostics SUCCESS / FAILED
+- Status JSONへSeeder状態を追加
+
+履歴をD1へ大量保存する実装は行わない。
+
+## 100-3. コミット
+
+- `8f0a31a1cfa54b64a879deca1c882a3d4cd30837` — Seeder foundation
+- `98355618e027db17d0f4b72f0ac82d2eec9e7649` — scheduled Seeder
+- `6ab12d3f2705620ef03b44a81700c15fd3ac195d` — Seeder status exposure
+- `94c2f41d2a5b86dec3348bd749436aa8e24e27d7` — status normalization
+
+## 100-4. 次段階
+
+次はSeederを `/kingdoms/{kid}?include=boards&limit=100` へ拡張し、王国のcurrent board metadataを保存する。
+その後、ランキングboardsの取得を既存 `kingdom_ranking_current` + R2 historyへ接続する。
+
+---
