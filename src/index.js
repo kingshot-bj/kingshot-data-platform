@@ -256,10 +256,14 @@ async function runDataRetentionJob(env) {
       service: "system_log",
       feature: "system_log_archive",
       operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
-      status: systemLogArchive?.skipped ? "WARNING" : "SUCCESS",
+      status: systemLogArchive?.skipped || (systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded)
+        ? "WARNING"
+        : "SUCCESS",
       message: systemLogArchive?.skipped
         ? "System Log R2アーカイブを実行できませんでした。D1のイベントは削除していません。"
-        : "System Logの24時間Retention処理成功",
+        : systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded
+          ? "System LogのR2アーカイブは成功しましたが、Google Driveミラーは未完了です。"
+          : "System Logの24時間Retention処理成功",
       metadata: systemLogArchive
     });
     console.log("system_log_archive_ok", systemLogArchive);
