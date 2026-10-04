@@ -6669,3 +6669,178 @@ Phase 1初回実装:
 - 5ba73915463733c3ccb4a5bf05197ed29d410495 — System Status integration
 - f3ad73ee48e68f4ba03ef7d743a419d089c54c06 — Load Test Safety Gate integration
 
+
+
+---
+# 89. 2026-10-04 Phase 1 — Global Collection Semaphore / Safety統合 実装進捗
+
+#89は#86/#88の「未実装」記載を上書きする最新状態として扱う。
+
+## 89-1. 実装済み
+
+### Global Collection Semaphore
+追加:
+- `src/collection-semaphore.js`
+- `migrations/0034_global_collection_semaphore.sql`
+
+現段階の方式:
+- D1の単一カウンタ行 `collection_semaphore`
+- key: `GLOBAL_API`
+- 初期capacity: 26
+- acquire: 条件付きUPDATE
+- release: 条件付きUPDATE
+- hot acquire pathではSELECTを行わない
+- status表示時のみsnapshot SELECTを行う
+
+重要:
+- 既存Load Testの`MAX_API_CONCURRENCY=26`とは責務を分離。
+- 26は現時点のGlobal Semaphore default値。
+- 将来の実測値/Feature Matrix/API Pool状況によりcapacityを変更可能。
+
+### Watchlist / Load Testへの接続
+`src/index.js`:
+- API request直前の既存Load Test limiterにGlobal Collection Semaphoreを追加。
+- Load Testはlocal limiter → global limiter → API Pool leaseの順で制御。
+- 通常Watchlistも同じGlobal Collection Semaphoreを経由。
+- Global枠が満杯の場合は`GLOBAL_COLLECTION_SEMAPHORE_FULL`として短時間retry。
+- D1をpollingして待機する方式にはしていない。
+
+### Watchlist Safety Gate
+通常Watchlist Cron開始時に:
+- API Pool availability
+- Cloudflare resource usage
+- Safety Gate
+
+を1回評価。
+
+Safety Gateが停止した場合:
+- 新規Watchlist jobは開始しない。
+- 既に進行中のjobは途中放棄せず継続可能。
+- System LogへBLOCKED/PAUSEDまたはWARNING eventを記録。
+- `blocked_by`
+- `resume_condition`
+- `state`
+
+を記録する。
+
+### System Status / System JSON
+`/status`へ:
+- Safety Gate state
+- Cloudflare max usage
+- Global Collection Semaphore active/capacity/available
+- API Pool状態
+- Watchlist状態
+
+を表示。
+
+System JSONでも:
+- `operational.safety`
+- `operational.collectionSemaphore`
+
+を取得可能。
+
+### Load Test
+Load Test開始前:
+- Safety Gate
+- API Pool reserve
+- planned request estimate
+
+を確認。
+
+さらに実際の各API request:
+- local Load Test limiter
+- Global Collection Semaphore
+- API Pool
+
+を通過する。
+
+OWNER権限/force=trueでもHARD_STOPは突破不可。
+
+## 89-2. D1使用量方針
+
+Global Semaphoreのacquire/releaseは1 requestにつき:
+- acquire: 1 conditional UPDATE
+- release: 1 UPDATE
+
+であり、SELECT pollingは行わない。
+
+status snapshotのみ:
+- 1 SELECT
+
+したがって「待機のためのD1 SELECTループ」は作っていない。
+
+ただし、acquire/releaseのD1 write amplificationは今後の実測対象。
+Phase 1後半で:
+- 1 API requestあたりのD1 write増加
+- Watchlist 26並列時のD1 write
+- Load Test時のD1 write
+- Cloudflare D1 Rows Written
+
+を実測し、必要ならDurable Objects等のstateful coordinationへの移行を検討する。
+
+## 89-3. 現段階の重要なhardening課題
+
+現在のD1 counter方式には、Worker実行中断時に`active_count`が残る可能性がある。
+
+そのため:
+- Phase 1の「Global Semaphore完成」ではなく「Global Semaphore初版」
+- production E2E前にcrash/recovery対策を確認する
+- lease TTL / recovery / Durable Object等を比較する
+
+という扱いにする。
+
+Cloudflare公式仕様上、Durable Objectsはglobal uniquenessとstateful coordination向けの仕組みであり、今回のGlobal Semaphoreのような分散協調には適合性が高い。
+ただし、D1 usage / deployment complexity / current Worker architectureを比較してから採用を決定する。
+
+## 89-4. Status / JSON / Log Definition of Done進捗
+
+### 完了
+- Feature実装
+- Worker/API接続
+- D1 state
+- System Log
+- System Status
+- System JSON
+- blocked_by
+- resume_condition
+- stop state
+
+### 未完了
+- planned consumptionのkey-level精度
+- API minute/day remainingを実際のGateへ常時入力
+- Cloudflare reserve
+- Service reserve
+- Dynamic/Measured reserve
+- Semaphore crash recovery
+- 本番E2EでのD1 write amplification確認
+
+## 89-5. Phase 1コミット
+
+- `8a8905b1384c68180e61d1d719746825f9a264cc` — add global collection semaphore migration
+- `e74a1fbbd3277f8c360872ce2f605a3945230113` — add global collection semaphore module
+- `dad013475f0bf97a142509c87e1b7e3f7ceab0e7` — expose semaphore limiter adapter
+- `ad6d33d1c875d4c9d2c80b873e1bb47d4730ba35` — enforce global semaphore on collection API path
+- `db6532c665bbcdf2c4c07172b1378f61e2523723` — apply global semaphore to watchlist collection
+- `b4a9c8bfb2dee173b2e0ac0e7c612e831df9e69f` — gate new watchlist jobs with Safety policy
+- `4b1c23a89feb54cc65a69b8091f4de926230a0b4` — expose semaphore in operational status
+- `b0bb8822b21c90daa592ede5c4aeb4a401b06cf5` — fix status semaphore result binding
+- `48feb60ef3ea05ab5bff03e62e3f5d2185d38592` — show Safety Gate / Semaphore on system status
+- `e08363665a46d5cb0df89d72d36758758c403a48` — connect Load Test to global semaphore
+
+## 89-6. 次の実装順
+
+1. Semaphore crash/recovery方式を確定
+2. API key-level planned consumption
+3. Cloudflare / Service Reserve
+4. Dynamic/Measured Reserve
+5. Safety stop/resume event統一
+6. Phase 1 production E2E
+7. Phase 2 Data Collection Engine
+
+禁止事項:
+- ranking_snapshotsの広範囲read復活
+- Watchlistをコピーした別Crawler作成
+- Global SemaphoreをLoad Test専用にすること
+- System Status / System JSONへ載せない新機能追加
+
+---
