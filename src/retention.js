@@ -1,5 +1,6 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archiveD1RowsToR2 } from "./r2-archive.js";
+import { getGoogleDriveConnectionStatus, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
 
 const RETENTION_TABLES = Object.freeze([
   { key: "api_observations_days", table: "api_observations", column: "observed_at", keepLatestPerTarget: true },
@@ -162,7 +163,7 @@ async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket
 
 const SYSTEM_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 
-async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000) {
+async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000, googleDriveEnv = null) {
   if (!db || !archiveBucket) {
     return { selected: 0, archived: 0, deleted: 0, pending: null, skipped: true };
   }
@@ -190,6 +191,59 @@ async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000)
     rows
   });
 
+  // R2 remains the primary archive. When Google Drive OAuth is configured,
+  // mirror the exact R2 archive object to Drive before deleting D1 rows.
+  // Drive failure never causes data loss because the R2 copy is already
+  // confirmed; it is surfaced in the retention result/diagnostics instead.
+  let googleDrive = {
+    enabled: false,
+    uploaded: false,
+    verified: false,
+    skipped: true,
+    reason: "GOOGLE_DRIVE_NOT_CONFIGURED"
+  };
+  if (googleDriveEnv && archiveResult?.key) {
+    const driveStatus = await getGoogleDriveConnectionStatus(googleDriveEnv);
+    if (driveStatus.ready) {
+      try {
+        const upload = await uploadR2ObjectToGoogleDrive(googleDriveEnv, {
+          archiveBucket,
+          key: archiveResult.key,
+          mimeType: "application/gzip"
+        });
+        googleDrive = {
+          enabled: true,
+          uploaded: true,
+          verified: Boolean(upload?.verified),
+          duplicate: Boolean(upload?.duplicate),
+          driveFileId: upload?.driveFileId || null,
+          sourceKey: archiveResult.key,
+          sourceSize: Number(upload?.sourceSize || 0),
+          driveSize: Number(upload?.driveSize || 0),
+          skipped: false,
+          reason: null
+        };
+      } catch (error) {
+        googleDrive = {
+          enabled: true,
+          uploaded: false,
+          verified: false,
+          skipped: false,
+          sourceKey: archiveResult.key,
+          errorCode: String(error?.code || error?.message || "GOOGLE_DRIVE_ARCHIVE_FAILED").split(":")[0]
+        };
+      }
+    } else {
+      googleDrive = {
+        enabled: false,
+        uploaded: false,
+        verified: false,
+        skipped: true,
+        reason: "GOOGLE_DRIVE_NOT_READY"
+      };
+    }
+  }
+
   const rowids = rows.map(row => Number(row.rowid)).filter(Number.isFinite);
   if (rowids.length !== rows.length) {
     throw new Error("SYSTEM_LOG_ARCHIVE_ROWID_MISSING");
@@ -207,6 +261,8 @@ async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000)
   return {
     selected: rows.length,
     archived: Number(archiveResult?.rowCount || rows.length),
+    archiveKey: archiveResult?.key || null,
+    googleDrive,
     deleted: Number(deleted?.meta?.changes || 0),
     pending: Number(remaining?.count || 0),
     cutoff
@@ -224,7 +280,8 @@ export async function archiveSystemEventLog(db, archiveBucket, options = {}) {
   }, () => archiveExpiredSystemEventLog(
     db,
     archiveBucket,
-    options.batchSize
+    options.batchSize,
+    options.googleDriveEnv || null
   ));
 }
 
