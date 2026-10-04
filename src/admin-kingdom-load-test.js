@@ -630,7 +630,7 @@ function renderProgress(data,active){
   count.textContent="APIクエスト "+done+" / "+total+"　("+pct+"%)";
   fill.style.width=pct+"%";
   title.textContent="APIクエスト進捗";
-  meta.textContent="王国完了 "+Number(data.completed||0)+" / "+Number(data.target_count||0)+"　成功 "+Number(data.success||0)+" / 失敗 "+Number(data.failed||0)+"　"+apiMetricsText(data)+"　通常利用保護 "+LOAD_TEST_NORMAL_RESERVE+"本";
+  meta.textContent="王国完了 "+Number(data.completed||0)+" / "+Number(data.target_count||0)+"　成功 "+Number(data.success||0)+" / 失敗 "+Number(data.failed||0)+"　"+apiMetricsText(data)+"　通常利用保護 1本";
   var rows=Object.keys(active).map(function(k){return active[k];}).filter(function(x){return !x.completed;}).sort(function(a,b){return Number(a.kid)-Number(b.kid);});
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
