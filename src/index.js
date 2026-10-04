@@ -3878,7 +3878,6 @@ export default {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
     }
-  }
   },
   async queue(batch, env) {
     return await handleServiceUsageQueue(batch, env);
