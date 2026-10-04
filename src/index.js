@@ -714,6 +714,8 @@ async function runKingdomWatchlistJobs(env) {
       apiRemainingDay: poolBudget?.remainingDay,
       apiMinRemainingMinute: poolBudget?.minRemainingMinute,
       apiMinRemainingDay: poolBudget?.minRemainingDay,
+      apiReserveMinute: poolBudget?.measuredReserveMinute,
+      apiReserveDay: poolBudget?.measuredReserveDay,
       force: false
     });
     if (!watchlistSafety.allowed) {
