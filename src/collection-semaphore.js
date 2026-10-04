@@ -92,3 +92,19 @@ export const COLLECTION_SEMAPHORE_DEFAULTS = Object.freeze({
   key: DEFAULT_SEMAPHORE_KEY,
   capacity: DEFAULT_CAPACITY
 });
+
+export function createCollectionSemaphoreLimiter(db, capacity = DEFAULT_CAPACITY) {
+  return {
+    capacity: Math.max(1, Number(capacity) || DEFAULT_CAPACITY),
+    async acquire() {
+      const permit = await acquireCollectionPermit(db, { capacity });
+      if (!permit?.ok) throw permit?.error || new Error("GLOBAL_COLLECTION_SEMAPHORE_FULL");
+      let released = false;
+      return async () => {
+        if (released) return;
+        released = true;
+        await releaseCollectionPermit(db, permit).catch(() => {});
+      };
+    }
+  };
+}
