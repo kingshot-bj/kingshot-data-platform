@@ -185,7 +185,14 @@ write("INSERT OR IGNORE INTO collection_semaphore(semaphore_key,capacity,active_
 if (!tableExists("collection_semaphore_slots")) {
   write("CREATE TABLE collection_semaphore_slots (semaphore_key TEXT NOT NULL,slot_id INTEGER NOT NULL,lease_token TEXT,lease_until INTEGER,updated_at INTEGER NOT NULL,PRIMARY KEY(semaphore_key,slot_id))");
 }
-write("INSERT OR IGNORE INTO collection_semaphore_slots(semaphore_key,slot_id,lease_token,lease_until,updated_at) SELECT 'GLOBAL_API',value,NULL,NULL,strftime('%s','now') FROM (SELECT 1 AS value UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20 UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23 UNION ALL SELECT 24 UNION ALL SELECT 25 UNION ALL SELECT 26)");
+const slotValues = Array.from({ length: 26 }, (_, index) => {
+  const slotId = index + 1;
+  return "('GLOBAL_API'," + slotId + ",NULL,NULL,strftime('%s','now'))";
+}).join(",");
+write(
+  "INSERT OR IGNORE INTO collection_semaphore_slots(semaphore_key,slot_id,lease_token,lease_until,updated_at) VALUES " +
+    slotValues
+);;
 ensureIndex("idx_collection_semaphore_slots_lease","CREATE INDEX IF NOT EXISTS idx_collection_semaphore_slots_lease ON collection_semaphore_slots(semaphore_key,lease_until)");
 
 if (!tableExists("api_request_locks")) {
