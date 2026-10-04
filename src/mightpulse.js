@@ -25,7 +25,8 @@ export async function mightPulseFetch(env, path, {
   parentTraceId = null,
   operation = "MIGHTPULSE_REQUEST",
   targetType = null,
-  targetId = null
+  targetId = null,
+  metadata = null
 } = {}) {
   const apiKey = providedApiKey || env.MIGHTPULSE_API_KEY;
   const systemTrace = traceId || systemTraceId("mp");
@@ -50,7 +51,7 @@ export async function mightPulseFetch(env, path, {
       elapsedMs: Date.now() - startedAt,
       errorCode: error.code,
       message: error.message,
-      metadata: { path, method, attempts }
+      metadata: { path, method, attempts, ...(metadata && typeof metadata === "object" ? metadata : {}) }
     });
     throw error;
   }
