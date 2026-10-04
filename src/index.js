@@ -3796,8 +3796,9 @@ async function handleGoogleDriveOAuthCallback(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, executionContext) {
     const url = new URL(request.url);
+    const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
@@ -3847,7 +3848,7 @@ export default {
       if (url.pathname === "/api/owner/kingdom-load-test/history") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestHistoryApi(request, env); }
       if (url.pathname === "/api/owner/kingdom-load-test/status") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestStatusApi(request, env); }
       if (url.pathname === "/api/owner/kingdom-load-test/cancel") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestCancelApi(request, env, guard.auth); }
-      if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId, processKingdomWatchlistJob); }
+      if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId, processKingdomWatchlistJob, executionContext); }
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
       if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
