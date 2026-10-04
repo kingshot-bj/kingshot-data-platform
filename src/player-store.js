@@ -3,37 +3,6 @@ import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive
 import { recordDiagnostic } from "./diagnostics.js";
 import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 
-let playerIdentityHistorySchemaPromise = null;
-
-async function ensurePlayerIdentityHistorySchema(db) {
-  if (playerIdentityHistorySchemaPromise) return playerIdentityHistorySchemaPromise;
-  playerIdentityHistorySchemaPromise = (async () => {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS player_identity_history (
-        identity_history_id TEXT PRIMARY KEY,
-        governor_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        first_seen_at INTEGER NOT NULL,
-        last_seen_at INTEGER NOT NULL,
-        source_observation_id TEXT,
-        created_at INTEGER NOT NULL
-      )
-    `).run();
-    await db.prepare(
-      "CREATE INDEX IF NOT EXISTS idx_player_identity_history_governor ON player_identity_history (governor_id, first_seen_at ASC)"
-    ).run();
-    await db.prepare(
-      "CREATE INDEX IF NOT EXISTS idx_player_identity_history_name ON player_identity_history (name, governor_id)"
-    ).run();
-  })();
-  try {
-    return await playerIdentityHistorySchemaPromise;
-  } catch (error) {
-    playerIdentityHistorySchemaPromise = null;
-    throw error;
-  }
-}
-
 export async function getLatestPlayerObservation(db, governorId) {
   const row = await db.prepare(
     `SELECT observation_id, observed_at, http_status, payload_json
@@ -74,7 +43,6 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
   const now = Math.floor(Date.now() / 1000);
   const governorId = String(player.governor_id ?? observation.payload.governor_id);
 
-  await ensurePlayerIdentityHistorySchema(db);
   await savePlayerIdentityHistory(db, existing, player, observation);
   await savePlayerChangeEvents(db, existing, player, observation);
 
