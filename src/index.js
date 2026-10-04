@@ -3853,22 +3853,25 @@ export default {
       // a fixed low throughput. Catalog(1) + Seeder(max 2) are the fixed
       // discovery/current-state cost; the remaining safe budget is allocated
       // to Alliance Roller (up to 5), Player Roller (up to 5), and Ranking Roller (up to all 26 boards for the current kingdom).
-      const fixedBackgroundRequests = 3;
+      const fixedCatalogRequests = 1;
+      const seederRequestsBudget = 5;
       const minuteBudget = catalogBudget?.remainingMinute == null
-        ? 36
+        ? 42
         : Math.max(0, Math.floor(Number(catalogBudget.remainingMinute) - 1 - Number(catalogBudget.measuredReserveMinute || 5)));
       const dayBudget = catalogBudget?.remainingDay == null
-        ? 36
+        ? 42
         : Math.max(0, Math.floor(Number(catalogBudget.remainingDay) - 1 - Number(catalogBudget.measuredReserveDay || 50)));
       const variableBackgroundBudget = Math.min(
-        36,
-        Math.max(0, minuteBudget - fixedBackgroundRequests),
-        Math.max(0, dayBudget - fixedBackgroundRequests)
+        41,
+        Math.max(0, minuteBudget - fixedCatalogRequests),
+        Math.max(0, dayBudget - fixedCatalogRequests)
       );
-      const allianceRequestsBudget = Math.min(5, variableBackgroundBudget);
-      const playerRequestsBudget = Math.min(5, Math.max(0, variableBackgroundBudget - allianceRequestsBudget));
-      const rankingBoardsBudget = Math.min(26, Math.max(0, variableBackgroundBudget - allianceRequestsBudget - playerRequestsBudget));
-      const plannedBackgroundRequests = fixedBackgroundRequests + allianceRequestsBudget + playerRequestsBudget + rankingBoardsBudget;
+      const seederBudget = Math.min(seederRequestsBudget, variableBackgroundBudget);
+      const remainingAfterSeeder = Math.max(0, variableBackgroundBudget - seederBudget);
+      const allianceRequestsBudget = Math.min(5, remainingAfterSeeder);
+      const playerRequestsBudget = Math.min(5, Math.max(0, remainingAfterSeeder - allianceRequestsBudget));
+      const rankingBoardsBudget = Math.min(26, Math.max(0, remainingAfterSeeder - allianceRequestsBudget - playerRequestsBudget));
+      const plannedBackgroundRequests = fixedCatalogRequests + seederBudget + allianceRequestsBudget + playerRequestsBudget + rankingBoardsBudget;
       const safety = evaluateSafetyGate({
         operation: "KINGDOM_BACKGROUND_COLLECTION",
         priority: SAFETY_PRIORITIES.CATALOG,
@@ -3886,7 +3889,7 @@ export default {
       });
       if (safety.allowed) {
         await runKingdomCatalogDiscovery(env);
-        await runKingdomSeeder(env, { maxTargets: 2 });
+        await runKingdomSeeder(env, { maxTargets: seederBudget });
         if (allianceRequestsBudget > 0) {
           await runAllianceRoller(env, { maxTargets: allianceRequestsBudget });
         }
@@ -3909,7 +3912,8 @@ export default {
             errorCode: "NO_SAFE_RANKING_BUDGET",
             message: "Discovery / Alliance / Playerは安全枠内で実行可能ですが、ランキングへ割り当て可能なAPI残量がありません。",
             metadata: {
-              fixedBackgroundRequests,
+              fixedCatalogRequests,
+              seederBudget,
               minuteBudget,
               dayBudget,
               variableBackgroundBudget,
