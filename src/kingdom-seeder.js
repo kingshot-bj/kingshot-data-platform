@@ -1,5 +1,4 @@
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
-import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
@@ -22,9 +21,11 @@ export async function runKingdomSeeder(env, {
   const startedAt = now();
   const traceId = systemTraceId("kingdom-seeder");
 
+  const state = await env.DB.prepare("SELECT catalog_cursor FROM kingdom_seeder_state WHERE state_key = ?").bind("KINGDOM_SEEDER").first();
+  const cursor = Number(state?.catalog_cursor || 0);
   const targets = await env.DB.prepare(
-    "SELECT kid, name, status, last_seen_at FROM kingdom_catalog ORDER BY CASE WHEN status = 'ACTIVE' THEN 0 ELSE 1 END, last_seen_at DESC LIMIT ?"
-  ).bind(safeMax).all();
+    "SELECT kid, name, status, last_seen_at FROM kingdom_catalog ORDER BY kid LIMIT ? OFFSET ?"
+  ).bind(safeMax, cursor).all();
 
   const rows = targets.results || [];
   const result = { ok: true, targets: rows.length, success: 0, failed: 0, skipped: 0 };
@@ -122,6 +123,11 @@ export async function runKingdomSeeder(env, {
       }).catch(() => {});
     }
   }
+
+  const countResult = await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog").first();
+  const total = Number(countResult?.count || 0);
+  const nextCursor = rows.length && cursor + rows.length < total ? cursor + rows.length : 0;
+  await env.DB.prepare("UPDATE kingdom_seeder_state SET catalog_cursor = ?, processed_runs = processed_runs + 1, success_count = success_count + ?, failed_count = failed_count + ?, last_kid = ?, last_success_at = CASE WHEN ? > 0 THEN ? ELSE last_success_at END, last_failure_at = CASE WHEN ? > 0 THEN ? ELSE last_failure_at END, last_error = ?, updated_at = ? WHERE state_key = ?").bind(nextCursor, result.success, result.failed, rows[rows.length - 1]?.kid ?? null, result.success, startedAt, result.failed, startedAt, result.failed ? "one or more kingdoms failed" : null, now(), "KINGDOM_SEEDER").run();
 
   await recordSystemEvent(env.DB, {
     traceId,
