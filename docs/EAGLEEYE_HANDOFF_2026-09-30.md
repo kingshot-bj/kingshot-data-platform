@@ -7351,3 +7351,14 @@ Seederの取得先を `/kingdoms/{kid}?include=boards&limit=100` に拡張し、
 ### リソース方針
 
 26ボードを1回のCronで一括取得せず、API/D1/R2/Workerの瞬間負荷を抑える。1王国あたり約65分で26ボードを一巡する設計。今後の本番使用量を見て、Safety GateとMeasured Reserveを基準にrunあたり件数を調整する。
+
+
+## 100-7. Background Batch Safety統合
+
+Catalog / Seeder / Ranking Rollerを個別にSafety判定してD1 monitoring readsを増やすのではなく、1 Cronの背景収集バッチとしてまとめてSafety Gate判定。
+
+- plannedRequests = 最大5（Catalog 1 + Seeder 最大2 + Ranking 2）
+- Measured Reserve / API残量 / Cloudflare D1使用量を1回の判定で評価
+- block時は背景収集全体を停止
+
+コミット: `3eb025b6f98484b2d93130e19470bbe26a394bb3`
