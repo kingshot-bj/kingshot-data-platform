@@ -8774,3 +8774,144 @@ commit:
 - 20王国 / 上位10人で再実行
 - 実際にAPI進捗が0から進むことを確認
 - API Pool lease / D1 / R2 / Change Events / System Logを確認
+
+
+# 112. 2026-10-04 王国Watchlist実処理負荷テスト — Safety Gate再修正 / 次スレ引き継ぎ
+
+## 112-1. 現在の本番確認状況
+
+Ownerの「王国Watchlist実処理負荷テスト」を20王国・上位プレイヤー10人で実機実行。
+
+画面上の想定進捗は **720クエスト**。
+これは「基本プレイヤー情報を10人だけ保存する」という意味ではない。
+
+- 1王国あたりランキング26ボードを取得
+- 各ランキングは最大100位まで保存
+- その中から上位10人についてPlayer詳細APIを取得・保存
+- よってUI上の進捗単位は `20 × (26 + 10) = 720`
+
+「上位プレイヤー取得数」は詳細Player取得数。
+
+## 112-2. 発見した負荷テスト起動問題
+
+最初の実行では、
+
+- APIクエスト 0 / 720
+- 「処理状況を取得中…」
+- 実行ボタンが通常状態へ戻る
+- 中止ボタンが消える
+
+となり、実処理が開始されなかった。
+
+調査の結果、HTTP Routerから負荷テストAPIへ `requestTraceId` を渡しているのにfetch内で定義されていない問題、および長時間実行のための `executionContext.waitUntil(run)` にexecutionContextを渡していない問題を確認。
+
+修正commit:
+- `f8a668549bc83e6a79ff6bd33ca39f8651cec9f0`
+
+内容:
+- `fetch(request, env, executionContext)`
+- `requestTraceId` を `x-eagle-eye-trace-id` または `systemTraceId("http")` から生成
+- `/api/owner/kingdom-load-test` にexecutionContextを渡す
+
+## 112-3. 再実行後に発見した本当の起動停止
+
+修正後の再実行では、中止ボタンが約2秒表示された後に消え、画面に明確に
+
+`負荷テスト開始失敗`
+`Safety Gateによりロードテスト開始を停止しました。`
+
+と表示された。
+
+つまり負荷テスト本体はまだ一度も開始していない。
+
+## 112-4. Safety Gateの設計上の問題
+
+`src/admin-kingdom-load-test.js` の負荷テスト開始時に、長時間のキュー型処理にもかかわらず全予定リクエスト数をSafety Gateの `plannedRequests` として評価すると、20王国・10人で720を即時消費する前提になる。
+
+これは現在の負荷テスト実装と不整合。
+
+実際の負荷テストは:
+- API Poolの実利用可能キー数 - 通常利用保護1本を同時実行上限として使う
+- 各APIリクエストごとにAPI Pool lease
+- 完了した枠を即座に次リクエストへ回す
+- 全王国でAPI枠を共有
+- つまり720件を一斉に送る処理ではない
+
+現在の `src/admin-kingdom-load-test.js` には既にコメントと修正が入り、
+
+`const plannedRequests = 1;`
+
+としてSafety Gateを「開始時の1リクエスト分だけ」で評価する形になっている。
+
+ただしユーザーの実機結果ではSafety Gateで開始が停止したため、**この修正がCloudflare本番へデプロイされているか、または実際のSafety Gate判定条件の別要因で止まっているかを次スレで確認必須。**
+
+## 112-5. Safety Gate本体の重要仕様
+
+`src/safety-gate.js`:
+
+- `HARD_STOP` は強制開始でも突破不可
+- API残量不足なら `API_MINUTE_BUDGET_INSUFFICIENT` / `API_DAILY_BUDGET_INSUFFICIENT`
+- 最低残量保護なら `API_KEY_MINUTE_RESERVE_PROTECTED` / `API_KEY_DAILY_RESERVE_PROTECTED`
+- 通常利用保護キー数は1
+- Load Test priority = 10
+- Watchlist priority = 100
+
+Load Testは `force:true` でも安全制限を突破しない設計。
+
+次スレでは、Safety Gateを無条件で緩めるのではなく、
+
+**「開始を許可する条件」と「実行中にAPI Pool / Cloudflare資源を保護する条件」を分離する**
+
+方針で修正する。
+
+特に、開始時の全720件を予算判定するのは禁止。
+
+## 112-6. 現在確認できているコード
+
+`src/admin-kingdom-load-test.js` の開始処理は現在、
+
+- `availablePoolKeys < 2` なら開始不可
+- `plannedRequests = 1`
+- Cloudflare D1 usageを取得
+- Safety Gateへ現在のPool残量/最低残量/測定reserveを渡す
+- 通過後 `apiConcurrency = availablePoolKeys - 1`
+- Global collection semaphore = 最大26
+- 実処理は `runKingdomWatchlistLoad`
+- ランキング26ボード
+- 上位topN Player詳細
+- D1 current
+- Change Event
+- R2履歴
+- API Pool lease/release
+
+を通す。
+
+## 112-7. まだ未完了
+
+**負荷テスト本番E2E成功とは扱わない。**
+
+未確認:
+1. Safety Gateを実際に通過して開始できること
+2. API Poolが実際にリースされること
+3. ランキング26ボード取得
+4. Top 10 Player Detail取得
+5. D1 Current / Change Events
+6. R2 History
+7. System Status / System JSON / System Log
+8. 完了後API Poolが解放されること
+9. Load Test Historyが正常に表示されること
+
+今回画面下部に `LOAD_TEST_HISTORY_UNAVAILABLE` も表示されたため、履歴APIも別途確認する。
+
+## 112-8. 次スレ最初にやること
+
+1. **現在mainの `src/admin-kingdom-load-test.js` が本番deploy済みか確認**
+2. Safety Gateの実際の判定結果をJSONで確認し、`blockedBy` を特定
+3. 「開始時Safety Gate」と「実行中リソース保護」を分離する修正を行う
+4. 必要ならcommit → Cloudflare deploy
+5. 20王国 / 上位10人で再実行
+6. API進捗が0→増加することを確認
+7. Load Test Historyまで確認
+8. その後にEagleEye本体の本番E2E総点検へ戻る
+
+**重要: まだ「負荷テスト成功」とは言わない。**
