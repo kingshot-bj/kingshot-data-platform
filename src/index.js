@@ -3802,9 +3802,9 @@ export default {
         catalogCloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
       } catch {}
       const safety = evaluateSafetyGate({
-        operation: "KINGDOM_CATALOG",
+        operation: "KINGDOM_BACKGROUND_COLLECTION",
         priority: SAFETY_PRIORITIES.CATALOG,
-        plannedRequests: 1,
+        plannedRequests: 5,
         availablePoolKeys: Number(catalogBudget?.availableKeys || 0),
         reservedKeys: 1,
         cloudflare: catalogCloudflare,
@@ -3825,11 +3825,11 @@ export default {
           traceId: systemTraceId("kingdom-catalog"),
           eventType: "BLOCKED",
           service: "kingdom_catalog",
-          feature: "kingdom_discovery",
-          operation: "DISCOVERY_PAGE",
+          feature: "kingdom_background_collection",
+          operation: "BACKGROUND_BATCH",
           status: "PAUSED",
           errorCode: safety.blockedBy || "SAFETY_GATE_BLOCKED",
-          message: "Kingdom Catalog DiscoveryをSafety Gateが停止しました。",
+          message: "Kingdom Catalog / Seeder / Ranking RollerをSafety Gateが停止しました。",
           metadata: { state: safety.state, reasons: safety.reasons, resumeCondition: safety.resumeCondition }
         }).catch(() => {});
       }
