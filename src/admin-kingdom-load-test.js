@@ -355,6 +355,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     apiRemainingDay: poolBudget?.remainingDay ?? null,
     apiMinRemainingMinute: poolBudget?.minRemainingMinute ?? null,
     apiMinRemainingDay: poolBudget?.minRemainingDay ?? null,
+    apiReserveMinute: poolBudget?.measuredReserveMinute ?? null,
+    apiReserveDay: poolBudget?.measuredReserveDay ?? null,
     force: true
   });
   if(!safety.allowed)return new Response(JSON.stringify({ok:false,error:"SAFETY_GATE_BLOCKED",message:"Safety Gateによりロードテスト開始を停止しました。",safety}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
