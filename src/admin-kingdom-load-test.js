@@ -349,7 +349,7 @@ function createLoadTestApiLimiter(capacity) {
   };
 }
 
-async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProgress = null, apiLimiter = null) {
+async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProgress = null, apiLimiter = null, runTraceId = null) {
   const startedAt = Date.now();
   if (typeof processJob !== "function") return { run_id:runId, kid:Number(kid), ok:false, error:"KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE", elapsed_ms:Date.now()-startedAt };
 
@@ -377,7 +377,9 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
       if (job.status === "COMPLETED") return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt };
       let step;
       try {
-        step = await processJob(env, job, { reserveApiKeys: LOAD_TEST_NORMAL_RESERVE, apiLimiter });
+        const jobTraceId = systemTraceId("load-job");
+        await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"START", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, metadata:{ runId, jobId, kid:Number(kid), loadTest:true } });
+        step = await processJob(env, job, { reserveApiKeys: LOAD_TEST_NORMAL_RESERVE, apiLimiter, loadTestContext: { runId, jobId, traceId: jobTraceId } });
       } catch (error) {
         if (String(error?.code || error?.message || "") === "API_POOL_LOAD_TEST_CAPACITY_WAIT") {
           // Keep the load test out of the reserved normal-use key. Re-check on
@@ -555,7 +557,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
             progress,api_concurrency:apiLimiter.capacity,api_active_count:apiMetrics.active,api_waiting_count:apiMetrics.waiting,api_pool_waiting_count:apiMetrics.pool_waiting,api_wait_events:apiMetrics.wait_events,api_pool_wait_events:apiMetrics.pool_wait_events,api_wait_ms:apiMetrics.total_wait_ms,api_pool_wait_ms:apiMetrics.pool_wait_ms,api_wait_min_ms:apiMetrics.min_wait_ms,api_wait_max_ms:apiMetrics.max_wait_ms,api_wait_buckets_json:JSON.stringify(apiMetrics.wait_buckets||{})
           });
         },
-        apiLimiter
+        apiLimiter,
+        traceId
       ),
       async result => {
         completed++;
@@ -585,9 +588,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     const summary={run_id:runId,kingdom_count:kids.length,start_kid:Math.min(...kids),end_kid:Math.max(...kids),mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,elapsed_ms:Date.now()-startedAt,success_count:success,failed_count:failed,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:kids.length*26*100,latency_min_ms:latencies.length?Math.min(...latencies):null,latency_max_ms:latencies.length?Math.max(...latencies):null,latency_avg_ms:latencies.length?Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length):null,failure_codes:failureCodes,result_sample:failedResults.slice(0,50).map(item=>({kid:item.kid,error:item.error}))};
     runSummary=summary;
     await recordServiceUsage(env,{operation:"OWNER_KINGDOM_LOAD_TEST",actorUserId:auth.user_id,targetType:"USER",targetId:auth.user_id,metadata:summary});
-    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",metadata:summary});
+    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",runId,metadata:{...summary,runId,traceId}});
     await send({type:cancelledResults.length?"cancelled":"complete",run_id:runId,ok:true,cancelled:Boolean(cancelledResults.length),target_count:kids.length,concurrency,api_concurrency:apiConcurrency,top_n:topN,elapsed_ms:summary.elapsed_ms,success,failed,cancelled_count:cancelledResults.length,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:summary.max_expected_ranking_rows,results});
-  }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
+  }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",runId,metadata:{runId,traceId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
     if(metricsTimer) clearInterval(metricsTimer);
     if(heartbeatTimer) clearInterval(heartbeatTimer);
     if(apiLimiter) await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
