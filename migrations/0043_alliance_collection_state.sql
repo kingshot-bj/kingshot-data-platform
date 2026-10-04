@@ -1,2 +1,4 @@
--- Phase 2: Alliance Roller state hardening
-ALTER TABLE alliance_collection_state ADD COLUMN state TEXT NOT NULL DEFAULT 'IDLE';
+-- Phase 2: Alliance Roller state hardening.
+-- No schema change is required here: migration 0041 already defines state.
+-- Keep this migration as a successful no-op so environments that have not
+-- applied 0043 can advance past the superseded duplicate ALTER safely.
