@@ -76,6 +76,8 @@ export function evaluateSafetyGate({
   cloudflare = null,
   apiRemainingMinute = null,
   apiRemainingDay = null,
+  apiMinRemainingMinute = null,
+  apiMinRemainingDay = null,
   force = false,
   thresholds = {}
 } = {}) {
@@ -86,6 +88,8 @@ export function evaluateSafetyGate({
   const reserve = Math.max(0, Math.floor(finite(reservedKeys)));
   const remainingMinute = apiRemainingMinute == null ? null : finite(apiRemainingMinute, null);
   const remainingDay = apiRemainingDay == null ? null : finite(apiRemainingDay, null);
+  const minRemainingMinute = apiMinRemainingMinute == null ? null : finite(apiMinRemainingMinute, null);
+  const minRemainingDay = apiMinRemainingDay == null ? null : finite(apiMinRemainingDay, null);
 
   const reasons = [];
   let allowed = true;
@@ -115,6 +119,16 @@ export function evaluateSafetyGate({
   if (remainingDay != null && requests > Math.max(0, remainingDay - reserve)) {
     allowed = false;
     reasons.push("API_DAILY_BUDGET_INSUFFICIENT");
+  }
+
+  if (minRemainingMinute != null && minRemainingMinute < DEFAULTS.apiKeyMinRemainingMinute && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
+    allowed = false;
+    reasons.push("API_KEY_MINUTE_RESERVE_PROTECTED");
+  }
+
+  if (minRemainingDay != null && minRemainingDay < DEFAULTS.apiKeyMinRemainingDay && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
+    allowed = false;
+    reasons.push("API_KEY_DAILY_RESERVE_PROTECTED");
   }
 
   if (force && state === "HARD_STOP") {
