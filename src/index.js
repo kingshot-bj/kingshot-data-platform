@@ -3879,6 +3879,10 @@ export default {
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
     }
   }
+  },
+  async queue(batch, env) {
+    return await handleServiceUsageQueue(batch, env);
+  }
 };
 
 const EAGLEEYE_THEME_CSS = `
