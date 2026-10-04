@@ -8435,3 +8435,104 @@ Player Detail取得はMightPulse:
 - 新機能はSystem Log / System Status / System JSONで追跡可能にする
 
 を原則とする。
+
+
+# 107. 2026-10-04 Alliance Roller監査 — main反映済み
+
+## 107-1. 監査で発見した問題
+
+### A. 0043 migrationの重複DDL
+migrations/0041_alliance_catalog.sql の時点で alliance_collection_state.state は既に定義済みだった。
+
+一方、0043_alliance_collection_state.sql が同じ state を ALTER TABLE ... ADD COLUMN していたため、0043適用時にduplicate columnで失敗する構造だった。
+
+修正:
+- 0043をschema変更なしの成功no-op migrationへ変更。
+- 0041のschema履歴は変更しない。
+- commit: 4192b4af13ae0bc6eca544b616facc0ab2fd78c2
+
+### B. Alliance候補SQLのpower/rank混在
+従来は alliance_power と alliance_kills を同一GROUPでまとめ、MAX(score) / MIN(rank) をpowerとして扱っていた。
+
+これではkills側のscoreがpower側より大きい場合などに、Catalogのpower/power_rankが誤る可能性がある。
+
+修正:
+- alliance_power を優先して abbr/name/score/rank を取得。
+- alliance_powerが存在しない場合のみalliance_kills側をfallback。
+- 1 Alliance = 1 API取得という方針は維持。
+- commit: 1d8a8ee85875bb2ca10535a2ef332f22abd22a5e
+
+### C. Alliance diagnostic elapsedMs
+startedAt がUnix秒なのに Date.now() - startedAt としていたため、診断elapsedMsが異常に大きくなる問題を修正。
+
+- startedAtMs = Date.now() を追加。
+- elapsedMs計算を Date.now() - startedAtMs に修正。
+- 同じ1d8a8ee commit。
+
+## 107-2. main状態
+
+最新main:
+- 4192b4af13ae0bc6eca544b616facc0ab2fd78c2
+- 直前のAllianceコード修正commit: 1d8a8ee85875bb2ca10535a2ef332f22abd22a5e
+
+GitHub上のmain先頭は4192b4afで確認済み。
+
+## 107-3. 本番適用確認について
+
+この環境からCloudflare側のD1 migration履歴・Worker deployment状態を直接照会できるCloudflare connector/actionは利用できない。
+
+したがって現時点では:
+- コード修正: main反映済み
+- GitHub main: 確認済み
+- Cloudflare本番deploy: 未確認
+- D1 0043 remote適用成功: 未確認
+- Alliance Roller本番E2E: 未確認
+
+として扱う。
+
+ユーザー操作またはCloudflare側で本番適用が確認できた後、以下を実機確認する:
+1. Allianceランキング候補発見
+2. alliance_catalog登録
+3. MightPulse info+roster 1 request取得
+4. Current更新
+5. 変更なし時の不要history/write抑制
+6. R2履歴
+7. R2失敗時Emergency Buffer
+8. change_events
+9. Alliance Roller state/cursor
+10. System Status / System JSON / Diagnostics
+
+## 107-4. 次工程
+
+Alliance Roller本番E2E完了後、Player Rollerへ移行。
+
+Player Roller既存実装は:
+- kingdom_ranking_current / personal_power から発見
+- 1時間freshness skip
+- /players/{governor_id}?include=base,heroes,ranks,gov_gear
+- api_observations
+- players Current
+- Player history / change events
+- R2 / Emergency Buffer
+- System Log / Diagnostics / Status
+
+を利用する。
+
+Player Roller監査ではAllianceと同様に:
+- candidate SQL
+- ID mapping
+- payload structure
+- no-op時D1 write
+- R2/history
+- state/cursor
+- observability
+- Safety Gate
+- 本番E2E
+を確認する。
+
+## 107-5. 重要ルール再確認
+
+- ranking_snapshots の広範囲取得は復活させない。
+- R2_ONLYを維持。
+- 必要な機能は削らず、重複取得・不要writeだけ削減。
+- 「実装済み」「main反映済み」「deploy済み」「本番確認済み」を厳密に区別する。
