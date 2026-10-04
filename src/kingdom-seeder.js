@@ -55,13 +55,15 @@ export async function runKingdomSeeder(env, {
       const payload = extractObject(detail.result?.data);
       const observedAt = now();
       await env.DB.prepare(
-        "UPDATE kingdom_catalog SET name = COALESCE(?, name), status = COALESCE(?, status), region = COALESCE(?, region), language = COALESCE(?, language), raw_json = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ? WHERE kid = ?"
+        "UPDATE kingdom_catalog SET name = COALESCE(?, name), status = COALESCE(?, status), region = COALESCE(?, region), language = COALESCE(?, language), raw_json = ?, boards_json = ?, boards_observed_at = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ? WHERE kid = ?"
       ).bind(
         payload.name ?? payload.kingdom_name ?? null,
         payload.status ?? null,
         payload.region ?? payload.zone ?? null,
         payload.language ?? payload.lang ?? null,
         JSON.stringify(payload),
+        JSON.stringify(payload.boards ?? payload.ranking_boards ?? payload.leaderboards ?? []),
+        observedAt,
         Number(payload.source_observed_at ?? payload.observed_at ?? 0) || null,
         observedAt,
         observedAt,
