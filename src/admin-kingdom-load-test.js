@@ -363,6 +363,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
   }
 
   try {
+    await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"START", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, metadata:{ runId, jobId, kid:Number(kid), loadTest:true } }).catch(()=>{});
     let iterations = 0;
     while (iterations++ < 200) {
       // Long tests (up to 1000 kingdoms) must keep the global run lock alive.
@@ -379,7 +380,6 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
       if (job.status === "COMPLETED") { await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(kid), runId, jobId, message:"王国Job完了", metadata:{ runId, jobId, kid:Number(kid), rankingRows:Number(job.ranking_rows||0), playerRows:Number(job.player_rows||0) } }).catch(()=>{}); return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt }; }
       let step;
       try {
-        await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"START", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, metadata:{ runId, jobId, kid:Number(kid), loadTest:true } });
         step = await processJob(env, job, { reserveApiKeys: LOAD_TEST_NORMAL_RESERVE, apiLimiter, loadTestContext: { runId, jobId, traceId: jobTraceId } });
       } catch (error) {
         if (String(error?.code || error?.message || "") === "API_POOL_LOAD_TEST_CAPACITY_WAIT") {
