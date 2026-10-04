@@ -5,7 +5,7 @@ import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomRankingRollerResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -31,7 +31,8 @@ export async function getOperationalStatus(db) {
     getCollectionSemaphoreSnapshot(db).catch(() => null),
     getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null),
     getKingdomCatalogDiscoveryStatus(db).catch(() => null),
-    db.prepare("SELECT COUNT(*) AS total, MAX(updated_at) AS latest_updated_at FROM kingdom_catalog").first().catch(() => null)
+    db.prepare("SELECT COUNT(*) AS total, MAX(updated_at) AS latest_updated_at FROM kingdom_catalog").first().catch(() => null),
+    db.prepare("SELECT state, catalog_cursor, board_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_board, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_ranking_collection_state WHERE state_key = 'KINGDOM_RANKING_ROLLER'").first().catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -204,6 +205,21 @@ export async function getOperationalStatus(db) {
       lastSuccessAt: null,
       lastError: null,
       updatedAt: null
+    },
+    kingdomRankingRoller: {
+      state: kingdomRankingRollerResult?.state || "UNKNOWN",
+      catalogCursor: Number(kingdomRankingRollerResult?.catalog_cursor || 0),
+      boardCursor: Number(kingdomRankingRollerResult?.board_cursor || 0),
+      processedRuns: Number(kingdomRankingRollerResult?.processed_runs || 0),
+      successCount: Number(kingdomRankingRollerResult?.success_count || 0),
+      failedCount: Number(kingdomRankingRollerResult?.failed_count || 0),
+      skippedCount: Number(kingdomRankingRollerResult?.skipped_count || 0),
+      lastKid: kingdomRankingRollerResult?.last_kid ?? null,
+      lastBoard: kingdomRankingRollerResult?.last_board ?? null,
+      lastSuccessAt: kingdomRankingRollerResult?.last_success_at ? Number(kingdomRankingRollerResult.last_success_at) : null,
+      lastFailureAt: kingdomRankingRollerResult?.last_failure_at ? Number(kingdomRankingRollerResult.last_failure_at) : null,
+      lastError: kingdomRankingRollerResult?.last_error || null,
+      updatedAt: kingdomRankingRollerResult?.updated_at ? Number(kingdomRankingRollerResult.updated_at) : null
     },
     kingdomSeeder: {
       catalogRows: Number(kingdomSeederResult?.total || 0),
