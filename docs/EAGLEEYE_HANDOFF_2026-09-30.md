@@ -6917,3 +6917,27 @@ API requestごとのSELECTにはしない。
 - `cb473fbeaa659d0cdd0b6bb14b35d37ea8e9cbf2`
 - `5771cb7e0499290aeeeafc4918df03a28c2d6701`
 - `9c6a557e0dc0118adfe5a71131858bf16a08e27a`
+
+---
+# 92. 2026-10-04 Load Test runtime DDL cleanup
+
+Phase 1の実装監査で、OWNER Load Testだけに残っていたrequest-time schema DDLを整理。
+
+## 修正
+- migrations/0035_api_request_locks.sql を追加。
+- api_request_locks をD1 migrationの正本へ移動。
+- src/admin-kingdom-load-test.js の ensureLoadTestStateSchema() を削除。
+- Load Test開始時にCREATE TABLE / ALTER TABLEを実行しない構成へ変更。
+- 既存のLoad Test wait metrics 3列も0033までのmigrationを正本として維持。
+
+これにより、Load Testの通常実行経路でschema確認・DDLを行わない。
+
+## コミット
+- f5c20bc836f7621d20151ef7794588e1617a9fe9 — add api request lock migration
+- 94b63f1952c8fffa7ba115c8232431caf25f2b55 — remove load test request-time schema DDL
+
+## 残課題
+Global Collection SemaphoreのD1 counter方式は、Worker crash後のactive_count残留問題がまだある。
+TTL付きslot lease / Durable Objects / D1 coordinationの比較は継続する。
+
+---
