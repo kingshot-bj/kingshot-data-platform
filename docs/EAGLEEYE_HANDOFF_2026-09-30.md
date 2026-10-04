@@ -4997,3 +4997,889 @@ Load Test実行中に「進捗が止まっている」のか「API枠待ちで�
 - OWNER負荷テストの `run_id` と一致する場合は「OWNER負荷テスト」として表示。
 - Health Check等でユーザーJobに紐づかないリースは「システム処理 / 処理元不明」等として表示。
 - 実装コミット：`e67c7749924b999a3156c48d5d4f94bbcb3eb1ad`
+
+---
+
+## #85 2026-10-04 / EagleEye次期全体構想・Data Collection Engine・Safety Gate・Kingdom Discovery 実装計画
+
+## 85-1. この計画の目的
+
+今後のEagleEyeは「ユーザーがWatchlistへ登録した王国だけを取得するシステム」から、**KingShot世界全体を継続的に観測・蓄積・分析するデータプラットフォーム**へ拡張する。
+
+最終的な思想:
+
+> MightPulse本家を単純にコピーするのではなく、MightPulseが公開するデータを観測基盤として利用し、EagleEye自身が現在・過去・変化・比較・監視・分析を蓄積する。
+
+Watchlistは「その対象だけが存在する」という意味ではなく、**通常収集より高い優先度で継続監視する対象**という位置付けへ変更する。
+
+---
+
+## 85-2. 現在mainを確認したうえでの現状認識
+
+2026-10-04時点のmain最新コミット系列を確認。
+
+直近:
+- e67c7749924b999a3156c48d5d4f94bbcb3eb1ad — API Poolの現在lease元を管理画面上部へ表示
+- 449bd4040830148991a2bf0f2099fd16349c3c81 — 上記をhandoffへ記録
+- ac7f30729960f59b6f85db6d9ea4903490bf9b7e — Load Test heartbeatの改行構文修正
+- de0694c37b024cdb9f5ce37dd0dc79aafd64462e — Load Test routeの改行構文修正
+- 9a6c4c06c3af65b257bd975a0ea340d1387a623a — 正常2xxの空ランキングだけをskipするよう補正
+- e743cd0c601bc53e7fd2098c1cdf17061d013bbd — 未解放ランキングの空レスポンスskip
+
+主要実装を横断確認した結果、現状は以下を次期設計の土台として再利用する。
+
+### 既存の再利用対象
+
+1. API Pool
+   - key lease
+   - pool availability
+   - remaining minute/day
+   - cooldown / error / disabled / revoked
+   - lease owner表示
+   - Watchlist / Load Testの共通利用基盤
+
+2. Kingdom Watchlist
+   - Kingdom単位の取得Job
+   - ranking board取得
+   - player detail取得
+   - D1 current materialization
+   - R2 history
+   - change events
+   - job/lock/status
+
+3. OWNER Load Test
+   - Run履歴
+   - Cancel
+   - status復元
+   - progress heartbeat
+   - API global semaphore / limiter
+   - API wait metrics
+   - Pool wait metrics
+   - wait min/max/distribution
+   - CSV export
+   - OWNER専用実行
+
+4. Current Ranking
+   - kingdom_ranking_current にKID / board / rank / governor_id / nick_name / alliance情報等がある。
+   - Player Indexの初期版は新規player_directoryを作らず、kingdom_ranking_currentを軽量Indexとして再利用する。
+
+5. Detailed Player Cache
+   - players
+   - api_observations
+   - 既存のPlayer detail取得経路
+
+6. History
+   - D1 = current / operational state
+   - R2 = canonical history/archive
+   - HISTORY_STORAGE_MODE=R2_ONLY を維持
+   - R2 failure時はHistory Emergency Bufferへ退避
+   - ranking_snapshots の広範囲readは禁止
+
+7. System Observability
+   - /status
+   - System JSON
+   - Query Insights
+   - diagnostics
+   - system log
+   - API Pool status
+   - Load Test status/history
+
+---
+
+## 85-3. 重要な設計変更: Watchlist中心からCatalog中心へ
+
+現在:
+
+~~~
+User
+ ↓
+Kingdom Watchlist
+ ↓
+取得
+ ↓
+Data accumulation
+~~~
+
+次期:
+
+~~~
+                    EagleEye
+                       │
+                Kingdom Catalog
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+     Kingdom        Alliance        Player
+      Seeder         Roller          Roller
+        │              │              │
+        └──────────────┼──────────────┘
+                       ↓
+                Data Collection
+                       ↓
+              Current / History / Events
+                       ↓
+       ┌───────────────┼───────────────┐
+       ↓               ↓               ↓
+   Watchlist          Search          Compare
+   優先監視            横断検索          比較分析
+~~~
+
+**Watchlist外の王国・Alliance・Playerも、EagleEyeが認識できる状態を目指す。**
+
+---
+
+## 85-4. Kingdom Catalog
+
+### 目的
+
+「最大KIDはいくつか」ではなく、**MightPulseの王国一覧を基準としてEagleEyeが認識している王国集合を管理する。**
+
+Catalog候補情報:
+- kid
+- kingdom name
+- banner
+- opened_on
+- age_days
+- player_count
+- active_players
+- active_7d
+- active_30d
+- alliance_count
+- power
+- avg_power
+- health
+- power_gain_7d
+- その他、公式公開APIで取得可能なKingdom基本情報
+
+### 新王国検知
+
+王国一覧を定期同期し、前回Catalogとの差分から新規王国を検知する。
+
+**最大KID + 1方式は禁止。**
+
+例:
+
+~~~
+前回Catalog
+2471まで認識
+
+今回MightPulse一覧
+2471
+2472
+2474
+
+→ 2472 / 2474 をNEWとして検知
+→ 2473の不存在を「消滅」とは推測しない
+~~~
+
+Catalog候補状態:
+- first_seen_at
+- last_seen_at
+- status
+- source
+- opened_on
+
+新規発見時:
+~~~
+KINGDOM_DISCOVERED
+ ↓
+Catalog登録
+ ↓
+Seeder対象化
+ ↓
+リソースに余裕があれば詳細収集
+~~~
+
+Discoveryと詳細収集は分離する。
+
+---
+
+## 85-5. Kingdom Discoveryの定期実行
+
+新王国は日々増えるため、Catalog Syncは定期処理として設計する。
+
+初期:
+- 低コストな王国一覧取得
+- 前回Catalogとの差分
+- 新規KIDだけ登録
+- KINGDOM_DISCOVERED event
+
+その後:
+- Kingdom Seederへ渡す
+- Ranking / Player / Alliance収集はData Collection Engine側のSafety Gateを通す
+
+重要:
+**「新王国を発見すること」と「新王国の全データを一気に取得すること」を同じ処理にしない。**
+
+新王国100件発見時でも、Discovery自体を軽量に完了できる構造にする。
+
+---
+
+## 85-6. Data Collection Engine
+
+今のOWNER Load Testを単独の「テスト専用処理」として増築するのではなく、既存の取得処理を共通Engineへ整理する。
+
+~~~
+                 Data Collection Engine
+                         │
+          ┌──────────────┼──────────────┐
+          ↓              ↓              ↓
+       Normal          Forced         Load Test
+       Roller          Roller          Roller
+~~~
+
+### Normal Roller
+- Background収集
+- Safety Gateに従う
+- リソースに余裕がある場合のみ進める
+- Watchlistより低優先
+
+### Forced Roller
+- OWNERが対象範囲を指定
+- 即時収集を要求
+- Safety Gateを無視しない
+- リソース不足時は待機/縮退/停止
+
+### Load Test
+- **本番と同じRoller/Collection処理を使う**
+- 大量対象・高並列条件で実行
+- Safety Gateを通す
+- 一般ユーザーを犠牲にして100%まで使うことは禁止
+- 実際のRollerがどこまで安全に動けるかを測る
+
+したがって:
+
+> **Load Test = Rollerの強制・高負荷実行モード**
+
+と定義する。
+
+「負荷テスト専用の別取得ロジック」を新規に作らない。
+
+---
+
+## 85-7. 優先順位
+
+リソース逼迫時の優先順位:
+
+~~~
+P0  一般ユーザーの現在操作
+P1  Watchlist
+P2  Normal Roller
+P3  Forced Roller
+P4  Load Test
+~~~
+
+上位を守るため、下位処理から縮退・停止する。
+
+特にLoad Testが通常WatchlistのAPI Poolを奪い取る設計は禁止。
+
+---
+
+## 85-8. Safety Gate
+
+今回の拡張で最重要の横断コンポーネント。
+
+~~~
+                  Data Collection
+                         │
+                   Safety Gate
+                         │
+       ┌─────────────────┼─────────────────┐
+       ↓                 ↓                 ↓
+   Cloudflare         MightPulse       EagleEye
+   Resource            API Limit       Service Reserve
+~~~
+
+### Cloudflare側
+
+最低限監視:
+- D1 Rows Read
+- D1 Rows Written
+- D1 Storage
+- Workers Requests
+- Workers CPU
+- R2 Storage
+- R2 Class A
+- R2 Class B
+- 必要に応じその他リソース
+
+現在のPAID_5USD基準:
+- D1 Read 25B/month
+- D1 Write 50M/month
+- D1 Storage 5GB
+- Workers Requests 10M/month
+- Workers CPU 30M CPU-ms/month
+- R2 Storage 10GB
+- R2 Class A 1M/month
+- R2 Class B 10M/month
+
+EagleEye側90%安全ライン:
+- D1 Read 22.5B
+- D1 Write 45M
+- D1 Storage 4.5GB
+- Workers Requests 9M
+- Workers CPU 27M CPU-ms
+- R2 Storage 9GB
+- R2 Class A 900k
+- R2 Class B 9M
+
+**100%到達を停止条件として利用しない。**
+100%は「絶対に到達させない」境界。
+
+### Paid / Free
+
+~~~
+PLAN PROFILE
+ ├─ FREE
+ └─ PAID
+~~~
+
+Paid契約中はPaid上限を基準に安全制御。
+
+Freeへ戻った場合はFree制限へ自動的にSafety Profileを切り替え、Paid時のローラー設定をそのまま使用しない。
+
+---
+
+## 85-9. 一般ユーザー保護Reserve
+
+正式サービス前なので、過去の一般ユーザー利用実績からReserveを算出することはできない。
+
+初期版では**固定Reserve**を明示的に持つ。
+
+~~~
+Cloudflare actual limit
+ ↓
+EagleEye safety limit
+ ↓
+General Service Reserve
+ ↓
+Background available budget
+~~~
+
+一般ユーザーの実績が蓄積された後に:
+
+~~~
+Fixed Reserve
+ ↓
+Measured Reserve
+ ↓
+Dynamic / predictive Reserve
+~~~
+
+へ進化させる。
+
+---
+
+## 85-10. MightPulse APIキー安全装置
+
+MightPulse公式公開API仕様として確認済みの基準:
+- 60 requests/minute/key
+- 5,000 requests/day/key
+
+したがってCloudflareだけを見て実行量を決めてはいけない。
+
+API Pool全体だけでなく**各APIキー単位**で:
+- remainingMinute
+- remainingDay
+- cooldown
+- lease
+- status
+- reserved quota
+を管理する。
+
+例:
+
+~~~
+Key A 4,900 / 5,000
+Key B 4,800 / 5,000
+Key C 1,000 / 5,000
+
+Pool全体では余裕ありに見えても
+A/Bはほぼ使用不可
+~~~
+
+Rollerはキーごとの安全残量を考慮する。
+
+---
+
+## 85-11. 予定消費量の事前判定
+
+Roller / Forced Roller / Load Test開始前に、可能な範囲で予定取得量を算出する。
+
+例:
+
+~~~
+対象王国数
+× ranking requests
++ Player requests
++ Alliance requests
++ feature requests
+~~~
+
+そして:
+
+~~~
+current usage
++
+reserved usage
++
+planned usage
++
+emergency buffer
+~~~
+
+がSafety Limitを超えるなら、**開始しない**。
+
+実行中も実測値を監視し、予測を超えた場合は縮退・停止する。
+
+---
+
+## 85-12. Safety State
+
+Safety GateはON/OFFだけではなく段階制御する。
+
+初期案:
+
+| 状態 | 動作 |
+|---|---|
+| NORMAL | 通常運転 |
+| CAUTION | Background並列数/処理量を縮小 |
+| WARNING | Background Roller停止候補 |
+| CRITICAL | Forced Roller / Load Test停止 |
+| HARD_STOP | Background処理停止、一般サービス保護 |
+
+**100%ではなく、EagleEye Safety Limit到達前にBackgroundを止める。**
+
+状態遷移はCloudflare / MightPulse / Service Reserveのうち最も危険な側に合わせる。
+
+---
+
+## 85-13. 予測と実測の補正
+
+正式サービス前は消費モデルが未知なので、最初から完璧な予測は要求しない。
+
+~~~
+予測
+ ↓
+実行
+ ↓
+実測
+ ↓
+予測との差分
+ ↓
+次回予測補正
+~~~
+
+Run単位で少なくとも:
+- API request count
+- D1 rows read/write
+- R2 operations
+- Workers requests
+- elapsed time
+- API wait
+- Pool wait
+を蓄積し、後のRoller容量計算へ利用する。
+
+---
+
+## 85-14. Player Roller
+
+初期版では新規player_directoryを作らない。
+
+kingdom_ranking_current のpersonal_power等のPLAYER行を軽量Indexとして利用する。
+
+流れ:
+
+~~~
+Kingdom
+ ↓
+personal_power ranking
+ ↓
+Top N / 対象Player
+ ↓
+Player detail
+ ↓
+players / api_observations
+ ↓
+R2 history / change events
+~~~
+
+Top Nだけを詳細取得する現在のWatchlist処理を、Rollerの安全な実装へ段階的に拡張する。
+
+---
+
+## 85-15. Alliance Catalog / Alliance Roller
+
+MightPulse公式公開APIで確認できる範囲:
+- Alliance info
+- roster
+- power
+- count
+- leader
+- rank
+- roster member information
+
+ただし、**公式公開API仕様上「王国内の全Alliance一覧」を直接返すAPIは確認できていない。**
+
+したがって初期方針:
+1. Ranking / Player dataからAllianceを発見
+2. Alliance Catalogへ登録
+3. kid + tag等で詳細取得
+4. roster取得
+5. history / changesを蓄積
+
+非公開のMightPulse Web内部APIに依存しない。
+
+---
+
+## 85-16. MightPulse Feature Parity Matrix
+
+Phase 0として、本家機能を網羅的に棚卸しする。
+
+最低限:
+- Kingdom list
+- Kingdom detail
+- Kingdom rankings
+- Player search
+- Player detail
+- Alliance detail
+- Alliance roster
+- KvK
+- Momentum
+- Castle Battle History
+- Appointments / Ministers / Offenders
+- Events
+- Player Record
+- その他本家Webで確認できる機能
+
+各機能について必ず:
+- MightPulse Webに存在するか
+- 公式公開APIで取得可能か
+- EagleEyeに実装済みか
+- partialか
+- missingか
+- historyが必要か
+- Safety/Cost impact
+を記録する。
+
+**Web UIに存在することと、公式公開APIとして利用可能であることを混同しない。**
+
+---
+
+## 85-17. System Status / System JSON Observabilityは必須要件
+
+今回以降、新機能は実装だけで完了扱いにしない。
+
+### Definition of Done
+
+~~~
+Feature implementation
+ ↓
+DB/API/Worker
+ ↓
+System Status
+ ↓
+System JSON
+ ↓
+正常/異常/停止状態
+ ↓
+本番E2E
+~~~
+
+### Kingdom Catalog
+
+System Status / JSONで最低限:
+- known kingdoms
+- last sync
+- last success
+- new kingdoms found
+- sync errors
+- next run
+- status
+
+### Roller
+
+- state
+- current run
+- target
+- processed
+- success
+- failed
+- skipped
+- last target
+- API usage
+- D1/R2 usage
+- stop reason
+
+### Safety Gate
+
+- current state
+- Cloudflare resource state
+- MightPulse pool state
+- key-level quota state
+- Service Reserve
+- available background budget
+- blocked reason
+- resume condition
+
+### Load Test
+
+既存の:
+- Run
+- progress
+- API concurrency
+- API wait
+- Pool wait
+- min/max/distribution
+- history
+- CSV
+に加え、将来的に**どのRoller/collection modeを実行したか**を明示する。
+
+---
+
+## 85-18. System JSONの「なぜ止まったか」を必須化
+
+単に:
+
+~~~
+roller.status = STOPPED
+~~~
+
+だけでは不十分。
+
+例えば:
+
+~~~json
+{
+  "roller": {
+    "status": "PAUSED",
+    "reason": "MIGHTPULSE_DAILY_QUOTA_RESERVE",
+    "blocked_by": "API_KEY_POOL",
+    "resume_condition": "AVAILABLE_DAILY_QUOTA >= 500"
+  }
+}
+~~~
+
+のように、**原因・ブロッカー・再開条件**を機械可読にする。
+
+同じ原則をSafety Gate / Catalog Sync / Seeder / Roller / Load Testへ適用する。
+
+---
+
+## 85-19. D1 / R2原則
+
+今回のデータ量増加を前提として、既存原則を維持・強化する。
+
+### D1
+- current / operational state
+- 軽量Index
+- job state
+- event metadata
+- Safety / status state
+
+### R2
+- canonical history
+- 大量履歴
+- archive
+- 将来Google Driveへのarchive source
+
+### 禁止
+- ranking_snapshots の広範囲read
+- 「全件SELECTしてJSで絞る」方式
+- Roller追加を理由にD1 historyへ大量fallbackする設計
+
+Roller実装前に、各新規クエリのRows Read / Rows Writtenを必ず見積もる。
+
+---
+
+## 85-20. 実装フェーズ
+
+### Phase 0 — MightPulse Feature Matrix
+本家機能と公式API対応可否を棚卸し。
+
+### Phase 1 — Resource Safety Architecture
+- Safety Gate
+- Paid / Free profile
+- Cloudflare safety
+- MightPulse key quota
+- Service Reserve
+- planned consumption
+- hard stop / degradation
+- System Status / JSON
+
+**このPhaseを先に作る。**
+
+### Phase 2 — Data Collection Engine
+- 現在Watchlist取得経路を共通Engineへ抽象化
+- Normal / Forced / Load Test mode
+- 既存Load TestのRun/Cancel/Progress/Wait Metricsを再利用
+- Watchlist優先制御
+
+### Phase 3 — Kingdom Catalog / Discovery
+- Kingdom一覧同期
+- Catalog
+- first_seen / last_seen
+- NEW detection
+- KINGDOM_DISCOVERED event
+- System Status / JSON
+
+### Phase 4 — Kingdom Seeder
+- Watchlist外王国の基本情報取得
+- Safety Gate経由
+- bounded execution
+- stop/resume
+- observability
+
+### Phase 5 — Alliance Catalog / Roller
+- Alliance discovery
+- info
+- roster
+- history / changes
+- observability
+
+### Phase 6 — Player Roller
+- ranking currentをIndexとして利用
+- Player detail enrichment
+- API Pool / quota
+- R2 history
+- observability
+
+### Phase 7 — Feature Parity
+公開APIで安全に取得できる範囲から:
+- KvK
+- Momentum
+- Castle Battle History
+- Appointments
+- Events
+- Player Record
+- その他
+
+### Phase 8 — EagleEye独自分析
+- historical comparison
+- change detection
+- cross-kingdom analytics
+- cross-player analytics
+- cross-alliance analytics
+- prediction / anomaly detection
+- EagleEye独自ランキング
+
+---
+
+## 85-21. 実装前に解消する既存コード上の注意点
+
+今回のmain横断確認で、次期Engine化前に確認・整理すべき事項。
+
+### A. Load Test schemaのmigration化
+現在mainのsrc/admin-kingdom-load-test.jsには、wait distribution列についてruntime ALTER TABLEを行う互換コードが残っている一方、正式migration 0033も存在する。
+
+対象:
+- api_wait_min_ms
+- api_wait_max_ms
+- api_wait_buckets_json
+
+次期Engine化では:
+- 正式migrationを正本
+- runtime DDLは原則撤去
+- 本番migration適用状態を確認
+
+### B. 既存Load Testの定数/セマフォ整理
+MAX_API_CONCURRENCY=26等、旧Load Test由来の制御値とGlobal API Semaphoreの責務を整理する。
+
+**26は「1王国のランキングboard数」と「全体API concurrency」を混同しない。**
+
+### C. API Pool lease / quota
+現在のlease / availability / remainingMinute / remainingDayをSafety Gateへ正式に接続する前に、Pool選択条件と状態遷移を再確認する。
+
+### D. Status / System JSONのfeature分類
+src/cloudflare-analytics.jsのQuery Insights分類は、今後追加するCatalog / Seeder / Roller / Safety Gateを機械的に追跡できるよう拡張する。
+
+### E. ranking_snapshots
+既存のtarget_id限定readは存在するため、次期Roller追加時に「広範囲readへ逆戻りしない」ことをコードレビューで確認する。
+
+---
+
+## 85-22. 開発時の絶対ルール
+
+1. **本番未確認を本番確認済みと言わない。**
+2. 「コード実装済み / main反映済み / deploy済み / 本番E2E済み」を分離する。
+3. 新機能は必ずSystem Status + System JSONへ観測点を追加する。
+4. 新機能は正常 / WARNING / FAILED / PAUSED / STOPPED等の状態を観測可能にする。
+5. 停止理由と再開条件を機械可読にする。
+6. D1 Rows Read / Writtenを最優先で管理する。
+7. ranking_snapshotsの広範囲readを復活させない。
+8. R2_ONLYを維持する。
+9. MightPulseの1キーminute/day quotaをSafety Gateに含める。
+10. Cloudflare 100%を目指さない。
+11. 一般ユーザー保護Reserveを確保する。
+12. Load TestでもSafety Gateを無視しない。
+13. OWNER権限でも安全装置を突破できる設計にしない。
+14. Watchlist > Normal Roller > Forced Roller > Load Testの優先順位を維持する。
+15. 非公開MightPulse Web APIを公式APIと同一視しない。
+16. 新しいデータ収集処理を追加する前に、既存のCollection / API Pool / D1 / R2経路を再利用できないか確認する。
+17. 新しいDBテーブルは「本当に既存テーブルで表現できないか」を先に確認する。
+18. API Pool / Cloudflare / R2 / D1の秘密情報をUI・JSON・handoffへ出さない。
+
+---
+
+## 85-23. 次の実装開始順
+
+次スレッドでは、いきなりPlayer Rollerや全王国Seederを書き始めない。
+
+**順番を固定する。**
+
+1. Phase 0: MightPulse Feature Matrix
+2. 現行API Pool / Load Test / Cloudflare Monitoringのコード詳細監査
+3. Phase 1: Safety Gate設計
+4. System Status / System JSONの観測スキーマ設計
+5. Phase 2: Data Collection Engine抽象化
+6. Phase 3: Kingdom Catalog / Discovery
+7. 以降Seeder → Alliance → Player → Feature Parity → Analytics
+
+### 最初の実装レビューで必ず確認するもの
+
+- src/index.js
+- src/admin-kingdom-load-test.js
+- src/api-pool.js
+- src/cloudflare-analytics.js
+- src/ranking-store.js
+- src/status-ops.js
+- src/system-log.js
+- src/diagnostics.js
+- src/mightpulse.js
+- migrations/
+- wrangler.jsonc
+
+### 重要
+
+この #85 は**実装計画であり、実装完了を意味しない。**
+
+本セクションに記載した:
+- Kingdom Catalog
+- Kingdom Discovery
+- Data Collection Engine
+- Safety Gate
+- Normal/Forced/Load Test Roller
+- Alliance Roller
+- Player Roller
+- MightPulse Feature Parity
+- 新しいSystem Status / JSON観測項目
+
+は、**この時点では計画段階**として扱う。
+
+---
+
+## 85-24. この計画の成功条件
+
+最終的に以下を満たすこと。
+
+> **EagleEyeがWatchlistに依存せずKingShot世界を認識し、新しく生まれた王国を自動発見し、リソースに余裕がある範囲でKingdom → Alliance → Playerを継続的にRoller収集し、その処理自体をLoad Testとして強制実行できる。**
+
+同時に、
+
+> **Cloudflare / MightPulse API / 一般ユーザーサービスの3方向をSafety Gateで保護し、PaidでもFreeでも設定された安全枠を超えない。**
+
+そして、
+
+> **追加されたすべての機能について、System StatusとSystem JSONだけで「今動いているか」「何件処理したか」「何が止めているか」「いつ再開できるか」を確認できる。**
+
+これをEagleEye次期アーキテクチャの完成条件とする。
