@@ -210,7 +210,7 @@ export async function runAllianceRoller(env, {
         "INSERT INTO change_events (event_id, target_type, target_id, change_type, field_name, old_value_json, new_value_json, observation_id, detected_at, created_at) VALUES (?, 'ALLIANCE', ?, 'ALLIANCE_CHANGED', ?, ?, ?, ?, ?, ?)"
       ).bind(
         crypto.randomUUID(),
-        String(item.aid),
+        String(item.kid) + ":" + String(item.aid),
         field,
         JSON.stringify(item.previous?.[field] ?? null),
         JSON.stringify(item.current?.[field] ?? null),
