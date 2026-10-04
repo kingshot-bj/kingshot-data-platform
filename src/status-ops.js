@@ -5,7 +5,7 @@ import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomRankingRollerResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomSeederStateResult, kingdomRankingRollerResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -32,6 +32,7 @@ export async function getOperationalStatus(db) {
     getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null),
     getKingdomCatalogDiscoveryStatus(db).catch(() => null),
     db.prepare("SELECT COUNT(*) AS total, MAX(updated_at) AS latest_updated_at FROM kingdom_catalog").first().catch(() => null),
+    db.prepare("SELECT catalog_cursor, processed_runs, success_count, failed_count, last_kid, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_seeder_state WHERE state_key = 'KINGDOM_SEEDER'").first().catch(() => null),
     db.prepare("SELECT state, catalog_cursor, board_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_board, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_ranking_collection_state WHERE state_key = 'KINGDOM_RANKING_ROLLER'").first().catch(() => null)
   ]);
 
@@ -224,7 +225,15 @@ export async function getOperationalStatus(db) {
     kingdomSeeder: {
       catalogRows: Number(kingdomSeederResult?.total || 0),
       latestUpdatedAt: kingdomSeederResult?.latest_updated_at ? Number(kingdomSeederResult.latest_updated_at) : null,
-      state: kingdomSeederResult ? "AVAILABLE" : "UNKNOWN"
+      catalogCursor: Number(kingdomSeederStateResult?.catalog_cursor || 0),
+      processedRuns: Number(kingdomSeederStateResult?.processed_runs || 0),
+      successCount: Number(kingdomSeederStateResult?.success_count || 0),
+      failedCount: Number(kingdomSeederStateResult?.failed_count || 0),
+      lastKid: kingdomSeederStateResult?.last_kid ?? null,
+      lastSuccessAt: kingdomSeederStateResult?.last_success_at ? Number(kingdomSeederStateResult.last_success_at) : null,
+      lastFailureAt: kingdomSeederStateResult?.last_failure_at ? Number(kingdomSeederStateResult.last_failure_at) : null,
+      lastError: kingdomSeederStateResult?.last_error || null,
+      state: kingdomSeederStateResult ? "AVAILABLE" : "UNKNOWN"
     },
     watchlist: {
       total: Number(watch.total_count || 0),
