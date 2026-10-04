@@ -1,5 +1,5 @@
 const DEFAULT_SEMAPHORE_KEY = "GLOBAL_API";
-const DEFAULT_CAPACITY = 26;
+const DEFAULT_CAPACITY = 1000;
 const DEFAULT_LEASE_SECONDS = 180;
 
 async function ensureCollectionSemaphoreSchema(db) {
