@@ -3846,16 +3846,16 @@ export default {
       // Background collection uses the actual remaining API budget instead of
       // a fixed low throughput. Catalog(1) + Seeder(max 2) are the fixed
       // discovery/current-state cost; the remaining safe budget is allocated
-      // to Ranking Roller, up to all 26 boards for the current kingdom.
+      // to Alliance Roller (up to 5) and Ranking Roller (up to all 26 boards for the current kingdom).
       const fixedBackgroundRequests = 3;
       const minuteBudget = catalogBudget?.remainingMinute == null
-        ? 29
+        ? 31
         : Math.max(0, Math.floor(Number(catalogBudget.remainingMinute) - 1 - Number(catalogBudget.measuredReserveMinute || 5)));
       const dayBudget = catalogBudget?.remainingDay == null
-        ? 29
+        ? 31
         : Math.max(0, Math.floor(Number(catalogBudget.remainingDay) - 1 - Number(catalogBudget.measuredReserveDay || 50)));
       const variableBackgroundBudget = Math.min(
-        29,
+        31,
         Math.max(0, minuteBudget - fixedBackgroundRequests),
         Math.max(0, dayBudget - fixedBackgroundRequests)
       );
