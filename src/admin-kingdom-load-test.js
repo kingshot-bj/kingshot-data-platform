@@ -355,10 +355,13 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
   const startedAt = Date.now();
   if (typeof processJob !== "function") return { run_id:runId, kid:Number(kid), ok:false, error:"KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE", elapsed_ms:Date.now()-startedAt };
 
-  const jobId = crypto.randomUUID();
   const watchlistId = "LOAD_TEST:" + runId;
+  const existingJob = await env.DB.prepare("SELECT job_id FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND kid = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1").bind(watchlistId, Number(kid)).first().catch(() => null);
+  const jobId = existingJob?.job_id ? String(existingJob.job_id) : crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  await env.DB.prepare("INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)").bind(jobId, watchlistId, Number(kid), Number(topN), now, now, now).run();
+  if (!existingJob) {
+    await env.DB.prepare("INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)").bind(jobId, watchlistId, Number(kid), Number(topN), now, now, now).run();
+  }
 
   try {
     let iterations = 0;
@@ -471,6 +474,25 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await releaseLoadTestState(env.DB,runId).catch(()=>{});
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
+
+  // Seed durable Job rows before starting the async worker. This makes the
+  // Run observable immediately and removes the RUNNING-with-zero-Jobs gap.
+  try {
+    const jobNow = Math.floor(Date.now() / 1000);
+    for (let offset = 0; offset < kids.length; offset += 50) {
+      const batch = kids.slice(offset, offset + 50).map(kid => {
+        const jobId = crypto.randomUUID();
+        return env.DB.prepare("INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)").bind(jobId, "LOAD_TEST:" + runId, Number(kid), Number(topN), jobNow, jobNow, jobNow);
+      });
+      if (batch.length) await env.DB.batch(batch);
+    }
+  } catch (error) {
+    const failedAt = Math.floor(Date.now() / 1000);
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status='FAILED', completed_at=?, updated_at=? WHERE run_id=? AND status='RUNNING'").bind(failedAt, failedAt, runId).run().catch(()=>{});
+    await releaseLoadTestState(env.DB,runId).catch(()=>{});
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_JOB_SEED_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
+
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   let streamClosed=false;
   // Streaming is UI telemetry only. Never let a slow/closed iPhone stream
@@ -574,6 +596,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
 }})();
   // Keep the server-side Run alive when the iPhone Web App closes the stream on reload.
   if (executionContext?.waitUntil) executionContext.waitUntil(run);
+  // Give the worker a short synchronous kickoff window so the first D1/job
+  // activity is established before the streaming response is handed back.
+  await new Promise(resolve => setTimeout(resolve, 250));
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
 export function renderOwnerKingdomLoadTestPage() {
