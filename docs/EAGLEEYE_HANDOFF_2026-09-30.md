@@ -6844,3 +6844,34 @@ Cloudflare公式仕様上、Durable Objectsはglobal uniquenessとstateful coord
 - System Status / System JSONへ載せない新機能追加
 
 ---
+
+
+---
+# 90. 2026-10-04 Semaphore hot-path D1最適化
+
+#89実装を再監査し、Global Collection Semaphoreのhot pathにschema確認DDL/INSERTが残っていたため修正。
+
+## 修正
+`src/collection-semaphore.js`:
+- acquire前のCREATE TABLEを廃止
+- acquire前のschema INSERTを廃止
+- `migrations/0034_global_collection_semaphore.sql`をschema正本とする
+- acquireは条件付きUPDATEのみ
+- releaseはUPDATEのみ
+- status snapshotのみSELECT
+
+これによりSemaphoreの通常API request経路では:
+- D1 SELECT = 0
+- schema DDL = 0
+- schema INSERT = 0
+- acquire = 1 UPDATE
+- release = 1 UPDATE
+
+となる。
+
+## 現在の注意
+D1 counter方式のcrash recovery問題は未解決。
+そのためGlobal Semaphoreはまだ「初版」であり、Phase 1 production E2E前にrecovery方式を確定する。
+
+最新修正commit:
+- `4bcfb3f7fc176191c1145657ceddd95c1d2eeffc`
