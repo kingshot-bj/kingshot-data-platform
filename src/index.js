@@ -3804,7 +3804,7 @@ export default {
       const safety = evaluateSafetyGate({
         operation: "KINGDOM_BACKGROUND_COLLECTION",
         priority: SAFETY_PRIORITIES.CATALOG,
-        plannedRequests: 5,
+        plannedRequests: 13,
         availablePoolKeys: Number(catalogBudget?.availableKeys || 0),
         reservedKeys: 1,
         cloudflare: catalogCloudflare,
@@ -3819,7 +3819,7 @@ export default {
       if (safety.allowed) {
         await runKingdomCatalogDiscovery(env);
         await runKingdomSeeder(env, { maxTargets: 2 });
-        await runKingdomRankingRoller(env, { kingdomsPerRun: 1, boardsPerRun: 2 });
+        await runKingdomRankingRoller(env, { kingdomsPerRun: 1, boardsPerRun: 10 });
       } else {
         await recordSystemEvent(env.DB, {
           traceId: systemTraceId("kingdom-catalog"),
