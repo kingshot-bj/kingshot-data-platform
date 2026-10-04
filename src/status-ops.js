@@ -241,7 +241,7 @@ export async function getOperationalStatus(db) {
       updatedAt: allianceRollerResult?.updated_at ? Number(allianceRollerResult.updated_at) : null
     },
     playerRoller: {
-      state: playerRollerResult ? "AVAILABLE" : "UNKNOWN",
+      state: playerRollerResult?.state || "UNKNOWN",
       catalogCursor: Number(playerRollerResult?.catalog_cursor || 0),
       processedRuns: Number(playerRollerResult?.processed_runs || 0),
       successCount: Number(playerRollerResult?.success_count || 0),
