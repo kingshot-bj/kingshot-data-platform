@@ -45,8 +45,8 @@ export async function runKingdomSeeder(env, {
     const targetTrace = systemTraceId("kingdom-seed");
     try {
       const detail = await collectMightPulseThroughGuards(env, {
-        path: `/kingdoms/${encodeURIComponent(kid)}`,
-        endpoint: "/kingdoms/:kid",
+        path: `/kingdoms/${encodeURIComponent(kid)}?include=boards&limit=100`,
+        endpoint: "/kingdoms/:kid?include=boards&limit=100",
         targetType: "KINGDOM",
         targetId: String(kid),
         purpose: "KINGDOM_SEED"
