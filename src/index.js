@@ -29,7 +29,7 @@ import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemD
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
-import { buildSafetySnapshot } from "./safety-gate.js";
+import { buildSafetySnapshot, evaluateSafetyGate, SAFETY_PRIORITIES } from "./safety-gate.js";
 import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
@@ -687,10 +687,78 @@ async function runKingdomWatchlistJobs(env) {
   ).all();
   const activeWatchlistIds = new Set((activeJobRows.results || []).map(item => String(item.watchlist_id)));
 
+  // Safety is evaluated once per cron invocation, not once per watchlist.
+  // This keeps the background control path from multiplying D1/API monitoring
+  // reads when many kingdoms are registered.
+  let watchlistSafety = null;
+  try {
+    const poolAvailability = await getApiPoolAvailability(env.DB, {
+      provider: "MIGHTPULSE",
+      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
+    });
+    const availablePoolKeys = Number(poolAvailability?.totals?.available || 0);
+    let cloudflare = null;
+    try {
+      cloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
+    } catch {
+      cloudflare = null;
+    }
+    watchlistSafety = evaluateSafetyGate({
+      operation: "KINGDOM_WATCHLIST",
+      priority: SAFETY_PRIORITIES.WATCHLIST,
+      plannedRequests: 1,
+      availablePoolKeys,
+      reservedKeys: 0,
+      cloudflare,
+      force: false
+    });
+    if (!watchlistSafety.allowed) {
+      await recordSystemEvent(env.DB, {
+        traceId: systemTraceId("watchlist-safety"),
+        eventType: "BLOCKED",
+        service: "watchlist",
+        feature: "kingdom_watchlist",
+        operation: "SAFETY_GATE",
+        status: "PAUSED",
+        errorCode: watchlistSafety.blockedBy || "SAFETY_GATE_BLOCKED",
+        message: "王国ウォッチリストの新規実行をSafety Gateが停止しました。",
+        metadata: {
+          state: watchlistSafety.state,
+          reasons: watchlistSafety.reasons,
+          resumeCondition: watchlistSafety.resumeCondition,
+          availablePoolKeys: watchlistSafety.availablePoolKeys
+        }
+      }).catch(() => {});
+    }
+  } catch (error) {
+    watchlistSafety = {
+      allowed: false,
+      state: "CAUTION",
+      blockedBy: "SAFETY_GATE_EVALUATION_FAILED",
+      reasons: ["SAFETY_GATE_EVALUATION_FAILED"],
+      resumeCondition: "安全状態の再評価後に再開"
+    };
+    await recordSystemEvent(env.DB, {
+      traceId: systemTraceId("watchlist-safety"),
+      eventType: "ERROR",
+      service: "watchlist",
+      feature: "kingdom_watchlist",
+      operation: "SAFETY_GATE",
+      status: "WARNING",
+      errorCode: "SAFETY_GATE_EVALUATION_FAILED",
+      message: String(error?.message || error).slice(0, 1000)
+    }).catch(() => {});
+  }
+
   for (const row of rows.results || []) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     // Do not write a lock for an idle watchlist that is not due.
     if (!due && !activeWatchlistIds.has(String(row.watchlist_id))) continue;
+    // Active jobs are allowed to continue; Safety Gate only blocks creation
+    // of new background work. This avoids abandoning a resumable job halfway.
+    if (!activeWatchlistIds.has(String(row.watchlist_id)) && watchlistSafety && !watchlistSafety.allowed) {
+      continue;
+    }
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
     if (!lockToken) continue;
 
