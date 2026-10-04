@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS kingdom_seeder_state (
+  state_key TEXT PRIMARY KEY,
+  catalog_cursor INTEGER NOT NULL DEFAULT 0,
+  processed_runs INTEGER NOT NULL DEFAULT 0,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  last_kid INTEGER,
+  last_success_at INTEGER,
+  last_failure_at INTEGER,
+  last_error TEXT,
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO kingdom_seeder_state
+(state_key, updated_at) VALUES ('KINGDOM_SEEDER', strftime('%s','now'));
