@@ -6,7 +6,7 @@ import { recordDiagnostic } from "./diagnostics.js";
 
 const STATE_KEY = "KINGDOM_RANKING_ROLLER";
 const DEFAULT_KINGDOMS_PER_RUN = 1;
-const DEFAULT_BOARDS_PER_RUN = 2;
+const DEFAULT_BOARDS_PER_RUN = 10;
 
 function now() { return Math.floor(Date.now() / 1000); }
 
@@ -31,7 +31,7 @@ export async function runKingdomRankingRoller(env, {
   const db = env?.DB;
   if (!db) throw new Error("DB_NOT_CONFIGURED");
   const kingdomLimit = Math.min(2, Math.max(1, Number(kingdomsPerRun) || 1));
-  const boardLimit = Math.min(3, Math.max(1, Number(boardsPerRun) || 2));
+  const boardLimit = Math.min(20, Math.max(1, Number(boardsPerRun) || DEFAULT_BOARDS_PER_RUN));
   const traceId = systemTraceId("kingdom-ranking-roller");
   const startedAt = now();
 
@@ -61,47 +61,58 @@ export async function runKingdomRankingRoller(env, {
     metadata: { kingdomsPerRun: kingdomLimit, boardsPerRun: boardLimit, boardCursor }
   });
 
+  const jobs = [];
   for (const kingdom of kingdoms) {
     for (const board of boards) {
-      try {
-        const collected = await collectKingdomRanking(env, kingdom.kid, board.key, {
-          limit: 100,
-          purpose: "KINGDOM_RANKING_ROLLER"
-        });
-        const payload = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
-        const entries = extractEntries(payload);
-        const observedAt = now();
-        await saveKingdomRankingBoard(db, {
-          kid: Number(kingdom.kid),
-          board: board.key,
-          entries,
-          observedAt,
-          sourceObservedAt: Number(payload?.source_observed_at ?? payload?.observed_at ?? 0) || null,
-          sourceObservationId: payload?.source_observation_id ?? null,
-          archiveBucket: env.R2_ARCHIVE,
-          historyMode: String(env.HISTORY_STORAGE_MODE || "R2_ONLY")
-        });
-        success++;
-        await recordDiagnostic(db, {
-          service: "kingdom_ranking_roller", feature: "kingdom_ranking",
-          operation: "COLLECT_BOARD", status: "SUCCESS", provider: "MIGHTPULSE",
-          targetType: "KINGDOM", targetId: String(kingdom.kid),
-          rowsReceived: entries.length, rowsSaved: entries.length,
-          elapsedMs: Math.max(0, Date.now() - startedAt),
-          message: "王国ランキング取得・current保存成功。",
-          metadata: { board: board.key }
-        });
-      } catch (error) {
-        failed++;
-        await recordDiagnostic(db, {
-          service: "kingdom_ranking_roller", feature: "kingdom_ranking",
-          operation: "COLLECT_BOARD", status: "FAILED",
-          errorCode: String(error?.code || error?.message || "KINGDOM_RANKING_FAILED").split(":")[0],
-          provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: String(kingdom.kid),
-          message: String(error?.message || error).slice(0, 2000),
-          metadata: { board: board.key }
-        }).catch(() => {});
-      }
+      jobs.push({ kingdom, board });
+    }
+  }
+
+  const results = await Promise.allSettled(jobs.map(async ({ kingdom, board }) => {
+    const collected = await collectKingdomRanking(env, kingdom.kid, board.key, {
+      limit: 100,
+      purpose: "KINGDOM_RANKING_ROLLER"
+    });
+    const payload = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
+    const entries = extractEntries(payload);
+    const observedAt = now();
+    await saveKingdomRankingBoard(db, {
+      kid: Number(kingdom.kid),
+      board: board.key,
+      entries,
+      observedAt,
+      sourceObservedAt: Number(payload?.source_observed_at ?? payload?.observed_at ?? 0) || null,
+      sourceObservationId: payload?.source_observation_id ?? null,
+      archiveBucket: env.R2_ARCHIVE,
+      historyMode: String(env.HISTORY_STORAGE_MODE || "R2_ONLY")
+    });
+    return { kingdom, board, entries };
+  }));
+
+  for (const [index, result] of results.entries()) {
+    const job = jobs[index];
+    if (result.status === "fulfilled") {
+      success++;
+      await recordDiagnostic(db, {
+        service: "kingdom_ranking_roller", feature: "kingdom_ranking",
+        operation: "COLLECT_BOARD", status: "SUCCESS", provider: "MIGHTPULSE",
+        targetType: "KINGDOM", targetId: String(job.kingdom.kid),
+        rowsReceived: result.value.entries.length, rowsSaved: result.value.entries.length,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        message: "王国ランキング取得・current保存成功。",
+        metadata: { board: job.board.key }
+      });
+    } else {
+      failed++;
+      const error = result.reason;
+      await recordDiagnostic(db, {
+        service: "kingdom_ranking_roller", feature: "kingdom_ranking",
+        operation: "COLLECT_BOARD", status: "FAILED",
+        errorCode: String(error?.code || error?.message || "KINGDOM_RANKING_FAILED").split(":")[0],
+        provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: String(job.kingdom.kid),
+        message: String(error?.message || error).slice(0, 2000),
+        metadata: { board: job.board.key }
+      }).catch(() => {});
     }
   }
 
