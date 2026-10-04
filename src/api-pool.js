@@ -147,7 +147,7 @@ export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null
   await db.prepare(
     "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?1, remaining_minute), remaining_day = COALESCE(?2, remaining_day), quota_reset_at = COALESCE(?3, quota_reset_at), last_used_at = ?4, last_success_at = ?5, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?6 WHERE key_id = ?7 AND lease_id = ?8"
   ).bind(remainingMinute ?? null, remainingDay ?? null, quotaResetAt ?? null, now, now, now, keyId, leaseId).run();
-  await recordSystemEvent(db, { traceId:traceId || jobId || systemTraceId("pool"), eventType:"API_SUCCESS", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"SUCCESS", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, metadata:{ keyId, poolType, endpoint, jobId:jobId || null } });
+  await recordSystemEvent(db, { traceId:traceId || jobId || systemTraceId("pool"), eventType:"API_SUCCESS", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"SUCCESS", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, leaseId:leaseId || null, traceId:traceId || null } });
 }
 
 export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false, traceId = null } = {}) {
@@ -158,7 +158,7 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
   await db.prepare(
     "UPDATE api_pool_keys SET status = ?1, cooldown_until = ?2, last_used_at = ?3, last_error_at = ?4, last_error_code = ?5, last_error_message = ?6, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?7 WHERE key_id = ?8 AND lease_id = ?9"
   ).bind(status, cooldownUntil, now, now, errorCode ?? null, truncate(errorMessage, 500), now, keyId, leaseId).run();
-  await recordSystemEvent(db, { traceId:jobId || systemTraceId("pool"), eventType:"API_FAILURE", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"FAILED", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, errorCode:errorCode || null, message:errorMessage || null, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, cooldownSeconds, disable, keepAvailable } });
+  await recordSystemEvent(db, { traceId:jobId || systemTraceId("pool"), eventType:"API_FAILURE", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"FAILED", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, errorCode:errorCode || null, message:errorMessage || null, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, leaseId:leaseId || null, traceId:traceId || null, cooldownSeconds, disable, keepAvailable } });
 }
 
 export async function getPoolStats(db) {
