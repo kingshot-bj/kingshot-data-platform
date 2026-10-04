@@ -8146,3 +8146,29 @@ System JSON側でもAlliance / Player / Rankingの状態を返す。
 10. API残量が十分ならRanking最大26 boardsまで拡張される
 
 を確認する。
+
+# 104. 2026-10-04 Background Seederも動的スループットへ拡張
+
+固定 `maxTargets: 2` を撤回。
+
+現在のBackground Collection予算は:
+
+- Kingdom Catalog Discovery: 1
+- Kingdom Seeder: 最大5
+- Alliance Roller: 最大5
+- Player Roller: 最大5
+- Ranking Roller: 最大26
+
+最大合計:
+
+```
+1 + 5 + 5 + 5 + 26 = 42 requests
+```
+
+Catalog 1 requestを固定し、残りの安全枠をSeeder / Alliance / Player / Rankingへ配分する。
+
+Seederは最大5件まで増速できるため、王国Catalogの初期metadata/boards補完を従来より早く進められる。
+
+ただしSafety Gateは従来どおり通過必須であり、API minute/day残量、Measured Reserve、Cloudflare使用量等が危険になればBackground全体を停止する。
+
+**「2件/回」という人工的な固定速度ではなく、必要な処理を安全余力の範囲で最大限進める。**
