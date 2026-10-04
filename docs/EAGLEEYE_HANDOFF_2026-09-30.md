@@ -6574,3 +6574,98 @@ Feature MatrixからSafety Gateへ渡す分類:
 
 公式API参照:
 - https://api.mightpulse.com/
+
+---
+# 88. 2026-10-04 Phase 1 — Resource Safety Foundation 進捗
+
+## 88-1. 実装済み
+
+### Safety Gate共通module
+追加:
+- src/safety-gate.js
+
+責務:
+- NORMAL / CAUTION / WARNING / CRITICAL / HARD_STOP判定
+- Cloudflare最大使用率評価
+- API Pool available key評価
+- reserved key保護
+- planned request budget評価
+- API minute/day remaining評価
+- operation priority
+- stop reason
+- blocked_by
+- resume_condition
+- OWNER/forceでもHARD_STOPを突破しない
+
+### System StatusへのSafety可視化
+/statusのoperational JSONに:
+- safety.state
+- maxCloudflareUsagePercent
+- availablePoolKeys
+- activeLeases
+- waiting
+- thresholds
+
+を追加。
+
+既存Cloudflare monitoring:
+- WARNING = 70%
+- CRITICAL = 85%
+- HARD_STOP = 100%
+
+と接続。
+
+### OWNER Load Test
+Load Test開始前にSafety Gateを実行するよう変更。
+
+plannedRequests:
+- 対象王国数 × (26 ranking boards + topN player取得)
+
+Load Testは:
+- API Pool reserve
+- Cloudflare safety
+- planned request budget
+
+を通過しなければ開始しない。
+
+重要:
+- OWNER権限でもSafety Gateは突破不可。
+- force=trueは「Safety無視」の意味ではない。
+- Load Test専用Crawlerは追加していない。
+
+## 88-2. まだ未実装
+
+- Watchlist通常更新へのSafety Gate適用
+- Normal RollerへのSafety Gate
+- Forced RollerへのSafety Gate
+- Catalog/Seeder/Roller共通Engine
+- Global Collection Semaphore
+- API key単位のplanned consumption精度向上
+- Cloudflare Reserve
+- Service Reserve
+- Dynamic/Measured Reserve
+- Safety stop/resume eventの統一
+- Status UIでのSafety詳細表示
+- System JSONのplanned/actual budget詳細
+
+## 88-3. 注意点
+
+現在のLoad Testは既存の:
+- MAX_API_CONCURRENCY=26
+- LOAD_TEST_NORMAL_RESERVE=1
+
+を維持している。
+
+これはPhase 2のGlobal Collection Semaphore完成までの既存実装。
+26はGlobal Semaphoreの最終値ではない。
+
+また、Cloudflare Analytics取得不能時はSafety Gateを即HARD_STOPにはせずCAUTION扱いとし、API Pool側の安全判定を継続する。
+この挙動はPhase 1の実測・運用結果を見て再調整する。
+
+## 88-4. コミット
+
+Phase 1初回実装:
+- 2ae6daabe860170a0390e7e6e44d0039a6598d62 — safety-gate.js
+- 5ba73915463733c3ccb4a5bf05197ed29d410495 — System Status integration
+- f3ad73ee48e68f4ba03ef7d743a419d089c54c06 — Load Test Safety Gate integration
+
