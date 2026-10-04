@@ -8172,3 +8172,98 @@ Seederは最大5件まで増速できるため、王国Catalogの初期metadata/
 ただしSafety Gateは従来どおり通過必須であり、API minute/day残量、Measured Reserve、Cloudflare使用量等が危険になればBackground全体を停止する。
 
 **「2件/回」という人工的な固定速度ではなく、必要な処理を安全余力の範囲で最大限進める。**
+# 103. 2026-10-04 Phase 2 — Alliance / Player Roller統合・本番前監査
+
+## 103-1. Alliance Roller
+
+Alliance Catalog / Rollerを追加。
+
+- Migration: `0041_alliance_catalog.sql`
+- State hardening: `0043_alliance_collection_state.sql`
+- `src/alliance-catalog.js`
+- 共通 `collectMightPulseThroughGuards` を使用
+- MightPulse `/alliances/{kid}/{tag}?include=info,roster` を1リクエストで取得
+- ランキングから発見したAllianceを先にCatalogへ登録
+- API取得成功後にCurrent情報を更新
+- 変更時のみR2履歴を保存
+- R2失敗時はHistory Emergency Bufferへ退避
+- Allianceの変更項目を`change_events`へ記録
+- Diagnostics / System Logを記録
+- 永続cursorで巡回
+- System JSON / Statusへ状態を公開
+
+本番前監査で、state列不足とUPDATE binding不整合を発見し修正済み。
+
+## 103-2. Player Roller
+
+既存の`0042_player_roller_state.sql` / `src/player-roller.js`を再監査。
+
+Player Rollerは:
+
+- `kingdom_ranking_current`からPlayer IDを発見
+- 既にPlayer Currentが存在し、1時間以内なら不要な再取得を避ける
+- 期限切れ / 未取得PlayerのみMightPulseへ問い合わせ
+- `include=base,heroes,ranks,gov_gear`で必要情報を1回取得
+- `api_observations`へ観測保存
+- `players`へCurrent materialize
+- Player identity history / change eventsを維持
+- R2_ONLY時はR2履歴を優先
+- R2失敗時はEmergency Buffer
+- Diagnostics / System Log / Status JSONを利用
+
+という構造になっている。
+
+## 103-3. Request-time DDL監査
+
+Player Rollerの保存経路を監査したところ、`src/player-store.js`に残っていた`player_identity_history`のrequest-time CREATE TABLE / CREATE INDEXを発見。
+
+既にMigration `0014_player_identity_history.sql`が存在するため、runtime DDLは不要。
+
+`dc67ef48d1b5a03a824706370bba69c817e3bd31`で削除済み。
+
+**今後も「migrationに存在するschemaをrequest-time DDLで再作成する実装」は追加しない。**
+
+## 103-4. Background API予算
+
+Background collectionは固定件数ではなく、API remaining / measured reserve / day reserveから動的配分する。
+
+現在の優先配分:
+
+1. Kingdom Catalog Discovery
+2. Kingdom Seeder
+3. Alliance Roller 最大5
+4. Player Roller 最大5
+5. Kingdom Ranking Roller 最大26
+
+Safety Gateを通過した場合のみ実行。
+
+必要な処理を削減するためではなく、余力がある場合にPaidプランとGlobal Collection Semaphore最大26を活用するための設計。
+
+## 103-5. Phase 2現在地
+
+実装済み:
+
+- Common Data Collection Engine
+- Kingdom Catalog / Discovery
+- Kingdom Seeder
+- Kingdom Ranking Roller
+- Alliance Catalog / Roller
+- Player Roller
+- API Pool / Global Semaphore / Safety Gate統合
+- Current / R2 History / Emergency Buffer
+- Change Event
+- Diagnostics
+- System Log
+- System Status JSON
+
+残確認:
+
+- 本番migration適用確認
+- Background 1回実行で各Rollerの実リソース消費確認
+- API remaining / measured reserveによる動的配分確認
+- 26並列Semaphore挙動確認
+- System Status HTMLでの各Roller表示の最終確認
+- Alliance / Player検索からID→On-demand最新取得までのE2E確認
+- Phase 2の実装漏れがないか最終横断監査
+
+**上記はコードを削る理由ではなく、本番で必要な機能が実際に繋がっていることを確認するための項目。**
