@@ -64,10 +64,11 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
   if (request.method !== "POST") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json"}});
   try {
     const now = Math.floor(Date.now() / 1000);
+    const requestedRunId = String(new URL(request.url).searchParams.get("run_id") || "").trim();
     const row = await env.DB.prepare(
       "SELECT lock_token, lock_until FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
     ).bind(LOAD_TEST_LOCK_KEY, now).first();
-    let runId = row?.lock_token ? String(row.lock_token) : "";
+    let runId = row?.lock_token ? String(row.lock_token) : requestedRunId;
     let runMeta = runId
       ? await env.DB.prepare("SELECT run_id,status FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first().catch(() => null)
       : null;
