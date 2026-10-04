@@ -7873,7 +7873,7 @@ async function renderPublicStatusPage(request, env) {
   if (operationalResult.status !== "fulfilled") {
     console.error("public_status_operational_unavailable", operationalResult.reason?.message || operationalResult.reason);
   }
-  operational.safety = buildSafetySnapshot({ cloudflare: usage, availablePoolKeys: operational.apiPool?.availableKeys || 0, activeLeases: operational.apiPool?.activeLeases || 0, thresholds: { warningPercent: 70, criticalPercent: 85, hardStopPercent: 100 } });
+  operational.safety = buildSafetySnapshot({ cloudflare: usage, availablePoolKeys: operational.apiPool?.availableKeys || 0, activeLeases: operational.apiPool?.activeLeases || 0, apiReserveMinute: operational.apiPool?.budget?.measuredReserveMinute, apiReserveDay: operational.apiPool?.budget?.measuredReserveDay, thresholds: { warningPercent: 70, criticalPercent: 85, hardStopPercent: 100 } });
   operational.safety.collectionSemaphore = operational.collectionSemaphore || null;
 
   let data;
