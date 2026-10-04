@@ -7517,3 +7517,92 @@ Phase 2以降の新機能では、以下を順に確認する。
 7. 追加機能・状態・停止理由がSystem Log / System Status / System JSONで追跡できるか
 
 **「機能を減らしてリソースを守る」のではなく、「必要な機能を最大限維持したまま、重複・不要再取得・不要書き込みを削って効率を上げる」ことをEagleEyeの基本設計原則とする。**
+# 102. 2026-10-04 Phase 2 — Background Ranking Rollerの動的スループット化
+
+## 102-1. 固定10ボード/回を撤回
+
+#100-8で導入した「標準10ボード/回、最大20ボード/回」は、瞬間負荷を抑える目的では有効だったが、Paidプランの余力がある状態でも人工的にスループットを制限してしまう。
+
+今回の設計方針確定により、固定10件方式を撤回。
+
+**Ranking Rollerは1王国あたり最大26ボードを処理可能とし、Cron実行時の実際の安全API残量から今回の処理件数を動的決定する。**
+
+## 102-2. 動的予算
+
+Background collectionの固定消費:
+- Catalog Discovery: 最大1 request
+- Kingdom Seeder: 最大2 requests
+- 固定合計: 3 requests
+
+残りをRanking Rollerへ配分する。
+
+概念:
+
+    API remaining
+     - General reserve
+     - Measured reserve
+     - Catalog 1
+     - Seeder 2
+     = Ranking budget
+
+    Ranking budget
+     = min(26, minute safe budget, day safe budget)
+
+余力が十分なら26 boards、残量が少なければ安全に実行できる件数まで縮小する。
+
+Ranking budgetが0の場合は、Catalog / Seederのみ実行可能ならそれらを継続し、RankingだけをPAUSEDとして記録する。
+
+## 102-3. Safety Gateとの関係
+
+動的に算出したplannedBackgroundRequests、availablePoolKeys、remainingMinute、remainingDay、minRemainingMinute、minRemainingDay、measuredReserveMinute、measuredReserveDay、Cloudflare usageをSafety Gateへ渡す。
+
+したがって、動的スループット化はSafety Gateを回避するものではない。
+
+**「余裕があるときは速く、危険になれば自動的に縮小・停止する」**のが正式仕様。
+
+## 102-4. Global Collection Semaphore
+
+Ranking RollerのAPI取得は既存のGlobal Collection Semaphoreを通る。
+
+最大26並列を利用可能とし、API Poolの実際のキー数が26未満でも人工的に「26未満だから処理しない」とはしない。
+
+API Poolが一時的に枯渇している場合は共通API lease側で待機・再利用されるため、キー数とRanking処理件数を同一視しない。
+
+## 102-5. Ranking保存側の監査結果
+
+現行 ranking-store.js を横断確認した結果、以下は既に効率化済み。
+
+- kingdom_ranking_current は変更されたentryのみ更新
+- 消失したtargetのみDELETE
+- kingdom_ranking_board_state はboard単位でcurrent状態を更新
+- HISTORY_STORAGE_MODE=R2_ONLY では ranking_snapshots へ1entry/1rowの履歴INSERTを行わない
+- R2履歴は変更entryのみ保存
+- R2失敗時のみHistory Emergency Bufferへ退避
+- ranking_snapshots の広範囲readは使用しない
+
+したがって、現時点では「取得件数を減らす」より、**必要な26ボードを安全余力の範囲で高速に取得すること**を優先する。
+
+今後さらにD1/R2最適化を行う場合も、Current/History/Change Eventの意味を壊さず、実測されたQuery Insights / R2 operation数を基準に改善する。
+
+## 102-6. 実装コミット
+
+- 25744d3f655e904f1570ea6759a84b354ea02301
+  - Ranking Rollerの最大処理board数を26へ拡張
+- 7c3a736dbc4784f4652dcf34d5a9fabf6e909c73
+  - Background Ranking budgetをAPI残量・Measured Reserveから動的算出
+  - 固定13 request判定を撤回
+  - Ranking 0件時のPAUSED可視化を追加
+
+## 102-7. 完成確認
+
+本番E2Eでは、同じコードでAPI残量条件を変えた場合に:
+
+1. 十分な余力 → Ranking 26/26へ拡大
+2. 中程度の余力 → 安全な件数まで自動縮小
+3. Ranking予算0 → RankingのみPAUSED
+4. API / Cloudflare危険状態 → Safety GateがBackgroundを停止
+5. System Log / System Status / System JSONから、今回の予算・停止理由を確認可能
+
+であることを確認する。
+
+**今後、理由なく固定10件へ戻す実装は行わない。**
