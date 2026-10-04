@@ -1,6 +1,6 @@
 const DEFAULT_SEMAPHORE_KEY = "GLOBAL_API";
 const DEFAULT_CAPACITY = 26;
-const DEFAULT_LEASE_SECONDS = 90;
+const DEFAULT_LEASE_SECONDS = 180;
 
 async function ensureCollectionSemaphoreSchema(db) {
   // Schema is provisioned by migrations/0034 and 0036.
