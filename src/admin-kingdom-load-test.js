@@ -125,23 +125,37 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
       return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_NOT_RUNNING"}), {status:409,headers:{"content-type":"application/json","cache-control":"no-store"}});
     }
 
-    if (!row?.lock_token) {
-      // No active execution lock means there is no live load-test owner to
-      // receive a cancellation marker. Finalize the orphaned RUNNING record
-      // immediately so history never lies about an interrupted test.
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = 'LOAD_TEST_CANCELLED', updated_at = ? WHERE watchlist_id = ? AND status NOT IN ('COMPLETED','FAILED')"
-      ).bind(now, "LOAD_TEST:" + runId).run().catch(() => {});
-      await env.DB.prepare(
-        "UPDATE kingdom_load_test_runs SET status = 'CANCELLED', completed_at = ?, updated_at = ? WHERE run_id = ? AND status = 'RUNNING'"
-      ).bind(now, now, runId).run();
-      return new Response(JSON.stringify({ok:true,run_id:runId,status:"CANCELLED_ORPHANED"}), {headers:{"content-type":"application/json","cache-control":"no-store"}});
-    }
-
+    // Always persist the cancellation marker first. This makes the Run state
+    // authoritative immediately, instead of depending on the server-side
+    // execution reaching its next cancellation checkpoint.
     await env.DB.prepare(
       "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at"
     ).bind("LOAD_TEST_CANCEL", "CANCEL:" + runId, now + 60 * 60 * 2, now).run();
-    return new Response(JSON.stringify({ok:true,run_id:runId,status:"CANCEL_REQUESTED"}), {headers:{"content-type":"application/json","cache-control":"no-store"}});
+
+    // Finalize the user-visible Run immediately. The worker's finally block
+    // explicitly preserves CANCELLED, so a late completion cannot overwrite it.
+    await env.DB.prepare(
+      "UPDATE kingdom_load_test_runs SET status = 'CANCELLED', completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE run_id = ? AND status = 'RUNNING'"
+    ).bind(now, now, runId).run();
+
+    // Mark unfinished kingdom jobs as cancelled as well. They remain FAILED
+    // internally for schema compatibility, but the status API normalizes the
+    // LOAD_TEST_CANCELLED marker to the user-facing CANCELLED phase.
+    await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = 'LOAD_TEST_CANCELLED', updated_at = ? WHERE watchlist_id = ? AND status NOT IN ('COMPLETED','FAILED')"
+    ).bind(now, "LOAD_TEST:" + runId).run().catch(() => {});
+
+    if (!row?.lock_token) {
+      // There is no live execution owner. The persisted cancellation is enough
+      // and the stale load-test lock can be safely removed if it exists.
+      await env.DB.prepare(
+        "DELETE FROM api_request_locks WHERE lock_key = ? AND lock_token = ?"
+      ).bind(LOAD_TEST_LOCK_KEY, runId).run().catch(() => {});
+      await clearLoadTestCancellation(env.DB, runId);
+      return new Response(JSON.stringify({ok:true,run_id:runId,status:"CANCELLED_ORPHANED"}), {headers:{"content-type":"application/json","cache-control":"no-store"}});
+    }
+
+    return new Response(JSON.stringify({ok:true,run_id:runId,status:"CANCELLED"}), {headers:{"content-type":"application/json","cache-control":"no-store"}});
   } catch (error) {
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_CANCEL_FAILED",message:error?.message||String(error)}), {status:500,headers:{"content-type":"application/json"}});
   }
