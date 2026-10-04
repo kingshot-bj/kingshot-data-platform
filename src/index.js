@@ -869,11 +869,11 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const traceId = diagnosticTraceId("ranking");
       const startedAtMs = Date.now();
       try {
-        const requestLimiter = apiLimiter || globalCollectionLimiter;
+        const requestLimiter = apiLimiter;
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter;
         const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
-          { useGlobalSemaphore: !apiLimiter, globalLimiter: apiLimiter?.globalLimiter || null }
+          { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter }
         ));
         return { board, traceId, startedAtMs, fetched };
       } catch (error) {
@@ -1041,7 +1041,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     }
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
-        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: apiLimiter?.globalLimiter || null })) };
+        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter })) };
       } catch (error) {
         await recordDiagnostic(env.DB, {
           service: "watchlist",
