@@ -334,9 +334,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   if(!kids.length)return new Response(JSON.stringify({ok:false,error:"KINGDOMS_REQUIRED"}),{status:400,headers:{"content-type":"application/json"}});
   if(kids.length>MAX_KINGDOMS)return new Response(JSON.stringify({ok:false,error:"TOO_MANY_KINGDOMS",max:MAX_KINGDOMS}),{status:400,headers:{"content-type":"application/json"}});
   const startedAt=Date.now(),runId=crypto.randomUUID(),traceId=requestTraceId||systemTraceId("load");
-  const poolAvailability=await getApiPoolAvailability(env.DB,{poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
-  const availablePoolKeys=Number(poolAvailability?.totals?.available||0);
   const poolBudget=await getApiPoolBudgetSnapshot(env.DB,{provider:"MIGHTPULSE",poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
+  const availablePoolKeys=Number(poolBudget?.availableKeys||0);
   if(availablePoolKeys<2)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const plannedRequests = Math.max(1, kids.length * (26 + topN));
   let cloudflareSafety = null;
@@ -354,6 +353,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     cloudflare: cloudflareSafety,
     apiRemainingMinute: poolBudget?.remainingMinute ?? null,
     apiRemainingDay: poolBudget?.remainingDay ?? null,
+    apiMinRemainingMinute: poolBudget?.minRemainingMinute ?? null,
+    apiMinRemainingDay: poolBudget?.minRemainingDay ?? null,
     force: true
   });
   if(!safety.allowed)return new Response(JSON.stringify({ok:false,error:"SAFETY_GATE_BLOCKED",message:"Safety Gateによりロードテスト開始を停止しました。",safety}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
