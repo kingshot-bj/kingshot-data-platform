@@ -78,6 +78,8 @@ export function evaluateSafetyGate({
   apiRemainingDay = null,
   apiMinRemainingMinute = null,
   apiMinRemainingDay = null,
+  apiReserveMinute = null,
+  apiReserveDay = null,
   force = false,
   thresholds = {}
 } = {}) {
@@ -90,6 +92,8 @@ export function evaluateSafetyGate({
   const remainingDay = apiRemainingDay == null ? null : finite(apiRemainingDay, null);
   const minRemainingMinute = apiMinRemainingMinute == null ? null : finite(apiMinRemainingMinute, null);
   const minRemainingDay = apiMinRemainingDay == null ? null : finite(apiMinRemainingDay, null);
+  const reserveMinute = Math.max(DEFAULTS.apiKeyMinRemainingMinute, finite(apiReserveMinute, DEFAULTS.apiKeyMinRemainingMinute));
+  const reserveDay = Math.max(DEFAULTS.apiKeyMinRemainingDay, finite(apiReserveDay, DEFAULTS.apiKeyMinRemainingDay));
 
   const reasons = [];
   let allowed = true;
@@ -111,22 +115,22 @@ export function evaluateSafetyGate({
     }
   }
 
-  if (remainingMinute != null && requests > Math.max(0, remainingMinute - reserve)) {
+  if (remainingMinute != null && requests > Math.max(0, remainingMinute - reserve - reserveMinute)) {
     allowed = false;
     reasons.push("API_MINUTE_BUDGET_INSUFFICIENT");
   }
 
-  if (remainingDay != null && requests > Math.max(0, remainingDay - reserve)) {
+  if (remainingDay != null && requests > Math.max(0, remainingDay - reserve - reserveDay)) {
     allowed = false;
     reasons.push("API_DAILY_BUDGET_INSUFFICIENT");
   }
 
-  if (minRemainingMinute != null && minRemainingMinute < DEFAULTS.apiKeyMinRemainingMinute && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
+  if (minRemainingMinute != null && minRemainingMinute < reserveMinute && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
     allowed = false;
     reasons.push("API_KEY_MINUTE_RESERVE_PROTECTED");
   }
 
-  if (minRemainingDay != null && minRemainingDay < DEFAULTS.apiKeyMinRemainingDay && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
+  if (minRemainingDay != null && minRemainingDay < reserveDay && Number(priority) < SAFETY_PRIORITIES.WATCHLIST) {
     allowed = false;
     reasons.push("API_KEY_DAILY_RESERVE_PROTECTED");
   }
@@ -145,6 +149,8 @@ export function evaluateSafetyGate({
     plannedRequests: requests,
     availablePoolKeys: available,
     reservedKeys: reserve,
+    apiReserveMinute: reserveMinute,
+    apiReserveDay: reserveDay,
     usagePercent,
     reasons,
     blockedBy: reasons[0] || null,
