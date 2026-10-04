@@ -7126,3 +7126,75 @@ Phase 2でも新機能追加時は必ず:
 へ反映する。
 
 ---
+
+
+---
+# 98. 2026-10-04 Phase 2 — Common Data Collection Engine 初版
+
+## 98-1. 実装
+
+追加:
+- `src/data-collection-engine.js`
+
+共通プリミティブ:
+- Global Collection Semaphore
+- API Pool lease
+- MightPulse request
+- API Pool success/failure accounting
+- Semaphore release
+- 429 / upstream error / timeout時のAPI Pool cooldown/disable判定
+
+収集順序を固定:
+1. Global Collection Semaphore
+2. API Pool lease
+3. MightPulse request
+4. API Pool success/failure記録
+5. Semaphore release
+
+D1 pollingやrequest-time DDLは行わない。
+
+追加export:
+- `collectMightPulseThroughGuards()`
+- `collectKingdomRanking()`
+- `collectPlayerDetail()`
+
+## 98-2. Watchlist接続
+
+既存王国Watchlistの以下API収集を共通Engineへ接続:
+- Kingdom ranking
+- Player full detail
+
+既存WatchlistのDB保存・R2保存・resume job構造は変更しない。
+
+Load Test経路では既存local limiter + global limiterを維持し、共通Engine側のSemaphoreを二重取得しないよう分岐。
+
+これにより:
+- Normal Watchlist → Common EngineがGlobal Semaphoreを取得
+- Load Test → 既存Load Test limiterがGlobal Semaphoreを取得し、Common Engineは二重取得しない
+
+## 98-3. D1 / API方針
+
+Common EngineはAPI requestごとのbudget SELECTを追加しない。
+API Pool budget / Safety Gateはjob開始時の既存判定を維持。
+
+API Pool leaseとGlobal Semaphoreの順序を共通化し、将来のCatalog / Seeder / Alliance Roller / Player Rollerでも同じ安全制御を再利用できる状態にする。
+
+## 98-4. コミット
+
+- `28d6e33b6a6e05fcd720eaa5be239dd0a901eb96` — add common guarded data collection primitive
+- `ef6b590eae45f853e6d50f9dafd8aea3449c31a7` — route Watchlist collection through common engine
+- `23952e33c7e760f0420a7436354f915584dfaaea` — avoid duplicate global semaphore in load-test player collection
+- `5ecc8134f317f9f02df9f7acb6fad5046a0dde6b` — fix Watchlist semaphore integration
+
+## 98-5. 次の実装
+
+次はCommon Engineを使って、Phase 2のCatalog / Kingdom Discoveryへ進む。
+ただし、既存API endpointの確定範囲を超える機能は追加せず、公式APIで確認済みの:
+- `/v1/kingdoms?page=1&size=24`
+- `/v1/kingdoms/{kid}`
+- `/v1/kingdoms/{kid}?include=boards&limit=100`
+- `/v1/kingdoms/{kid}/ranks?limit=100`
+
+を対象に、bounded pagination / current-state保存 / R2 historyを前提に実装する。
+
+---
