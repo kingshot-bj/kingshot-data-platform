@@ -1,10 +1,11 @@
 import { getSystemEventLog } from "./system-log.js";
 import { getCollectionSemaphoreSnapshot } from "./collection-semaphore.js";
 import { getApiPoolBudgetSnapshot } from "./api-pool.js";
+import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -28,7 +29,8 @@ export async function getOperationalStatus(db) {
     ).first(),
     getSystemEventLog(db, { limit: 100 }),
     getCollectionSemaphoreSnapshot(db).catch(() => null),
-    getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null)
+    getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null),
+    getKingdomCatalogDiscoveryStatus(db).catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -176,6 +178,32 @@ export async function getOperationalStatus(db) {
     },
     loadTest,
     collectionSemaphore: semaphoreResult || { key: "GLOBAL_API", capacity: 26, active: null, available: null, state: "UNAVAILABLE" },
+    kingdomCatalog: kingdomCatalogResult ? {
+      discoveryKey: kingdomCatalogResult.discovery_key || "MIGHTPULSE_KINGDOMS",
+      nextPage: Number(kingdomCatalogResult.next_page || 1),
+      pageSize: Number(kingdomCatalogResult.page_size || 24),
+      state: kingdomCatalogResult.state || "UNKNOWN",
+      pagesChecked: Number(kingdomCatalogResult.pages_checked || 0),
+      kingdomsSeen: Number(kingdomCatalogResult.kingdoms_seen || 0),
+      catalogTotal: Number(kingdomCatalogResult.catalog_total || 0),
+      catalogActive: Number(kingdomCatalogResult.catalog_active || 0),
+      lastPageAt: kingdomCatalogResult.last_page_at ? Number(kingdomCatalogResult.last_page_at) : null,
+      lastSuccessAt: kingdomCatalogResult.last_success_at ? Number(kingdomCatalogResult.last_success_at) : null,
+      lastError: kingdomCatalogResult.last_error || null,
+      updatedAt: kingdomCatalogResult.updated_at ? Number(kingdomCatalogResult.updated_at) : null
+    } : {
+      state: "UNAVAILABLE",
+      nextPage: 1,
+      pageSize: 24,
+      pagesChecked: 0,
+      kingdomsSeen: 0,
+      catalogTotal: 0,
+      catalogActive: 0,
+      lastPageAt: null,
+      lastSuccessAt: null,
+      lastError: null,
+      updatedAt: null
+    },
     watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
