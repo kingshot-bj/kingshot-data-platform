@@ -397,3 +397,54 @@ export async function listPlayerRankHistoryFromR2(bucket, {
     .slice(0, safeLimit);
 }
 
+
+
+const ALLIANCE_HISTORY_ARCHIVE_VERSION = "v1";
+
+export async function archiveAllianceHistoryBatch(bucket, {
+  kid,
+  aid,
+  observedAt,
+  sourceObservedAt = null,
+  payload
+}) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!Number.isFinite(Number(kid)) || !aid || !payload || typeof payload !== "object") return null;
+
+  const row = {
+    _eagleeye_archive_version: ALLIANCE_HISTORY_ARCHIVE_VERSION,
+    _source_table: "alliance_catalog",
+    kid: Number(kid),
+    aid: String(aid),
+    observed_at: Number(observedAt),
+    source_observed_at: sourceObservedAt,
+    payload
+  };
+  const body = await gzipText(JSON.stringify(row) + "\n");
+  const key = [
+    "history",
+    ALLIANCE_HISTORY_ARCHIVE_VERSION,
+    "alliance_catalog",
+    String(kid),
+    encodeURIComponent(String(aid)),
+    String(observedAt),
+    crypto.randomUUID()
+  ].join("/") + ".ndjson.gz";
+
+  await bucket.put(key, body, {
+    httpMetadata: {
+      contentType: "application/x-ndjson",
+      contentEncoding: "gzip",
+      cacheControl: "private, no-store"
+    },
+    customMetadata: {
+      sourceTable: "alliance_catalog",
+      archiveVersion: ALLIANCE_HISTORY_ARCHIVE_VERSION,
+      kid: String(kid),
+      aid: String(aid),
+      observedAt: String(observedAt)
+    }
+  });
+
+  return { key, rowCount: 1 };
+}
