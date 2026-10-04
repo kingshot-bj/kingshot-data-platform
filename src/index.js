@@ -3950,3 +3950,32 @@ export default {
         message: String(error?.message || error).slice(0, 2000)
       }).catch(() => {});
     }
+    await recordSystemEvent(env.DB, {
+      traceId,
+      eventType: "COMPLETE",
+      service: "scheduler",
+      feature: "scheduled",
+      operation: "SCHEDULED_RUN",
+      status: "SUCCESS",
+      targetType: "CRON",
+      targetId: String(controller?.scheduledTime || ""),
+      elapsedMs: Date.now() - startedAt
+    });
+  } catch (error) {
+    await recordSystemEvent(env.DB, {
+      traceId,
+      eventType: "ERROR",
+      service: "scheduler",
+      feature: "scheduled",
+      operation: "SCHEDULED_RUN",
+      status: "FAILED",
+      targetType: "CRON",
+      targetId: String(controller?.scheduledTime || ""),
+      elapsedMs: Date.now() - startedAt,
+      errorCode: error?.code || "SCHEDULED_RUN_FAILED",
+      message: String(error?.message || error).slice(0, 2000)
+    }).catch(() => {});
+    throw error;
+  }
+  }
+};
