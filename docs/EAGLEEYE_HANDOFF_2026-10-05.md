@@ -195,3 +195,36 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 - トップ画面 `renderHome()` は10秒ごとに通知APIをポーリングし、負荷テスト中だけ「現在、システム負荷テストを実施しています」を表示。終了・ロック消失で自動非表示。
 - 通知API障害時は `active:false` 相当で処理し、公開トップ画面を壊さない。
 - 実装コミット: `a0dd575b6e97afd7ad776547451c66e9f83a834c`（通知API）、`27c8b0b0d43fb82d93173117a09c2951aea48215`（トップ画面）。
+
+
+---
+
+## 2026-10-05 追加：System LogのGoogle Driveミラー + Gateway遡及時間選択
+
+### Google Drive
+- `src/retention.js` のSystem Log R2アーカイブ後、同じR2 `.ndjson.gz` オブジェクトをGoogle Driveへミラーする処理を追加。
+- R2を一次保管とし、R2保存成功後にGoogle Driveへアップロードする。
+- Google Drive側は既存の重複検出・サイズ検証を利用。
+- Google Driveミラー失敗時もR2を保持したまま処理を継続し、System Log診断をWARNINGとして記録。
+- `runDataRetentionJob()` から `googleDriveEnv: env` を渡すよう変更。
+- `wrangler.jsonc` のrequired secretsに `GOOGLE_OAUTH_CLIENT_SECRET` / `GOOGLE_DRIVE_REFRESH_TOKEN` を明示。
+- 実際のOAuth refresh tokenの有無・接続成功は本番環境で別途確認が必要。コードだけでユーザーOAuth同意を代行してはいけない。
+
+### Gateway
+- `/api/gateway/v1/status` のSystem Log遡及時間を選択式に変更。
+- 対応プリセット：`15m`, `1h`, `6h`, `24h`
+- デフォルトは `15m`。既存のショートカットはURL自体を変更せず、そのまま最新15分ログを取得可能。
+- 24時間ログが必要なショートカットは `?range=24h` を付ければよい。
+- 例：
+  - 最新15分：`/api/gateway/v1/status`
+  - 1時間：`/api/gateway/v1/status?range=1h`
+  - 6時間：`/api/gateway/v1/status?range=6h`
+  - 24時間：`/api/gateway/v1/status?range=24h`
+- UI側の選択機能を追加しても、機械取得用URLは固定したままにする方針。iPhoneショートカットの操作性を落とさない。
+
+### Commits
+- `ddcffe9516b064f247011d2493a102106ac14eb5` — Google Drive mirror
+- `7ed22aaacf863a6dc1d984838329c9794ae27002` — retention cronからGoogle Drive環境を渡す
+- `3243ee642bcd8f0bd72e83429fd3c07a0634f904` — Google Driveミラー失敗をWARNING化
+- `cf15daf53f9461a62fdc86acbd04e5de8babb59e` — Google Drive required secrets明示
+- `c6b3c9f0328c02ba1106b649d0e3a79ed3aaca88` — Gateway遡及時間プリセット
