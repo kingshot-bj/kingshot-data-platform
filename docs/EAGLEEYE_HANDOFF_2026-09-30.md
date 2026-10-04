@@ -7327,3 +7327,27 @@ Seederの取得先を `/kingdoms/{kid}?include=boards&limit=100` に拡張し、
 - `ac39bb709245aabf64f57a604f840f38dcdfe475`
 
 次はboards metadataの実レスポンス形式を基準に、ランキング取得対象を安全に列挙して既存 `saveKingdomRankingBoard` に接続する。
+
+
+## 100-6. Kingdom Ranking Roller
+
+ランキング取得を全件一括ではなく永続カーソル方式へ変更。
+
+- `migrations/0039_kingdom_ranking_collection_state.sql`
+- `src/kingdom-ranking-roller.js`
+- 1 Cronあたり1王国×2ボード = 最大2ランキングAPI取得
+- 26ボードをカーソルで順番に処理
+- 1王国の全26ボード完了後に次王国へ進む
+- currentは既存 `saveKingdomRankingBoard` → `kingdom_ranking_current`
+- historyはR2_ONLY + R2 emergency buffer設計を維持
+- System Log / Diagnostics / Status JSON対応
+
+コミット:
+- `5c86d837dc2f4903bab094e717bd925b44bc525a`
+- `146fd3eaa58e76a6b9288cd642c3350999182e07`
+- `f998a185e5d6e449619dab0be612ba554df8a38c`
+- `b225ac70b0ec7338291bd2a87da1802dfd8824fc`
+
+### リソース方針
+
+26ボードを1回のCronで一括取得せず、API/D1/R2/Workerの瞬間負荷を抑える。1王国あたり約65分で26ボードを一巡する設計。今後の本番使用量を見て、Safety GateとMeasured Reserveを基準にrunあたり件数を調整する。
