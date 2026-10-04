@@ -11,24 +11,7 @@ const LOAD_TEST_NORMAL_RESERVE = 1;
 const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
 const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
 
-async function ensureLoadTestStateSchema(db) {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS api_request_locks (
-      lock_key TEXT PRIMARY KEY,
-      lock_token TEXT NOT NULL,
-      lock_until INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `).run();
-  for (const [name, definition] of [
-    ["api_wait_min_ms", "INTEGER NOT NULL DEFAULT 0"],
-    ["api_wait_max_ms", "INTEGER NOT NULL DEFAULT 0"],
-    ["api_wait_buckets_json", "TEXT NOT NULL DEFAULT '{}'"]
-  ]) await db.prepare("ALTER TABLE kingdom_load_test_runs ADD COLUMN " + name + " " + definition).run().catch(() => {});
-}
-
 async function acquireLoadTestState(db, runId) {
-  await ensureLoadTestStateSchema(db);
   const now = Math.floor(Date.now() / 1000);
   const lockUntil = now + LOAD_TEST_LOCK_TTL_SECONDS;
   const result = await db.prepare(`
