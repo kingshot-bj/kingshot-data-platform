@@ -157,3 +157,31 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 「2026-10-05 handoffから継続。まず現在のLoad Test runがジョブ開始まで到達しているかをstatus-36.jsonのrun_id相関で確定し、その後Job→API Pool→MightPulseの順で実行経路を潰す。0/520だけを根拠にAPI未実行とは判断しない。」
 
 現時点では負荷テスト本番成功扱いではない。
+
+## 15. 2026-10-05 System Log 相関・時刻観測の実装
+今回、負荷テストの「開始 → Job → API Pool lease → MightPulse → 完了」をJSON/System Logだけで追えるよう、以下をmainへ実装した。
+
+### 相関ID
+- Load Test: `run_id` + Load Test root `trace_id`
+- Kingdom Job: `job_id` + Job `trace_id`、parent = Load Test trace
+- 個別API request: request `trace_id`、parent = Job trace
+- API Pool: `lease_id`、`lease_job_id=job_id`、`runId`、`traceId`、`parentTraceId`
+- MightPulse: 同一request `trace_id`、parent = Job trace、metadataに `runId/jobId/leaseId`
+
+### 時刻
+- System Log既存の `started_at / completed_at / elapsed_ms / created_at` を維持。
+- MightPulseイベントは実リクエスト開始時刻・完了時刻を記録。
+- API Pool success/failureイベントも実リクエスト開始時刻・完了時刻を記録。
+- 相関IDはmetadataにも正規化して保存するため、System JSONから直接抽出可能。
+
+### 実装commit
+- `1d78703f449a8434a0cf01ca971e65e312a3fe91` — System Log correlation metadata normalization
+- `6943cef496d4c89034f520d36dffb76533cf9bb4` — API Pool lease correlation
+- `534991910b23748492810271f58a6a31f4f70dd8` / `b7f9fd9fb43db54d44d8d259de283f228de71669` / `d17ec23c8f8549e9f80d2385b52460219dca763e` — MightPulse correlation/timestamp logging
+- `02d1c05db4273125a317c84288cdffca46cf891a` / `9f02805bae368a23718ad35fe0e6a8c9a8fa2? ` — Load Test context propagation
+- `13bcc7475db1e819f01dd4ca59120cbda525ee20` / `70dbd01c9e776bead289f9fd051033868fcff14f` / `c89145f2530d4c4f36797b524b5b4754045602f8` — Job start/completion correlation
+- `32854551b229feb2af4852dbc2e15bef791a4712` / `ea822f8bc22dd3511380899cb275b0a55264b1372` / `a5101dbb51416a733fbdb6b2f46c205045c10e3f` / `70e1f05fa2be797bb319670af7c40c492e67d3b9` — API Pool timestamp/trace propagation
+
+### 注意
+- これはコード実装完了であり、Cloudflare本番deploy・本番E2E成功確認とは別。
+- 次はdeploy後に新しい20王国runを実行し、同一run_id/trace_idで Job → lease → MightPulse が連続して出ることを確認する。
