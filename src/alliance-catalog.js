@@ -105,8 +105,6 @@ export async function runAllianceRoller(env, {
     startedAt,
     startedAt
   ));
-  if (candidateStatements.length) await db.batch(candidateStatements);
-
   const pairWhere = rows.map(() => "(kid = ? AND aid = ?)").join(" OR ");
   const pairBindings = rows.flatMap(row => [Number(row.kid), String(row.aid)]);
   const previousRows = await db.prepare(
@@ -116,6 +114,8 @@ export async function runAllianceRoller(env, {
     String(row.kid) + ":" + String(row.aid),
     row
   ]));
+
+  if (candidateStatements.length) await db.batch(candidateStatements);
 
   const results = await Promise.allSettled(rows.map(async row => {
     const collected = await collectAllianceDetail(env, row.kid, row.abbr, {
