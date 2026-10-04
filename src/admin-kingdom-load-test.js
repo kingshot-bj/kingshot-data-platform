@@ -3,7 +3,6 @@ import { recordServiceUsage } from "./service-usage.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { evaluateSafetyGate } from "./safety-gate.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
-import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 
 const MAX_KINGDOMS = 1000;
 const LOAD_TEST_NORMAL_RESERVE = 1;
