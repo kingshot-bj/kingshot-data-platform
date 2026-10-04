@@ -3,7 +3,7 @@ import { getCollectionSemaphoreSnapshot } from "./collection-semaphore.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
