@@ -6,6 +6,21 @@ import { getSystemEventLog } from "./system-log.js";
 
 const GATEWAY_VERSION = "v1";
 
+const GATEWAY_LOG_RANGES = Object.freeze({
+  "15m": 15 * 60,
+  "1h": 60 * 60,
+  "6h": 6 * 60 * 60,
+  "24h": 24 * 60 * 60
+});
+
+function resolveGatewayLogRange(value) {
+  const key = String(value || "15m").trim().toLowerCase();
+  return {
+    key: Object.prototype.hasOwnProperty.call(GATEWAY_LOG_RANGES, key) ? key : "15m",
+    seconds: GATEWAY_LOG_RANGES[Object.prototype.hasOwnProperty.call(GATEWAY_LOG_RANGES, key) ? key : "15m"]
+  };
+}
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -141,9 +156,12 @@ async function handleGatewayStatus(request, env) {
   if (!String(env.EAGLEEYE_GATEWAY_TOKEN || "").trim()) return jsonResponse({ ok: false, error: "GATEWAY_NOT_CONFIGURED" }, 503);
   if (!isGatewayAuthorized(request, env)) return jsonResponse({ ok: false, error: "UNAUTHORIZED" }, 401);
 
+  const url = new URL(request.url);
+  const logRange = resolveGatewayLogRange(url.searchParams.get("range"));
+
   const retrievedAt = new Date();
   const retrievedAtUnix = Math.floor(retrievedAt.getTime() / 1000);
-  const systemLogFromUnix = retrievedAtUnix - 24 * 60 * 60;
+  const systemLogFromUnix = retrievedAtUnix - logRange.seconds;
 
   const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult, systemLogResult] = await Promise.allSettled([
     getReadOnlyDiagnostics(env.DB, { recentLimit: 100 }),
@@ -244,9 +262,10 @@ async function handleGatewayStatus(request, env) {
     },
     systemLog: {
       range: {
+        preset: logRange.key,
         from: new Date(systemLogFromUnix * 1000).toISOString(),
         to: retrievedAt.toISOString(),
-        duration_seconds: 24 * 60 * 60
+        duration_seconds: logRange.seconds
       },
       event_count: systemLogEvents.length,
       summary: systemLogSummary,
