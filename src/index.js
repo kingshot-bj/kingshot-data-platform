@@ -692,15 +692,11 @@ async function runKingdomWatchlistJobs(env) {
   // reads when many kingdoms are registered.
   let watchlistSafety = null;
   try {
-    const poolAvailability = await getApiPoolAvailability(env.DB, {
-      provider: "MIGHTPULSE",
-      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
-    });
-    const availablePoolKeys = Number(poolAvailability?.totals?.available || 0);
     const poolBudget = await getApiPoolBudgetSnapshot(env.DB, {
       provider: "MIGHTPULSE",
       poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
     });
+    const availablePoolKeys = Number(poolBudget?.availableKeys || 0);
     let cloudflare = null;
     try {
       cloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
@@ -710,10 +706,14 @@ async function runKingdomWatchlistJobs(env) {
     watchlistSafety = evaluateSafetyGate({
       operation: "KINGDOM_WATCHLIST",
       priority: SAFETY_PRIORITIES.WATCHLIST,
-      plannedRequests: 1,
+      plannedRequests: 26 + Math.max(5, Math.min(10, Number(row?.top_n || 10))),
       availablePoolKeys,
       reservedKeys: 0,
       cloudflare,
+      apiRemainingMinute: poolBudget?.remainingMinute,
+      apiRemainingDay: poolBudget?.remainingDay,
+      apiMinRemainingMinute: poolBudget?.minRemainingMinute,
+      apiMinRemainingDay: poolBudget?.minRemainingDay,
       force: false
     });
     if (!watchlistSafety.allowed) {
