@@ -179,3 +179,21 @@ export async function collectPlayerDetail(env, governorId, {
     useGlobalSemaphore
   });
 }
+
+
+export async function collectAllianceDetail(env, kid, abbr, {
+  purpose = "ALLIANCE_COLLECTION",
+  globalLimiter = null,
+  useGlobalSemaphore = true
+} = {}) {
+  return collectMightPulseThroughGuards(env, {
+    path: `/alliances/${encodeURIComponent(kid)}/${encodeURIComponent(abbr)}`,
+    endpoint: "/alliances/:kid/:tag",
+    targetType: "ALLIANCE",
+    targetId: `${kid}:${abbr}`,
+    purpose,
+    query: { include: "info,roster" },
+    globalLimiter,
+    useGlobalSemaphore
+  });
+}
