@@ -7032,3 +7032,36 @@ System Logも既存migration `0028_system_event_log.sql`をschema正本として
 - `867556caef52bc649be93346a68980675b798790` — remove system log request-time DDL
 
 ---
+
+---
+# 96. 2026-10-04 Phase 1 Measured Reserve
+
+## 実装
+- api_pool_usage の実測値から直近1時間のピークAPI requests/minuteと直近24時間の実使用量を算出。
+- 固定reserveより大きい場合に自動的に保護枠を引き上げるMeasured Reserveを追加。
+- Safety Gateはminute/dayの残量からMeasured Reserveを差し引いて新規バックグラウンド処理を判定。
+- Watchlist / Owner Load TestのSafety GateへMeasured Reserveを接続。
+- System Status / System JSONへ measuredReserveMinute / measuredReserveDay / measuredPeakMinuteRequests / measuredUsedDayRequests / measuredReserveCheckedAt を公開。
+- Safety snapshotにもAPI reserve値を公開。
+
+## 制御方針
+- 固定下限: 5 requests/minute、50 requests/day。
+- minute measured reserve = 直近ピーク/minute × 20%（切り上げ）。
+- day measured reserve = 直近24時間実使用量 × 5%（切り上げ）。
+- 固定下限と実測reserveの大きい方を採用。
+- HARD_STOPは従来通りforceでも突破不可。
+- Watchlistは高優先度としてpool key reserve保護の対象外だが、minute/day予算自体の保護枠は適用。
+
+## D1
+- Measured Reserve取得は api_pool_usage の実測行のみ（estimated=0）。
+- 直近1時間peakと24時間累計を利用し、無期限履歴を走査しない。
+
+## Phase 1状況
+- Safety Foundation: 完了
+- Global Collection Semaphore + crash recovery: 完了
+- API Pool budget/reserve: 完了
+- Measured Reserve: 完了
+- System Log request-time DDL cleanup: 完了
+- System Status / JSON observability: 完了
+- 残りは本番E2Eで実測確認する項目のみ。コード側のPhase 1実装は完了扱い。
+---
