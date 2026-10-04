@@ -6941,3 +6941,35 @@ Global Collection SemaphoreのD1 counter方式は、Worker crash後のactive_cou
 TTL付きslot lease / Durable Objects / D1 coordinationの比較は継続する。
 
 ---
+
+---
+# 93. 2026-10-04 Safety Gate API key reserve / budget observability
+
+Phase 1のAPI Pool budget連携を再監査し、実コード上の未接続箇所を修正。
+
+## 修正
+- Safety GateへAPI key単位のminimum remaining minute/dayを入力可能にした。
+- WatchlistはAPI Pool availabilityとbudgetを別々にSELECTせず、budget snapshot 1回からavailableKeysを取得。
+- WatchlistのplannedRequestsを1ではなく、1王国あたり26 boards + topN player取得の実処理想定へ修正。
+- Load Testもavailability + budgetの二重SELECTを廃止し、budget snapshot 1回へ統合。
+- Load Test / Watchlistともaggregate remaining minute/dayをSafety Gateへ入力。
+- Load Test / background roller等の低優先度処理では、API key単位のminimum remaining reserveを保護。
+- /status の System JSONへAPI Pool budgetを追加し、aggregate/minimum quota残量を確認可能にした。
+
+## D1効果
+- Watchlist開始判定: API Pool budget SELECT 1回。
+- Load Test開始判定: API Pool budget SELECT 1回。
+- API requestごとのbudget SELECTは追加していない。
+- /statusはbudget snapshot 1回を追加するが、これは運用確認経路でありAPI hot pathではない。
+
+## コミット
+- 4b58e1a46c42e1c35a2d8029f8819c4642f1ea0b — enforce API key reserve floors in safety gate
+- 565772457863d61296317bf06ded88859c5fb44b — use single API budget snapshot for watchlist safety
+- 5f2514690d2875bb44cb91ad1212e98eb07c1122 — use single API budget snapshot for load test safety
+- 107a15d27e43ebef754260da361f3fd20253000f — expose API quota budget in operational status
+
+## 注意
+API key minimum reserveはWatchlistのような最優先処理まで一律停止させず、低優先度処理の保護に使う。
+今後、実際のAPI Pool lease分配と照合してreserve値の妥当性を実測する。
+
+---
