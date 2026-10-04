@@ -1,9 +1,10 @@
 import { getSystemEventLog } from "./system-log.js";
 import { getCollectionSemaphoreSnapshot } from "./collection-semaphore.js";
+import { getApiPoolBudgetSnapshot } from "./api-pool.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -26,7 +27,8 @@ export async function getOperationalStatus(db) {
       "SELECT pool_type, status, label, last_success_at, last_error_at, last_error_code, last_error_message FROM api_pool_keys ORDER BY COALESCE(last_error_at, 0) DESC, updated_at DESC LIMIT 1"
     ).first(),
     getSystemEventLog(db, { limit: 100 }),
-    getCollectionSemaphoreSnapshot(db).catch(() => null)
+    getCollectionSemaphoreSnapshot(db).catch(() => null),
+    getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -92,9 +94,8 @@ export async function getOperationalStatus(db) {
   }
   const job = jobResult || null;
 
-  // Load-test state is intentionally read-only here. The table is created lazily
-  // by the OWNER load-test path, so status JSON must remain usable before the
-  // first load test has ever run.
+  // Load-test state is read-only here. The coordination table is provisioned
+  // by migrations, so status does not create or alter schema.
   let loadTest = {
     schemaAvailable: false,
     active: false,
@@ -147,6 +148,15 @@ export async function getOperationalStatus(db) {
       availableKeys: poolTotals.AVAILABLE,
       activeLeases: Number(leaseResult?.active_count || 0),
       expiredActiveLeases: Number(leaseResult?.expired_active_count || 0),
+      budget: budgetResult ? {
+        checkedAt: Number(budgetResult.checkedAt || 0),
+        keyCount: Number(budgetResult.keyCount || 0),
+        availableKeys: Number(budgetResult.availableKeys || 0),
+        remainingMinute: Number(budgetResult.remainingMinute || 0),
+        remainingDay: Number(budgetResult.remainingDay || 0),
+        minRemainingMinute: Number(budgetResult.minRemainingMinute || 0),
+        minRemainingDay: Number(budgetResult.minRemainingDay || 0)
+      } : null,
       latestKey: latestKey ? {
         poolType: latestKey.pool_type,
         status: latestKey.status,
