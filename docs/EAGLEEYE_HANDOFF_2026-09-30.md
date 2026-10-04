@@ -7751,3 +7751,78 @@ System Status HTML:
 9. 失敗時のcursor再開
 
 本番確認前に実装済みとは扱うが、実機確認済みとは扱わない。
+
+# 104. 2026-10-04 Alliance Roller — History / Change Event接続
+
+Alliance Rollerをcurrent保存だけで終わらせず、既存のEagleEye履歴基盤へ接続。
+
+## 104-1. History
+
+変更が発生したAllianceについてのみ:
+- R2へAlliance info + roster payloadをarchive
+- D1 currentへ反映
+
+同一内容の再取得ではR2へ新しい履歴objectを作成しない。
+
+これは「必要な履歴は残すが、同一payloadの無意味な再保存はしない」というResource Efficiency原則による。
+
+## 104-2. R2 failure
+
+R2保存に失敗した場合:
+- HISTORY_EMERGENCY_BUFFERへALLIANCEとして退避
+- R2復旧時に既存Drain経路から再archive
+
+Historyを失う状態でCurrentだけ更新することは避ける。
+
+## 104-3. Change Event
+
+Allianceの変更項目:
+- abbr
+- name
+- power
+- member_count
+- leader_name
+- leader_uid
+- leader_governor_id
+- flag_url
+- power_rank
+
+について前回値と今回値を比較し、変更時のみchange_eventsへ保存。
+
+target_idはkid + aidでnamespaceを分離する。
+
+## 104-4. リソース効率
+
+- Discovery candidateはbatch upsert
+- 前回状態はbatch SELECT
+- APIはinfo + rosterを1 request
+- 同一状態ではCurrent UPDATEを省略
+- 同一状態ではR2 archiveを省略
+- 変更時だけChange Eventを生成
+- R2 failure時だけEmergency Bufferを使用
+
+D1はrows_read / rows_writtenが使用量指標となり、R2 PutObjectはClass A operationであるため、不要な再書き込みを避ける。 citeturn5search0turn4search0
+
+## 104-5. コミット
+
+- b742e498bacc97e10808b173db6bf9c3316ac7f5 — Alliance R2 archive
+- 5629ee5162d7c7ce03d3bf53110449197087ceb6 — Alliance emergency recovery
+- d716945ddd8dfa4bf78bc5d524970b2baa49a01c — History / Change Event
+- 878d6ecc2ae1cb6389b9f33644962eb88230bb3d — previous state comparison order
+- 91e3cecbe9899905ae6cfd2538eac8a93ac44288 — kid + aid namespacing
+
+## 104-6. Phase 5完成条件
+
+本番E2Eで:
+1. Ranking CurrentからAllianceを発見
+2. alliance_catalogへ登録
+3. info + roster取得
+4. current反映
+5. 初回/変更時R2履歴保存
+6. 変更時change_events生成
+7. R2障害時Emergency Buffer退避
+8. System Status / System JSONで状態確認
+9. 複数王国の同一abbrを正しく分離
+10. D1/R2使用量を確認
+
+まで確認する。
