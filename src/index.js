@@ -773,6 +773,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
   const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
   const apiLimiter = options?.apiLimiter || null;
+  const globalCollectionLimiter = options?.globalCollectionLimiter || createCollectionSemaphoreLimiter(env.DB, WATCHLIST_MAX_API_CONCURRENCY);
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
@@ -793,7 +794,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const traceId = diagnosticTraceId("ranking");
       const startedAtMs = Date.now();
       try {
-        const fetched = await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchKingdomRankingThroughApiPool(
+        const requestLimiter = apiLimiter || globalCollectionLimiter;
+        if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter;
+        const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
         ));
         return { board, traceId, startedAtMs, fetched };
@@ -1104,9 +1107,11 @@ async function fetchWithLoadTestApiLimiter(apiLimiter, worker) {
   const maxRetries = 20;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     let release = null;
+    let globalRelease = null;
     let poolWaitStartedAt = null;
     try {
       release = await apiLimiter.acquire();
+      if (apiLimiter.globalLimiter) globalRelease = await apiLimiter.globalLimiter.acquire();
       return await worker();
     } catch (error) {
       const code = String(error?.code || error?.message || "");
@@ -1116,6 +1121,7 @@ async function fetchWithLoadTestApiLimiter(apiLimiter, worker) {
         poolWaitStartedAt = typeof apiLimiter.markPoolWaitStart === "function" ? apiLimiter.markPoolWaitStart() : null;
       }
     } finally {
+      if (globalRelease) await Promise.resolve(globalRelease()).catch(() => {});
       if (release) await Promise.resolve(release()).catch(() => {});
     }
     try {
