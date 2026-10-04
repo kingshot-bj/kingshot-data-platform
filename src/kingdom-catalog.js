@@ -99,9 +99,6 @@ export async function runKingdomCatalogDiscovery(env, {
     for (const row of rows) {
       const kid = kingdomId(row);
       if (!kid) continue;
-      const existing = await env.DB.prepare(
-        "SELECT first_seen_at FROM kingdom_catalog WHERE kid = ?"
-      ).bind(kid).first();
       statements.push(env.DB.prepare(
         "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid) DO UPDATE SET name=excluded.name, status=excluded.status, region=excluded.region, language=excluded.language, raw_json=excluded.raw_json, source_observed_at=excluded.source_observed_at, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at"
       ).bind(
@@ -112,7 +109,7 @@ export async function runKingdomCatalogDiscovery(env, {
         row.language ?? row.lang ?? null,
         JSON.stringify(row),
         Number(row.source_observed_at ?? row.observed_at ?? 0) || null,
-        Number(existing?.first_seen_at || now),
+        now,
         now,
         now
       ));
