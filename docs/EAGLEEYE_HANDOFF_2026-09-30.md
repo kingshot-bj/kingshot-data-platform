@@ -7950,3 +7950,72 @@ System Status HTML:
 10. D1/R2/API使用量
 
 本番E2E完了まではPlayer Rollerを「実装済み・未本番確認」と扱う。
+# 106. 2026-10-04 Phase 2 cross-check — Alliance / Player / Status
+
+## 106-1. Code cross-check
+
+再確認した結果、Phase 2のAlliance / Playerについては、既存コミットを含めて以下まで実装済み。
+
+- Alliance Catalog / Roller
+- Alliance R2 history
+- Alliance History Emergency Buffer
+- Alliance change_events
+- kid + aid namespace
+- Player Roller
+- Player full detail API
+- Player observation / materialize
+- Player history / change events
+- Player 1-hour background freshness skip
+- Alliance / Player dynamic background budget
+- System JSON
+- System Status HTML
+
+## 106-2. System Status HTML
+
+「データ収集基盤」表示は既に存在し、以下を確認済み:
+
+- Kingdom Discovery
+- Kingdom Seeder
+- Alliance Roller
+- Player Roller
+- Ranking Roller
+- Global Collection Semaphore
+
+したがって、今回の再確認では重複UIを追加しない。
+
+UI大改修は別フェーズとして扱い、現在は運用確認に必要な表示を維持する。
+
+## 106-3. 重要な設計判断
+
+Alliance / Playerは、全件を常時最新にすることを目的としない。
+
+- Rankingから発見 → ID確保
+- Catalog / Currentへ登録
+- 必要な対象はBackgroundで補完
+- ユーザーが閲覧する場合はID経由でOn-demand最新取得
+- 同一内容のBackground再取得はFreshness / Change判定で抑制
+
+これにより「発見可能な対象を増やすこと」と「ユーザーが見たい情報を最新にすること」を両立する。
+
+## 106-4. 本番E2E残項目
+
+コード実装上の未接続は現時点で確認されていない。
+
+残るのは本番環境での実測:
+
+1. migration 0041 / 0042 remote適用
+2. Kingdom Ranking → Alliance discovery
+3. Alliance info + roster取得
+4. Alliance history / change_events
+5. personal_power → Player discovery
+6. Player full detail取得
+7. Player materialize / history / change_events
+8. 1時間freshness skip
+9. Background dynamic budget
+10. Global Semaphore最大26並列
+11. Safety Gateによる縮小 / 停止
+12. System Status / System JSON一致
+13. D1 rows / R2 operations / API quota実測
+14. R2障害時Emergency Buffer復旧
+
+**ここから先は、ユーザー操作が必要な本番E2E項目に到達した場合のみ確認を依頼する。**
