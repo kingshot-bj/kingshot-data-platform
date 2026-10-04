@@ -178,7 +178,7 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 - `1d78703f449a8434a0cf01ca971e65e312a3fe91` — System Log correlation metadata normalization
 - `6943cef496d4c89034f520d36dffb76533cf9bb4` — API Pool lease correlation
 - `534991910b23748492810271f58a6a31f4f70dd8` / `b7f9fd9fb43db54d44d8d259de283f228de71669` / `d17ec23c8f8549e9f80d2385b52460219dca763e` — MightPulse correlation/timestamp logging
-- `02d1c05db4273125a317c84288cdffca46cf891a` / `9f02805bae368a23718ad35fe0e6a8c9a8fa2? ` — Load Test context propagation
+- `02d1c05db4273125a317c84288cdffca46cf891a` / `9f02805bae368a23718ad35fe0e6a9c8a9fa05c6 ` — Load Test context propagation
 - `13bcc7475db1e819f01dd4ca59120cbda525ee20` / `70dbd01c9e776bead289f9fd051033868fcff14f` / `c89145f2530d4c4f36797b524b5b4754045602f8` — Job start/completion correlation
 - `32854551b229feb2af4852dbc2e15bef791a4712` / `ea822f8bc22dd3511380899cb275b0a55264b1372` / `a5101dbb51416a733fbdb6b2f46c205045c10e3f` / `70e1f05fa2be797bb319670af7c40c492e67d3b9` — API Pool timestamp/trace propagation
 
