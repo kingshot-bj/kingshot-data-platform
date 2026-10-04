@@ -93,7 +93,7 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
   try {
     const url = new URL(request.url);
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 20)));
-    const rows = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms,api_active_count,api_waiting_count,api_pool_waiting_count,api_wait_events,api_pool_wait_events,api_wait_ms,api_pool_wait_ms,api_wait_min_ms,api_wait_max_ms,api_wait_buckets_json,last_activity_at FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+    const rows = await env.DB.prepare("SELECT * FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
     const rawRuns=rows.results||[];
     const legacyRuns=rawRuns.filter(row=>String(row.status||"")!=="RUNNING"&&Number(row.success_count||0)===0&&Number(row.failed_count||0)===0);
     const legacySummary=new Map();
@@ -122,7 +122,7 @@ export async function handleOwnerKingdomLoadTestExportApi(request, env) {
   try {
     const runId = String(new URL(request.url).searchParams.get("run_id") || "").trim();
     if (!runId) return new Response(JSON.stringify({ok:false,error:"RUN_ID_REQUIRED"}), {status:400,headers:{"content-type":"application/json; charset=UTF-8"}});
-    const row = await env.DB.prepare("SELECT run_id,target_count,start_kid,end_kid,top_n,concurrency,api_concurrency,available_pool_keys,status,created_at,completed_at,success_count,failed_count,ranking_rows_saved,player_rows_saved,elapsed_ms,api_wait_events,api_pool_wait_events,api_wait_ms,api_pool_wait_ms,api_wait_min_ms,api_wait_max_ms,api_wait_buckets_json FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
+    const row = await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
     if (!row) return new Response(JSON.stringify({ok:false,error:"RUN_NOT_FOUND"}), {status:404,headers:{"content-type":"application/json; charset=UTF-8"}});
     let buckets={}; try { buckets=JSON.parse(row.api_wait_buckets_json||"{}"); } catch {}
     const lines=[["metric","value"],["run_id",row.run_id],["status",row.status],["target_count",row.target_count],["start_kid",row.start_kid],["end_kid",row.end_kid],["top_n",row.top_n],["job_concurrency",row.concurrency],["api_concurrency",row.api_concurrency],["available_pool_keys",row.available_pool_keys],["success_count",row.success_count],["failed_count",row.failed_count],["ranking_rows_saved",row.ranking_rows_saved],["player_rows_saved",row.player_rows_saved],["elapsed_ms",row.elapsed_ms??""],["api_wait_events",row.api_wait_events],["api_pool_wait_events",row.api_pool_wait_events],["api_wait_ms",row.api_wait_ms],["api_pool_wait_ms",row.api_pool_wait_ms],["api_wait_min_ms",row.api_wait_min_ms],["api_wait_max_ms",row.api_wait_max_ms],["wait_bucket_0_5s",buckets["0-5s"]||0],["wait_bucket_5_10s",buckets["5-10s"]||0],["wait_bucket_10_20s",buckets["10-20s"]||0],["wait_bucket_20_30s",buckets["20-30s"]||0],["wait_bucket_30_60s",buckets["30-60s"]||0],["wait_bucket_60s_plus",buckets["60s+"]||0]];
@@ -337,7 +337,12 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   const poolBudget=await getApiPoolBudgetSnapshot(env.DB,{provider:"MIGHTPULSE",poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
   const availablePoolKeys=Number(poolBudget?.availableKeys||0);
   if(availablePoolKeys<2)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
-  const plannedRequests = Math.max(1, kids.length * (26 + topN));
+  // Load Test is a queued workload, not a single burst of all planned requests.
+  // The real API Pool limiter and per-request leases enforce capacity while the run
+  // progresses. Safety Gate must therefore validate only the startup budget here;
+  // using the full (kingdoms × boards × players) count incorrectly blocks long,
+  // throttled runs before they can start.
+  const plannedRequests = 1;
   let cloudflareSafety = null;
   try {
     cloudflareSafety = await getCloudflareD1Usage(env, { includeQueryInsights: false });
