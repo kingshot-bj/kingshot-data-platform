@@ -7980,7 +7980,9 @@ async function renderPublicStatusPage(request, env) {
         <div class="resource-row"><div><b>現在の安全状態</b><small>最大Cloudflare使用率</small></div><strong>${escapeHtml(safetyState)} · ${operational.safety?.maxCloudflareUsagePercent == null ? "—" : formatPercent(operational.safety.maxCloudflareUsagePercent)}</strong></div>
         <div class="resource-row"><div><b>Global Collection Semaphore</b><small>全Worker共通のAPI収集並列枠</small></div><strong>${semaphore?.active == null ? "—" : formatInt(semaphore.active)} / ${semaphore?.capacity == null ? "—" : formatInt(semaphore.capacity)}</strong></div>
         <div class="resource-row"><div><b>利用可能な収集枠</b><small>Semaphore remaining</small></div><strong>${semaphore?.available == null ? "—" : formatInt(semaphore.available)}</strong></div>
-        <div class="resource-note">Safety Gateの停止理由・再開条件はSystem JSON / System Logにも記録します。</div>
+        <div class="resource-row"><div><b>Measured Reserve</b><small>直近実測から自動算出したAPI保護枠</small></div><strong>${operational.apiPool?.budget?.measuredReserveMinute == null ? "—" : formatInt(operational.apiPool.budget.measuredReserveMinute) + "/min"} · ${operational.apiPool?.budget?.measuredReserveDay == null ? "—" : formatInt(operational.apiPool.budget.measuredReserveDay) + "/day"}</strong></div>
+        <div class="resource-row"><div><b>API Quota残量</b><small>aggregate remaining / 最小key残量</small></div><strong>${operational.apiPool?.budget ? formatInt(operational.apiPool.budget.remainingMinute) + "/min · " + formatInt(operational.apiPool.budget.remainingDay) + "/day" : "—"}</strong></div>
+        <div class="resource-note">Safety Gateの停止理由・再開条件、Measured Reserve、API QuotaはSystem JSON / System Logでも確認できます。</div>
       </div>
     </section>`;
 
