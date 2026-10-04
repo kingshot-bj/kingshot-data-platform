@@ -26,7 +26,7 @@ export async function runPlayerRoller(env, {
   const startedAt = now();
   const traceId = systemTraceId("player-roller");
   const state = await db.prepare(
-    "SELECT catalog_cursor, last_kid, last_governor_id FROM player_collection_state WHERE state_key = ?"
+    "SELECT state, catalog_cursor, last_kid, last_governor_id FROM player_collection_state WHERE state_key = ?"
   ).bind(STATE_KEY).first();
 
   const lastKid = Number(state?.last_kid || 0);
@@ -63,6 +63,8 @@ export async function runPlayerRoller(env, {
 
     return { ok: true, targets: 0, success: 0, failed: 0, skipped: 0, reset: true };
   }
+
+  await db.prepare("UPDATE player_collection_state SET state = 'RUNNING', updated_at = ? WHERE state_key = ?").bind(startedAt, STATE_KEY).run();
 
   await recordSystemEvent(db, {
     traceId,
@@ -176,11 +178,12 @@ export async function runPlayerRoller(env, {
 
   const last = rows[rows.length - 1];
   await db.prepare(
-    "UPDATE player_collection_state SET catalog_cursor = catalog_cursor + ?, processed_runs = processed_runs + 1, success_count = success_count + ?, failed_count = failed_count + ?, last_kid = ?, last_governor_id = ?, last_success_at = CASE WHEN ? > 0 THEN ? ELSE last_success_at END, last_failure_at = CASE WHEN ? > 0 THEN ? ELSE last_failure_at END, last_error = ?, updated_at = ? WHERE state_key = ?"
+    "UPDATE player_collection_state SET catalog_cursor = catalog_cursor + ?, processed_runs = processed_runs + 1, success_count = success_count + ?, failed_count = failed_count + ?, state = ?, last_kid = ?, last_governor_id = ?, last_success_at = CASE WHEN ? > 0 THEN ? ELSE last_success_at END, last_failure_at = CASE WHEN ? > 0 THEN ? ELSE last_failure_at END, last_error = ?, updated_at = ? WHERE state_key = ?"
   ).bind(
     rows.length,
     success,
     failed,
+    failed ? "WARNING" : "IDLE",
     Number(last.kid),
     String(last.governor_id),
     success,
@@ -216,6 +219,6 @@ export async function runPlayerRoller(env, {
 
 export async function getPlayerRollerStatus(db) {
   return db.prepare(
-    "SELECT state_key, catalog_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_governor_id, last_success_at, last_failure_at, last_error, updated_at FROM player_collection_state WHERE state_key = ?"
+    "SELECT state_key, state, catalog_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_governor_id, last_success_at, last_failure_at, last_error, updated_at FROM player_collection_state WHERE state_key = ?"
   ).bind(STATE_KEY).first();
 }
