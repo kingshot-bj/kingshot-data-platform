@@ -7013,3 +7013,22 @@ Global Collection SemaphoreのD1 counter方式を再設計し、Worker crash時�
 - System Status / System JSONでactive/available/recovery状態が一致すること。
 
 ---
+
+---
+# 95. 2026-10-04 System Log hot-path DDL cleanup
+
+System Logも既存migration `0028_system_event_log.sql`をschema正本として明確化。
+
+## 修正
+- `src/system-log.js` のrequest-time CREATE TABLE / CREATE INDEXを撤去。
+- System Log書き込みはmigration済みテーブルへのINSERTのみ。
+- System Status / JSON取得時のSystem Log読み取りでもschema DDLを発生させない。
+
+## 効果
+- Safety / Semaphore / Load Test / Watchlist等の運用イベント記録でrequest-time DDLなし。
+- D1 Rows Writtenだけでなく、schema確認用の不要なwrite amplificationも削減。
+
+## コミット
+- `867556caef52bc649be93346a68980675b798790` — remove system log request-time DDL
+
+---
