@@ -6973,3 +6973,42 @@ API key minimum reserveはWatchlistのような最優先処理まで一律停止
 今後、実際のAPI Pool lease分配と照合してreserve値の妥当性を実測する。
 
 ---
+
+---
+# 94. 2026-10-04 Global Collection Semaphore crash recovery hardening
+
+Global Collection SemaphoreのD1 counter方式を再設計し、Worker crash時のactive_count残留問題を解消する初版hardeningを実装。
+
+## 方式変更
+- migration 0036 `collection_semaphore_slots` を追加。
+- GLOBAL_APIに26個の独立slotを用意。
+- acquireはfree/expired slotを1つだけ原子的UPDATEでlease。
+- releaseはlease_token一致時のみ解放。
+- lease期限切れslotは次のacquireで自動再利用。
+- Worker crash後に古いWorkerが遅れてreleaseしても、新しいlease tokenとは一致しないため新規leaseを破壊しない。
+- hot pathのacquire/releaseは引き続きSELECT pollingなし。
+
+## D1負荷
+- acquire: 1 UPDATE
+- release: 1 UPDATE
+- crash recovery: 追加cron/cleanup SELECT不要
+- status snapshot: 1 SELECT
+
+旧 `collection_semaphore.active_count` はmigration 0034との後方互換のため残置。新コードはslot tableを正本として扱う。
+
+## Lease
+- 初期lease TTL: 90秒。
+- 実際のAPI応答がMightPulse側で最大90秒待機する可能性があるため、今後実測でTTLを再調整する。
+- 長時間処理に対するheartbeat/refresh APIも実装済みだが、現時点のrequest wrapperではまだ自動refreshしていない。
+
+## コミット
+- 2be0f34db9d34916e37750527fae67d9f15c1905 — add crash-safe semaphore slots
+- 09ea05d93fa6f612c6e2727883a7b641cf5f117a — make collection semaphore crash-recoverable
+
+## Production E2E前の残確認
+- lease TTLと実API最大応答時間の実測。
+- 26並列時のD1 Rows Written増加。
+- crash/recoveryでslotが自動回収されること。
+- System Status / System JSONでactive/available/recovery状態が一致すること。
+
+---
