@@ -172,6 +172,57 @@ export async function getPoolStats(db) {
   }));
 }
 
+export async function getApiPoolBudgetSnapshot(db, {
+  provider = PROVIDER,
+  poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
+  now = Math.floor(Date.now() / 1000)
+} = {}) {
+  const types = Array.isArray(poolTypes) && poolTypes.length
+    ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
+    : ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+  const placeholders = types.map(() => "?").join(",");
+  const result = await db.prepare(
+    `SELECT
+       COUNT(*) AS key_count,
+       COALESCE(SUM(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+         THEN 1 ELSE 0 END), 0) AS available_keys,
+       COALESCE(SUM(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+         THEN MAX(COALESCE(remaining_minute, 0), 0) ELSE 0 END), 0) AS remaining_minute,
+       COALESCE(SUM(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+         THEN MAX(COALESCE(remaining_day, 0), 0) ELSE 0 END), 0) AS remaining_day,
+       COALESCE(MIN(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+         THEN COALESCE(remaining_minute, 0) END), 0) AS min_remaining_minute,
+       COALESCE(MIN(CASE WHEN status IN ('AVAILABLE','COOLDOWN')
+         AND (cooldown_until IS NULL OR cooldown_until <= ?)
+         AND (leased_until IS NULL OR leased_until <= ?)
+         THEN COALESCE(remaining_day, 0) END), 0) AS min_remaining_day
+     FROM api_pool_keys
+     WHERE provider = ? AND pool_type IN (${placeholders})`
+  ).bind(
+    now, now, now, now, now, now, now, now, now, now,
+    provider, ...types
+  ).first();
+  return {
+    provider,
+    poolTypes: types,
+    keyCount: Number(result?.key_count || 0),
+    availableKeys: Number(result?.available_keys || 0),
+    remainingMinute: Number(result?.remaining_minute || 0),
+    remainingDay: Number(result?.remaining_day || 0),
+    minRemainingMinute: Number(result?.min_remaining_minute || 0),
+    minRemainingDay: Number(result?.min_remaining_day || 0),
+    checkedAt: now
+  };
+}
+
 export async function getApiPoolAvailability(db, {
   provider = PROVIDER,
   poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
