@@ -29,6 +29,7 @@ import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemD
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
+import { buildSafetySnapshot } from "./safety-gate.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -7787,6 +7788,7 @@ async function renderPublicStatusPage(request, env) {
   if (operationalResult.status !== "fulfilled") {
     console.error("public_status_operational_unavailable", operationalResult.reason?.message || operationalResult.reason);
   }
+  operational.safety = buildSafetySnapshot({ cloudflare: usage, availablePoolKeys: operational.apiPool?.availableKeys || 0, activeLeases: operational.apiPool?.activeLeases || 0, thresholds: { warningPercent: 70, criticalPercent: 85, hardStopPercent: 100 } });
 
   let data;
   if (diagnosticsResult.status === "fulfilled") {
