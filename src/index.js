@@ -853,6 +853,10 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
   const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
   const apiLimiter = options?.apiLimiter || null;
+  const loadTestContext = options?.loadTestContext || null;
+  const loadTestRunId = loadTestContext?.runId ? String(loadTestContext.runId) : null;
+  const loadTestJobId = loadTestContext?.jobId ? String(loadTestContext.jobId) : String(job?.job_id || "");
+  const loadTestJobTraceId = loadTestContext?.traceId || null;
   // A load-test Run already has one process-wide API limiter shared by all
   // kingdom workers in this Worker invocation. Do not add the D1-backed global
   // semaphore on top of it: that semaphore is for independent production
@@ -882,15 +886,16 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     // actively leased key from being reused until its request is released.
     const fetchedBoards = await fetchWithConcurrency(boards, concurrency, async board => {
       const traceId = diagnosticTraceId("ranking");
+      const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : traceId;
       const startedAtMs = Date.now();
       try {
         const requestLimiter = apiLimiter;
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter || null;
         const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
-          { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter }
+          { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId }
         ));
-        return { board, traceId, startedAtMs, fetched };
+        return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
         error.rankingBoard = board;
         error.rankingTraceId = traceId;
@@ -1058,7 +1063,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     }
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
-        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter })) };
+        const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : null;
+        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId })) };
       } catch (error) {
         await recordDiagnostic(env.DB, {
           service: "watchlist",
