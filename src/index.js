@@ -3801,10 +3801,27 @@ export default {
       try {
         catalogCloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
       } catch {}
+      // Background collection uses the actual remaining API budget instead of
+      // a fixed low throughput. Catalog(1) + Seeder(max 2) are the fixed
+      // discovery/current-state cost; the remaining safe budget is allocated
+      // to Ranking Roller, up to all 26 boards for the current kingdom.
+      const fixedBackgroundRequests = 3;
+      const minuteBudget = catalogBudget?.remainingMinute == null
+        ? 26
+        : Math.max(0, Math.floor(Number(catalogBudget.remainingMinute) - 1 - Number(catalogBudget.measuredReserveMinute || 5)));
+      const dayBudget = catalogBudget?.remainingDay == null
+        ? 26
+        : Math.max(0, Math.floor(Number(catalogBudget.remainingDay) - 1 - Number(catalogBudget.measuredReserveDay || 50)));
+      const rankingBoardsBudget = Math.min(
+        26,
+        Math.max(0, minuteBudget - fixedBackgroundRequests),
+        Math.max(0, dayBudget - fixedBackgroundRequests)
+      );
+      const plannedBackgroundRequests = fixedBackgroundRequests + rankingBoardsBudget;
       const safety = evaluateSafetyGate({
         operation: "KINGDOM_BACKGROUND_COLLECTION",
         priority: SAFETY_PRIORITIES.CATALOG,
-        plannedRequests: 13,
+        plannedRequests: plannedBackgroundRequests,
         availablePoolKeys: Number(catalogBudget?.availableKeys || 0),
         reservedKeys: 1,
         cloudflare: catalogCloudflare,
@@ -3819,7 +3836,31 @@ export default {
       if (safety.allowed) {
         await runKingdomCatalogDiscovery(env);
         await runKingdomSeeder(env, { maxTargets: 2 });
-        await runKingdomRankingRoller(env, { kingdomsPerRun: 1, boardsPerRun: 10 });
+        if (rankingBoardsBudget > 0) {
+          await runKingdomRankingRoller(env, {
+            kingdomsPerRun: 1,
+            boardsPerRun: rankingBoardsBudget
+          });
+        } else {
+          await recordSystemEvent(env.DB, {
+            traceId: systemTraceId("kingdom-ranking-roller"),
+            eventType: "PAUSED",
+            service: "kingdom_ranking_roller",
+            feature: "kingdom_ranking",
+            operation: "DYNAMIC_BUDGET",
+            status: "PAUSED",
+            errorCode: "NO_SAFE_RANKING_BUDGET",
+            message: "Catalog / Seederは安全枠内で実行可能ですが、ランキングへ割り当て可能なAPI残量がありません。",
+            metadata: {
+              fixedBackgroundRequests,
+              minuteBudget,
+              dayBudget,
+              rankingBoardsBudget,
+              remainingMinute: catalogBudget?.remainingMinute ?? null,
+              remainingDay: catalogBudget?.remainingDay ?? null
+            }
+          }).catch(() => {});
+        }
       } else {
         await recordSystemEvent(env.DB, {
           traceId: systemTraceId("kingdom-catalog"),
