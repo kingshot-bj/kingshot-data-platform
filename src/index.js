@@ -3791,16 +3791,27 @@ export default {
     await runDiagnosticHealthChecks(env);
     // Phase 2: bounded discovery. One page per Cron keeps API/D1 usage predictable.
     try {
+      const catalogBudget = await getApiPoolBudgetSnapshot(env.DB, {
+        provider: "MIGHTPULSE",
+        poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"]
+      });
+      let catalogCloudflare = null;
+      try {
+        catalogCloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
+      } catch {}
       const safety = evaluateSafetyGate({
         operation: "KINGDOM_CATALOG",
         priority: SAFETY_PRIORITIES.CATALOG,
         plannedRequests: 1,
-        availablePoolKeys: Number((await getApiPoolBudgetSnapshot(env.DB, {
-          provider: "MIGHTPULSE",
-          poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"]
-        }))?.availableKeys || 0),
+        availablePoolKeys: Number(catalogBudget?.availableKeys || 0),
         reservedKeys: 1,
-        cloudflare: await getCloudflareD1Usage(env, { includeQueryInsights: false }),
+        cloudflare: catalogCloudflare,
+        apiRemainingMinute: catalogBudget?.remainingMinute,
+        apiRemainingDay: catalogBudget?.remainingDay,
+        apiMinRemainingMinute: catalogBudget?.minRemainingMinute,
+        apiMinRemainingDay: catalogBudget?.minRemainingDay,
+        apiReserveMinute: catalogBudget?.measuredReserveMinute,
+        apiReserveDay: catalogBudget?.measuredReserveDay,
         force: false
       });
       if (safety.allowed) {
