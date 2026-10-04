@@ -106,7 +106,7 @@ export async function mightPulseFetch(env, path, {
           targetId: targetId || path,
           httpStatus: response.status,
           elapsedMs: Date.now() - startedAt,
-          metadata: { path, method, attempts }
+          metadata: { path, method, attempts, ...(metadata && typeof metadata === "object" ? metadata : {}) }
         });
         return {
           data: body,
@@ -149,7 +149,7 @@ export async function mightPulseFetch(env, path, {
             elapsedMs: Date.now() - startedAt,
             errorCode: error.code || "MIGHTPULSE_REQUEST_FAILED",
             message: error.message,
-            metadata: { path, method, attempts }
+            metadata: { path, method, attempts, ...(metadata && typeof metadata === "object" ? metadata : {}) }
           });
           throw error;
         }
@@ -188,7 +188,7 @@ export async function mightPulseFetch(env, path, {
           elapsedMs: Date.now() - startedAt,
           errorCode: lastError?.code || "MIGHTPULSE_REQUEST_FAILED",
           message: lastError?.message || null,
-          metadata: { path, method, attempts }
+          metadata: { path, method, attempts, ...(metadata && typeof metadata === "object" ? metadata : {}) }
         });
         throw lastError;
       }
