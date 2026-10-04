@@ -205,10 +205,11 @@ export async function getOperationalStatus(db) {
       lastError: null,
       updatedAt: null
     },
-    kingdomSeeder: kingdomSeederResult ? {
-      catalogRows: Number(kingdomSeederResult.total || 0),
-      latestUpdatedAt: kingdomSeederResult.latest_updated_at ? Number(kingdomSeederResult.latest_updated_at) : null
-    } : { catalogRows: 0, latestUpdatedAt: null },
+    kingdomSeeder: {
+      catalogRows: Number(kingdomSeederResult?.total || 0),
+      latestUpdatedAt: kingdomSeederResult?.latest_updated_at ? Number(kingdomSeederResult.latest_updated_at) : null,
+      state: kingdomSeederResult ? "AVAILABLE" : "UNKNOWN"
+    },
     watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
