@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 
 const DB = process.env.D1_DATABASE || "eagleeye-db";
+const COLLECTION_SEMAPHORE_SLOT_CAPACITY = 1000;
 const APPLY = process.argv.includes("--apply");
 
 function run(sql) {
@@ -181,11 +182,11 @@ for (const [column,definition] of [
 if (!tableExists("collection_semaphore")) {
   write("CREATE TABLE collection_semaphore (semaphore_key TEXT PRIMARY KEY,capacity INTEGER NOT NULL,active_count INTEGER NOT NULL DEFAULT 0,updated_at INTEGER NOT NULL)");
 }
-write("INSERT OR IGNORE INTO collection_semaphore(semaphore_key,capacity,active_count,updated_at) VALUES ('GLOBAL_API',26,0,strftime('%s','now'))");
+write("INSERT OR IGNORE INTO collection_semaphore(semaphore_key,capacity,active_count,updated_at) VALUES ('GLOBAL_API'," + COLLECTION_SEMAPHORE_SLOT_CAPACITY + ",0,strftime('%s','now'))");
 if (!tableExists("collection_semaphore_slots")) {
   write("CREATE TABLE collection_semaphore_slots (semaphore_key TEXT NOT NULL,slot_id INTEGER NOT NULL,lease_token TEXT,lease_until INTEGER,updated_at INTEGER NOT NULL,PRIMARY KEY(semaphore_key,slot_id))");
 }
-const slotValues = Array.from({ length: 26 }, (_, index) => {
+const slotValues = Array.from({ length: COLLECTION_SEMAPHORE_SLOT_CAPACITY }, (_, index) => {
   const slotId = index + 1;
   return "('GLOBAL_API'," + slotId + ",NULL,NULL,strftime('%s','now'))";
 }).join(",");
@@ -232,8 +233,11 @@ if (!tableExists("player_collection_state")) {
 }
 write("INSERT OR IGNORE INTO player_collection_state(state_key,updated_at) VALUES ('PLAYER_ROLLER',strftime('%s','now'))");
 
-const slots = run("SELECT COUNT(*) AS c FROM collection_semaphore_slots WHERE semaphore_key='GLOBAL_API' AND slot_id BETWEEN 1 AND 26")[0]?.c ?? 0;
-if (APPLY && Number(slots) !== 26) {
+if (APPLY) {
+  write("UPDATE collection_semaphore SET capacity = " + COLLECTION_SEMAPHORE_SLOT_CAPACITY + ", updated_at = strftime('%s','now') WHERE semaphore_key = 'GLOBAL_API'");
+}
+const slots = run("SELECT COUNT(*) AS c FROM collection_semaphore_slots WHERE semaphore_key='GLOBAL_API' AND slot_id BETWEEN 1 AND " + COLLECTION_SEMAPHORE_SLOT_CAPACITY)[0]?.c ?? 0;
+if (APPLY && Number(slots) !== COLLECTION_SEMAPHORE_SLOT_CAPACITY) {
   throw new Error("GLOBAL_API slot verification failed after reconciliation: " + slots);
 }
 
