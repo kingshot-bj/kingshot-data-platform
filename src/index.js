@@ -5243,7 +5243,11 @@ async function fetchThroughWatchlistApiPool(env, {
   targetId,
   purpose,
   include = null,
-  query = null
+  query = null,
+  traceId = null,
+  parentTraceId = null,
+  jobId = null,
+  runId = null
 }) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
@@ -5257,7 +5261,8 @@ async function fetchThroughWatchlistApiPool(env, {
           poolType: candidatePoolType,
           purpose,
           targetType,
-          targetId
+          targetId,
+          jobId
         });
         poolType = candidatePoolType;
         break;
@@ -5283,7 +5288,13 @@ async function fetchThroughWatchlistApiPool(env, {
 
     const result = await mightPulseFetch(env, path, {
       query: query || (include ? { include } : undefined),
-      apiKey: lease.api_key
+      apiKey: lease.api_key,
+      traceId,
+      parentTraceId,
+      operation: purpose || "MIGHTPULSE_REQUEST",
+      targetType,
+      targetId,
+      metadata: { runId, jobId, leaseId: lease.lease_id, poolType: lease.pool_type, endpoint }
     });
 
     await recordApiPoolSuccess(env.DB, {
@@ -5295,6 +5306,7 @@ async function fetchThroughWatchlistApiPool(env, {
       targetId,
       purpose,
       httpStatus: result.status,
+      traceId,
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
       remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
     });
@@ -5315,6 +5327,7 @@ async function fetchThroughWatchlistApiPool(env, {
         targetId,
         purpose,
         httpStatus: status,
+        traceId,
         errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
@@ -5326,25 +5339,27 @@ async function fetchThroughWatchlistApiPool(env, {
   }
 }
 
-async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING") {
+async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING", correlation = {}) {
   return fetchThroughWatchlistApiPool(env, {
     path: `/kingdoms/${encodeURIComponent(kid)}/ranks`,
     endpoint: "/kingdoms/:kid/ranks",
     targetType: "KINGDOM",
     targetId: String(kid),
     purpose,
-    query: { board, limit }
+    query: { board, limit },
+    ...correlation
   });
 }
 
-async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGDOM_WATCHLIST_PLAYER") {
+async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGDOM_WATCHLIST_PLAYER", correlation = {}) {
   return fetchThroughWatchlistApiPool(env, {
     path: `/players/${encodeURIComponent(governorId)}`,
     endpoint: "/players/:governor_id",
     targetType: "PLAYER",
     targetId: String(governorId),
     purpose,
-    query: { include: "base,heroes,ranks,gov_gear" }
+    query: { include: "base,heroes,ranks,gov_gear" },
+    ...correlation
   });
 }
 
