@@ -122,6 +122,16 @@ async function archiveBufferedRow(bucket, row) {
       sourceObservationId: row.source_observation_id
     });
   }
+  if (row.history_type === "ALLIANCE") {
+    const { archiveAllianceHistoryBatch } = await import("./r2-archive.js");
+    return archiveAllianceHistoryBatch(bucket, {
+      kid: row.kid,
+      aid: payload.aid,
+      observedAt: row.observed_at,
+      sourceObservedAt: row.source_observed_at,
+      payload: payload.data
+    });
+  }
   throw new Error("HISTORY_EMERGENCY_UNKNOWN_TYPE:" + row.history_type);
 }
 
