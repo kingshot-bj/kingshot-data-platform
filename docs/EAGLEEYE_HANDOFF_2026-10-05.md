@@ -185,3 +185,13 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 ### 注意
 - これはコード実装完了であり、Cloudflare本番deploy・本番E2E成功確認とは別。
 - 次はdeploy後に新しい20王国runを実行し、同一run_id/trace_idで Job → lease → MightPulse が連続して出ることを確認する。
+
+
+## 2026-10-05 — 公開負荷テスト通知をOWNER詳細画面から分離
+
+- OWNER専用の `/api/owner/kingdom-load-test/status` は詳細進捗取得用として維持。
+- 全ユーザー共通のトップ画面通知用に、認証・権限不要の軽量 `GET /api/load-test/notice-status` を新設。
+- 通知APIは `api_request_locks` の `OWNER_KINGDOM_LOAD_TEST` が現在有効かだけを確認し、runId・Job・API Pool情報などの内部情報は返さない。
+- トップ画面 `renderHome()` は10秒ごとに通知APIをポーリングし、負荷テスト中だけ「現在、システム負荷テストを実施しています」を表示。終了・ロック消失で自動非表示。
+- 通知API障害時は `active:false` 相当で処理し、公開トップ画面を壊さない。
+- 実装コミット: `a0dd575b6e97afd7ad776547451c66e9f83a834c`（通知API）、`27c8b0b0d43fb82d93173117a09c2951aea48215`（トップ画面）。
