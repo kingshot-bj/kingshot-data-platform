@@ -6,7 +6,7 @@ import { recordDiagnostic } from "./diagnostics.js";
 
 const STATE_KEY = "KINGDOM_RANKING_ROLLER";
 const DEFAULT_KINGDOMS_PER_RUN = 1;
-const DEFAULT_BOARDS_PER_RUN = 10;
+const DEFAULT_BOARDS_PER_RUN = 26;
 
 function now() { return Math.floor(Date.now() / 1000); }
 
@@ -31,7 +31,7 @@ export async function runKingdomRankingRoller(env, {
   const db = env?.DB;
   if (!db) throw new Error("DB_NOT_CONFIGURED");
   const kingdomLimit = Math.min(2, Math.max(1, Number(kingdomsPerRun) || 1));
-  const boardLimit = Math.min(20, Math.max(1, Number(boardsPerRun) || DEFAULT_BOARDS_PER_RUN));
+  const boardLimit = Math.min(26, Math.max(1, Number(boardsPerRun) || DEFAULT_BOARDS_PER_RUN));
   const traceId = systemTraceId("kingdom-ranking-roller");
   const startedAt = now();
 
