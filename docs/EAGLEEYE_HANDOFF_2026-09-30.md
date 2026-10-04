@@ -8635,3 +8635,14 @@ Player Rollerのコード監査・修正は完了。
 3. Background実行時の実API/D1/R2リソース消費確認
 4. System Status / System JSON / Diagnosticsの実値確認
 5. Phase 2横断監査完了
+
+## #110 2026-10-04 index.js HTTP Router 復旧
+
+- 本番E2E中に Cloudflare の `Worker threw exception` / 1101 が発生したため、`src/index.js` を再監査。
+- 現行 `bb8b24c6...` では `export default` の末尾まででファイルが終了しており、HTTP `fetch(request, env)` が存在しなかった。
+- 過去の `97a923395624237e2a9d43c14fe66e316dcc53c9`（`fix: restore index.js after truncated player compare edit`）にはHTTP Routerと、その後段のTheme / Discord OAuth等のコードが完全に存在することを確認。
+- 現行側の最新Player Roller / Alliance Roller / Dynamic Budget等を保持したまま、欠落していた `export default` のHTTP Router以降のindex.js尾部を復旧。
+- 復旧コミット: `62f5742a1e9bbff2d670f4c42733893e0ee0b3db`、続くexport構造修正: `448b82879c71533a98053145c45f4241120fce69`。
+- GitHub上で確認済み: `export default` は1箇所、`async fetch(request, env)` は1箇所、Player/Alliance Rollerコードも保持。
+- **未確認:** Wrangler build成功、本番Cloudflareデプロイ、本番E2E。これらは別途確認する。
+- 今回はコード復旧を先行し、Cloudflare上でのデプロイ成功を未確認のまま「復旧済み」とは扱わない。
