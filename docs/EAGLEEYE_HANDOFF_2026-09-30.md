@@ -5883,3 +5883,419 @@ src/cloudflare-analytics.jsのQuery Insights分類は、今後追加するCatalo
 > **追加されたすべての機能について、System StatusとSystem JSONだけで「今動いているか」「何件処理したか」「何が止めているか」「いつ再開できるか」を確認できる。**
 
 これをEagleEye次期アーキテクチャの完成条件とする。
+
+---
+# 86. 2026-10-04 現行main全体監査・次期実装計画確定版
+
+2026-10-04時点のmainを再確認。本セクションを今後の実装計画の確定補足とする。
+
+現行main HEAD:
+- 6674c353cce86653a7752e53a83ecbd9e39932ab
+- docs: add EagleEye next architecture implementation plan
+
+## 86-1. 現行mainで確認した再利用基盤
+
+### Kingdom / Ranking
+既存:
+- kingdom_ranking_current
+- kingdom_ranking_board_state
+- ranking-store.js
+- ranking-catalog.js
+- 26 ranking board定義
+- Current RankingのQuery Insights分類
+
+方針:
+- kingdom_ranking_currentを軽量Current/Indexとして利用。
+- Player Rollerの入口としてpersonal_power等のPLAYER行を利用。
+- ranking_snapshotsは履歴用途に限定。
+- ranking_snapshotsの広範囲readは絶対に復活させない。
+
+### API Pool
+src/api-pool.jsに既存:
+- SYSTEM_GENERAL / SYSTEM_WATCHLIST / USER_CONTRIBUTED
+- atomic lease
+- leased_until / cooldown
+- remaining_minute / remaining_day
+- quota_per_minute / quota_per_day
+- lease owner / purpose / target
+- success / failure
+- pool availability
+- expiry release
+
+不足:
+- Safety Gateとの統合
+- 開始前planned consumption判定
+- Cloudflare/API/Reserve横断budget
+- Normal / Forced / Load Testの優先制御
+- key-level quotaを含む統合停止理由
+
+### Watchlist Job
+既存:
+- kingdom_watchlist_jobs
+- kingdom_watchlist_locks
+- ranking → player処理
+- board cursor / player cursor
+- cancellation
+- progress / error state
+
+方針:
+- 既存Watchlist processorをData Collection Engineへ抽象化して再利用。
+- Watchlist処理をコピーしてSeeder/Rollerを別実装しない。
+
+### OWNER Load Test
+src/admin-kingdom-load-test.jsに既存:
+- Watchlist実処理ベースの負荷テスト
+- job concurrency
+- local API concurrency limiter
+- API wait / API Pool wait
+- wait distribution
+- Run history
+- Cancel
+- Progress / heartbeat / Progress recovery
+- CSV export
+- System Log / Service Usage
+
+重要:
+- MAX_API_CONCURRENCY=26はLoad Test内部のlocal limiter。
+- EagleEye全体のGlobal Semaphoreではない。
+- 26を全体API concurrencyとして再利用しない。
+- 将来はGlobal Collection Semaphoreを新設し、Load Testもそこを通す。
+- Load Test専用Crawlerは作らない。
+
+### System Log / Diagnostics / Monitoring
+既存:
+- src/system-log.js
+- src/diagnostics.js
+- src/status-ops.js
+- src/cloudflare-analytics.js
+- SQL単位Query Insights
+- Current Ranking等の分類
+- Load Test / API Pool / MightPulse event
+- Cloudflare D1/R2/Workers monitoring
+
+新機能のobservabilityは既存System Log / Diagnostics / Status JSONへ統合する。
+
+## 86-2. 現行mainにまだ存在しないもの
+
+以下は専用実装がなく、現時点では計画段階。
+
+- Kingdom Catalog
+- Kingdom Discovery / Catalog Sync
+- Kingdom Seeder
+- Alliance Catalog
+- Alliance Roller
+- Player Roller
+- Data Collection Engine
+- Normal Roller
+- Forced Roller
+- Global Collection Semaphore
+- Safety Gate
+- Cloudflare/API/Reserve統合budget
+- Planned Consumption Calculator
+- Background Budget
+- Dynamic/Measured Reserve
+- Catalog/Seeder/Roller用System Status / System JSON
+- MightPulse Feature Parity Matrix
+
+src/にはcatalog / roller / collection / safety専用moduleはまだ存在しない。
+
+## 86-3. DB / Storage方針
+
+新規tableは、既存tableで表現できないことを確認してから追加する。
+
+優先再利用:
+- kingdom_ranking_current
+- kingdom_ranking_board_state
+- kingdom_watchlist_jobs
+- kingdom_watchlist_locks
+- api_pool_keys
+- api_pool_usage
+- system_event_log
+- diagnostic_events
+- kingdom_load_test_runs
+
+Storage:
+- current / operational state → D1
+- large history / archive → R2
+- HISTORY_STORAGE_MODE=R2_ONLYを維持
+
+## 86-4. 次期アーキテクチャ
+
+~~~text
+MightPulse API
+      ↓
+   API Pool
+      ↓
+ Safety Gate
+      ↓
+Global Collection Semaphore
+      ↓
+Data Collection Engine
+      ↓
+Watchlist / Normal / Forced / Load Test
+      ↓
+Kingdom Catalog / Alliance Catalog / Player Index
+      ↓
+D1 Current
+      ↓
+R2 History / Archive
+
+Observability:
+System Log + Diagnostics + System Status + System JSON
+~~~
+
+## 86-5. 実装フェーズ確定
+
+### Phase 0 — MightPulse Feature Matrix
+本家Web機能と公式公開API対応可否を棚卸し。
+
+記録:
+- Web存在
+- 公式公開API可否
+- EagleEye実装状況
+- partial / missing
+- history必要性
+- API cost
+- D1/R2 cost
+- Safety impact
+- Status / JSON observability要件
+
+ここでは新機能を作らない。
+
+### Phase 1 — Resource Safety Foundation
+実装:
+1. Safety Gate
+2. Global Collection Semaphore
+3. Cloudflare safety profile
+4. MightPulse key-level quota
+5. Service Reserve
+6. planned consumption
+7. background budget
+8. NORMAL / CAUTION / WARNING / CRITICAL / HARD_STOP
+9. stop reason
+10. resume condition
+
+OWNERでもSafety Gateを突破不可。Load TestもSafety Gateを通す。Watchlistより下位処理を先に縮退/停止する。
+
+### Phase 2 — Data Collection Engine
+既存Watchlist処理を共通Engineへ抽象化。
+
+Mode:
+- NORMAL
+- FORCED
+- LOAD_TEST
+
+共通:
+- API lease
+- Global Semaphore
+- Safety Gate
+- wait metrics
+- cancellation
+- progress
+- run history
+- observability
+
+Load TestはEngineの高負荷実行modeとする。
+
+### Phase 3 — Kingdom Catalog / Discovery
+- MightPulse王国一覧同期
+- Catalog
+- first_seen_at / last_seen_at
+- status / source / opened_on
+- NEW detection
+- KINGDOM_DISCOVERED event
+- System Status / JSON
+
+禁止:
+- 最大KID+1推測
+- Discoveryと詳細収集の同一処理化
+
+### Phase 4 — Kingdom Seeder
+Watchlist外王国の基本情報をSafety Gate経由でbounded収集。
+planned consumption、stop/resume、progress、Status/JSON、D1/R2 usageを持つ。
+
+### Phase 5 — Alliance Catalog / Roller
+ranking / player dataからAllianceを発見しCatalog化。
+info / roster / history / changesを収集。
+非公開MightPulse Web内部APIには依存しない。
+
+### Phase 6 — Player Roller
+~~~
+Kingdom
+ ↓
+personal_power / target ranking
+ ↓
+Top N / target players
+ ↓
+Player detail
+ ↓
+players / api_observations
+ ↓
+R2 history / change events
+~~~
+
+入口はkingdom_ranking_current。ranking_snapshotsの広範囲readは使用しない。
+
+### Phase 7 — Feature Parity
+公式公開APIで安全に取得可能な範囲から:
+- KvK
+- Momentum
+- Castle Battle History
+- Appointments / Ministers / Offenders
+- Events
+- Player Record
+- その他Feature Matrixで確認した機能
+
+### Phase 8 — EagleEye独自分析
+データ蓄積後に:
+- historical comparison
+- cross-kingdom
+- cross-alliance
+- cross-player
+- anomaly detection
+- prediction
+- EagleEye独自ranking
+
+## 86-6. 新機能Definition of Done
+
+~~~text
+Feature
+ ↓
+API / Worker / DB / R2
+ ↓
+System Log
+ ↓
+System Status
+ ↓
+System JSON
+ ↓
+normal / warning / failed / paused / stopped
+ ↓
+reason / blocker / resume condition
+ ↓
+本番E2E
+~~~
+
+最低限:
+- feature
+- state
+- current run
+- target
+- processed
+- success
+- failed
+- skipped
+- last target
+- API usage
+- D1/R2 usage
+- stop reason
+- blocked_by
+- resume_condition
+- last success
+- last failure
+- next run
+
+## 86-7. 実装前に整理する既存コード
+
+### Load Test runtime DDL
+src/admin-kingdom-load-test.jsに0033 migrationと重複するruntime ALTER TABLEが存在。
+対象:
+- api_wait_min_ms
+- api_wait_max_ms
+- api_wait_buckets_json
+
+migrationを正本とし、本番適用状態を確認後、不要なruntime DDLを撤去する。
+
+### API concurrency
+現在はLoad Test local limiter=26。
+今後Global Collection Semaphoreを新設し、責務をEngine側へ移す。
+
+### index.js
+src/index.jsは巨大なmonolith。
+次期Engineの新規ロジックを大量追加せず、Collection Engine / Safety / Catalog / Rollerを専用moduleへ分離する。
+
+### Ranking定義
+既存:
+- KINGDOM_RANKING_BOARDS
+- RANKING_BOARD_LABELS
+- src/ranking-catalog.js
+
+今後:
+- key / labelの正本を整理。
+- 既存UI/API/CSVの期待値を確認してから統合。
+- 同じranking定義を新規作成しない。
+
+## 86-8. 実装順の最終固定
+
+~~~text
+0. Feature Matrix
+        ↓
+1. Safety Foundation
+        ↓
+2. Data Collection Engine
+        ↓
+3. Kingdom Catalog / Discovery
+        ↓
+4. Kingdom Seeder
+        ↓
+5. Alliance Catalog / Roller
+        ↓
+6. Player Roller
+        ↓
+7. Feature Parity
+        ↓
+8. EagleEye独自分析
+~~~
+
+各Phase開始前に必ず:
+- 現行mainとの重複確認
+- D1/R2 cost見積り
+- API Pool影響
+- System Status / JSON設計
+- 本番確認項目
+
+## 86-9. 現時点の状態
+
+### 既存・再利用可能
+- Kingdom Watchlist / Player Watchlist
+- kingdom_ranking_current / kingdom_ranking_board_state
+- API Pool / key lease / quota tracking
+- Load Test / Run History / Cancel / Progress / Recovery / Wait Metrics
+- System Log / Diagnostics / Cloudflare Monitoring
+- R2 History Archive / History Emergency Buffer
+- Google Drive transport primitive
+
+### 計画のみ・未実装
+- Feature Matrix
+- Safety Gate
+- Global Collection Semaphore
+- Data Collection Engine
+- Kingdom Catalog / Discovery
+- Kingdom Seeder
+- Alliance Catalog / Roller
+- Player Roller
+- Planned Consumption
+- Background Budget
+- Measured/Dynamic Reserve
+- Roller-specific System Status / JSON
+
+この「計画のみ・未実装」に記載しただけでは、実装済みとは扱わない。
+
+## 86-10. 次の開始点
+
+本MDの#86を計画確定版として扱う。
+
+次の作業は **Phase 0: MightPulse Feature Matrix作成**。
+
+Phase 1へ入る前にAPI Pool、Load Test、Cloudflare Monitoring、System Status / System JSONの詳細を再確認し、Safety Gate設計を確定する。
+
+この時点では新しいCrawler / Seeder / Rollerの実装を開始しない。
+
+最終目標:
+> Watchlistに依存せずKingShot世界を認識し、Kingdom → Alliance → Playerを安全に継続収集し、その収集処理をLoad Testとして検証できるData Collection基盤を構築する。
+
+さらに:
+> Cloudflare / MightPulse / 一般ユーザーサービスをSafety Gateで保護し、Paid / Freeのどちらでも安全枠を超えない。
+
+さらに:
+> 追加機能についてSystem Status + System JSONだけで、何が動いているか、どこまで進んだか、なぜ止まったか、いつ再開できるかを確認できる状態にする。
