@@ -473,29 +473,34 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   }
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   let streamClosed=false;
-  const send=async payload=>{
+  // Streaming is UI telemetry only. Never let a slow/closed iPhone stream
+  // block the actual load-test worker. The durable Run state + status API are
+  // authoritative and allow recovery after reload/navigation.
+  const send=payload=>{
     if(streamClosed)return false;
     try{
-      await writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
+      const writePromise=writer.write(encoder.encode(JSON.stringify(payload)+"\n"));
+      writePromise.catch(error=>{
+        streamClosed=true;
+        console.warn("owner_kingdom_load_test_stream_closed",runId,error?.message||String(error));
+      });
       return true;
     }catch(error){
-      // The OWNER may reload/navigate away while the server-side Run continues.
-      // Client stream failure must not abort the D1/API load-test work.
       streamClosed=true;
       console.warn("owner_kingdom_load_test_stream_closed",runId,error?.message||String(error));
       return false;
     }
   };
-  let runFailed=false,runSummary=null;
+  let runFailed=false,runSummary=null,apiLimiter=null,metricsTimer=null,heartbeatTimer=null;
   const run=(async()=>{try{
     await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0,quest_completed:0,quest_total:kids.length*(26+topN),quest_percent:0});
-    const apiLimiter=createLoadTestApiLimiter(apiConcurrency);
+    apiLimiter=createLoadTestApiLimiter(apiConcurrency);
     apiLimiter.globalLimiter = createCollectionSemaphoreLimiter(env.DB, MAX_API_CONCURRENCY);
     let completed=0,success=0,failed=0;
-    const metricsTimer=setInterval(()=>{persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});},2000);
+    metricsTimer=setInterval(()=>{persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});},2000);
     const questProgressByKid=new Map(),questTotalByKid=new Map(kids.map(kid=>[Number(kid),26+topN]));
     const getQuestProgress=()=>{let completedQuests=0,totalQuests=0;for(const kid of kids){const item=questProgressByKid.get(Number(kid))||{};completedQuests+=Number(item.completed||0);totalQuests+=Number(questTotalByKid.get(Number(kid))||26+topN);}return {completed_quests:completedQuests,total_quests:totalQuests,percent:totalQuests?Math.min(100,Math.round(completedQuests/totalQuests*100)):0};};
-    const heartbeatTimer=setInterval(async()=>{const m=apiLimiter.snapshot(),q=getQuestProgress();await send({type:"heartbeat",run_id:runId,target_count:kids.length,completed,success,failed,quest_completed:q.completed_quests,quest_total:q.total_quests,quest_percent:q.percent,api_concurrency:apiLimiter.capacity,api_active_count:m.active,api_waiting_count:m.waiting,api_pool_waiting_count:m.pool_waiting,api_wait_events:m.wait_events,api_pool_wait_events:m.pool_wait_events,api_wait_ms:m.total_wait_ms,api_pool_wait_ms:m.pool_wait_ms,api_wait_min_ms:m.min_wait_ms,api_wait_max_ms:m.max_wait_ms,api_wait_buckets_json:JSON.stringify(m.wait_buckets||{})});},2000);
+    heartbeatTimer=setInterval(()=>{const m=apiLimiter.snapshot(),q=getQuestProgress();send({type:"heartbeat",run_id:runId,target_count:kids.length,completed,success,failed,quest_completed:q.completed_quests,quest_total:q.total_quests,quest_percent:q.percent,api_concurrency:apiLimiter.capacity,api_active_count:m.active,api_waiting_count:m.waiting,api_pool_waiting_count:m.pool_waiting,api_wait_events:m.wait_events,api_pool_wait_events:m.pool_wait_events,api_wait_ms:m.total_wait_ms,api_pool_wait_ms:m.pool_wait_ms,api_wait_min_ms:m.min_wait_ms,api_wait_max_ms:m.max_wait_ms,api_wait_buckets_json:JSON.stringify(m.wait_buckets||{})});},2000);
     const results=await runWithConcurrency(
       kids,
       concurrency,
@@ -549,7 +554,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         });
       }
     );
-    clearInterval(metricsTimer);clearInterval(heartbeatTimer);
+    if(metricsTimer) clearInterval(metricsTimer); if(heartbeatTimer) clearInterval(heartbeatTimer);
     const successfulResults=results.filter(item=>item?.ok),failedResults=results.filter(item=>!item?.ok),cancelledResults=results.filter(item=>item?.cancelled);
     const rankingRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.ranking_rows||0),0),playerRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.player_rows||0),0);
     const latencies=successfulResults.map(item=>Number(item.elapsed_ms)).filter(Number.isFinite),failureCodes={};
@@ -560,8 +565,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",metadata:summary});
     await send({type:cancelledResults.length?"cancelled":"complete",run_id:runId,ok:true,cancelled:Boolean(cancelledResults.length),target_count:kids.length,concurrency,api_concurrency:apiConcurrency,top_n:topN,elapsed_ms:summary.elapsed_ms,success,failed,cancelled_count:cancelledResults.length,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:summary.max_expected_ranking_rows,results});
   }catch(error){runFailed=true;await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"FAILED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:Date.now()-startedAt,errorCode:error?.code||"LOAD_TEST_FAILED",message:error?.message||"王国Watchlist実処理負荷テスト失敗",metadata:{runId,targetCount:kids.length,mode:"KINGDOM_WATCHLIST_PIPELINE",topN}});await send({type:"error",run_id:runId,ok:false,error:String(error?.message||error||"LOAD_TEST_FAILED").slice(0,1000)});}finally{
-    clearInterval(metricsTimer);
-    await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
+    if(metricsTimer) clearInterval(metricsTimer);
+    if(heartbeatTimer) clearInterval(heartbeatTimer);
+    if(apiLimiter) await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     const finalNow=Math.floor(Date.now()/1000);
     await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
