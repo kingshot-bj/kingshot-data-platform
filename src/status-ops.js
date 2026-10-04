@@ -5,7 +5,7 @@ import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -30,7 +30,8 @@ export async function getOperationalStatus(db) {
     getSystemEventLog(db, { limit: 100 }),
     getCollectionSemaphoreSnapshot(db).catch(() => null),
     getApiPoolBudgetSnapshot(db, { provider: "MIGHTPULSE", poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"] }).catch(() => null),
-    getKingdomCatalogDiscoveryStatus(db).catch(() => null)
+    getKingdomCatalogDiscoveryStatus(db).catch(() => null),
+    db.prepare("SELECT COUNT(*) AS total, MAX(updated_at) AS latest_updated_at FROM kingdom_catalog").first().catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -204,6 +205,10 @@ export async function getOperationalStatus(db) {
       lastError: null,
       updatedAt: null
     },
+    kingdomSeeder: kingdomSeederResult ? {
+      catalogRows: Number(kingdomSeederResult.total || 0),
+      latestUpdatedAt: kingdomSeederResult.latest_updated_at ? Number(kingdomSeederResult.latest_updated_at) : null
+    } : { catalogRows: 0, latestUpdatedAt: null },
     watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
