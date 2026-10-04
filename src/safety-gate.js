@@ -165,6 +165,8 @@ export function buildSafetySnapshot({
   availablePoolKeys = 0,
   activeLeases = 0,
   waiting = 0,
+  apiReserveMinute = null,
+  apiReserveDay = null,
   thresholds = {}
 } = {}) {
   const usagePercent = maxUsagePercent(cloudflare);
@@ -174,6 +176,8 @@ export function buildSafetySnapshot({
     availablePoolKeys: Math.max(0, Math.floor(finite(availablePoolKeys))),
     activeLeases: Math.max(0, Math.floor(finite(activeLeases))),
     waiting: Math.max(0, Math.floor(finite(waiting))),
+    apiReserveMinute: Math.max(DEFAULTS.apiKeyMinRemainingMinute, finite(apiReserveMinute, DEFAULTS.apiKeyMinRemainingMinute)),
+    apiReserveDay: Math.max(DEFAULTS.apiKeyMinRemainingDay, finite(apiReserveDay, DEFAULTS.apiKeyMinRemainingDay)),
     thresholds: {
       warningPercent: finite(thresholds.warningPercent, DEFAULTS.cloudflareWarningPercent),
       criticalPercent: finite(thresholds.criticalPercent, DEFAULTS.cloudflareCriticalPercent),
