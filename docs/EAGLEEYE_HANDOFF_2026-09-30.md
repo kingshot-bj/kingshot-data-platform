@@ -7606,3 +7606,148 @@ API Poolが一時的に枯渇している場合は共通API lease側で待機・
 であることを確認する。
 
 **今後、理由なく固定10件へ戻す実装は行わない。**
+
+# 103. 2026-10-04 Phase 5 — Alliance Catalog / Roller foundation
+
+## 103-1. Alliance discovery方針
+
+Allianceは新しい外部一覧APIを追加要求せず、既存のKingdom Ranking CurrentをDiscovery sourceとして再利用する。
+
+対象:
+- alliance_power
+- alliance_kills
+
+ここから:
+- kid
+- aid
+- abbr
+- name
+- score
+- rank
+
+を取得し、Alliance Catalogへ登録する。
+
+これによりランキング取得時点で発見されたAllianceは、詳細API取得に失敗しても「EagleEyeが存在を認識しているAlliance」としてCatalogに残る。
+
+## 103-2. 公開API
+
+MightPulse公式公開API:
+
+- GET /v1/alliances/{kid}/{tag}?include=info,roster
+
+1 requestで:
+- alliance info
+- roster
+
+を取得する。
+
+Allianceのtagはcase-sensitiveで、同じtagが複数王国に存在し得るため、識別単位は **kid + abbr / aid** とする。
+
+## 103-3. Storage
+
+追加:
+- migrations/0041_alliance_catalog.sql
+- src/alliance-catalog.js
+
+alliance_catalog:
+- kid
+- aid
+- abbr
+- name
+- power
+- member_count
+- leader_name
+- leader_uid
+- leader_governor_id
+- flag_url
+- power_rank
+- raw_json
+- source_observed_at
+- first_seen_at
+- last_seen_at
+- updated_at
+- status
+
+詳細APIレスポンスはraw_jsonへ1つだけ保存する。
+infoとrosterを別々に重複保存する設計にはしない。
+
+## 103-4. Roller
+
+Alliance Roller:
+- 永続cursor
+- 最大26対象/実行
+- Global Collection Semaphore
+- API Pool
+- Common Data Collection Engine
+- System Log
+- Diagnostics
+- Status JSON
+- Status HTML
+
+を共通利用する。
+
+Discovery候補はD1 batchでCatalogへ先にmaterializeし、その後最大対象数だけMightPulse詳細APIを並列取得する。
+
+## 103-5. Background予算
+
+Background collectionの可変予算を:
+
+- Alliance Roller: 最大5 requests
+- Ranking Roller: 残り最大26 requests
+
+へ動的配分。
+
+Catalog 1 + Seeder 2を固定消費とし、
+
+- API minute remaining
+- API day remaining
+- measured reserve
+- general reserve
+
+から安全な可変予算を算出する。
+
+余裕が少ない場合はAlliance / Rankingとも自動縮小する。
+
+## 103-6. Observability
+
+System JSON:
+- allianceRoller.state
+- catalogCursor
+- processedRuns
+- successCount
+- failedCount
+- skippedCount
+- lastKid
+- lastAid
+- lastSuccessAt
+- lastFailureAt
+- lastError
+- updatedAt
+
+System Status HTML:
+- データ収集基盤カードへAlliance Rollerを追加。
+
+## 103-7. 実装コミット
+
+- a2a74e99272babd30be6242d882d9f1d5c9d644e — Alliance Catalog / Roller schema
+- e28600f2dfcb4cf39a0247df6bb863ebcb971fa5 — Common Alliance collection primitive
+- 99d6ede320e91e506ccd9875df7188c8bd5b6c67 — Alliance Catalog / Roller
+- 5f9437540c3fc53d242d470306ac4c716ddc97e6 — Background dynamic budget integration
+- a309c7e92812af69bf7880dd4b78f22ae294e52c — Status JSON integration
+- a543de154071eb98e5b2e86eeca58b86076fd2b2 — System Status HTML integration
+- afb119633ed168f05e30cb4b2832451d25e2607c — Status page schema-gap resilience
+
+## 103-8. 本番E2E
+
+未確認:
+1. migration 0041 remote適用
+2. Alliance candidate discovery
+3. Alliance info + roster取得
+4. alliance_catalog current保存
+5. 複数王国で同一abbrが存在する場合のkid分離
+6. System Status / System JSONのAlliance Roller表示
+7. API/D1使用量
+8. Roster件数と保存payloadサイズ
+9. 失敗時のcursor再開
+
+本番確認前に実装済みとは扱うが、実機確認済みとは扱わない。
