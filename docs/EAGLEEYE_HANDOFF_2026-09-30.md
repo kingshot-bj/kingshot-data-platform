@@ -8267,3 +8267,171 @@ Safety Gateを通過した場合のみ実行。
 - Phase 2の実装漏れがないか最終横断監査
 
 **上記はコードを削る理由ではなく、本番で必要な機能が実際に繋がっていることを確認するための項目。**
+
+# 103. 2026-10-04 Phase 2継続 — Alliance Roller実装途中・次スレ引き継ぎ
+
+## 103-1. 今スレで確定した設計方針
+
+ユーザー方針として、EagleEyeは「全対象を常時最新化する」ことを目的にしない。
+
+- 最低1回でも対象を発見・取得してIDを確保できれば、EagleEye上の検索可能資産になる
+- Player / Allianceは保存済みIDを利用して、ユーザーが閲覧・検索したタイミングでMightPulseから最新情報を取得できる
+- Background Collectionは「検索可能な母集団を広げる」「未発見対象を捕捉する」「定期観測が必要なランキング等を更新する」ことを主目的とする
+- 必要な機能は削らない
+- 削るのは重複取得・重複保存・不要な再取得・不要な低速化
+- Paidプランの余力がある場合は26並列等を積極的に活用し、危険域ではSafety Gateで低優先処理を抑制する
+
+この設計原則は #101 に明文化済み。
+
+## 103-2. Ranking Rollerの動的スループット化
+
+固定10ボード/回方式を撤回。
+
+現在:
+- Ranking Roller最大26 boards/run
+- Background実行時にAPI remaining / measured reserve / minute/day budgetからRanking budgetを動的算出
+- Catalog Discovery最大1 request
+- Kingdom Seeder最大2 requests
+- 残りの安全枠をAlliance / Rankingへ配分
+- Safety Gateを通すため、動的化しても安全制御は維持
+
+関連コミット:
+- `25744d3f655e904f1570ea6759a84b354ea02301`
+- `7c3a736dbc4784f4652dcf34d5a9fabf6e909c73`
+
+## 103-3. Alliance Catalog / Roller
+
+追加済み:
+- `migrations/0041_alliance_catalog.sql`
+- `src/alliance-catalog.js`
+- `src/data-collection-engine.js` に `collectAllianceDetail()`
+- `src/index.js` Background CollectionへAlliance Rollerを組み込み
+- `src/status-ops.js` にAlliance Roller状態を追加
+
+Alliance取得はMightPulse:
+`/alliances/{kid}/{tag}?include=info,roster`
+
+を使用し、info + rosterを1リクエストで取得する。
+
+Alliance候補は `kingdom_ranking_current` のAllianceランキングから発見する。
+
+設計上:
+1. ランキングからAllianceを発見
+2. Alliance ID / tagをCatalogへ登録
+3. APIからinfo + rosterを取得
+4. Currentを更新
+5. 変更時のみR2履歴保存
+6. change_eventsへ変更記録
+7. System Log / Diagnosticsへ記録
+
+を行う。
+
+## 103-4. 本番前に発見した修正
+
+Alliance Rollerコードが `alliance_collection_state.state` を更新・参照している一方、初期migrationにstate列が無かった。
+
+そのため:
+- `migrations/0043_alliance_collection_state.sql` を追加
+- Alliance Roller側でもstateを一貫して更新するよう修正
+
+関連コミット:
+- `963c728175eaadfa480a74ba485ca1f182b96f3c`
+- `82ea6fd513cc57cda5f8cd06060f7cd0da895dd9`
+
+## 103-5. Alliance Rollerの現在地
+
+Alliance Rollerは実装途中。
+
+コード上では既に:
+- Cursor/state
+- Alliance候補抽出
+- 初期Catalog登録
+- 最大26対象の処理枠
+- Global Collection Semaphore
+- API Pool
+- MightPulse info+roster取得
+- Current更新
+- R2履歴
+- History Emergency Buffer
+- change_events
+- Diagnostics
+- System Log
+- Status JSON
+
+まで組み込まれている。
+
+ただし次スレ開始時に必ず以下をコード監査すること。
+
+### 必須監査項目
+
+1. `kingdom_ranking_current` の実際のschemaを確認し、Alliance候補SQLの `abbr / name / score / rank / target_id` が実schemaと一致しているか確認
+2. `alliance_catalog` の `aid` がMightPulseレスポンス上の実IDと一致するか確認
+3. APIレスポンスのinfo / roster構造に対するextract処理を確認
+4. Alliance Current更新が「変更なしの場合に不要なD1 writeをしない」ことを確認
+5. R2履歴は変更時のみ保存されることを確認
+6. R2失敗時のEmergency Bufferが正しく動作することを確認
+7. `change_events` の変更単位とold/new valueが正しいことを確認
+8. state/cursor更新が失敗時にも次回処理を壊さないことを確認
+9. `alliance_collection_state` migration順序と本番適用方法を確認
+10. System Status HTMLでもAlliance Rollerを運用上確認できるようにする
+11. System JSON / System Log / Diagnosticsとの整合性を確認
+12. Safety Gateの動的Background budgetでAllianceとRankingが過剰に枠を奪い合わないことを確認
+
+## 103-6. 次スレの開始地点
+
+Alliance Roller監査・修正を完了した後:
+
+**Phase 2 → Alliance Catalog / Roller完成 → Player Roller**
+
+へ進む。
+
+Player Rollerは既存:
+- `migrations/0042_player_roller_state.sql`
+- `player_collection_state`
+
+を起点にする。
+
+Player Rollerでは、ランキング等からGovernor ID / Player IDを発見し、最低1回のPlayer Detail取得によって検索可能なPlayer母集団を増やす設計を採用する。
+
+Player Detail取得はMightPulse:
+`/players/{id}?include=base,heroes,ranks,gov_gear`
+
+の1リクエストで必要情報をまとめて取得する。
+
+## 103-7. UI大改修について
+
+ユーザーからUI刷新の参考画像が共有された。
+
+ただし現段階ではUI全面改修を開始しない。
+
+今は:
+- 機能実装
+- Data Collection基盤
+- Safety
+- System Status / JSON / Log
+- 本番E2E
+
+を優先する。
+
+共有された画像は、後段の**EagleEye UI大幅リデザインの方向性・参考デザイン**として扱う。
+
+現行UIには新機能の最低限の運用状態表示を必要に応じて追加するが、全面的なデザイン変更は別フェーズで実施する。
+
+## 103-8. 重要な実装姿勢
+
+今後の実装では:
+
+**「機能を削ってリソースを守る」のではなく、「必要な機能を最大限残し、同じデータを何度も扱う無駄だけを削る」**
+
+を維持する。
+
+特に:
+- 26並列を活用できる余力があるなら活用
+- 取得対象を意味なく少数に固定しない
+- 1回のAPIで取れる情報はまとめて取る
+- 既取得IDを再発見するためだけの無駄なAPI取得を避ける
+- CurrentとHistoryの役割を分離
+- ユーザーが必要な対象はOn-demand最新化
+- 新機能はSystem Log / System Status / System JSONで追跡可能にする
+
+を原則とする。
