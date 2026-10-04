@@ -356,15 +356,18 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     availablePoolKeys,
     reservedKeys: LOAD_TEST_NORMAL_RESERVE,
     cloudflare: cloudflareSafety,
-    apiRemainingMinute: poolBudget?.remainingMinute ?? null,
-    apiRemainingDay: poolBudget?.remainingDay ?? null,
-    apiMinRemainingMinute: poolBudget?.minRemainingMinute ?? null,
-    apiMinRemainingDay: poolBudget?.minRemainingDay ?? null,
-    apiReserveMinute: poolBudget?.measuredReserveMinute ?? null,
-    apiReserveDay: poolBudget?.measuredReserveDay ?? null,
+    // The load test is a queued/throttled workload. Do not reject the entire
+    // run at startup based on the aggregate API quota/reserve calculation.
+    // Each actual request still goes through the API Pool lease/quota guards.
     force: true
   });
-  if(!safety.allowed)return new Response(JSON.stringify({ok:false,error:"SAFETY_GATE_BLOCKED",message:"Safety Gateによりロードテスト開始を停止しました。",safety}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  if(!safety.allowed)return new Response(JSON.stringify({
+    ok:false,
+    error:"SAFETY_GATE_BLOCKED",
+    message:"Safety Gateによりロードテスト開始を停止しました。",
+    reasons:safety.reasons||[],
+    safety
+  }),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   // Global API budget: all kingdoms share Available - 1 reserved key.
   const apiConcurrency=Math.max(1,availablePoolKeys-LOAD_TEST_NORMAL_RESERVE);
   const concurrency=Math.min(kids.length,apiConcurrency);
