@@ -7362,3 +7362,33 @@ Catalog / Seeder / Ranking Rollerを個別にSafety判定してD1 monitoring rea
 - block時は背景収集全体を停止
 
 コミット: `3eb025b6f98484b2d93130e19470bbe26a394bb3`
+
+
+## 100-8. リソース効率改善（再評価）
+
+横断確認で以下の無駄を発見・修正。
+
+### Seeder
+以前は毎Cronで `last_seen_at DESC LIMIT 2` のため同じ王国を繰り返し取得する可能性があった。
+→ `kingdom_seeder_state` にカーソルを持たせ、Catalogを順番に巡回。
+
+### Ranking Roller
+以前は1 Cronあたり2ボードを逐次取得していた。
+→ 標準10ボード/回、最大20ボードまで設定可能。
+→ Promise.allSettledでAPI取得を並列化し、Global Semaphoreの最大26並列を活用。
+→ current/history保存は既存の差分保存ロジックを利用。
+
+### 現在の背景収集量
+- Catalog: 1 API
+- Seeder: 最大2 API
+- Ranking: 1王国×10 API（並列）
+- Safety Gate plannedRequests: 13
+
+「処理を減らす」のではなく「必要な処理を高速化し、同一データの重複取得を排除する」方針へ明確化。
+
+コミット:
+- `26941dfc1a4bf751ed9f44450beceb5866f4ba28`
+- `da57660cc1fc0ef5aa828f20479b9db26898f750`
+- `f9e686e4c3390eb7d2af87dbe92f0aaa7ad02a33`
+- `16a76b3279b40235054163c73b3c930892bcfa1e`
+- `ed9b5bbfd406d39fde68c70258e15fdd3438531f`
