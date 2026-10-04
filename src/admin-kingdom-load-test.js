@@ -1,4 +1,4 @@
-import { getApiPoolAvailability } from "./api-pool.js";
+import { getApiPoolAvailability, getApiPoolBudgetSnapshot } from "./api-pool.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { evaluateSafetyGate } from "./safety-gate.js";
@@ -353,6 +353,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   const startedAt=Date.now(),runId=crypto.randomUUID(),traceId=requestTraceId||systemTraceId("load");
   const poolAvailability=await getApiPoolAvailability(env.DB,{poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
   const availablePoolKeys=Number(poolAvailability?.totals?.available||0);
+  const poolBudget=await getApiPoolBudgetSnapshot(env.DB,{provider:"MIGHTPULSE",poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
   if(availablePoolKeys<2)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const plannedRequests = Math.max(1, kids.length * (26 + topN));
   let cloudflareSafety = null;
@@ -368,6 +369,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     availablePoolKeys,
     reservedKeys: LOAD_TEST_NORMAL_RESERVE,
     cloudflare: cloudflareSafety,
+    apiRemainingMinute: poolBudget?.remainingMinute ?? null,
+    apiRemainingDay: poolBudget?.remainingDay ?? null,
     force: true
   });
   if(!safety.allowed)return new Response(JSON.stringify({ok:false,error:"SAFETY_GATE_BLOCKED",message:"Safety Gateによりロードテスト開始を停止しました。",safety}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
