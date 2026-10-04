@@ -3,10 +3,11 @@ import { getCollectionSemaphoreSnapshot } from "./collection-semaphore.js";
 import { getApiPoolBudgetSnapshot } from "./api-pool.js";
 import { getKingdomCatalogDiscoveryStatus } from "./kingdom-catalog.js";
 import { getAllianceRollerStatus } from "./alliance-catalog.js";
+import { getPlayerRollerStatus } from "./player-roller.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomSeederStateResult, kingdomRankingRollerResult, allianceRollerResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomSeederStateResult, kingdomRankingRollerResult, allianceRollerResult, playerRollerResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -35,7 +36,8 @@ export async function getOperationalStatus(db) {
     db.prepare("SELECT COUNT(*) AS total, MAX(updated_at) AS latest_updated_at FROM kingdom_catalog").first().catch(() => null),
     db.prepare("SELECT catalog_cursor, processed_runs, success_count, failed_count, last_kid, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_seeder_state WHERE state_key = 'KINGDOM_SEEDER'").first().catch(() => null),
     db.prepare("SELECT state, catalog_cursor, board_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_board, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_ranking_collection_state WHERE state_key = 'KINGDOM_RANKING_ROLLER'").first().catch(() => null),
-    getAllianceRollerStatus(db).catch(() => null)
+    getAllianceRollerStatus(db).catch(() => null),
+    getPlayerRollerStatus(db).catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -237,6 +239,20 @@ export async function getOperationalStatus(db) {
       lastFailureAt: allianceRollerResult?.last_failure_at ? Number(allianceRollerResult.last_failure_at) : null,
       lastError: allianceRollerResult?.last_error || null,
       updatedAt: allianceRollerResult?.updated_at ? Number(allianceRollerResult.updated_at) : null
+    },
+    playerRoller: {
+      state: playerRollerResult ? "AVAILABLE" : "UNKNOWN",
+      catalogCursor: Number(playerRollerResult?.catalog_cursor || 0),
+      processedRuns: Number(playerRollerResult?.processed_runs || 0),
+      successCount: Number(playerRollerResult?.success_count || 0),
+      failedCount: Number(playerRollerResult?.failed_count || 0),
+      skippedCount: Number(playerRollerResult?.skipped_count || 0),
+      lastKid: playerRollerResult?.last_kid ?? null,
+      lastGovernorId: playerRollerResult?.last_governor_id ?? null,
+      lastSuccessAt: playerRollerResult?.last_success_at ? Number(playerRollerResult.last_success_at) : null,
+      lastFailureAt: playerRollerResult?.last_failure_at ? Number(playerRollerResult.last_failure_at) : null,
+      lastError: playerRollerResult?.last_error || null,
+      updatedAt: playerRollerResult?.updated_at ? Number(playerRollerResult.updated_at) : null
     },
     kingdomSeeder: {
       catalogRows: Number(kingdomSeederResult?.total || 0),
