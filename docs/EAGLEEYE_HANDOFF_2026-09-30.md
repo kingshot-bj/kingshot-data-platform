@@ -7065,3 +7065,64 @@ System Logも既存migration `0028_system_event_log.sql`をschema正本として
 - System Status / JSON observability: 完了
 - 残りは本番E2Eで実測確認する項目のみ。コード側のPhase 1実装は完了扱い。
 ---
+
+
+---
+# 97. 2026-10-04 Phase 1 observability completion / Phase 2 transition
+
+## 97-1. System Status UI補完
+
+Phase 1でSystem JSONへ追加済みだったAPI保護情報を、/statusのResource Safety画面にも表示するよう統一。
+
+表示追加:
+- Measured Reserve: minute/day
+- API Quota残量: aggregate remaining minute/day
+- Safety JSON / System Logにも同じ安全判定・再開条件があることを明示
+
+これによりPhase 1のDefinition of Done:
+- Feature
+- Worker/API
+- D1/R2
+- System Log
+- System Status
+- System JSON
+- stop reason / blocked_by / resume_condition
+
+のうち、Measured Reserveについて「JSONにはあるがStatus画面にない」という可視化差分を解消。
+
+コミット:
+- `f22aa9e1c52fdfebbf366d2a5a17ede34064cb06`
+
+## 97-2. Phase 1現状
+
+コード側のPhase 1実装は完了扱い。
+本番E2Eで確認が必要なのは引き続き:
+- 26並列時のGlobal Semaphore実測
+- acquire/releaseのD1 Rows Written増加
+- 180秒leaseの妥当性
+- expired slotの自動回収
+- System Status / System JSONのactive/available/recovery一致
+- API Pool Measured Reserveが実測値に基づき期待通り変化すること
+
+ユーザーの手動確認が必要になるまでは自動実装を継続する。
+
+## 97-3. Phase 2開始条件
+
+Phase 2 Data Collection Engineでは、既存王国ウォッチリストをコピーした新Crawlerは作らない。
+既存Watchlistの以下を共通収集基盤へ段階的に抽出・再利用する:
+- API Pool lease
+- Global Collection Semaphore
+- request retry / rate-limit handling
+- cancellation / resumable job
+- progress / wait metrics
+- System Log / Diagnostics
+- Safety Gate
+- R2 history / D1 current state separation
+
+最初の対象は「共通API収集プリミティブ」の抽出であり、挙動変更を最小化したまま既存Watchlistをその共通基盤へ接続する。
+
+Phase 2でも新機能追加時は必ず:
+**System Log + System Status + System JSON**
+へ反映する。
+
+---
