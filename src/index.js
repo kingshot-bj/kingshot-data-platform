@@ -3206,7 +3206,7 @@ async function renderAdminDiagnosticsPage(request, env) {
   try {
     [data, operational] = await Promise.all([
       getSystemDiagnostics(env.DB, { recentLimit: 100 }),
-      getOperationalStatus(env.DB)
+      getOperationalStatus(env.DB).catch(() => null)
     ]);
   } catch (error) {
     const message = String(error?.message || error);
