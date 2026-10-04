@@ -31,6 +31,7 @@ import { handleGatewayApi } from "./gateway-api.js";
 import { getOperationalStatus } from "./status-ops.js";
 import { buildSafetySnapshot, evaluateSafetyGate, SAFETY_PRIORITIES } from "./safety-gate.js";
 import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
+import { collectMightPulseThroughGuards, collectKingdomRanking, collectPlayerDetail } from "./data-collection-engine.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -871,7 +872,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         const requestLimiter = apiLimiter || globalCollectionLimiter;
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter;
         const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
-          env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING"
+          env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
+          { useGlobalSemaphore: !apiLimiter, globalLimiter: apiLimiter?.globalLimiter || null }
         ));
         return { board, traceId, startedAtMs, fetched };
       } catch (error) {
@@ -5320,99 +5322,36 @@ async function fetchThroughWatchlistApiPool(env, {
   targetId,
   purpose,
   include = null,
-  query = null
+  query = null,
+  useGlobalSemaphore = true
 }) {
-  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
-  let lease = null;
-  let poolType = null;
-  const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-  try {
-    lease = await leaseApiKey(env.DB, {
-      poolTypes: automaticPoolTypes,
-      purpose,
-      targetType,
-      targetId
-    });
-    poolType = lease.pool_type;
-    if (!lease) {
-      const availability = await getApiPoolAvailability(env.DB, {
-        provider: "MIGHTPULSE",
-        poolTypes: automaticPoolTypes
-      });
-      const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
-      const error = new Error("NO_API_POOL_KEY_AVAILABLE");
-      error.code = "NO_API_POOL_KEY_AVAILABLE";
-      error.poolAvailability = availability;
-      error.userMessage = exhaustedByLease
-        ? "現在、利用可能なAPIキーがすべて処理中（リース中）のため更新できません。キー自体の無効化とは限りません。しばらく待ってから再試行してください。"
-        : "現在、利用可能なMightPulse APIキーを確保できません。キーの無効化・クールダウン等の状態を確認してください。";
-      throw error;
-    }
-
-    const result = await mightPulseFetch(env, path, {
-      query: query || (include ? { include } : undefined),
-      apiKey: lease.api_key
-    });
-
-    await recordApiPoolSuccess(env.DB, {
-      keyId: lease.key_id,
-      leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-      endpoint,
-      targetType,
-      targetId,
-      purpose,
-      httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
-    });
-
-    return { result, pool_type: poolType, key_id: lease.key_id };
-  } catch (error) {
-    if (lease) {
-      const status = Number(error?.status || 0);
-      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
-      const disable = status === 401 || status === 403;
-      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
-      await recordApiPoolFailure(env.DB, {
-        keyId: lease.key_id,
-        leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-        endpoint,
-        targetType,
-        targetId,
-        purpose,
-        httpStatus: status,
-        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-        errorMessage: error?.message || null,
-        cooldownSeconds: cooldown,
-        disable,
-        keepAvailable
-      });
-    }
-    throw error;
-  }
-}
-
-async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING") {
-  return fetchThroughWatchlistApiPool(env, {
-    path: `/kingdoms/${encodeURIComponent(kid)}/ranks`,
-    endpoint: "/kingdoms/:kid/ranks",
-    targetType: "KINGDOM",
-    targetId: String(kid),
+  return collectMightPulseThroughGuards(env, {
+    path,
+    endpoint,
+    targetType,
+    targetId,
     purpose,
-    query: { board, limit }
+    include,
+    query,
+    globalLimiter: useGlobalSemaphore ? null : null,
+    useGlobalSemaphore
   });
 }
 
-async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGDOM_WATCHLIST_PLAYER") {
-  return fetchThroughWatchlistApiPool(env, {
-    path: `/players/${encodeURIComponent(governorId)}`,
-    endpoint: "/players/:governor_id",
-    targetType: "PLAYER",
-    targetId: String(governorId),
+async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING", options = {}) {
+  return collectKingdomRanking(env, kid, board, {
+    limit,
     purpose,
-    query: { include: "base,heroes,ranks,gov_gear" }
+    globalLimiter: options.globalLimiter || null,
+    useGlobalSemaphore: options.useGlobalSemaphore !== false
+  });
+}
+
+async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGDOM_WATCHLIST_PLAYER", options = {}) {
+  return collectPlayerDetail(env, governorId, {
+    purpose,
+    globalLimiter: options.globalLimiter || null,
+    useGlobalSemaphore: options.useGlobalSemaphore !== false
   });
 }
 
