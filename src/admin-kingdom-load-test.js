@@ -206,6 +206,41 @@ export async function handleOwnerKingdomLoadTestExportApi(request, env) {
   } catch(error) { return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_EXPORT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8"}}); }
 }
 
+export async function handleLoadTestNoticeStatusApi(request, env) {
+  if (request.method !== "GET") {
+    return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), {
+      status:405,
+      headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}
+    });
+  }
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare(
+      "SELECT lock_until, updated_at FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
+    ).bind(LOAD_TEST_LOCK_KEY, now).first().catch(() => null);
+    return new Response(JSON.stringify({
+      ok:true,
+      active:Boolean(row),
+      updated_at:row?.updated_at ? Number(row.updated_at) : null,
+      expires_at:row?.lock_until ? Number(row.lock_until) : null
+    }), {
+      headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}
+    });
+  } catch (error) {
+    console.error("load_test_notice_status_failed", error?.message || error);
+    // The notice must never break the public home page. If the coordination
+    // state cannot be read, hide the notice rather than exposing internal data.
+    return new Response(JSON.stringify({
+      ok:false,
+      active:false,
+      error:"LOAD_TEST_NOTICE_UNAVAILABLE"
+    }), {
+      status:200,
+      headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}
+    });
+  }
+}
+
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
