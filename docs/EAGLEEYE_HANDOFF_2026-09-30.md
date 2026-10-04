@@ -8019,3 +8019,130 @@ Alliance / Playerは、全件を常時最新にすることを目的としない
 14. R2障害時Emergency Buffer復旧
 
 **ここから先は、ユーザー操作が必要な本番E2E項目に到達した場合のみ確認を依頼する。**
+
+# 103. 2026-10-04 Phase 2 — Alliance / Player Roller実装状況
+
+## 103-1. Alliance Roller
+
+Allianceは既存の `kingdom_ranking_current` から発見する。
+
+対象:
+- `alliance_power`
+- `alliance_kills`
+
+発見した `kid + alliance identifier + abbr` を `alliance_catalog` に登録し、その後MightPulseの:
+
+```
+/alliances/{kid}/{tag}?include=info,roster
+```
+
+を共通Data Collection Engine経由で取得する。
+
+1回のAPI取得でAlliance infoとrosterをまとめて取得し、無駄な個別API取得を行わない。
+
+変更がある場合のみ:
+- `alliance_catalog` Current更新
+- R2履歴保存
+- `change_events` 記録
+
+R2失敗時はHistory Emergency Bufferへ退避する。
+
+## 103-2. Player Roller
+
+Playerは `kingdom_ranking_current` の `personal_power` から発見する。
+
+既にPlayer Currentが存在し、Background Freshness（3600秒）以内なら定期Rollerでは再取得しない。
+
+未登録または古いPlayerだけを対象に:
+
+```
+/players/{governor_id}?include=base,heroes,ranks,gov_gear
+```
+
+を1回で取得する。
+
+取得後:
+- API observation保存
+- Player Current materialize
+- 必要な履歴保存
+- System Log
+- Diagnostic
+
+まで共通処理として実行する。
+
+## 103-3. Background予算配分
+
+現在のBackground Collectionは固定10件ではなく、API安全残量から動的に配分する。
+
+最大構成:
+
+- Catalog Discovery: 1
+- Kingdom Seeder: 2
+- Alliance Roller: 5
+- Player Roller: 5
+- Kingdom Ranking Roller: 26
+
+合計最大39 requests / background batch。
+
+Safety Gateはこのplanned request数を事前評価し、Measured Reserveと通常利用保護を維持する。
+
+十分な余力がある場合はRankingを最大26 boardsまで使用する。
+
+## 103-4. 重要な設計思想
+
+Alliance / Player Rollerは「全件を常時最新化する」ためだけの処理ではない。
+
+主目的は:
+- 一度でも発見した対象をEagleEyeの検索可能資産にする
+- IDを確保する
+- Current情報を作る
+- ユーザーアクセス時のOn-demand最新取得につなげる
+
+である。
+
+そのため、既に十分新しいPlayerを定期Rollerで再取得するような無駄処理は避ける。
+
+## 103-5. 本番前に発見した修正
+
+Alliance Roller実装確認中、`alliance_collection_state` が `state` 列を使用しているにもかかわらず初期migrationに列が無い不整合を発見。
+
+修正:
+- `migrations/0043_alliance_collection_state.sql`
+- Alliance Rollerのstate永続化
+- System StatusのAlliance Roller state表示
+
+を追加。
+
+本番E2E前に修正済み。
+
+## 103-6. System Status / JSON
+
+System Statusには既存の「データ収集基盤」カードがあり、以下を表示可能:
+
+- Kingdom Discovery
+- Kingdom Seeder
+- Alliance Roller
+- Player Roller
+- Ranking Roller
+- Global Collection Semaphore
+
+System JSON側でもAlliance / Player / Rankingの状態を返す。
+
+したがって、新機能追加時に「裏では動いているが運用画面から状態が分からない」状態を作らない。
+
+## 103-7. 今後のE2E確認
+
+本番E2Eでは最低限:
+
+1. Allianceランキングから候補を発見できる
+2. Alliance Catalogへ登録される
+3. Alliance info + roster取得が成功する
+4. R2履歴が作成される
+5. 変更時だけCurrent/Change Event/Historyが更新される
+6. Playerランキングから候補を発見できる
+7. Player Detailを1 APIで取得できる
+8. Freshness内のPlayerを不要再取得しない
+9. System Status / System JSONで各Rollerの状態を確認できる
+10. API残量が十分ならRanking最大26 boardsまで拡張される
+
+を確認する。
