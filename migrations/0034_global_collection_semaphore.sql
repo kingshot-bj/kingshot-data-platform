@@ -7,5 +7,5 @@ CREATE TABLE IF NOT EXISTS collection_semaphore (
 );
 
 INSERT INTO collection_semaphore (semaphore_key, capacity, active_count, updated_at)
-VALUES ('GLOBAL_API', 26, 0, strftime('%s','now'))
+VALUES ('GLOBAL_API', 1000, 0, strftime('%s','now'))
 ON CONFLICT(semaphore_key) DO NOTHING;
