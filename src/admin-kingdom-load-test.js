@@ -559,10 +559,12 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     // MightPulse request still goes through the real API Pool lease/release path.
     apiLimiter.globalLimiter = null;
     let completed=0,success=0,failed=0;
+    let lastProgressSnapshot=null;
+    let lastSystemHeartbeatAt=0;
     metricsTimer=setInterval(()=>{persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});},2000);
     const questProgressByKid=new Map(),questTotalByKid=new Map(kids.map(kid=>[Number(kid),26+topN]));
     const getQuestProgress=()=>{let completedQuests=0,totalQuests=0;for(const kid of kids){const item=questProgressByKid.get(Number(kid))||{};completedQuests+=Number(item.completed||0);totalQuests+=Number(questTotalByKid.get(Number(kid))||26+topN);}return {completed_quests:completedQuests,total_quests:totalQuests,percent:totalQuests?Math.min(100,Math.round(completedQuests/totalQuests*100)):0};};
-    heartbeatTimer=setInterval(()=>{const m=apiLimiter.snapshot(),q=getQuestProgress();send({type:"heartbeat",run_id:runId,target_count:kids.length,completed,success,failed,quest_completed:q.completed_quests,quest_total:q.total_quests,quest_percent:q.percent,api_concurrency:apiLimiter.capacity,api_active_count:m.active,api_waiting_count:m.waiting,api_pool_waiting_count:m.pool_waiting,api_wait_events:m.wait_events,api_pool_wait_events:m.pool_wait_events,api_wait_ms:m.total_wait_ms,api_pool_wait_ms:m.pool_wait_ms,api_wait_min_ms:m.min_wait_ms,api_wait_max_ms:m.max_wait_ms,api_wait_buckets_json:JSON.stringify(m.wait_buckets||{})});},2000);
+    heartbeatTimer=setInterval(()=>{const m=apiLimiter.snapshot(),q=getQuestProgress();const nowSec=Math.floor(Date.now()/1000);send({type:"heartbeat",run_id:runId,target_count:kids.length,completed,success,failed,quest_completed:q.completed_quests,quest_total:q.total_quests,quest_percent:q.percent,api_concurrency:apiLimiter.capacity,api_active_count:m.active,api_waiting_count:m.waiting,api_pool_waiting_count:m.pool_waiting,api_wait_events:m.wait_events,api_pool_wait_events:m.pool_wait_events,api_wait_ms:m.total_wait_ms,api_pool_wait_ms:m.pool_wait_ms,api_wait_min_ms:m.min_wait_ms,api_wait_max_ms:m.max_wait_ms,api_wait_buckets_json:JSON.stringify(m.wait_buckets||{})});if(nowSec-lastSystemHeartbeatAt>=10){lastSystemHeartbeatAt=nowSec;recordSystemEvent(env.DB,{traceId:systemTraceId("load-progress"),parentTraceId:traceId,eventType:"PROGRESS",service:"load_test",feature:"owner_kingdom_load_test",operation:"HEARTBEAT",status:"RUNNING",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,startedAt:nowSec,completedAt:nowSec,elapsedMs:0,message:"王国Watchlist実処理負荷テスト進捗",metadata:{runId,traceId,targetCount:kids.length,completed,success,failed,questCompleted:q.completed_quests,questTotal:q.total_quests,questPercent:q.percent,apiConcurrency:apiLimiter.capacity,apiActiveCount:m.active,apiWaitingCount:m.waiting,apiPoolWaitingCount:m.pool_waiting,apiWaitEvents:m.wait_events,apiPoolWaitEvents:m.pool_wait_events,apiWaitMs:m.total_wait_ms,apiPoolWaitMs:m.pool_wait_ms,apiWaitMinMs:m.min_wait_ms,apiWaitMaxMs:m.max_wait_ms,lastProgress:lastProgressSnapshot,lastProgressAgeSeconds:lastProgressSnapshot?Math.max(0,nowSec-Number(lastProgressSnapshot.updated_at||nowSec)):null}}).catch(()=>{});}},2000);
     const results=await runWithConcurrency(
       kids,
       concurrency,
@@ -574,6 +576,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
         processJob,
         async progress => {
           const kidNumber=Number(progress.kid);
+          lastProgressSnapshot={kid:kidNumber,phase:String(progress.phase||""),board_index:Number(progress.board_index||0),player_cursor:Number(progress.player_cursor||0),player_count:Number(progress.player_count||0),updated_at:Math.floor(Date.now()/1000)};
           const boardCompleted=Math.min(26,Math.max(0,Number(progress.board_index||0)));
           const playerCompleted=Math.max(0,Number(progress.player_cursor||0));
           const playerCount=Number(progress.player_count);
