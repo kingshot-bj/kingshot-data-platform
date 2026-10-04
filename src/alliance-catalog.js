@@ -28,6 +28,7 @@ export async function runAllianceRoller(env, {
 
   const limit = Math.min(26, Math.max(1, Number(maxTargets) || DEFAULT_TARGETS_PER_RUN));
   const startedAt = now();
+  const startedAtMs = Date.now();
   const traceId = systemTraceId("alliance-roller");
 
   const state = await db.prepare(
@@ -38,7 +39,11 @@ export async function runAllianceRoller(env, {
   const lastAid = String(state?.last_aid || "");
 
   const candidates = await db.prepare(
-    "SELECT kid, target_id AS aid, MAX(abbr) AS abbr, MAX(name) AS name, MAX(score) AS power, MIN(rank) AS power_rank " +
+    "SELECT kid, target_id AS aid, " +
+    "COALESCE(MAX(CASE WHEN board = 'alliance_power' THEN abbr END), MAX(abbr)) AS abbr, " +
+    "COALESCE(MAX(CASE WHEN board = 'alliance_power' THEN name END), MAX(name)) AS name, " +
+    "COALESCE(MAX(CASE WHEN board = 'alliance_power' THEN score END), MAX(score)) AS power, " +
+    "COALESCE(MIN(CASE WHEN board = 'alliance_power' THEN rank END), MIN(rank)) AS power_rank " +
     "FROM kingdom_ranking_current " +
     "WHERE target_type = 'ALLIANCE' AND board IN ('alliance_power','alliance_kills') " +
     "AND abbr IS NOT NULL AND TRIM(abbr) <> '' " +
@@ -240,7 +245,7 @@ export async function runAllianceRoller(env, {
         targetId: String(result.value.aid),
         rowsReceived: result.value.memberCount ?? 0,
         rowsSaved: result.value.changed ? 1 : 0,
-        elapsedMs: Math.max(0, Date.now() - startedAt),
+        elapsedMs: Math.max(0, Date.now() - startedAtMs),
         message: "Alliance info / roster取得・Catalog保存成功。",
         metadata: { kid: result.value.kid, abbr: result.value.abbr }
       }).catch(() => {});
