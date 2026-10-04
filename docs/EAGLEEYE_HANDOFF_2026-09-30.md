@@ -7198,3 +7198,77 @@ API Pool leaseとGlobal Semaphoreの順序を共通化し、将来のCatalog / S
 を対象に、bounded pagination / current-state保存 / R2 historyを前提に実装する。
 
 ---
+
+
+---
+# 99. 2026-10-04 Phase 2 — Kingdom Catalog / Discovery foundation
+
+## 99-1. Schema
+
+追加 migration:
+- `0037_kingdom_catalog.sql`
+
+追加テーブル:
+- `kingdom_catalog`: 発見済み王国のcurrent catalog
+- `kingdom_catalog_discovery`: bounded paginationの進捗・停止・失敗状態
+
+Discovery初期値:
+- page=1
+- page size=24
+- 1 Cron = 1 page
+
+## 99-2. Discovery Engine
+
+追加:
+- `src/kingdom-catalog.js`
+
+公式APIで確認済みの `/kingdoms?page=&size=` を使用。
+レスポンス形状は `kingdoms/items/results/data` の候補をboundedに解釈し、王国IDを正規化。
+
+重要なリソース制御:
+- Common Data Collection Engineを使用
+- API Pool leaseを使用
+- Global Collection Semaphoreを使用
+- Safety GateをCron単位で評価
+- measured API reserveをSafety Gateへ渡す
+- normal-use key reserveとして1 keyを確保
+- 1回のCronで1ページのみ処理
+- 最大24王国/ページ
+- 王国ごとの存在確認SELECTは行わず、batch upsertでD1 readを増やさない
+
+## 99-3. System Observability
+
+Discovery実行時に:
+- System Log: START / COMPLETE / ERROR / BLOCKED
+- Diagnostics: SUCCESS / FAILED
+- Discovery state: IDLE / RUNNING / FAILED / PAUSED
+
+Status JSONへ:
+- nextPage
+- pageSize
+- pagesChecked
+- kingdomsSeen
+- catalogTotal
+- catalogActive
+- lastPageAt
+- lastSuccessAt
+- lastError
+
+を公開。
+
+## 99-4. コミット
+
+- `1a94d7c55ec794aafdd87d59d6caf3124da8685` — Kingdom Catalog schema
+- `45a45fc7cb07daab3f1034634837ee9a040d2049` — bounded discovery implementation
+- `4807cf8784cc634f5e6525fb252b6acb0d4c4420` — remove per-kingdom catalog reads
+- `7a92eb7e8baf10df27c6b6dfcdee0090cad5914d` — scheduled discovery
+- `d39964cfbd782fcfa2af7fac7918c40552604ce0` — API budget helper import
+- `ceca6df36acbb3fecefa579aab9a6aa1036d7a83` — operational status exposure
+- `da4a4fd11d57faf65d14776a6e4d29bdd08fbcea` — measured reserve Safety Gate integration
+
+## 99-5. 次段階
+
+次はCatalogから対象王国を選択して、`/kingdoms/{kid}` と `/kingdoms/{kid}?include=boards&limit=100` のcurrent stateを取得するKingdom Seederへ進む。
+Seederも1回の実行でbounded target数だけ処理し、D1 current state / R2 history / System Log / Status JSONを一体で更新する。
+
+---
