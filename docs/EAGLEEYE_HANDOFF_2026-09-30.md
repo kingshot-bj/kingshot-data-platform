@@ -8727,3 +8727,32 @@ commit:
 これにより次回実機テストでは「なぜ開始できなかったか」を画面上で特定できる。
 
 なお、Load Test本体の開始成功はこの時点では未確認。
+
+
+---
+
+# 2026-10-05 追加 — OWNER王国負荷テスト Safety Gate 修正
+
+## #110 Load Test開始時のSafety Gate誤ブロック修正
+
+- 本番Owner Controlの「王国Watchlist実処理負荷テスト」で、20王国・上位10人の場合にUIが
+  「APIクエスト 0 / 720 (0%)」のまま開始失敗する事象を確認。
+- 原因:
+  - `src/admin-kingdom-load-test.js` が Safety Gate の `plannedRequests` に
+    `王国数 × (26ランキング + topNプレイヤー)` の全予定リクエスト数を渡していた。
+  - Safety Gateはその全件を「今すぐ消費する」前提でAPI分間/日次予算を判定するため、実際にはAPI Poolが順次処理する負荷テストまで開始前にブロックしていた。
+- 修正:
+  - Load Test開始時のSafety Gate `plannedRequests` を `1` に変更。
+  - 実処理中のAPI容量制御は既存のAPI Pool lease + Load Test API limiter + global collection semaphoreに任せる。
+  - 通常利用保護1本、Cloudflare HARD_STOP、API Poolの実際のリース失敗等は引き続き安全装置として機能する。
+- 同時にLoad Test履歴/CSV APIのDB互換性を改善:
+  - `kingdom_load_test_runs` の列追加migration有無で履歴取得が壊れないよう、履歴/CSV取得を `SELECT *` ベースへ変更。
+- Commit: `37a751b9baa61015177449fa76cf9f5f9d58ed77`
+- **本番E2E確認: 未実施。**
+- 次の確認:
+  1. Cloudflare deploy完了
+  2. OWNER Load Testを20王国・top10で開始
+  3. 0/720から実際に進捗することを確認
+  4. API同時処理数がAvailable Pool - 通常利用保護1本になることを確認
+  5. 履歴が表示されることを確認
+  6. 完了後にSystem Status / System JSON / System Logにも結果が反映されることを確認
