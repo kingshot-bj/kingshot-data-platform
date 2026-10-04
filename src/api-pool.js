@@ -150,7 +150,7 @@ export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null
   await recordSystemEvent(db, { traceId:traceId || jobId || systemTraceId("pool"), parentTraceId, startedAt:startedAt || now, completedAt:completedAt || now, eventType:"API_SUCCESS", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"SUCCESS", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, leaseId:leaseId || null, traceId:traceId || null, runId:runId || null } });
 }
 
-export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false, traceId = null, startedAt = null, completedAt = null } = {}) {
+export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 0, errorCode = null, errorMessage = null, cooldownSeconds = 0, disable = false, keepAvailable = false, traceId = null, parentTraceId = null, runId = null, startedAt = null, completedAt = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : keepAvailable ? "AVAILABLE" : "ERROR";
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
