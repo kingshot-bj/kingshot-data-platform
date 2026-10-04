@@ -5252,6 +5252,7 @@ async function fetchThroughWatchlistApiPool(env, {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
   let poolType = null;
+  const requestStartedAt = Math.floor(Date.now() / 1000);
   const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
   try {
     let lastNoKeyError = null;
@@ -5307,6 +5308,8 @@ async function fetchThroughWatchlistApiPool(env, {
       purpose,
       httpStatus: result.status,
       traceId,
+      startedAt: requestStartedAt,
+      completedAt: Math.floor(Date.now() / 1000),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
       remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
     });
@@ -5328,6 +5331,8 @@ async function fetchThroughWatchlistApiPool(env, {
         purpose,
         httpStatus: status,
         traceId,
+        startedAt: requestStartedAt,
+        completedAt: Math.floor(Date.now() / 1000),
         errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
