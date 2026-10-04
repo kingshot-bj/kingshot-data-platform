@@ -6299,3 +6299,278 @@ Phase 1へ入る前にAPI Pool、Load Test、Cloudflare Monitoring、System Stat
 
 さらに:
 > 追加機能についてSystem Status + System JSONだけで、何が動いているか、どこまで進んだか、なぜ止まったか、いつ再開できるかを確認できる状態にする。
+
+---
+# 87. 2026-10-04 Phase 0 — MightPulse Feature Matrix 初版
+
+## 87-1. 調査基準
+
+公式MightPulse API仕様を2026-10-04時点で確認。
+
+公式:
+- https://api.mightpulse.com/
+- https://www.mightpulse.com/
+
+API仕様で確認できた範囲:
+- Player
+- Alliance
+- Kingdom
+- Kingdom Rankings
+- Player base / heroes / ranks / gov_gear
+- Alliance info / roster
+- Kingdom list / detail / rankings
+- 1 keyあたり60 requests/minute、5,000 requests/day
+- Mighty連携keyは120 requests/minute、10,000 requests/day
+- Player / Alliance responseは最大60分古い可能性あり
+- stale sectionは更新待ち最大90秒
+- 同一Player/Allianceへの同時requestは更新結果を共有
+- 429はrate limit超過
+
+このため、EagleEyeでは「Webに表示される = APIで直接取得できる」とは扱わない。
+公開APIで明示されたendpoint / fieldだけをFeature Matrix上の取得可能判定とする。
+
+## 87-2. API Feature Matrix
+
+| Feature | MightPulse Web | 公開API | EagleEye現状 | Phase | 履歴価値 | API Cost | Safety |
+|---|---|---|---|---|---|---|---|
+| Kingdom一覧 / Discovery | YES | YES /v1/kingdoms | 未実装 | 3 | HIGH | 1 req/page | HIGH |
+| Kingdom基本情報 | YES | YES /v1/kingdoms/{kid} | 一部Watchlist経由 | 3/4 | HIGH | 1 req | HIGH |
+| Kingdom ranking | YES | YES /ranks | 実装済み | 既存/2 | HIGH | 1 req/board | HIGH |
+| Kingdom board一覧 | YES | YES include=boards | 実装済み相当 | 既存/2 | HIGH | 1 req | HIGH |
+| Alliance基本情報 | YES | YES /alliances/{kid}/{tag}?include=info | 一部実装 | 5 | HIGH | 1 req | HIGH |
+| Alliance roster | YES | YES include=roster | 一部実装 | 5 | HIGH | 1 req | CRITICAL |
+| Player base | YES | YES /players/{id}?include=base | 実装済み | 既存/2/6 | HIGH | 1 req | HIGH |
+| Player heroes | YES | YES include=heroes | 実装済み/role制御あり | 既存/6 | HIGH | 1 req | CRITICAL |
+| Player ranks | YES | YES include=ranks | 実装済み | 既存/6 | HIGH | 1 req | HIGH |
+| Governor gear | YES | YES include=gov_gear | 実装済み/role制御あり | 既存/6 | HIGH | 1 req | CRITICAL |
+| Player Record | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | HIGH | TBD | HIGH |
+| KvK | YES | Kingdom endpointの明示fieldとして未確認 | 未実装/一部Web表示のみ | 7 / 要再確認 | HIGH | TBD | HIGH |
+| Momentum | YES | Kingdom endpointの明示fieldとして未確認 | 未実装 | 7 / 要再確認 | HIGH | TBD | HIGH |
+| Castle Battle History | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | HIGH | TBD | HIGH |
+| Appointments / Ministers | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | MEDIUM | TBD | HIGH |
+| Offenders | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | MEDIUM | TBD | HIGH |
+| Events | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | MEDIUM | TBD | HIGH |
+| New this week | YES | 公開API仕様で独立endpoint未確認 | 未実装 | 7 / 要再確認 | MEDIUM | TBD | HIGH |
+| Map / coordinates | YES | Player base x/yあり | Player baseで取得可能 | 6 | MEDIUM | player 1 req | HIGH |
+| VIP | YES | Player base vipあり | 実装/visibility制御あり | 既存 | MEDIUM | player 1 req | HIGH |
+| Alliance abbreviation | YES | Player base alliance.abbrあり | 実装 | 既存/6 | HIGH | player 1 req | HIGH |
+| Hero total / hero power | YES | Player heroes + ranks / Kingdom board | 一部実装 | 6 | HIGH | 1 req | HIGH |
+| Hero highest level | YES | heroes sectionから算出可能 | 要実装確認 | 6 | HIGH | 1 req | HIGH |
+| Main hero | YES | heroes position等から判定候補 | 要実装確認 | 6 | HIGH | 1 req | HIGH |
+| Hero equipment | YES | heroes.gear / exclusive_gear | 実装/role制御あり | 既存/6 | HIGH | 1 req | CRITICAL |
+| Governor equipment | YES | gov_gear | 実装/role制御あり | 既存/6 | HIGH | 1 req | CRITICAL |
+| Alliance power/kills ranking | YES | Kingdom ranks | 実装済み | 既存 | HIGH | 1 req/board | HIGH |
+| Ranking change | YES/EagleEye | Current + history | 実装済み | 既存 | CRITICAL | current read + archive | HIGH |
+| Watchlist | EagleEye独自 | API利用 | 実装済み | 既存 | CRITICAL | bounded | CRITICAL |
+| Load Test | EagleEye独自 | API利用 | 実装済み | 既存/2 | LOW | HIGH | CRITICAL |
+| Cross-kingdom analysis | EagleEye独自 | 複数API | 未実装 | 8 | CRITICAL | VERY HIGH | CRITICAL |
+| Cross-alliance analysis | EagleEye独自 | 複数API | 未実装 | 8 | CRITICAL | HIGH | CRITICAL |
+| Anomaly detection | EagleEye独自 | 蓄積データ | 未実装 | 8 | CRITICAL | LOW after data | MEDIUM |
+| Prediction | EagleEye独自 | 蓄積データ | 未実装 | 8 | CRITICAL | LOW after data | MEDIUM |
+
+## 87-3. Kingdom Rankingの公開APIと既存EagleEyeの対応
+
+公開APIで明示されたboard:
+- alliance_power
+- alliance_kills
+- personal_power
+- kills
+- town_center
+- rebel_conquest
+- single_hero
+- hero_total
+- troop_power
+- building_power
+- research_power
+- hero_no_equip
+- hero_equip
+- gov_gear
+- gov_charm
+- pet_power
+- island_prosperity
+- migrant_score
+- mystic_trial
+- coliseum
+- forest_of_life
+- crystal_cave
+- knowledge_nexus
+- molten_fort
+- radiant_spire
+- master_power
+
+既存src/ranking-catalog.jsには上記26 boardが存在。
+ただし:
+- VERIFIED
+- PROVISIONAL
+
+が混在しているため、Phase 0でAPI仕様との照合結果を正本として更新する。
+特にPROVISIONAL項目は「API存在未確認」ではなく「EagleEye内部の検証状態」として整理する。
+
+## 87-4. API costの基本モデル
+
+公式仕様上、通常keyは:
+- 60 req/min
+- 5,000 req/day
+
+Mighty keyは:
+- 120 req/min
+- 10,000 req/day
+
+また、Player/Allianceのsectionが60分以上古い場合、MightPulse側更新待ち最大90秒が発生する。
+
+したがってplanned consumptionは単純なrequest数だけでは不十分。
+
+最低限:
+- request count
+- key count
+- per-key minute quota
+- per-key daily quota
+- remaining_minute
+- remaining_day
+- expected stale-refresh risk
+- endpoint type
+- concurrency
+- expected wait
+- retry allowance
+- emergency reserve
+
+を考慮する。
+
+特にPlayer Rollerは:
+- Player base
+- heroes
+- ranks
+- gov_gear
+
+を1 requestにまとめられるため、section分割して4 requestにしない。
+現行API仕様のinclude方式を基本とする。
+
+## 87-5. Feature分類
+
+### BASIC候補
+- Kingdom基本情報
+- Player base
+- VIP
+- coordinates
+- alliance基本情報
+- basic ranking
+
+### ADVANCED候補
+- Player ranks
+- heroes
+- hero equipment
+- governor gear
+- detailed ranking
+- alliance roster
+
+### ADMIN候補
+- bulk collection
+- historical aggregation
+- operational monitoring
+- load test
+- system diagnostics
+
+### EagleEye独自
+- Kingdom Discovery
+- Catalog
+- Seeder
+- Roller
+- cross-kingdom
+- cross-alliance
+- historical comparison
+- anomaly detection
+- prediction
+- ranking change analytics
+
+実際のrole公開範囲は既存PLAYER_VISIBILITY_ITEMSと照合して決定する。
+Feature Matrixとrole matrixを混同しない。
+
+## 87-6. Phase 0で確定したこと
+
+1. **Kingdom Discoveryは公開APIで実現可能**
+   - /v1/kingdoms
+   - opened_on
+   - kid
+   - activity/power等
+   をCatalog同期のsourceとする。
+
+2. **Kingdom Seederは公開APIだけで実現可能**
+   - Kingdom detail
+   - Kingdom ranks
+   をbounded収集する。
+
+3. **Alliance Rollerは公開APIで実現可能**
+   - Kingdom rankingのAlliance boardから対象Allianceを発見
+   - /v1/alliances/{kid}/{tag}?include=info,roster
+   でinfo/roster取得。
+
+4. **Player Rollerは公開APIで実現可能**
+   - kingdom_ranking_currentから対象Playerを発見
+   - /v1/players/{id}?include=base,heroes,ranks,gov_gear
+   を基本request単位とする。
+
+5. **ranking_snapshotsをPlayer discovery sourceとして使わない**
+   - current tableを利用。
+   - historyはR2中心。
+
+6. **Web-only機能は現時点で公開API機能として確定しない**
+   - KvK
+   - Momentum
+   - Castle Battle History
+   - Appointments
+   - Ministers
+   - Offenders
+   - Events
+   - New this week
+   - Player Record
+   についてはPhase 7でendpointの正式確認を行う。
+
+## 87-7. Phase 1 Safety Gateへの入力項目
+
+Feature MatrixからSafety Gateへ渡す分類:
+
+- feature_id
+- endpoint
+- request_weight
+- expected_requests
+- priority
+- freshness
+- history_required
+- d1_write_weight
+- r2_write_weight
+- api_key_quota_weight
+- stale_refresh_risk
+- normal_allowed
+- forced_allowed
+- load_test_allowed
+- minimum_reserve_required
+
+優先順位:
+1. Normal / Watchlist
+2. User-requested Forced
+3. Catalog Discovery
+4. Seeder
+5. Alliance Roller
+6. Player Roller
+7. Load Test
+
+ただしLoad Testが安全枠を消費して通常運用を圧迫する場合はSafety Gateが停止させる。
+
+## 87-8. Phase 0暫定判定
+
+**Phase 0は初版完了。**
+
+未確定として残す:
+- Web-only機能の公式API endpoint
+- API request単価がendpoint別に同一かどうかの実測
+- 429発生条件のkey単位詳細
+- Cloudflare D1/R2 write amplification
+- Player full-detailの実測応答サイズ
+- Alliance rosterの王国あたり件数と実測cost
+- Catalog全件同期のpagination実測
+- stale refresh発生率
+
+これらはPhase 1 Safety設計前の実測項目とする。
+
+公式API参照:
+- https://api.mightpulse.com/
