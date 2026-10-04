@@ -1,0 +1,97 @@
+name: EagleEye D1 Schema Reconciliation
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type RECONCILE_PRODUCTION to modify production D1"
+        required: true
+        type: string
+
+jobs:
+  reconcile-production-d1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Verify Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing."; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing."; exit 1; }
+
+      - name: Require explicit production confirmation
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "RECONCILE_PRODUCTION" || {
+            echo "::error::Refusing production D1 mutation. Type RECONCILE_PRODUCTION exactly.";
+            exit 1;
+          }
+
+      - name: Capture D1 Time Travel bookmark
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          wrangler d1 time-travel info eagleeye-db | tee d1-time-travel-before.txt
+
+      - name: Show migration state before reconciliation
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          wrangler d1 migrations list eagleeye-db --remote
+          wrangler d1 execute eagleeye-db --remote --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
+
+      - name: Reconcile existing production schema and migration history
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          node scripts/reconcile-d1-schema.mjs --apply
+
+      - name: Verify reconciled schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          wrangler d1 execute eagleeye-db --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_semaphore_slots';"
+          wrangler d1 execute eagleeye-db --remote --command "SELECT semaphore_key, COUNT(*) AS slot_count, MIN(slot_id) AS min_slot, MAX(slot_id) AS max_slot FROM collection_semaphore_slots GROUP BY semaphore_key;"
+          wrangler d1 execute eagleeye-db --remote --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id DESC LIMIT 40;"
+
+      - name: Verify no 0017-0043 migrations remain pending
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          OUT="$(wrangler d1 migrations list eagleeye-db --remote 2>&1)"
+          printf '%s\n' "$OUT"
+          if printf '%s\n' "$OUT" | grep -Eq '00(1[7-9]|2[0-9]|3[0-9]|4[0-3])_'; then
+            echo "::error::One or more reconciled migrations are still pending. Do not deploy or run the load test."
+            exit 1
+          fi
+
+      - name: Upload reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eagleeye-d1-schema-reconciliation
+          path: d1-time-travel-before.txt
+          if-no-files-found: ignore
