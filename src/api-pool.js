@@ -223,6 +223,41 @@ export async function getApiPoolBudgetSnapshot(db, {
   };
 }
 
+export async function getApiPoolMeasuredReserve(db, {
+  provider = PROVIDER,
+  poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
+  now = Math.floor(Date.now() / 1000)
+} = {}) {
+  const types = Array.isArray(poolTypes) && poolTypes.length
+    ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
+    : ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
+  const placeholders = types.map(() => "?").join(",");
+  const minuteRows = await db.prepare(
+    `SELECT (used_at / 60) AS minute_bucket, SUM(request_count) AS requests
+     FROM api_pool_usage
+     WHERE provider = ? AND pool_type IN (${placeholders}) AND used_at >= ? AND used_at <= ?
+       AND estimated = 0
+     GROUP BY minute_bucket ORDER BY requests DESC LIMIT 1`
+  ).bind(provider, ...types, now - 3600, now).first();
+  const dayRow = await db.prepare(
+    `SELECT COALESCE(SUM(request_count), 0) AS requests
+     FROM api_pool_usage
+     WHERE provider = ? AND pool_type IN (${placeholders}) AND used_at >= ? AND used_at <= ?
+       AND estimated = 0`
+  ).bind(provider, ...types, now - 86400, now).first();
+  const peakMinute = Math.max(0, Number(minuteRows?.requests || 0));
+  const usedDay = Math.max(0, Number(dayRow?.requests || 0));
+  const measuredMinuteReserve = Math.ceil(peakMinute * 0.20);
+  const measuredDayReserve = Math.ceil(usedDay * 0.05);
+  return {
+    peakMinuteRequests: peakMinute,
+    usedDayRequests: usedDay,
+    measuredMinuteReserve,
+    measuredDayReserve,
+    checkedAt: now
+  };
+}
+
 export async function getApiPoolAvailability(db, {
   provider = PROVIDER,
   poolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
