@@ -283,7 +283,9 @@ export async function getPlayerHistory(db, governorId, limit = 30, archiveBucket
 
 export async function getPlayerNameHistory(db, governorId, limit = 20) {
   if (!db) throw new Error("D1 database binding is not configured.");
-  await ensurePlayerIdentityHistorySchema(db);
+  // player_identity_history is created by migration 0014.
+  // Do not call an undefined runtime schema helper here; this read path must
+  // stay read-only and must not issue DDL on every player-detail request.
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
   const result = await db.prepare(
     `SELECT name, first_seen_at, last_seen_at, source_observation_id
