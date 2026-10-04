@@ -7868,6 +7868,7 @@ async function renderPublicStatusPage(request, env) {
     console.error("public_status_operational_unavailable", operationalResult.reason?.message || operationalResult.reason);
   }
   operational.safety = buildSafetySnapshot({ cloudflare: usage, availablePoolKeys: operational.apiPool?.availableKeys || 0, activeLeases: operational.apiPool?.activeLeases || 0, thresholds: { warningPercent: 70, criticalPercent: 85, hardStopPercent: 100 } });
+  operational.safety.collectionSemaphore = operational.collectionSemaphore || null;
 
   let data;
   if (diagnosticsResult.status === "fulfilled") {
@@ -7904,8 +7905,8 @@ async function renderPublicStatusPage(request, env) {
   const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
   const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
   const usageWarning = usage.status === "WARNING";
-  const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
-    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
+  const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical || ["HARD_STOP","CRITICAL"].includes(operational.safety?.state)
+    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、Safety Gate、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
     : usageWarning || data.overall === "DEGRADED" || watchlistWarning
       ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
       : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
@@ -7961,6 +7962,22 @@ async function renderPublicStatusPage(request, env) {
       <strong>${formatInt(statuses.AVAILABLE)} / ${formatInt(statuses.ERROR + statuses.COOLDOWN + statuses.DISABLED + statuses.REVOKED)}</strong>
     </div>`).join("") || '<div class="resource-note">APIキーが登録されていません。</div>';
   const latestKey = operational.apiPool.latestKey;
+  const safetyState = operational.safety?.state || "CAUTION";
+  const semaphore = operational.collectionSemaphore || operational.safety?.collectionSemaphore || null;
+  const safetyTone = safetyState === "HARD_STOP" || safetyState === "CRITICAL" ? "bad" : safetyState === "WARNING" || safetyState === "CAUTION" ? "warn" : "good";
+  const safetyLabel = safetyState === "HARD_STOP" ? "停止" : safetyState === "CRITICAL" ? "Critical" : safetyState === "WARNING" ? "Warning" : safetyState === "CAUTION" ? "要確認" : "正常";
+  const safetySection = `
+    <section class="section">
+      <h2>Resource Safety</h2>
+      <div class="card resource-card">
+        <div class="resource-head"><div><b>Safety Gate</b><small>Cloudflare使用率・API Pool・収集制御の共通安全判定</small></div><span class="state ${safetyTone}">${safetyLabel}</span></div>
+        <div class="resource-row"><div><b>現在の安全状態</b><small>最大Cloudflare使用率</small></div><strong>${escapeHtml(safetyState)} · ${operational.safety?.maxCloudflareUsagePercent == null ? "—" : formatPercent(operational.safety.maxCloudflareUsagePercent)}</strong></div>
+        <div class="resource-row"><div><b>Global Collection Semaphore</b><small>全Worker共通のAPI収集並列枠</small></div><strong>${semaphore?.active == null ? "—" : formatInt(semaphore.active)} / ${semaphore?.capacity == null ? "—" : formatInt(semaphore.capacity)}</strong></div>
+        <div class="resource-row"><div><b>利用可能な収集枠</b><small>Semaphore remaining</small></div><strong>${semaphore?.available == null ? "—" : formatInt(semaphore.available)}</strong></div>
+        <div class="resource-note">Safety Gateの停止理由・再開条件はSystem JSON / System Logにも記録します。</div>
+      </div>
+    </section>`;
+
   const apiPoolSection = `
     <section class="section">
       <h2>API Pool Health</h2>
@@ -8205,7 +8222,7 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
 
-  const operationalSection = apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + r2ObjectInventorySection + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
+  const operationalSection = safetySection + apiPoolSection + mightPulseSection + watchlistSection + databaseSection + r2Section + r2ObjectInventorySection + googleSection + runtimeSection + queryInsightsSection + runtimeConfigSection + workerDetailSection + r2DetailSection + d1QueryDetailSection + diagnosticsDetailSection;
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
