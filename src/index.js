@@ -3795,6 +3795,7 @@ async function handleGoogleDriveOAuthCallback(request, env) {
   }
 }
 
+export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     try {
