@@ -36,6 +36,7 @@ import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
+import { runPlayerRoller } from "./player-roller.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -3846,22 +3847,23 @@ export default {
       // Background collection uses the actual remaining API budget instead of
       // a fixed low throughput. Catalog(1) + Seeder(max 2) are the fixed
       // discovery/current-state cost; the remaining safe budget is allocated
-      // to Alliance Roller (up to 5) and Ranking Roller (up to all 26 boards for the current kingdom).
+      // to Alliance Roller (up to 5), Player Roller (up to 5), and Ranking Roller (up to all 26 boards for the current kingdom).
       const fixedBackgroundRequests = 3;
       const minuteBudget = catalogBudget?.remainingMinute == null
-        ? 31
+        ? 36
         : Math.max(0, Math.floor(Number(catalogBudget.remainingMinute) - 1 - Number(catalogBudget.measuredReserveMinute || 5)));
       const dayBudget = catalogBudget?.remainingDay == null
-        ? 31
+        ? 36
         : Math.max(0, Math.floor(Number(catalogBudget.remainingDay) - 1 - Number(catalogBudget.measuredReserveDay || 50)));
       const variableBackgroundBudget = Math.min(
-        31,
+        36,
         Math.max(0, minuteBudget - fixedBackgroundRequests),
         Math.max(0, dayBudget - fixedBackgroundRequests)
       );
       const allianceRequestsBudget = Math.min(5, variableBackgroundBudget);
-      const rankingBoardsBudget = Math.min(26, Math.max(0, variableBackgroundBudget - allianceRequestsBudget));
-      const plannedBackgroundRequests = fixedBackgroundRequests + allianceRequestsBudget + rankingBoardsBudget;
+      const playerRequestsBudget = Math.min(5, Math.max(0, variableBackgroundBudget - allianceRequestsBudget));
+      const rankingBoardsBudget = Math.min(26, Math.max(0, variableBackgroundBudget - allianceRequestsBudget - playerRequestsBudget));
+      const plannedBackgroundRequests = fixedBackgroundRequests + allianceRequestsBudget + playerRequestsBudget + rankingBoardsBudget;
       const safety = evaluateSafetyGate({
         operation: "KINGDOM_BACKGROUND_COLLECTION",
         priority: SAFETY_PRIORITIES.CATALOG,
@@ -3882,6 +3884,9 @@ export default {
         await runKingdomSeeder(env, { maxTargets: 2 });
         if (allianceRequestsBudget > 0) {
           await runAllianceRoller(env, { maxTargets: allianceRequestsBudget });
+        }
+        if (playerRequestsBudget > 0) {
+          await runPlayerRoller(env, { maxTargets: playerRequestsBudget });
         }
         if (rankingBoardsBudget > 0) {
           await runKingdomRankingRoller(env, {
@@ -3904,6 +3909,7 @@ export default {
               dayBudget,
               variableBackgroundBudget,
               allianceRequestsBudget,
+              playerRequestsBudget,
               rankingBoardsBudget,
               remainingMinute: catalogBudget?.remainingMinute ?? null,
               remainingDay: catalogBudget?.remainingDay ?? null
@@ -3920,7 +3926,7 @@ export default {
           status: "PAUSED",
           errorCode: safety.blockedBy || "SAFETY_GATE_BLOCKED",
           message: "Kingdom Catalog / Seeder / Ranking RollerをSafety Gateが停止しました。",
-          metadata: { state: safety.state, reasons: safety.reasons, resumeCondition: safety.resumeCondition, plannedBackgroundRequests, allianceRequestsBudget, rankingBoardsBudget }
+          metadata: { state: safety.state, reasons: safety.reasons, resumeCondition: safety.resumeCondition, plannedBackgroundRequests, allianceRequestsBudget, playerRequestsBudget, rankingBoardsBudget }
         }).catch(() => {});
       }
     } catch (error) {
