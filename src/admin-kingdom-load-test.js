@@ -59,6 +59,41 @@ async function clearLoadTestCancellation(db, runId) {
   ).bind("LOAD_TEST_CANCEL", "CANCEL:" + runId).run().catch(() => {});
 }
 
+async function recoverStaleLoadTestRuns(db) {
+  if (!db) return { recovered: 0 };
+  const now = Math.floor(Date.now() / 1000);
+  const staleBefore = now - 15;
+  const rows = await db.prepare(
+    "SELECT run_id,last_activity_at,updated_at FROM kingdom_load_test_runs WHERE status = 'RUNNING' AND COALESCE(last_activity_at,updated_at,created_at) < ? ORDER BY created_at DESC LIMIT 50"
+  ).bind(staleBefore).all().catch(() => ({results:[]}));
+  let recovered = 0;
+  for (const row of (rows.results || [])) {
+    const runId = String(row.run_id || "");
+    if (!runId) continue;
+    const lock = await db.prepare(
+      "SELECT lock_token,lock_until FROM api_request_locks WHERE lock_key = ? AND lock_until > ? LIMIT 1"
+    ).bind(LOAD_TEST_LOCK_KEY, now).first().catch(() => null);
+    if (lock?.lock_token && String(lock.lock_token) !== runId) continue;
+    if (lock?.lock_token === runId) {
+      const cancel = await db.prepare(
+        "SELECT lock_token FROM api_request_locks WHERE lock_key = ? AND lock_token = ? AND lock_until > ? LIMIT 1"
+      ).bind("LOAD_TEST_CANCEL", "CANCEL:" + runId, now).first().catch(() => null);
+      if (!cancel) continue;
+    }
+    await db.prepare(
+      "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = 'LOAD_TEST_CANCELLED', updated_at = ? WHERE watchlist_id = ? AND status NOT IN ('COMPLETED','FAILED')"
+    ).bind(now, "LOAD_TEST:" + runId).run().catch(() => {});
+    await db.prepare(
+      "UPDATE kingdom_load_test_runs SET status = 'CANCELLED', completed_at = COALESCE(completed_at, ?), updated_at = ? WHERE run_id = ? AND status = 'RUNNING'"
+    ).bind(now, now, runId).run().catch(() => {});
+    if (lock?.lock_token === runId) {
+      await db.prepare("DELETE FROM api_request_locks WHERE lock_key = ? AND lock_token = ?").bind(LOAD_TEST_LOCK_KEY, runId).run().catch(() => {});
+    }
+    recovered++;
+  }
+  return { recovered };
+}
+
 export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
   if (!auth || auth.role !== "OWNER" || auth.status !== "ACTIVE") return new Response(JSON.stringify({ok:false,error:"OWNER_REQUIRED"}), {status:403,headers:{"content-type":"application/json"}});
   if (request.method !== "POST") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json"}});
@@ -115,6 +150,10 @@ export async function handleOwnerKingdomLoadTestCancelApi(request, env, auth) {
 export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json; charset=UTF-8"}});
   try {
+    // Normalize abandoned RUNNING records before returning history so an old
+    // disconnected test cannot remain "実行中" forever.
+    await recoverStaleLoadTestRuns(env.DB);
+
     const url = new URL(request.url);
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") || 20)));
     const rows = await env.DB.prepare("SELECT * FROM kingdom_load_test_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
@@ -158,6 +197,9 @@ export async function handleOwnerKingdomLoadTestExportApi(request, env) {
 export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
   if (request.method !== "GET") return new Response(JSON.stringify({ ok:false, error:"METHOD_NOT_ALLOWED" }), { status:405, headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"} });
   try {
+    // Recover stale/orphaned Runs before calculating the current state.
+    await recoverStaleLoadTestRuns(env.DB);
+
     const now=Math.floor(Date.now()/1000);
     const url=new URL(request.url);
     const requestedRunId=String(url.searchParams.get("run_id")||"").trim();
@@ -507,7 +549,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     clearInterval(metricsTimer);
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     const finalNow=Math.floor(Date.now()/1000);
-    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
 }})();
   // Keep the server-side Run alive when the iPhone Web App closes the stream on reload.
