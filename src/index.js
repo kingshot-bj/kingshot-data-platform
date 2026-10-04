@@ -853,11 +853,21 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
   const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
   const apiLimiter = options?.apiLimiter || null;
-  const globalCollectionLimiter = options?.globalCollectionLimiter || createCollectionSemaphoreLimiter(env.DB, WATCHLIST_MAX_API_CONCURRENCY);
+  // A load-test Run already has one process-wide API limiter shared by all
+  // kingdom workers in this Worker invocation. Do not add the D1-backed global
+  // semaphore on top of it: that semaphore is for independent production
+  // collection jobs across Worker invocations. Keeping it out of the load test
+  // prevents a schema/lease problem in the semaphore from blocking the first
+  // MightPulse request entirely.
+  const globalCollectionLimiter = options?.globalCollectionLimiter || (
+    apiLimiter ? null : createCollectionSemaphoreLimiter(env.DB, WATCHLIST_MAX_API_CONCURRENCY)
+  );
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
-    const concurrency = apiLimiter ? WATCHLIST_MAX_API_CONCURRENCY : await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    const concurrency = apiLimiter
+      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), KINGDOM_RANKING_BOARDS.length - startIndex))
+      : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
       error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
@@ -875,7 +885,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const startedAtMs = Date.now();
       try {
         const requestLimiter = apiLimiter;
-        if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter;
+        if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter || null;
         const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
           { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter }
@@ -1038,7 +1048,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
-    const concurrency = apiLimiter ? Math.min(WATCHLIST_MAX_API_CONCURRENCY, batchIds.length) : await getWatchlistApiConcurrency(env, { reserveApiKeys });
+    const concurrency = apiLimiter
+      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), batchIds.length))
+      : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
       error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
