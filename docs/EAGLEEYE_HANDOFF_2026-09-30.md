@@ -7315,3 +7315,15 @@ SeederはCatalogから最大2王国/実行だけを対象にし、各王国に�
 その後、ランキングboardsの取得を既存 `kingdom_ranking_current` + R2 historyへ接続する。
 
 ---
+
+
+## 100-5. Board Metadata拡張
+
+Seederの取得先を `/kingdoms/{kid}?include=boards&limit=100` に拡張し、`kingdom_catalog` に `boards_json` / `boards_observed_at` を追加。
+
+コミット:
+- `e02174c745ff061287c53026e79e5af1d1b30d51`
+- `5b509c00f9f880186d3fead918d96eebca2e43b2`
+- `ac39bb709245aabf64f57a604f840f38dcdfe475`
+
+次はboards metadataの実レスポンス形式を基準に、ランキング取得対象を安全に列挙して既存 `saveKingdomRankingBoard` に接続する。
