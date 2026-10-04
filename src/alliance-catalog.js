@@ -266,7 +266,6 @@ export async function runAllianceRoller(env, {
   await db.prepare(
     "UPDATE alliance_collection_state SET catalog_cursor = catalog_cursor + ?, processed_runs = processed_runs + 1, success_count = success_count + ?, failed_count = failed_count + ?, state = ?, last_kid = ?, last_aid = ?, last_success_at = CASE WHEN ? > 0 THEN ? ELSE last_success_at END, last_failure_at = CASE WHEN ? > 0 THEN ? ELSE last_failure_at END, last_error = ?, updated_at = ? WHERE state_key = ?"
   ).bind(
-    failed ? "WARNING" : "IDLE",
     rows.length,
     success,
     failed,
