@@ -8646,3 +8646,64 @@ Player Rollerのコード監査・修正は完了。
 - GitHub上で確認済み: `export default` は1箇所、`async fetch(request, env)` は1箇所、Player/Alliance Rollerコードも保持。
 - **未確認:** Wrangler build成功、本番Cloudflareデプロイ、本番E2E。これらは別途確認する。
 - 今回はコード復旧を先行し、Cloudflare上でのデプロイ成功を未確認のまま「復旧済み」とは扱わない。
+
+
+# 111. 2026-10-04 王国Watchlist実処理負荷テスト — 起動不具合修正
+
+## 111-1. 本番画面で発見
+
+Ownerの「王国Watchlist実処理負荷テスト」を20王国 / 上位プレイヤー10人で開始したところ、
+
+- APIクエスト 0 / 720
+- 「処理状況を取得中…」
+- 実行ボタンが有効状態へ戻る
+- 中止ボタンが無効
+
+となり、負荷テストが実処理開始していないように見える状態を確認。
+
+## 111-2. 原因
+
+src/index.js のHTTP Routerで、負荷テストAPIを呼ぶ際に requestTraceId を渡していたが、fetch()内で requestTraceId が定義されていなかった。
+
+そのため /api/owner/kingdom-load-test 到達時にReferenceErrorとなり、Load Test handler自体が正常に開始されない構造だった。
+
+また、handleOwnerKingdomLoadTestApi() は長時間のサーバー側実行継続に executionContext.waitUntil(run) を利用する設計なのに、Workerの fetch()からexecutionContextを渡していなかった。
+
+## 111-3. 修正
+
+src/index.js:
+
+- fetch(request, env, executionContext) に変更
+- requestTraceId を x-eagle-eye-trace-id または systemTraceId("http") から生成
+- /api/owner/kingdom-load-test へ executionContext を渡すよう修正
+
+commit:
+- f8a668549bc83e6a79ff6bd33ca39f8651cec9f0
+
+## 111-4. 負荷テストの処理数について再確認
+
+画面の「上位プレイヤー取得数 5人 / 10人」は、ランキング上位から選んだPlayerについて詳細Player APIを取得する人数。
+
+一方、ランキング処理は各王国について26ボードを取得し、各ボード最大100件を保存する。
+
+したがって20王国・上位10人の場合、UI上の進捗クエスト数は:
+
+20 × (26 + 10) = 720
+
+となり、スクリーンショットの720は正しい。
+
+「10人」は基本ランキングデータを10人しか保存しないという意味ではなく、詳細Player取得対象数。
+
+## 111-5. 次の確認
+
+- commit f8a6685... をCloudflareへdeploy
+- Owner Load Testを20王国 / 上位10人で再実行
+- API Poolリース状況確認
+- Ranking 26 board取得確認
+- Top 10 Player Detail取得確認
+- D1 Current / Change Events確認
+- R2 History確認
+- System Log / Diagnostics / System Status / System JSON確認
+- 完了後にAPI Poolが解放されることを確認
+
+この時点では負荷テスト本番E2E成功とは扱わない。
