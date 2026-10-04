@@ -155,7 +155,12 @@ export async function getOperationalStatus(db) {
         remainingMinute: Number(budgetResult.remainingMinute || 0),
         remainingDay: Number(budgetResult.remainingDay || 0),
         minRemainingMinute: Number(budgetResult.minRemainingMinute || 0),
-        minRemainingDay: Number(budgetResult.minRemainingDay || 0)
+        minRemainingDay: Number(budgetResult.minRemainingDay || 0),
+        measuredReserveMinute: Number(budgetResult.measuredReserveMinute || 0),
+        measuredReserveDay: Number(budgetResult.measuredReserveDay || 0),
+        measuredPeakMinuteRequests: Number(budgetResult.measuredPeakMinuteRequests || 0),
+        measuredUsedDayRequests: Number(budgetResult.measuredUsedDayRequests || 0),
+        measuredReserveCheckedAt: Number(budgetResult.measuredReserveCheckedAt || 0)
       } : null,
       latestKey: latestKey ? {
         poolType: latestKey.pool_type,
