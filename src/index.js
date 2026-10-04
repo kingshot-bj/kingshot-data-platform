@@ -3795,96 +3795,7 @@ async function handleGoogleDriveOAuthCallback(request, env) {
   }
 }
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    try {
-      if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") return env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request));
-      if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
-      if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
-      if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
-      if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
-      if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
-      if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
-      if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
-      if (url.pathname === "/api/auth/logout") return logout(request);
-      if (url.pathname === "/api/admin/google-drive/authorize") return await handleGoogleDriveAuthorizeApi(request, env);
-      if (url.pathname === "/api/admin/google-drive/verify") return await handleGoogleDriveVerifyApi(request, env);
-      if (url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);
-      if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
-      if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
-      if (url.pathname === "/api/discord/interactions") return await handleSupportInteraction(request, env);
-      if (url.pathname === "/api/admin/discord-support/register-command") return await handleDiscordSupportCommandRegistrationApi(request, env);
-      if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); } if (url.pathname === "/api/support/context") { const auth = await getAuthenticatedUser(request, env); return await handleSupportContextApi(request, env, auth); }
-      if (url.pathname === "/api/me") return await handleMe(request, env);
-      if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
-      if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
-      if (url.pathname === "/api/admin/mightpulse-research") return await handleMightPulseResearchApi(request, env);
-      if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
-      if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
-      if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
-      if (url.pathname === "/api/admin/player-visibility") return await handlePlayerVisibilityApi(request, env);
-      if (url.pathname === "/api/admin/player-export") return await handlePlayerSectionExport(request, env);
-      if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
-      if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
-      if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
-      if (url.pathname === "/api/admin/discord/roles") return await handleDiscordRolesLookupApi(request, env);
-      if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
-      if (url.pathname === "/api/admin/r2-archive-objects") return await handleR2ArchiveObjectsApi(request, env);
-      if (url.pathname === "/api/admin/api-pool/keys") return await handleApiPoolKeys(request, env);
-      if (url.pathname === "/api/admin/api-pool/add") return await handleApiPoolAdd(request, env);
-      if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
-      if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
-      if (url.pathname === "/api/admin/api-pool/health-check") return await handleApiPoolHealthCheck(request, env);
-      if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
-      if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
-      if (url.pathname === "/api/admin/api-pool/test-ranking") return await handleApiPoolTestRanking(request, env);
-      if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
-      if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
-      if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
-      if (url.pathname === "/api/owner/users/status") return await handleOwnerUserStatusApi(request, env);
-      if (url.pathname === "/api/owner/users/login-history") return await handleOwnerLoginHistoryApi(request, env);
-      if (url.pathname === "/api/owner/audit-log") return await handleOwnerAuditLogApi(request, env);
-      if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-      if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
-      if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
-      if (url.pathname === "/admin/google-drive") return await renderGoogleDriveSetupPage(request, env);
-      if (url.pathname === "/admin/data-retention") return eagleEyeHtmlResponse(await renderDataRetentionPage(request, env));
-      if (url.pathname === "/admin/player-visibility") return eagleEyeHtmlResponse(await renderPlayerVisibilityPage(request, env));
-      if (url.pathname === "/admin/kingdom-rankings") return eagleEyeHtmlResponse(await renderAdminKingdomRankingsPage(request, env));
-      if (url.pathname === "/support") return eagleEyeHtmlResponse(await renderSupportPage(request, env));
-      if (url.pathname === "/status") return await renderPublicStatusPage(request, env);
-      if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
-      if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
-      if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
-      if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
-      if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
-      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
-      if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
-      if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
-      if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
-      if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
-      if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
-      if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
-      if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
-      if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
-      if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
-      if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
-      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
-      return eagleEyeHtmlResponse(await renderHome(request, env));
-    } catch (error) {
-      console.error("EagleEye request error:", error);
-      return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
-    }
-  }
-  },
-  async queue(batch, env) {
-    return await handleServiceUsageQueue(batch, env);
-  }
-};
-
+}
 const EAGLEEYE_THEME_CSS = `
 <style id="eagleeye-theme">
 :root{color-scheme:dark}
@@ -7985,7 +7896,3 @@ function decodeBase64Url(value) {
 
 function constantTimeEqual(a, b) {
   if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
