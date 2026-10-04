@@ -6997,13 +6997,14 @@ Global Collection SemaphoreのD1 counter方式を再設計し、Worker crash時�
 旧 `collection_semaphore.active_count` はmigration 0034との後方互換のため残置。新コードはslot tableを正本として扱う。
 
 ## Lease
-- 初期lease TTL: 90秒。
-- 実際のAPI応答がMightPulse側で最大90秒待機する可能性があるため、今後実測でTTLを再調整する。
+- 初期lease TTL: 180秒。
+- 実際のAPI応答がMightPulse側で最大90秒待機する可能性を考慮し、180秒の安全余裕を持たせた。今後実測で再調整する。
 - 長時間処理に対するheartbeat/refresh APIも実装済みだが、現時点のrequest wrapperではまだ自動refreshしていない。
 
 ## コミット
 - 2be0f34db9d34916e37750527fae67d9f15c1905 — add crash-safe semaphore slots
 - 09ea05d93fa6f612c6e2727883a7b641cf5f117a — make collection semaphore crash-recoverable
+- 5ae4831eaeca8f28b049b02c0bd915899c7d6cd5 — add recovery buffer to semaphore lease TTL
 
 ## Production E2E前の残確認
 - lease TTLと実API最大応答時間の実測。
