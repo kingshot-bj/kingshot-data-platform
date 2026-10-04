@@ -697,6 +697,10 @@ async function runKingdomWatchlistJobs(env) {
       poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
     });
     const availablePoolKeys = Number(poolAvailability?.totals?.available || 0);
+    const poolBudget = await getApiPoolBudgetSnapshot(env.DB, {
+      provider: "MIGHTPULSE",
+      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
+    });
     let cloudflare = null;
     try {
       cloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
