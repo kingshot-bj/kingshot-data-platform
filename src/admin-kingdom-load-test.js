@@ -357,6 +357,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
   const existingJob = await env.DB.prepare("SELECT job_id FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND kid = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1").bind(watchlistId, Number(kid)).first().catch(() => null);
   const jobId = existingJob?.job_id ? String(existingJob.job_id) : crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
+  const jobTraceId = systemTraceId("load-job");
   if (!existingJob) {
     await env.DB.prepare("INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)").bind(jobId, watchlistId, Number(kid), Number(topN), now, now, now).run();
   }
@@ -369,15 +370,15 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
       await refreshLoadTestState(env.DB, runId).catch(() => {});
       if (await isLoadTestCancelled(env.DB, runId)) {
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?").bind("LOAD_TEST_CANCELLED", Math.floor(Date.now()/1000), jobId).run().catch(() => {});
+        await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"CANCELLED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, message:"王国Jobは負荷テスト中止により終了しました。", metadata:{ runId, jobId, kid:Number(kid), cancelled:true } }).catch(()=>{});
         return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, cancelled:true, status:"CANCELLED", error:"LOAD_TEST_CANCELLED", elapsed_ms:Date.now()-startedAt };
       }
       const job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1").bind(jobId).first();
       if (!job) throw new Error("LOAD_TEST_JOB_NOT_FOUND");
       if (job.status === "FAILED") throw new Error(String(job.last_error || "KINGDOM_WATCHLIST_JOB_FAILED"));
-      if (job.status === "COMPLETED") return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt };
+      if (job.status === "COMPLETED") { await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(kid), runId, jobId, message:"王国Job完了", metadata:{ runId, jobId, kid:Number(kid), rankingRows:Number(job.ranking_rows||0), playerRows:Number(job.player_rows||0) } }).catch(()=>{}); return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt }; }
       let step;
       try {
-        const jobTraceId = systemTraceId("load-job");
         await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"START", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, metadata:{ runId, jobId, kid:Number(kid), loadTest:true } });
         step = await processJob(env, job, { reserveApiKeys: LOAD_TEST_NORMAL_RESERVE, apiLimiter, loadTestContext: { runId, jobId, traceId: jobTraceId } });
       } catch (error) {
@@ -413,6 +414,7 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
     const message = String(error?.message || error || "KINGDOM_WATCHLIST_JOB_FAILED").slice(0,1000);
     await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status <> 'COMPLETED'")
       .bind(message, Math.floor(Date.now()/1000), jobId).run().catch(() => {});
+    await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(kid), runId, jobId, errorCode:message.split(":")[0], message, metadata:{ runId, jobId, kid:Number(kid) } }).catch(()=>{});
     return { run_id:runId, job_id:jobId, kid:Number(kid), ok:false, status:"FAILED", error:message, elapsed_ms:Date.now()-startedAt };
   } finally {
     // Keep the job row durable exactly like the normal Kingdom Watchlist job.
