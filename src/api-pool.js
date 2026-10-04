@@ -210,6 +210,7 @@ export async function getApiPoolBudgetSnapshot(db, {
     now, now, now, now, now, now, now, now, now, now,
     provider, ...types
   ).first();
+  const measuredReserve = await getApiPoolMeasuredReserve(db, { provider, poolTypes: types, now });
   return {
     provider,
     poolTypes: types,
@@ -219,6 +220,11 @@ export async function getApiPoolBudgetSnapshot(db, {
     remainingDay: Number(result?.remaining_day || 0),
     minRemainingMinute: Number(result?.min_remaining_minute || 0),
     minRemainingDay: Number(result?.min_remaining_day || 0),
+    measuredReserveMinute: Number(measuredReserve?.measuredMinuteReserve || 0),
+    measuredReserveDay: Number(measuredReserve?.measuredDayReserve || 0),
+    measuredPeakMinuteRequests: Number(measuredReserve?.peakMinuteRequests || 0),
+    measuredUsedDayRequests: Number(measuredReserve?.usedDayRequests || 0),
+    measuredReserveCheckedAt: measuredReserve?.checkedAt || now,
     checkedAt: now
   };
 }
