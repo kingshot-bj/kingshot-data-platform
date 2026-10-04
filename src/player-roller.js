@@ -24,6 +24,7 @@ export async function runPlayerRoller(env, {
 
   const limit = Math.min(26, Math.max(1, Number(maxTargets) || DEFAULT_TARGETS_PER_RUN));
   const startedAt = now();
+  const startedAtMs = Date.now();
   const traceId = systemTraceId("player-roller");
   const state = await db.prepare(
     "SELECT state, catalog_cursor, last_kid, last_governor_id FROM player_collection_state WHERE state_key = ?"
@@ -149,7 +150,7 @@ export async function runPlayerRoller(env, {
         targetId: result.value.governorId,
         rowsReceived: 1,
         rowsSaved: 1,
-        elapsedMs: Math.max(0, Date.now() - startedAt),
+        elapsedMs: Math.max(0, Date.now() - startedAtMs),
         message: "Player詳細取得・Current materialize成功。",
         metadata: {
           kid: result.value.kid,
