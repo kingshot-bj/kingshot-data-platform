@@ -1,21 +1,11 @@
 const DEFAULT_SEMAPHORE_KEY = "GLOBAL_API";
 const DEFAULT_CAPACITY = 26;
 
-async function ensureCollectionSemaphoreSchema(db, capacity = DEFAULT_CAPACITY) {
-  if (!db) return;
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS collection_semaphore (
-      semaphore_key TEXT PRIMARY KEY,
-      capacity INTEGER NOT NULL,
-      active_count INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL
-    )
-  `).run();
-  await db.prepare(`
-    INSERT INTO collection_semaphore (semaphore_key, capacity, active_count, updated_at)
-    VALUES (?, ?, 0, ?)
-    ON CONFLICT(semaphore_key) DO NOTHING
-  `).bind(DEFAULT_SEMAPHORE_KEY, Math.max(1, Number(capacity) || DEFAULT_CAPACITY), Math.floor(Date.now() / 1000)).run();
+async function ensureCollectionSemaphoreSchema(db) {
+  // Schema is provisioned by migrations/0034_global_collection_semaphore.sql.
+  // Keep the hot path free of DDL/INSERTs so each API permit costs only the
+  // conditional acquire UPDATE and the release UPDATE.
+  return Boolean(db);
 }
 
 /**
