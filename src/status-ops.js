@@ -1,4 +1,5 @@
 import { getSystemEventLog } from "./system-log.js";
+import { getCollectionSemaphoreSnapshot } from "./collection-semaphore.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
@@ -24,7 +25,8 @@ export async function getOperationalStatus(db) {
     db.prepare(
       "SELECT pool_type, status, label, last_success_at, last_error_at, last_error_code, last_error_message FROM api_pool_keys ORDER BY COALESCE(last_error_at, 0) DESC, updated_at DESC LIMIT 1"
     ).first(),
-    getSystemEventLog(db, { limit: 100 })
+    getSystemEventLog(db, { limit: 100 }),
+    getCollectionSemaphoreSnapshot(db).catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -158,6 +160,7 @@ export async function getOperationalStatus(db) {
       leaseByPurpose
     },
     loadTest,
+    collectionSemaphore: semaphoreResult || { key: "GLOBAL_API", capacity: 26, active: null, available: null, state: "UNAVAILABLE" },
     watchlist: {
       total: Number(watch.total_count || 0),
       enabled: Number(watch.enabled_count || 0),
