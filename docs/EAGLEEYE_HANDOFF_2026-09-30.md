@@ -7826,3 +7826,127 @@ D1はrows_read / rows_writtenが使用量指標となり、R2 PutObjectはClass 
 10. D1/R2使用量を確認
 
 まで確認する。
+
+# 105. 2026-10-04 Phase 6 — Player Roller foundation
+
+## 105-1. Discovery source
+
+Player discovery sourceは新規player_directoryを作らず、既存の:
+- kingdom_ranking_current
+- board = personal_power
+- target_type = PLAYER
+
+を利用する。
+
+これによりranking取得時点で発見されたPlayerを、そのままPlayer ID確保 → 詳細取得へ接続できる。
+
+## 105-2. Player detail
+
+MightPulse公開APIの:
+
+/players/{governor_id}?include=base,heroes,ranks,gov_gear
+
+を1 requestで使用。
+
+分割して:
+- base
+- heroes
+- ranks
+- gov_gear
+
+を別requestにしない。
+
+## 105-3. Freshness-aware background collection
+
+Background Player Rollerは、既にplayers.observed_atが1時間以内のPlayerを再取得対象から除外。
+
+目的:
+- MightPulse側の60分freshness特性に合わせる
+- ユーザーOn-demand取得直後の重複Background取得を避ける
+- 同じPlayerを短時間に何度も取得しない
+
+ただしユーザーがPlayer Detail等を要求した場合は、別のOn-demand経路で必要な最新情報を取得可能とする。
+
+## 105-4. Existing Player Store reuse
+
+Player Rollerは新しい保存経路を作らず:
+- saveApiObservation
+- materializePlayer
+- player identity history
+- player change_events
+- players current
+- R2 player history
+- History Emergency Buffer
+
+を既存経路として再利用する。
+
+## 105-5. Background budget
+
+可変Background予算を:
+- Alliance: 最大5
+- Player: 最大5
+- Ranking: 最大26
+
+へ拡張。
+
+固定:
+- Catalog: 1
+- Seeder: 2
+
+最大合計:
+- 1 + 2 + 5 + 5 + 26 = 39 requests / background batch
+
+ただし実際の実行量は:
+- API remaining minute/day
+- measured reserve
+- general reserve
+- Cloudflare safety state
+- Safety Gate
+
+から動的に縮小される。
+
+## 105-6. Observability
+
+System JSON:
+- playerRoller.state
+- catalogCursor
+- processedRuns
+- successCount
+- failedCount
+- skippedCount
+- lastKid
+- lastGovernorId
+- lastSuccessAt
+- lastFailureAt
+- lastError
+- updatedAt
+
+System Status HTML:
+- データ収集基盤カードへPlayer Rollerを追加。
+
+## 105-7. Migration / implementation
+
+- 684ed855cbdb9b8db625e6ea2e0bbba182938ec6 — Player Roller state migration
+- 28b4b251fd4bcc38a6127beccd4c93c0290feb0c — Player Roller
+- 9a6ea8eeb833a9ed611816e7e0578ca9091cf06f — Background integration
+- 0aa51734bf3bd5242e50d8ae1bf1d5fc1b126a1c — Status JSON
+- 23668fed9c8dfc41af7a620f868fca2a7e690c53 — System Status HTML
+- 28d698a2bce9230ea45175e562d4a19a37981287 — runtime state column
+- 7e8ee9ca36bdd5d652a59f003fe4e3878905afe7 — runtime state persistence
+- 1b9773ade07ad0a8b59123ebb973cf133251da8b — Status runtime state
+
+## 105-8. 本番E2E
+
+未確認:
+1. migration 0042 remote適用
+2. personal_power rankingからPlayer discovery
+3. 1 requestでfull Player detail取得
+4. players / api_observations / identity history保存
+5. change_events発生
+6. R2 player history保存
+7. 1時間freshness skip
+8. On-demand取得とBackground Rollerの競合時のGlobal Semaphore動作
+9. System Status / System JSON表示
+10. D1/R2/API使用量
+
+本番E2E完了まではPlayer Rollerを「実装済み・未本番確認」と扱う。
