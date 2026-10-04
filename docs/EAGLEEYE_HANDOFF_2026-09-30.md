@@ -7801,7 +7801,7 @@ target_idはkid + aidでnamespaceを分離する。
 - 変更時だけChange Eventを生成
 - R2 failure時だけEmergency Bufferを使用
 
-D1はrows_read / rows_writtenが使用量指標となり、R2 PutObjectはClass A operationであるため、不要な再書き込みを避ける。 citeturn5search0turn4search0
+D1はrows_read / rows_writtenが使用量指標となり、R2 PutObjectはClass A operationであるため、不要な再書き込みを避ける。
 
 ## 104-5. コミット
 
