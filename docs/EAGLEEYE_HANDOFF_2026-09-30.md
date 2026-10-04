@@ -8756,3 +8756,21 @@ commit:
   4. API同時処理数がAvailable Pool - 通常利用保護1本になることを確認
   5. 履歴が表示されることを確認
   6. 完了後にSystem Status / System JSON / System Logにも結果が反映されることを確認
+
+
+# 112. 2026-10-04 王国Watchlist実処理負荷テスト — Safety Gate 起動判定修正
+
+- 20王国 / 上位10人で負荷テスト開始時、実処理前に `SAFETY_GATE_BLOCKED` となることを本番画面で確認。
+- Load Testは720件を一括バーストする処理ではなく、API Poolの空き枠を共有しながら順次取得するキュー型・スロット制御処理。
+- 起動時Safety Gateで全体のAPI残量・測定予備枠を使って判定すると、実際には長時間かけて実行可能なテストまで開始前に過剰ブロックするため修正。
+- 起動時はCloudflareのHARD_STOP等の安全判定とAPI Poolの通常利用保護1本を維持し、実際のAPIリクエストは既存のAPI Pool lease/quota guardで個別に制御する。
+- `SAFETY_GATE_BLOCKED` 時は `reasons` もレスポンスへ返し、原因をUI/診断から追跡可能にした。
+
+commit:
+- `5e7b77b130328ea7ffadca6c92042a34c234726a`
+
+次:
+- Cloudflareへdeploy
+- 20王国 / 上位10人で再実行
+- 実際にAPI進捗が0から進むことを確認
+- API Pool lease / D1 / R2 / Change Events / System Logを確認
