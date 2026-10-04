@@ -6875,3 +6875,45 @@ D1 counter方式のcrash recovery問題は未解決。
 
 最新修正commit:
 - `4bcfb3f7fc176191c1145657ceddd95c1d2eeffc`
+
+
+---
+# 91. 2026-10-04 API Pool planned consumption精度向上
+
+Phase 1のkey-level quota連携を実装。
+
+## 追加
+`src/api-pool.js`
+- `getApiPoolBudgetSnapshot()` を追加
+- 対象PoolのAVAILABLE/COOLDOWNかつlease有効期限切れのkeyだけを集計
+- aggregate remaining_minute
+- aggregate remaining_day
+- available key数
+- minimum remaining per key
+
+## Safety Gate連携
+Watchlist / Load Test開始時に:
+- API Pool available key数
+- aggregate remaining_minute
+- aggregate remaining_day
+
+をSafety Gateへ入力。
+
+これにより「key本数が足りている」だけでなく、
+**planned request数が実際のAPI quota残量を超える場合に開始を停止**できる。
+
+## D1方針
+このbudget snapshotは開始判定時に1回だけ取得。
+API requestごとのSELECTにはしない。
+
+引き続き:
+- API Pool lease時のatomic UPDATE
+- Global Semaphore acquire/release
+- planned consumption
+
+を組み合わせ、D1 read amplificationを抑える。
+
+最新commit:
+- `cb473fbeaa659d0cdd0b6bb14b35d37ea8e9cbf2`
+- `5771cb7e0499290aeeeafc4918df03a28c2d6701`
+- `9c6a557e0dc0118adfe5a71131858bf16a08e27a`
