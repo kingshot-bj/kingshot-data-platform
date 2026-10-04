@@ -250,7 +250,7 @@ async function runDataRetentionJob(env) {
     const systemLogArchive = await archiveSystemEventLog(
       env.DB,
       env.ARCHIVE,
-      { batchSize: 1000 }
+      { batchSize: 1000, googleDriveEnv: env }
     );
     await recordDiagnostic(env.DB, {
       service: "system_log",
