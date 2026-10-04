@@ -8536,3 +8536,50 @@ Player Roller監査ではAllianceと同様に:
 - R2_ONLYを維持。
 - 必要な機能は削らず、重複取得・不要writeだけ削減。
 - 「実装済み」「main反映済み」「deploy済み」「本番確認済み」を厳密に区別する。
+
+
+# 108. 2026-10-04 Cloudflare deploy build failure — index.js EOF修正
+
+## 108-1. 本番deployログで確認した障害
+
+Cloudflare deploy:
+- Wrangler 4.147.0
+- `npx wrangler deploy`
+- Build failed
+- `src/index.js:3953:0 Unexpected end of file`
+
+原因は `export default { async scheduled(...) { ... } }` の末尾で、scheduled handlerの外側try/catchとhandler/objectの終了部分が欠落していたこと。
+
+## 108-2. 修正
+
+`src/index.js` 末尾に以下の終了処理を復元:
+- scheduled処理成功時のSCHEDULED_RUN COMPLETE System Log
+- scheduled外側tryのcatch
+- SCHEDULED_RUN FAILED System Log
+- エラー再throw
+- scheduled handler終了
+- export default object終了
+
+commit:
+- `0dc457c2be64ca9fdc8243b18c03f9a1e7a56b36`
+
+## 108-3. deploy状態
+
+修正commitはGitHub mainへ反映済み。
+
+ただしこの環境からCloudflare connector/actionを直接実行できないため、Cloudflare側の再deploy成功は未確認。
+
+ユーザー側でCloudflare deployログを再確認し、今回の `Unexpected end of file` が消えてWorker build/deployまで完了することを確認する。
+
+## 108-4. 重要な注意
+
+この構文欠落はAlliance Roller固有のロジックバグではなく、Background Collection拡張後からmainに残っていたファイル末尾の構文欠落。今回のCloudflare buildで顕在化した。
+
+今後は新機能実装後に:
+1. JavaScript構文
+2. Wrangler build/deploy
+3. main反映
+4. Cloudflare deploy
+5. 本番E2E
+
+を明確に分離して確認する。
