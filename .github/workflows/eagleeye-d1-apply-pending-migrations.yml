@@ -27,6 +27,25 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing."; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing."; exit 1; }
 
+      - name: Guard against legacy production schema drift
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          wrangler d1 execute eagleeye-db --remote --command "PRAGMA table_info(api_pool_keys);"
+          wrangler d1 execute eagleeye-db --remote --command "SELECT name FROM d1_migrations WHERE name IN ('0017_api_pool_atomic_lease.sql','0036_collection_semaphore_slots.sql') ORDER BY name;"
+          LEASE_COLS="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT COUNT(*) AS c FROM pragma_table_info('api_pool_keys') WHERE name='lease_id';")"
+          SLOT_TABLE="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT COUNT(*) AS c FROM sqlite_master WHERE type='table' AND name='collection_semaphore_slots';")"
+          RECORDED="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT COUNT(*) AS c FROM d1_migrations WHERE name='0017_api_pool_atomic_lease.sql';")"
+          SLOT_RECORDED="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT COUNT(*) AS c FROM d1_migrations WHERE name='0036_collection_semaphore_slots.sql';")"
+          node - <<'NODE' "$LEASE_COLS" "$SLOT_TABLE" "$RECORDED" "$SLOT_RECORDED"
+          const [a,b,c,d]=process.argv.slice(2).map(JSON.parse);
+          const val=x=>x?.[0]?.results?.[0]?.c ?? 0;
+          if(val(a)>0 && val(c)===0) throw new Error('Production schema drift detected: api_pool_keys.lease_id exists but migration 0017 is not recorded. Run EagleEye D1 Schema Reconciliation first.');
+          if(val(b)===0 && val(d)===0) throw new Error('Production schema drift detected: collection_semaphore_slots is missing while migration 0036 is not recorded. Run EagleEye D1 Schema Reconciliation first.');
+          NODE
+
       - name: Show pending migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
