@@ -95,6 +95,8 @@ export async function mightPulseFetch(env, path, {
         await recordSystemEvent(env.DB, {
           traceId: systemTrace,
           parentTraceId,
+          startedAt: Math.floor(startedAt / 1000),
+          completedAt: Math.floor(Date.now() / 1000),
           eventType: "EXTERNAL_API",
           service: "mightpulse",
           feature: "mightpulse",
@@ -134,6 +136,8 @@ export async function mightPulseFetch(env, path, {
           await recordSystemEvent(env.DB, {
             traceId: systemTrace,
             parentTraceId,
+            startedAt: Math.floor(startedAt / 1000),
+            completedAt: Math.floor(Date.now() / 1000),
             eventType: "EXTERNAL_API",
             service: "mightpulse",
             feature: "mightpulse",
