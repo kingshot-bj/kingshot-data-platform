@@ -799,10 +799,10 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
       const changeEventStart=Math.floor(Number(run.created_at||0));
       const changeEventEnd=Math.floor(Date.now()/1000);
       for(const changeType of changeEventTypes){
-        const row=await env.DB.prepare(
+        const rows=await env.DB.prepare(
           "SELECT target_type, change_type, COUNT(*) AS event_count FROM change_events WHERE change_type=? AND detected_at >= ? AND detected_at <= ? GROUP BY target_type, change_type"
-        ).bind(changeType,changeEventStart,changeEventEnd).first().catch(()=>null);
-        if(row) changeEventBreakdown.push({
+        ).bind(changeType,changeEventStart,changeEventEnd).all().catch(()=>({results:[]}));
+        for(const row of rows.results||[]) changeEventBreakdown.push({
           targetType:String(row.target_type||""),
           changeType:String(row.change_type||""),
           count:Number(row.event_count||0)
