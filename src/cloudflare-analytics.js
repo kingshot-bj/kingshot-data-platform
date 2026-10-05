@@ -1,4 +1,5 @@
 const CLOUDFLARE_GRAPHQL_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql";
+const CLOUDFLARE_API_ENDPOINT = "https://api.cloudflare.com/client/v4";
 
 const D1_FREE_LIMITS = {
   rowsRead: 5_000_000,
@@ -362,6 +363,117 @@ function monthStartUtcString(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString();
 }
 
+function daysInUtcMonth(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function billingCycleBoundary(anchorTimestamp, date, direction = "start") {
+  const anchor = new Date(anchorTimestamp);
+  if (!Number.isFinite(anchor.getTime())) return null;
+  const anchorDay = anchor.getUTCDate();
+  const makeBoundary = (year, monthIndex) => {
+    const day = Math.min(anchorDay, daysInUtcMonth(year, monthIndex));
+    return new Date(Date.UTC(
+      year,
+      monthIndex,
+      day,
+      anchor.getUTCHours(),
+      anchor.getUTCMinutes(),
+      anchor.getUTCSeconds(),
+      anchor.getUTCMilliseconds()
+    ));
+  };
+
+  let boundary = makeBoundary(date.getUTCFullYear(), date.getUTCMonth());
+  if (direction === "start" && boundary > date) {
+    boundary = makeBoundary(date.getUTCFullYear(), date.getUTCMonth() - 1);
+  }
+  if (direction === "end" && boundary <= date) {
+    boundary = makeBoundary(date.getUTCFullYear(), date.getUTCMonth() + 1);
+  }
+  return boundary;
+}
+
+async function getCloudflareBillingCycle(env, { now = new Date(), token = "" } = {}) {
+  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  const billingToken = String(env.CLOUDFLARE_BILLING_TOKEN || token || "").trim();
+  if (!accountId || !billingToken) {
+    return {
+      available: false,
+      state: "UNCONFIGURED",
+      message: "Cloudflare Billing APIの設定が不足しています。Billing Read権限を持つトークンが必要です。"
+    };
+  }
+
+  const response = await fetch(
+    CLOUDFLARE_API_ENDPOINT + "/accounts/" + encodeURIComponent(accountId) + "/billable-usage/info",
+    {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + billingToken,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = payload?.errors?.map(item => item?.message).filter(Boolean).join("; ");
+    return {
+      available: false,
+      state: "ERROR",
+      httpStatus: response.status,
+      message: message || "Cloudflare Billing API HTTP " + response.status
+    };
+  }
+  if (Array.isArray(payload?.errors) && payload.errors.length) {
+    return {
+      available: false,
+      state: "ERROR",
+      message: payload.errors.map(item => item?.message).filter(Boolean).join("; ") || "Cloudflare Billing API error"
+    };
+  }
+
+  const subscriptions = Array.isArray(payload?.result?.subscriptions)
+    ? payload.result.subscriptions
+    : [];
+  const activeSubscriptions = subscriptions
+    .filter(item => !item?.end_timestamp)
+    .sort((a, b) => String(b?.start_timestamp || "").localeCompare(String(a?.start_timestamp || "")));
+  const subscription = activeSubscriptions[0] || subscriptions[0] || null;
+  const anchorTimestamp = subscription?.billing_cycle_anchor_timestamp || null;
+  if (!anchorTimestamp) {
+    return {
+      available: false,
+      state: "NO_ANCHOR",
+      covered: Boolean(payload?.result?.covered),
+      subscriptionCount: subscriptions.length,
+      message: "Cloudflare Billing APIからbilling_cycle_anchor_timestampを取得できませんでした。"
+    };
+  }
+
+  const cycleStart = billingCycleBoundary(anchorTimestamp, now, "start");
+  const cycleEnd = billingCycleBoundary(anchorTimestamp, now, "end");
+  if (!cycleStart || !cycleEnd) {
+    return {
+      available: false,
+      state: "INVALID_ANCHOR",
+      message: "Cloudflare billing cycle anchor timestampが不正です。"
+    };
+  }
+
+  return {
+    available: true,
+    state: "OK",
+    covered: Boolean(payload?.result?.covered),
+    subscriptionId: subscription?.id || null,
+    subscriptionStart: subscription?.start_timestamp || null,
+    anchorTimestamp,
+    cycleStart: cycleStart.toISOString(),
+    cycleEnd: cycleEnd.toISOString(),
+    billingDayUtc: cycleStart.getUTCDate()
+  };
+}
+
 function dayStartUtcString(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())).toISOString();
 }
@@ -669,11 +781,37 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const date = utcDateString(now);
   const dayStart = dayStartUtcString(now);
   const endTime = now.toISOString();
-  const monthStart = monthStartUtcString(now);
   const paidMode = monitoring.key === "PAID_5USD";
-  const d1Start = paidMode ? monthStart.slice(0, 10) : date;
+
+  // Paid monitoring must follow Cloudflare's actual billing cycle, not the
+  // calendar month. The Billing API exposes billing_cycle_anchor_timestamp.
+  // We intentionally do not silently label a calendar-month fallback as a
+  // billing period.
+  const billingCycle = paidMode
+    ? await getCloudflareBillingCycle(env, { now, token })
+    : {
+        available: true,
+        state: "FREE_DAILY",
+        cycleStart: dayStart,
+        cycleEnd: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString(),
+        billingDayUtc: null
+      };
+
+  if (paidMode && !billingCycle.available) {
+    console.warn("cloudflare_billing_cycle_unavailable", billingCycle.message || billingCycle.state);
+  }
+
+  const usagePeriodStart = paidMode && billingCycle.available
+    ? billingCycle.cycleStart
+    : paidMode
+      ? monthStartUtcString(now)
+      : dayStart;
+  const usagePeriodEnd = paidMode && billingCycle.available
+    ? billingCycle.cycleEnd
+    : endTime;
+  const d1Start = paidMode ? usagePeriodStart.slice(0, 10) : date;
   const d1End = date;
-  const workerStart = paidMode ? monthStart : dayStart;
+  const workerStart = usagePeriodStart;
 
   const response = await fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
     method: "POST",
@@ -763,7 +901,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
         },
         body: JSON.stringify({
           query: R2_USAGE_QUERY,
-          variables: { accountTag, start: monthStart, end: endTime }
+          variables: { accountTag, start: usagePeriodStart, end: endTime }
         })
       }),
       fetch(CLOUDFLARE_GRAPHQL_ENDPOINT, {
@@ -864,12 +1002,35 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
     date,
     retrievedAt: new Date().toISOString(),
     note: "Cloudflare Analyticsの集計値です。最新値の反映には遅延が発生する場合があります。",
+    usagePeriod: {
+      start: usagePeriodStart,
+      end: paidMode && billingCycle.available ? billingCycle.cycleEnd : endTime,
+      basis: paidMode
+        ? (billingCycle.available ? "CLOUDFLARE_BILLING_CYCLE" : "CALENDAR_MONTH_FALLBACK_BILLING_UNAVAILABLE")
+        : "UTC_DAY",
+      billingCycle
+    },
     monitoring: {
       profile: monitoring.key,
       label: monitoring.label,
       budgetUsd: monitoring.budgetUsd,
       safetyFactor: monitoring.safetyFactor,
       period: monitoring.period,
+      periodStart: usagePeriodStart,
+      periodEnd: paidMode && billingCycle.available ? billingCycle.cycleEnd : endTime,
+      periodBasis: paidMode
+        ? (billingCycle.available ? "CLOUDFLARE_BILLING_CYCLE" : "CALENDAR_MONTH_FALLBACK_BILLING_UNAVAILABLE")
+        : "UTC_DAY",
+      billingCycle: {
+        available: Boolean(billingCycle.available),
+        state: billingCycle.state || null,
+        subscriptionId: billingCycle.subscriptionId || null,
+        anchorTimestamp: billingCycle.anchorTimestamp || null,
+        cycleStart: billingCycle.cycleStart || null,
+        cycleEnd: billingCycle.cycleEnd || null,
+        billingDayUtc: billingCycle.billingDayUtc ?? null,
+        message: billingCycle.message || null
+      },
       budgetUtilizationPercent,
       budgetState,
       estimatedOverageUsd,
