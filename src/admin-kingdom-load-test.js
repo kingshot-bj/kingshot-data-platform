@@ -565,8 +565,9 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const runNow=Math.floor(Date.now()/1000);
   try{
-    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,api_concurrency,available_pool_keys,cloudflare_before_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
-      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,apiConcurrency,concurrency,apiConcurrency,availablePoolKeys,cloudflareSafety ? JSON.stringify(compactCloudflareLoadTestSnapshot(cloudflareSafety)) : null,runNow,runNow).run();
+    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,api_concurrency,available_pool_keys,cloudflare_before_json,status,created_at,updated_at,last_activity_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'RUNNING',?,?,?)")
+      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,apiConcurrency,concurrency,apiConcurrency,availablePoolKeys,cloudflareSafety ? JSON.stringify(compactCloudflareLoadTestSnapshot(cloudflareSafety)) : null,runNow,runNow,runNow).run();
+    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"RUN",status:"STARTED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,startedAt:runNow,completedAt:null,elapsedMs:0,message:"王国Watchlist実処理負荷テスト Run開始",metadata:{runId,targetCount:kids.length,startKid:Math.min(...kids),endKid:Math.max(...kids),topN,concurrency,apiConcurrency,availablePoolKeys}});
   }catch(error){
     await releaseLoadTestState(env.DB,runId).catch(()=>{});
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
@@ -816,11 +817,31 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     if(allJobsDone){
-      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta,verification,changeEventBreakdown,changeEventBreakdownBasis:"created_at_window_for_run; may include unrelated concurrent activity"}});
+      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta,verification,changeEventBreakdown,changeEventBreakdownBasis:"detected_at_window_for_run; may include unrelated concurrent activity"}});
     }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
   } catch(error) {
-    runError=error; await touch(); throw error;
+    runError=error;
+    await touch();
+    // A consumer can fail independently while other 20-kingdom batches are
+    // still running. Only finalize the parent Run when every seeded Job is
+    // terminal; otherwise leave the durable Run as RUNNING for the other
+    // consumers to finish.
+    const terminal=await env.DB.prepare(
+      "SELECT COUNT(*) AS remaining FROM kingdom_watchlist_jobs WHERE watchlist_id=? AND status NOT IN ('COMPLETED','FAILED')"
+    ).bind("LOAD_TEST:"+runId).first().catch(()=>({remaining:0}));
+    if(Number(terminal?.remaining||0)===0){
+      const finalAt=Math.floor(Date.now()/1000);
+      const summaryRows=await env.DB.prepare(
+        "SELECT SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS success_count,SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_count,SUM(ranking_rows) AS ranking_rows_saved,SUM(player_rows) AS player_rows_saved FROM kingdom_watchlist_jobs WHERE watchlist_id=?"
+      ).bind("LOAD_TEST:"+runId).first().catch(()=>null);
+      const finalElapsed=Math.max(0,Date.now()-Number(run.created_at||finalAt)*1000);
+      await env.DB.prepare(
+        "UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' ELSE 'FAILED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=? AND status='RUNNING'"
+      ).bind(Number(summaryRows?.success_count||0),Number(summaryRows?.failed_count||0),Number(summaryRows?.ranking_rows_saved||0),Number(summaryRows?.player_rows_saved||0),finalElapsed,finalAt,finalAt,finalAt,runId).run().catch(()=>{});
+      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:"FAILED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,startedAt:Number(run.created_at||finalAt),completedAt:finalAt,elapsedMs:finalElapsed,errorCode:runError?.code||"LOAD_TEST_QUEUE_FAILED",message:"王国Watchlist実処理負荷テスト Run失敗",metadata:{runId,targetCount:allKids.length,success:Number(summaryRows?.success_count||0),failed:Number(summaryRows?.failed_count||0),rankingRowsSaved:Number(summaryRows?.ranking_rows_saved||0),playerRowsSaved:Number(summaryRows?.player_rows_saved||0),finalizedBy:"queue_consumer_error"} }).catch(()=>{});
+    }
+    throw error;
   } finally {
     if(timer) clearInterval(timer);
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true).catch(()=>{});
