@@ -3818,13 +3818,6 @@ async function handleGoogleDriveOAuthCallback(request, env) {
 }
 
 export default {
-  async queue(batch, env) {
-    for (const message of batch.messages) {
-      if (message?.body?.type !== "KINGDOM_LOAD_TEST_RUN") { message.ack(); continue; }
-      try { await runKingdomLoadTestQueue(env, message.body, processKingdomWatchlistJob); message.ack(); }
-      catch (error) { console.error("kingdom_load_test_queue_consumer_failed", error?.message || error); message.retry(); }
-    }
-  },
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
@@ -3925,7 +3918,23 @@ export default {
     }
   },
   async queue(batch, env) {
-    return await handleServiceUsageQueue(batch, env);
+    const messages = batch?.messages || [];
+    const loadTestMessages = messages.filter(message => message?.body?.type === "KINGDOM_LOAD_TEST_RUN");
+    const serviceUsageMessages = messages.filter(message => message?.body?.type !== "KINGDOM_LOAD_TEST_RUN");
+
+    for (const message of loadTestMessages) {
+      try {
+        await runKingdomLoadTestQueue(env, message.body, processKingdomWatchlistJob);
+        message.ack();
+      } catch (error) {
+        console.error("kingdom_load_test_queue_consumer_failed", error?.message || error);
+        message.retry();
+      }
+    }
+
+    if (serviceUsageMessages.length) {
+      await handleServiceUsageQueue({ ...batch, messages: serviceUsageMessages }, env);
+    }
   }
 };
 
