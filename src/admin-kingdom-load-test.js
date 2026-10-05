@@ -797,7 +797,7 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
       const cloudflareAfter=await captureCloudflareLoadTestUsage(env);
       let cloudflareBefore=null; try { cloudflareBefore=run.cloudflare_before_json?JSON.parse(run.cloudflare_before_json):null; } catch {}
       const cloudflareDelta=buildCloudflareLoadTestDelta(cloudflareBefore,cloudflareAfter);
-      const totalElapsedMs=Math.max(0,(now-Number(run.created_at||Math.floor(startedAt/1000)))*1000+(Date.now()%1000));
+      const totalElapsedMs=Math.max(0,Date.now()-Number(run.created_at||Math.floor(startedAt/1000))*1000);
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,cloudflare_after_json=?,cloudflare_delta_json=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,totalElapsedMs,cloudflareAfter?JSON.stringify(cloudflareAfter):null,JSON.stringify(cloudflareDelta),now,now,now,runId).run();
     }else{
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET last_activity_at=?,updated_at=? WHERE run_id=? AND status='RUNNING'").bind(now,now,runId).run().catch(()=>{});
