@@ -7583,6 +7583,14 @@ async function renderPublicStatusPage(request, env) {
   const monitoringEstimatedCostJpy = usage.monitoring?.estimatedMonthlyCostJpy ?? null;
   const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
   const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
+  const usagePeriod = usage.usagePeriod || null;
+  const billingCycle = usage.monitoring?.billingCycle || usagePeriod?.billingCycle || null;
+  const formatPeriodDate = value => value ? new Date(value).toLocaleString("ja-JP", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+  const billingPeriodLabel = monitoringProfile === "PAID_5USD"
+    ? (usagePeriod?.basis === "CLOUDFLARE_BILLING_CYCLE"
+      ? "請求サイクル: " + formatPeriodDate(usagePeriod.start) + " ～ " + formatPeriodDate(usagePeriod.end) + "（UTC）"
+      : "請求サイクル未取得：カレンダー月フォールバック中")
+    : "Free監視: UTC日次";
   const monitoringBudgetLabel = monitoringProfile === "PAID_5USD"
     ? "最大使用率（CPU推定を含む）"
     : "Freeプラン現行監視の最大使用率";
@@ -7781,6 +7789,7 @@ async function renderPublicStatusPage(request, env) {
             </div>
           </div>
           <div class="resource-note" id="monitoring-profile-message">現在: <b>${escapeHtml(monitoringProfile === "PAID_5USD" ? "Workers Paid $5" : "Workers Free")}</b> · ${escapeHtml(monitoringProfileSetting.source === "DB" ? "保存済み設定" : "環境変数の既定値")}</div>
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>請求サイクル</b><small>Cloudflare Billing APIのbilling_cycle_anchor_timestamp基準</small></div><strong class="${billingCycle?.available ? "good" : "warn"}">${escapeHtml(billingPeriodLabel)}</strong></div>` : `<div class="resource-note">${escapeHtml(billingPeriodLabel)}</div>`}
           ` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>請求サイクル内のD1 / Workers / R2各使用率の最大値。CPUはRequests × CPU P50の推定値</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div><div class="resource-note">この割合は「$5を使った割合」ではありません。CPU使用率が最大値になった場合は、Workersの月間CPU安全上限に対する推定値（CPU P50基準）です。</div>` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
@@ -7789,7 +7798,7 @@ async function renderPublicStatusPage(request, env) {
           <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
           <div class="resource-head"><div><b>${monitoringProfile === "PAID_5USD" ? "Workers Paid $5 Included" : "Workers Free Tier"}</b><small>${escapeHtml(usage.workers?.scriptName || "kingshot-data-platform")} · ${monitoringProfile === "PAID_5USD" ? "請求サイクル内" : "当日UTC"}</small></div><span class="state ${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).tone : "neutral"}">${usage.workers?.available ? cloudflareUsageLabel(usage.workers.requestsState).label : "未確認"}</span></div>
           ${usage.workers?.available ? resourceRow("Worker Requests", usage.workers.requests, usage.limits?.workers?.requestsPerMonth ?? usage.limits?.workers?.requestsPerDay, usage.workers.requestsPercent, usage.workers.requestsState) : ""}
-          <div class="resource-head"><div><b>R2 ${monitoringProfile === "PAID_5USD" ? "Included" : "Free Tier"}</b><small>${escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—")}〜 · 月次</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
+          <div class="resource-head"><div><b>R2 ${monitoringProfile === "PAID_5USD" ? "Included" : "Free Tier"}</b><small>${monitoringProfile === "PAID_5USD" && usagePeriod?.basis === "CLOUDFLARE_BILLING_CYCLE" ? escapeHtml(formatPeriodDate(usagePeriod.start) + " ～ " + formatPeriodDate(usagePeriod.end) + " · 請求サイクル") : escapeHtml(usage.r2?.monthStart ? new Date(usage.r2.monthStart).toLocaleDateString("ja-JP") : "—") + "〜 · 月次"}</small></div><span class="state ${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).tone : "neutral"}">${usage.r2?.available ? cloudflareUsageLabel(usage.r2.classAState).label : "未確認"}</span></div>
           ${usage.r2?.available ? resourceRow("Class A Operations", usage.r2.classAOperations, usage.limits?.r2?.classAOperationsPerMonth, usage.r2.classAPercent, usage.r2.classAState) : ""}
           ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
           ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
