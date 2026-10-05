@@ -505,3 +505,36 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - /kingdoms Discoveryは既存API Pool/Guard/Safety Gateを迂回しない。
 - 取得済み/未取得判定を理由に負荷テスト対象を自動除外しない。
 - 本番E2Eが成功するまで「負荷テスト成功」と断定しない。
+
+## 2026-10-05 — MightPulse王国存在数の24時間更新
+
+### 目的
+- 「未取得王国」をEagleEye内のランキング保有数ではなく、MightPulseが返す実在・掲載王国数を母数として計算できるようにする。
+- Catalog 0件を理由に「未取得0王国」と誤表示する状態を解消する。
+- 既存の負荷テストや王国ウォッチリスト取得とは独立して、王国Catalogを24時間周期で更新する。
+
+### 実装
+- 既存 `runKingdomCatalogDiscovery()` を再利用。
+- 新規 `src/kingdom-catalog-scheduler.js` を追加。
+- Worker Cronは既存の5分トリガーを利用し、毎回APIを叩くのではなく、以下の条件で1ページだけ処理する。
+  - Catalog更新サイクル未完了（`next_page != 1`）なら次ページを処理。
+  - 完了済みで24時間未経過ならスキップ。
+  - 24時間経過後はpage 1から次の全件走査を開始。
+- 1回のCronで1ページ（最大24王国）のみ取得するため、1 Worker実行に大量APIリクエストを発生させない。
+- `/kingdoms?page=N&size=24` は既存API Pool / Guard経由で取得する。
+- 全ページ走査が完了して `next_page=1` に戻った時点で、`kingdom_catalog` 件数を記録した完了System Eventを追加。
+
+### 未取得王国の母数
+- `kingdom_collection_stats` の取得済み王国数を取得済みとして使用。
+- `kingdom_catalog` の件数をMightPulse確認済み王国数として使用。
+- Catalog更新完了後は、
+  `未取得王国 = MightPulse確認王国数 - 取得済み王国数`
+  として表示される。
+- したがってCatalogが0件の初期状態では、未取得数は実際の母数がまだ取得できていない状態。Catalog Discovery完了後に正しい値になる。
+
+### 安全性
+- 新しい外部APIエンドポイントは追加していない。
+- 既存の `/kingdoms` Discovery実装を再利用。
+- 既存のランキング取得、プレイヤー取得、Change Event、API Pool lease/return、Load Test処理には変更を加えていない。
+- 1ページ単位のBounded Discoveryを維持。
+- MightPulse APIは1 Cronあたり最大1リクエストなので、5分Cronでも最大288リクエスト/日。全件走査完了後は24時間スキップする。
