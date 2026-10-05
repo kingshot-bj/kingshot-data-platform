@@ -282,3 +282,13 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 
 ### 次の確認
 次回100王国本番負荷テストでは、20王国Runを基準としてCloudflare消費率がどの程度増えるかを比較する。
+
+
+### OWNER負荷テストのCloudflare消費量履歴保存
+- `kingdom_load_test_runs` に `cloudflare_before_json` / `cloudflare_after_json` / `cloudflare_delta_json` を追加。
+- 負荷テスト開始時と完了時のCloudflare利用量を保存し、差分を履歴API/CSVへ出力。
+- 保存する履歴は**プラン非依存の実測差分**。$5 Paidを固定基準にした割合は保存しない。
+- 履歴UIでは小型の `Free / Paid $5` 切替で比較基準を選択し、保存済みの実測値から表示時に割合を再計算する。
+- 将来の別プラン追加時も、保存データを作り直さず比較基準だけ追加できる構造。
+- Cloudflare履歴用migrationは、既存の `0036_collection_semaphore_slots.sql` と番号が衝突しないよう `migrations/0044_kingdom_load_test_cloudflare_usage.sql` に整理。
+- 既にデプロイ済みコードが本番D1の未適用カラムを参照していたため、**migration適用前は負荷テスト開始が失敗する**。0044適用後に本番E2Eを再実施する。
