@@ -233,35 +233,38 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 ## 2026-10-05 — OWNER負荷テストのCloudflare消費量履歴保存
 
 ### 目的
-OWNERの王国Watchlist実処理負荷テストについて、各RunごとにCloudflare $5 Paidプラン相当の消費量を「開始前 → 終了後」の差分で保存し、過去Runと比較できるようにした。
+OWNERの王国Watchlist実処理負荷テストについて、各RunごとにCloudflareリソースの「開始前 → 終了後」差分を保存し、過去Runと比較できるようにする。
+
+### 重要方針
+- 履歴として保存するのは**プラン非依存の実測差分**。
+- 「$5 Paidプラン前提」で消費率を保存しない。
+- Run実行時点のCloudflare監視profileは参考情報として保持するが、保存値の割合計算には使用しない。
+- Free / Paid $5等の比較基準は、履歴を表示するときに選択して再計算する。
+- 将来別プランを追加しても、過去Runの実測データを作り直す必要はない。
 
 ### 保存対象
 - D1 Rows Read
 - D1 Rows Written
+- D1 storage bytesの変化
 - Workers Requests
-- Workers CPU time（Cloudflare AnalyticsのP50ベース推定値）
+- Workers CPU time（Cloudflare Analyticsから取得した値）
 - R2 Class A operations
 - R2 Class B operations
-- R2 storage bytes
+- R2 storage bytesの変化
 
-Runには以下の3つのJSONを保存する。
+Runには以下のJSONを保存する。
 - `cloudflare_before_json`
 - `cloudflare_after_json`
 - `cloudflare_delta_json`
 
-差分JSONではPAID_5USD時の月間込み枠を基準に、各リソースの今回Run消費率（%）を算出する。
+差分JSONにはリソースの**生の差分値のみ**を保存し、プラン別のlimit / percentageは保存しない。
 
 ### UI
-OWNER負荷テスト履歴の各Runに小さく以下を表示する。
-- D1読 %
-- D1書 %
-- Workers CPU（推定）%
-- R2 Class A %
-- R2 Class B %
-
-大きな専用カードにはせず、既存の履歴詳細内に追加する方針。
-
-CSVエクスポートにもCloudflare消費差分JSONを追加。
+OWNER負荷テスト履歴にはCloudflare消費量を既存履歴内で小さく表示する。
+- 小型の `Free / Paid $5` 切替ボタンを用意。
+- 選択した比較基準に応じて、保存済み実測値から表示時に割合を再計算する。
+- $5 Paidを常時前提にはしない。
+- 将来の別プラン追加時も比較基準だけ追加できる構造。
 
 ### System JSON / System Log
 - Load Test COMPLETEイベントのmetadataに `cloudflareUsage` を追加。
@@ -270,25 +273,19 @@ CSVエクスポートにもCloudflare消費差分JSONを追加。
 
 ### Queue対応
 Queueが20王国単位で分割されても、開始前スナップショットはRun作成時に1回取得し、最終Queue chunk完了時に終了後スナップショットを取得する。
-また、複数Queue chunkをまたぐRunの`elapsed_ms`はRun作成時刻から算出するよう修正した。
+複数Queue chunkをまたぐRunの `elapsed_ms` はRun作成時刻から算出する。
 
 ### Migration / Commits
-- `0036_kingdom_load_test_cloudflare_usage.sql`
+- `0044_kingdom_load_test_cloudflare_usage.sql`
 - `2828698ae8c8176f39f5374ec2487f5563b1ca7d` — Cloudflare usage snapshot/delta persistence
 - `57b30c6eae9949a7e0bd36f8294d321d4eae2096` — history UI rendering fix
 - `1214dee66004390a8363e73e597eefcf9596bfbd1` — Queue chunk跨ぎのtotal elapsed修正
 - `731c3fe2346657ecea92413a8a5521aee263a2f1` — Run start timestamp基準へ補正
-- `3f9923b318e50840d2a51ad402ce864f08e5944c` — D1 migration
+- `3f9923b318e50840d2a51ad402ce864f08e5944c` — 初期migration実装
+- `f70fcbd984040f67dba1f78e0aca79829ef91deb` — 履歴をプラン非依存化 + 小型Free/Paid $5比較切替
 
-### 次の確認
-次回100王国本番負荷テストでは、20王国Runを基準としてCloudflare消費率がどの程度増えるかを比較する。
-
-
-### OWNER負荷テストのCloudflare消費量履歴保存
-- `kingdom_load_test_runs` に `cloudflare_before_json` / `cloudflare_after_json` / `cloudflare_delta_json` を追加。
-- 負荷テスト開始時と完了時のCloudflare利用量を保存し、差分を履歴API/CSVへ出力。
-- 保存する履歴は**プラン非依存の実測差分**。$5 Paidを固定基準にした割合は保存しない。
-- 履歴UIでは小型の `Free / Paid $5` 切替で比較基準を選択し、保存済みの実測値から表示時に割合を再計算する。
-- 将来の別プラン追加時も、保存データを作り直さず比較基準だけ追加できる構造。
-- Cloudflare履歴用migrationは、既存の `0036_collection_semaphore_slots.sql` と番号が衝突しないよう `migrations/0044_kingdom_load_test_cloudflare_usage.sql` に整理。
-- 既にデプロイ済みコードが本番D1の未適用カラムを参照していたため、**migration適用前は負荷テスト開始が失敗する**。0044適用後に本番E2Eを再実施する。
+### 現在の注意
+- コード上はCloudflare履歴の割合計算を固定$5保存方式から、表示時のプラン選択方式へ変更済み。
+- ただし本番D1への `0044_kingdom_load_test_cloudflare_usage.sql` 適用確認はまだ必要。
+- **本番E2E成功扱いにはしていない。**
+- 次回負荷テスト前にmigration適用を確認し、100王国本番負荷テストでは20王国単位のRunを基準にCloudflare実測値を比較する。
