@@ -53,7 +53,7 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="metric"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div></div>
 </div></div>
 <div class="section"><h2>王国コレクション状況</h2><div class="detail">
-<div class="row"><span>Catalog登録王国</span><b>${formatCount(collection.catalogTotal)}王国</b></div>
+<div class="row"><span>MightPulse確認王国</span><b>${formatCount(collection.catalogTotal)}王国</b></div>
 <div class="row"><span>取得済み王国</span><b>${formatCount(collection.collectedCount)}王国</b></div>
 <div class="row"><span>未取得王国</span><b>${formatCount(collection.uncollectedCount)}王国</b></div>
 <div class="row"><span>累計成功取得</span><b>${formatCount(collection.collectionCount)}回</b></div>
@@ -65,7 +65,7 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="row"><span>有効な王国ウォッチリスト</span><b>${formatCount(activeWatchlists)}件</b></div>
 <div class="row"><span>ウォッチ対象のユニーク王国</span><b>${formatCount(watchedKingdoms)}王国</b></div>
 </div></div>
-<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「登録王国」はプレイヤーDB基準です。ランキングだけ存在する王国は上の関連データで別に確認できます。</div>
+<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「MightPulse確認王国」はMightPulse /kingdoms のCatalogを24時間周期で更新した件数です。取得済み王国との差分を未取得王国として表示します。プレイヤーDB基準の王国数は上の「登録王国」で確認できます。</div>
 </main></body></html>`;
   } catch (error) {
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye データ登録状況</title><style>body{background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px}.error{margin-top:18px;padding:16px;border:1px solid #7f1d1d;background:#3a1418;border-radius:12px;color:#fca5a5}a{color:#cbd5e1}</style></head><body><a href="/admin">← ADMIN CONTROL</a><h1>データ登録状況を取得できません</h1><div class="error">${String(error?.message || error)}</div></body></html>`;
