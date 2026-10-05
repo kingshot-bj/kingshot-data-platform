@@ -792,14 +792,23 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
           Number(verificationRow?.ranking_rows_sum||0)===totalRankingRows &&
           Number(verificationRow?.player_rows_sum||0)===totalPlayerRows
       };
-      const changeEventRows=await env.DB.prepare(
-        "SELECT target_type, change_type, COUNT(*) AS event_count FROM change_events WHERE created_at >= ? AND created_at <= ? GROUP BY target_type, change_type ORDER BY event_count DESC"
-      ).bind(Number(run.created_at||0),Math.floor(Date.now()/1000)).all().catch(()=>({results:[]}));
-      const changeEventBreakdown=(changeEventRows.results||[]).map(row=>({
-        targetType:String(row.target_type||""),
-        changeType:String(row.change_type||""),
-        count:Number(row.event_count||0)
-      }));
+      // Use the existing change_type + detected_at index instead of scanning change_events by created_at.
+      // This keeps the diagnostic itself bounded and avoids turning verification into a D1 read spike.
+      const changeEventTypes=["RANK_CHANGED","POWER_CHANGED","TOWN_CENTER_CHANGED","ALLIANCE_CHANGED","COORDINATES_CHANGED","ACTIVITY_CHANGED","KILLS_CHANGED","PLAYER_FIELD_CHANGED"];
+      const changeEventBreakdown=[];
+      const changeEventStart=Math.floor(Number(run.created_at||0));
+      const changeEventEnd=Math.floor(Date.now()/1000);
+      for(const changeType of changeEventTypes){
+        const row=await env.DB.prepare(
+          "SELECT target_type, change_type, COUNT(*) AS event_count FROM change_events WHERE change_type=? AND detected_at >= ? AND detected_at <= ? GROUP BY target_type, change_type"
+        ).bind(changeType,changeEventStart,changeEventEnd).first().catch(()=>null);
+        if(row) changeEventBreakdown.push({
+          targetType:String(row.target_type||""),
+          changeType:String(row.change_type||""),
+          count:Number(row.event_count||0)
+        });
+      }
+      changeEventBreakdown.sort((a,b)=>b.count-a.count);
       const totalElapsedMs=Math.max(0,Date.now()-Number(run.created_at||Math.floor(startedAt/1000))*1000);
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,cloudflare_after_json=?,cloudflare_delta_json=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,totalElapsedMs,cloudflareAfter?JSON.stringify(cloudflareAfter):null,JSON.stringify(cloudflareDelta),now,now,now,runId).run();
     }else{
