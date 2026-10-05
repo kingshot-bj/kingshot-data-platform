@@ -912,7 +912,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
         },
         body: JSON.stringify({
           query: R2_BANDWIDTH_QUERY,
-          variables: { accountTag, start: monthStart, end: endTime }
+          variables: { accountTag, start: usagePeriodStart, end: endTime }
         })
       })
     ]);
@@ -929,7 +929,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
         ),
         available: true,
         bandwidthAvailable: bandwidthResponse.ok && !Array.isArray(bandwidthPayload?.errors),
-        monthStart,
+        monthStart: usagePeriodStart,
         bucket: String(env.CLOUDFLARE_R2_BUCKET_NAME || "eagleeye-archive")
       };
     }
