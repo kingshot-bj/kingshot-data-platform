@@ -38,6 +38,10 @@
       {
         "binding": "SERVICE_USAGE_QUEUE",
         "queue": "eagleeye-service-usage"
+      },
+      {
+        "binding": "LOAD_TEST_QUEUE",
+        "queue": "eagleeye-load-test"
       }
     ],
     "consumers": [
@@ -48,6 +52,14 @@
         "max_retries": 5,
         "max_concurrency": 1,
         "dead_letter_queue": "eagleeye-service-usage-dlq"
+      },
+      {
+        "queue": "eagleeye-load-test",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "max_concurrency": 1,
+        "dead_letter_queue": "eagleeye-load-test-dlq"
       }
     ]
   },
@@ -110,5 +122,8 @@
       "GOOGLE_OAUTH_CLIENT_SECRET",
       "GOOGLE_DRIVE_REFRESH_TOKEN"
     ]
+  },
+  "limits": {
+    "cpu_ms": 300000
   }
 }
