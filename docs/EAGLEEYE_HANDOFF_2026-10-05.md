@@ -228,3 +228,57 @@ Step 4: 必要な観測点だけ追加し、無条件でSafety Gateを緩めな�
 - `3243ee642bcd8f0bd72e83429fd3c07a0634f904` — Google Driveミラー失敗をWARNING化
 - `cf15daf53f9461a62fdc86acbd04e5de8babb59e` — Google Drive required secrets明示
 - `c6b3c9f0328c02ba1106b649d0e3a79ed3aaca88` — Gateway遡及時間プリセット
+
+
+## 2026-10-05 — OWNER負荷テストのCloudflare消費量履歴保存
+
+### 目的
+OWNERの王国Watchlist実処理負荷テストについて、各RunごとにCloudflare $5 Paidプラン相当の消費量を「開始前 → 終了後」の差分で保存し、過去Runと比較できるようにした。
+
+### 保存対象
+- D1 Rows Read
+- D1 Rows Written
+- Workers Requests
+- Workers CPU time（Cloudflare AnalyticsのP50ベース推定値）
+- R2 Class A operations
+- R2 Class B operations
+- R2 storage bytes
+
+Runには以下の3つのJSONを保存する。
+- `cloudflare_before_json`
+- `cloudflare_after_json`
+- `cloudflare_delta_json`
+
+差分JSONではPAID_5USD時の月間込み枠を基準に、各リソースの今回Run消費率（%）を算出する。
+
+### UI
+OWNER負荷テスト履歴の各Runに小さく以下を表示する。
+- D1読 %
+- D1書 %
+- Workers CPU（推定）%
+- R2 Class A %
+- R2 Class B %
+
+大きな専用カードにはせず、既存の履歴詳細内に追加する方針。
+
+CSVエクスポートにもCloudflare消費差分JSONを追加。
+
+### System JSON / System Log
+- Load Test COMPLETEイベントのmetadataに `cloudflareUsage` を追加。
+- これによりSystem Log / GatewayのSystem JSONからRun単位のCloudflare消費量を追跡可能。
+- API key等の秘密情報は保存しない。
+
+### Queue対応
+Queueが20王国単位で分割されても、開始前スナップショットはRun作成時に1回取得し、最終Queue chunk完了時に終了後スナップショットを取得する。
+また、複数Queue chunkをまたぐRunの`elapsed_ms`はRun作成時刻から算出するよう修正した。
+
+### Migration / Commits
+- `0036_kingdom_load_test_cloudflare_usage.sql`
+- `2828698ae8c8176f39f5374ec2487f5563b1ca7d` — Cloudflare usage snapshot/delta persistence
+- `57b30c6eae9949a7e0bd36f8294d321d4eae2096` — history UI rendering fix
+- `1214dee66004390a8363e73e597eefcf9596bfbd1` — Queue chunk跨ぎのtotal elapsed修正
+- `731c3fe2346657ecea92413a8a5521aee263a2f1` — Run start timestamp基準へ補正
+- `3f9923b318e50840d2a51ad402ce864f08e5944c` — D1 migration
+
+### 次の確認
+次回100王国本番負荷テストでは、20王国Runを基準としてCloudflare消費率がどの程度増えるかを比較する。
