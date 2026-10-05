@@ -47,7 +47,7 @@ import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, re
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
-import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, renderOwnerKingdomLoadTestPage } from "./admin-kingdom-load-test.js";
+import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { archiveSystemEventLog } from "./retention.js";
@@ -3818,6 +3818,13 @@ async function handleGoogleDriveOAuthCallback(request, env) {
 }
 
 export default {
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      if (message?.body?.type !== "KINGDOM_LOAD_TEST_RUN") { message.ack(); continue; }
+      try { await runKingdomLoadTestQueue(env, message.body, processKingdomWatchlistJob); message.ack(); }
+      catch (error) { console.error("kingdom_load_test_queue_consumer_failed", error?.message || error); message.retry(); }
+    }
+  },
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
