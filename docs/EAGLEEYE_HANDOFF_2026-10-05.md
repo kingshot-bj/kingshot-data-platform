@@ -339,3 +339,41 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - Billing APIが403等の場合は、既存Analytics tokenにBilling Readを付与するか、`CLOUDFLARE_BILLING_TOKEN` を設定する。
 
 - `5845c1258f251457757d5af3295b57c1f91f1c96` / `c13ef77fb04c0f4c368486a3f83d878f4fdb399` — System Status UIに実請求サイクル表示を追加。Paid時は `CLOUDFLARE_BILLING_CYCLE` を表示し、取得失敗時はフォールバック中であることを明示。
+
+
+## 2026-10-05 — 負荷テスト検証・Change Event Read最適化（安全実装）
+
+### 実装内容
+- migrations/0045_change_events_player_lookup.sql
+  - change_events に target_type / target_id / change_type / detected_at / created_at の複合Indexを追加。
+  - データ行のINSERT/UPDATE/DELETEは行わず、既存データを破壊しないRead最適化。
+- src/admin-kingdom-load-test.js
+  - Queue完了時に kingdom_watchlist_jobs の件数・terminal状態・ranking/player rows合計をRun集計値と照合する検証情報をSystem Log metadataへ保存。
+  - Run開始時刻から終了時刻までの change_events を target_type / change_type 別に集計し、Change Event内訳をSystem Log metadataへ保存。
+  - Change Event内訳は同時間帯の通常利用イベントが混在する可能性があるため、metadataに changeEventBreakdownBasis を明示。既存Change Event自体は変更・削除しない。
+  - Queue consumerの finally で、Run全体の elapsed_ms をconsumerチャンク時間で上書きしないよう修正。kingdom_load_test_runs.created_at をRun経過時間の正本として使用。
+- totalElapsedMs の本番/main差分確認：
+  - Queue完了分岐には既にRun開始基準計算が存在した。
+  - ただし最終 finally UPDATE が Date.now()-startedAt で上書きする経路を確認したため、今回修正した。
+  - これにより20王国単位Queue chunkを跨ぐRunでも、履歴の経過時間はRun全体を表す。
+
+### データ安全性
+- change_events の既存行は変更・削除しない。
+- kingdom_load_test_runs / kingdom_watchlist_jobs の集計値は検証用SELECTのみで取得。
+- Change Event内訳もSELECT集計のみ。
+- 既存ランキング保存、previous_rank、removedTargets、R2_ONLY、API Pool lease/return処理には変更を加えない。
+- 0045 migrationはIndex追加のみで、既存データ欠損を発生させるDMLを含まない。
+
+### 実装コミット
+- 4e04f16ceff1574dd93f966490d481fbc7882396 — Change Event複合Index追加
+- 7c5df21719c1dff0c7e8f262df2a76d0ac8407cf — Load Test検証集計 + Change Event内訳 + elapsed修正
+- a3fbd1fafc2dbf5fcc25363d8af216f746ed9624 — Load Test final elapsed更新の修復
+
+### 次の本番確認
+1. 0045 migrationを本番D1へ適用。
+2. Workerをdeploy。
+3. 20王国負荷テストを実行。
+4. System Log / System JSONで verification.summaryMatches = true を確認。
+5. changeEventBreakdown の内訳とRun時間帯を確認。
+6. elapsed_ms がRun開始からの全体時間になっていることを確認。
+7. Change Event件数・ranking/player rowsとCloudflare実測差分を既存履歴と比較する。
