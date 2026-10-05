@@ -39,51 +39,23 @@ function compactCloudflareLoadTestSnapshot(usage) {
 function buildCloudflareLoadTestDelta(before, after) {
   if (!before || !after) return { available: false };
   const delta = (a, b) => Number(b || 0) - Number(a || 0);
-  const d1Read = delta(before.d1?.rows_read, after.d1?.rows_read);
-  const d1Write = delta(before.d1?.rows_written, after.d1?.rows_written);
-  const d1Storage = delta(before.d1?.storage_bytes, after.d1?.storage_bytes);
-  const workerRequests = delta(before.workers?.requests, after.workers?.requests);
-  const workerCpu = delta(before.workers?.cpu_time_ms, after.workers?.cpu_time_ms);
-  const r2A = delta(before.r2?.class_a_operations, after.r2?.class_a_operations);
-  const r2B = delta(before.r2?.class_b_operations, after.r2?.class_b_operations);
-  const r2Storage = delta(before.r2?.storage_bytes, after.r2?.storage_bytes);
-  const pct = (value, limit) => Number.isFinite(value) && Number.isFinite(limit) && limit > 0
-    ? Math.max(0, (Math.max(0, value) / limit) * 100)
-    : null;
-  const profile = String(after.profile || before.profile || "");
-  const paid = profile === "PAID_5USD";
-  const limits = paid ? {
-    d1RowsRead: 25_000_000_000,
-    d1RowsWritten: 50_000_000,
-    workersRequests: 10_000_000,
-    workersCpuMs: 30_000_000,
-    r2ClassA: 1_000_000,
-    r2ClassB: 10_000_000
-  } : null;
   return {
     available: true,
-    profile,
+    profile: String(after.profile || before.profile || ""),
     d1: {
-      rows_read: d1Read,
-      rows_written: d1Write,
-      storage_bytes: d1Storage,
-      rows_read_percent: limits ? pct(d1Read, limits.d1RowsRead) : null,
-      rows_written_percent: limits ? pct(d1Write, limits.d1RowsWritten) : null
+      rows_read: delta(before.d1?.rows_read, after.d1?.rows_read),
+      rows_written: delta(before.d1?.rows_written, after.d1?.rows_written),
+      storage_bytes: delta(before.d1?.storage_bytes, after.d1?.storage_bytes)
     },
     workers: {
-      requests: workerRequests,
-      cpu_time_ms: workerCpu,
-      requests_percent: limits ? pct(workerRequests, limits.workersRequests) : null,
-      cpu_time_ms_percent: limits ? pct(workerCpu, limits.workersCpuMs) : null
+      requests: delta(before.workers?.requests, after.workers?.requests),
+      cpu_time_ms: delta(before.workers?.cpu_time_ms, after.workers?.cpu_time_ms)
     },
     r2: {
-      class_a_operations: r2A,
-      class_b_operations: r2B,
-      storage_bytes: r2Storage,
-      class_a_percent: limits ? pct(r2A, limits.r2ClassA) : null,
-      class_b_percent: limits ? pct(r2B, limits.r2ClassB) : null
-    },
-    limits
+      class_a_operations: delta(before.r2?.class_a_operations, after.r2?.class_a_operations),
+      class_b_operations: delta(before.r2?.class_b_operations, after.r2?.class_b_operations),
+      storage_bytes: delta(before.r2?.storage_bytes, after.r2?.storage_bytes)
+    }
   };
 }
 
@@ -819,7 +791,7 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
 }
 
 export function renderOwnerKingdomLoadTestPage() {
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}.back{color:#94a3b8;text-decoration:none}.reload-btn{margin:0;padding:8px 12px;border:1px solid #475569;border-radius:9px;background:#111827;color:#e2e8f0;font-weight:800;font-size:13px}.reload-btn:active{transform:scale(.98)}.reload-btn:disabled{opacity:.58}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}.history{margin-top:18px;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220}.history h2{margin:0 0 10px;font-size:16px}.history-list{display:grid;gap:9px}.history-item{padding:11px;border:1px solid #334155;border-radius:10px;background:#111b2d}.history-main{display:flex;justify-content:space-between;gap:8px;font-weight:800}.history-meta{margin-top:5px;color:#94a3b8;font-size:12px;line-height:1.6}.history-ok{color:#86efac}.history-failed{color:#fca5a5}.history-running{color:#fbbf24}</style></head><body><main class="wrap"><div class="toolbar"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><button type="button" id="reloadPage" class="reload-btn" onclick="window.__eagleEyeReloadPage()">↻ 再読み込み</button></div><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用Jobも通常の王国Watchlist Jobと同じくD1へ保存し、終了後24時間の保持期間を経て通常の保持期限処理で削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><div class="hint" style="margin:8px 0">API同時処理数は自動決定：実際の利用可能キー数 − 通常利用保護1本。複数の王国Jobが同時に進み、ランキング・プレイヤーのAPIリクエストは全王国でこのAPI枠を共有します。空いた枠は完了したリクエストから即座に次の取得へ回します。</div><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" style="background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">APIクエスト進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div><div class="history"><h2>過去の負荷テスト</h2><div id="historyList" class="history-list"><div class="history-meta">履歴を取得中…</div></div></div></div><script>(function(){window.__eagleEyeLoadTestUiToken=0;function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}.back{color:#94a3b8;text-decoration:none}.reload-btn{margin:0;padding:8px 12px;border:1px solid #475569;border-radius:9px;background:#111827;color:#e2e8f0;font-weight:800;font-size:13px}.reload-btn:active{transform:scale(.98)}.reload-btn:disabled{opacity:.58}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}.history{margin-top:18px;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220}.history h2{margin:0 0 10px;font-size:16px}.history-list{display:grid;gap:9px}.history-item{padding:11px;border:1px solid #334155;border-radius:10px;background:#111b2d}.history-main{display:flex;justify-content:space-between;gap:8px;font-weight:800}.history-meta{margin-top:5px;color:#94a3b8;font-size:12px;line-height:1.6}.history-ok{color:#86efac}.cf-plan-switch{display:flex;gap:3px}.cf-plan-btn{margin:0;padding:3px 7px;border:1px solid #475569;border-radius:6px;background:#111827;color:#94a3b8;font-size:10px;font-weight:800}.cf-plan-btn.active{background:#334155;color:#fff;border-color:#64748b}.history-failed{color:#fca5a5}.history-running{color:#fbbf24}</style></head><body><main class="wrap"><div class="toolbar"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><button type="button" id="reloadPage" class="reload-btn" onclick="window.__eagleEyeReloadPage()">↻ 再読み込み</button></div><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用Jobも通常の王国Watchlist Jobと同じくD1へ保存し、終了後24時間の保持期間を経て通常の保持期限処理で削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><div class="hint" style="margin:8px 0">API同時処理数は自動決定：実際の利用可能キー数 − 通常利用保護1本。複数の王国Jobが同時に進み、ランキング・プレイヤーのAPIリクエストは全王国でこのAPI枠を共有します。空いた枠は完了したリクエストから即座に次の取得へ回します。</div><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" style="background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">APIクエスト進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div><div class="history"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><h2 style="margin:0">過去の負荷テスト</h2><div class="cf-plan-switch" aria-label="Cloudflare比較プラン"><button type="button" class="cf-plan-btn" data-plan="FREE" onclick="setCloudflarePlan('FREE')">Free</button><button type="button" class="cf-plan-btn" data-plan="PAID_5USD" onclick="setCloudflarePlan('PAID_5USD')">Paid $5</button></div></div><div id="historyList" class="history-list"><div class="history-meta">履歴を取得中…</div></div></div></div><script>(function(){window.__eagleEyeLoadTestUiToken=0;initCloudflarePlan();function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
 function formatWaitMs(ms){ms=Number(ms||0);if(ms<1000)return ms+"ms";var sec=Math.round(ms/1000);if(sec<60)return sec+"秒";var min=Math.floor(sec/60),rest=sec%60;return min+"分"+(rest?rest+"秒":"");}
 function apiMetricsText(data){var cap=Number(data.api_concurrency||0),active=Number(data.api_active_count||0),waiting=Number(data.api_waiting_count||0),poolWaiting=Number(data.api_pool_waiting_count||0);var totalWait=Number(data.api_wait_ms||0)+Number(data.api_pool_wait_ms||0);return "API使用 "+active+" / "+cap+"　待ち "+waiting+"　Pool待ち "+poolWaiting+"　累計待機 "+formatWaitMs(totalWait)+"　最小 "+formatWaitMs(data.api_wait_min_ms)+"　最大 "+formatWaitMs(data.api_wait_max_ms);}
 function renderJobProgress(j){
@@ -846,6 +818,29 @@ function renderProgress(data,active){
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
 function formatHistoryTime(ts){if(!ts)return "-";try{return new Date(Number(ts)*1000).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});}catch(e){return "-";}}
+function cloudflarePlanLimits(plan){
+  if(plan==="PAID_5USD") return {d1Read:25000000000,d1Write:50000000,workersRequests:10000000,workersCpu:30000000,r2A:1000000,r2B:10000000};
+  return {d1Read:5000000,d1Write:100000,r2A:1000000,r2B:10000000};
+}
+function cloudflarePct(value,limit){return Number.isFinite(Number(value))&&limit>0?Math.max(0,Number(value)/limit*100):null;}
+function renderCloudflareUsage(run){
+  var cf=run.cloudflare_usage;if(!cf||!cf.available)return "";
+  var plan=window.__eagleEyeCloudflarePlan||((cf.profile==="PAID_5USD")?"PAID_5USD":"FREE");
+  var l=cloudflarePlanLimits(plan),d=cf.d1||{},w=cf.workers||{},r=cf.r2||{};
+  var p=function(v,lim){var x=cloudflarePct(v,lim);return x==null?"-":x.toFixed(4)+"%";};
+  return "<br>Cloudflare ["+esc(plan==="PAID_5USD"?"Paid $5":"Free")+"] D1読 "+p(d.rows_read,l.d1Read)+" / 書 "+p(d.rows_written,l.d1Write)+" / CPU "+(plan==="PAID_5USD"?p(w.cpu_time_ms,l.workersCpu):"-")+" / R2 A "+p(r.class_a_operations,l.r2A)+" / B "+p(r.class_b_operations,l.r2B);
+}
+function setCloudflarePlan(plan){
+  window.__eagleEyeCloudflarePlan=plan;
+  try{localStorage.setItem("eagleEye.loadTest.cloudflarePlan",plan);}catch(e){}
+  document.querySelectorAll(".cf-plan-btn").forEach(function(btn){btn.classList.toggle("active",btn.dataset.plan===plan);});
+  loadLoadTestHistory();
+}
+function initCloudflarePlan(){
+  var saved="";
+  try{saved=String(localStorage.getItem("eagleEye.loadTest.cloudflarePlan")||"");}catch(e){}
+  window.__eagleEyeCloudflarePlan=(saved==="FREE"||saved==="PAID_5USD")?saved:"FREE";
+}
 function renderLoadTestHistory(runs){
   var list=document.getElementById("historyList");
   if(!list)return;
@@ -854,12 +849,7 @@ function renderLoadTestHistory(runs){
     var status=String(run.status||"UNKNOWN");
     var label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;
     var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";
-    var cf=run.cloudflare_usage;
-    var cfHtml="";
-    if(cf&&cf.available){
-      var d=cf.d1||{},w=cf.workers||{},r=cf.r2||{};
-      cfHtml="<br>Cloudflare消費 D1読 "+esc(Number(d.rows_read_percent||0).toFixed(4))+"% / 書 "+esc(Number(d.rows_written_percent||0).toFixed(4))+"% / CPU(推定) "+esc(Number(w.cpu_time_ms_percent||0).toFixed(4))+"% / R2 A "+esc(Number(r.class_a_percent||0).toFixed(4))+"% / B "+esc(Number(r.class_b_percent||0).toFixed(4))+"%";
-    }
+    var cfHtml=renderCloudflareUsage(run);
     return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　最小 '+esc(formatWaitMs(run.api_wait_min_ms))+'　最大 '+esc(formatWaitMs(run.api_wait_max_ms))+'<br>待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回'+cfHtml+'</div><div style="margin-top:8px"><a href="/api/owner/kingdom-load-test/export?run_id='+encodeURIComponent(run.run_id)+'" download style="display:inline-block;padding:7px 10px;border-radius:8px;background:#334155;color:#fff;text-decoration:none;font-size:12px;font-weight:800">CSVエクスポート</a></div></div>';
   }).join("");
 }
