@@ -699,13 +699,21 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     const now=Math.floor(Date.now()/1000);
     const remaining=await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_watchlist_jobs WHERE watchlist_id=? AND status NOT IN ('COMPLETED','FAILED')").bind("LOAD_TEST:"+runId).first().catch(()=>({count:0}));
     const allJobsDone=Number(remaining?.count||0)===0;
+    let totalSuccess=success,totalFailed=failed,totalRankingRows=rankingRows,totalPlayerRows=playerRows;
     if(allJobsDone){
-      await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,success,failed,rankingRows,playerRows,Date.now()-startedAt,now,now,now,runId).run();
+      const totals=await env.DB.prepare("SELECT SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS success_count,SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_count,SUM(ranking_rows) AS ranking_rows_saved,SUM(player_rows) AS player_rows_saved FROM kingdom_watchlist_jobs WHERE watchlist_id=?").bind("LOAD_TEST:"+runId).first().catch(()=>null);
+      totalSuccess=Number(totals?.success_count||0);
+      totalFailed=Number(totals?.failed_count||0);
+      totalRankingRows=Number(totals?.ranking_rows_saved||0);
+      totalPlayerRows=Number(totals?.player_rows_saved||0);
+      await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,Date.now()-startedAt,now,now,now,runId).run();
     }else{
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET last_activity_at=?,updated_at=? WHERE run_id=? AND status='RUNNING'").bind(now,now,runId).run().catch(()=>{});
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
-    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:kids.length,success,failed,cancelled,rankingRowsSaved:rankingRows,playerRowsSaved:playerRows,concurrency,apiConcurrency}});
+    if(allJobsDone){
+      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency}});
+    }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
   } catch(error) {
     runError=error; await touch(); throw error;
