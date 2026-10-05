@@ -102,6 +102,10 @@
         {
           "binding": "SERVICE_USAGE_QUEUE",
           "queue": "eagleeye-service-usage"
+        },
+        {
+          "binding": "LOAD_TEST_QUEUE",
+          "queue": "eagleeye-load-test"
         }
       ]
     },
