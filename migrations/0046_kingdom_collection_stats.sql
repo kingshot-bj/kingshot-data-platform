@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS kingdom_collection_stats (
   updated_at INTEGER NOT NULL
 );
 
+ALTER TABLE kingdom_watchlist_jobs ADD COLUMN collection_source TEXT NOT NULL DEFAULT 'OPERATOR';
+
 CREATE INDEX IF NOT EXISTS idx_kingdom_collection_stats_last_collected
   ON kingdom_collection_stats(last_collected_at DESC);
 
