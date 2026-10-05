@@ -7803,7 +7803,7 @@ async function renderPublicStatusPage(request, env) {
           ${usage.r2?.available ? resourceRow("Class B Operations", usage.r2.classBOperations, usage.limits?.r2?.classBOperationsPerMonth, usage.r2.classBPercent, usage.r2.classBState) : ""}
           ${usage.r2?.available ? resourceRow("R2 Storage", usage.r2.storageBytes, usage.limits?.r2?.storageBytes, usage.r2.storagePercent, usage.r2.storageState) : ""}
           <div class="resource-note">${escapeHtml(usage.note || "Cloudflare Analyticsの集計値です。")}</div>
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-note">PAID_5USD はCloudflare Workers Paidの月次込み枠を基準に、EagleEye側で90%を安全上限として監視します。無料へ戻す場合は <code>CLOUDFLARE_MONITORING_PROFILE=FREE</code> に切り替えて再デプロイすると、従来のFree監視へ戻せます。</div>` : `<div class="resource-note">現在はFree監視プロファイルです。Paid移行時は <code>CLOUDFLARE_MONITORING_PROFILE=PAID_5USD</code> に切り替えます。</div>`}
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-note">PAID_5USD はCloudflare Workers Paidの請求サイクル内込み枠を基準に、EagleEye側で90%を安全上限として監視します。無料へ戻す場合は <code>CLOUDFLARE_MONITORING_PROFILE=FREE</code> に切り替えて再デプロイすると、従来のFree監視へ戻せます。</div>` : `<div class="resource-note">現在はFree監視プロファイルです。Paid移行時は <code>CLOUDFLARE_MONITORING_PROFILE=PAID_5USD</code> に切り替えます。</div>`}
         </div>
       </section>
     `
