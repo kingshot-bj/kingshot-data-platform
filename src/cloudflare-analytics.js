@@ -55,7 +55,7 @@ function getCloudflareMonitoringProfile(env, profileOverride = null) {
       key: "PAID_5USD",
       label: "Workers Paid $5 envelope",
       budgetUsd: 5,
-      period: "BILLING_MONTH_ESTIMATE",
+      period: "CLOUDFLARE_BILLING_CYCLE",
       safetyFactor: PAID_SAFETY_FACTOR,
       usdJpyRate: Number.isFinite(usdJpyRate) && usdJpyRate > 0 ? usdJpyRate : DEFAULT_USD_JPY_RATE,
       d1: Object.fromEntries(Object.entries(D1_PAID_INCLUDED).map(([key, value]) => [key, Math.floor(value * PAID_SAFETY_FACTOR)])),
@@ -999,7 +999,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   return {
     configured: true,
     status,
-    source: "Cloudflare GraphQL Analytics API",
+    source: "Cloudflare GraphQL Analytics API + Billing API",
     date,
     retrievedAt: new Date().toISOString(),
     note: "Cloudflare Analyticsの集計値です。最新値の反映には遅延が発生する場合があります。",
