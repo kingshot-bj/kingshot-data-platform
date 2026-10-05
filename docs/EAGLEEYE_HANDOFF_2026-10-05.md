@@ -425,3 +425,35 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 5. 同一王国を再取得し、取得済み王国数は増えず、累計成功取得だけ+1になることを確認。
 6. 手動更新ではユーザー取得+1、Cron/ローラー/Seederでは運営取得+1になることを確認。
 7. 失敗・中止では取得済み数・累計成功取得が増えないことを確認。
+
+## 2026-10-05 — Load Test Run台帳を一次情報化・ログ取得経路を改善
+
+### 背景
+- status JSON / System LogにはQueue consumer、個別王国Job、API処理、D1処理などが同じrunId系列で混在するため、ログ検索だけでは「100王国Run全体の開始〜終了」を安全に復元しにくかった。
+- 実際の100王国テストでも、20王国単位のQueue consumerが複数回記録され、consumer単位のelapsed_msをRun全体時間と誤認し得る状態だった。
+- そのため、Run全体の計測・状態・完了時刻は kingdom_load_test_runs を一次情報とし、System LogはそのRunの開始・完了・失敗を補助記録する構成へ強化した。
+
+### 実装
+- src/admin-kingdom-load-test.js
+  - Run作成直後に親Runの LOAD_TEST / RUN / STARTED System Eventを記録。
+  - kingdom_load_test_runs.created_at をRun開始時刻の正本として使用。
+  - Queue consumerが20王国単位で分割されても、各consumerのelapsed_msをRun全体時間として扱わない。
+  - 全JobがterminalになったconsumerだけがRun完了を確定。
+  - UPDATE ... WHERE status='RUNNING' の変更件数で完了確定権を1回に限定し、最後のconsumerが複数競合しても完了System Eventを重複記録しない。
+  - consumer失敗時も、全JobがterminalならRunをFAILEDとして確定し、Run全体elapsed_msを finishedAt - created_at で保存。
+  - 他consumerがまだ動いている場合はRunをFAILEDへ早期確定せず、残りのconsumerが継続できるようにする。
+  - Change Event内訳のbasis表記を実際の検索条件 detected_at に修正。
+- 既存の履歴APIは kingdom_load_test_runs.elapsed_ms を優先して返すため、今後の所要時間確認はログ時刻の推測ではなくRun台帳の値を使用できる。
+
+### 計測上のルール
+1. Run開始 = kingdom_load_test_runs.created_at
+2. Run終了 = kingdom_load_test_runs.completed_at
+3. Run所要時間 = kingdom_load_test_runs.elapsed_ms
+4. Queue consumerの開始/終了時刻は「バッチ処理時間」であり、Run全体時間ではない。
+5. System Logの LOAD_TEST / RUN / STARTED と COMPLETE/FAILED はRun台帳を監査・診断する補助記録。
+6. status JSON / History APIはRun台帳を優先して表示する。
+
+### 安全性
+- 既存のランキング保存、Change Event生成、API Pool lease/return、R2保存、previous_rank、removedTargetsには変更を加えていない。
+- 新しい処理はRunメタデータとSystem Logの記録・確定処理のみ。
+- 個別Jobのデータを再取得したり、過去ログを再構築したりする処理は追加していない。
