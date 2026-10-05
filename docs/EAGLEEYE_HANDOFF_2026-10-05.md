@@ -337,3 +337,5 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - 本番確認時は、Paid監視JSONで `usagePeriod.basis = CLOUDFLARE_BILLING_CYCLE` になっていることを確認する。
 - `cycleStart` が実際のCloudflare請求日と一致することも確認する。
 - Billing APIが403等の場合は、既存Analytics tokenにBilling Readを付与するか、`CLOUDFLARE_BILLING_TOKEN` を設定する。
+
+- `5845c1258f251457757d5af3295b57c1f91f1c96` / `c13ef77fb04c0f4c368486a3f83d878f4fdb399` — System Status UIに実請求サイクル表示を追加。Paid時は `CLOUDFLARE_BILLING_CYCLE` を表示し、取得失敗時はフォールバック中であることを明示。
