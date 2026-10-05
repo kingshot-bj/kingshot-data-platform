@@ -718,7 +718,10 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     if(heartbeatTimer) clearInterval(heartbeatTimer);
     if(apiLimiter) await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     const finalNow=Math.floor(Date.now()/1000);
-    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, elapsed_ms = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),Date.now()-startedAt,finalNow,finalNow,runId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, // The Run can span multiple Queue consumers. Never overwrite its duration with one consumer chunk.
+     const runCreatedAtMs=Math.max(0,Number(run.created_at||0)*1000);
+     const finalElapsedMs=runCreatedAtMs>0 ? Math.max(0,Date.now()-runCreatedAtMs) : Math.max(0,Date.now()-startedAt);
+     await env.DB.prepare("UPDATE kingdom_load_test_runs SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' WHEN EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status = 'FAILED' AND last_error = 'LOAD_TEST_CANCELLED') THEN 'CANCELLED' WHEN ? = 1 THEN 'FAILED' ELSE 'COMPLETED' END, success_count = ?, failed_count = ?, ranking_rows_saved = ?, player_rows_saved = ?, updated_at = ?, completed_at = ? WHERE run_id = ?").bind("LOAD_TEST:"+runId,runFailed ? 1 : 0,Number(runSummary?.success_count||0),Number(runSummary?.failed_count||0),Number(runSummary?.ranking_rows_saved||0),Number(runSummary?.player_rows_saved||0),finalElapsedMs,finalNow,finalNow,runId).run().catch(()=>{});
     await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(error=>console.error("owner_kingdom_load_test_state_release_failed",error?.message||String(error)));await writer.close().catch(()=>{});
 }})();
   // Keep the server-side Run alive when the iPhone Web App closes the stream on reload.
@@ -769,6 +772,34 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
       const cloudflareAfter=await captureCloudflareLoadTestUsage(env);
       let cloudflareBefore=null; try { cloudflareBefore=run.cloudflare_before_json?JSON.parse(run.cloudflare_before_json):null; } catch {}
       const cloudflareDelta=buildCloudflareLoadTestDelta(cloudflareBefore,cloudflareAfter);
+      // Observational verification only: no job/result data is mutated here.
+      const verificationRow=await env.DB.prepare(
+        "SELECT COUNT(*) AS job_count, SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS completed_jobs, SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_jobs, SUM(CASE WHEN status NOT IN ('COMPLETED','FAILED') THEN 1 ELSE 0 END) AS non_terminal_jobs, SUM(ranking_rows) AS ranking_rows_sum, SUM(player_rows) AS player_rows_sum FROM kingdom_watchlist_jobs WHERE watchlist_id=?"
+      ).bind("LOAD_TEST:"+runId).first().catch(()=>null);
+      const verification={
+        expectedJobs:allKids.length,
+        jobRows:Number(verificationRow?.job_count||0),
+        completedJobs:Number(verificationRow?.completed_jobs||0),
+        failedJobs:Number(verificationRow?.failed_jobs||0),
+        nonTerminalJobs:Number(verificationRow?.non_terminal_jobs||0),
+        rankingRowsSum:Number(verificationRow?.ranking_rows_sum||0),
+        playerRowsSum:Number(verificationRow?.player_rows_sum||0),
+        summaryMatches:
+          Number(verificationRow?.job_count||0)===allKids.length &&
+          Number(verificationRow?.non_terminal_jobs||0)===0 &&
+          Number(verificationRow?.completed_jobs||0)===totalSuccess &&
+          Number(verificationRow?.failed_jobs||0)===totalFailed &&
+          Number(verificationRow?.ranking_rows_sum||0)===totalRankingRows &&
+          Number(verificationRow?.player_rows_sum||0)===totalPlayerRows
+      };
+      const changeEventRows=await env.DB.prepare(
+        "SELECT target_type, change_type, COUNT(*) AS event_count FROM change_events WHERE created_at >= ? AND created_at <= ? GROUP BY target_type, change_type ORDER BY event_count DESC"
+      ).bind(Number(run.created_at||0),Math.floor(Date.now()/1000)).all().catch(()=>({results:[]}));
+      const changeEventBreakdown=(changeEventRows.results||[]).map(row=>({
+        targetType:String(row.target_type||""),
+        changeType:String(row.change_type||""),
+        count:Number(row.event_count||0)
+      }));
       const totalElapsedMs=Math.max(0,Date.now()-Number(run.created_at||Math.floor(startedAt/1000))*1000);
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,cloudflare_after_json=?,cloudflare_delta_json=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,totalElapsedMs,cloudflareAfter?JSON.stringify(cloudflareAfter):null,JSON.stringify(cloudflareDelta),now,now,now,runId).run();
     }else{
@@ -776,7 +807,7 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     if(allJobsDone){
-      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta}});
+      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta,verification,changeEventBreakdown,changeEventBreakdownBasis:"created_at_window_for_run; may include unrelated concurrent activity"}});
     }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
   } catch(error) {
