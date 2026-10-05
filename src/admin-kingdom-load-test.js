@@ -530,6 +530,23 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_JOB_SEED_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
 
+  // Queue handoff: execution must not depend on the HTTP/NDJSON connection.
+  if (!env.LOAD_TEST_QUEUE || typeof env.LOAD_TEST_QUEUE.send !== "function") {
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status='FAILED', completed_at=?, updated_at=? WHERE run_id=? AND status='RUNNING'").bind(runNow, runNow, runId).run().catch(()=>{});
+    await releaseLoadTestState(env.DB,runId).catch(()=>{});
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_QUEUE_UNAVAILABLE",message:"負荷テスト専用Queueが設定されていません。"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
+  try {
+    await env.LOAD_TEST_QUEUE.send({type:"KINGDOM_LOAD_TEST_RUN",run_id:runId,actor_id:String(auth.user_id||""),trace_id:traceId,top_n:topN,concurrency,api_concurrency:apiConcurrency});
+    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"QUEUED",status:"QUEUED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,startedAt:runNow,completedAt:runNow,elapsedMs:0,message:"王国Watchlist実処理負荷テストをQueueへ投入",metadata:{runId,targetCount:kids.length,topN,concurrency,apiConcurrency}});
+  } catch(error) {
+    const failedAt=Math.floor(Date.now()/1000);
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status='FAILED', completed_at=?, updated_at=? WHERE run_id=? AND status='RUNNING'").bind(failedAt,failedAt,runId).run().catch(()=>{});
+    await releaseLoadTestState(env.DB,runId).catch(()=>{});
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_QUEUE_SEND_FAILED",message:error?.message||String(error)}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
+  return new Response(JSON.stringify({ok:true,type:"queued",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,top_n:topN})+"\n",{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate"}});
+
   const encoder=new TextEncoder(),stream=new TransformStream(),writer=stream.writable.getWriter();
   let streamClosed=false;
   // Streaming is UI telemetry only. Never let a slow/closed iPhone stream
@@ -645,6 +662,48 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   await new Promise(resolve => setTimeout(resolve, 250));
   return new Response(stream.readable,{headers:{"content-type":"application/x-ndjson; charset=UTF-8","cache-control":"no-store, no-cache, must-revalidate","x-accel-buffering":"no"}});
 }
+export async function runKingdomLoadTestQueue(env, message, processJob) {
+  const runId=String(message?.run_id||"").trim();
+  if(!runId) throw new Error("LOAD_TEST_QUEUE_RUN_ID_REQUIRED");
+  if(typeof processJob!=="function") throw new Error("KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE");
+  const run=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id=? LIMIT 1").bind(runId).first();
+  if(!run) return {ok:false,skipped:true,reason:"RUN_NOT_FOUND",run_id:runId};
+  if(String(run.status||"")!=="RUNNING") return {ok:true,skipped:true,reason:"RUN_NOT_RUNNING",run_id:runId,status:String(run.status||"")};
+  let kids=[]; try { kids=JSON.parse(run.kids_json||"[]").map(Number).filter(Number.isFinite); } catch {}
+  if(!kids.length) throw new Error("LOAD_TEST_KIDS_MISSING");
+  const topN=Number(run.top_n||message.top_n||10)===5?5:10;
+  const apiConcurrency=Math.max(1,Number(run.api_concurrency||message.api_concurrency||1));
+  const concurrency=Math.max(1,Math.min(kids.length,Number(run.concurrency||message.concurrency||apiConcurrency)));
+  const traceId=String(message.trace_id||systemTraceId("load-queue"));
+  const actorId=String(message.actor_id||"");
+  const apiLimiter=createLoadTestApiLimiter(apiConcurrency); apiLimiter.globalLimiter=null;
+  const startedAt=Date.now(); let timer=null; let runError=null;
+  const touch=async()=>{const now=Math.floor(Date.now()/1000);await refreshLoadTestState(env.DB,runId).catch(()=>{});await env.DB.prepare("UPDATE kingdom_load_test_runs SET last_activity_at=?,updated_at=? WHERE run_id=? AND status='RUNNING'").bind(now,now,runId).run().catch(()=>{});await persistLoadTestMetrics(env.DB,runId,apiLimiter).catch(()=>{});};
+  await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"CONSUME",status:"STARTED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,startedAt:Math.floor(startedAt/1000),message:"Queue consumerが負荷テストを開始",metadata:{runId,targetCount:kids.length,topN,concurrency,apiConcurrency}}).catch(()=>{});
+  timer=setInterval(()=>{touch().catch(()=>{});},5000);
+  try {
+    const results=await runWithConcurrency(kids,concurrency,kid=>runKingdomWatchlistLoad(env,kid,topN,runId,processJob,async()=>{await touch();},apiLimiter,traceId),async()=>{await touch();});
+    const success=results.filter(x=>x?.ok).length;
+    const failed=results.filter(x=>!x?.ok&&!x?.cancelled).length;
+    const cancelled=results.filter(x=>x?.cancelled).length;
+    const rankingRows=results.reduce((n,x)=>n+Number(x?.ranking_rows||0),0);
+    const playerRows=results.reduce((n,x)=>n+Number(x?.player_rows||0),0);
+    const now=Math.floor(Date.now()/1000);
+    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,success,failed,rankingRows,playerRows,Date.now()-startedAt,now,now,now,runId).run();
+    await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
+    await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:kids.length,success,failed,cancelled,rankingRowsSaved:rankingRows,playerRowsSaved:playerRows,concurrency,apiConcurrency}});
+    return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
+  } catch(error) {
+    runError=error; await touch(); throw error;
+  } finally {
+    if(timer) clearInterval(timer);
+    await persistLoadTestMetrics(env.DB,runId,apiLimiter,true).catch(()=>{});
+    if(runError) await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"CONSUME",status:"FAILED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,elapsedMs:Date.now()-startedAt,errorCode:runError?.code||"LOAD_TEST_QUEUE_FAILED",message:runError?.message||String(runError),metadata:{runId}}).catch(()=>{});
+    const current=await env.DB.prepare("SELECT status FROM kingdom_load_test_runs WHERE run_id=? LIMIT 1").bind(runId).first().catch(()=>null);
+    if(current && String(current.status)!=="RUNNING"){await clearLoadTestCancellation(env.DB,runId);await releaseLoadTestState(env.DB,runId).catch(()=>{});}
+  }
+}
+
 export function renderOwnerKingdomLoadTestPage() {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye 王国Watchlist実処理負荷テスト</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:2px}.back{color:#94a3b8;text-decoration:none}.reload-btn{margin:0;padding:8px 12px;border:1px solid #475569;border-radius:9px;background:#111827;color:#e2e8f0;font-weight:800;font-size:13px}.reload-btn:active{transform:scale(.98)}.reload-btn:disabled{opacity:.58}.badge{display:inline-block;margin-top:16px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;line-height:1.7;font-size:13px}label{display:block;margin-top:14px;color:#cbd5e1;font-size:13px}input,select{width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button{margin-top:16px;padding:12px 16px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}button:disabled{opacity:.58;cursor:not-allowed}.warning{margin-top:14px;padding:12px;border-radius:10px;border:1px solid #7c5b13;background:#211a0a;color:#f8d27a;font-size:12px;line-height:1.7}#progress{display:none;margin-top:16px}.progress{margin:14px 0;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220;display:grid;gap:5px}.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:#f59e0b}.progress small{color:#94a3b8}.progress-track{height:7px;border-radius:999px;background:#334155;overflow:hidden;margin-top:4px}.progress-fill{height:100%;border-radius:999px;background:#f59e0b;transition:width .2s}.active-jobs{display:grid;gap:0;max-height:520px;overflow:auto}#result{white-space:pre-wrap;overflow:auto;margin-top:16px;padding:14px;border-radius:10px;background:#0b1220;color:#cbd5e1;font-size:12px;line-height:1.6}.history{margin-top:18px;padding:15px;border:1px solid #334155;border-radius:14px;background:#0b1220}.history h2{margin:0 0 10px;font-size:16px}.history-list{display:grid;gap:9px}.history-item{padding:11px;border:1px solid #334155;border-radius:10px;background:#111b2d}.history-main{display:flex;justify-content:space-between;gap:8px;font-weight:800}.history-meta{margin-top:5px;color:#94a3b8;font-size:12px;line-height:1.6}.history-ok{color:#86efac}.history-failed{color:#fca5a5}.history-running{color:#fbbf24}</style></head><body><main class="wrap"><div class="toolbar"><a class="back" href="/admin/api-pool">← API Pool管理へ戻る</a><button type="button" id="reloadPage" class="reload-btn" onclick="window.__eagleEyeReloadPage()">↻ 再読み込み</button></div><div class="badge">OWNER ONLY</div><h1>王国Watchlist実処理負荷テスト</h1><p class="hint">実際の王国ウォッチリスト更新と同じ取得・比較・保存パイプラインを実行します。ランキング26ボード、上位プレイヤー取得、D1現在値更新、Change Event、R2履歴保存まで本番と同じ処理を通します。</p><div class="warning">テストで生成されたランキング・プレイヤー・履歴データは削除しません。後からユーザーが検索した場合にそのまま利用できるようにします。テスト用Jobも通常の王国Watchlist Jobと同じくD1へ保存し、終了後24時間の保持期間を経て通常の保持期限処理で削除します。</div><div class="card"><label>開始王国番号<input id="startKid" type="number" min="1" step="1" value="1500"></label><label>取得王国数<select id="kidCount"><option value="20" selected>20王国</option><option value="40">40王国</option><option value="60">60王国</option><option value="80">80王国</option><option value="100">100王国</option><option value="200">200王国</option><option value="300">300王国</option><option value="400">400王国</option><option value="500">500王国</option><option value="600">600王国</option><option value="700">700王国</option><option value="800">800王国</option><option value="900">900王国</option><option value="1000">1000王国</option></select></label><button type="button" onclick="window.__eagleEyeBuildKids()" style="background:#334155;color:#fff">王国範囲を生成</button><div id="selectedKids" style="margin-top:10px;color:#cbd5e1;font-size:12px;line-height:1.7"></div><label>王国番号（直接入力可）<input id="kids" placeholder="1500,1501,1502"></label><label>上位プレイヤー取得数<select id="topN"><option value="5">5人</option><option value="10" selected>10人</option></select></label><div class="hint" style="margin:8px 0">API同時処理数は自動決定：実際の利用可能キー数 − 通常利用保護1本。複数の王国Jobが同時に進み、ランキング・プレイヤーのAPIリクエストは全王国でこのAPI枠を共有します。空いた枠は完了したリクエストから即座に次の取得へ回します。</div><button type="button" id="run" onclick="window.__eagleEyeRunLoadTest()">王国Watchlist実処理を実行</button><button type="button" id="cancel" onclick="window.__eagleEyeCancelLoadTest()" style="background:#7f1d1d;color:#fff;margin-left:8px">負荷テストを中止</button><div id="progress"><div class="progress"><b id="progressTitle">APIクエスト進捗</b><span id="progressCount">0 / 0</span><div class="progress-track"><div class="progress-fill" id="progressFill"></div></div><small id="progressMeta">処理状況を取得中…</small></div><div id="activeJobs"></div></div><div id="result">結果はここに表示されます。</div><div class="history"><h2>過去の負荷テスト</h2><div id="historyList" class="history-list"><div class="history-meta">履歴を取得中…</div></div></div></div><script>(function(){window.__eagleEyeLoadTestUiToken=0;function parseKids(raw){return [...new Set(String(raw||"").split(/[\\s,、]+/).map(function(v){return v.trim();}).filter(function(v){return /^\\d+$/.test(v);}).map(Number).filter(function(v){return v>0;}))];}function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch];});}function phaseText(p){return p==="RANKINGS"?"ランキング":p==="PLAYERS"?"プレイヤー":"完了";}
 function formatWaitMs(ms){ms=Number(ms||0);if(ms<1000)return ms+"ms";var sec=Math.round(ms/1000);if(sec<60)return sec+"秒";var min=Math.floor(sec/60),rest=sec%60;return min+"分"+(rest?rest+"秒":"");}
