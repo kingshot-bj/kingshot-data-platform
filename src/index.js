@@ -37,6 +37,7 @@ import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
 import { runPlayerRoller } from "./player-roller.js";
+import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
@@ -788,7 +789,7 @@ async function runKingdomWatchlistJobs(env) {
       if (!job) {
         const jobId = crypto.randomUUID();
         await env.DB.prepare(
-          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
+          "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'OPERATOR', ?, ?)"
         ).bind(jobId, row.watchlist_id, Number(row.kid), Number(row.top_n), now, now, now).run();
         job = {
           job_id: jobId,
@@ -804,6 +805,7 @@ async function runKingdomWatchlistJobs(env) {
           source_last_at: null,
           ranking_rows: 0,
           player_rows: 0,
+          collection_source: "OPERATOR",
           created_at: now,
           updated_at: now
         };
@@ -1051,6 +1053,13 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const batchIds = ids.slice(cursor, cursor + WATCHLIST_PLAYER_BATCH);
 
     if (!batchIds.length) {
+      // Count a kingdom only after the complete ranking + player workflow
+      // reaches its terminal state. Partial or failed jobs are not collection.
+      await recordKingdomCollectionSuccess(env.DB, {
+        kid: job.kid,
+        source: String(job.collection_source || "OPERATOR").toUpperCase(),
+        collectedAt: now
+      });
       await env.DB.prepare(
         "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
       ).bind(now, now, job.job_id).run();
@@ -2855,7 +2864,7 @@ async function handleKingdomWatchlistApi(request, env) {
     try {
       const jobId = crypto.randomUUID();
       await env.DB.prepare(
-        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
+        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'USER', ?, ?)"
       ).bind(jobId, id, kid, topN, now, now, now).run();
 
       const job = {
@@ -2872,6 +2881,7 @@ async function handleKingdomWatchlistApi(request, env) {
         source_last_at: null,
         ranking_rows: 0,
         player_rows: 0,
+        collection_source: "USER",
         created_at: now,
         updated_at: now
       };
@@ -2990,6 +3000,7 @@ async function handleKingdomWatchlistApi(request, env) {
           source_last_at: active.source_last_at ?? null,
           ranking_rows: Number(active.ranking_rows || 0),
           player_rows: Number(active.player_rows || 0),
+          collection_source: String(active.collection_source || "OPERATOR"),
           created_at: active.created_at,
           updated_at: active.updated_at
         } : null;
@@ -2997,7 +3008,7 @@ async function handleKingdomWatchlistApi(request, env) {
         if (!job) {
           const jobId = crypto.randomUUID();
           await env.DB.prepare(
-            "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, ?, ?)"
+            "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'USER', ?, ?)"
           ).bind(jobId, watchlistId, watch.kid, watch.top_n, now, now, now).run();
           job = {
             job_id: jobId,
