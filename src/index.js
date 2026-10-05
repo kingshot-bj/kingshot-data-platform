@@ -33,6 +33,7 @@ import { buildSafetySnapshot, evaluateSafetyGate, SAFETY_PRIORITIES } from "./sa
 import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 import { collectMightPulseThroughGuards, collectKingdomRanking, collectPlayerDetail } from "./data-collection-engine.js";
 import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
+import { runKingdomCatalogDailyRefresh } from "./kingdom-catalog-scheduler.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
@@ -3926,6 +3927,13 @@ export default {
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
+    }
+  },
+  async scheduled(event, env, executionContext) {
+    try {
+      await runKingdomCatalogDailyRefresh(env);
+    } catch (error) {
+      console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
     }
   },
   async queue(batch, env) {
