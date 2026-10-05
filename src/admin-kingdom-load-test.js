@@ -9,6 +9,94 @@ const LOAD_TEST_NORMAL_RESERVE = 1;
 const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
 const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
 
+function compactCloudflareLoadTestSnapshot(usage) {
+  if (!usage || usage.configured !== true) return null;
+  const account = usage.account || {};
+  const database = usage.database || {};
+  const workers = usage.workers || {};
+  const r2 = usage.r2 || {};
+  const monitoring = usage.monitoring || {};
+  return {
+    retrieved_at: usage.retrievedAt || new Date().toISOString(),
+    profile: monitoring.profile || null,
+    d1: {
+      rows_read: Number(account.rowsRead || 0),
+      rows_written: Number(account.rowsWritten || 0),
+      storage_bytes: Number(database.databaseSizeBytes || 0)
+    },
+    workers: {
+      requests: Number(workers.requests || 0),
+      cpu_time_ms: Number(workers.cpuTimeMs || 0)
+    },
+    r2: {
+      class_a_operations: Number(r2.classAOperations || 0),
+      class_b_operations: Number(r2.classBOperations || 0),
+      storage_bytes: Number(r2.storageBytes || 0)
+    }
+  };
+}
+
+function buildCloudflareLoadTestDelta(before, after) {
+  if (!before || !after) return { available: false };
+  const delta = (a, b) => Number(b || 0) - Number(a || 0);
+  const d1Read = delta(before.d1?.rows_read, after.d1?.rows_read);
+  const d1Write = delta(before.d1?.rows_written, after.d1?.rows_written);
+  const d1Storage = delta(before.d1?.storage_bytes, after.d1?.storage_bytes);
+  const workerRequests = delta(before.workers?.requests, after.workers?.requests);
+  const workerCpu = delta(before.workers?.cpu_time_ms, after.workers?.cpu_time_ms);
+  const r2A = delta(before.r2?.class_a_operations, after.r2?.class_a_operations);
+  const r2B = delta(before.r2?.class_b_operations, after.r2?.class_b_operations);
+  const r2Storage = delta(before.r2?.storage_bytes, after.r2?.storage_bytes);
+  const pct = (value, limit) => Number.isFinite(value) && Number.isFinite(limit) && limit > 0
+    ? Math.max(0, (Math.max(0, value) / limit) * 100)
+    : null;
+  const profile = String(after.profile || before.profile || "");
+  const paid = profile === "PAID_5USD";
+  const limits = paid ? {
+    d1RowsRead: 25_000_000_000,
+    d1RowsWritten: 50_000_000,
+    workersRequests: 10_000_000,
+    workersCpuMs: 30_000_000,
+    r2ClassA: 1_000_000,
+    r2ClassB: 10_000_000
+  } : null;
+  return {
+    available: true,
+    profile,
+    d1: {
+      rows_read: d1Read,
+      rows_written: d1Write,
+      storage_bytes: d1Storage,
+      rows_read_percent: limits ? pct(d1Read, limits.d1RowsRead) : null,
+      rows_written_percent: limits ? pct(d1Write, limits.d1RowsWritten) : null
+    },
+    workers: {
+      requests: workerRequests,
+      cpu_time_ms: workerCpu,
+      requests_percent: limits ? pct(workerRequests, limits.workersRequests) : null,
+      cpu_time_ms_percent: limits ? pct(workerCpu, limits.workersCpuMs) : null
+    },
+    r2: {
+      class_a_operations: r2A,
+      class_b_operations: r2B,
+      storage_bytes: r2Storage,
+      class_a_percent: limits ? pct(r2A, limits.r2ClassA) : null,
+      class_b_percent: limits ? pct(r2B, limits.r2ClassB) : null
+    },
+    limits
+  };
+}
+
+async function captureCloudflareLoadTestUsage(env) {
+  try {
+    const usage = await getCloudflareD1Usage(env, { includeQueryInsights: false });
+    return compactCloudflareLoadTestSnapshot(usage);
+  } catch (error) {
+    console.warn("load_test_cloudflare_usage_snapshot_failed", error?.message || error);
+    return null;
+  }
+}
+
 async function acquireLoadTestState(db, runId) {
   const now = Math.floor(Date.now() / 1000);
   const lockUntil = now + LOAD_TEST_LOCK_TTL_SECONDS;
@@ -184,7 +272,7 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
       const rankingRows=Number(row.ranking_rows_saved||0)||Number(fallback?.ranking_rows_saved||0);
       const playerRows=Number(row.player_rows_saved||0)||Number(fallback?.player_rows_saved||0);
       const elapsed=row.elapsed_ms==null?((row.completed_at&&row.created_at)?(Number(row.completed_at)-Number(row.created_at))*1000:null):Number(row.elapsed_ms);
-      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed,api_active_count:Number(row.api_active_count||0),api_waiting_count:Number(row.api_waiting_count||0),api_pool_waiting_count:Number(row.api_pool_waiting_count||0),api_wait_events:Number(row.api_wait_events||0),api_pool_wait_events:Number(row.api_pool_wait_events||0),api_wait_ms:Number(row.api_wait_ms||0),api_pool_wait_ms:Number(row.api_pool_wait_ms||0),api_wait_min_ms:Number(row.api_wait_min_ms||0),api_wait_max_ms:Number(row.api_wait_max_ms||0),api_wait_buckets_json:String(row.api_wait_buckets_json||"{}"),last_activity_at:Number(row.last_activity_at||0)};
+      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed,api_active_count:Number(row.api_active_count||0),api_waiting_count:Number(row.api_waiting_count||0),api_pool_waiting_count:Number(row.api_pool_waiting_count||0),api_wait_events:Number(row.api_wait_events||0),api_pool_wait_events:Number(row.api_pool_wait_events||0),api_wait_ms:Number(row.api_wait_ms||0),api_pool_wait_ms:Number(row.api_pool_wait_ms||0),api_wait_min_ms:Number(row.api_wait_min_ms||0),api_wait_max_ms:Number(row.api_wait_max_ms||0),api_wait_buckets_json:String(row.api_wait_buckets_json||"{}"),last_activity_at:Number(row.last_activity_at||0),cloudflare_usage:(()=>{let delta=null;try{delta=row.cloudflare_delta_json?JSON.parse(row.cloudflare_delta_json):null;}catch{}return delta;})()};
     })}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
     console.error("owner_kingdom_load_test_history_failed",error?.message||error);
@@ -200,7 +288,7 @@ export async function handleOwnerKingdomLoadTestExportApi(request, env) {
     const row = await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(runId).first();
     if (!row) return new Response(JSON.stringify({ok:false,error:"RUN_NOT_FOUND"}), {status:404,headers:{"content-type":"application/json; charset=UTF-8"}});
     let buckets={}; try { buckets=JSON.parse(row.api_wait_buckets_json||"{}"); } catch {}
-    const lines=[["metric","value"],["run_id",row.run_id],["status",row.status],["target_count",row.target_count],["start_kid",row.start_kid],["end_kid",row.end_kid],["top_n",row.top_n],["job_concurrency",row.concurrency],["api_concurrency",row.api_concurrency],["available_pool_keys",row.available_pool_keys],["success_count",row.success_count],["failed_count",row.failed_count],["ranking_rows_saved",row.ranking_rows_saved],["player_rows_saved",row.player_rows_saved],["elapsed_ms",row.elapsed_ms??""],["api_wait_events",row.api_wait_events],["api_pool_wait_events",row.api_pool_wait_events],["api_wait_ms",row.api_wait_ms],["api_pool_wait_ms",row.api_pool_wait_ms],["api_wait_min_ms",row.api_wait_min_ms],["api_wait_max_ms",row.api_wait_max_ms],["wait_bucket_0_5s",buckets["0-5s"]||0],["wait_bucket_5_10s",buckets["5-10s"]||0],["wait_bucket_10_20s",buckets["10-20s"]||0],["wait_bucket_20_30s",buckets["20-30s"]||0],["wait_bucket_30_60s",buckets["30-60s"]||0],["wait_bucket_60s_plus",buckets["60s+"]||0]];
+    const lines=[["metric","value"],["run_id",row.run_id],["status",row.status],["target_count",row.target_count],["start_kid",row.start_kid],["end_kid",row.end_kid],["top_n",row.top_n],["job_concurrency",row.concurrency],["api_concurrency",row.api_concurrency],["available_pool_keys",row.available_pool_keys],["success_count",row.success_count],["failed_count",row.failed_count],["ranking_rows_saved",row.ranking_rows_saved],["player_rows_saved",row.player_rows_saved],["elapsed_ms",row.elapsed_ms??""],["api_wait_events",row.api_wait_events],["api_pool_wait_events",row.api_pool_wait_events],["api_wait_ms",row.api_wait_ms],["api_pool_wait_ms",row.api_pool_wait_ms],["api_wait_min_ms",row.api_wait_min_ms],["api_wait_max_ms",row.api_wait_max_ms],["wait_bucket_0_5s",buckets["0-5s"]||0],["wait_bucket_5_10s",buckets["5-10s"]||0],["wait_bucket_10_20s",buckets["10-20s"]||0],["wait_bucket_20_30s",buckets["20-30s"]||0],["wait_bucket_30_60s",buckets["30-60s"]||0],["wait_bucket_60s_plus",buckets["60s+"]||0],["cloudflare_usage",row.cloudflare_delta_json||""]];
     const csv=lines.map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\r\n")+"\r\n";
     return new Response(csv,{headers:{"content-type":"text/csv; charset=UTF-8","content-disposition":'attachment; filename="eagleeye-load-test-'+runId+'.csv"',"cache-control":"no-store"}});
   } catch(error) { return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_EXPORT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8"}}); }
@@ -505,8 +593,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const runNow=Math.floor(Date.now()/1000);
   try{
-    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,api_concurrency,available_pool_keys,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
-      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,apiConcurrency,concurrency,apiConcurrency,availablePoolKeys,runNow,runNow).run();
+    await env.DB.prepare("INSERT INTO kingdom_load_test_runs (run_id,target_count,kids_json,start_kid,end_kid,top_n,requested_concurrency,concurrency,api_concurrency,available_pool_keys,cloudflare_before_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'RUNNING',?,?)")
+      .bind(runId,kids.length,JSON.stringify(kids),Math.min(...kids),Math.max(...kids),topN,apiConcurrency,concurrency,apiConcurrency,availablePoolKeys,cloudflareSafety ? JSON.stringify(compactCloudflareLoadTestSnapshot(cloudflareSafety)) : null,runNow,runNow).run();
   }catch(error){
     await releaseLoadTestState(env.DB,runId).catch(()=>{});
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_RUN_METADATA_INSERT_FAILED",message:error?.message||String(error)}),{status:500,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
@@ -706,13 +794,16 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
       totalFailed=Number(totals?.failed_count||0);
       totalRankingRows=Number(totals?.ranking_rows_saved||0);
       totalPlayerRows=Number(totals?.player_rows_saved||0);
-      await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,Date.now()-startedAt,now,now,now,runId).run();
+      const cloudflareAfter=await captureCloudflareLoadTestUsage(env);
+      let cloudflareBefore=null; try { cloudflareBefore=run.cloudflare_before_json?JSON.parse(run.cloudflare_before_json):null; } catch {}
+      const cloudflareDelta=buildCloudflareLoadTestDelta(cloudflareBefore,cloudflareAfter);
+      await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,cloudflare_after_json=?,cloudflare_delta_json=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,totalSuccess,totalFailed,totalRankingRows,totalPlayerRows,Date.now()-startedAt,cloudflareAfter?JSON.stringify(cloudflareAfter):null,JSON.stringify(cloudflareDelta),now,now,now,runId).run();
     }else{
       await env.DB.prepare("UPDATE kingdom_load_test_runs SET last_activity_at=?,updated_at=? WHERE run_id=? AND status='RUNNING'").bind(now,now,runId).run().catch(()=>{});
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     if(allJobsDone){
-      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency}});
+      await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta}});
     }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
   } catch(error) {
@@ -754,7 +845,7 @@ function renderProgress(data,active){
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
 function formatHistoryTime(ts){if(!ts)return "-";try{return new Date(Number(ts)*1000).toLocaleString("ja-JP",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});}catch(e){return "-";}}
-function renderLoadTestHistory(runs){var list=document.getElementById("historyList");if(!list)return;if(!runs||!runs.length){list.innerHTML='<div class="history-meta">過去の負荷テストはありません。</div>';return;}list.innerHTML=runs.map(function(run){var status=String(run.status||"UNKNOWN"),label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　最小 '+esc(formatWaitMs(run.api_wait_min_ms))+'　最大 '+esc(formatWaitMs(run.api_wait_max_ms))+'<br>待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回</div><div style="margin-top:8px"><a href="/api/owner/kingdom-load-test/export?run_id='+encodeURIComponent(run.run_id)+'" download style="display:inline-block;padding:7px 10px;border-radius:8px;background:#334155;color:#fff;text-decoration:none;font-size:12px;font-weight:800">CSVエクスポート</a></div></div>';}).join("");}
+function renderLoadTestHistory(runs){var list=document.getElementById("historyList");if(!list)return;if(!runs||!runs.length){list.innerHTML='<div class="history-meta">過去の負荷テストはありません。</div>';return;}list.innerHTML=runs.map(function(run){var status=String(run.status||"UNKNOWN"),label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　最小 '+esc(formatWaitMs(run.api_wait_min_ms))+'　最大 '+esc(formatWaitMs(run.api_wait_max_ms))+'<br>待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回'+(run.cloudflare_usage&&run.cloudflare_usage.available?'<br>Cloudflare消費 D1読 '+esc((Number(run.cloudflare_usage.d1?.rows_read_percent||0)).toFixed(4))+'% / 書 '+esc((Number(run.cloudflare_usage.d1?.rows_written_percent||0)).toFixed(4))+'% / CPU '+esc((Number(run.cloudflare_usage.workers?.cpu_time_ms_percent||0)).toFixed(4))+'% / R2 A '+esc((Number(run.cloudflare_usage.r2?.class_a_percent||0)).toFixed(4))+'% / B '+esc((Number(run.cloudflare_usage.r2?.class_b_percent||0)).toFixed(4))+'%</div><div style="margin-top:8px">':'</div><div style="margin-top:8px">');<a href="/api/owner/kingdom-load-test/export?run_id='+encodeURIComponent(run.run_id)+'" download style="display:inline-block;padding:7px 10px;border-radius:8px;background:#334155;color:#fff;text-decoration:none;font-size:12px;font-weight:800">CSVエクスポート</a></div></div>';}).join("");}
 async function loadLoadTestHistory(){try{var response=await fetch("/api/owner/kingdom-load-test/history?limit=20",{cache:"no-store",credentials:"same-origin"});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}var data=await response.json();renderLoadTestHistory(data.runs||[]);}catch(e){var list=document.getElementById("historyList");if(list)list.innerHTML='<div class="history-meta">履歴取得失敗: '+esc(e&&e.message||e)+'</div>';}}
 window.__eagleEyeReloadPage=function(){var button=document.getElementById("reloadPage");if(button){button.disabled=true;button.textContent="↻ 読み込み中…";}window.location.reload();};window.__eagleEyeBuildKids=function(){var start=Math.max(1,Number(document.getElementById("startKid").value||0)),count=Math.max(1,Number(document.getElementById("kidCount").value||20)),values=[];for(var i=0;i<count;i++)values.push(start+i);document.getElementById("kids").value=values.join(",");document.getElementById("selectedKids").textContent=values.join(", ");};window.__eagleEyeCancelLoadTest=async function(){var cancelButton=document.getElementById("cancel");try{var runId="";try{runId=String(localStorage.getItem("eagleEye.loadTest.runId")||"").trim();}catch(e){}var endpoint="/api/owner/kingdom-load-test/cancel"+(runId?"?run_id="+encodeURIComponent(runId):"");var response=await fetch(endpoint,{method:"POST",credentials:"same-origin",cache:"no-store"});var data=await response.json();if(!response.ok)throw new Error(data.message||data.error||"CANCEL_FAILED");document.getElementById("result").textContent=data.status==="CANCELLED_ORPHANED"?"負荷テストを中止しました。孤立していた実行記録も中止へ確定しました。":"負荷テストを中止しました。実行中のAPI処理は安全に終了処理へ移行します。";try{localStorage.removeItem("eagleEye.loadTest.runId");}catch(e){}var progress=document.getElementById("progress");if(progress)progress.style.display="none";var activeJobs=document.getElementById("activeJobs");if(activeJobs)activeJobs.innerHTML="";if(cancelButton)cancelButton.disabled=true;loadLoadTestHistory();}catch(e){document.getElementById("result").textContent="中止要求失敗: "+e.message;if(cancelButton)cancelButton.disabled=false;}};window.__eagleEyeRunLoadTest=async function(){window.__eagleEyeLoadTestUiToken++;if(window.__eagleEyeLoadTestStatusTimer){clearInterval(window.__eagleEyeLoadTestStatusTimer);window.__eagleEyeLoadTestStatusTimer=null;}var trace=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():"client-"+Date.now(),run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),active={};try{var kids=parseKids(document.getElementById("kids").value);if(!kids.length){window.__eagleEyeBuildKids();kids=parseKids(document.getElementById("kids").value);}if(!kids.length)throw new Error("王国番号を入力してください。");var topN=document.getElementById("topN").value||"10";try{localStorage.setItem("eagleEye.loadTest.runId","");}catch(e){}run.disabled=true;run.textContent="実行中…";cancel.disabled=false;result.textContent="処理開始…";document.getElementById("progress").style.display="block";document.getElementById("progressCount").textContent="APIクエスト 0 / "+(kids.length*(26+Number(topN)))+"　(0%)";document.getElementById("progressFill").style.width="0%";document.getElementById("activeJobs").innerHTML="";var response=await fetch("/api/owner/kingdom-load-test?kids="+encodeURIComponent(kids.join(","))+"&top_n="+topN,{cache:"no-store",credentials:"same-origin",headers:{"x-eagle-eye-trace-id":trace}});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}
     // Do not depend on the NDJSON stream for live progress. Mobile browsers/proxies
