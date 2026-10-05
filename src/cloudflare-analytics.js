@@ -988,7 +988,8 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
     workers.available ? resourceState(workers.requestsPercent) : "UNKNOWN",
     r2.available ? resourceState(r2.classAPercent) : "UNKNOWN",
     r2.available ? resourceState(r2.classBPercent) : "UNKNOWN",
-    r2.available ? resourceState(r2.storagePercent) : "UNKNOWN"
+    r2.available ? resourceState(r2.storagePercent) : "UNKNOWN",
+    paidMode && !billingCycle.available ? "WARNING" : "OK"
   ];
   const status = resourceStates.includes("EXHAUSTED") ? "EXHAUSTED"
     : resourceStates.includes("CRITICAL") ? "CRITICAL"
