@@ -537,7 +537,13 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_QUEUE_UNAVAILABLE",message:"負荷テスト専用Queueが設定されていません。"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
   try {
-    await env.LOAD_TEST_QUEUE.send({type:"KINGDOM_LOAD_TEST_RUN",run_id:runId,actor_id:String(auth.user_id||""),trace_id:traceId,top_n:topN,concurrency,api_concurrency:apiConcurrency});
+    const queueMessages=[];
+    for(let offset=0;offset<kids.length;offset+=20){
+      queueMessages.push({body:{type:"KINGDOM_LOAD_TEST_RUN",run_id:runId,actor_id:String(auth.user_id||""),trace_id:traceId,top_n:topN,concurrency,api_concurrency:apiConcurrency,kids:kids.slice(offset,offset+20)}});
+    }
+    for(let offset=0;offset<queueMessages.length;offset+=100){
+      await env.LOAD_TEST_QUEUE.sendBatch(queueMessages.slice(offset,offset+100));
+    }
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"QUEUED",status:"QUEUED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,startedAt:runNow,completedAt:runNow,elapsedMs:0,message:"王国Watchlist実処理負荷テストをQueueへ投入",metadata:{runId,targetCount:kids.length,topN,concurrency,apiConcurrency}});
   } catch(error) {
     const failedAt=Math.floor(Date.now()/1000);
@@ -669,8 +675,10 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
   const run=await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id=? LIMIT 1").bind(runId).first();
   if(!run) return {ok:false,skipped:true,reason:"RUN_NOT_FOUND",run_id:runId};
   if(String(run.status||"")!=="RUNNING") return {ok:true,skipped:true,reason:"RUN_NOT_RUNNING",run_id:runId,status:String(run.status||"")};
-  let kids=[]; try { kids=JSON.parse(run.kids_json||"[]").map(Number).filter(Number.isFinite); } catch {}
-  if(!kids.length) throw new Error("LOAD_TEST_KIDS_MISSING");
+  let allKids=[]; try { allKids=JSON.parse(run.kids_json||"[]").map(Number).filter(Number.isFinite); } catch {}
+  const messageKids=Array.isArray(message?.kids)?message.kids.map(Number).filter(Number.isFinite):[];
+  const kids=messageKids.length?messageKids:allKids;
+  if(!allKids.length||!kids.length) throw new Error("LOAD_TEST_KIDS_MISSING");
   const topN=Number(run.top_n||message.top_n||10)===5?5:10;
   const apiConcurrency=Math.max(1,Number(run.api_concurrency||message.api_concurrency||1));
   const concurrency=Math.max(1,Math.min(kids.length,Number(run.concurrency||message.concurrency||apiConcurrency)));
@@ -689,7 +697,13 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     const rankingRows=results.reduce((n,x)=>n+Number(x?.ranking_rows||0),0);
     const playerRows=results.reduce((n,x)=>n+Number(x?.player_rows||0),0);
     const now=Math.floor(Date.now()/1000);
-    await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,success,failed,rankingRows,playerRows,Date.now()-startedAt,now,now,now,runId).run();
+    const remaining=await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_watchlist_jobs WHERE watchlist_id=? AND status NOT IN ('COMPLETED','FAILED')").bind("LOAD_TEST:"+runId).first().catch(()=>({count:0}));
+    const allJobsDone=Number(remaining?.count||0)===0;
+    if(allJobsDone){
+      await env.DB.prepare("UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' WHEN ? > 0 THEN 'CANCELLED' ELSE 'COMPLETED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=?").bind(cancelled,success,failed,rankingRows,playerRows,Date.now()-startedAt,now,now,now,runId).run();
+    }else{
+      await env.DB.prepare("UPDATE kingdom_load_test_runs SET last_activity_at=?,updated_at=? WHERE run_id=? AND status='RUNNING'").bind(now,now,runId).run().catch(()=>{});
+    }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(kids.length),runId,elapsedMs:Date.now()-startedAt,message:"Queue consumerによる王国Watchlist実処理負荷テスト完了",metadata:{runId,targetCount:kids.length,success,failed,cancelled,rankingRowsSaved:rankingRows,playerRowsSaved:playerRows,concurrency,apiConcurrency}});
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
