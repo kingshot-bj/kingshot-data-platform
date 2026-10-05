@@ -289,3 +289,51 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - ただし本番D1への `0044_kingdom_load_test_cloudflare_usage.sql` 適用確認はまだ必要。
 - **本番E2E成功扱いにはしていない。**
 - 次回負荷テスト前にmigration適用を確認し、100王国本番負荷テストでは20王国単位のRunを基準にCloudflare実測値を比較する。
+
+
+## 2026-10-05 — Cloudflare監視期間を実請求サイクル基準へ変更
+
+### 変更理由
+- 旧実装のPaid監視は `UTC月初 → 現在` のカレンダー月集計だった。
+- CloudflareのWorkers Paid / usage-based billingは実際の請求サイクルに沿って集計する必要がある。
+- Cloudflare Billing APIは `billing_cycle_anchor_timestamp` を返せるため、これを正本としてEagleEye側の集計期間を決定する。
+
+### 実装
+- `src/cloudflare-analytics.js`
+- Cloudflare Billing API:
+  - `GET /accounts/{account_id}/billable-usage/info`
+  - active subscriptionの `billing_cycle_anchor_timestamp` を取得。
+- 現在時刻から、そのanchorに対応する「今回の請求期間開始」と「次回の請求期間開始」を算出。
+- Paid (`PAID_5USD`) の以下を請求サイクル基準へ変更：
+  - D1 Rows Read / Written
+  - D1 Query Insights
+  - Workers Requests / CPU
+  - R2 Operations / Storage / Bandwidth
+- Free profileは従来どおりUTC日次windowを使用。
+- System JSONの `usagePeriod` と `monitoring.billingCycle` に以下を出力：
+  - `cycleStart`
+  - `cycleEnd`
+  - `anchorTimestamp`
+  - `billingDayUtc`
+  - `periodBasis`
+  - `subscriptionId`
+- 請求サイクル取得失敗時は黙って「請求期間」と表示しない。
+  - 現在は明示的に `CALENDAR_MONTH_FALLBACK_BILLING_UNAVAILABLE` として状態JSONに残し、WARNING化。
+  - これは最終状態ではなく、Billing Read権限を設定した本番環境で `CLOUDFLARE_BILLING_CYCLE` が実際に取れることを確認する。
+
+### Cloudflare API Token
+- Billing API呼び出しにはCloudflareのAccount > Billing > Read権限が必要。
+- 実装は `CLOUDFLARE_BILLING_TOKEN` が設定されていればそれを使用し、未設定なら既存の `CLOUDFLARE_ANALYTICS_TOKEN` をBilling APIにも試す。
+- 推奨はAnalytics用とBilling用を分離し、Billing専用tokenにBilling Readだけを付与すること。
+- token自体やsecret値はUI / JSON / handoffへ出さない。
+
+### 実装コミット
+- `a6b005b5e2f1b05d6ed690ebb976388b418aac10` — Billing cycle基準化
+- `74face772aefbb1da5b502db4dd04aa2bd9dd065` — Billing cycle取得失敗時WARNING化
+- `a67058be1ca1a28745d1bf0c6850f92e7b3346bf` — R2 bandwidthも請求期間基準へ統一
+
+### 本番確認
+- まだdeploy / 本番Status確認はしていない。
+- 本番確認時は、Paid監視JSONで `usagePeriod.basis = CLOUDFLARE_BILLING_CYCLE` になっていることを確認する。
+- `cycleStart` が実際のCloudflare請求日と一致することも確認する。
+- Billing APIが403等の場合は、既存Analytics tokenにBilling Readを付与するか、`CLOUDFLARE_BILLING_TOKEN` を設定する。
