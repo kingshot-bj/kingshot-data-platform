@@ -379,3 +379,49 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 5. changeEventBreakdown の内訳とRun時間帯を確認。
 6. elapsed_ms がRun開始からの全体時間になっていることを確認。
 7. Change Event件数・ranking/player rowsとCloudflare実測差分を既存履歴と比較する。
+
+
+## 2026-10-05 — 王国コレクション実績・取得済み管理（実装）
+
+### 実装内容
+- migrations/0046_kingdom_collection_stats.sql
+  - kingdom_collection_stats を追加。
+  - 王国ごとに初回取得、最終成功取得、累計成功取得、運営取得、ユーザー取得、最終取得元を保持。
+  - 既存のランキング・Player・Change Event履歴は変更しない。
+  - kingdom_watchlist_jobs.collection_source を追加し、Watchlist経由の取得元を OPERATOR / USER としてジョブ単位で保持。
+- src/kingdom-collection-stats.js
+  - 成功した王国取得だけを原子的にカウント。
+  - 取得途中・失敗・キャンセルは「取得済み」にしない。
+- src/index.js
+  - 王国Watchlistの完全成功時にコレクション実績を記録。
+  - Cron/System Watchlistは OPERATOR。
+  - ユーザーの追加直後・手動更新は USER。
+  - 既存ジョブ再開時も保存済み collection_source を使用するため、途中でCronへ引き継がれても元の取得主体を維持。
+- src/kingdom-ranking-roller.js
+  - 最終ランキングボードまで全成功した王国だけ OPERATOR として記録。
+  - 部分ボード実行では取得済み扱いにしない。
+- src/kingdom-seeder.js
+  - 王国詳細取得成功時に OPERATOR として記録。
+- src/admin-data-coverage.js
+  - Adminのデータ登録状況に「Catalog登録王国 / 取得済み / 未取得 / 累計成功取得 / 運営取得 / ユーザー取得」を追加。
+
+### 取得済み判定
+- kingdom_catalog の登録王国数を母数とする。
+- kingdom_collection_stats に1行存在する王国を取得済みとする。
+- 成功完了時のみ1カウント。
+- 既存履歴から過去の全取得回数を推定・再構築する処理は行わず、この実装以降の成功取得を正確に蓄積する。
+
+### D1負荷・安全性
+- カバレッジ画面は既存Catalogの件数と小さな集計テーブルだけを読む。
+- players / kingdom_ranking_current を王国ごとに再走査する方式ではない。
+- 既存のAPI Pool lease/return、ランキング比較、previous_rank、removedTargets、R2_ONLYの挙動は変更しない。
+- 0046は既存データを削除・更新する移行ではなく、新規管理テーブルとJobの取得元列を追加する。
+
+### 本番反映前の確認
+1. 0046をD1へ適用。
+2. WorkerをDeploy。
+3. 小規模の王国Watchlist実処理を1件成功させる。
+4. Admin「データ登録状況」で取得済み王国が1増えることを確認。
+5. 同一王国を再取得し、取得済み王国数は増えず、累計成功取得だけ+1になることを確認。
+6. 手動更新ではユーザー取得+1、Cron/ローラー/Seederでは運営取得+1になることを確認。
+7. 失敗・中止では取得済み数・累計成功取得が増えないことを確認。
