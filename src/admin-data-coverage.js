@@ -1,3 +1,4 @@
+import { getKingdomCollectionCoverage } from "./kingdom-collection-stats.js";
 function formatCount(value) {
   return Number(value || 0).toLocaleString("ja-JP");
 }
@@ -9,11 +10,12 @@ export async function renderAdminDataCoveragePage(env, auth) {
 
   const startedAt = Date.now();
   try {
-    const [playerCounts, rankingKingdomCount, watchlistCounts, accountCounts] = await Promise.all([
+    const [playerCounts, rankingKingdomCount, watchlistCounts, accountCounts, collectionCoverage] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS player_count, COUNT(DISTINCT kid) AS kingdom_count FROM players WHERE governor_id IS NOT NULL").first(),
       env.DB.prepare("SELECT COUNT(DISTINCT kid) AS count FROM kingdom_ranking_current").first(),
       env.DB.prepare("SELECT COUNT(*) AS watchlist_count, COUNT(DISTINCT kid) AS kingdom_count FROM kingdom_watchlists WHERE enabled = 1").first(),
-      env.DB.prepare("SELECT role, COUNT(*) AS count FROM users GROUP BY role").all()
+      env.DB.prepare("SELECT role, COUNT(*) AS count FROM users GROUP BY role").all(),
+      getKingdomCollectionCoverage(env.DB)
     ]);
 
     const players = Number(playerCounts?.player_count || 0);
@@ -21,6 +23,7 @@ export async function renderAdminDataCoveragePage(env, auth) {
     const rankingKingdoms = Number(rankingKingdomCount?.count || 0);
     const watchedKingdoms = Number(watchlistCounts?.kingdom_count || 0);
     const activeWatchlists = Number(watchlistCounts?.watchlist_count || 0);
+    const collection = collectionCoverage || {};
     const accountRows = accountCounts?.results || [];
     const accountByRole = new Map(accountRows.map(row => [String(row.role || "BASIC").toUpperCase(), Number(row.count || 0)]));
     const totalAccounts = accountRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
@@ -49,12 +52,20 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="metric"><div class="metric-label">ADVANCED</div><div class="metric-value">${formatCount(accountByRole.get("ADVANCED") || 0)}人</div></div>
 <div class="metric"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div></div>
 </div></div>
+<div class="section"><h2>王国コレクション状況</h2><div class="detail">
+<div class="row"><span>Catalog登録王国</span><b>${formatCount(collection.catalogTotal)}王国</b></div>
+<div class="row"><span>取得済み王国</span><b>${formatCount(collection.collectedCount)}王国</b></div>
+<div class="row"><span>未取得王国</span><b>${formatCount(collection.uncollectedCount)}王国</b></div>
+<div class="row"><span>累計成功取得</span><b>${formatCount(collection.collectionCount)}回</b></div>
+<div class="row"><span>運営取得</span><b>${formatCount(collection.operatorCollectionCount)}回</b></div>
+<div class="row"><span>ユーザー取得</span><b>${formatCount(collection.userCollectionCount)}回</b></div>
+</div></div>
 <div class="section"><h2>関連データ</h2><div class="detail">
 <div class="row"><span>ランキングデータが存在する王国</span><b>${formatCount(rankingKingdoms)}王国</b></div>
 <div class="row"><span>有効な王国ウォッチリスト</span><b>${formatCount(activeWatchlists)}件</b></div>
 <div class="row"><span>ウォッチ対象のユニーク王国</span><b>${formatCount(watchedKingdoms)}王国</b></div>
 </div></div>
-<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>※「登録王国」はプレイヤーDB基準です。ランキングだけ存在する王国は上の関連データで別に確認できます。</div>
+<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「登録王国」はプレイヤーDB基準です。ランキングだけ存在する王国は上の関連データで別に確認できます。</div>
 </main></body></html>`;
   } catch (error) {
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye データ登録状況</title><style>body{background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px}.error{margin-top:18px;padding:16px;border:1px solid #7f1d1d;background:#3a1418;border-radius:12px;color:#fca5a5}a{color:#cbd5e1}</style></head><body><a href="/admin">← ADMIN CONTROL</a><h1>データ登録状況を取得できません</h1><div class="error">${String(error?.message || error)}</div></body></html>`;
