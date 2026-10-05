@@ -368,6 +368,8 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - 4e04f16ceff1574dd93f966490d481fbc7882396 — Change Event複合Index追加
 - 7c5df21719c1dff0c7e8f262df2a76d0ac8407cf — Load Test検証集計 + Change Event内訳 + elapsed修正
 - a3fbd1fafc2dbf5fcc25363d8af216f746ed9624 — Load Test final elapsed更新の修復
+- 7247c8439953c26920643206124fba0759ce92f2 — Change Event内訳集計を既存Index利用へ変更
+- f9bbf426ee34e0e91a11d38038e5610ab3107455 — target_type別内訳を取りこぼさない集計へ修正
 
 ### 次の本番確認
 1. 0045 migrationを本番D1へ適用。
