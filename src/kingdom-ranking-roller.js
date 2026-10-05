@@ -3,6 +3,7 @@ import { saveKingdomRankingBoard } from "./ranking-store.js";
 import { RANKING_CATALOG } from "./ranking-catalog.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
+import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 
 const STATE_KEY = "KINGDOM_RANKING_ROLLER";
 const DEFAULT_KINGDOMS_PER_RUN = 1;
@@ -114,6 +115,25 @@ export async function runKingdomRankingRoller(env, {
         metadata: { board: job.board.key }
       }).catch(() => {});
     }
+  }
+
+  // A kingdom is marked collected only when every requested board for
+  // that kingdom completed successfully in this batch.
+  const kingdomSuccess = new Map();
+  for (const kingdom of kingdoms) kingdomSuccess.set(Number(kingdom.kid), true);
+  for (const [index, result] of results.entries()) {
+    if (result.status !== "fulfilled") {
+      const kid = Number(jobs[index]?.kingdom?.kid || 0);
+      if (kid) kingdomSuccess.set(kid, false);
+    }
+  }
+  for (const [kid, successForKingdom] of kingdomSuccess.entries()) {
+    if (!successForKingdom) continue;
+    await recordKingdomCollectionSuccess(db, {
+      kid,
+      source: "OPERATOR",
+      collectedAt: now()
+    });
   }
 
   const nextBoard = boardCursor + boards.length;
