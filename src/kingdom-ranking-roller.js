@@ -117,30 +117,34 @@ export async function runKingdomRankingRoller(env, {
     }
   }
 
-  // A kingdom is marked collected only when every requested board for
-  // that kingdom completed successfully in this batch.
-  const kingdomSuccess = new Map();
-  for (const kingdom of kingdoms) kingdomSuccess.set(Number(kingdom.kid), true);
-  for (const [index, result] of results.entries()) {
-    if (result.status !== "fulfilled") {
-      const kid = Number(jobs[index]?.kingdom?.kid || 0);
-      if (kid) kingdomSuccess.set(kid, false);
-    }
-  }
-  for (const [kid, successForKingdom] of kingdomSuccess.entries()) {
-    if (!successForKingdom) continue;
-    await recordKingdomCollectionSuccess(db, {
-      kid,
-      source: "OPERATOR",
-      collectedAt: now()
-    });
-  }
-
   const nextBoard = boardCursor + boards.length;
   const nextKingdomCursor = nextBoard >= RANKING_CATALOG.length
     ? Number(state?.catalog_cursor || 0) + kingdoms.length
     : Number(state?.catalog_cursor || 0);
   const normalizedBoard = nextBoard >= RANKING_CATALOG.length ? 0 : nextBoard;
+
+  // Only count a kingdom as fully collected after the final ranking board
+  // has completed successfully. Partial board batches must not create a
+  // false "collected" state.
+  if (nextBoard >= RANKING_CATALOG.length) {
+    const kingdomSuccess = new Map();
+    for (const kingdom of kingdoms) kingdomSuccess.set(Number(kingdom.kid), true);
+    for (const [index, result] of results.entries()) {
+      if (result.status !== "fulfilled") {
+        const kid = Number(jobs[index]?.kingdom?.kid || 0);
+        if (kid) kingdomSuccess.set(kid, false);
+      }
+    }
+    for (const [kid, successForKingdom] of kingdomSuccess.entries()) {
+      if (!successForKingdom) continue;
+      await recordKingdomCollectionSuccess(db, {
+        kid,
+        source: "OPERATOR",
+        collectedAt: now()
+      });
+    }
+  }
+
   const maxCatalog = await db.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog").first();
   const totalCatalog = Number(maxCatalog?.count || 0);
   const finalCatalogCursor = nextKingdomCursor >= totalCatalog ? 0 : nextKingdomCursor;
