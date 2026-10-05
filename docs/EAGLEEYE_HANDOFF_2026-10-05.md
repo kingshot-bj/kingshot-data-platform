@@ -457,3 +457,51 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - 既存のランキング保存、Change Event生成、API Pool lease/return、R2保存、previous_rank、removedTargetsには変更を加えていない。
 - 新しい処理はRunメタデータとSystem Logの記録・確定処理のみ。
 - 個別Jobのデータを再取得したり、過去ログを再構築したりする処理は追加していない。
+
+
+## 2026-10-05 — Kingdom Catalog方針確定
+
+### 方針
+- Kingdom Catalogは「既存D1から推定復元」ではなく、MightPulseの正規 /kingdoms Discoveryで一度取得して正式なマスターとして確立する方針。
+- kingdom_catalog は単なる取得済み王国一覧ではなく、kid / name / status / region / language / raw_json / source_observed_at / first_seen_at / last_seen_at を持つ王国マスターとして設計済み。
+- 既存の players / ranking から復元できるのは主にkid・観測時刻等で、status/region/raw_json等は正確な正規値として復元できない。
+- 正式サービス開始前なので、今の段階で正規ソースからCatalogを確立する。
+
+### リソース方針
+- API使用量だけでなく、Cloudflare D1 Reads / Writes / Storage、Workers CPU / Requests、R2等の総リソースを考慮する。
+- /kingdoms Discoveryは既存実装が1ページ最大24件のbounded処理。
+- 初回Catalog構築後は、既存kidは更新、新規kidはINSERTという通常のCatalog運用にする。
+- 不要な再全件Writeを前提にしない。
+
+### 負荷テスト方針
+- Catalog専用の新しい負荷テスト機能は作らない。
+- Catalog初期化後は、現在の王国Watchlist実処理負荷テストをそのまま利用する。
+- 負荷テスト対象は取得済み/未取得で除外せず、指定王国を実際に取得する。
+- 既存/未取得を混在させ、実運用に近い負荷を測定する。
+- 既存のRun台帳、Cloudflare使用量履歴、System Log、System JSON、Change Event内訳、Job完了検証を利用する。
+
+### CatalogとCollection Statsの役割
+- kingdom_catalog = EagleEyeが認識する王国マスター。
+- kingdom_collection_stats = その王国を実際に取得した成功実績。
+- Catalog登録済みでも未取得はあり得る。
+- 0047の歴史的バックフィルはCollection Coverageの復元であり、Catalogそのものの復元ではない。
+
+### 現在の状態
+- 0046/0047は本番D1へ適用済み。
+- kingdom_collection_stats は既存データから134王国をOPERATORの初回実績としてバックフィル済み。
+- Admin「データ登録状況」で、Catalog登録王国=0、取得済み=134、累計成功取得=134、運営取得=134、ユーザー取得=0、ランキングデータが存在する王国=135を確認済み。
+- Catalog登録0は kingdom_catalog がまだ正式Discoveryされていないため。
+
+### 次スレ実施順
+1. kingdom_catalog の現行migration/schemaとDiscovery実装を最終確認。
+2. MightPulse /kingdoms Discoveryを正規経路で実行しCatalogを初期化。
+3. D1/Workers/API等のCloudflare実測消費を確認。
+4. Catalog初期化後、既存の王国Watchlist負荷テストを取得済み/未取得関係なく実行。
+5. Run台帳・Cloudflare使用量履歴・System JSON・System Logで実負荷を評価。
+6. 新規専用テスト機能は追加しない。
+
+### 注意
+- Catalog初期化前に既存D1から推定CatalogをINSERTする処理は追加しない。
+- /kingdoms Discoveryは既存API Pool/Guard/Safety Gateを迂回しない。
+- 取得済み/未取得判定を理由に負荷テスト対象を自動除外しない。
+- 本番E2Eが成功するまで「負荷テスト成功」と断定しない。
