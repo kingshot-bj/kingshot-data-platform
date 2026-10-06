@@ -7,7 +7,7 @@ import { getPlayerRollerStatus } from "./player-roller.js";
 const API_POOL_STATUS_ORDER = ["AVAILABLE", "COOLDOWN", "ERROR", "DISABLED", "REVOKED"];
 
 export async function getOperationalStatus(db) {
-  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomSeederStateResult, kingdomRankingRollerResult, allianceRollerResult, playerRollerResult] = await Promise.all([
+  const [poolResult, leaseResult, leaseDetailResult, watchResult, watchDetailResult, jobResult, latestKeyResult, systemLogResult, semaphoreResult, budgetResult, kingdomCatalogResult, kingdomSeederResult, kingdomSeederStateResult, kingdomRankingRollerResult, allianceRollerResult, playerRollerResult, kingdomR2BackfillResult] = await Promise.all([
     db.prepare(
       "SELECT pool_type, status, COUNT(*) AS count FROM api_pool_keys GROUP BY pool_type, status ORDER BY pool_type, status"
     ).all(),
@@ -37,7 +37,8 @@ export async function getOperationalStatus(db) {
     db.prepare("SELECT catalog_cursor, processed_runs, success_count, failed_count, last_kid, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_seeder_state WHERE state_key = 'KINGDOM_SEEDER'").first().catch(() => null),
     db.prepare("SELECT state, catalog_cursor, board_cursor, processed_runs, success_count, failed_count, skipped_count, last_kid, last_board, last_success_at, last_failure_at, last_error, updated_at FROM kingdom_ranking_collection_state WHERE state_key = 'KINGDOM_RANKING_ROLLER'").first().catch(() => null),
     getAllianceRollerStatus(db).catch(() => null),
-    getPlayerRollerStatus(db).catch(() => null)
+    getPlayerRollerStatus(db).catch(() => null),
+    db.prepare("SELECT migration_key, last_kid, state, batches_run, rows_archived, last_batch_count, last_batch_at, last_success_at, last_error, updated_at FROM kingdom_catalog_r2_migration WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL' LIMIT 1").first().catch(() => null)
   ]);
 
   const poolRows = poolResult.results || [];
@@ -253,6 +254,19 @@ export async function getOperationalStatus(db) {
       lastFailureAt: playerRollerResult?.last_failure_at ? Number(playerRollerResult.last_failure_at) : null,
       lastError: playerRollerResult?.last_error || null,
       updatedAt: playerRollerResult?.updated_at ? Number(playerRollerResult.updated_at) : null
+    },
+    kingdomCatalogR2Backfill: {
+      available: Boolean(kingdomR2BackfillResult),
+      migrationKey: kingdomR2BackfillResult?.migration_key || "KINGDOM_CATALOG_R2_BACKFILL",
+      state: kingdomR2BackfillResult?.state || "UNAVAILABLE",
+      lastKid: kingdomR2BackfillResult?.last_kid != null ? Number(kingdomR2BackfillResult.last_kid) : 0,
+      batchesRun: Number(kingdomR2BackfillResult?.batches_run || 0),
+      rowsArchived: Number(kingdomR2BackfillResult?.rows_archived || 0),
+      lastBatchCount: Number(kingdomR2BackfillResult?.last_batch_count || 0),
+      lastBatchAt: kingdomR2BackfillResult?.last_batch_at ? Number(kingdomR2BackfillResult.last_batch_at) : null,
+      lastSuccessAt: kingdomR2BackfillResult?.last_success_at ? Number(kingdomR2BackfillResult.last_success_at) : null,
+      lastError: kingdomR2BackfillResult?.last_error || null,
+      updatedAt: kingdomR2BackfillResult?.updated_at ? Number(kingdomR2BackfillResult.updated_at) : null
     },
     kingdomSeeder: {
       catalogRows: Number(kingdomSeederResult?.total || 0),
