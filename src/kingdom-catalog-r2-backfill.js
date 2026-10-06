@@ -4,7 +4,7 @@ import { recordDiagnostic } from "./diagnostics.js";
 
 const MIGRATION_KEY = "KINGDOM_CATALOG_R2_BACKFILL";
 const DEFAULT_BATCH_SIZE = 10;
-const MAX_BATCH_SIZE = 10;
+const MAX_BATCH_SIZE = 100;
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -38,7 +38,7 @@ function buildPayload(row) {
 }
 
 /**
- * Archive at most 10 legacy catalog rows.
+ * Archive at most 100 legacy catalog rows.
  *
  * Safety contract:
  * - Never clears D1 before the corresponding R2 put succeeds.
