@@ -1338,3 +1338,74 @@ Phase 1 K01〜K10から開始する。
 - 既存観測にheroes/ranks/gov_gearが揃っている場合、明示refreshでもrich fetchを維持するよう修正。
 - `src/index.js` 構文再検証PASS。
 - Alliance Discord通知はAlliance target_id=aidの実コード仕様に合わせ、`kingdom_ranking_current` 経由でKingdom Watchlistと照合するよう修正済み。
+
+
+# 2026-10-07 — 全コード再チェック継続 / 次スレ引き継ぎ
+
+## 現在位置
+ユーザー指示：「再チェックのため全コードをもう一度洗って」。
+全リポジトリツリーを再取得し、現行mainの全体構成を確認開始。
+
+### 現行ファイル数（再チェック開始時点）
+- Repository files: 139
+- src/*.js: 46
+- migrations/*.sql: 53
+- 最新main: `3463f49dd80625f475d3e8c100bb997bbdc72fb` 時点から後続修正を含む現行mainを確認中。
+
+## 重要：今回の再チェックは「主要コード6本だけ」ではなく全コード対象
+対象:
+- `src/` 全46 JS
+- `migrations/` 全53 SQL
+- `.github/workflows/`
+- `wrangler.jsonc`
+- 公開HTML / scripts
+- 既存docsとの整合
+
+## 既に再確認したこと
+- Migration番号の重複なし。現行最新は0052。
+- 0052 = `discord_notification_state`
+- 0048/0049/0050/0051の存在を確認。
+- Portal/Catalog/Ranking Change/Discord/Mighty/System Statusの主要コードは前スレで修正済み。
+- 主要6 JS:
+  - `src/kingdom-portal.js`
+  - `src/kingdom-catalog-page.js`
+  - `src/ranking-store.js`
+  - `src/discord-notifications.js`
+  - `src/status-ops.js`
+  - `src/index.js`
+  の構文チェックは前回PASS。
+- 新規Portal/Catalog/Notificationコードから`ranking_snapshots`の広域D1 readを追加していない。
+- Kingdom PortalのBOARDS定義は26件。
+- Catalog paginationは全件COUNTを撤去し、50+1方式。
+- Ranking ChangeはRANK_CHANGED/RANK_IN/RANK_OUTをchange_eventsへ永続化する修正済み。
+- Discord通知はWatchlist対象に限定し、重複claim/retry処理を実装済み。
+- System Status/JSONへPortal/Mighty/Discord状態を追加済み。
+- 0052 migrationはまだProduction適用していない。
+- 本番Deploy/Promotion/E2Eはまだ実施していない。
+
+## 今回の再チェックでまだ未完了
+**全46 JS / 全53 migration / workflow / wranglerを最後まで横断監査していない。**
+次スレではここから再開する。
+
+### 優先チェック順
+1. 全46 JSの構文/未定義参照/import-export整合
+2. 全53 migrationのSQL構文・重複番号・依存順序
+3. src/index.jsの全routeと実関数接続
+4. 全D1テーブル参照とmigration schemaの整合
+5. R2 binding / key / archive format整合
+6. API Pool / global semaphore / safety gate bypassの有無
+7. MightPulse endpoint/purpose/guard整合
+8. Watchlist Job → Queue → Collection → R2/D1 write path
+9. System Status / JSON / Diagnostic / System Logの観測可能性
+10. Wrangler / GitHub Actions / migration apply workflow
+11. 30工程の実装台帳との突合
+12. Deploy Candidate判定
+
+## 絶対条件
+- `ranking_snapshots` の広域readを復活させない。
+- R2_ONLY方針を維持。
+- Secrets/API keysをUI/JSON/logへ出さない。
+- API Pool/global semaphore/safety gateを迂回しない。
+- 本番Deployは再チェック完了まで行わない。
+- 「コード存在」と「実装完成」「E2E確認済み」「本番反映済み」を混同しない。
+- 進捗表示は何分の何で報告。
