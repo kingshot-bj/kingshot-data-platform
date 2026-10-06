@@ -65,7 +65,7 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="row"><span>有効な王国ウォッチリスト</span><b>${formatCount(activeWatchlists)}件</b></div>
 <div class="row"><span>ウォッチ対象のユニーク王国</span><b>${formatCount(watchedKingdoms)}王国</b></div>
 </div></div>
-<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「把握済み王国」はMightPulse /kingdoms のCatalogを24時間周期で更新した件数です。取得済み王国との差分を未取得王国として表示します。プレイヤーDB基準の王国数は上の「登録王国」で確認できます。</div>
+<div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「把握済み王国」は王国Catalogの存在確認件数です。Catalog Discoveryは5分ごとに1ページずつ探索を継続し、新規王国だけをD1へ登録します。既存王国の詳細データはR2へ保存し、D1には検索用インデックスを残します。取得済み王国との差分を未取得王国として表示します。プレイヤーDB基準の王国数は上の「登録王国」で確認できます。</div>
 </main></body></html>`;
   } catch (error) {
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye データ登録状況</title><style>body{background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px}.error{margin-top:18px;padding:16px;border:1px solid #7f1d1d;background:#3a1418;border-radius:12px;color:#fca5a5}a{color:#cbd5e1}</style></head><body><a href="/admin">← ADMIN CONTROL</a><h1>データ登録状況を取得できません</h1><div class="error">${String(error?.message || error)}</div></body></html>`;
