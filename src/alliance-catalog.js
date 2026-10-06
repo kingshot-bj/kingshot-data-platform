@@ -160,14 +160,15 @@ export async function runAllianceRoller(env, {
       let archived = false;
       if (env.R2_ARCHIVE) {
         try {
-          await archiveAllianceHistoryBatch(env.R2_ARCHIVE, {
+          const archive = await archiveAllianceHistoryBatch(env.R2_ARCHIVE, {
             kid: Number(row.kid),
             aid,
             observedAt,
             sourceObservedAt,
             payload
           });
-          archived = true;
+          if (!archive?.key) throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
+          archived = archive;
         } catch (error) {
           console.error("alliance_history_r2_archive_failed", { kid: row.kid, aid, message: error?.message || String(error) });
         }
@@ -180,10 +181,11 @@ export async function runAllianceRoller(env, {
           sourceObservedAt,
           payload: { aid, data: payload }
         });
+        throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
       }
 
       await db.prepare(
-        "UPDATE alliance_catalog SET abbr = ?, name = ?, power = ?, member_count = ?, leader_name = ?, leader_uid = ?, leader_governor_id = ?, flag_url = ?, power_rank = ?, raw_json = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ?, status = 'ACTIVE' WHERE kid = ? AND aid = ?"
+        "UPDATE alliance_catalog SET abbr = ?, name = ?, power = ?, member_count = ?, leader_name = ?, leader_uid = ?, leader_governor_id = ?, flag_url = ?, power_rank = ?, raw_json = NULL, source_observed_at = ?, last_seen_at = ?, updated_at = ?, status = 'ACTIVE', r2_latest_key = ? WHERE kid = ? AND aid = ?"
       ).bind(
         current.abbr,
         current.name,
@@ -194,10 +196,10 @@ export async function runAllianceRoller(env, {
         current.leader_governor_id,
         current.flag_url,
         current.power_rank,
-        JSON.stringify(payload ?? {}),
         sourceObservedAt,
         observedAt,
         observedAt,
+        archived.key,
         Number(row.kid),
         aid
       ).run();
