@@ -1074,9 +1074,9 @@ Phase 1 K01〜K10から開始する。
 ## 今回の進捗
 - **全体: 30/30 コード実装一巡**
 - Phase 1: Kingdom探索基盤 10/10
-- Phase 2: Alliance / Comparison / Momentum / Ranking Change / Freshness / Player段階取得 10/10
-- Phase 3: Mighty / Watchlist Analytics / Discord通知 7/7
-- 横断観測: Portal System Log / Portal System JSON status 3/3
+- Phase 2: Alliance / Comparison / Momentum / Ranking Change / Freshness / Player統合・段階取得 12/12
+- Phase 3: Mighty / Watchlist初回取得 / Watchlist Analytics / Discord通知 5/5
+- 横断観測: Portal System Log / Portal System JSON status / feature observability 3/3
 - ただし「完了」ではない。**本番Deploy・migration適用・本番E2Eは未確認**。
 
 ## 今回の主な実装
