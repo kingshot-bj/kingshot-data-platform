@@ -102,7 +102,7 @@ export async function renderKingdomRankingsPage(request, env) {
   const boards = await env.DB.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
   const available = (boards.results||[]).map(x=>x.board);
   const board = available.includes(selected) ? selected : (available[0]||selected);
-  const rows = await env.DB.prepare("SELECT rank,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC LIMIT 100").bind(kid,board).all();
+  const rows = await env.DB.prepare("SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC LIMIT 100").bind(kid,board).all();
   const label=BOARDS.find(x=>x[0]===board)?.[1]||board;
   const boardLinks=BOARDS.map(([b,l])=>"<a class='"+(b===board?"active":"")+"' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(b)+"'>"+esc(l)+"</a>").join("");
   const body=(rows.results||[]).map(r=>{
