@@ -1,14 +1,15 @@
-export async function verifyKingdomCatalogR2Backfill(env) {
+export async function verifyKingdomCatalogR2Backfill(env, { batchSize = 10 } = {}) {
   if (!env?.DB) throw new Error("DB_NOT_CONFIGURED");
   if (!env?.ARCHIVE) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   const state = await env.DB.prepare(
     "SELECT last_kid FROM kingdom_catalog_r2_migration WHERE migration_key = ? LIMIT 1"
   ).bind("KINGDOM_CATALOG_R2_BACKFILL").first();
   const lastKid = Number(state?.last_kid || 0);
+  const safeBatchSize = Math.min(100, Math.max(1, Number(batchSize) || 10));
   if (!lastKid) return { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
   const selected = await env.DB.prepare(
-    "SELECT kid, r2_latest_key, raw_json, boards_json FROM kingdom_catalog WHERE kid <= ? AND r2_latest_key IS NOT NULL ORDER BY kid DESC LIMIT 10"
-  ).bind(lastKid).all();
+    "SELECT kid, r2_latest_key, raw_json, boards_json FROM kingdom_catalog WHERE kid <= ? AND r2_latest_key IS NOT NULL ORDER BY kid DESC LIMIT ?"
+  ).bind(lastKid, safeBatchSize).all();
   const rows = [];
   for (const row of (selected.results || [])) {
     let r2Exists = false;
