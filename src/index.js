@@ -53,7 +53,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
-import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, handleKingdomPortalApi } from "./kingdom-portal.js";
+import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
@@ -3965,6 +3965,7 @@ export default {
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
       if (url.pathname === "/alliance") return eagleEyeHtmlResponse(await renderAlliancePage(request, env));
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
+      if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-raw-data") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderApiRawDataPage(guard.auth)); }
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
