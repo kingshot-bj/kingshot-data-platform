@@ -339,7 +339,7 @@ export async function handleOwnerKingdomLoadTestSystemJsonApi(request, env) {
       if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8","content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
     }
     const payload = await buildLoadTestSystemJson(env, runId);
-    return new Response(JSON.stringify(payload, null, 2), {headers:{"content-type":"application/json; charset=UTF-8",""content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
+    return new Response(JSON.stringify(payload, null, 2), {headers:{"content-type":"application/json; charset=UTF-8","content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
   } catch (error) {
     const status = String(error?.message || "") === "RUN_NOT_FOUND" ? 404 : 500;
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_SYSTEM_JSON_UNAVAILABLE",message:error?.message||String(error)}),{status,headers:{"content-type":"application/json; charset=UTF-8"}});
