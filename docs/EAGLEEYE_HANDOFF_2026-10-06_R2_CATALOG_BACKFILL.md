@@ -291,3 +291,16 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
   - `262ddbc33f4618191af59b65196b3dfade726e9d`
   - `835e5894afa7a6124eb7fc3ad6f3449757a02d18`
   - `c83f15e2a9893ea354bd820fb9943a927985b622`
+
+
+### 2026-10-06 一括実行停止原因の修正
+- 一括バックフィルが `1130/2528` で停止した事象を確認。
+- 原因候補となる `kid > last_kid` カーソル条件を撤去。
+- 未処理判定は `r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)` のみを使用。
+- これにより途中でKID条件により対象を取りこぼして終了することを防止。
+- 0件取得時は残件数を再確認し、残件がある場合は `KINGDOM_CATALOG_R2_BACKFILL_STALLED_REMAINING` で失敗扱いにする。
+- 検証不合格時は自動継続しない。
+- 修正コミット:
+  - `9167f4258666338070c6950fe3ab81ef4e9336f3`
+  - `fa1455d48ffc264710597cf390bf8e943d514c0e`
+  - `60e372ac66c69681a93b4ccac2e900fb883247a3`
