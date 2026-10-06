@@ -912,8 +912,8 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     if(allJobsDone && runFinalized){
-      const systemJsonArchive = await persistLoadTestSystemJson(env, runId);
       await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,startedAt:Number(run.created_at||now),completedAt:now,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テストRun完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta,verification,changeEventBreakdown,changeEventBreakdownBasis:"detected_at_window_for_run; may include unrelated concurrent activity"}});
+      await persistLoadTestSystemJson(env, runId);
     }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
   } catch(error) {
@@ -936,6 +936,7 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
         "UPDATE kingdom_load_test_runs SET status=CASE WHEN status='CANCELLED' THEN 'CANCELLED' ELSE 'FAILED' END,success_count=?,failed_count=?,ranking_rows_saved=?,player_rows_saved=?,elapsed_ms=?,last_activity_at=?,updated_at=?,completed_at=? WHERE run_id=? AND status='RUNNING'"
       ).bind(Number(summaryRows?.success_count||0),Number(summaryRows?.failed_count||0),Number(summaryRows?.ranking_rows_saved||0),Number(summaryRows?.player_rows_saved||0),finalElapsed,finalAt,finalAt,finalAt,runId).run().catch(()=>{});
       await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:"FAILED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,startedAt:Number(run.created_at||finalAt),completedAt:finalAt,elapsedMs:finalElapsed,errorCode:runError?.code||"LOAD_TEST_QUEUE_FAILED",message:"王国Watchlist実処理負荷テスト Run失敗",metadata:{runId,targetCount:allKids.length,success:Number(summaryRows?.success_count||0),failed:Number(summaryRows?.failed_count||0),rankingRowsSaved:Number(summaryRows?.ranking_rows_saved||0),playerRowsSaved:Number(summaryRows?.player_rows_saved||0),finalizedBy:"queue_consumer_error"} }).catch(()=>{});
+      await persistLoadTestSystemJson(env, runId);
     }
     throw error;
   } finally {
