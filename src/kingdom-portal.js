@@ -135,33 +135,60 @@ export async function renderAlliancePage(request, env) {
 }
 
 export async function renderKingdomComparePage(request, env) {
-  const url=new URL(request.url);
-  const kids=[...new Set(url.searchParams.getAll("kid").flatMap(v=>String(v).split(",")).map(Number).filter(n=>Number.isInteger(n)&&n>0))].slice(0,4);
-  if(kids.length<2) return page("王国比較","<main class='wrap'><h1>王国比較</h1><p>URLに ?kid=1&kid=2 のように2王国以上を指定してください。</p></main>");
-  const placeholders=kids.map(k=>"?").join(",");
-  const rows=await env.DB.prepare("SELECT kid,name,status,source_observed_at,last_seen_at FROM kingdom_catalog WHERE kid IN ("+placeholders+") ORDER BY kid").bind(...kids).all();
-  const current=await env.DB.prepare("SELECT kid,board,rank,score FROM kingdom_ranking_current WHERE kid IN ("+placeholders+") AND board = 'personal_power' AND target_type='PLAYER' ORDER BY kid,rank LIMIT 10").bind(...kids).all();
-  const top=new Map(); for(const r of current.results||[]){const a=top.get(r.kid)||[];a.push(r);top.set(r.kid,a);}
-  const cards=(rows.results||[]).map(r=>"<article class='compare'><h2>王国 "+esc(r.kid)+"</h2><p>"+esc(r.name||"名称未取得")+"</p><div>最終取得 "+esc(ts(r.last_seen_at))+"</div><div>Top1 Power "+esc(num(top.get(r.kid)?.[0]?.score))+"</div></article>").join("");
-  return page("王国比較","<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><div class='comparegrid'>"+cards+"</div></main>");
-}
+  const url = new URL(request.url);
+  const kids = [...new Set(
+    url.searchParams.getAll("kid")
+      .flatMap(value => String(value).split(","))
+      .map(Number)
+      .filter(value => Number.isInteger(value) && value > 0)
+  )].slice(0, 4);
 
-export async function handleKingdomPortalApi(request, env) {
-  const url=new URL(request.url);
-  if(url.pathname==="/api/kingdom-portal/status") {
-    const latest=await env.DB.prepare("SELECT status,operation,created_at,error_code FROM system_event_log WHERE service = 'kingdom_portal' ORDER BY created_at DESC LIMIT 1").first();
-    const catalog=await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog").first();
-    return Response.json({ok:true,service:"kingdom_portal",catalog_count:Number(catalog?.count||0),latest_event:latest||null});
+  if (kids.length < 2) {
+    return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p>URLに ?kid=1&kid=2 のように2王国以上を指定してください。</p></main>");
   }
-  if(url.pathname!=="/api/kingdom-portal/ranking") return null;
-  const kid=Number(url.searchParams.get("kid")); const board=String(url.searchParams.get("board")||"personal_power");
-  if(!Number.isInteger(kid)||kid<1) return Response.json({ok:false,error:"INVALID_KID"},{status:400});
-  const allowed=BOARDS.some(x=>x[0]===board); if(!allowed) return Response.json({ok:false,error:"INVALID_BOARD"},{status:400});
-  const rows=await env.DB.prepare("SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank,observed_at,source_observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100").bind(kid,board).all();
-  await recordSystemEvent(env.DB,{traceId:systemTraceId("kingdom-portal"),eventType:"COMPLETE",service:"kingdom_portal",feature:"ranking_explorer",operation:"READ_CURRENT_RANKING",status:"SUCCESS",targetType:"KINGDOM",targetId:String(kid),metadata:{board,rowCount:rows.results?.length||0}}).catch(()=>{});
-  return Response.json({ok:true,kid,board,rows:rows.results||[]});
-}
 
+  const placeholders = kids.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    "SELECT kid,name,status,source_observed_at,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ") ORDER BY kid"
+  ).bind(...kids).all();
+
+  const details = await Promise.all((rows.results || []).map(async row => {
+    let archived = null;
+    try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
+    const payload = archived?.payload || {};
+    const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+    return { ...row, detail };
+  }));
+
+  const cards = details.map(row => {
+    const d = row.detail || {};
+    const metrics = [
+      ["Power", d.power],
+      ["平均Power", d.avg_power],
+      ["領主数", d.player_count],
+      ["Active 7d", d.active_7d],
+      ["Active 30d", d.active_30d],
+      ["Power Gain 7d", d.power_gain_7d],
+      ["TC Pushers 7d", d.tc_pushers_7d],
+      ["Health", d.health],
+      ["同盟数", d.alliance_count],
+      ["Hero Power", d.hero_power],
+      ["Troop Power", d.troop_power],
+      ["Research Power", d.research_power]
+    ];
+    return "<article class='compare'><h2>王国 " + esc(row.kid) + "</h2><p>" + esc(row.name || d.name || "名称未取得") + "</p>" +
+      "<div class='compare-meta'>最終取得 " + esc(ts(row.last_seen_at)) + " / Provider観測 " + esc(ts(row.source_observed_at || d.source_observed_at)) + "</div>" +
+      "<div class='compare-metrics'>" + metrics.map(([label,value]) =>
+        "<div><small>" + esc(label) + "</small><strong>" + esc(num(value)) + "</strong></div>"
+      ).join("") + "</div></article>";
+  }).join("");
+
+  return page("王国比較",
+    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p>最大4王国。現在値と7日成長指標を比較します。詳細payloadは選択した王国だけR2から読み込みます。</p><div class='comparegrid'>" +
+    (cards || "<div class='empty'>比較対象がありません。</div>") +
+    "</div></main>"
+  );
+}
 
 export async function renderKingdomMightyPage(request, env) {
   const url=new URL(request.url);
