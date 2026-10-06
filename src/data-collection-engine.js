@@ -63,18 +63,18 @@ export async function collectMightPulseThroughGuards(env, {
       releaseGlobal = await semaphore.acquire();
     }
 
-    lease = await leaseApiKey(env.DB, {
+    lease = await withD1TransientRetry(() => leaseApiKey(env.DB, {
       poolTypes,
       purpose,
       targetType,
       targetId
-    });
+    }));
 
     if (!lease) {
-      const availability = await getApiPoolAvailability(env.DB, {
+      const availability = await withD1TransientRetry(() => getApiPoolAvailability(env.DB, {
         provider: "MIGHTPULSE",
         poolTypes
-      });
+      }));
       const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
       const error = new Error("NO_API_POOL_KEY_AVAILABLE");
       error.code = "NO_API_POOL_KEY_AVAILABLE";
@@ -92,7 +92,7 @@ export async function collectMightPulseThroughGuards(env, {
       maxRetries
     });
 
-    await recordApiPoolSuccess(env.DB, {
+    await withD1TransientRetry(() => recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
       poolType: lease.pool_type,
@@ -103,7 +103,7 @@ export async function collectMightPulseThroughGuards(env, {
       httpStatus: result.status,
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
       remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
-    });
+    }));
 
     return {
       result,
@@ -121,7 +121,7 @@ export async function collectMightPulseThroughGuards(env, {
       const disable = status === 401 || status === 403;
       const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
 
-      await recordApiPoolFailure(env.DB, {
+      await withD1TransientRetry(() => recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
         poolType: lease.pool_type,
@@ -135,7 +135,7 @@ export async function collectMightPulseThroughGuards(env, {
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
-      });
+      }));
     }
     throw error;
   } finally {
