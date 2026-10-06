@@ -1,4 +1,5 @@
 import { getMightPulseKingdom, getMightPulseAlliance } from "./mightpulse.js";
+import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 
 const BOARDS = [
   ["personal_power","個人総力"],["kills","個人撃破"],["town_center","役場Lv."],["hero_total","英雄全体総力"],
@@ -155,6 +156,19 @@ export async function handleKingdomPortalApi(request, env) {
   return Response.json({ok:true,kid,board,rows:rows.results||[]});
 }
 
+
+export async function renderKingdomMightyPage(request, env) {
+  const url=new URL(request.url);
+  const kid=Number(url.searchParams.get("kid"));
+  if(!Number.isInteger(kid)||kid<1) return page("Mighty","<main class='wrap'><div class='empty'>kidを指定してください。</div></main>");
+  if(String(env?.MIGHTPULSE_MIGHTY_ENABLED||"").toLowerCase()!=="true") {
+    return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>Events / KvK はMightPulse Mightyキーを明示的に有効化した場合のみ取得します。現在はAPI呼び出しを行っていません。</div></main>");
+  }
+  let events=null,kvk=null,errors=[];
+  try { events=await collectMightPulseThroughGuards(env,{path:"/kingdoms/"+encodeURIComponent(kid)+"/events",endpoint:"/kingdoms/:kid/events",targetType:"KINGDOM",targetId:String(kid),purpose:"KINGDOM_MIGHTY_EVENTS"}); } catch(e){ errors.push("Events: "+String(e?.code||e?.message||e)); }
+  try { kvk=await collectMightPulseThroughGuards(env,{path:"/kingdoms/"+encodeURIComponent(kid)+"/kvk",endpoint:"/kingdoms/:kid/kvk",targetType:"KINGDOM",targetId:String(kid),purpose:"KINGDOM_MIGHTY_KVK"}); } catch(e){ errors.push("KvK: "+String(e?.code||e?.message||e)); }
+  return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty Events / KvK</h1>"+(errors.length?"<div class='empty'>"+errors.map(esc).join("<br>")+"</div>":"")+"<section><h2>Events</h2><pre>"+esc(JSON.stringify(events?.result?.data||events?.result||{},null,2))+"</pre></section><section><h2>KvK</h2><pre>"+esc(JSON.stringify(kvk?.result?.data||kvk?.result||{},null,2))+"</pre></section></main>");
+}
 
 export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
   if (!auth || auth.status !== "ACTIVE") return page("Watchlist Analytics","<main class='wrap'><div class='empty'>ログインが必要です。</div></main>");
