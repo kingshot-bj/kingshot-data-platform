@@ -40,10 +40,12 @@ async function claimApiPoolKey(db, {
   purpose = "GENERAL",
   targetType = null,
   targetId = null,
-  leaseSeconds = LEASE_SECONDS
+  leaseSeconds = LEASE_SECONDS,
+  reserveAvailableKeys = 0
 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
+  const reserve = Math.max(0, Math.floor(Number(reserveAvailableKeys) || 0));
   const leaseId = crypto.randomUUID();
   const eligiblePoolTypes = Array.isArray(poolTypes) && poolTypes.length
     ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
@@ -54,13 +56,20 @@ async function claimApiPoolKey(db, {
   // placeholders generated for the dynamic pool-type IN list. D1/SQLite
   // assigns anonymous parameters differently when numbered parameters are
   // present, causing a binding-count error for multi-pool leases.
+  const reserveCondition = reserve > 0
+    ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN') AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
+    : "";
   const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?, leased_until = ?, lease_job_id = ?, lease_purpose = ?, lease_target_type = ?, lease_target_id = ?, updated_at = ? " +
-    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
+    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
+    reserveCondition +
+    " ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
     "RETURNING key_id, provider, pool_type, encrypted_key";
-  const row = await db.prepare(sql).bind(
+  const bindings = [
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
     provider ?? PROVIDER, ...eligiblePoolTypes, now, now
-  ).first();
+  ];
+  if (reserve > 0) bindings.push(provider ?? PROVIDER, ...eligiblePoolTypes, now, now, reserve);
+  const row = await db.prepare(sql).bind(...bindings).first();
 
   if (!row) throw new Error("NO_API_POOL_KEY_AVAILABLE");
 
@@ -99,7 +108,8 @@ export async function leaseApiKeyForHealthCheck(db, {
          lease_target_id = ?5,
          updated_at = ?6
      WHERE key_id = ?7
-       AND status IN ('AVAILABLE','ERROR','DISABLED')
+       AND status IN ('AVAILABLE','ERROR','DISABLED','COOLDOWN')
+       AND (cooldown_until IS NULL OR cooldown_until <= ?8)
        AND (leased_until IS NULL OR leased_until <= ?8)
      RETURNING key_id, provider, pool_type, encrypted_key`
   ).bind(
