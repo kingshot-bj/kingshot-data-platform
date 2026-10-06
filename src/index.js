@@ -3968,7 +3968,7 @@ export default {
         if (guard.error) return guard.error;
         if (request.method === "POST") {
           const form = await request.formData().catch(() => null);
-          if (String(form?.get("action") || "") === "run") {
+          if (["run", "run_all"].includes(String(form?.get("action") || ""))) {
             try {
               const runAll = String(form?.get("action") || "") === "run_all";
               const requestedBatchSize = runAll ? 100 : Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));
