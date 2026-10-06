@@ -58,6 +58,7 @@ import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, han
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { archiveSystemEventLog } from "./retention.js";
+import { runKingdomDiscordNotifications } from "./discord-notifications.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -4021,6 +4022,11 @@ export default {
       await runKingdomCatalogDailyRefresh(env);
     } catch (error) {
       console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
+    }
+    try {
+      await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
+    } catch (error) {
+      console.error("kingdom_discord_notifications_failed", error?.message || error);
     }
   },
   async queue(batch, env) {
