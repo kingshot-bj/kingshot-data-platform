@@ -399,6 +399,30 @@ export async function getMightPulseAlliance(env, kid, tag, {
   );
 }
 
+export async function getMightPulseKingdomEvents(env, kid, { apiKey = null, traceId = null, parentTraceId = null } = {}) {
+  const kingdomId = String(kid || "").trim();
+  if (!kingdomId) throw new MightPulseError("Kingdom ID is required.", { status: 400, code: "INVALID_KINGDOM_ID" });
+  return mightPulseFetch(env, `/kingdoms/${encodeURIComponent(kingdomId)}/events`, {
+    apiKey, traceId, parentTraceId, operation: "GET_KINGDOM_EVENTS", targetType: "KINGDOM", targetId: kingdomId
+  });
+}
+
+export async function getMightPulseKingdomKvk(env, kid, { apiKey = null, traceId = null, parentTraceId = null } = {}) {
+  const kingdomId = String(kid || "").trim();
+  if (!kingdomId) throw new MightPulseError("Kingdom ID is required.", { status: 400, code: "INVALID_KINGDOM_ID" });
+  return mightPulseFetch(env, `/kingdoms/${encodeURIComponent(kingdomId)}/kvk`, {
+    apiKey, traceId, parentTraceId, operation: "GET_KINGDOM_KVK", targetType: "KINGDOM", targetId: kingdomId
+  });
+}
+
+export async function getMightPulseKingdomKvkScores(env, kid, { apiKey = null, traceId = null, parentTraceId = null } = {}) {
+  const kingdomId = String(kid || "").trim();
+  if (!kingdomId) throw new MightPulseError("Kingdom ID is required.", { status: 400, code: "INVALID_KINGDOM_ID" });
+  return mightPulseFetch(env, `/kingdoms/${encodeURIComponent(kingdomId)}/kvk/scores`, {
+    apiKey, traceId, parentTraceId, operation: "GET_KINGDOM_KVK_SCORES", targetType: "KINGDOM", targetId: kingdomId
+  });
+}
+
 export async function getMightPulseKingdom(env, kid, {
   include,
   limit,
