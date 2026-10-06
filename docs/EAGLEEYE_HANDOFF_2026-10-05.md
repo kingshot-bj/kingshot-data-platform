@@ -538,3 +538,40 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - 既存のランキング取得、プレイヤー取得、Change Event、API Pool lease/return、Load Test処理には変更を加えていない。
 - 1ページ単位のBounded Discoveryを維持。
 - MightPulse APIは1 Cronあたり最大1リクエストなので、5分Cronでも最大288リクエスト/日。全件走査完了後は24時間スキップする。
+
+## 2026-10-06 — 王国Catalog / Collection Coverageの定義統一
+
+### 目的
+- UIの「把握済み王国」「取得済み王国」「未取得王国」の意味を明確化。
+- 「取得済み王国」は、ランキングだけ・王国Seederだけの部分取得ではなく、EagleEyeの王国Watchlist処理でランキング取得から対象プレイヤー詳細取得まで到達した完全成功を意味する。
+- 未取得王国は、ユーザー指定どおり **MightPulseで存在を把握した王国数 − EagleEye取得済み王国数** とする。
+
+### 変更
+- `src/kingdom-ranking-roller.js`
+  - ランキング26ボード完了だけでは `kingdom_collection_stats` を増やさない。
+  - ランキングRollerはランキングデータの収集状態だけを担当する。
+- `src/kingdom-seeder.js`
+  - `/kingdoms/:kid` の王国詳細取得成功だけでは `kingdom_collection_stats` を増やさない。
+  - SeederはCatalog/王国current情報の更新だけを担当する。
+- `src/index.js`
+  - 既存の完全なRANKINGS→PLAYERSフローがterminal成功した箇所だけで `recordKingdomCollectionSuccess()` を実行する。
+  - 失敗・中止・途中状態は取得済みにしない。
+- `src/kingdom-catalog-page.js`
+  - 全件SELECTを廃止。
+  - 1ページ50王国のページング表示に変更し、カタログが増えても1画面で全件をD1から読むことを避ける。
+
+### 既存データ
+- `0047` でバックフィル済みの134王国は、その時点の既存ランキング＋Player実データを根拠とする歴史的OPERATOR実績として維持する。
+- 今回の修正では既存のcollection_stats行を削除・再計算しない。
+- 今後の部分取得では取得済み件数を増やさず、完全成功した王国だけが増える。
+
+### Catalog更新周期
+- MightPulse `/kingdoms` Discoveryは既存どおり5分Cronごとに1ページ（最大24王国）のbounded処理を継続する。
+- 全ページ完了後、24時間経過するまで次の全件走査を開始しない。
+- これはAPI/D1負荷を抑えるための安全設計であり、全件走査の所要時間は王国数に応じて変動する。
+- Catalog Discoveryの外部API経路、API Pool、Guard、Safety Gateは変更しない。
+
+### 安全性
+- ranking_snapshotsの広域Readは復活させない。
+- API Pool lease/return、Watchlistのランキング比較、previous_rank、removedTargets、Change Event生成、R2保存には変更なし。
+- 既存Catalog / Collection Statsのデータ削除・破壊的migrationは行わない。
