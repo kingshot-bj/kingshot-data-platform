@@ -1,5 +1,6 @@
 import { getMightPulseKingdom, getMightPulseAlliance } from "./mightpulse.js";
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
+import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const BOARDS = [
   ["personal_power","個人総力"],["kills","個人撃破"],["town_center","役場Lv."],["hero_total","英雄全体総力"],
@@ -148,11 +149,17 @@ export async function renderKingdomComparePage(request, env) {
 
 export async function handleKingdomPortalApi(request, env) {
   const url=new URL(request.url);
+  if(url.pathname==="/api/kingdom-portal/status") {
+    const latest=await env.DB.prepare("SELECT status,operation,created_at,error_code FROM system_events WHERE service = 'kingdom_portal' ORDER BY created_at DESC LIMIT 1").first();
+    const catalog=await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog").first();
+    return Response.json({ok:true,service:"kingdom_portal",catalog_count:Number(catalog?.count||0),latest_event:latest||null});
+  }
   if(url.pathname!=="/api/kingdom-portal/ranking") return null;
   const kid=Number(url.searchParams.get("kid")); const board=String(url.searchParams.get("board")||"personal_power");
   if(!Number.isInteger(kid)||kid<1) return Response.json({ok:false,error:"INVALID_KID"},{status:400});
   const allowed=BOARDS.some(x=>x[0]===board); if(!allowed) return Response.json({ok:false,error:"INVALID_BOARD"},{status:400});
   const rows=await env.DB.prepare("SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank,observed_at,source_observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100").bind(kid,board).all();
+  await recordSystemEvent(env.DB,{traceId:systemTraceId("kingdom-portal"),eventType:"COMPLETE",service:"kingdom_portal",feature:"ranking_explorer",operation:"READ_CURRENT_RANKING",status:"SUCCESS",targetType:"KINGDOM",targetId:String(kid),metadata:{board,rowCount:rows.results?.length||0}}).catch(()=>{});
   return Response.json({ok:true,kid,board,rows:rows.results||[]});
 }
 
