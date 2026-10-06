@@ -5633,9 +5633,11 @@ async function handlePlayerApi(request, env) {
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     let source = "D1";
     const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
+    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
+    const fetchRich = rich || (refresh && hasRichProfile);
 
     if (!observation || refresh || (rich && needsRichProfile)) {
-      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), rich ? "base,heroes,ranks,gov_gear" : "base");
+      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
       source = "MIGHTPULSE";
@@ -6197,9 +6199,11 @@ async function renderPlayerPage(request, env) {
     const rich = url.searchParams.get("rich") === "1";
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
+    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
+    const fetchRich = rich || (refresh && hasRichProfile);
 
     if (!observation || refresh || (rich && needsRichProfile)) {
-      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), rich ? "base,heroes,ranks,gov_gear" : "base");
+      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
 
