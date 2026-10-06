@@ -3617,10 +3617,10 @@ async function handleKingdomCatalogR2BackfillApi(request, env) {
 
     if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
     const body = await request.json().catch(() => ({}));
-    const batchSize = Math.min(10, Math.max(1, Number(body?.batch_size) || 10));
+    const batchSize = Math.min(100, Math.max(1, Number(body?.batch_size) || 10));
     const result = await runKingdomCatalogR2Backfill(env, { batchSize });
     const verification = result.archived > 0
-      ? await verifyKingdomCatalogR2Backfill(env)
+      ? await verifyKingdomCatalogR2Backfill(env, { batchSize: result.archived })
       : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
     return json({ ...result, verification });
   } catch (error) {
@@ -3972,7 +3972,7 @@ export default {
             try {
               const requestedBatchSize = Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));
               const result = await runKingdomCatalogR2Backfill(env, { batchSize: requestedBatchSize });
-              const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
+              const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env, { batchSize: result.archived }) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification }));
             } catch (error) {
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ok:false, error:error?.message || String(error) }));
