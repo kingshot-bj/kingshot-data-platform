@@ -1,6 +1,7 @@
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
+import { archiveKingdomCatalogSnapshot } from "./r2-archive.js";
 
 const DEFAULT_TARGETS_PER_RUN = 2;
 const DISCOVERY_KEY = "MIGHTPULSE_KINGDOMS";
@@ -55,19 +56,24 @@ export async function runKingdomSeeder(env, {
 
       const payload = extractObject(detail.result?.data);
       const observedAt = now();
+      const archive = await archiveKingdomCatalogSnapshot(env.ARCHIVE, {
+        kid,
+        payload,
+        observedAt
+      });
+      if (!archive?.key) throw new Error("KINGDOM_CATALOG_R2_ARCHIVE_FAILED");
       await env.DB.prepare(
-        "UPDATE kingdom_catalog SET name = COALESCE(?, name), status = COALESCE(?, status), region = COALESCE(?, region), language = COALESCE(?, language), raw_json = ?, boards_json = ?, boards_observed_at = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ? WHERE kid = ?"
+        "UPDATE kingdom_catalog SET name = COALESCE(?, name), status = COALESCE(?, status), region = COALESCE(?, region), language = COALESCE(?, language), raw_json = NULL, boards_json = NULL, boards_observed_at = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ?, r2_latest_key = ? WHERE kid = ?"
       ).bind(
         payload.name ?? payload.kingdom_name ?? null,
         payload.status ?? null,
         payload.region ?? payload.zone ?? null,
         payload.language ?? payload.lang ?? null,
-        JSON.stringify(payload),
-        JSON.stringify(payload.boards ?? payload.ranking_boards ?? payload.leaderboards ?? []),
         observedAt,
         Number(payload.source_observed_at ?? payload.observed_at ?? 0) || null,
         observedAt,
         observedAt,
+        archive.key,
         kid
       ).run();
 
