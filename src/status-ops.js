@@ -103,6 +103,15 @@ export async function getOperationalStatus(db) {
     }
   }
   const job = jobResult || null;
+  const latestEventByService = new Map();
+  for (const event of systemLogResult) {
+    const service = String(event.service || "");
+    if (!latestEventByService.has(service)) latestEventByService.set(service, event);
+  }
+  const portalEvent = latestEventByService.get("kingdom_portal") || null;
+  const mightyEvent = latestEventByService.get("kingdom_mighty") || null;
+  const discordNotificationEvent = latestEventByService.get("discord_notification") || null;
+
 
   // Load-test state is read-only here. The coordination table is provisioned
   // by migrations, so status does not create or alter schema.
@@ -280,6 +289,24 @@ export async function getOperationalStatus(db) {
       lastFailureAt: kingdomSeederStateResult?.last_failure_at ? Number(kingdomSeederStateResult.last_failure_at) : null,
       lastError: kingdomSeederStateResult?.last_error || null,
       state: kingdomSeederStateResult ? "AVAILABLE" : "UNKNOWN"
+    },
+    kingdomPortal: {
+      state: portalEvent?.status || "UNKNOWN",
+      lastEventAt: portalEvent?.created_at ? Number(portalEvent.created_at) : null,
+      lastOperation: portalEvent?.operation || null,
+      lastErrorCode: portalEvent?.error_code || null
+    },
+    kingdomMighty: {
+      state: mightyEvent?.status || "UNKNOWN",
+      lastEventAt: mightyEvent?.created_at ? Number(mightyEvent.created_at) : null,
+      lastOperation: mightyEvent?.operation || null,
+      lastErrorCode: mightyEvent?.error_code || null
+    },
+    discordNotification: {
+      state: discordNotificationEvent?.status || "UNKNOWN",
+      lastEventAt: discordNotificationEvent?.created_at ? Number(discordNotificationEvent.created_at) : null,
+      lastOperation: discordNotificationEvent?.operation || null,
+      lastErrorCode: discordNotificationEvent?.error_code || null
     },
     watchlist: {
       total: Number(watch.total_count || 0),
