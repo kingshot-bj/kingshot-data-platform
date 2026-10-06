@@ -1194,3 +1194,100 @@ Phase 1 K01〜K10から開始する。
 - Mighty機能は明示有効化なしに外部APIを呼ばない。
 - Secrets/API keysをUI・JSON・Log・handoffへ出さない。
 - 実機Load Testと新機能Deployを混同しない。
+
+
+# 2026-10-07 — Deploy前コード総点検・ブラッシュアップ追記
+
+## 現在の判定
+- **30/30: 実装対象コードの一巡済み**
+- **コード監査: 継続中**
+- **本番Deploy: 未実施**
+- **D1 0052 migration: 未適用**
+- **本番E2E: 未実施**
+- Cloudflare Workers BuildsのProduction Deploy commandはユーザー操作で `npx wrangler versions upload` に変更済み。Git pushでVersion作成は進むがActive Deploymentは更新しない運用。
+
+## 今回の監査で修正した重要事項
+1. Discord通知migrationの番号重複を修正。
+   - 旧: `0050_discord_notification_state.sql`
+   - 新: `0052_discord_notification_state.sql`
+   - 旧ファイルは削除済み。
+   - 既存 `0050_alliance_catalog_r2_index.sql` / `0051_players_r2_index.sql` を維持。
+2. Kingdom Catalog
+   - KID完全一致
+   - 王国名検索
+   - Status filter
+   - Sort
+   - 50件表示 + 51件先読み方式
+   - `COUNT(*)` と Status DISTINCT を撤去して検索時の全Catalog row readを削減。
+   - Catalogカードから直接王国Watchlist追加。
+   - inline script構文エラーを修正。
+3. Kingdom Portal
+   - Ranking board stateの行数表示を `checked_rows` ベースへ修正。
+   - Alliance rankingを `kingdom_ranking_current` から表示できるfallbackを追加。
+   - Alliance DetailもCatalog未生成時にcurrent rankingから基本情報を表示。
+   - 既存R2 backfill前のlegacy Catalogについて `raw_json` fallbackを追加。
+   - Kingdom比較を最大4王国のR2 current payloadからPower / Active / Growth / Health等を比較するbounded処理へ変更。
+   - Ranking表示で `target_type` を明示取得し、AllianceをPlayerとして誤リンクしないよう修正。
+   - System Status用の誤った `system_events` テーブル参照を実在する `system_event_log` に修正。
+4. Ranking Change
+   - `getKingdomRankingChanges()` が計算していた `rankingChanges` をD1 `change_events`へ永続化。
+   - 2回目以降のみ `RANK_IN`, `RANK_OUT`, `RANK_CHANGED` を記録。
+   - 初回baselineではINイベントを発生させない。
+   - R2失敗時はcurrent/event writeを実行せず、既存R2_ONLY safetyを維持。
+   - Ranking Change UIはboard check timeにboundedしてChange Eventを読む。
+5. Discord通知
+   - Player WatchlistだけでなくKingdom Watchlist配下のPlayer/Allianceも対象。
+   - `INSERT OR IGNORE` によるnotification claimを先に行い、Cron重複時の二重送信を防止。
+   - Discord送信失敗時はclaimを削除して次回retry可能。
+   - `DISCORD_NOTIFICATION_CHANNEL_ID` 未設定時は完全無効。
+   - Diagnostic + System Logの両方へ記録。
+6. System Status / JSON
+   - `kingdomPortal`
+   - `kingdomMighty`
+   - `discordNotification`
+   を `getOperationalStatus()` に追加。
+   - 既存System Status collector UIにも表示。
+   - System JSON経由でも取得可能。
+7. Mighty
+   - Events / KvKは `MIGHTPULSE_MIGHTY_ENABLED=true` が明示されない限りAPIを呼ばない。
+   - 有効化時も `collectMightPulseThroughGuards` 経由でAPI Pool + global semaphoreを通す。
+   - System Logに `kingdom_mighty` START/COMPLETEを記録。
+
+## 構文検証
+以下をGitHub mainの現行内容からimport/exportを除いたWorker JSとしてparseし、全件PASS:
+- `src/kingdom-portal.js`
+- `src/kingdom-catalog-page.js`
+- `src/ranking-store.js`
+- `src/discord-notifications.js`
+- `src/status-ops.js`
+- `src/index.js`
+
+追加で通知SQL / Ranking Change SQLをSQLiteで構文・JOIN条件検証済み。
+
+## D1 / R2安全確認
+- 新規Portal / Catalog / Notificationコードから `ranking_snapshots` の広域readなし。
+- Ranking historyの既存R2_ONLY pathは維持。
+- Catalog詳細はR2優先、legacy raw_jsonはR2 backfill前のbounded fallbackのみ。
+- Kingdom comparisonは最大4王国だけR2 GET。
+- Catalog pageはCOUNT全表readをしない。
+- Notification stateはprimary keyで重複claimを抑止。
+- Secrets/API keysをUI/JSONへ出していない。
+
+## Deploy前に残る必須確認
+1. Production D1 `d1_migrations` の0048/0049/0050/0051適用状態を確認。
+2. `0052_discord_notification_state.sql` をProductionへ適用。
+3. Migration適用後に通知state table/indexを確認。
+4. 現在の実機Load Test Runを終了・結果確定。
+5. Workers Buildを `npx wrangler versions upload` のまま成功させ、Version URLでSmoke Test。
+6. Version URLはproduction resourcesを使うため、書き込みを伴うSmoke Testは対象を限定する。
+7. Kingdom Catalog → Detail → Ranking → Player → Alliance → Watchlist E2E。
+8. Ranking Changeを2回目の取得でRANK_CHANGED / IN / OUTまで確認。
+9. Discord通知はテストChange Eventで1回だけ送信されることを確認。
+10. System Status / System JSON / System Log / Diagnosticで新機能を確認。
+11. 問題なければActive Deploymentへ手動Promotion。
+12. Promotion後に既存20王国Load TestをRegression実行。
+
+## Cloudflare運用メモ
+- Workers Buildsの `npx wrangler versions upload` はVersionを作成するがActive Deploymentを更新しない。
+- D1 migrationはWorker Versionとは別管理なので、`0052`適用をDeploy前に別途行う。
+- Version URLはproduction resourcesを使うため、Previewと同一視しない。
