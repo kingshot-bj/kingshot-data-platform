@@ -3,6 +3,8 @@ import { recordServiceUsage } from "./service-usage.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { evaluateSafetyGate } from "./safety-gate.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
+import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
+import { archiveKingdomCatalogSnapshot } from "./r2-archive.js";
 
 const MAX_KINGDOMS = 1000;
 const LOAD_TEST_NORMAL_RESERVE = 1;
@@ -538,6 +540,92 @@ function createLoadTestApiLimiter(capacity) {
   };
 }
 
+async function captureKingdomCatalogForLoadTest(env, kid, runId, jobId, apiLimiter = null, runTraceId = null) {
+  const startedAt = Date.now();
+  const traceId = systemTraceId("load-catalog");
+  const targetId = String(kid);
+  let releaseApi = null;
+  try {
+    if (!env?.DB || !env?.ARCHIVE) throw new Error("KINGDOM_CATALOG_STORAGE_NOT_CONFIGURED");
+    if (apiLimiter) releaseApi = await apiLimiter.acquire();
+
+    const fetched = await collectMightPulseThroughGuards(env, {
+      path: `/kingdoms/${encodeURIComponent(kid)}?include=boards&limit=100`,
+      endpoint: "/kingdoms/:kid?include=boards&limit=100",
+      targetType: "KINGDOM",
+      targetId,
+      purpose: "KINGDOM_CATALOG_LOAD_TEST"
+    });
+
+    const raw = fetched.result?.data;
+    const payload = raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw.data && typeof raw.data === "object" && !Array.isArray(raw.data) ? raw.data : raw)
+      : {};
+    const observedAt = Math.floor(Date.now() / 1000);
+    const archive = await archiveKingdomCatalogSnapshot(env.ARCHIVE, {
+      kid: Number(kid),
+      payload,
+      observedAt
+    });
+    if (!archive?.key) throw new Error("KINGDOM_CATALOG_R2_ARCHIVE_FAILED");
+
+    await env.DB.prepare(
+      "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at, boards_json, boards_observed_at, r2_latest_key) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(kid) DO UPDATE SET name=COALESCE(excluded.name, kingdom_catalog.name), status=COALESCE(excluded.status, kingdom_catalog.status), region=COALESCE(excluded.region, kingdom_catalog.region), language=COALESCE(excluded.language, kingdom_catalog.language), source_observed_at=excluded.source_observed_at, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at, boards_observed_at=excluded.boards_observed_at, r2_latest_key=excluded.r2_latest_key"
+    ).bind(
+      Number(kid),
+      payload.name ?? payload.kingdom_name ?? null,
+      payload.status ?? null,
+      payload.region ?? payload.zone ?? null,
+      payload.language ?? payload.lang ?? null,
+      Number(payload.source_observed_at ?? payload.observed_at ?? 0) || null,
+      observedAt,
+      observedAt,
+      observedAt,
+      observedAt,
+      archive.key
+    ).run();
+
+    await recordSystemEvent(env.DB, {
+      traceId,
+      parentTraceId: runTraceId || null,
+      eventType: "COMPLETE",
+      service: "kingdom_catalog",
+      feature: "owner_kingdom_load_test",
+      operation: "CATALOG_CAPTURE",
+      status: "SUCCESS",
+      targetType: "KINGDOM",
+      targetId,
+      runId,
+      jobId,
+      elapsedMs: Date.now() - startedAt,
+      message: "負荷テスト対象王国のCatalog詳細を取得・R2保存・D1 index更新しました。",
+      metadata: { runId, jobId, kid: Number(kid), r2Key: archive.key, observedAt }
+    }).catch(() => {});
+
+    return { ok: true, kid: Number(kid), r2Key: archive.key, elapsedMs: Date.now() - startedAt };
+  } catch (error) {
+    await recordSystemEvent(env.DB, {
+      traceId,
+      parentTraceId: runTraceId || null,
+      eventType: "ERROR",
+      service: "kingdom_catalog",
+      feature: "owner_kingdom_load_test",
+      operation: "CATALOG_CAPTURE",
+      status: "FAILED",
+      targetType: "KINGDOM",
+      targetId,
+      runId,
+      jobId,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: error?.code || "KINGDOM_CATALOG_LOAD_TEST_FAILED",
+      message: String(error?.message || error).slice(0, 2000)
+    }).catch(() => {});
+    throw error;
+  } finally {
+    if (releaseApi) releaseApi();
+  }
+}
+
 async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProgress = null, apiLimiter = null, runTraceId = null) {
   const startedAt = Date.now();
   if (typeof processJob !== "function") return { run_id:runId, kid:Number(kid), ok:false, error:"KINGDOM_WATCHLIST_PROCESSOR_UNAVAILABLE", elapsed_ms:Date.now()-startedAt };
@@ -566,7 +654,11 @@ async function runKingdomWatchlistLoad(env, kid, topN, runId, processJob, onProg
       const job = await env.DB.prepare("SELECT * FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1").bind(jobId).first();
       if (!job) throw new Error("LOAD_TEST_JOB_NOT_FOUND");
       if (job.status === "FAILED") throw new Error(String(job.last_error || "KINGDOM_WATCHLIST_JOB_FAILED"));
-      if (job.status === "COMPLETED") { await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(kid), runId, jobId, message:"王国Job完了", metadata:{ runId, jobId, kid:Number(kid), rankingRows:Number(job.ranking_rows||0), playerRows:Number(job.player_rows||0) } }).catch(()=>{}); return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt }; }
+      if (job.status === "COMPLETED") {
+        const catalog = await captureKingdomCatalogForLoadTest(env, kid, runId, jobId, apiLimiter, runTraceId);
+        await recordSystemEvent(env.DB, { traceId: jobTraceId, parentTraceId: runTraceId || null, eventType:"COMPLETE", service:"watchlist", feature:"owner_kingdom_load_test", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(kid), runId, jobId, message:"王国Job完了（Catalog詳細取得済み）", metadata:{ runId, jobId, kid:Number(kid), rankingRows:Number(job.ranking_rows||0), playerRows:Number(job.player_rows||0), catalogR2Key:catalog.r2Key } }).catch(()=>{});
+        return { run_id:runId, job_id:jobId, kid:Number(kid), ok:true, status:"COMPLETED", ranking_rows:Number(job.ranking_rows||0), player_rows:Number(job.player_rows||0), catalog_saved:true, catalog_r2_key:catalog.r2Key, board_index:Number(job.board_index||0), elapsed_ms:Date.now()-startedAt };
+      }
       let step;
       try {
         step = await processJob(env, job, { reserveApiKeys: LOAD_TEST_NORMAL_RESERVE, apiLimiter, loadTestContext: { runId, jobId, traceId: jobTraceId } });
