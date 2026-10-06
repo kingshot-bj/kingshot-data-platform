@@ -387,3 +387,34 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - ranking_snapshots の広範囲読み取りを復活させない。
 - R2保存前にcurrent indexのR2 pointerを更新しない。
 - player_catalog / ranking_catalog のような冗長テーブルを増やさない。
+
+## 2026-10-06 負荷テスト Catalog取得後の確認事項（次スレ最優先）
+
+### 実施した負荷テスト
+- 対象: KID 1〜20
+- 上位プレイヤー: 10人
+- ユーザー確認では、実行は最終的に20王国すべて成功。
+- 途中経過の15/20・成功14/失敗1は実行途中のスナップショットであり、最終結果と混同しない。
+- 過去履歴には「成功34 / 失敗1」と表示されており、今回20王国の最終結果と一致しないため、負荷テスト履歴/集計も確認・修正対象。
+
+### Catalog取得処理
+- 負荷テストにはCatalog詳細取得処理が実装済み。
+- Watchlist Job完了後に `/kingdoms/:kid?include=boards&limit=100` を取得し、saveKingdomCatalogObservation() を通してR2へ保存、その後D1 kingdom_catalog の軽量indexを更新する。
+- 実装コミット: 02144d5f60ff356e92056384d8f9f01d3ce564ac / dd37bc1a83cee32a1d00c56b64826e492dc0d590 / 84bc72c6d0ed097ec57da0d48be1328ba45aee17 / a1bcc4ed45d95ddbfb575ff1ede47471d13c3b0f
+- Catalog保存はR2保存成功後にD1 indexを更新する。
+
+### 現在判明しているUI上の問題
+- 負荷テスト後、/kingdom-catalog でKID 1〜20を確認したところ、王国1〜3等が「名称未取得」、王国4は「Kraaa-pocalypse」と表示された。
+- 次スレで今回Runの最終DB状態とR2実体を確認し、Catalog取得済みデータが実際に利用可能かを確定する。
+- 最優先確認: kingdom_watchlist_jobs 20件の最終status、system_event_log の CATALOG_CAPTURE 成否、KID 1〜20の kingdom_catalog.r2_latest_key、各R2 objectの実在とpayload、payload内name階層、D1 nameが空になる理由、履歴の「成功34 / 失敗1」の集計元。
+- src/kingdom-catalog-store.js は現在 payload.name ?? payload.kingdom_name のみをD1 nameへ入れるため、実APIレスポンスのname階層が異なる場合は原因候補。ただし推測で修正せず実データ確認後に修正する。
+
+### 負荷テスト進捗パッチ
+- src/admin-kingdom-load-test.js にCatalogを含めたクエスト総数・進捗表示の修正を適用。コミット: 8206e61f38c0646de781a9327c5150440fa1da9a
+- このコミットは主にUI/Status側の進捗計算を補正したもので、Job statusをCATALOGフェーズとして永続化する本格的な完了判定修正は未完了。
+- 現コードはWatchlist JobがCOMPLETEDになった後にCatalog取得を行うため、Catalog処理中にStatus/履歴側から完了と見える窓がある。
+- 本格修正時はCATALOGを明示的な非終端フェーズとして扱い、runKingdomWatchlistLoad、Status API、Queue完了判定、History/System JSONを横断して整合させる。既存status利用箇所を先に全検索する。
+
+### 注意
+- さきほどの会話で「成功14王国」と扱った説明は途中経過と最終結果を混同した誤り。次スレではユーザー確認済みの最終20/20成功を前提に調査する。
+- 対象はKID 1〜20。1500番台ではない。
