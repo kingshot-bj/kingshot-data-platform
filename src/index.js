@@ -3970,7 +3970,8 @@ export default {
           const form = await request.formData().catch(() => null);
           if (String(form?.get("action") || "") === "run") {
             try {
-              const requestedBatchSize = Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));\n              const result = await runKingdomCatalogR2Backfill(env, { batchSize: requestedBatchSize });
+              const requestedBatchSize = Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));
+              const result = await runKingdomCatalogR2Backfill(env, { batchSize: requestedBatchSize });
               const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification }));
             } catch (error) {
