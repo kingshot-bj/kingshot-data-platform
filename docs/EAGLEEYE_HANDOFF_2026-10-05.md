@@ -575,3 +575,41 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - ranking_snapshotsの広域Readは復活させない。
 - API Pool lease/return、Watchlistのランキング比較、previous_rank、removedTargets、Change Event生成、R2保存には変更なし。
 - 既存Catalog / Collection Statsのデータ削除・破壊的migrationは行わない。
+
+
+## 2026-10-06 — Catalog D1軽量Index + R2詳細保存 / 既存データBackfill
+
+### 方針確定
+- kingdom_catalog は検索・一覧・存在確認のためのD1軽量Indexとして維持する。
+- 詳細な王国payloadはR2を正本アーカイブとする。
+- kingdom_catalog.r2_latest_key から最新詳細アーカイブを参照できる。
+- Discoveryは新規王国の追加検知を目的とし、既存Catalog行を毎回詳細更新しない。
+- 既存行の詳細JSONは、別のbounded backfillで段階的にR2へ退避する。
+
+### 0048
+- migrations/0048_kingdom_catalog_r2_index.sql を追加。
+- r2_latest_key と検索Indexのみを追加する非破壊migration。
+- **本番D1への適用は未確認。** GitHub Actionsのmanual migration applyが必要。
+
+### 0049 / Backfill
+- migrations/0049_kingdom_catalog_r2_backfill.sql を追加。
+- kingdom_catalog_r2_migration にcursor・状態・累計退避件数を保持し、途中失敗から再開可能。
+- src/kingdom-catalog-r2-backfill.js は1回最大10王国だけ処理する。
+- 各王国について **R2保存成功 → D1のraw_json/boards_jsonをNULL化** の順序を厳守。
+- R2保存失敗時はD1詳細データを削除しない。
+- Cronから自動実行しない。Owner専用 POST /api/admin/kingdom-catalog-r2-backfill から明示的に1バッチずつ実行する。
+- 既にR2キーが設定された行は対象外。
+- 0048/0049の本番適用前にBackfill APIを実行してはいけない。
+
+### Discovery周期の意味
+- 「24時間更新」は「既存Catalogを24時間ごとに全件更新」ではない。
+- **新しく追加された王国が24時間以内にCatalogへ入ること**を目的とする。
+- 現在は5分Cronごとに1ページ（最大24王国）を連続走査し、最終ページ後はpage 1へ戻る。
+- 2540王国規模では通常約9時間の1周となるため、24時間以内の新規検知を満たす余裕がある。
+- 外部APIは既存のPool/Guard経由のみ。Discoveryは1 Cronあたり最大1リクエスト。
+
+### 安全性
+- ranking_snapshots の広域Readを復活させない。
+- 既存のRanking/Watchlist/API Pool lease/return/Change Event処理を変更しない。
+- Backfillは最大10件/回のbounded処理で、R2成功前にD1データを消さない。
+- 0048/0049本番適用完了を確認するまで、既存Catalogの詳細JSONを削除しない。
