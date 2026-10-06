@@ -1,5 +1,6 @@
 import { sendDiscordNotification } from "./discord-support.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
+import { recordDiagnostic } from "./diagnostics.js";
 
 function eventIsWatchedSql() {
   return `(
@@ -82,6 +83,18 @@ export async function runKingdomDiscordNotifications(env, {
       }).catch(() => {});
     }
   }
+
+  await recordDiagnostic(db, {
+    service: "notifications",
+    feature: "watchlist_notification",
+    operation: "DELIVER_CHANGE_EVENTS",
+    status: failed ? "WARNING" : "SUCCESS",
+    targetType: "CHANGE_EVENT",
+    rowsReceived: rows.results?.length || 0,
+    rowsSaved: sent,
+    message: "Discord Change Event通知処理完了。",
+    metadata: { sent, skipped, failed, candidates: rows.results?.length || 0 }
+  }).catch(() => {});
 
   await recordSystemEvent(db, {
     traceId: systemTraceId("discord-notify"),
