@@ -77,6 +77,49 @@ export async function archiveD1RowsToR2(bucket, { table, rows }) {
   };
 }
 
+
+const KINGDOM_CATALOG_ARCHIVE_VERSION = "v1";
+
+export async function archiveKingdomCatalogSnapshot(bucket, { kid, payload, observedAt }) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!Number.isFinite(Number(kid)) || !payload || typeof payload !== "object") return null;
+
+  const timestamp = Number(observedAt) || Math.floor(Date.now() / 1000);
+  const key = [
+    "catalog",
+    KINGDOM_CATALOG_ARCHIVE_VERSION,
+    String(kid),
+    String(timestamp),
+    crypto.randomUUID()
+  ].join("/") + ".json.gz";
+
+  const row = {
+    _eagleeye_archive_version: KINGDOM_CATALOG_ARCHIVE_VERSION,
+    _source_table: "kingdom_catalog",
+    kid: Number(kid),
+    observed_at: timestamp,
+    payload
+  };
+  const body = await gzipText(JSON.stringify(row) + "\n");
+
+  await bucket.put(key, body, {
+    httpMetadata: {
+      contentType: "application/json",
+      contentEncoding: "gzip",
+      cacheControl: "private, no-store"
+    },
+    customMetadata: {
+      sourceTable: "kingdom_catalog",
+      archiveVersion: KINGDOM_CATALOG_ARCHIVE_VERSION,
+      kid: String(kid),
+      observedAt: String(timestamp)
+    }
+  });
+
+  return { key, kid: Number(kid), observedAt: timestamp };
+}
+
+
 export { ARCHIVE_TABLES };
 
 
