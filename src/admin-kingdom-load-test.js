@@ -69,6 +69,82 @@ async function captureCloudflareLoadTestUsage(env) {
   }
 }
 
+async function buildLoadTestSystemJson(env, runId) {
+  const safeRunId = String(runId || "").trim();
+  if (!safeRunId || !env?.DB) throw new Error("LOAD_TEST_RUN_ID_REQUIRED");
+  const run = await env.DB.prepare("SELECT * FROM kingdom_load_test_runs WHERE run_id = ? LIMIT 1").bind(safeRunId).first();
+  if (!run) throw new Error("RUN_NOT_FOUND");
+  const jobsResult = await env.DB.prepare("SELECT job_id,kid,top_n,status,board_index,player_cursor,player_ids_json,ranking_rows,player_rows,created_at,updated_at,last_error,collection_source FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY kid ASC").bind("LOAD_TEST:" + safeRunId).all().catch(() => ({ results: [] }));
+  const since = Math.max(0, Number(run.created_at || 0) - 5);
+  const until = Math.max(since, Number(run.completed_at || run.updated_at || Math.floor(Date.now()/1000)) + 5);
+  const eventResult = await env.DB.prepare("SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,completed_at,elapsed_ms,error_code,message,metadata_json,created_at FROM system_event_log WHERE created_at >= ? AND created_at <= ? AND metadata_json LIKE ? ORDER BY created_at ASC,event_id ASC LIMIT 5000").bind(since, until, "%\\\"runId\\\":\\\"" + safeRunId.replace(/[%_]/g, "") + "\\\"%").all().catch(() => ({ results: [] }));
+  const events = (eventResult.results || []).map(row => {
+    let metadata = null;
+    try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : null; } catch {}
+    const clean = { ...row };
+    delete clean.metadata_json;
+    return { ...clean, metadata };
+  });
+  let cloudflareBefore = null, cloudflareAfter = null, cloudflareDelta = null;
+  try { cloudflareBefore = run.cloudflare_before_json ? JSON.parse(run.cloudflare_before_json) : null; } catch {}
+  try { cloudflareAfter = run.cloudflare_after_json ? JSON.parse(run.cloudflare_after_json) : null; } catch {}
+  try { cloudflareDelta = run.cloudflare_delta_json ? JSON.parse(run.cloudflare_delta_json) : null; } catch {}
+  return {
+    schema_version: "eagleeye-load-test-system-json-v1",
+    generated_at: new Date().toISOString(),
+    run: {
+      run_id: safeRunId, status: String(run.status || "UNKNOWN"),
+      target_count: Number(run.target_count || 0),
+      kids: (() => { try { return JSON.parse(run.kids_json || "[]"); } catch { return []; } })(),
+      start_kid: Number(run.start_kid || 0), end_kid: Number(run.end_kid || 0),
+      top_n: Number(run.top_n || 0), requested_concurrency: Number(run.requested_concurrency || 0),
+      concurrency: Number(run.concurrency || 0), api_concurrency: Number(run.api_concurrency || 0),
+      available_pool_keys: Number(run.available_pool_keys || 0),
+      created_at: Number(run.created_at || 0), updated_at: Number(run.updated_at || 0),
+      completed_at: run.completed_at == null ? null : Number(run.completed_at),
+      elapsed_ms: run.elapsed_ms == null ? null : Number(run.elapsed_ms),
+      success_count: Number(run.success_count || 0), failed_count: Number(run.failed_count || 0),
+      ranking_rows_saved: Number(run.ranking_rows_saved || 0), player_rows_saved: Number(run.player_rows_saved || 0),
+      api_metrics: {
+        active_count: Number(run.api_active_count || 0), waiting_count: Number(run.api_waiting_count || 0),
+        pool_waiting_count: Number(run.api_pool_waiting_count || 0), wait_events: Number(run.api_wait_events || 0),
+        pool_wait_events: Number(run.api_pool_wait_events || 0), wait_ms: Number(run.api_wait_ms || 0),
+        pool_wait_ms: Number(run.api_pool_wait_ms || 0), wait_min_ms: Number(run.api_wait_min_ms || 0),
+        wait_max_ms: Number(run.api_wait_max_ms || 0),
+        wait_buckets: (() => { try { return JSON.parse(run.api_wait_buckets_json || "{}"); } catch { return {}; } })()
+      }
+    },
+    cloudflare: { before: cloudflareBefore, after: cloudflareAfter, delta: cloudflareDelta },
+    jobs: (jobsResult.results || []).map(job => ({
+      job_id: String(job.job_id || ""), kid: Number(job.kid || 0), top_n: Number(job.top_n || 0),
+      status: String(job.status || ""), board_index: Number(job.board_index || 0),
+      player_cursor: Number(job.player_cursor || 0),
+      player_count: (() => { try { return JSON.parse(job.player_ids_json || "[]").length; } catch { return 0; } })(),
+      ranking_rows: Number(job.ranking_rows || 0), player_rows: Number(job.player_rows || 0),
+      created_at: Number(job.created_at || 0), updated_at: Number(job.updated_at || 0),
+      last_error: job.last_error || null, collection_source: job.collection_source || null
+    })),
+    system_events: events
+  };
+}
+
+async function persistLoadTestSystemJson(env, runId) {
+  try {
+    if (!env?.ARCHIVE) return { saved: false, reason: "R2_ARCHIVE_NOT_CONFIGURED" };
+    const payload = await buildLoadTestSystemJson(env, runId);
+    const body = JSON.stringify(payload);
+    const key = "load-tests/system-json/v1/" + String(runId) + ".json";
+    await env.ARCHIVE.put(key, body, {
+      httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" },
+      customMetadata: { source: "kingdom_load_test", runId: String(runId), schemaVersion: "eagleeye-load-test-system-json-v1" }
+    });
+    return { saved: true, key, bytes: new TextEncoder().encode(body).byteLength };
+  } catch (error) {
+    console.warn("load_test_system_json_archive_failed", error?.message || error);
+    return { saved: false, reason: String(error?.message || error) };
+  }
+}
+
 async function acquireLoadTestState(db, runId) {
   const now = Math.floor(Date.now() / 1000);
   const lockUntil = now + LOAD_TEST_LOCK_TTL_SECONDS;
@@ -249,6 +325,24 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
   } catch(error) {
     console.error("owner_kingdom_load_test_history_failed",error?.message||error);
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_HISTORY_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  }
+}
+
+export async function handleOwnerKingdomLoadTestSystemJsonApi(request, env) {
+  if (request.method !== "GET") return new Response(JSON.stringify({ok:false,error:"METHOD_NOT_ALLOWED"}), {status:405,headers:{"content-type":"application/json; charset=UTF-8"}});
+  try {
+    const runId = String(new URL(request.url).searchParams.get("run_id") || "").trim();
+    if (!runId) return new Response(JSON.stringify({ok:false,error:"RUN_ID_REQUIRED"}), {status:400,headers:{"content-type":"application/json; charset=UTF-8"}});
+    const key = "load-tests/system-json/v1/" + runId + ".json";
+    if (env.ARCHIVE) {
+      const object = await env.ARCHIVE.get(key).catch(() => null);
+      if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"private, no-store"}});
+    }
+    const payload = await buildLoadTestSystemJson(env, runId);
+    return new Response(JSON.stringify(payload), {headers:{"content-type":"application/json; charset=UTF-8","cache-control":"private, no-store"}});
+  } catch (error) {
+    const status = String(error?.message || "") === "RUN_NOT_FOUND" ? 404 : 500;
+    return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_SYSTEM_JSON_UNAVAILABLE",message:error?.message||String(error)}),{status,headers:{"content-type":"application/json; charset=UTF-8"}});
   }
 }
 
@@ -818,6 +912,7 @@ export async function runKingdomLoadTestQueue(env, message, processJob) {
     }
     await persistLoadTestMetrics(env.DB,runId,apiLimiter,true);
     if(allJobsDone && runFinalized){
+      const systemJsonArchive = await persistLoadTestSystemJson(env, runId);
       await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:totalFailed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId,targetType:"KINGDOM_BATCH",targetId:String(allKids.length),runId,startedAt:Number(run.created_at||now),completedAt:now,elapsedMs:totalElapsedMs,message:"Queue consumerによる王国Watchlist実処理負荷テストRun完了",metadata:{runId,targetCount:allKids.length,success:totalSuccess,failed:totalFailed,cancelled,rankingRowsSaved:totalRankingRows,playerRowsSaved:totalPlayerRows,concurrency,apiConcurrency,cloudflareUsage:cloudflareDelta,verification,changeEventBreakdown,changeEventBreakdownBasis:"detected_at_window_for_run; may include unrelated concurrent activity"}});
     }
     return {ok:true,run_id:runId,success,failed,cancelled,ranking_rows_saved:rankingRows,player_rows_saved:playerRows};
