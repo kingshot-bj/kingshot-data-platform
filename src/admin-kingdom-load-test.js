@@ -4,7 +4,7 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { evaluateSafetyGate } from "./safety-gate.js";
 import { getCloudflareD1Usage } from "./cloudflare-analytics.js";
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
-import { archiveKingdomCatalogSnapshot } from "./r2-archive.js";
+import { saveKingdomCatalogObservation } from "./kingdom-catalog-store.js";
 
 const MAX_KINGDOMS = 1000;
 const LOAD_TEST_NORMAL_RESERVE = 1;
@@ -562,28 +562,11 @@ async function captureKingdomCatalogForLoadTest(env, kid, runId, jobId, apiLimit
       ? (raw.data && typeof raw.data === "object" && !Array.isArray(raw.data) ? raw.data : raw)
       : {};
     const observedAt = Math.floor(Date.now() / 1000);
-    const archive = await archiveKingdomCatalogSnapshot(env.ARCHIVE, {
+    const catalog = await saveKingdomCatalogObservation(env, {
       kid: Number(kid),
       payload,
       observedAt
     });
-    if (!archive?.key) throw new Error("KINGDOM_CATALOG_R2_ARCHIVE_FAILED");
-
-    await env.DB.prepare(
-      "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at, boards_json, boards_observed_at, r2_latest_key) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?) ON CONFLICT(kid) DO UPDATE SET name=COALESCE(excluded.name, kingdom_catalog.name), status=COALESCE(excluded.status, kingdom_catalog.status), region=COALESCE(excluded.region, kingdom_catalog.region), language=COALESCE(excluded.language, kingdom_catalog.language), source_observed_at=excluded.source_observed_at, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at, boards_observed_at=excluded.boards_observed_at, r2_latest_key=excluded.r2_latest_key"
-    ).bind(
-      Number(kid),
-      payload.name ?? payload.kingdom_name ?? null,
-      payload.status ?? null,
-      payload.region ?? payload.zone ?? null,
-      payload.language ?? payload.lang ?? null,
-      Number(payload.source_observed_at ?? payload.observed_at ?? 0) || null,
-      observedAt,
-      observedAt,
-      observedAt,
-      observedAt,
-      archive.key
-    ).run();
 
     await recordSystemEvent(env.DB, {
       traceId,
@@ -599,10 +582,10 @@ async function captureKingdomCatalogForLoadTest(env, kid, runId, jobId, apiLimit
       jobId,
       elapsedMs: Date.now() - startedAt,
       message: "負荷テスト対象王国のCatalog詳細を取得・R2保存・D1 index更新しました。",
-      metadata: { runId, jobId, kid: Number(kid), r2Key: archive.key, observedAt }
+      metadata: { runId, jobId, kid: Number(kid), r2Key: catalog.r2Key, observedAt }
     }).catch(() => {});
 
-    return { ok: true, kid: Number(kid), r2Key: archive.key, elapsedMs: Date.now() - startedAt };
+    return { ok: true, kid: Number(kid), r2Key: catalog.r2Key, elapsedMs: Date.now() - startedAt };
   } catch (error) {
     await recordSystemEvent(env.DB, {
       traceId,
