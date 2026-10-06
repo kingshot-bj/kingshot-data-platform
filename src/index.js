@@ -1433,7 +1433,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 }
 </style></head><body>
 <div class="topbar">
-  <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1></div>
+  <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1><p><a href="/kingdom-watchlist/analytics" style="color:#f59e0b;text-decoration:none">Analytics →</a></p></div>
   <button id="themeToggle" class="theme-toggle" type="button" aria-label="テーマ切り替え" title="テーマ切り替え">🌙</button>
 </div>
 <div id="msg" class="status-line"><span class="status-dot"></span><span>読み込み中…</span></div>
