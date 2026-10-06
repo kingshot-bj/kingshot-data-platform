@@ -130,13 +130,19 @@ export async function renderAllianceListPage(request, env) {
 export async function renderAlliancePage(request, env) {
   const url=new URL(request.url); const kid=Number(url.searchParams.get("kid")); const tag=String(url.searchParams.get("tag")||"").trim();
   if(!Number.isInteger(kid)||!tag) return page("同盟詳細","<div class='empty'>王国と同盟タグを指定してください。</div>");
-  const row=await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid = ? AND (abbr = ? OR aid = ?) LIMIT 1").bind(kid,tag,tag).first();
+  let row=await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid = ? AND (abbr = ? OR aid = ?) LIMIT 1").bind(kid,tag,tag).first();
+  if (!row) {
+    row = await env.DB.prepare(
+      "SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1"
+    ).bind(kid,tag,tag,tag).first();
+  }
+  if (!row) return page("同盟詳細","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><div class='empty'>指定された同盟が見つかりません。</div></main>");
   let archived=null; try{archived=await readR2Json(env.ARCHIVE,row?.r2_latest_key)}catch{}
   const payload=archived?.payload||{};
   const alliance=payload?.alliance||payload?.data?.alliance||payload;
   const members=Array.isArray(payload?.roster)?payload.roster:Array.isArray(payload?.members)?payload.members:Array.isArray(payload?.data?.roster)?payload.data.roster:[];
   const roster=members.slice(0,100).map(m=>"<a class='row' href='/player?governor_id="+encodeURIComponent(m.governor_id||m.uid||"")+"'><span>"+esc(m.nick_name||m.governor_id||m.uid)+"</span><em>"+num(m.power)+"</em><small>役場 "+esc(m.town_center_level??"—")+"</small></a>").join("");
-  return page("同盟 "+(row?.abbr||tag),"<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(alliance.name||row?.name||tag)+"</h1><p>"+esc(alliance.abbr||row?.abbr||tag)+" · Power "+esc(num(alliance.power||row?.power))+" · "+esc(num(alliance.count||row?.member_count))+"人</p><div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a></div><section><h2>Roster</h2><div class='list'>"+(roster||"<div class='empty'>Roster履歴がありません。</div>")+"</div></section></main>");
+  return page("同盟 "+(row?.abbr||tag),"<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(alliance.name||row?.name||tag)+"</h1><p>"+esc(alliance.abbr||row?.abbr||tag)+" · Power "+esc(num(alliance.power||row?.power))+" · "+esc(num(alliance.count||row?.member_count||"—"))+"人</p><div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a></div><section><h2>Roster</h2><div class='list'>"+(roster||"<div class='empty'>Roster詳細はまだR2に保存されていません。ランキングcurrentから基本情報のみ表示しています。</div>")+"</div></section></main>");
 }
 
 export async function renderKingdomComparePage(request, env) {
