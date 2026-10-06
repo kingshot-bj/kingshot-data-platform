@@ -5501,7 +5501,7 @@ async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGD
   });
 }
 
-async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP") {
+async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP", include = "base") {
   if (!env.DB) throw new Error("DB_NOT_CONFIGURED");
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
 
@@ -5536,7 +5536,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
     if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
 
     const result = await getMightPulsePlayer(env, id, {
-      include: "base,heroes,ranks,gov_gear",
+      include: ["base","base,heroes,ranks,gov_gear"].includes(String(include)) ? String(include) : "base",
       apiKey: lease.api_key
     });
 
@@ -5600,6 +5600,7 @@ async function handlePlayerApi(request, env) {
   const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   const refresh = url.searchParams.get("refresh") === "1";
+  const rich = url.searchParams.get("rich") === "1";
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
 
@@ -5609,8 +5610,8 @@ async function handlePlayerApi(request, env) {
     let source = "D1";
     const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
 
-    if (!observation || refresh || needsRichProfile) {
-      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
+    if (!observation || refresh || (rich && needsRichProfile)) {
+      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), rich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
       source = "MIGHTPULSE";
@@ -6169,11 +6170,12 @@ async function renderPlayerPage(request, env) {
 
   try {
     const refresh = url.searchParams.get("refresh") === "1";
+    const rich = url.searchParams.get("rich") === "1";
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
 
-    if (!observation || refresh || needsRichProfile) {
-      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : "PLAYER_LOOKUP");
+    if (!observation || refresh || (rich && needsRichProfile)) {
+      const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), rich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
 
