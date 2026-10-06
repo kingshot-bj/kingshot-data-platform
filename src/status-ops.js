@@ -194,7 +194,7 @@ export async function getOperationalStatus(db) {
       leaseByPurpose
     },
     loadTest,
-    collectionSemaphore: semaphoreResult || { key: "GLOBAL_API", capacity: 26, active: null, available: null, state: "UNAVAILABLE" },
+    collectionSemaphore: semaphoreResult || { key: "GLOBAL_API", capacity: 1000, active: null, available: null, state: "UNAVAILABLE" },
     kingdomCatalog: kingdomCatalogResult ? {
       discoveryKey: kingdomCatalogResult.discovery_key || "MIGHTPULSE_KINGDOMS",
       nextPage: Number(kingdomCatalogResult.next_page || 1),
