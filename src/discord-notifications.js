@@ -4,9 +4,17 @@ import { recordDiagnostic } from "./diagnostics.js";
 
 function eventIsWatchedSql() {
   return `(
-    (ce.target_type = 'PLAYER' AND EXISTS (
-      SELECT 1 FROM player_watchlists pw
-      WHERE pw.governor_id = ce.target_id AND pw.enabled = 1
+    (ce.target_type = 'PLAYER' AND (
+      EXISTS (
+        SELECT 1 FROM player_watchlists pw
+        WHERE pw.governor_id = ce.target_id AND pw.enabled = 1
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM kingdom_ranking_current krc
+        JOIN kingdom_watchlists kw ON kw.kid = krc.kid AND kw.enabled = 1
+        WHERE krc.target_type = 'PLAYER' AND krc.target_id = ce.target_id
+      )
     ))
     OR
     (ce.target_type = 'ALLIANCE' AND EXISTS (
