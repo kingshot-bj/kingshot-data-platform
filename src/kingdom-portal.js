@@ -117,9 +117,14 @@ export async function renderKingdomRankingsPage(request, env) {
 export async function renderAllianceListPage(request, env) {
   const url=new URL(request.url); const kid=Number(url.searchParams.get("kid"));
   if(!Number.isInteger(kid)||kid<1) return page("同盟一覧","<div class='empty'>kidを指定してください。</div>");
-  const rows=await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all();
-  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid)+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid)+"</span><em>"+num(r.power)+"</em><small>"+num(r.member_count)+"人</small></a>").join("");
-  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><div class='list'>"+(body||"<div class='empty'>Catalogに同盟データがありません。</div>")+"</div></main>");
+  let rows=await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all();
+  if (!(rows.results || []).length) {
+    rows = await env.DB.prepare(
+      "SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' ORDER BY rank ASC LIMIT 100"
+    ).bind(kid).all();
+  }
+  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"ランキングcurrent")+"</small></a>").join("");
+  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><div class='list'>"+(body||"<div class='empty'>同盟ランキングデータがありません。</div>")+"</div></main>");
 }
 
 export async function renderAlliancePage(request, env) {
