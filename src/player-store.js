@@ -124,13 +124,17 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
 
   if (archiveBucket) {
     try {
-      await archivePlayerHistoryBatch(archiveBucket, {
+      const archive = await archivePlayerHistoryBatch(archiveBucket, {
         governorId,
         observationId: observation.observation_id,
         observedAt: observation.observed_at,
         player
       });
-      archived = true;
+      if (!archive?.key) throw new Error("PLAYER_R2_ARCHIVE_FAILED");
+      archived = archive;
+      await db.prepare(
+        "UPDATE players SET r2_latest_key = ? WHERE governor_id = ?"
+      ).bind(archive.key, governorId).run();
       if (r2Only) {
         await recordDiagnostic(db, {
           service: "player", feature: "history_storage", operation: "ARCHIVE_R2",
