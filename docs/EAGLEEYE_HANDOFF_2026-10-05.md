@@ -1331,3 +1331,10 @@ Phase 1 K01〜K10から開始する。
 **コード監査: 継続中 → 本番Deploy未実施。**
 「30/30完了」ではなく、コード実装一巡 + 再監査で不整合を修正した状態。
 次の必須ゲートはProduction D1 migration履歴照合、0052適用、Version URL Smoke Test、本番E2E、Regression、Promotion。
+
+
+## 再監査追加修正（Player）
+- Playerの `refresh=1` が既存rich観測をbase-only観測で上書きし得る回帰を確認。
+- 既存観測にheroes/ranks/gov_gearが揃っている場合、明示refreshでもrich fetchを維持するよう修正。
+- `src/index.js` 構文再検証PASS。
+- Alliance Discord通知はAlliance target_id=aidの実コード仕様に合わせ、`kingdom_ranking_current` 経由でKingdom Watchlistと照合するよう修正済み。
