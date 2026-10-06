@@ -94,26 +94,31 @@ export async function runKingdomCatalogDiscovery(env, {
     });
     const payload = fetched.result?.data;
     const rows = extractKingdoms(payload);
-    const statements = [];
-
-    for (const row of rows) {
-      const kid = kingdomId(row);
-      if (!kid) continue;
-      statements.push(env.DB.prepare(
-        "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid) DO UPDATE SET name=excluded.name, status=excluded.status, region=excluded.region, language=excluded.language, raw_json=excluded.raw_json, source_observed_at=excluded.source_observed_at, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at"
+    const candidates = rows
+      .map(row => ({ row, kid: kingdomId(row) }))
+      .filter(item => item.kid);
+    const existing = candidates.length
+      ? await env.DB.prepare(
+          "SELECT kid FROM kingdom_catalog WHERE kid IN (" + candidates.map(() => "?").join(",") + ")"
+        ).bind(...candidates.map(item => item.kid)).all()
+      : { results: [] };
+    const existingKids = new Set((existing.results || []).map(row => Number(row.kid)));
+    const statements = candidates
+      .filter(item => !existingKids.has(item.kid))
+      .map(({ row, kid }) => env.DB.prepare(
+        "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         kid,
         row.name ?? row.kingdom_name ?? null,
         row.status ?? null,
         row.region ?? row.zone ?? null,
         row.language ?? row.lang ?? null,
-        JSON.stringify(row),
+        null,
         Number(row.source_observed_at ?? row.observed_at ?? 0) || null,
         now,
         now,
         now
       ));
-    }
     if (statements.length) await env.DB.batch(statements);
 
     const nextPage = rows.length < safePageSize ? 1 : targetPage + 1;
@@ -132,7 +137,7 @@ export async function runKingdomCatalogDiscovery(env, {
       rowsReceived: rows.length,
       rowsSaved: statements.length,
       message: "王国Catalogの1ページ取得が完了しました。",
-      metadata: { page: targetPage, pageSize: safePageSize, nextPage }
+      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms: statements.length, existingKingdoms: candidates.length - statements.length }
     });
     await recordSystemEvent(env.DB, {
       traceId,
@@ -143,7 +148,7 @@ export async function runKingdomCatalogDiscovery(env, {
       status: "SUCCESS",
       targetType: "PAGE",
       targetId: String(targetPage),
-      metadata: { page: targetPage, rowsReceived: rows.length, rowsSaved: statements.length, nextPage }
+      metadata: { page: targetPage, rowsReceived: rows.length, rowsSaved: statements.length, nextPage, newKingdoms: statements.length, existingKingdoms: candidates.length - statements.length }
     });
     return { ok: true, page: targetPage, rowsReceived: rows.length, rowsSaved: statements.length, nextPage };
   } catch (error) {
