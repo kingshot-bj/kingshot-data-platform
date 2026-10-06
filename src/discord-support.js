@@ -645,6 +645,16 @@ async function registerOrUpdateSupportCommand(env, applicationId, guildId, comma
   );
 }
 
+export async function sendDiscordNotification(env, { channelId, content, embeds = null } = {}) {
+  const id = normalizeDiscordId(channelId);
+  const message = String(content || "").trim();
+  if (!id || !message) throw new Error("DISCORD_NOTIFICATION_INPUT_INVALID");
+  return discordRequest(env, `/channels/${encodeURIComponent(id)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content: message.slice(0, 2000), embeds: Array.isArray(embeds) ? embeds.slice(0,10) : undefined })
+  });
+}
+
 export async function registerSupportCommands(env) {
   const applicationId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
   const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
