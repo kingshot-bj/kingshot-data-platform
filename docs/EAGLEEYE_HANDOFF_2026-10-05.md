@@ -1067,3 +1067,130 @@ Phase 1 K01〜K10から開始する。
 - docs/EAGLEEYE_DATA_ARCHITECTURE.md
 
 既存実装があるものは再実装せず、UI/route/導線を追加する。
+
+
+# 2026-10-07 — Kingdom Portal / 調査・監視機能 30工程コード実装一巡
+
+## 今回の進捗
+- **全体: 30/30 コード実装一巡**
+- Phase 1: Kingdom探索基盤 10/10
+- Phase 2: Alliance / Comparison / Momentum / Ranking Change / Freshness / Player段階取得 10/10
+- Phase 3: Mighty / Watchlist Analytics / Discord通知 7/7
+- 横断観測: Portal System Log / Portal System JSON status 3/3
+- ただし「完了」ではない。**本番Deploy・migration適用・本番E2Eは未確認**。
+
+## 今回の主な実装
+### Kingdom Portal
+- `src/kingdom-portal.js` 新設
+- `/kingdom?kid=` Kingdom Detail
+- `/kingdom/rankings?kid=&board=` 26ランキングExplorer
+- `/kingdom/changes?kid=&board=` 前回順位→今回順位 / UP / DOWN / IN/OUT表示
+- `/kingdom/alliances?kid=` Alliance List
+- `/alliance?kid=&tag=` Alliance Detail / Roster
+- `/kingdom/compare?kid=&kid=` Kingdom Comparison
+- `/kingdom/mighty?kid=` Mighty Events / KvK（明示的Mighty有効化時のみ）
+- `/kingdom-watchlist/analytics` Watchlist Analytics
+- `/api/kingdom-portal/ranking`
+- `/api/kingdom-portal/status`
+
+### Kingdom Catalog
+- `src/kingdom-catalog-page.js` を検索Portal化。
+- KID完全一致、王国名部分一致。
+- 50件ページング維持。
+- KID / 名前 / 最終更新順ソート。
+- 詳細は `/kingdom` へ遷移。
+- D1全件SELECTは禁止、検索条件付き+LIMIT/OFFSETを維持。
+
+### Player
+- Player DetailからKingdom / Allianceへ戻る導線追加。
+- RankingからPlayer Detailへ遷移。
+- RankingからPlayer Watchlistへ直接追加。
+- Player取得を段階化:
+  - 通常: `include=base`
+  - 明示的詳細取得: `include=base,heroes,ranks,gov_gear`
+- `/player?rich=1` を詳細取得導線として追加。
+- API Pool経由を維持。
+
+### MightPulse
+- `getMightPulseKingdomEvents`
+- `getMightPulseKingdomKvk`
+- `getMightPulseKingdomKvkScores`
+- Events/KvKは `MIGHTPULSE_MIGHTY_ENABLED=true` の明示設定がない限り外部APIを呼ばない。
+- 有効化時も `collectMightPulseThroughGuards` → API Pool経由。
+- API Pool直接迂回なし。
+
+### Discord通知
+- migration: `0050_discord_notification_state.sql`
+- `src/discord-notifications.js`
+- `DISCORD_NOTIFICATION_CHANNEL_ID` が未設定なら通知処理は無効。
+- Change Eventをbounded取得し、notification stateで重複送信を抑止。
+- scheduled handlerへ接続。
+- Discord送信は既存 `discord-support.js` の認証経路を再利用。
+
+### 観測
+- Portal ranking APIでSystem Log `service=kingdom_portal` を記録。
+- `/api/kingdom-portal/status` でCatalog件数と直近Portal eventをJSON取得可能。
+- Mighty / Discord notificationもSystem Logへ記録。
+- 新機能は既存System Log / Gateway JSONから追跡可能。
+
+## 主要コミット
+- `a2c0a42146d49817eb436e2723c1d45651c1d3d2` Kingdom Portal基盤
+- `33bf21ee105666c7ffdf15e245fd35ef402417b8` Portal route
+- `fe5df48824a661a514509443f943a33023a0e640` Catalog検索
+- `df7a2dbf1b875dbcc8c4a9dbaba3eb2451c8a5dc` Player逆導線
+- `9d20502fcf05b001e0f53e788bb527fcbd58a43a` Ranking Change Explorer
+- `db99d68c3c7ae66895877684eff66eec63c5d5c2` Ranking Change route
+- `073466e81d7e98333526d673e0bdc136eeaa923c` Player staged fetch
+- `3f92da83d888c8c48f63310a67efbdda4ab6f6bd` Player staged UI
+- `566aa9754a8c396eef220799bd21b908f195a613` MightPulse Events/KvK client
+- `74b705b750e1a49673db9e61250828f9a7525506` Discord notification helper
+- `91e9ff44e3d50c7d3fe7cb7b512ed58dab63a2de` notification migration 0050
+- `46ce66ae1ac8887c7d26612fdfc4305b384779f6` Discord notification worker
+- `6e32fd4823ed27a1c7f8e9e6078d16467cc9c1f0` scheduled notification hook
+- `4d181935bf6857da6f2707233d6d017f1657c3cd` Watchlist Analytics
+- `e4a4b2a42e2f25d0e494fc442e9a5dc1354d1617` Analytics route
+- `f48567248932d0ba5bac8430df1e9cb1a0af6cd1` Analytics active-user auth fix
+- `10f521f9967a2a1c0df3258b527ead1107cd1137` guarded Mighty page
+- `d5548c4067449e7aef8c188190a1c2be4693a6ef` Mighty route
+- `8408a0092f5391edbd7c0fc72101d5cbe374e414` Mighty navigation
+- `87513287f311e7b104acc98adbe6d1a71b3bd36f8` Portal observability
+- `ef052241d5f8240cbc9715069787cb4d77550f8a` Portal status route
+
+## 検証
+- `src/kingdom-portal.js`: syntax-check PASS
+- `src/index.js`: syntax-check PASS
+- `src/mightpulse.js`: syntax-check PASS
+- `src/discord-support.js`: syntax-check PASS
+- `src/discord-notifications.js`: syntax-check PASS
+- `src/kingdom-catalog-page.js`: syntax-check PASS
+- migration SQLは非破壊のCREATE TABLE/INDEXのみ。
+
+## 本番反映状態
+- **今回のコードは本番Deployしていない。**
+- Cloudflare Workers BuildsのDeploy commandはユーザー操作で `npx wrangler versions upload` に一時変更済み。
+- これによりGit push時はVersion uploadのみで、Active Deploymentへ自動昇格しない運用。
+- 実機負荷テストは現行Active Deploymentを対象として継続可能。
+- Cloudflare公式仕様上、`versions upload` はVersionを作るが即時Deployしない方式。Deployは別操作。
+
+## 次回、本番反映前に必ず行うこと
+1. migration 0048/0049の本番適用状態を再確認。
+2. migration 0050を本番適用。
+3. `MIGHTPULSE_MIGHTY_ENABLED` はMighty契約・キー確認後のみ設定。
+4. `DISCORD_NOTIFICATION_CHANNEL_ID` は通知先確認後のみ設定。
+5. Deploy前に現在の実機Load Test Runが終了していることを確認。
+6. Version upload後、Version URLでSmoke Test。
+7. Active Deploymentへ手動Deploy。
+8. Kingdom Catalog → Kingdom Detail → Ranking → Player → Alliance → WatchlistをE2E確認。
+9. System Status / Gateway JSON / System LogでPortal観測を確認。
+10. その後、既存20王国Load Testを再実行し、既存Watchlist経路にRegressionがないことを確認。
+11. migration 0050未適用のまま通知channelを設定しない。
+12. 本番確認までは「完了」扱いにしない。
+
+## 絶対ルール再確認
+- `ranking_snapshots` 広域Readを復活させない。
+- R2_ONLYを維持。
+- Catalogはbounded read。
+- API Poolを迂回しない。
+- Mighty機能は明示有効化なしに外部APIを呼ばない。
+- Secrets/API keysをUI・JSON・Log・handoffへ出さない。
+- 実機Load Testと新機能Deployを混同しない。
