@@ -304,3 +304,20 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
   - `9167f4258666338070c6950fe3ab81ef4e9336f3`
   - `fa1455d48ffc264710597cf390bf8e943d514c0e`
   - `60e372ac66c69681a93b4ccac2e900fb883247a3`
+
+
+## 2026-10-06 負荷テストからKingdom Catalog詳細を取得する方針へ変更
+- 確認結果、既存の「王国Watchlist実処理負荷テスト」はランキング26ボード＋上位プレイヤー取得までで、`kingdom_catalog` の詳細取得は実装されていなかった。
+- 一方、通常の `kingdom-seeder` は `/kingdoms/:kid?include=boards&limit=100` を取得し、R2へCatalog詳細を保存してD1 indexを更新する既存実装を持っている。
+- 今後の負荷テストでは、各王国Watchlist Job完了後に同じCatalog詳細取得を追加する。
+- 取得フロー:
+  1. `/kingdoms/:kid?include=boards&limit=100` をMightPulse API Pool経由で取得
+  2. R2へCatalog詳細JSONを保存
+  3. `kingdom_catalog` の検索用indexをINSERT/UPDATE
+  4. `r2_latest_key` を最新R2オブジェクトへ更新
+  5. 詳細JSONはD1へ戻さず、R2を詳細データの保存先とする
+- Load Test API limiterをCatalog取得にも適用し、既存のAPI同時処理上限を逸脱しない。
+- System Eventへ `service=kingdom_catalog / operation=CATALOG_CAPTURE / feature=owner_kingdom_load_test` を記録するため、System JSONからRun単位で確認可能。
+- Catalog取得失敗時はその王国Jobを成功扱いにせず、Load Test側の失敗として扱う。
+- 実装コミット: `02144d5f60ff356e92056384d8f9f01d3ce564ac`
+- これにより、今後の負荷テスト自体が「Watchlist実処理＋Catalog詳細取得」の実処理負荷試験を兼ねる。
