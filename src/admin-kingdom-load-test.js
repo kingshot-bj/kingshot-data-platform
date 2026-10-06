@@ -336,7 +336,7 @@ export async function handleOwnerKingdomLoadTestSystemJsonApi(request, env) {
     const key = "load-tests/system-json/v1/" + runId + ".json";
     if (env.ARCHIVE) {
       const object = await env.ARCHIVE.get(key).catch(() => null);
-      if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8",""content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
+      if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8","content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
     }
     const payload = await buildLoadTestSystemJson(env, runId);
     return new Response(JSON.stringify(payload, null, 2), {headers:{"content-type":"application/json; charset=UTF-8",""content-disposition":'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
