@@ -149,7 +149,7 @@ export async function renderKingdomComparePage(request, env) {
 export async function handleKingdomPortalApi(request, env) {
   const url=new URL(request.url);
   if(url.pathname==="/api/kingdom-portal/status") {
-    const latest=await env.DB.prepare("SELECT status,operation,created_at,error_code FROM system_events WHERE service = 'kingdom_portal' ORDER BY created_at DESC LIMIT 1").first();
+    const latest=await env.DB.prepare("SELECT status,operation,created_at,error_code FROM system_event_log WHERE service = 'kingdom_portal' ORDER BY created_at DESC LIMIT 1").first();
     const catalog=await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog").first();
     return Response.json({ok:true,service:"kingdom_portal",catalog_count:Number(catalog?.count||0),latest_event:latest||null});
   }
