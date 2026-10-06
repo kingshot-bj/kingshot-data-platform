@@ -3,8 +3,6 @@ export async function renderKingdomCatalogPage(request, env) {
   const pageSize = 50;
   const requestedPage = Number(url.searchParams.get("page") || "1");
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const offset = (page - 1) * pageSize;
-
   const countRow = await env.DB.prepare("SELECT COUNT(*) AS total FROM kingdom_catalog").first();
   const total = Number(countRow?.total || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -16,7 +14,7 @@ export async function renderKingdomCatalogPage(request, env) {
   const kingdoms = rows.results || [];
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const fmtTime = value => value ? new Date(Number(value) * 1000).toLocaleString("ja-JP", {timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
-  const cards = kingdoms.map(row => "<div class='card'><div class='head'><div><strong>王国 " + esc(row.kid) + "</strong><div class='name'>" + esc(row.name || "名称未取得") + "</div></div><span class='status'>" + esc(row.status || "—") + "</span></div><div class='meta'><span>Region: " + esc(row.region || "—") + "</span><span>Language: " + esc(row.language || "—") + "</span><span>最終確認: " + esc(fmtTime(row.last_seen_at)) + "</span></div></div>").join("");
+  const cards = kingdoms.map(row => "<div class='card'><div class='head'><div><strong>王国 " + esc(row.kid) + "</strong><div class='name'>" + esc(row.name || "名称未取得") + "</div></div><span class='status'>" + esc(row.status || "—") + "</span></div><div class='meta'><span>Region: " + esc(row.region || "—") + "</span><span>Language: " + esc(row.language || "—") + "</span><span>最終更新: " + esc(fmtTime(row.last_seen_at)) + "</span></div></div>").join("");
 
   const prev = currentPage > 1
     ? "<a class='pager-btn' href='/kingdom-catalog?page=" + (currentPage - 1) + "'>← 前へ</a>"
