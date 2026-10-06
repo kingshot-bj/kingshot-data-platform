@@ -155,6 +155,29 @@ export async function handleKingdomPortalApi(request, env) {
   return Response.json({ok:true,kid,board,rows:rows.results||[]});
 }
 
+
+export async function renderKingdomChangesPage(request, env) {
+  const url = new URL(request.url);
+  const kid = Number(url.searchParams.get("kid"));
+  const board = String(url.searchParams.get("board") || "personal_power");
+  if (!Number.isInteger(kid) || kid < 1) return page("ランキング変化","<main class='wrap'><div class='empty'>kidを指定してください。</div></main>");
+  const current = await env.DB.prepare(
+    "SELECT rank,target_type,target_id,governor_id,nick_name,score,abbr,name,previous_rank,observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
+  ).bind(kid,board).all();
+  const events = await env.DB.prepare(
+    "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type='PLAYER' AND target_id IN (SELECT target_id FROM kingdom_ranking_current WHERE kid=? AND board=?) ORDER BY detected_at DESC LIMIT 100"
+  ).bind(kid,board).all();
+  const eventMap = new Map((events.results||[]).map(r=>[String(r.target_id),r]));
+  const rows=(current.results||[]).map(r=>{
+    const d=Number(r.previous_rank)-Number(r.rank);
+    const movement=Number.isFinite(d)&&d!==0?(d>0?"UP":"DOWN"):"FLAT";
+    const ev=eventMap.get(String(r.target_id));
+    return "<div class='rank'><b>#"+esc(r.rank)+"</b><a href='/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id)+"'>"+esc(r.nick_name||r.governor_id||r.target_id)+"</a><span>"+(movement==="UP"?"↑"+d:movement==="DOWN"?"↓"+Math.abs(d):"→")+" / 前回 "+esc(r.previous_rank??"—")+"</span><small>"+esc(ts(r.observed_at))+"</small></div>";
+  }).join("");
+  const inOut=(events.results||[]).filter(r=>["RANK_IN","RANK_OUT","RANKING_IN","RANKING_OUT"].includes(String(r.change_type))).map(r=>"<div class='row'><span>"+esc(r.change_type)+"</span><span>"+esc(r.target_id)+"</span><small>"+esc(ts(r.detected_at))+"</small></div>").join("");
+  return page("ランキング変化","<main class='wrap'><a class='back' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(board)+"'>← ランキング</a><h1>ランキング変化</h1><p>前回順位 → 今回順位。現在値とChange Eventだけを使用しています。</p><section><h2>順位変動</h2><div class='list'>"+(rows||"<div class='empty'>変動データなし</div>")+"</div></section><section><h2>IN / OUT</h2><div class='list'>"+(inOut||"<div class='empty'>直近IN / OUTなし</div>")+"</div></section></main>");
+}
+
 function rankDelta(prev,current){
   const p=Number(prev), c=Number(current);
   if(!Number.isFinite(p)||!Number.isFinite(c)||p===c)return "—";
