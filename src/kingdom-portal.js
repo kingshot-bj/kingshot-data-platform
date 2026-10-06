@@ -1,4 +1,3 @@
-import { getMightPulseKingdom, getMightPulseAlliance } from "./mightpulse.js";
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
