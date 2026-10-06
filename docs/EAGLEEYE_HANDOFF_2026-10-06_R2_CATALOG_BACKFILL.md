@@ -41,7 +41,7 @@ Migration:
 SHA:
 `414bad05ed456bdd3a86f97ff18cc236783b2512`
 
-**重要: 0048はまだ本番適用済みではない。**
+**重要: GitHub上では0048定義済み。Cloudflare本番D1への適用有無はGitHubだけでは確認できないため、Actions/本番D1の `d1_migrations` 確認が必要。**
 既存のGitHub Actions migration workflowはworkflow_dispatch式だが、この環境にはdispatch操作がない。
 ユーザー側でActionsを手動実行できる。
 
@@ -137,9 +137,11 @@ LIMIT ?
 - updated_at
 
 ### 0049について
-現在、`migrations/0049_kingdom_catalog_r2_backfill.sql` を作成しようとしたが、GitHub update_fileは新規ファイルなので失敗した。
-**0049はまだGitHubに作成されていない。**
-次スレではcreate_fileを使って作成すること。
+**更新:** 0049は既にGitHubへ作成済み。
+- Migration: `migrations/0049_kingdom_catalog_r2_backfill.sql`
+- 作成コミット: `c98311057ba69e5f199bad3e9df76e731e97f4c5`
+- 内容: 再開可能なバックフィル状態テーブル＋カーソル用Index
+- 本番D1への適用有無は未確認。0048と合わせて本番 `d1_migrations` を確認すること。
 
 予定SQL:
 ```sql
@@ -204,10 +206,22 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 ## 現在の判断
 
 ここまでのD1/R2設計変更は本番データを削除しない安全な準備段階。
-次スレでは、
-1. 0048本番適用確認
-2. 0049作成・適用
-3. Owner専用の小バッチR2バックフィル実装
-4. System Status/JSONで進捗確認
-5. 実機で1バッチ検証
-の順で進める。
+ただし、次の実装は既に先行しているため、作業順を更新する。
+
+### 現在確認できた実装済み
+1. 0048 Migration定義済み
+2. 0049 Migration定義済み
+3. `src/kingdom-catalog-r2-backfill.js` 実装済み（最大10件、kidカーソル、R2成功後のみD1 NULL化）
+4. `POST /api/admin/kingdom-catalog-r2-backfill` 実装済み、`requireOwner` によりOwner専用
+5. System Event / Diagnosticへのバックフィル実行結果記録実装済み
+6. System Statusへ `kingdomCatalogR2Backfill` 状態を追加済み（コミット: `279ec8577d8db446665b24c9c1e9a055f6a3bcb6`）
+
+### 次に実施する順序
+1. **0048本番適用確認** — 本番D1の `d1_migrations` と `kingdom_catalog.r2_latest_key` を確認
+2. **0049本番適用確認** — 本番D1の `d1_migrations` と `kingdom_catalog_r2_migration` を確認。未適用ならActionsから適用
+3. **Worker本番デプロイ確認** — Status/APIの最新コードが本番に反映されていることを確認
+4. **Owner専用・小バッチR2バックフィル** — 1バッチ最大10件
+5. **System Status / JSONで進捗確認** — state / last_kid / batches_run / rows_archived / last_error 等
+6. **実機で1バッチ検証** — R2 key生成、D1 raw_json/boards_json NULL化、検索用項目維持を確認
+
+**重要:** 0048/0049の「GitHubに存在すること」と「本番D1に適用済みであること」は別。ここを混同しない。
