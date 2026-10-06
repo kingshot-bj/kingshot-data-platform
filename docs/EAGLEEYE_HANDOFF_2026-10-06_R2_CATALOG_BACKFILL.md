@@ -341,3 +341,20 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - API取得: `collectMightPulseThroughGuards` = 共通取得ガード
 - System観測: System Event / Diagnostics = 実行状況・失敗原因の観測
 - 新しい冗長な `player_catalog` / `ranking_catalog` テーブルは追加しない。
+
+
+## 2026-10-06 Alliance Catalog R2化
+- 横断監査で `alliance_catalog.raw_json` が詳細payloadをD1へ保持し続けていることを確認。
+- Kingdom Catalogと同じ方針へ統一し、Alliance CatalogもD1を軽量current index、詳細payloadをR2とする。
+- Migration `0050_alliance_catalog_r2_index.sql` を追加し、`alliance_catalog.r2_latest_key` とIndexを追加。
+- `src/alliance-catalog.js` を修正:
+  - Alliance詳細取得後、先にR2へ保存。
+  - R2 key取得成功後のみD1 current indexを更新。
+  - `raw_json` はNULL化。
+  - R2保存失敗時はD1 current indexを詳細payload付きで更新しない。
+  - 既存のD1緊急履歴バッファはR2障害時の履歴退避として維持。
+- これにより今後のAlliance取得も「API → R2詳細 → D1軽量index」に統一。
+- 既存の `alliance_catalog.raw_json` はまだバックフィル対象として残るため、Kingdom Catalog R2バックフィル完了後に同様の安全なAllianceバックフィルを実施する。
+- 主なコミット:
+  - Migration: `0050_alliance_catalog_r2_index.sql`
+  - Code: `a74631ef6ef8ef4014bb9b4e6e66ab96805cccf4`
