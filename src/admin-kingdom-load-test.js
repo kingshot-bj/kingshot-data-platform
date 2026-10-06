@@ -106,6 +106,9 @@ async function buildLoadTestSystemJson(env, runId) {
       completed_at: run.completed_at == null ? null : Number(run.completed_at),
       elapsed_ms: run.elapsed_ms == null ? null : Number(run.elapsed_ms),
       success_count: Number(run.success_count || 0), failed_count: Number(run.failed_count || 0),
+      success_job_count: Number(run.success_count || 0), failed_job_count: Number(run.failed_count || 0),
+      completed_kingdom_count: (() => { const s=summarizeLoadTestKingdomOutcomes(jobsResult.results||[],Number(run.target_count||0)); return s.completedKingdoms; })(),
+      unresolved_kingdom_count: (() => { const s=summarizeLoadTestKingdomOutcomes(jobsResult.results||[],Number(run.target_count||0)); return s.unresolvedKingdoms; })(),
       ranking_rows_saved: Number(run.ranking_rows_saved || 0), player_rows_saved: Number(run.player_rows_saved || 0),
       api_metrics: {
         active_count: Number(run.api_active_count || 0), waiting_count: Number(run.api_waiting_count || 0),
@@ -312,8 +315,15 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
     const legacySummary=new Map();
     if(legacyRuns.length){
       const placeholders=legacyRuns.map(()=>"?").join(",");
-      const summaryRows=await env.DB.prepare("SELECT watchlist_id,SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS success_count,SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_count,SUM(ranking_rows) AS ranking_rows_saved,SUM(player_rows) AS player_rows_saved FROM kingdom_watchlist_jobs WHERE watchlist_id IN ("+placeholders+") GROUP BY watchlist_id").bind(...legacyRuns.map(row=>"LOAD_TEST:"+String(row.run_id))).all();
+      const summaryRows=await env.DB.prepare("SELECT watchlist_id,SUM(CASE WHEN status='COMPLETED' THEN 1 ELSE 0 END) AS success_count,SUM(CASE WHEN status='FAILED' THEN 1 ELSE 0 END) AS failed_count,SUM(ranking_rows) AS ranking_rows_saved,SUM(player_rows) AS player_rows_saved,COUNT(DISTINCT CASE WHEN status='COMPLETED' THEN kid END) AS completed_kingdom_count FROM kingdom_watchlist_jobs WHERE watchlist_id IN ("+placeholders+") GROUP BY watchlist_id").bind(...legacyRuns.map(row=>"LOAD_TEST:"+String(row.run_id))).all();
       for(const summary of (summaryRows.results||[])) legacySummary.set(String(summary.watchlist_id),summary);
+    }
+    const runIds=rawRuns.map(row=>"LOAD_TEST:"+String(row.run_id));
+    const kingdomSummary=new Map();
+    if(runIds.length){
+      const placeholders=runIds.map(()=>"?").join(",");
+      const summaryRows=await env.DB.prepare("SELECT watchlist_id,COUNT(DISTINCT CASE WHEN status='COMPLETED' THEN kid END) AS completed_kingdom_count,COUNT(DISTINCT kid) AS observed_kingdom_count FROM kingdom_watchlist_jobs WHERE watchlist_id IN ("+placeholders+") GROUP BY watchlist_id").bind(...runIds).all();
+      for(const summary of (summaryRows.results||[])) kingdomSummary.set(String(summary.watchlist_id),summary);
     }
     return new Response(JSON.stringify({ok:true,runs:rawRuns.map(row=>{
       const fallback=legacySummary.get("LOAD_TEST:"+String(row.run_id));
@@ -321,8 +331,10 @@ export async function handleOwnerKingdomLoadTestHistoryApi(request, env) {
       const failedCount=Number(row.failed_count||0)||Number(fallback?.failed_count||0);
       const rankingRows=Number(row.ranking_rows_saved||0)||Number(fallback?.ranking_rows_saved||0);
       const playerRows=Number(row.player_rows_saved||0)||Number(fallback?.player_rows_saved||0);
+      const completedKingdomCount=Number(kingdomSummary.get("LOAD_TEST:"+String(row.run_id))?.completed_kingdom_count||fallback?.completed_kingdom_count||0);
+      const unresolvedKingdomCount=Math.max(0,Number(row.target_count||0)-completedKingdomCount);
       const elapsed=row.elapsed_ms==null?((row.completed_at&&row.created_at)?(Number(row.completed_at)-Number(row.created_at))*1000:null):Number(row.elapsed_ms);
-      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed,api_active_count:Number(row.api_active_count||0),api_waiting_count:Number(row.api_waiting_count||0),api_pool_waiting_count:Number(row.api_pool_waiting_count||0),api_wait_events:Number(row.api_wait_events||0),api_pool_wait_events:Number(row.api_pool_wait_events||0),api_wait_ms:Number(row.api_wait_ms||0),api_pool_wait_ms:Number(row.api_pool_wait_ms||0),api_wait_min_ms:Number(row.api_wait_min_ms||0),api_wait_max_ms:Number(row.api_wait_max_ms||0),api_wait_buckets_json:String(row.api_wait_buckets_json||"{}"),last_activity_at:Number(row.last_activity_at||0),cloudflare_usage:(()=>{let delta=null;try{delta=row.cloudflare_delta_json?JSON.parse(row.cloudflare_delta_json):null;}catch{}return delta;})()};
+      return {run_id:String(row.run_id),target_count:Number(row.target_count||0),start_kid:Number(row.start_kid||0),end_kid:Number(row.end_kid||0),top_n:Number(row.top_n||0),concurrency:Number(row.concurrency||0),api_concurrency:Number(row.api_concurrency||0),available_pool_keys:Number(row.available_pool_keys||0),status:String(row.status||"UNKNOWN"),created_at:Number(row.created_at||0),updated_at:Number(row.updated_at||0),completed_at:row.completed_at==null?null:Number(row.completed_at),success_count:successCount,failed_count:failedCount,success_job_count:successCount,failed_job_count:failedCount,completed_kingdom_count:completedKingdomCount,unresolved_kingdom_count:unresolvedKingdomCount,ranking_rows_saved:rankingRows,player_rows_saved:playerRows,elapsed_ms:elapsed,api_active_count:Number(row.api_active_count||0),api_waiting_count:Number(row.api_waiting_count||0),api_pool_waiting_count:Number(row.api_pool_waiting_count||0),api_wait_events:Number(row.api_wait_events||0),api_pool_wait_events:Number(row.api_pool_wait_events||0),api_wait_ms:Number(row.api_wait_ms||0),api_pool_wait_ms:Number(row.api_pool_wait_ms||0),api_wait_min_ms:Number(row.api_wait_min_ms||0),api_wait_max_ms:Number(row.api_wait_max_ms||0),api_wait_buckets_json:String(row.api_wait_buckets_json||"{}"),last_activity_at:Number(row.last_activity_at||0),cloudflare_usage:(()=>{let delta=null;try{delta=row.cloudflare_delta_json?JSON.parse(row.cloudflare_delta_json):null;}catch{}return delta;})()};
     })}),{headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   } catch(error) {
     console.error("owner_kingdom_load_test_history_failed",error?.message||error);
@@ -448,9 +460,12 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
     });
 
     const targetCount=Number(runMeta?.target_count||normalizedJobs.length||0);
-    const completed=normalizedJobs.filter(j=>j.completed).length;
-    const success=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
-    const failed=normalizedJobs.filter(j=>j.phase==="FAILED").length;
+    const outcome=summarizeLoadTestKingdomOutcomes(normalizedJobs,targetCount);
+    const completed=outcome.completedKingdoms;
+    const success=outcome.completedKingdoms;
+    const failed=outcome.failedKingdoms;
+    const successJobs=normalizedJobs.filter(j=>j.phase==="COMPLETED").length;
+    const failedJobs=normalizedJobs.filter(j=>j.phase==="FAILED").length;
     const cancelled=normalizedJobs.filter(j=>j.phase==="CANCELLED").length;
     const topN=Number(runMeta?.top_n||0)||10;
     let questCompleted=0,questTotal=0;
@@ -470,7 +485,7 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
       started_at:Number(runMeta?.created_at||lock?.updated_at||0),
       expires_at:lock?.lock_until||null,
       target_count:targetCount,
-      completed,success,failed,cancelled,
+      completed,success,failed,success_jobs:successJobs,failed_jobs:failedJobs,cancelled,
       quest_completed:questCompleted,quest_total:questTotal,quest_percent:questPercent,
       requested_concurrency:Number(runMeta?.requested_concurrency||0),
       concurrency:Number(runMeta?.concurrency||0),
@@ -486,6 +501,23 @@ export async function handleOwnerKingdomLoadTestStatusApi(request, env) {
     return new Response(JSON.stringify({ok:false,active:false,error:"LOAD_TEST_STATUS_UNAVAILABLE"}),{status:503,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   }
 }
+function summarizeLoadTestKingdomOutcomes(jobs, targetCount) {
+  const completedKids=new Set();
+  const failedKids=new Set();
+  for (const job of jobs || []) {
+    const kid=Number(job?.kid);
+    if (!Number.isFinite(kid)) continue;
+    if (String(job?.status||"")==="COMPLETED") completedKids.add(kid);
+    else if (String(job?.status||"")==="FAILED") failedKids.add(kid);
+  }
+  for (const kid of completedKids) failedKids.delete(kid);
+  const target=Math.max(0,Number(targetCount)||0);
+  const completedKingdoms=Math.min(target,completedKids.size);
+  const failedKingdoms=Math.min(Math.max(0,target-completedKingdoms),failedKids.size);
+  const unresolvedKingdoms=Math.max(0,target-completedKingdoms);
+  return {completedKingdoms,failedKingdoms,unresolvedKingdoms};
+}
+
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
@@ -1087,10 +1119,11 @@ function renderLoadTestHistory(runs){
   if(!runs||!runs.length){list.innerHTML='<div class="history-meta">過去の負荷テストはありません。</div>';return;}
   list.innerHTML=runs.map(function(run){
     var status=String(run.status||"UNKNOWN");
-    var label=status==="COMPLETED"&&Number(run.failed_count||0)>0?"一部失敗":status==="COMPLETED"?"成功":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;
+    var completedKingdoms=Number(run.completed_kingdom_count||0),targetKingdoms=Number(run.target_count||0),unresolvedKingdoms=Number(run.unresolved_kingdom_count||Math.max(0,targetKingdoms-completedKingdoms));
+    var label=status==="COMPLETED"&&completedKingdoms===targetKingdoms?"成功":status==="COMPLETED"&&unresolvedKingdoms>0?"一部未取得":status==="COMPLETED_WITH_ERRORS"?"一部失敗":status==="CANCELLED"?"中止":status==="FAILED"?"失敗":status==="RUNNING"?"実行中":status;
     var cls=status==="COMPLETED"?"history-ok":status==="RUNNING"?"history-running":"history-failed";
     var cfHtml=renderCloudflareUsage(run);
-    return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(run.target_count)+'王国（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功 '+esc(run.success_count)+' / 失敗 '+esc(run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　最小 '+esc(formatWaitMs(run.api_wait_min_ms))+'　最大 '+esc(formatWaitMs(run.api_wait_max_ms))+'<br>待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回'+cfHtml+'</div><div style="margin-top:8px"><a href="/api/owner/kingdom-load-test/export?run_id='+encodeURIComponent(run.run_id)+'" download style="display:inline-block;padding:7px 10px;border-radius:8px;background:#334155;color:#fff;text-decoration:none;font-size:12px;font-weight:800">CSVエクスポート</a> <a href="/api/owner/kingdom-load-test/system-json?run_id='+encodeURIComponent(run.run_id)+'" target="_blank" rel="noopener" style="display:inline-block;padding:7px 10px;border-radius:8px;background:#475569;color:#fff;text-decoration:none;font-size:12px;font-weight:800">システムJSON</a></div></div>';
+    return '<div class="history-item"><div class="history-main"><span>'+esc(formatHistoryTime(run.created_at))+'</span><span class="'+cls+'">'+esc(label)+'</span></div><div class="history-meta">'+esc(completedKingdoms)+' / '+esc(targetKingdoms)+'王国取得済み（'+esc(run.start_kid)+'〜'+esc(run.end_kid)+'）　成功Job '+esc(run.success_job_count||run.success_count)+' / 失敗Job '+esc(run.failed_job_count||run.failed_count)+'<br>API同時 '+esc(run.api_concurrency)+'　Pool Available '+esc(run.available_pool_keys)+'　上位 '+esc(run.top_n)+'人<br>ランキング '+esc(run.ranking_rows_saved)+' rows　プレイヤー '+esc(run.player_rows_saved)+' rows　所要 '+esc(run.elapsed_ms==null?"-":run.elapsed_ms+"ms")+'<br>API待機 '+esc(formatWaitMs(Number(run.api_wait_ms||0)+Number(run.api_pool_wait_ms||0)))+'　最小 '+esc(formatWaitMs(run.api_wait_min_ms))+'　最大 '+esc(formatWaitMs(run.api_wait_max_ms))+'<br>待ち発生 '+esc(run.api_wait_events||0)+'回　Pool待ち '+esc(run.api_pool_wait_events||0)+'回'+cfHtml+'</div><div style="margin-top:8px"><a href="/api/owner/kingdom-load-test/export?run_id='+encodeURIComponent(run.run_id)+'" download style="display:inline-block;padding:7px 10px;border-radius:8px;background:#334155;color:#fff;text-decoration:none;font-size:12px;font-weight:800">CSVエクスポート</a> <a href="/api/owner/kingdom-load-test/system-json?run_id='+encodeURIComponent(run.run_id)+'" target="_blank" rel="noopener" style="display:inline-block;padding:7px 10px;border-radius:8px;background:#475569;color:#fff;text-decoration:none;font-size:12px;font-weight:800">システムJSON</a></div></div>';
   }).join("");
 }
 async function loadLoadTestHistory(){try{var response=await fetch("/api/owner/kingdom-load-test/history?limit=20",{cache:"no-store",credentials:"same-origin"});if(!response.ok){var detail="HTTP "+response.status;try{var body=await response.json();detail=body.message||body.error||detail;}catch(e){}throw new Error(detail);}var data=await response.json();renderLoadTestHistory(data.runs||[]);}catch(e){var list=document.getElementById("historyList");if(list)list.innerHTML='<div class="history-meta">履歴取得失敗: '+esc(e&&e.message||e)+'</div>';}}
