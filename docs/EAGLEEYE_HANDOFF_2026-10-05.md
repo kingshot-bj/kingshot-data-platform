@@ -1120,7 +1120,7 @@ Phase 1 K01〜K10から開始する。
 - API Pool直接迂回なし。
 
 ### Discord通知
-- migration: `0050_discord_notification_state.sql`
+- migration: `0052_discord_notification_state.sql`
 - `src/discord-notifications.js`
 - `DISCORD_NOTIFICATION_CHANNEL_ID` が未設定なら通知処理は無効。
 - Change Eventをbounded取得し、notification stateで重複送信を抑止。
@@ -1301,3 +1301,33 @@ Phase 1 K01〜K10から開始する。
 - 現行BOARDS定義は26件を再確認済み。
 - 現行主要6 JSの構文チェックを再実施しPASS。
 - 通知/RANKING CHANGE SQLをSQLiteで再検証済み。
+
+
+# 2026-10-07 — 再監査（全コード再チェック）
+
+## 再監査結果
+- mainの全ファイル棚卸し: **139 files**
+- src JavaScript: 全46ファイルを対象に構文監査。import/export除去後のparse検証を分割実施し、実コード上の構文エラーは検出なし。
+- `src/data-collection-engine.js` はmultiline importを含むため専用除去ロジックで再parseしPASS。
+- `src/safety-gate.js` の検査時に検査用export除去処理が `DEFAULTS as SAFETY_DEFAULTS` を残す誤検出があったが、実コードの構文エラーではないことを確認。
+- 新規Portal/通知/Catalogコードから `ranking_snapshots` の広域SELECTなし。Ranking historyの既存target-specific SELECTのみ確認。
+
+## 再監査で発見・修正した実コード問題
+1. `runKingdomWatchlistJobs()` のSafety Gateでループ外の `row?.top_n` を参照していた問題を修正。plannedRequestsはbounded固定値へ変更。
+2. Discord Alliance通知のWatchlist判定が `kid:aid` 形式を仮定していた問題を修正。実際のranking target_idであるaidを `kingdom_ranking_current` 経由でKIDに紐付けて判定。
+3. 0052 Discord notification migration番号を再確認。
+4. 既存migrationには `0008_data_retention.sql` と `0008_kingdom_watchlist_jobs.sql` の同番号が存在。これは既存本番履歴との整合性確認が必要なため、今回勝手に改番しない。
+
+## 再監査で確認した既存安全ルール
+- R2_ONLY history pathを維持。
+- ranking_snapshots広域Readを復活させていない。
+- Catalog paginationは50+1方式。
+- Portal Comparisonは最大4王国bounded R2 read。
+- Watchlist Safety Gateは新規Jobのみ停止し、active resumable Jobは継続可能。
+- API Pool / Global Collection Semaphore経由を維持。
+- Secrets/API keysをUI/JSON/Handoffへ追加していない。
+
+## 現在の判定
+**コード監査: 継続中 → 本番Deploy未実施。**
+「30/30完了」ではなく、コード実装一巡 + 再監査で不整合を修正した状態。
+次の必須ゲートはProduction D1 migration履歴照合、0052適用、Version URL Smoke Test、本番E2E、Regression、Promotion。
