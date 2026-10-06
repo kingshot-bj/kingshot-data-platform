@@ -54,7 +54,7 @@ export async function renderKingdomDetailPage(request, env) {
   const payload = archived?.payload || {};
   const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
   const boards = await env.DB.prepare(
-    "SELECT board, COUNT(*) AS rows, MAX(last_checked_at) AS last_checked_at, MAX(source_observed_at) AS source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? GROUP BY board ORDER BY board"
+    "SELECT board, MAX(checked_rows) AS rows, MAX(changed_rows) AS changed_rows, MAX(last_checked_at) AS last_checked_at, MAX(source_observed_at) AS source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? GROUP BY board ORDER BY board"
   ).bind(kid).all();
   const topPlayers = await env.DB.prepare(
     "SELECT rank,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10"
@@ -77,7 +77,7 @@ export async function renderKingdomDetailPage(request, env) {
   const allianceRows=(topAlliances.results||[]).map(r=>"<a class='row' href='/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(r.abbr||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(r.name||r.abbr||r.target_id)+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
   const boardRows=(boards.results||[]).map(r=>{
     const label=BOARDS.find(x=>x[0]===r.board)?.[1]||r.board;
-    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"行 · "+esc(ts(r.last_checked_at))+"</small></a>";
+    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"行 · 変更 "+num(r.changed_rows)+" · "+esc(ts(r.last_checked_at))+"</small></a>";
   }).join("");
 
   const html = "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><div class='hero'><div><div class='eyebrow'>KINGDOM PORTAL</div><h1>王国 "+esc(kid)+"</h1><p>"+esc(row.name||detail.name||"名称未取得")+"</p></div><button id='watch' data-kid='"+esc(kid)+"'>＋王国ウォッチリスト</button></div>"+
