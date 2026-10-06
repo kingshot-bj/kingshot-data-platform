@@ -225,3 +225,15 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 6. **実機で1バッチ検証** — R2 key生成、D1 raw_json/boards_json NULL化、検索用項目維持を確認
 
 **重要:** 0048/0049の「GitHubに存在すること」と「本番D1に適用済みであること」は別。ここを混同しない。
+
+
+## 2026-10-06 Owner UI追加
+- Owner専用ページ: `/owner/kingdom-catalog-r2-backfill`
+- OWNER CONTROLから「王国Catalog R2バックフィル」で遷移可能。
+- GET `/api/admin/kingdom-catalog-r2-backfill` でバックフィル状態を取得。
+- POSTは従来どおり最大10件。ページから10件実行・状態更新が可能。
+- R2保存成功後のみD1詳細JSONをNULL化する既存安全条件を維持。
+- UI追加コミット:
+  - `f358932bf98ccd98fb6e83d1b18642b1aefccb1`
+  - `c926c4139c2e9d57c8a8baa5e5b349c3f7bf313d`
+- 次段階: 本番Workerへ最新コードをデプロイ後、Owner UIから10件だけ実機検証する。
