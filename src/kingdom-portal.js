@@ -37,7 +37,7 @@ async function readR2Json(bucket, key) {
 }
 async function catalogRow(db, kid) {
   return db.prepare(
-    "SELECT kid,name,status,region,language,source_observed_at,first_seen_at,last_seen_at,updated_at,r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1"
+    "SELECT kid,name,status,region,language,raw_json,boards_json,source_observed_at,first_seen_at,last_seen_at,updated_at,r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1"
   ).bind(Number(kid)).first();
 }
 
@@ -51,7 +51,11 @@ export async function renderKingdomDetailPage(request, env) {
 
   let archived = null;
   try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
-  const payload = archived?.payload || {};
+  let legacy = null;
+  if (!archived?.payload && (row.raw_json || row.boards_json)) {
+    try { legacy = row.raw_json ? JSON.parse(row.raw_json) : null; } catch {}
+  }
+  const payload = archived?.payload || legacy || {};
   const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
   const boards = await env.DB.prepare(
     "SELECT board, MAX(checked_rows) AS rows, MAX(changed_rows) AS changed_rows, MAX(last_checked_at) AS last_checked_at, MAX(source_observed_at) AS source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? GROUP BY board ORDER BY board"
@@ -160,13 +164,17 @@ export async function renderKingdomComparePage(request, env) {
 
   const placeholders = kids.map(() => "?").join(",");
   const rows = await env.DB.prepare(
-    "SELECT kid,name,status,source_observed_at,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ") ORDER BY kid"
+    "SELECT kid,name,status,raw_json,source_observed_at,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ") ORDER BY kid"
   ).bind(...kids).all();
 
   const details = await Promise.all((rows.results || []).map(async row => {
     let archived = null;
     try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
-    const payload = archived?.payload || {};
+    let legacy = null;
+    if (!archived?.payload && row.raw_json) {
+      try { legacy = JSON.parse(row.raw_json); } catch {}
+    }
+    const payload = archived?.payload || legacy || {};
     const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
     return { ...row, detail };
   }));
