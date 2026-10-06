@@ -5,17 +5,15 @@ export async function renderKingdomCatalogPage(request, env) {
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const offset = (page - 1) * pageSize;
 
-  const [countRow, rows] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) AS total FROM kingdom_catalog").first(),
-    env.DB.prepare(
-      "SELECT kid, name, status, region, language, last_seen_at FROM kingdom_catalog ORDER BY kid ASC LIMIT ? OFFSET ?"
-    ).bind(pageSize, offset).all()
-  ]);
-
+  const countRow = await env.DB.prepare("SELECT COUNT(*) AS total FROM kingdom_catalog").first();
   const total = Number(countRow?.total || 0);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const kingdoms = currentPage === page ? (rows.results || []) : [];
+  const offset = (currentPage - 1) * pageSize;
+  const rows = await env.DB.prepare(
+    "SELECT kid, name, status, region, language, last_seen_at FROM kingdom_catalog ORDER BY kid ASC LIMIT ? OFFSET ?"
+  ).bind(pageSize, offset).all();
+  const kingdoms = rows.results || [];
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const fmtTime = value => value ? new Date(Number(value) * 1000).toLocaleString("ja-JP", {timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
   const cards = kingdoms.map(row => "<div class='card'><div class='head'><div><strong>王国 " + esc(row.kid) + "</strong><div class='name'>" + esc(row.name || "名称未取得") + "</div></div><span class='status'>" + esc(row.status || "—") + "</span></div><div class='meta'><span>Region: " + esc(row.region || "—") + "</span><span>Language: " + esc(row.language || "—") + "</span><span>最終確認: " + esc(fmtTime(row.last_seen_at)) + "</span></div></div>").join("");
