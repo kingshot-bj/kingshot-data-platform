@@ -34,6 +34,7 @@ import { createCollectionSemaphoreLimiter } from "./collection-semaphore.js";
 import { collectMightPulseThroughGuards, collectKingdomRanking, collectPlayerDetail } from "./data-collection-engine.js";
 import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
 import { runKingdomCatalogDailyRefresh } from "./kingdom-catalog-scheduler.js";
+import { runKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
@@ -3580,6 +3581,25 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
   }
 }
 
+async function handleKingdomCatalogR2BackfillApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const batchSize = Math.min(10, Math.max(1, Number(body?.batch_size) || 10));
+    const result = await runKingdomCatalogR2Backfill(env, { batchSize });
+    return json(result);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error?.code || error?.message || "KINGDOM_CATALOG_R2_BACKFILL_FAILED",
+      message: String(error?.message || error).slice(0, 2000)
+    }, 500);
+  }
+}
+
 async function handleMightPulseResearchApi(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
@@ -3861,6 +3881,7 @@ export default {
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
       if (url.pathname === "/api/admin/data-retention") return await handleDataRetentionApi(request, env);
+      if (url.pathname === "/api/admin/kingdom-catalog-r2-backfill") return await handleKingdomCatalogR2BackfillApi(request, env);
       if (url.pathname === "/api/admin/player-visibility") return await handlePlayerVisibilityApi(request, env);
       if (url.pathname === "/api/admin/player-export") return await handlePlayerSectionExport(request, env);
       if (url.pathname === "/api/admin/kingdom-rankings") return await handleAdminKingdomRankingApi(request, env);
