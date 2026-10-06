@@ -4,11 +4,11 @@ export function renderKingdomCatalogR2BackfillPage() {
 <body><main class="wrap"><nav class="nav"><a href="/owner">← OWNER CONTROL</a><a href="/status">システム状況</a></nav>
 <h1>王国Catalog → R2バックフィル</h1>
 <p class="muted">既存の詳細JSONをR2へ退避し、成功後にD1の詳細JSONだけをNULL化します。1回の実行は最大10件です。</p>
-<section class="card"><h2>現在の状態</h2><div id="summary" class="muted">読み込み中…</div><div class="grid" id="stats"></div><div class="actions"><button id="run">10件バックフィル実行</button><button id="refresh" class="secondary">状態を更新</button></div><div id="result" class="result" hidden></div></section>
+<section class="card"><h2>現在の状態</h2><div id="summary" class="muted">読み込み中…</div><div class="grid" id="stats"></div><div class="actions"><button id="run">10件バックフィル実行</button><button id="verify" class="secondary">直近10件を検証</button><button id="refresh" class="secondary">状態を更新</button></div><div id="result" class="result" hidden></div></section>
 <section class="card"><h2>安全条件</h2><div class="notice">R2保存が成功した行だけD1の <b>raw_json / boards_json</b> をNULL化します。失敗した場合はD1の詳細JSONを残します。自動連続実行は行わず、1回ずつ実行します。</div></section>
 </main><script>
 (function(){
-var summary=document.getElementById("summary"),stats=document.getElementById("stats"),result=document.getElementById("result"),run=document.getElementById("run"),refresh=document.getElementById("refresh");
+var summary=document.getElementById("summary"),stats=document.getElementById("stats"),result=document.getElementById("result"),run=document.getElementById("run"),refresh=document.getElementById("refresh"),verify=document.getElementById("verify");
 function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function fmt(v){return v==null||v===""?"—":String(v);}
 function show(d){
@@ -44,7 +44,24 @@ async function execute(){
   }catch(e){result.textContent="実行失敗: "+(e.message||e);}
   finally{run.disabled=false;refresh.disabled=false;}
 }
-run.onclick=execute;refresh.onclick=load;load();
+async function verifyLatest(){
+  verify.disabled=true;result.hidden=false;result.textContent="検証中…";
+  try{
+    var r=await fetch("/api/admin/kingdom-catalog-r2-backfill",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"verify"}),credentials:"same-origin",cache:"no-store"});
+    var d=await r.json().catch(function(){return{}});
+    if(!r.ok||!d.ok) throw new Error(d.error||d.message||("HTTP "+r.status));
+    var v=d.verification||{};
+    result.textContent="検証結果\n"+
+      "R2オブジェクト: "+v.r2+"/"+v.checked+"\n"+
+      "R2ポインタ: "+v.pointer+"/"+v.checked+"\n"+
+      "raw_json退避: "+v.rawNull+"/"+v.checked+"\n"+
+      "boards_json退避: "+v.boardsNull+"/"+v.checked+"\n"+
+      "不整合: "+v.failed+"件\n\n"+
+      JSON.stringify(v.rows||[],null,2);
+  }catch(e){result.textContent="検証失敗: "+(e.message||e);}
+  finally{verify.disabled=false;}
+}
+run.onclick=execute;verify.onclick=verifyLatest;refresh.onclick=load;load();
 })();
 </script></body></html>`;
 }
