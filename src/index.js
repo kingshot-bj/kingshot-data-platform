@@ -3963,7 +3963,23 @@ export default {
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderOwnerKingdomLoadTestPage()); }
-      if (url.pathname === "/owner/kingdom-catalog-r2-backfill") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env)); }
+      if (url.pathname === "/owner/kingdom-catalog-r2-backfill") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return guard.error;
+        if (request.method === "POST") {
+          const form = await request.formData().catch(() => null);
+          if (String(form?.get("action") || "") === "run") {
+            try {
+              const result = await runKingdomCatalogR2Backfill(env, { batchSize: 10 });
+              const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
+              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification }));
+            } catch (error) {
+              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ok:false, error:error?.message || String(error) }));
+            }
+          }
+        }
+        return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env));
+      }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
