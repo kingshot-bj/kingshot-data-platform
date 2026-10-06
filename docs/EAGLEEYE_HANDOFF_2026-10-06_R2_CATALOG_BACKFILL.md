@@ -258,3 +258,14 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - UI/APIコミット:
   - `12159c88b2fe37434cd04007fae79503587f22b4`
   - `c6632f823a74b2cd4eaf0316dc6ad4f77784b3db`
+
+
+## 2026-10-06 バッチ上限・自動検証修正
+- 原因: UI/APIは100件選択を受け付けていたが、`kingdom-catalog-r2-backfill.js` の内部 `MAX_BATCH_SIZE` が10のままで、実処理が常に10件に制限されていた。
+- 修正: 内部上限を100件へ変更。
+- 自動検証も固定10件から、実際に処理したバッチ件数を検証する方式へ変更。
+- API側のOwnerバックフィル上限も100件へ統一。
+- 修正コミット:
+  - `10acb11d5edb193a63fd1b281cfd0baef9441c82`
+  - `87d1e92e627dd6cd680026dccf194116a61e0651`
+  - `a7cbe39811928e4b6250a6cd8361ba0407f31f3a`
