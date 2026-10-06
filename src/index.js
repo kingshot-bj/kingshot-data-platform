@@ -3314,6 +3314,21 @@ async function renderAdminDiagnosticsPage(request, env) {
       detail: operational?.kingdomRankingRoller ? "KID " + (operational.kingdomRankingRoller.lastKid ?? "—") + " / Board " + (operational.kingdomRankingRoller.lastBoard ?? "—") + " / 成功 " + operational.kingdomRankingRoller.successCount + " / 失敗 " + operational.kingdomRankingRoller.failedCount : "状態取得不可"
     },
     {
+      label: "Kingdom Portal",
+      state: operational?.kingdomPortal?.state || "UNKNOWN",
+      detail: operational?.kingdomPortal ? (operational.kingdomPortal.lastOperation || "未実行") + " / " + (operational.kingdomPortal.lastEventAt ? new Date(operational.kingdomPortal.lastEventAt * 1000).toLocaleString("ja-JP") : "時刻なし") : "状態取得不可"
+    },
+    {
+      label: "Mighty Events / KvK",
+      state: operational?.kingdomMighty?.state || "UNKNOWN",
+      detail: operational?.kingdomMighty ? (operational.kingdomMighty.lastOperation || "未実行") + " / " + (operational.kingdomMighty.lastEventAt ? new Date(operational.kingdomMighty.lastEventAt * 1000).toLocaleString("ja-JP") : "時刻なし") : "状態取得不可"
+    },
+    {
+      label: "Discord Change Notification",
+      state: operational?.discordNotification?.state || "UNKNOWN",
+      detail: operational?.discordNotification ? (operational.discordNotification.lastOperation || "未実行") + " / " + (operational.discordNotification.lastEventAt ? new Date(operational.discordNotification.lastEventAt * 1000).toLocaleString("ja-JP") : "時刻なし") : "状態取得不可"
+    },
+    {
       label: "Global Collection Semaphore",
       state: operational?.collectionSemaphore?.state || "UNKNOWN",
       detail: operational?.collectionSemaphore ? "Active " + (operational.collectionSemaphore.active ?? "—") + " / Available " + (operational.collectionSemaphore.available ?? "—") + " / Capacity " + (operational.collectionSemaphore.capacity ?? 26) : "状態取得不可"
