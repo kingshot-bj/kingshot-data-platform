@@ -1085,7 +1085,7 @@ function renderProgress(data,active){
   count.textContent="API処理タスク "+done+" / "+total+"　("+pct+"%)";
   fill.style.width=pct+"%";
   title.textContent="API処理進捗";
-  meta.textContent="王国完了 "+Number(data.completed||0)+" / "+Number(data.target_count||0)+"　成功Job "+Number(data.success||0)+" / 失敗Job "+Number(data.failed||0)+"　"+apiMetricsText(data)+"　※API処理タスク数（実HTTPリクエスト数ではありません）　通常利用保護 1本";
+  meta.textContent="取得済み王国 "+Number(data.completed||0)+" / "+Number(data.target_count||0)+"　成功Job "+Number(data.success_jobs??data.success??0)+" / 失敗Job "+Number(data.failed_jobs??data.failed??0)+"　"+apiMetricsText(data)+"　※王国数はKID単位、Job数は再試行を含む　通常利用保護 1本";
   var rows=Object.keys(active).map(function(k){return active[k];}).filter(function(x){return !x.completed;}).sort(function(a,b){return Number(a.kid)-Number(b.kid);});
   list.innerHTML=rows.length?rows.map(renderJobProgress).join(""):"";
 }
@@ -1186,7 +1186,7 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
 
     if(data.active){
       run.disabled=true;run.textContent="実行中…";cancel.disabled=false;
-      result.textContent="実行中…\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
+      result.textContent="実行中…\\n取得済み王国 "+data.completed+" / "+data.target_count+"\\n成功Job "+(data.success_jobs??data.success??0)+" / 失敗Job "+(data.failed_jobs??data.failed??0)+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
       window.__eagleEyeLoadTestStatusTimer=setInterval(async function(){
         try{
           var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});if(!r.ok)return;
@@ -1198,18 +1198,18 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
           if(d.active){
             result.textContent="実行中…\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの進捗を表示中";
           }else{
-            result.textContent=(d.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n"+d.completed+" / "+d.target_count+"王国\\n成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"\\nD1保存済みの最終状態を表示中";
+            result.textContent=(d.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n取得済み王国 "+d.completed+" / "+d.target_count+"\\n成功Job "+(d.success_jobs??d.success??0)+" / 失敗Job "+(d.failed_jobs??d.failed??0)+" / 中止 "+d.cancelled+"\\nD1保存済みの最終状態を表示中";
             document.getElementById("progressTitle").textContent=d.run_status==="CANCELLED"?"中止":"✓ 更新完了";
-            document.getElementById("progressMeta").textContent="成功 "+d.success+" / 失敗 "+d.failed+" / 中止 "+d.cancelled+"　API同時処理 "+Number(d.api_concurrency||0);
+            document.getElementById("progressMeta").textContent="取得済み王国 "+d.completed+" / "+d.target_count+"　成功Job "+(d.success_jobs??d.success??0)+" / 失敗Job "+(d.failed_jobs??d.failed??0)+" / 中止 "+d.cancelled+"　API同時処理 "+Number(d.api_concurrency||0);
             clearInterval(window.__eagleEyeLoadTestStatusTimer);
             run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.disabled=true;
           }
         }catch(e){}
       },2000);
     }else{
-      result.textContent=(data.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n"+data.completed+" / "+data.target_count+"王国\\n成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"\\nD1保存済みの最終状態を表示中";
+      result.textContent=(data.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n取得済み王国 "+data.completed+" / "+data.target_count+"\\n成功Job "+(data.success_jobs??data.success??0)+" / 失敗Job "+(data.failed_jobs??data.failed??0)+" / 中止 "+data.cancelled+"\\nD1保存済みの最終状態を表示中";
       document.getElementById("progressTitle").textContent=data.run_status==="CANCELLED"?"中止":"✓ 更新完了";
-      document.getElementById("progressMeta").textContent="成功 "+data.success+" / 失敗 "+data.failed+" / 中止 "+data.cancelled+"　Job同時実行 "+Number(data.api_concurrency||0);
+      document.getElementById("progressMeta").textContent="取得済み王国 "+data.completed+" / "+data.target_count+"　成功Job "+(data.success_jobs??data.success??0)+" / 失敗Job "+(data.failed_jobs??data.failed??0)+" / 中止 "+data.cancelled+"　Job同時実行 "+Number(data.api_concurrency||0);
     }
   }catch(e){}
 }
