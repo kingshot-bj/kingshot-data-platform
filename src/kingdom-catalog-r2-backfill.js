@@ -126,7 +126,7 @@ export async function runKingdomCatalogR2Backfill(env, {
       "SELECT rows_archived, batches_run FROM kingdom_catalog_r2_migration WHERE migration_key = ?"
     ).bind(MIGRATION_KEY).first();
     await env.DB.prepare(
-      "UPDATE kingdom_catalog_r2_migration SET last_kid = ?, state = 'COMPLETED', batches_run = ?, rows_archived = ?, last_batch_count = ?, last_batch_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE migration_key = ?"
+      "UPDATE kingdom_catalog_r2_migration SET last_kid = ?, state = 'IDLE', batches_run = ?, rows_archived = ?, last_batch_count = ?, last_batch_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE migration_key = ?"
     ).bind(
       nextKid,
       Number(newState?.batches_run || 0) + 1,
