@@ -97,13 +97,14 @@ export async function runKingdomCatalogDiscovery(env, {
     const candidates = rows
       .map(row => ({ row, kid: kingdomId(row) }))
       .filter(item => item.kid);
-    const existing = candidates.length
+    const uniqueCandidates = [...new Map(candidates.map(item => [item.kid, item])).values()];
+    const existing = uniqueCandidates.length
       ? await env.DB.prepare(
           "SELECT kid FROM kingdom_catalog WHERE kid IN (" + candidates.map(() => "?").join(",") + ")"
-        ).bind(...candidates.map(item => item.kid)).all()
+        ).bind(...uniqueCandidates.map(item => item.kid)).all()
       : { results: [] };
     const existingKids = new Set((existing.results || []).map(row => Number(row.kid)));
-    const statements = candidates
+    const statements = uniqueCandidates
       .filter(item => !existingKids.has(item.kid))
       .map(({ row, kid }) => env.DB.prepare(
         "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -137,7 +138,7 @@ export async function runKingdomCatalogDiscovery(env, {
       rowsReceived: rows.length,
       rowsSaved: statements.length,
       message: "王国Catalogの1ページ取得が完了しました。",
-      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms: statements.length, existingKingdoms: candidates.length - statements.length }
+      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms: statements.length, existingKingdoms: uniqueCandidates.length - statements.length }
     });
     await recordSystemEvent(env.DB, {
       traceId,
