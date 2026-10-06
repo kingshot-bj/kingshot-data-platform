@@ -243,10 +243,25 @@ export async function getKingdomRankingChanges(db, { kid, board, entries, observ
         oldValue: previous.rank, newValue: current.rank, oldScore: previous.score, newScore: current.score,
         observedAt, sourceObservationId
       });
+    } else if (!previous && previousRows.length > 0) {
+      rankingChanges.push({
+        targetType: current.targetType, targetId: current.targetId, changeType: "RANK_IN",
+        oldValue: null, newValue: current.rank, oldScore: null, newScore: current.score,
+        observedAt, sourceObservationId
+      });
     }
   });
   const removedTargets = previousRows.filter(row => !currentKeys.has(String(row.target_type) + ":" + String(row.target_id)))
-    .map(row => ({ targetType: String(row.target_type), targetId: String(row.target_id) }));
+    .map(row => ({ targetType: String(row.target_type), targetId: String(row.target_id), oldValue: row.rank, oldScore: row.score }));
+  if (previousRows.length > 0) {
+    for (const removed of removedTargets) {
+      rankingChanges.push({
+        targetType: removed.targetType, targetId: removed.targetId, changeType: "RANK_OUT",
+        oldValue: removed.oldValue, newValue: null, oldScore: removed.oldScore, newScore: null,
+        observedAt, sourceObservationId
+      });
+    }
+  }
   return { changedEntries, rankingChanges, removedTargets };
 }
 
@@ -318,6 +333,25 @@ async function saveKingdomRankingBoardInternal(db, {
 
   let archived = false;
   let emergencyBuffered = false;
+
+  if (comparison?.rankingChanges?.length) {
+    for (const change of comparison.rankingChanges) {
+      currentStatements.push(db.prepare(
+        "INSERT INTO change_events (event_id,target_type,target_id,change_type,field_name,old_value_json,new_value_json,observation_id,detected_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+      ).bind(
+        crypto.randomUUID(),
+        String(change.targetType),
+        String(change.targetId),
+        String(change.changeType),
+        "rank",
+        JSON.stringify(change.oldValue ?? null),
+        JSON.stringify(change.newValue ?? null),
+        change.sourceObservationId ? String(change.sourceObservationId) : null,
+        Number(change.observedAt),
+        Number(change.observedAt)
+      ));
+    }
+  }
 
   if (filteredEntries.length) {
     const archiveEntries = filteredEntries.map((entry, index) => {
