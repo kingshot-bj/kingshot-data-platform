@@ -1,7 +1,6 @@
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
-import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 
 const DEFAULT_TARGETS_PER_RUN = 2;
 const DISCOVERY_KEY = "MIGHTPULSE_KINGDOMS";
@@ -97,11 +96,6 @@ export async function runKingdomSeeder(env, {
         targetId: String(kid)
       });
       result.success++;
-      await recordKingdomCollectionSuccess(env.DB, {
-        kid,
-        source: "OPERATOR",
-        collectedAt: observedAt
-      });
     } catch (error) {
       result.failed++;
       await recordDiagnostic(env.DB, {
