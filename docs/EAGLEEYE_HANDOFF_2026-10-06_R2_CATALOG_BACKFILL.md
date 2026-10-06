@@ -247,3 +247,14 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - 実装コミット:
   - `0f3252faff5827630fc3f40d610c39f05798b99b`
   - `cbc2aec991a2c32c05157c634e01bd91e91da56b`
+
+
+## 2026-10-06 バッチ件数選択
+- Owner画面で1回のバックフィル件数を選択可能に変更。
+- 選択肢: 10 / 25 / 50 / 100件。
+- 初期選択: 50件。
+- API側上限: 100件。
+- 実行後の自動検証は選択件数に対して実施。
+- UI/APIコミット:
+  - `12159c88b2fe37434cd04007fae79503587f22b4`
+  - `c6632f823a74b2cd4eaf0316dc6ad4f77784b3db`
