@@ -35,6 +35,7 @@ import { collectMightPulseThroughGuards, collectKingdomRanking, collectPlayerDet
 import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
 import { runKingdomCatalogDailyRefresh } from "./kingdom-catalog-scheduler.js";
 import { runKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill.js";
+import { renderKingdomCatalogR2BackfillPage } from "./kingdom-catalog-r2-backfill-page.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
@@ -3584,9 +3585,29 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
 async function handleKingdomCatalogR2BackfillApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
-  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 
   try {
+    if (request.method === "GET") {
+      const row = await env.DB.prepare(
+        "SELECT migration_key, last_kid, state, batches_run, rows_archived, last_batch_count, last_batch_at, last_success_at, last_error, updated_at FROM kingdom_catalog_r2_migration WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL' LIMIT 1"
+      ).first();
+      if (!row) return json({ ok:false, error:"R2_BACKFILL_STATE_NOT_FOUND" }, 503);
+      return json({
+        ok:true,
+        migrationKey: row.migration_key,
+        state: row.state,
+        lastKid: Number(row.last_kid || 0),
+        batchesRun: Number(row.batches_run || 0),
+        rowsArchived: Number(row.rows_archived || 0),
+        lastBatchCount: Number(row.last_batch_count || 0),
+        lastBatchAt: row.last_batch_at == null ? null : Number(row.last_batch_at),
+        lastSuccessAt: row.last_success_at == null ? null : Number(row.last_success_at),
+        lastError: row.last_error || null,
+        updatedAt: row.updated_at == null ? null : Number(row.updated_at)
+      });
+    }
+
+    if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
     const body = await request.json().catch(() => ({}));
     const batchSize = Math.min(10, Math.max(1, Number(body?.batch_size) || 10));
     const result = await runKingdomCatalogR2Backfill(env, { batchSize });
@@ -3931,6 +3952,7 @@ export default {
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
       if (url.pathname === "/admin/api-pool") return eagleEyeHtmlResponse(await renderApiPoolAdminPage(request, env));
       if (url.pathname === "/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderOwnerKingdomLoadTestPage()); }
+      if (url.pathname === "/owner/kingdom-catalog-r2-backfill") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderKingdomCatalogR2BackfillPage()); }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
@@ -7156,7 +7178,7 @@ async function renderOwnerAdminPage(request,env){
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye OWNER CONTROL</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← EagleEye</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
-<div class="card"><h2>管理機能</h2><div class="links"><a class="link" href="/admin/api-pool"><b>API Pool管理</b><span>APIキー・Pool・テスト</span></a><a class="link" href="/admin/google-drive"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定</span></a><a class="link" href="/admin/diagnostics"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細</span></a><a class="link" href="/admin/data-coverage"><b>データ登録状況</b><span>現在登録されているプレイヤー数・王国数を確認</span></a><a class="link" href="/admin/api-raw-data"><b>API Raw Inspector</b><span>MightPulse保存生データと画像リソースを実画像で照合</span></a><a class="link" href="/owner/kingdom-load-test"><b>王国Watchlist実処理負荷テスト</b><span>本番と同じ取得・保存パイプラインを実行</span></a><a class="link" href="/admin/kingdom-rankings"><b>王国ランキング</b><span>必要なランキングだけ取得・閲覧・Sheets出力</span></a><a class="link" href="/admin/data-retention"><b>データ保存期間</b><span>D1履歴・R2アーカイブ</span></a><a class="link" href="/admin/player-visibility"><b>データ公開設定</b><span>ロール別公開範囲</span></a><a class="link" href="/players"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更</span></a><a class="link" href="/kingdom-watchlist"><b>王国ウォッチリスト</b><span>監視対象・ランキング</span></a></div></div>
+<div class="card"><h2>管理機能</h2><div class="links"><a class="link" href="/admin/api-pool"><b>API Pool管理</b><span>APIキー・Pool・テスト</span></a><a class="link" href="/admin/google-drive"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定</span></a><a class="link" href="/admin/diagnostics"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細</span></a><a class="link" href="/admin/data-coverage"><b>データ登録状況</b><span>現在登録されているプレイヤー数・王国数を確認</span></a><a class="link" href="/admin/api-raw-data"><b>API Raw Inspector</b><span>MightPulse保存生データと画像リソースを実画像で照合</span></a><a class="link" href="/owner/kingdom-load-test"><b>王国Watchlist実処理負荷テスト</b><span>本番と同じ取得・保存パイプラインを実行</span></a><a class="link" href="/owner/kingdom-catalog-r2-backfill"><b>王国Catalog R2バックフィル</b><span>既存詳細JSONを最大10件ずつR2へ退避</span></a><a class="link" href="/admin/kingdom-rankings"><b>王国ランキング</b><span>必要なランキングだけ取得・閲覧・Sheets出力</span></a><a class="link" href="/admin/data-retention"><b>データ保存期間</b><span>D1履歴・R2アーカイブ</span></a><a class="link" href="/admin/player-visibility"><b>データ公開設定</b><span>ロール別公開範囲</span></a><a class="link" href="/players"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更</span></a><a class="link" href="/kingdom-watchlist"><b>王国ウォッチリスト</b><span>監視対象・ランキング</span></a></div></div>
 <div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
