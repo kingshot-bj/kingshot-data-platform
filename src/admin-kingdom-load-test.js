@@ -90,7 +90,7 @@ async function buildLoadTestSystemJson(env, runId) {
   try { cloudflareAfter = run.cloudflare_after_json ? JSON.parse(run.cloudflare_after_json) : null; } catch {}
   try { cloudflareDelta = run.cloudflare_delta_json ? JSON.parse(run.cloudflare_delta_json) : null; } catch {}
   return {
-    schema_version: "eagleeye-load-test-system-json-v1",
+    schema_version: "system-json-v1",
     generated_at: new Date().toISOString(),
     run: {
       run_id: safeRunId, status: String(run.status || "UNKNOWN"),
@@ -136,7 +136,7 @@ async function persistLoadTestSystemJson(env, runId) {
     const key = "load-tests/system-json/v1/" + String(runId) + ".json";
     await env.ARCHIVE.put(key, body, {
       httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" },
-      customMetadata: { source: "kingdom_load_test", runId: String(runId), schemaVersion: "eagleeye-load-test-system-json-v1" }
+      customMetadata: { source: "kingdom_load_test", runId: String(runId), schemaVersion: "system-json-v1" }
     });
     return { saved: true, key, bytes: new TextEncoder().encode(body).byteLength };
   } catch (error) {
@@ -336,10 +336,10 @@ export async function handleOwnerKingdomLoadTestSystemJsonApi(request, env) {
     const key = "load-tests/system-json/v1/" + runId + ".json";
     if (env.ARCHIVE) {
       const object = await env.ARCHIVE.get(key).catch(() => null);
-      if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8","content-disposition:'attachment; filename="eagleeye-load-test-system-'+runId+'.json"',"cache-control":"private, no-store"}});
+      if (object?.body) return new Response(object.body, {headers:{"content-type":"application/json; charset=UTF-8","content-disposition:'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
     }
     const payload = await buildLoadTestSystemJson(env, runId);
-    return new Response(JSON.stringify(payload, null, 2), {headers:{"content-type":"application/json; charset=UTF-8","content-disposition:'attachment; filename="eagleeye-load-test-system-'+runId+'.json"',"cache-control":"private, no-store"}});
+    return new Response(JSON.stringify(payload, null, 2), {headers:{"content-type":"application/json; charset=UTF-8","content-disposition:'attachment; filename="system-'+runId+'.json"',"cache-control":"private, no-store"}});
   } catch (error) {
     const status = String(error?.message || "") === "RUN_NOT_FOUND" ? 404 : 500;
     return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_SYSTEM_JSON_UNAVAILABLE",message:error?.message||String(error)}),{status,headers:{"content-type":"application/json; charset=UTF-8"}});
