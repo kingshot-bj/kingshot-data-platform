@@ -3978,7 +3978,7 @@ export default {
                 await env.DB.prepare("UPDATE kingdom_catalog_r2_migration SET state = 'FAILED', last_error = ?, updated_at = ? WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL'")
                   .bind("VERIFICATION_FAILED:" + verification.failed, Math.floor(Date.now() / 1000)).run();
               }
-              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, autoContinue: runAll && !result.complete }));
+              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, autoContinue: runAll && !result.complete && Number(verification.failed || 0) === 0 }));
             } catch (error) {
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ok:false, error:error?.message || String(error) }));
             }
