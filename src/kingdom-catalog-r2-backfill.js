@@ -42,7 +42,7 @@ function buildPayload(row) {
  *
  * Safety contract:
  * - Never clears D1 before the corresponding R2 put succeeds.
- * - Resumes by kid, so a failed batch does not repeat already archived rows.
+ * - Resumes from the remaining D1 rows; r2_latest_key is the authoritative processed marker.
  * - Never runs from Cron; callers must explicitly invoke this bounded operation.
  */
 export async function runKingdomCatalogR2Backfill(env, {
@@ -78,11 +78,16 @@ export async function runKingdomCatalogR2Backfill(env, {
 
   try {
     const selected = await env.DB.prepare(
-      "SELECT kid, name, status, region, language, raw_json, boards_json, source_observed_at, first_seen_at, last_seen_at, updated_at FROM kingdom_catalog WHERE kid > ? AND r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL) ORDER BY kid ASC LIMIT ?"
-    ).bind(lastKid, safeBatchSize).all();
+      "SELECT kid, name, status, region, language, raw_json, boards_json, source_observed_at, first_seen_at, last_seen_at, updated_at FROM kingdom_catalog WHERE r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL) ORDER BY kid ASC LIMIT ?"
+    ).bind(safeBatchSize).all();
     const rows = selected.results || [];
 
     if (!rows.length) {
+      const remainingCheck = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM kingdom_catalog WHERE r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)"
+      ).first();
+      const remaining = Number(remainingCheck?.count || 0);
+      if (remaining > 0) throw new Error("KINGDOM_CATALOG_R2_BACKFILL_STALLED_REMAINING:" + remaining);
       await env.DB.prepare(
         "UPDATE kingdom_catalog_r2_migration SET state = 'COMPLETE', last_batch_count = 0, last_batch_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE migration_key = ?"
       ).bind(startedAt, startedAt, startedAt, MIGRATION_KEY).run();
