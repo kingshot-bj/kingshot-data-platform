@@ -3619,7 +3619,10 @@ async function handleKingdomCatalogR2BackfillApi(request, env) {
     const body = await request.json().catch(() => ({}));
     const batchSize = Math.min(10, Math.max(1, Number(body?.batch_size) || 10));
     const result = await runKingdomCatalogR2Backfill(env, { batchSize });
-    return json(result);
+    const verification = result.archived > 0
+      ? await verifyKingdomCatalogR2Backfill(env)
+      : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
+    return json({ ...result, verification });
   } catch (error) {
     return json({
       ok: false,
