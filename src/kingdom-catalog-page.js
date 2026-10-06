@@ -1,11 +1,4 @@
-import { getAuthenticatedUser } from "./user-eligibility.js";
-
 export async function renderKingdomCatalogPage(request, env) {
-  const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") {
-    return "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><p>ログインが必要です。</p><a href='/api/auth/discord'>Discordでログイン</a>";
-  }
-
   const rows = await env.DB.prepare(
     "SELECT kid, name, status, region, language, last_seen_at FROM kingdom_catalog ORDER BY kid ASC"
   ).all();
