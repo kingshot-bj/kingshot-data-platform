@@ -7,7 +7,14 @@ import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { saveKingdomCatalogObservation } from "./kingdom-catalog-store.js";
 
 const MAX_KINGDOMS = 1000;
-const LOAD_TEST_NORMAL_RESERVE = 1;
+const LOAD_TEST_NORMAL_RESERVE_PERCENT = 0.10;
+const LOAD_TEST_MIN_NORMAL_RESERVE = 1;
+function calculateLoadTestReserve(availableKeys) {
+  const available = Math.max(0, Math.floor(Number(availableKeys) || 0));
+  return available > 0
+    ? Math.max(LOAD_TEST_MIN_NORMAL_RESERVE, Math.ceil(available * LOAD_TEST_NORMAL_RESERVE_PERCENT))
+    : 0;
+}
 const LOAD_TEST_LOCK_KEY = "OWNER_KINGDOM_LOAD_TEST";
 const LOAD_TEST_LOCK_TTL_SECONDS = 60 * 60 * 2;
 
@@ -728,7 +735,8 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   const startedAt=Date.now(),runId=crypto.randomUUID(),traceId=requestTraceId||systemTraceId("load");
   const poolBudget=await getApiPoolBudgetSnapshot(env.DB,{provider:"MIGHTPULSE",poolTypes:["SYSTEM_WATCHLIST","SYSTEM_GENERAL","USER_CONTRIBUTED"]});
   const availablePoolKeys=Number(poolBudget?.availableKeys||0);
-  if(availablePoolKeys<2)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護のため、ロードテストには少なくとも2本の利用可能なAPIキーが必要です。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
+  const loadTestReserve=calculateLoadTestReserve(availablePoolKeys);
+  if(availablePoolKeys<=loadTestReserve)return new Response(JSON.stringify({ok:false,error:"API_POOL_TEST_CAPACITY_INSUFFICIENT",message:"通常利用保護枠10%を確保するとロードテストに利用できるAPIキーがありません。",available_pool_keys:availablePoolKeys,reserved_for_normal_use:loadTestReserve,reserve_percent:LOAD_TEST_NORMAL_RESERVE_PERCENT}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   // Load Test is a queued workload, not a single burst of all planned requests.
   // The real API Pool limiter and per-request leases enforce capacity while the run
   // progresses. Safety Gate must therefore validate only the startup budget here;
@@ -746,7 +754,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     priority: 10,
     plannedRequests,
     availablePoolKeys,
-    reservedKeys: LOAD_TEST_NORMAL_RESERVE,
+    reservedKeys: loadTestReserve,
     cloudflare: cloudflareSafety,
     // The load test is a queued/throttled workload. Do not reject the entire
     // run at startup based on the aggregate API quota/reserve calculation.
@@ -761,7 +769,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     safety
   }),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   // Global API budget: all kingdoms share Available - 1 reserved key.
-  const apiConcurrency=Math.max(1,availablePoolKeys-LOAD_TEST_NORMAL_RESERVE);
+  const apiConcurrency=Math.max(1,availablePoolKeys-loadTestReserve);
   const concurrency=Math.min(kids.length,apiConcurrency);
   if(!await acquireLoadTestState(env.DB,runId))return new Response(JSON.stringify({ok:false,error:"LOAD_TEST_ALREADY_RUNNING",message:"現在、別の王国負荷テストが実行中です。"}),{status:409,headers:{"content-type":"application/json; charset=UTF-8","cache-control":"no-store"}});
   const runNow=Math.floor(Date.now()/1000);
@@ -837,7 +845,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
   };
   let runFailed=false,runSummary=null,apiLimiter=null,metricsTimer=null,heartbeatTimer=null;
   const run=(async()=>{try{
-    await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0,quest_completed:0,quest_total:kids.length*(26+topN),quest_percent:0});
+    await send({type:"start",run_id:runId,target_count:kids.length,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:loadTestReserve,mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,completed:0,success:0,failed:0,quest_completed:0,quest_total:kids.length*(26+topN),quest_percent:0});
     apiLimiter=createLoadTestApiLimiter(apiConcurrency);
     // The load-test API limiter is the authoritative concurrency gate for this
     // single Run. Do not stack the D1 collection semaphore here; every actual
@@ -910,7 +918,7 @@ export async function handleOwnerKingdomLoadTestApi(request, env, auth, requestT
     const rankingRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.ranking_rows||0),0),playerRowsSaved=successfulResults.reduce((sum,item)=>sum+Number(item.player_rows||0),0);
     const latencies=successfulResults.map(item=>Number(item.elapsed_ms)).filter(Number.isFinite),failureCodes={};
     for(const item of failedResults){const code=String(item?.error||"UNKNOWN");failureCodes[code]=(failureCodes[code]||0)+1;}
-    const summary={run_id:runId,kingdom_count:kids.length,start_kid:Math.min(...kids),end_kid:Math.max(...kids),mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:LOAD_TEST_NORMAL_RESERVE,elapsed_ms:Date.now()-startedAt,success_count:success,failed_count:failed,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:kids.length*26*100,latency_min_ms:latencies.length?Math.min(...latencies):null,latency_max_ms:latencies.length?Math.max(...latencies):null,latency_avg_ms:latencies.length?Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length):null,failure_codes:failureCodes,result_sample:failedResults.slice(0,50).map(item=>({kid:item.kid,error:item.error}))};
+    const summary={run_id:runId,kingdom_count:kids.length,start_kid:Math.min(...kids),end_kid:Math.max(...kids),mode:"KINGDOM_WATCHLIST_PIPELINE",top_n:topN,concurrency,api_concurrency:apiConcurrency,requested_concurrency:apiConcurrency,available_pool_keys:availablePoolKeys,reserved_for_normal_use:loadTestReserve,elapsed_ms:Date.now()-startedAt,success_count:success,failed_count:failed,ranking_rows_saved:rankingRowsSaved,player_rows_saved:playerRowsSaved,max_expected_ranking_rows:kids.length*26*100,latency_min_ms:latencies.length?Math.min(...latencies):null,latency_max_ms:latencies.length?Math.max(...latencies):null,latency_avg_ms:latencies.length?Math.round(latencies.reduce((a,b)=>a+b,0)/latencies.length):null,failure_codes:failureCodes,result_sample:failedResults.slice(0,50).map(item=>({kid:item.kid,error:item.error}))};
     runSummary=summary;
     await recordServiceUsage(env,{operation:"OWNER_KINGDOM_LOAD_TEST",actorUserId:auth.user_id,targetType:"USER",targetId:auth.user_id,metadata:summary});
     await recordSystemEvent(env.DB,{traceId,eventType:"LOAD_TEST",service:"load_test",feature:"owner_kingdom_load_test",operation:"COMPLETE",status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",actorType:"OWNER",actorId:auth.user_id,targetType:"KINGDOM_BATCH",targetId:String(kids.length),elapsedMs:summary.elapsed_ms,message:failed?"OWNER王国Watchlist実処理負荷テスト完了（一部失敗あり）":"OWNER王国Watchlist実処理負荷テスト完了",runId,metadata:{...summary,runId,traceId}});
