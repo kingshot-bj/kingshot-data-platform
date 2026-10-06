@@ -321,3 +321,23 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - Catalog取得失敗時はその王国Jobを成功扱いにせず、Load Test側の失敗として扱う。
 - 実装コミット: `02144d5f60ff356e92056384d8f9f01d3ce564ac`
 - これにより、今後の負荷テスト自体が「Watchlist実処理＋Catalog詳細取得」の実処理負荷試験を兼ねる。
+
+
+## 2026-10-06 Catalog保存責務の共通化
+- 王国Catalogの詳細保存処理を `src/kingdom-catalog-store.js` に集約。
+- 共通処理は「R2へ完全payload保存 → R2 key確定 → D1の軽量index更新」の順序を保証する。
+- `src/kingdom-seeder.js` と `src/admin-kingdom-load-test.js` は共通保存層を利用するよう変更。
+- これにより通常Seederと負荷テストで保存仕様が分岐せず、D1へ詳細JSONを戻さない方針を一貫して維持。
+- API取得自体は既存の `collectMightPulseThroughGuards` を継続利用し、API Pool lease/returnやGlobal Semaphoreの責務は変更していない。
+- 主要コミット:
+  - `dd37bc1a83cee32a1d00c56b64826e492dc0d590` 共通Catalog保存層追加
+  - `84bc72c6d0ed097ec57da0d48be1328ba45aee17` Seeder接続
+  - `a1bcc4ed45d95ddbfb575ff1ede47471d13c3b0f` 負荷テスト接続
+
+### 現在の責務分離
+- Kingdom Catalog: `kingdom_catalog` = 軽量検索/current index、詳細 = R2
+- Player: `players` = current index、詳細/履歴 = 既存player store + R2
+- Ranking: `kingdom_ranking_current` = current ranking、履歴 = R2/D1互換履歴
+- API取得: `collectMightPulseThroughGuards` = 共通取得ガード
+- System観測: System Event / Diagnostics = 実行状況・失敗原因の観測
+- 新しい冗長な `player_catalog` / `ranking_catalog` テーブルは追加しない。
