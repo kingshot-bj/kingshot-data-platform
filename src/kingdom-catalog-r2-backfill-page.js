@@ -1,13 +1,31 @@
-export function renderKingdomCatalogR2BackfillPage() {
+export async function renderKingdomCatalogR2BackfillPage(env) {
+  let initial = {};
+  try {
+    initial = await env.DB.prepare("SELECT last_kid, state, batches_run, rows_archived, last_batch_count, last_batch_at, last_success_at, last_error, updated_at FROM kingdom_catalog_r2_migration WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL' LIMIT 1").first() || {};
+  } catch (error) {
+    initial = { state: "ERROR", last_error: String(error?.message || error).slice(0, 500) };
+  }
+  const initialJson = JSON.stringify({
+    state: initial.state || "IDLE",
+    lastKid: Number(initial.last_kid || 0),
+    batchesRun: Number(initial.batches_run || 0),
+    rowsArchived: Number(initial.rows_archived || 0),
+    lastBatchCount: Number(initial.last_batch_count || 0),
+    lastBatchAt: initial.last_batch_at == null ? null : Number(initial.last_batch_at),
+    lastSuccessAt: initial.last_success_at == null ? null : Number(initial.last_success_at),
+    lastError: initial.last_error || null,
+    updatedAt: initial.updated_at == null ? null : Number(initial.updated_at)
+  }).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye R2バックフィル</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:20px 14px 48px}.nav{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.muted{color:#94a3b8;font-size:13px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.stat{padding:11px;border-radius:10px;background:#0b1220;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:11px}.stat b{display:block;margin-top:4px;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.actions button{min-height:44px;padding:10px 15px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;cursor:pointer}.actions button.secondary{background:#334155;color:#f8fafc}.actions button:disabled{opacity:.55;cursor:default}.ok{color:#86efac}.bad{color:#fca5a5}.warn{color:#fbbf24}.result{margin-top:12px;padding:11px;border-radius:10px;background:#0b1220;border:1px solid #334155;white-space:pre-wrap;word-break:break-word;font-size:12px}.notice{margin-top:12px;padding:11px;border-radius:10px;background:#1e293b;color:#cbd5e1;font-size:12px;line-height:1.6}@media(max-width:560px){.grid{grid-template-columns:1fr}.actions button{width:100%}}</style></head>
 <body><main class="wrap"><nav class="nav"><a href="/owner">← OWNER CONTROL</a><a href="/status">システム状況</a></nav>
 <h1>王国Catalog → R2バックフィル</h1>
 <p class="muted">既存の詳細JSONをR2へ退避し、成功後にD1の詳細JSONだけをNULL化します。1回の実行は最大10件です。</p>
-<section class="card"><h2>現在の状態</h2><div id="summary" class="muted">読み込み中…</div><div class="grid" id="stats"></div><div class="actions"><button id="run">10件バックフィル実行</button><button id="refresh" class="secondary">状態を更新</button></div><div id="result" class="result" hidden></div></section>
+<section class="card"><h2>現在の状態</h2><div id="summary" class="muted">状態を表示しています…</div><div class="grid" id="stats"></div><div class="actions"><button id="run">10件バックフィル実行</button><button id="refresh" class="secondary">状態を更新</button></div><div id="result" class="result" hidden></div></section>
 <section class="card"><h2>安全条件</h2><div class="notice">R2保存が成功した行だけD1の <b>raw_json / boards_json</b> をNULL化します。失敗した場合はD1の詳細JSONを残します。自動連続実行は行わず、1回ずつ実行します。</div></section>
 </main><script>
 (function(){
+var initial=${initialJson};
 var summary=document.getElementById("summary"),stats=document.getElementById("stats"),result=document.getElementById("result"),run=document.getElementById("run"),refresh=document.getElementById("refresh");
 function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function fmt(v){return v==null||v===""?"—":String(v);}
@@ -44,7 +62,7 @@ async function execute(){
   }catch(e){result.textContent="実行失敗: "+(e.message||e);}
   finally{run.disabled=false;refresh.disabled=false;}
 }
-run.onclick=execute;refresh.onclick=load;load();
+show(initial);run.onclick=execute;refresh.onclick=load;load();
 })();
 </script></body></html>`;
 }
