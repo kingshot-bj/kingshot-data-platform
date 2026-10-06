@@ -156,6 +156,18 @@ export async function handleKingdomPortalApi(request, env) {
 }
 
 
+export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
+  if (!auth || auth.status !== "ACTIVE") return page("Watchlist Analytics","<main class='wrap'><div class='empty'>ログインが必要です。</div></main>");
+  const watches = await env.DB.prepare(
+    "SELECT w.kid,w.top_n,w.interval_hours,w.enabled,w.last_run_at,w.last_success_at,w.last_error,c.name,c.status,c.source_observed_at,c.last_seen_at FROM kingdom_watchlists w LEFT JOIN kingdom_catalog c ON c.kid=w.kid WHERE w.discord_id=? ORDER BY w.created_at DESC LIMIT 100"
+  ).bind(auth.discord_id).all();
+  const rows=(watches.results||[]).map(r=>{
+    const freshness=r.source_observed_at&&r.last_seen_at?Math.max(0,Number(r.last_seen_at)-Number(r.source_observed_at)):null;
+    return "<div class='row'><b>王国 "+esc(r.kid)+"</b><span>"+esc(r.name||"名称未取得")+"</span><em>"+(Number(r.enabled)===1?"監視中":"停止")+"</em><small>最終成功 "+esc(ts(r.last_success_at))+" / 鮮度差 "+esc(freshness==null?"—":Math.round(freshness/60)+"分")+"</small></div>";
+  }).join("");
+  return page("Watchlist Analytics","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国Watchlist</a><h1>Watchlist Analytics</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国Watchlistはありません。</div>")+"</div></main>");
+}
+
 export async function renderKingdomChangesPage(request, env) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
