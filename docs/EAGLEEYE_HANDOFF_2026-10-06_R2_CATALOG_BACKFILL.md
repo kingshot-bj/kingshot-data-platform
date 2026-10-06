@@ -358,3 +358,32 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
 - 主なコミット:
   - Migration: `0050_alliance_catalog_r2_index.sql`
   - Code: `a74631ef6ef8ef4014bb9b4e6e66ab96805cccf4`
+
+## 2026-10-06 Player R2 latest pointer
+- Player側もKingdom / Allianceと同じ「current index + R2 detail/history」構成へ統一。
+- migrations/0051_players_r2_index.sql を追加し、players.r2_latest_key と idx_players_r2_latest を追加。
+- src/player-store.js のR2保存処理で archivePlayerHistoryBatch() の返却keyを受け取り、R2保存成功後に players.r2_latest_key を更新。
+- R2保存に失敗した場合は既存のEmergency Buffer経路を維持し、既存の r2_latest_key を上書きしない。
+- Player詳細履歴は引き続きR2を優先し、player_snapshots は互換/フォールバック履歴として維持。
+- players に新しい player_catalog は作らない。既存 players がPlayer current indexの責務を持つ。
+- PR #5でmainへマージ済み。Merge commit: dfcb27847d9e9c7c46c1c5de172831c3284840fb
+
+## 2026-10-06 API Observation / legacy detail整理
+- api_observations は単なるCatalog/current detail tableではなく、API取得の観測・監査台帳として利用されているため、現時点では payload_json を即時削除しない。
+- Player取得では saveApiObservation() → materializePlayer() の順で観測IDを発行し、Player current/historyと紐付けている。
+- getLatestPlayerObservation() はD1 api_observations.payload_json を直接読む互換APIだが、現行のPlayer roller主要経路では最新Player取得元として使っていないため、今後のR2観測移行候補として扱う。
+- したがって今回、api_observations のpayloadをNULL化する変更は行わない。先に「監査メタデータ」と「詳細payload」の利用箇所を完全分離してから移行する。
+- ranking_snapshots は現行ランキングの取得元に戻さない。最新ランキングは kingdom_ranking_current のみを参照する。
+- ranking_snapshots / player_rank_snapshots はR2履歴保存＋D1互換/緊急退避の履歴層として残す。R2_ONLYでは正常時のD1履歴INSERTを行わない既存方針を維持。
+
+## 2026-10-06 現時点のD1/R2責務
+1. Kingdom Catalog: D1軽量current/search index + R2詳細
+2. Alliance Catalog: D1軽量current/search index + R2詳細
+3. Player: D1 current index + R2詳細/履歴 + r2_latest_key
+4. Ranking current: kingdom_ranking_current、履歴はR2中心 + D1互換/緊急退避
+5. API Observation: 取得監査台帳。詳細payloadは現時点では互換性のためD1保持。将来R2化する場合は利用箇所を分離してから実施
+
+絶対に守ること:
+- ranking_snapshots の広範囲読み取りを復活させない。
+- R2保存前にcurrent indexのR2 pointerを更新しない。
+- player_catalog / ranking_catalog のような冗長テーブルを増やさない。
