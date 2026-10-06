@@ -49,7 +49,7 @@ import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, re
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
-import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
+import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { archiveSystemEventLog } from "./retention.js";
@@ -3879,6 +3879,7 @@ export default {
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
       if (url.pathname === "/api/admin/api-pool/test-ranking") return await handleApiPoolTestRanking(request, env);
+      if (url.pathname === "/api/owner/kingdom-load-test/system-json") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestSystemJsonApi(request, env); }
       if (url.pathname === "/api/owner/kingdom-load-test/history") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestHistoryApi(request, env); }
       if (url.pathname === "/api/owner/kingdom-load-test/status") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestStatusApi(request, env); }
       if (url.pathname === "/api/load-test/notice-status") return await handleLoadTestNoticeStatusApi(request, env);
