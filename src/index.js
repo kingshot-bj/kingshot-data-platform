@@ -906,7 +906,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter || null;
         const fetched = await fetchWithLoadTestApiLimiter(requestLimiter, () => fetchKingdomRankingThroughApiPool(
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
-          { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId }
+          { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys }
         ));
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
@@ -1084,7 +1084,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
         const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : null;
-        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId })) };
+        return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys })) };
       } catch (error) {
         await recordDiagnostic(env.DB, {
           service: "watchlist",
@@ -3899,6 +3899,80 @@ async function handleGoogleDriveOAuthCallback(request, env) {
   }
 }
 
+async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
+  if (!env?.DB) return { checked: 0, recovered: 0, disabled: 0, failed: 0 };
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await env.DB.prepare(
+    "SELECT key_id, status, pool_type, last_error_at FROM api_pool_keys " +
+    "WHERE provider = 'MIGHTPULSE' " +
+    "AND status IN ('ERROR','COOLDOWN') " +
+    "AND (cooldown_until IS NULL OR cooldown_until <= ?) " +
+    "AND (leased_until IS NULL OR leased_until <= ?) " +
+    "ORDER BY COALESCE(last_error_at, 0) ASC, created_at ASC LIMIT ?"
+  ).bind(now, now, Math.max(1, Math.min(10, Number(limit) || 4))).all();
+
+  let checked = 0, recovered = 0, disabled = 0, failed = 0;
+  const probeGovernorId = String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582").trim();
+
+  for (const row of (rows.results || [])) {
+    let lease = null;
+    checked++;
+    try {
+      lease = await leaseApiKeyForHealthCheck(env.DB, {
+        keyId: String(row.key_id),
+        purpose: "API_POOL_AUTO_RECOVERY",
+        targetType: "API_KEY",
+        targetId: probeGovernorId
+      });
+      const result = await getMightPulsePlayer(env, probeGovernorId, {
+        include: "base",
+        apiKey: lease.api_key
+      });
+      await recordApiPoolSuccess(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        poolType: lease.pool_type,
+        endpoint: "/players/:governor_id",
+        targetType: "API_KEY",
+        targetId: probeGovernorId,
+        purpose: "API_POOL_AUTO_RECOVERY",
+        httpStatus: result.status,
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      });
+      recovered++;
+    } catch (error) {
+      failed++;
+      if (lease) {
+        const status = Number(error?.status || 0);
+        const cooldown = status === 429 ? 300
+          : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 60
+          : 300;
+        const disable = status === 401 || status === 403;
+        await recordApiPoolFailure(env.DB, {
+          keyId: lease.key_id,
+          leaseId: lease.lease_id,
+          poolType: lease.pool_type,
+          endpoint: "/players/:governor_id",
+          targetType: "API_KEY",
+          targetId: probeGovernorId,
+          purpose: "API_POOL_AUTO_RECOVERY",
+          httpStatus: status,
+          errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage: error?.message || null,
+          cooldownSeconds: disable ? 0 : cooldown,
+          disable,
+          keepAvailable: false
+        });
+        if (disable) disabled++;
+      }
+    }
+  }
+
+  return { checked, recovered, disabled, failed };
+}
+
 export default {
   async fetch(request, env, executionContext) {
     const url = new URL(request.url);
@@ -4036,6 +4110,11 @@ export default {
     }
   },
   async scheduled(event, env, executionContext) {
+    try {
+      await runApiPoolAutoRecovery(env, { limit: 4 });
+    } catch (error) {
+      console.error("api_pool_auto_recovery_failed", error?.message || error);
+    }
     try {
       await runKingdomCatalogDailyRefresh(env);
     } catch (error) {
@@ -5398,9 +5477,11 @@ async function fetchThroughWatchlistApiPool(env, {
   traceId = null,
   parentTraceId = null,
   jobId = null,
-  runId = null
+  runId = null,
+  reserveApiKeys = 0
 }) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  const reserve = Math.max(0, Math.floor(Number(reserveApiKeys) || 0));
   let lease = null;
   let poolType = null;
   const requestStartedAt = Math.floor(Date.now() / 1000);
@@ -5414,7 +5495,8 @@ async function fetchThroughWatchlistApiPool(env, {
           purpose,
           targetType,
           targetId,
-          jobId
+          jobId,
+          reserveAvailableKeys: reserve
         });
         poolType = candidatePoolType;
         break;
