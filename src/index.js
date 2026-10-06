@@ -49,6 +49,7 @@ import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, re
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
+import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
@@ -3903,6 +3904,7 @@ export default {
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
+      if (url.pathname === "/kingdom-catalog") { return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-raw-data") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderApiRawDataPage(guard.auth)); }
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
@@ -7977,7 +7979,7 @@ async function renderHome(request, env) {
         </div>
         <a class="logout" href="/api/auth/logout">ログアウト</a>
       </section>
-      <nav class="nav"><a href="/my-player">マイKingShot</a><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a><a href="/support">お問い合わせ</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
+      <nav class="nav"><a href="/my-player">マイKingShot</a><a href="/players">プレイヤー検索</a><a href="/player-watchlist">プレイヤーウォッチリスト</a><a href="/kingdom-watchlist">王国ウォッチリスト</a><a href="/support">お問い合わせ</a><a href="/kingdom-catalog">王国カタログ</a>${auth && (auth.role === "ADMIN" || auth.role === "OWNER") ? '<a href="/admin">ADMIN CONTROL</a>' : ""}${auth && auth.role === "OWNER" ? '<a href="/owner">OWNER CONTROL</a>' : ""}</nav>`
     : `
       <a class="login" href="/api/auth/discord">Discordでログイン</a>`;
 
