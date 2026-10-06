@@ -36,6 +36,7 @@ import { runKingdomCatalogDiscovery } from "./kingdom-catalog.js";
 import { runKingdomCatalogDailyRefresh } from "./kingdom-catalog-scheduler.js";
 import { runKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill.js";
 import { renderKingdomCatalogR2BackfillPage } from "./kingdom-catalog-r2-backfill-page.js";
+import { verifyKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill-verify.js";
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
@@ -3587,6 +3588,13 @@ async function handleKingdomCatalogR2BackfillApi(request, env) {
   if (guard.error) return guard.error;
 
   try {
+    if (request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      if (String(body?.action || "").toLowerCase() === "verify") {
+        return json({ ok: true, verification: await verifyKingdomCatalogR2Backfill(env) });
+      }
+    }
+
     if (request.method === "GET") {
       const row = await env.DB.prepare(
         "SELECT migration_key, last_kid, state, batches_run, rows_archived, last_batch_count, last_batch_at, last_success_at, last_error, updated_at FROM kingdom_catalog_r2_migration WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL' LIMIT 1"
