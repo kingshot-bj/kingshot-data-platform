@@ -1,7 +1,7 @@
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
-import { archiveKingdomCatalogSnapshot } from "./r2-archive.js";
+import { saveKingdomCatalogObservation } from "./kingdom-catalog-store.js";
 
 const DEFAULT_TARGETS_PER_RUN = 2;
 const DISCOVERY_KEY = "MIGHTPULSE_KINGDOMS";
@@ -56,26 +56,11 @@ export async function runKingdomSeeder(env, {
 
       const payload = extractObject(detail.result?.data);
       const observedAt = now();
-      const archive = await archiveKingdomCatalogSnapshot(env.ARCHIVE, {
+      const catalog = await saveKingdomCatalogObservation(env, {
         kid,
         payload,
         observedAt
       });
-      if (!archive?.key) throw new Error("KINGDOM_CATALOG_R2_ARCHIVE_FAILED");
-      await env.DB.prepare(
-        "UPDATE kingdom_catalog SET name = COALESCE(?, name), status = COALESCE(?, status), region = COALESCE(?, region), language = COALESCE(?, language), raw_json = NULL, boards_json = NULL, boards_observed_at = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ?, r2_latest_key = ? WHERE kid = ?"
-      ).bind(
-        payload.name ?? payload.kingdom_name ?? null,
-        payload.status ?? null,
-        payload.region ?? payload.zone ?? null,
-        payload.language ?? payload.lang ?? null,
-        observedAt,
-        Number(payload.source_observed_at ?? payload.observed_at ?? 0) || null,
-        observedAt,
-        observedAt,
-        archive.key,
-        kid
-      ).run();
 
       await recordDiagnostic(env.DB, {
         service: "kingdom_seeder",
@@ -89,7 +74,7 @@ export async function runKingdomSeeder(env, {
         rowsSaved: 1,
         elapsedMs: Math.max(0, Date.now() - startedAt),
         message: "王国current state取得成功。",
-        metadata: { endpoint: "/kingdoms/:kid" }
+        metadata: { endpoint: "/kingdoms/:kid", r2Key: catalog.r2Key }
       });
       await recordSystemEvent(env.DB, {
         traceId: targetTrace,
