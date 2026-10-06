@@ -724,7 +724,7 @@ async function runKingdomWatchlistJobs(env) {
     watchlistSafety = evaluateSafetyGate({
       operation: "KINGDOM_WATCHLIST",
       priority: SAFETY_PRIORITIES.WATCHLIST,
-      plannedRequests: 26 + Math.max(5, Math.min(10, Number(row?.top_n || 10))),
+      plannedRequests: 26 + 10,
       availablePoolKeys,
       reservedKeys: 0,
       cloudflare,
