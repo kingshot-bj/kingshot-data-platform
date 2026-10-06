@@ -225,8 +225,8 @@ export async function renderKingdomChangesPage(request, env) {
   ).bind(kid,board).all();
   const targetType = ["alliance_power","alliance_kills"].includes(board) ? "ALLIANCE" : "PLAYER";
   const events = await env.DB.prepare(
-    "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type=? AND target_id IN (SELECT target_id FROM kingdom_ranking_current WHERE kid=? AND board=? UNION SELECT target_id FROM change_events WHERE target_type=? AND detected_at >= (SELECT COALESCE(MAX(last_checked_at),0) FROM kingdom_ranking_board_state WHERE kid=? AND board=?)) ORDER BY detected_at DESC LIMIT 100"
-  ).bind(targetType,targetType,kid,board,targetType,kid,board).all();
+    "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type=? AND detected_at >= (SELECT COALESCE(last_checked_at,0) FROM kingdom_ranking_board_state WHERE kid=? AND board=?) ORDER BY detected_at DESC LIMIT 100"
+  ).bind(targetType,kid,board).all();
   const eventMap = new Map((events.results||[]).map(r=>[String(r.target_id),r]));
   const rows=(current.results||[]).map(r=>{
     const d=Number(r.previous_rank)-Number(r.rank);
