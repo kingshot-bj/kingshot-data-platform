@@ -1291,3 +1291,13 @@ Phase 1 K01〜K10から開始する。
 - Workers Buildsの `npx wrangler versions upload` はVersionを作成するがActive Deploymentを更新しない。
 - D1 migrationはWorker Versionとは別管理なので、`0052`適用をDeploy前に別途行う。
 - Version URLはproduction resourcesを使うため、Previewと同一視しない。
+
+
+## 追加監査修正
+- Catalog paginationをさらにread-bounded化。全件COUNT/DISTINCTを廃止し、50+1件方式へ変更。
+- Kingdom Detailのranking board rowsを`checked_rows`/changed_rowsから表示。
+- Alliance ranking fallbackに`target_id`を含め、Catalog未生成時でもリンク先を安定化。
+- Alliance DetailはCatalog/R2がない場合もranking_currentから基本情報を表示。
+- 現行BOARDS定義は26件を再確認済み。
+- 現行主要6 JSの構文チェックを再実施しPASS。
+- 通知/RANKING CHANGE SQLをSQLiteで再検証済み。
