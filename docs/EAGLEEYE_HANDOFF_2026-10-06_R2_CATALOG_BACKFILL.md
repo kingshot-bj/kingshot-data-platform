@@ -269,3 +269,12 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
   - `10acb11d5edb193a63fd1b281cfd0baef9441c82`
   - `87d1e92e627dd6cd680026dccf194116a61e0651`
   - `a7cbe39811928e4b6250a6cd8361ba0407f31f3a`
+
+
+## 2026-10-06 結果表示改善
+- バックフィル結果を生JSON中心から成功/不合格の一目判定UIへ変更。
+- 成功条件: R2 / D1ポインタ / raw_json NULL / boards_json NULL が全件OKかつ不整合0。
+- 成功時は「🟢 バックフィル成功」、失敗時は「🔴 バックフィル不合格」。
+- 件数・各検証項目・不整合・次回KIDを簡潔に表示。
+- 生JSONは「詳細ログ」に折りたたみ。
+- コミット: `e0266dcec160217d8d1220b48cbe28127201f14e`
