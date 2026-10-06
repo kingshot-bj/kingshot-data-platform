@@ -18,9 +18,11 @@ function eventIsWatchedSql() {
     ))
     OR
     (ce.target_type = 'ALLIANCE' AND EXISTS (
-      SELECT 1 FROM kingdom_watchlists kw
-      WHERE kw.enabled = 1
-        AND kw.kid = CAST(substr(ce.target_id, 1, instr(ce.target_id, ':') - 1) AS INTEGER)
+      SELECT 1
+      FROM kingdom_ranking_current krc
+      JOIN kingdom_watchlists kw ON kw.kid = krc.kid AND kw.enabled = 1
+      WHERE krc.target_type = 'ALLIANCE'
+        AND krc.target_id = ce.target_id
     ))
   )`;
 }
