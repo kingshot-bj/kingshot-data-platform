@@ -237,3 +237,13 @@ CREATE INDEX IF NOT EXISTS idx_kingdom_catalog_r2_backfill_cursor
   - `f358932bf98ccd98fb6e83d1b18642b1aefccb1`
   - `c926c4139c2e9d57c8a8baa5e5b349c3f7bf313d`
 - 次段階: 本番Workerへ最新コードをデプロイ後、Owner UIから10件だけ実機検証する。
+
+
+## 2026-10-06 操作フロー簡略化
+- R2バックフィルは「10件実行」1操作で、実行直後に自動検証する方式へ変更。
+- 自動検証内容: R2オブジェクト存在、D1 r2_latest_key、raw_json NULL、boards_json NULL、不整合件数。
+- 「直近10件を検証」単独ボタンは廃止。
+- 次回以降は同じ「10件バックフィル実行」を押すだけで、処理→検証結果表示まで完結。
+- 実装コミット:
+  - `0f3252faff5827630fc3f40d610c39f05798b99b`
+  - `cbc2aec991a2c32c05157c634e01bd91e91da56b`
