@@ -613,3 +613,457 @@ Queueが20王国単位で分割されても、開始前スナップショット�
 - 既存のRanking/Watchlist/API Pool lease/return/Change Event処理を変更しない。
 - Backfillは最大10件/回のbounded処理で、R2成功前にD1データを消さない。
 - 0048/0049本番適用完了を確認するまで、既存Catalogの詳細JSONを削除しない。
+## 2026-10-06 — EagleEye機能拡張計画（全項目採用・実装進捗台帳）
+
+### 目的
+今回の現行コード全体監査、MightPulse公式API仕様、公開サイト確認を踏まえ、前スレで提案した機能を**すべて採用**する。
+この章はユーザー向け資料というより、今後の実装セッションで「何を採用し、どこまで進んだか」をモデル自身が把握するための実装台帳として扱う。
+
+状態は必ず以下を区別する。
+- 未着手
+- 実装中
+- コード実装済み
+- migration済み
+- deploy済み
+- 本番E2E確認済み
+- 完了
+
+コード実装済みだけでは完了扱いにしない。
+
+# 1. 最終プロダクト方針
+
+EagleEyeを単なるMightPulseデータ表示画面にはしない。
+
+最終形は、
+**王国 → 同盟 → プレイヤー → ランキング → 変化 → 履歴 → Watchlist → 通知**
+を相互に辿れる調査・監視プラットフォームとする。
+
+MightPulseはデータ供給元。
+EagleEye独自価値は、横断検索、現在値、履歴、Watchlist、Change Event、ランキング変動、王国比較、同盟調査、Player調査、freshness、通知、API/Cloudflare消費管理に置く。
+
+# 2. 採用機能一覧
+
+## K01 Kingdom Catalog → Kingdom Portal
+状態: 未着手
+
+Catalogを王国探索の入口へ昇格。
+- KID検索
+- 王国名検索
+- status/activity/power等のフィルタ
+- ソート
+- 50件ページング維持
+- Catalogカード→王国詳細
+- Catalogカード→王国Watchlist追加
+- Watchlist登録状態表示
+- 把握済み/取得済み/未取得表示
+
+D1全件SELECTは禁止。検索は軽量Catalog Index、詳細はR2を利用する。
+
+## K02 KID検索
+状態: 未着手
+KID完全一致検索を最優先で追加。D1の検索Indexを使用。
+
+## K03 王国名検索
+状態: 未着手
+王国名検索を追加。部分一致等はD1負荷を考慮して実装。
+
+## K04 Catalog Filter / Sort
+状態: 未着手
+活動度、Power、status等、Catalogに実際に保持している項目だけを対象にする。大量行をWorker側へ読み込んでから絞る方式は禁止。
+
+## K05 Kingdom Detail
+状態: 未着手
+
+MightPulse /kingdoms/{kid} で確認できる値を中心に王国詳細を作る。
+候補:
+- KID / name
+- opened_on / age_days
+- power / avg_power
+- player_count / active_players / active_7d / active_30d
+- alliance_count
+- health
+- power_rank / activity_rank
+- power_gain_7d / tc_pushers_7d
+- gov_power / alliance_power / alliance_kills / kills
+- hero_power / hero_total
+- troop_power / building_power / research_power
+- hero_no_equip / hero_equip
+- governor_gear_power / governor_charm_power
+- pet_power / island_prosperity
+- migrant_score / mystic_trial / master_power
+- board_totals
+
+導線:
+- Watchlist追加/解除
+- 26ランキング
+- 同盟一覧
+- Top Player
+- 王国比較
+- Events（Mighty）
+- KvK（Mighty）
+- freshness
+
+APIに存在しない値を推測で追加しない。公開サイトだけにある表示もAPI payloadで裏付けられない限り依存しない。
+
+## K06 Kingdom Watchlist直追加
+状態: 未着手
+Catalog/Detailから1操作で追加。登録済みなら状態表示。
+初回取得は既存Watchlist Job / Queue / API Pool / Safety Gateを再利用する。
+
+## K07 Kingdom Ranking Explorer
+状態: 未着手
+
+26 boards:
+alliance_power, alliance_kills, personal_power, kills, town_center, rebel_conquest, single_hero, hero_total, troop_power, building_power, research_power, hero_no_equip, hero_equip, gov_gear, gov_charm, pet_power, island_prosperity, migrant_score, mystic_trial, coliseum, forest_of_life, crystal_cave, knowledge_nexus, molten_fort, radiant_spire, master_power
+
+Kingdom×boardの共有データとして扱う。Playerごとに26回取得しない。
+Ranking行→Player Detail、Player Watchlist追加を可能にする。
+
+## K08 Ranking → Player
+状態: 未着手
+ランキング行からPlayer Detailへ遷移。Governor ID/UID、name、alliance等を利用。
+
+## K09 Ranking → Player Watchlist
+状態: 未着手
+ランキング行から直接Player Watchlist追加。既存Watchlist APIを再利用。
+
+## K10 Player → Kingdom / Alliance
+状態: 未着手
+既存Player Detailから王国詳細・同盟詳細へ相互リンク。Playerを孤立ページにしない。
+
+## P01 Player Watchlist統合
+状態: 部分実装 / 拡張未着手
+Kingdom/Ranking/Allianceから追加可能にする。
+既存Change Event / previous_rankを利用して、
+- 前回順位→今回順位
+- UP/DOWN
+- IN/OUT
+- 変動幅
+- 大幅上昇/下降
+を表示。
+
+## A01 Alliance List
+状態: 未着手
+Kingdomから同盟一覧。
+
+## A02 Alliance Detail
+状態: 未着手
+API: /v1/alliances/{kid}/{tag}?include=info,roster
+表示候補:
+aid/name/abbr/kid/power/count/leader_name/leader_uid/leader_governor_id/flag_url/power_rank
+
+## A03 Alliance Roster
+状態: 未着手
+RosterのUID/governor_id/fid/nick_name/power/town_center_level/kills/alliance_rank/label/kid/avatar_url/last_active_at/onlineを表示。
+Roster→Player Watchlist追加。
+
+## A04 Alliance相互導線
+状態: 未着手
+Alliance→Player、Player→Alliance、Kingdom→Alliance、Alliance→Kingdomを実装。
+
+## C01 Kingdom Comparison
+状態: 未着手
+2王国以上を比較。
+Power、Average Power、Player Count、Active、Alliance Count、Health、Rank、Power Gain 7d、TC Pushers 7d、各種power、Migrant Score、Mystic Trial、Master Power等。
+履歴がある場合は成長差も比較。
+
+## C02 Kingdom Momentum / Growth
+状態: 未着手
+power_gain_7d、tc_pushers_7d、active_7d、active_30d、health、Power、Activity Rankを使い「強い」だけでなく「伸びている」を可視化。
+将来Score化する場合も各指標と計算根拠を表示。
+
+## R01 Ranking Change Explorer
+状態: 基盤あり / UI未着手
+既存Change Event / previous_rankを使用。
+前回→今回、UP/DOWN/IN/OUT、変動幅、最近動いたPlayerを表示。
+過去ranking_snapshotsの広域SELECTは禁止。
+
+## R02 Rank IN / OUT
+状態: 基盤あり / UI未着手
+圏外→圏内、圏内→圏外を明示。既存Change Eventを利用。
+
+## F01 Freshness / Observation Status
+状態: 未着手
+
+EagleEye取得時刻とMightPulse側観測時刻を分離。
+- EagleEye fetched_at
+- provider observation timestamp
+- section freshness
+- last successful fetch
+- stale/fresh/unavailable
+
+MightPulseはPlayer/Allianceの各include sectionごとに鮮度判定され、最大60分程度古いデータが返る場合がある。stale sectionでは最大約90秒待つ場合がある。同一Player/Allianceへの同時要求は結果共有される。
+したがって「EagleEyeが今取得した」と「MightPulse側で今観測された」を同一視しない。
+
+## P02 Player Detail段階取得
+状態: 未着手
+
+現状の base,heroes,ranks,gov_gear 一括取得を監査。
+base先行、ranks/heroes/gov_gearの必要時取得を検討。
+ただし一括取得が安全なケースもあるため、API数だけで機械的に分割せず、
+stale wait、API Pool占有時間、Worker CPU、D1、実測時間を比較して決める。
+
+## F02 Top Player / concentration
+状態: 未着手
+Kingdom DetailにTop Player等を追加。
+Top 10 power share等、公開サイトだけの値はAPI payloadで確認できた場合のみ採用。
+
+## M01 MightPulse Events
+状態: 未着手
+Mighty専用。
+GET /v1/kingdoms/{kid}/events
+Event name/category/when/begin/endを表示。
+403 mighty_requiredを権限不足として扱い、頻回取得しない。
+
+## M02 KvK
+状態: 未着手
+Mighty専用。
+/v1/kingdoms/{kid}/kvk
+/v1/kingdoms/{kid}/kvk/scores
+/v1/kvk/matchups
+Season、Stage、Opponent、Previous Season、Scores、Days I-V等。
+403 mighty_required、404 scores_unavailableを区別。
+Scoresは5分周期更新仕様。
+
+## W01 Watchlist追加直後の初回取得
+状態: 未着手
+「初回取得しますか？」を提示。
+新規取得機構は作らず、既存Watchlist Job / Queue / API Pool / Safety Gateを使用。
+完全成功時のみCollection Statsへ記録。失敗/中止は取得済みにしない。
+
+## N01 Watchlist Analytics
+状態: 未着手
+Watchlist対象の順位変化、王国変化、取得成功率、freshness等をまとめる。
+
+## N02 Discord通知
+状態: 未着手
+Phase 3。
+Player rank change、IN/OUT、Kingdom health/momentum change、Watchlist取得失敗、KvK/Event更新、大きなChange Event等。
+通知判定はChange Event / Watchlist起点。毎回全データを取り直す方式にしない。
+
+# 3. MightPulse仕様を実装基準として固定
+
+認証:
+- Bearer kss_...
+- X-Api-Key
+- Base https://api.mightpulse.com/v1
+
+Rate limit:
+- 通常 60 requests/min/key、5,000/day/key
+- Mighty 120/min/key、10,000/day/key
+
+Player:
+- /players/{id}?include=base
+- /players/{id}?include=base,heroes,ranks,gov_gear
+- id_type=uid
+
+Alliance:
+- /alliances/{kid}/{tag}?include=info,roster
+
+Kingdom:
+- /kingdoms?page=1&size=24
+- /kingdoms/{kid}
+- /kingdoms/{kid}?include=boards&limit=100
+- /kingdoms/{kid}/ranks?limit=100
+- /kingdoms/{kid}/ranks?board=pet_power&limit=50
+
+Errors:
+401 key不正/欠落
+403 権限不足
+404 entity不明 / scores未公開
+429 rate limit
+
+API Poolの全体concurrencyと、MightPulseの1 key rate limitを混同しない。
+
+# 4. 実装順序（固定）
+
+## Phase 1 — Kingdom探索基盤
+1. K02 KID検索
+2. K03 王国名検索
+3. K04 Filter/Sort
+4. K05 Kingdom Detail
+5. K06 Watchlist追加
+6. K07 Ranking Explorer
+7. K08 Ranking→Player
+8. K09 Ranking→Player Watchlist
+9. K10 Player→Kingdom/Alliance
+10. K01 Portal化の最終UI統合
+
+Phase 1完了条件:
+- KIDから王国を探せる
+- 王国詳細を開ける
+- Watchlist追加できる
+- 26 boardsを見られる
+- Playerへ遷移できる
+- Playerから王国/Allianceへ戻れる
+- 既存取得基盤を壊していない
+
+## Phase 2 — 調査機能
+A01 → A02 → A03 → A04 → C01 → C02 → R01/R02 → F01 → P02 → F02
+
+## Phase 3 — Mighty / Monitoring
+M01 → M02 → N01 → N02
+
+# 5. データ設計原則
+
+D1:
+現在状態、検索Index、軽量メタデータ。
+
+R2:
+詳細payload、history、archive。
+
+Google Drive:
+R2長期ミラー。
+
+Change Events:
+変化検索・通知。
+
+Collection Stats:
+Catalog登録と取得成功を分離。
+
+絶対ルール:
+- ranking_snapshots広域Readを復活させない
+- D1全件SELECTをしない
+- Catalogはページング
+- R2保存成功前にD1詳細を消さない
+- API Pool / Safety Gateを迂回しない
+- OWNERでも安全装置を突破しない
+- 通常利用分をAPI Poolから保護
+- key単位rate limitを尊重
+- 同時実行数とHTTP request数を混同しない
+- stale waitを含めAPI Pool占有時間を評価
+- secretをUI/JSON/Log/Handoffへ出さない
+
+# 6. System Status / System JSON / System Log必須
+
+今回採用する全機能は、実装時に必ず観測可能にする。
+
+System Status:
+- enabled/disabled
+- last success/failure
+- count
+- freshness
+- API Pool state
+- MightPulse permission state（必要な場合）
+
+System JSON:
+- 機械検証可能な状態値
+- start/end
+- counters
+- error code
+- correlation ID
+
+System Log:
+- START
+- SUCCESS
+- FAILURE
+- duration
+- correlation ID
+- relevant metadata
+
+UIだけに状態を持たせない。
+
+# 7. 既存実装との接続
+
+再利用する:
+- Kingdom Catalog
+- Kingdom Watchlist
+- Player Watchlist
+- Player Detail
+- Player Compare
+- Kingdom Ranking
+- Change Events
+- API Pool
+- Queue
+- Collection Stats
+- R2 archive
+- Cloudflare usage history
+- System Status
+- System JSON
+- System Log
+- Google Drive mirror
+
+新規主領域:
+- Kingdom Detail route/UI
+- Ranking Explorer UI
+- Alliance routes/UI
+- Kingdom Comparison
+- Momentum
+- Ranking Change UI
+- Events/KvK client + UI
+- Freshness model/UI
+- Watchlist cross-links
+- Discord notification
+
+# 8. 進捗台帳
+
+| ID | 機能 | 現在状態 | 本番確認 |
+|---|---|---|---|
+| K01 | Catalog Portal化 | 未着手 | 未確認 |
+| K02 | KID検索 | 未着手 | 未確認 |
+| K03 | 王国名検索 | 未着手 | 未確認 |
+| K04 | Filter/Sort | 未着手 | 未確認 |
+| K05 | Kingdom Detail | 未着手 | 未確認 |
+| K06 | Watchlist直追加 | 未着手 | 未確認 |
+| K07 | Ranking Explorer | 未着手 | 未確認 |
+| K08 | Ranking→Player | 未着手 | 未確認 |
+| K09 | Ranking→Player Watchlist | 未着手 | 未確認 |
+| K10 | Player→Kingdom/Alliance | 未着手 | 未確認 |
+| A01 | Alliance List | 未着手 | 未確認 |
+| A02 | Alliance Detail | 未着手 | 未確認 |
+| A03 | Alliance Roster | 未着手 | 未確認 |
+| A04 | Alliance相互導線 | 未着手 | 未確認 |
+| C01 | Kingdom Comparison | 未着手 | 未確認 |
+| C02 | Kingdom Momentum | 未着手 | 未確認 |
+| R01 | Ranking Change Explorer | 基盤あり/UI未着手 | 未確認 |
+| R02 | Rank IN/OUT | 基盤あり/UI未着手 | 未確認 |
+| P01 | Player Watchlist統合 | 部分実装 | 未確認 |
+| P02 | Player段階取得 | 未着手 | 未確認 |
+| F01 | Freshness | 未着手 | 未確認 |
+| F02 | Top Player/concentration | 未着手 | 未確認 |
+| M01 | Events | 未着手 | 未確認 |
+| M02 | KvK | 未着手 | 未確認 |
+| W01 | 初回取得Prompt | 未着手 | 未確認 |
+| N01 | Watchlist Analytics | 未着手 | 未確認 |
+| N02 | Discord通知 | 未着手 | 未確認 |
+| O01 | System Status観測 | 各機能必須 | 未確認 |
+| O02 | System JSON観測 | 各機能必須 | 未確認 |
+| O03 | System Log観測 | 各機能必須 | 未確認 |
+
+# 9. 実装セッションの固定手順
+
+1. この台帳を読む。
+2. 現在mainを確認。
+3. 既存実装を再利用できる箇所を確認。
+4. 必要最小限を実装。
+5. コード検証。
+6. migration確認。
+7. commit。
+8. deploy。
+9. 本番E2E。
+10. System Status / JSON / Log確認。
+11. この台帳の状態を更新。
+12. 次スレへ移るなら必ずhandoffへ進捗追記。
+
+「実装したつもり」でCompletedにしない。本番E2E確認まで完了扱いにしない。
+
+# 10. 次に着手する具体的作業
+
+Phase 1 K01〜K10から開始する。
+
+最初に現行mainの以下を再確認:
+- src/kingdom-catalog-page.js
+- src/index.js
+- Kingdom Catalog route
+- Kingdom Watchlist API
+- Kingdom Ranking API/UI
+- Player Detail route/UI
+- Player Watchlist API/UI
+- src/mightpulse.js
+- src/data-collection-engine.js
+- 関連migration/schema
+- docs/mightpulse-ranking-data-map.md
+- docs/I-3_MightPulse_API_Integration.md
+- docs/EAGLEEYE_DATA_ARCHITECTURE.md
+
+既存実装があるものは再実装せず、UI/route/導線を追加する。
