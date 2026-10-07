@@ -1860,7 +1860,8 @@ async function handleMyAdvancedApi(request, env) {
         apiKey
       });
 
-      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);\n      const vipEligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
+      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);
+      const vipEligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
       await trackServiceUsage(env, auth, "MIGHTPULSE_API_KEY_CONTRIBUTE", {
         targetType: "USER",
         targetId: auth.user_id,
@@ -1877,9 +1878,13 @@ async function handleMyAdvancedApi(request, env) {
       return json({
         ok: true,
         promoted: Boolean(eligibility.promoted),
-        role: eligibility.role,
+        role: vipEligibility.role || eligibility.role,
         hasPlayerLink: eligibility.hasPlayerLink,
-        hasMightPulseKey: eligibility.hasMightPulseKey
+        hasMightPulseKey: eligibility.hasMightPulseKey,
+        vip: {
+          eligible: Boolean(vipEligibility.eligible),
+          promoted: Boolean(vipEligibility.promoted)
+        }
       });
     }
 
@@ -4054,7 +4059,8 @@ export default {
       }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
-      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);\n      if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
+      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
+      if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
       if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
