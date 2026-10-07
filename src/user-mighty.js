@@ -150,3 +150,47 @@ export async function revokeUserMightyKey(db, userId) {
   ).bind(timestamp, timestamp, String(userId || "").trim()).run();
   return { changed: Number(result?.meta?.changes || 0) > 0 };
 }
+
+
+export async function callUserMightyApi(db, { env, userId, path, query = null, timeoutMs, maxRetries } = {}) {
+  const credential = await getUserMightyCredential(db, { env, userId, includeSecret: true });
+  if (!credential) throw credentialError("MIGHTY_API_KEY_NOT_REGISTERED", "Mighty APIキーが登録されていません。");
+  if (credential.status !== "AVAILABLE") {
+    const error = credentialError("MIGHTY_API_KEY_NOT_AVAILABLE", "登録されたMighty APIキーは現在利用できません。");
+    error.status = credential.status;
+    throw error;
+  }
+
+  try {
+    const result = await mightPulseFetch(env, path, {
+      query,
+      apiKey: credential.api_key,
+      timeoutMs,
+      maxRetries
+    });
+    const timestamp = now();
+    await db.prepare(
+      "UPDATE user_mighty_credentials SET status='AVAILABLE', last_success_at=?, last_verified_at=?, last_error_at=NULL, last_error_code=NULL, last_error_message=NULL, updated_at=? WHERE credential_id=?"
+    ).bind(timestamp, timestamp, timestamp, credential.credential_id).run();
+    return { result, credential_id: credential.credential_id };
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    const nextStatus = status === 401 || status === 403
+      ? "DISABLED"
+      : status === 429 || status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR"
+        ? "COOLDOWN"
+        : "ERROR";
+    const timestamp = now();
+    await db.prepare(
+      "UPDATE user_mighty_credentials SET status=?, last_error_at=?, last_error_code=?, last_error_message=?, updated_at=? WHERE credential_id=?"
+    ).bind(
+      nextStatus,
+      timestamp,
+      String(error?.code || "MIGHTY_API_REQUEST_FAILED").slice(0, 100),
+      String(error?.message || "Mighty API request failed").slice(0, 500),
+      timestamp,
+      credential.credential_id
+    ).run().catch(() => {});
+    throw error;
+  }
+}
