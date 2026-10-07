@@ -1,5 +1,3 @@
-import { getSystemEventLog } from "./system-log.js";
-
 const SYSTEM_LOG_EXPORT_RANGES = Object.freeze({
   "15m": 15 * 60,
   "30m": 30 * 60,
@@ -104,8 +102,8 @@ async function createSystemLogExport(db, bucket, { range = "24h", traceId = null
               duration_seconds: resolved.seconds
             },
             event_count: eventCount,
-            events: []
-          }).replace(/,"events":\[\]\}$/," ,\"events\":[")));
+            events: null
+          }).replace(\"\\\"events\\\":null\", \"\\\"events\\\":[\")));
           return;
         }
 
