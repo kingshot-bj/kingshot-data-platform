@@ -622,42 +622,10 @@ function getMightPulseSourceTimestamp(data) {
   return normalizeMightPulseTimestamp(data?.cached_at);
 }
 
-let kingdomWatchlistSchemaPromise = null;
-
 async function ensureKingdomWatchlistFreshnessSchema(db) {
-  if (!db) return;
-  if (kingdomWatchlistSchemaPromise) return kingdomWatchlistSchemaPromise;
-  kingdomWatchlistSchemaPromise = (async () => {
-    // Stable tables/indexes are provisioned by D1 migrations.
-    // Keep only additive compatibility checks for legacy databases.
-  const definitions = {
-    kingdom_watchlist_jobs: [
-      ["source_first_at", "INTEGER"],
-      ["source_last_at", "INTEGER"]
-    ],
-    api_observations: [["source_observed_at", "INTEGER"]],
-    ranking_snapshots: [["source_observed_at", "INTEGER"]],
-    player_snapshots: [["source_observed_at", "INTEGER"]],
-    players: [["source_observed_at", "INTEGER"]],
-    player_rank_snapshots: [["source_observed_at", "INTEGER"]],
-    kingdom_ranking_current: [["previous_rank", "INTEGER"]]
-  };
-  for (const [table, columns] of Object.entries(definitions)) {
-    const info = await db.prepare("PRAGMA table_info(" + table + ")").all();
-    const existing = new Set((info.results || []).map(row => row.name));
-    for (const [column, type] of columns) {
-      if (!existing.has(column)) {
-        await db.prepare("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type).run();
-      }
-    }
-  }
-  })();
-  try {
-    return await kingdomWatchlistSchemaPromise;
-  } catch (error) {
-    kingdomWatchlistSchemaPromise = null;
-    throw error;
-  }
+  // Stable schema and current-ranking fields are provisioned by D1 migrations.
+  // Never perform request-time DDL or compatibility ALTERs.
+  return Boolean(db);
 }
 
 const KINGDOM_WATCHLIST_JOB_RETENTION_SECONDS = 24 * 60 * 60;
