@@ -2167,14 +2167,16 @@ async function renderMyPlayerPage(request, env) {
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
   async function getData(){
-    const [playerRes, advancedRes]=await Promise.all([
+    const [playerRes, advancedRes, vipRes]=await Promise.all([
       fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"}),
-      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"}),
+      fetch("/api/me/vip",{credentials:"same-origin",cache:"no-store"})
     ]);
-    const player=await playerRes.json().catch(()=>({})); const advanced=await advancedRes.json().catch(()=>({}));
+    const player=await playerRes.json().catch(()=>({})); const advanced=await advancedRes.json().catch(()=>({})); const vip=await vipRes.json().catch(()=>({}));
     if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
     if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
-    return {player,advanced};
+    if(!vipRes.ok||!vip.ok) throw new Error(vip.message||vip.error||("HTTP "+vipRes.status));
+    return {player,advanced,vip};
   }
   async function load(){render(await getData());}
   function render(d){
@@ -2207,10 +2209,23 @@ async function renderMyPlayerPage(request, env) {
       keyHtml+
       (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">最大'+esc(keyLimit)+'本まで提供できます。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px">MightPulse APIキーの提供上限（'+esc(keyLimit)+'本）に達しています。</div>')+
       '<div id="key-msg"></div></div>';
+    const v=d.vip||{};
+    const mightyConnected=Boolean(v.hasMightyKey);
+    const regularReady=Number(v.regularKeyCount||0)>=Number(v.regularKeyRequired||2);
+    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">VIP条件：通常APIキー2本＋Mighty APIキー1本。MightyキーはDiscordアカウント本人のものだけを登録してください。</p>'+
+      '<div class="check"><span class="check-icon '+(regularReady?"ok":"")+'">'+(regularReady?"✓":"")+'</span><span>通常APIキー '+esc(v.regularKeyCount||0)+' / '+esc(v.regularKeyRequired||2)+'</span></div>'+
+      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty APIキー '+(mightyConnected?"接続済み":"未登録")+'</span></div>'+
+      '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
+      (mightyConnected
+        ? '<div class="muted" style="margin-top:12px">Mightyキー：'+esc(v.mightyKey?.key_fingerprint ? "••••••••"+v.mightyKey.key_fingerprint : "登録済み")+'</div><button class="btn danger" id="revoke-mighty">Mighty APIキーを解除</button>'
+        : '<label class="label" for="mighty-key" style="margin-top:16px">Mighty APIキーを登録</label><input id="mighty-key" class="input" type="password" autocomplete="off" placeholder="Mighty APIキーを入力"><button class="btn" id="register-mighty">Mighty APIキーを登録</button><div class="muted" style="margin-top:12px">登録時にMighty専用エンドポイントでキーを検証し、暗号化してDiscordアカウントに紐付けます。</div>')+
+      '<div id="mighty-msg"></div></div>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
+    if(document.getElementById("register-mighty")) document.getElementById("register-mighty").onclick=registerMighty;
+    if(document.getElementById("revoke-mighty")) document.getElementById("revoke-mighty").onclick=revokeMighty;
   }
   async function save(){
     const input=document.getElementById("gid"), type=document.getElementById("atype"), msg=document.getElementById("msg"), button=document.getElementById("save");
@@ -2230,6 +2245,28 @@ async function renderMyPlayerPage(request, env) {
   async function remove(governorId){
     if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
     const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
+    await load();
+  }
+  async function registerMighty(){
+    const input=document.getElementById("mighty-key"), msg=document.getElementById("mighty-msg"), button=document.getElementById("register-mighty");
+    const key=String(input?.value||"").trim();
+    if(!key){msg.className="error";msg.textContent="Mighty APIキーを入力してください。";return;}
+    if(!confirm("このMighty APIキーをDiscordアカウントに登録しますか？")) return;
+    button.disabled=true; msg.className="muted"; msg.textContent="Mighty APIキーを検証しています…";
+    try{
+      const r=await fetch("/api/me/vip",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({api_key:key})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      msg.className="ok"; msg.textContent=d.promoted?"Mightyキーを登録しました。VIPへ昇格しました。":"Mightyキーを登録しました。通常APIキー2本でVIP条件を満たします。";
+      input.value=""; setTimeout(load,500);
+    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
+    finally{button.disabled=false;}
+  }
+  async function revokeMighty(){
+    if(!confirm("Mighty APIキーの登録を解除しますか？VIP機能も停止します。")) return;
+    const r=await fetch("/api/me/vip",{method:"DELETE",credentials:"same-origin"});
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
     await load();
