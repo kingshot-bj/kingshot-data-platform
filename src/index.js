@@ -6321,6 +6321,7 @@ async function renderPlayerPage(request, env) {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
     const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
+    visibleProfile.optional_assets = extractOptionalPlayerAssets(observation.payload);
     if (visibilityEnabled(visibilitySettings, "base_identity", auth.role)) {
       visibleProfile.name_history = await getPlayerNameHistory(env.DB, governorId);
     }
@@ -6420,6 +6421,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>
     ${noticeHtml}
     ${profile?.name_history?.length ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
+    ${renderPlayerOptionalAssets(profile?.optional_assets, canExport)}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">基本情報を更新</a><a class="action" href="/player?governor_id=${encodeURIComponent(governorId)}&rich=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
@@ -6429,7 +6431,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.profile-language{margin-top:3px;color:#cbd5e1;font-size:11px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.section-heading h2{margin:0}.section-export{display:inline-flex;align-items:center;justify-content:center;padding:6px 9px;border:1px solid #475569;border-radius:8px;background:#162238;color:#f59e0b;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}.hero-export{margin-top:7px}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.alliance-collapsible{padding:0;overflow:hidden}.alliance-collapsible details{width:100%}.alliance-collapsible summary{list-style:none;cursor:pointer;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}.alliance-collapsible summary::-webkit-details-marker{display:none}.alliance-collapsible summary>span:first-child{min-width:0}.alliance-collapsible summary b{display:block;font-size:16px}.alliance-collapsible summary small{display:block;margin-top:3px;color:#94a3b8;font-size:10px}.collapse-mark{width:28px;height:28px;border-radius:9px;background:#162238;color:#f59e0b;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex:0 0 28px}.alliance-collapsible details[open] .collapse-mark{transform:rotate(45deg)}.collapse-body{padding:0 16px 16px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.profile-identity{display:flex;align-items:center;gap:10px}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-identity-main{display:flex;align-items:center;gap:11px;min-width:0}.player-avatar-main{width:48px;height:48px;flex:0 0 48px;border-radius:12px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-avatar-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:17px}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-head{display:flex;align-items:center;gap:10px}.gear-head>div{min-width:0}.gear-icon{width:44px;height:44px;flex:0 0 44px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.gear-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.gear-name{margin-top:2px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.name-history-list{display:grid;gap:8px}.name-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:10px;background:#162238;border:1px solid #334155}.name-history-row strong{display:block;overflow-wrap:anywhere}.name-history-row span{display:inline-block;margin-left:7px;color:#f59e0b;font-size:10px}.name-history-row small{color:#94a3b8;font-size:10px;text-align:right;white-space:nowrap}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.profile-language{margin-top:3px;color:#cbd5e1;font-size:11px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.section-heading h2{margin:0}.section-export{display:inline-flex;align-items:center;justify-content:center;padding:6px 9px;border:1px solid #475569;border-radius:8px;background:#162238;color:#f59e0b;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}.hero-export{margin-top:7px}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}.profile-section h2{margin:0 0 12px;font-size:18px}.alliance-collapsible{padding:0;overflow:hidden}.alliance-collapsible details{width:100%}.alliance-collapsible summary{list-style:none;cursor:pointer;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}.alliance-collapsible summary::-webkit-details-marker{display:none}.alliance-collapsible summary>span:first-child{min-width:0}.alliance-collapsible summary b{display:block;font-size:16px}.alliance-collapsible summary small{display:block;margin-top:3px;color:#94a3b8;font-size:10px}.collapse-mark{width:28px;height:28px;border-radius:9px;background:#162238;color:#f59e0b;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex:0 0 28px}.alliance-collapsible details[open] .collapse-mark{transform:rotate(45deg)}.collapse-body{padding:0 16px 16px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-stars-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;padding:7px 10px;border:1px solid #334155;border-radius:9px;background:#0f172a}.hero-stars{display:flex;align-items:center;gap:2px;min-width:0}.hero-star{width:24px;height:24px;display:block;flex:0 0 24px;overflow:visible}.hero-star-petal{stroke:#9b7a28;stroke-width:1.05;stroke-linejoin:round}.hero-star-petal.is-filled{fill:#ffe98a}.hero-star-petal.is-empty{fill:#334155;opacity:.78}.hero-star-center{fill:#fff2ad;stroke:#9b7a28;stroke-width:1.05}.hero-star-divider{fill:none;stroke:#9b7a28;stroke-width:1.05;stroke-linecap:round}.hero-stars-label{font-size:12px;font-weight:800;color:#e2e8f0;white-space:nowrap}.hero-gear-section{margin-top:10px}.hero-gear-title{font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:7px}.hero-gear-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.hero-gear-item{min-width:0;text-align:center;padding:6px 4px;border:1px solid #334155;border-radius:9px;background:#0f172a}.hero-gear-image{width:48px;height:48px;display:block;margin:0 auto 4px;object-fit:contain;border-radius:8px;background:#111827;border:1px solid #475569}.hero-gear-image-empty{display:grid;place-items:center;color:#64748b;font-size:10px}.hero-gear-slot{display:block;font-size:9px;color:#cbd5e1;overflow-wrap:anywhere}.hero-gear-level{display:block;margin-top:2px;font-size:10px;font-weight:700;color:#fbbf24}.hero-gear-name{display:block;margin-top:2px;font-size:8px;color:#94a3b8;overflow-wrap:anywhere}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}.optional-assets-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.optional-asset-card{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #334155;border-radius:11px;background:#162238;min-width:0}.optional-asset-image{width:56px;height:56px;flex:0 0 56px;object-fit:contain;border-radius:10px;background:#0f172a;border:1px solid #475569}.optional-asset-info{min-width:0}.optional-asset-info b{display:block;font-size:12px;overflow-wrap:anywhere}.optional-asset-info span{display:block;margin-top:3px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.profile-identity{display:flex;align-items:center;gap:10px}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-identity-main{display:flex;align-items:center;gap:11px;min-width:0}.player-avatar-main{width:48px;height:48px;flex:0 0 48px;border-radius:12px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-avatar-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:17px}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-head{display:flex;align-items:center;gap:10px}.gear-head>div{min-width:0}.gear-icon{width:44px;height:44px;flex:0 0 44px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.gear-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.gear-name{margin-top:2px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.name-history-list{display:grid;gap:8px}.name-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:10px;background:#162238;border:1px solid #334155}.name-history-row strong{display:block;overflow-wrap:anywhere}.name-history-row span{display:inline-block;margin-left:7px;color:#f59e0b;font-size:10px}.name-history-row small{color:#94a3b8;font-size:10px;text-align:right;white-space:nowrap}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
   </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
 (function(){
   const btn=document.getElementById("player-watchlist-toggle");
@@ -6593,6 +6595,233 @@ function normalizeProfileAssetUrl(value) {
   return "https://api.mightpulse.com" + (raw.startsWith("/") ? raw : "/" + raw);
 }
 
+function renderSegmentedHeroStar(label, filledSegments = 0) {
+  const aria = escapeHtml(label || "Star");
+  const filled = Math.max(0, Math.min(6, Math.floor(Number(filledSegments) || 0)));
+
+  // ゲーム内の英雄ランク表示は「6個のダイヤ形パーツを中心で接続」
+  // した花形。各ダイヤを独立した1セグメントとして描画する。
+  const cx = 20;
+  const cy = 20;
+  const innerRadius = 1.2;
+  const outerRadius = 17.2;
+  const sideRadius = 7.8;
+  const sideWidth = 4.2;
+  const petals = [];
+
+  for (let i = 0; i < 6; i += 1) {
+    const angle = -Math.PI / 2 + i * (Math.PI / 3);
+    const radial = [Math.cos(angle), Math.sin(angle)];
+    const tangent = [-Math.sin(angle), Math.cos(angle)];
+    const point = (radius, width) => [
+      cx + radial[0] * radius + tangent[0] * width,
+      cy + radial[1] * radius + tangent[1] * width
+    ];
+
+    // 1枚のダイヤ：中心側の先端 → 左肩 → 外側の先端 → 右肩。
+    petals.push([
+      point(innerRadius, 0),
+      point(sideRadius, -sideWidth),
+      point(outerRadius, 0),
+      point(sideRadius, sideWidth)
+    ]);
+  }
+
+  const segments = petals.map((points, index) =>
+    '<polygon class="hero-star-petal ' + (index < filled ? 'is-filled' : 'is-empty') + '" points="' +
+    points.map(point => point.join(",")).join(" ") +
+    '"></polygon>'
+  ).join("");
+
+  return '<svg class="hero-star" viewBox="0 0 40 40" role="img" aria-label="' + aria + '" focusable="false">' +
+    segments +
+    '</svg>';
+}
+function renderPlayerOptionalAssets(assets, canExport = false) {
+  const list = Array.isArray(assets) ? assets : [];
+  if (!list.length) return "";
+  const esc = escapeHtml;
+  const image = item => {
+    const url = normalizeProfileAssetUrl(item?.url || item?.icon || item?.image);
+    if (!url) return "";
+    return '<img class="optional-asset-image" src="' + esc(url) + '" alt="" loading="lazy">';
+  };
+  const label = item => {
+    const path = String(item?.path || "").trim();
+    if (/castle|city/i.test(path)) return "城スキン";
+    if (/march/i.test(path)) return "行軍スキン";
+    if (/frame/i.test(path)) return "プロフィールフレーム";
+    if (/avatar|profile/i.test(path)) return "プロフィール素材";
+    if (/skin/i.test(path)) return "スキン";
+    return "追加素材";
+  };
+  const cards = list.map(item => '<div class="optional-asset-card">' +
+    image(item) +
+    '<div class="optional-asset-info"><b>' + esc(item?.label || label(item)) + '</b><span>' + esc(item?.name || item?.type || item?.path || "取得データ") + '</span></div>' +
+    '</div>').join("");
+  return '<section class="profile-section"><div class="section-heading"><h2>プロフィール素材</h2>' +
+    (canExport ? '<span class="label">追加素材は取得できたもののみ表示</span>' : '') +
+    '</div><div class="optional-assets-list">' + cards + '</div></section>';
+}
+
+function renderPlayerAdvancedSections(profile, governorId = "", canExport = false) {
+  const exportButton = (section) => canExport && governorId
+    ? '<a class="section-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=' + encodeURIComponent(section) + '">スプレッドシート出力</a>'
+    : "";
+  const p = profile || {};
+  const esc = escapeHtml;
+  let html = "";
+  const heroes = Array.isArray(p.heroes) ? p.heroes : [];
+
+  if (p.alliance && typeof p.alliance === "object") {
+    const a = p.alliance;
+    html += '<section class="profile-section alliance-collapsible"><details><summary><span><b>同盟情報</b><small>タップして詳細を表示</small></span><span class="collapse-mark">＋</span></summary><div class="collapse-body"><div class="section-heading"><h2>同盟情報</h2>' + exportButton("alliance") + '</div><div class="mini-grid">';
+    if (a.aid) html += '<div class="mini-card"><span>同盟ID</span><b>' + esc(formatProfileValue(a.aid)) + '</b></div>';
+    if (a.abbr || a.name) html += '<div class="mini-card"><span>同盟</span><b>' + esc([a.abbr, a.name].filter(Boolean).join(" ")) + '</b></div>';
+    if (a.rank !== undefined || a.rank_label) html += '<div class="mini-card"><span>同盟内順位</span><b>' + esc([a.rank_label, a.rank != null ? a.rank + "位" : ""].filter(Boolean).join(" ")) + '</b></div>';
+    if (a.power !== undefined) html += '<div class="mini-card"><span>同盟戦力</span><b>' + esc(formatCompactNumber(a.power)) + '</b></div>';
+    if (a.count !== undefined) html += '<div class="mini-card"><span>同盟人数</span><b>' + esc(formatProfileValue(a.count)) + '</b></div>';
+    if (a.leader_name) html += '<div class="mini-card"><span>盟主</span><b>' + esc(formatProfileValue(a.leader_name)) + '</b></div>';
+    if (a.flag_url) {
+      const flagUrl = normalizeProfileAssetUrl(a.flag_url);
+      html += '<div class="mini-card"><span>同盟旗</span><b class="flag-value"><img class="alliance-flag" src="' + esc(flagUrl) + '" alt="" loading="lazy"><span>表示</span></b></div>';
+    }
+    html += '</div></div></details></section>';
+  }
+
+  if (heroes.length) {
+    const maxLevel = heroes.reduce((max, hero) => Math.max(max, Number(hero.level) || 0), 0);
+    const heroRankings = Array.isArray(p.hero_rankings) ? p.hero_rankings : [];
+    const heroRankingLabels = {
+      single_hero: "英雄総力",
+      hero_total: "英雄全体総力",
+      hero_no_equip: "英雄総力（装備除外）",
+      hero_equip: "英雄総力（装備込み）"
+    };
+    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + (heroRankings.length ? '<div class="mini-grid">' : "");
+    for (const ranking of heroRankings) {
+      html += '<div class="mini-card"><span>' + esc(heroRankingLabels[ranking.board] || ranking.board) + '</span><b>' + esc(formatCompactNumber(ranking.score)) + ' / ' + esc(ranking.rank ?? "-") + '位</b></div>';
+    }
+    html += (heroRankings.length ? "</div>" : "") + '<div class="mini-grid"><div class="mini-card"><span>最高レベル（取得データ内）</span><b>Lv.' + esc(maxLevel || "-") + '</b></div><div class="mini-card"><span>取得英雄数</span><b>' + esc(heroes.length) + '</b></div></div><div class="hero-list">';
+    heroes.forEach(hero => {
+      const gear = Array.isArray(hero.gear) ? hero.gear : [];
+      const heroName = localizeHeroName(hero.name || hero.id);
+      const heroIconUrl = normalizeProfileAssetUrl(hero.icon);
+      html += '<article class="hero-card"><div class="hero-head"><div class="hero-title">' +
+        (heroIconUrl ? '<img class="hero-icon" src="' + esc(heroIconUrl) + '" alt="" loading="lazy">' : '<span class="hero-icon hero-icon-empty">?</span>') +
+        '<div><strong>' + esc(heroName) + '</strong><div class="hero-level">Lv.' + esc(hero.level ?? "-") + '</div></div></div>' +
+        '<span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div>';
+      const rawStarProgress = Number(hero.star);
+      const hasStarProgress = Number.isFinite(rawStarProgress);
+      const starProgress = hasStarProgress ? Math.max(0, Math.floor(rawStarProgress)) : 0;
+      const labelMatch = String(hero.star_label ?? "").match(/\d+/);
+      const wholeStarCount = Number.isFinite(Number(hero.stars))
+        ? Math.max(0, Math.floor(Number(hero.stars)))
+        : (labelMatch ? Number(labelMatch[0]) : (hasStarProgress ? Math.floor(starProgress / 6) : 0));
+      const starLabel = hero.star_label || (wholeStarCount > 0 ? (wholeStarCount + "-Star") : "Star -");
+
+      // MightPulse の raw hero.star は、画面上の星数ではなく6分割単位の進捗値として観測される。
+      // 例: star=30 / stars=5 → 5個すべて満タン、star=27 / stars=4 → 4個満タン + 5個目3/6。
+      let starSegments;
+      if (hasStarProgress) {
+        const fullStars = Math.min(5, Math.floor(starProgress / 6));
+        const partialSegments = Math.min(6, starProgress % 6);
+        starSegments = Array.from({ length: 5 }, (_, index) => {
+          if (index < fullStars) return 6;
+          if (index === fullStars && partialSegments > 0) return partialSegments;
+          return 0;
+        });
+      } else {
+        const fullStars = Math.min(5, wholeStarCount);
+        starSegments = Array.from({ length: 5 }, (_, index) => index < fullStars ? 6 : 0);
+      }
+
+      const starIcons = starSegments.map(segments => renderSegmentedHeroStar(starLabel, segments)).join("");
+      html += '<div class="hero-stars-row"><div class="hero-stars" aria-label="' + esc(starLabel) + '">' + starIcons + '</div><span class="hero-stars-label">' + esc(starLabel) + '</span></div>';
+      html += '<div class="hero-meta">品質 ' + esc(hero.quality ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
+      if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map((s, i) => "スキル" + (i + 1) + " Lv." + (s.level ?? "-")).join(" / ")) + '</div>';
+      if (hero.exclusive_gear || hero.exclusive_gear_level !== undefined) {
+        const eg = hero.exclusive_gear || {};
+        html += '<div class="hero-meta">専用装備: ' + esc(localizeExclusiveGearName(eg.name)) + ' Lv.' + esc(hero.exclusive_gear_level ?? eg.level ?? "-") + '</div>';
+      }
+      if (gear.length) {
+        html += '<div class="hero-gear-section"><div class="hero-gear-title">英雄通常装備</div><div class="hero-gear-list">';
+        for (const item of gear) {
+          const iconUrl = normalizeProfileAssetUrl(item?.icon);
+          const slotLabel = localizeHeroGearSlot(item?.slot || item?.name);
+          const level = item?.enhancement_level ?? item?.level ?? "-";
+          const name = item?.name || item?.slot || "";
+          html += '<div class="hero-gear-item">';
+          html += iconUrl
+            ? '<img class="hero-gear-image" src="' + esc(iconUrl) + '" alt="" loading="lazy">'
+            : '<div class="hero-gear-image hero-gear-image-empty">画像なし</div>';
+          html += '<span class="hero-gear-slot">' + esc(slotLabel) + '</span>';
+          html += '<span class="hero-gear-level">+' + esc(level) + '</span>';
+          if (name && name !== item?.slot) html += '<span class="hero-gear-name">' + esc(name) + '</span>';
+          html += '</div>';
+        }
+        html += '</div></div>';
+      }
+      html += '</article>';
+    });
+    html += '</div></section>';
+  }
+
+  if (p.ranks && typeof p.ranks === "object") {
+    const r = p.ranks;
+    html += '<section class="profile-section"><div class="section-heading"><h2>個人ランキング</h2>' + exportButton("rankings") + '</div><div class="mini-grid">';
+    [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["秘境の試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
+      if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
+    });
+    if (Array.isArray(r.leaderboards) && r.leaderboards.length) {
+      html += '</div><h3>その他ランキング</h3><div class="detail-list">';
+      for (const board of r.leaderboards) {
+        const label = localizeLeaderboardLabel(board);
+        const score = board?.score ?? board?.value ?? board?.rank_value;
+        const rank = board?.rank ?? board?.ranking;
+        html += '<div class="detail-row"><span>' + esc(formatProfileValue(label)) + '</span><b>' + esc(score !== undefined ? formatCompactNumber(score) : "-") + (rank !== undefined ? ' / ' + esc(rank) + '位' : '') + '</b></div>';
+      }
+      html += '</div>';
+    } else {
+      html += '</div>';
+    }
+    html += '</section>';
+  }
+
+  if (p.gov_gear && typeof p.gov_gear === "object") {
+    const g = p.gov_gear;
+    const items = Array.isArray(g.items) ? g.items : [];
+    html += '<section class="profile-section"><div class="section-heading"><h2>領主装備</h2>' + exportButton("gov_gear") + '</div><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
+    if (!g.hidden && items.length) {
+      html += '<div class="gear-list">' + items.map(item => {
+        const gems = Array.isArray(item.gems) ? item.gems : [];
+        const gemText = gems.length ? gems.map(gem => {
+          const level = localizeGemLevel(gem);
+          const label = gem?.name || gem?.slot || "宝石";
+          return level ? label + " Lv." + level : "宝石";
+        }).join(", ") : "";
+        const gearIconUrl = normalizeProfileAssetUrl(item.icon);
+        return '<div class="gear-card"><div class="gear-head">' +
+          (gearIconUrl ? '<img class="gear-icon" src="' + esc(gearIconUrl) + '" alt="" loading="lazy">' : '<span class="gear-icon gear-icon-empty">?</span>') +
+          '<div><strong>' + esc(localizeGovernorGearSlot(item.slot)) + '</strong></div>' +
+          '</div><div class="gear-stats">' +
+          '<div class="gear-stat">スロット<b>' + esc(localizeGovernorGearSlot(item.slot)) + '</b></div>' +
+          '<div class="gear-stat">品質<b>' + esc(localizeGovernorGearQuality(item.quality)) + '</b></div>' +
+          '<div class="gear-stat">Tier<b>' + esc(localizeGovernorGearTier(item.tier)) + '</b></div>' +
+          '<div class="gear-stat">★<b>' + esc(item.star ?? "-") + '</b></div>' +
+          '<div class="gear-stat">強化<b>' + esc(item.strength_level ?? "-") + '</b></div>' +
+          '<div class="gear-stat">スコア<b>' + esc(formatCompactNumber(item.score)) + '</b></div>' +
+          '<div class="gear-stat">戦闘力<b>' + esc(formatCompactNumber(item.combat)) + '</b></div>' +
+          '</div>' +
+          (gemText ? '<div class="gear-gems">宝石 <b>' + esc(gemText) + '</b></div>' : '') +
+          '</div>';
+      }).join("") + '</div>';
+    }
+    html += '</section>';
+  }
+
+  return html;
+}
 function renderPlayerAdvancedSections(profile, governorId = "", canExport = false) {
   const exportButton = (section) => canExport && governorId
     ? '<a class="section-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=' + encodeURIComponent(section) + '">スプレッドシート出力</a>'
