@@ -63,12 +63,8 @@ export async function handleSystemEventQueue(batch, env) {
     return { processed: events.length, ignored: messages.length - events.length };
   } catch (error) {
     console.error("system_event_queue_d1_batch_failed", error?.message || error);
-    for (const message of messages) {
-      try {
-        normalizeSystemEvent(message.body);
-        message.retry();
-      } catch {}
-    }
+    // Throwing leaves all still-unacked valid messages eligible for the
+    // Queue consumer retry policy. Invalid messages were already acked above.
     throw error;
   }
 }
