@@ -1621,3 +1621,38 @@ Cloudflare公式仕様上、Previewはproductionとは別のPreview-safe resourc
 - 20 kingdom regression
 
 したがって、**本番Deploy可能性の判定はまだ最終確定しない。**
+
+
+## 2026-10-07 全コード再監査追記（Role / Visibility + 再確認）
+
+### 今回の修正
+- Player Visibility の設定取得不能時フォールバックを fail-open から fail-closed に変更。
+- `filterPlayerForRole()` は `settings` 不在時、ADVANCED/ADMIN/OWNER を無条件開放しない。
+- `isChangeVisibleForRole()` も設定不在時に上位ロールを無条件開放しない。
+- Player History の一部経路で `filterPlayerForRole()` に Visibility Settings を渡していなかったため、設定取得後に明示的に渡すよう修正。
+- 変更コミット: `24160210fd9b4e7f4b375124a349bcd6f72edf19`, `972fe066cd065474e3e8188819bc19379ee1a9a3`.
+
+### 再監査結果
+- 認証: DB-backed role/status を使用。保護ルートは fail-closed。
+- ADMIN / OWNER: 主要管理API、Raw API、System Log、Load Test、User Role/Status 管理を再確認。
+- OWNER専用操作: requireOwner + ACTIVE 条件を再確認。
+- BASIC → ADVANCED 自動昇格: BASIC のみを ADVANCED に更新する条件を再確認。ADMIN/OWNER への自動昇格経路なし。
+- R2_ONLY: ranking/player store に広域 `ranking_snapshots` / `player_snapshots` read の復活なし。D1 fallback は target-specific + LIMIT。
+- request-time DDL: 本体コードに CREATE TABLE / CREATE INDEX / ALTER TABLE / DROP / PRAGMA table_info はなし。DDL確認は migration/workflow 側のみ。
+- Collection Semaphore fallback: capacity=1000 を再確認。
+- Player Visibility: `0053_player_visibility_min_role.sql` が min_role を追加。通常経路は min_role による role threshold を適用。
+- Visibility Settings 不在時は fail-closed に変更済み。
+
+### 残存 BLOCKER
+- `wrangler.jsonc` の Preview 設定が本番 D1 `eagleeye-db` / 本番 R2 `eagleeye-archive` / 本番 OAuth callback を参照している。
+- Preview 側 Queue 定義も production と完全同一ではなく、System Event Queue 等の分離確認が未完了。
+- Preview用リソースを実際に作成・確認せず resource ID/name を推測して変更してはいけない。
+
+### Deploy Candidate 判定
+- コード監査: PASS（今回確認範囲）
+- Role/Visibility: PASS（fail-closed 修正後）
+- R2_ONLY / D1 bounded read: PASS
+- Request-time DDL: PASS
+- Preview isolation: BLOCKED
+- Production migration 0053: 未適用
+- Production deploy / E2E: 未実施
