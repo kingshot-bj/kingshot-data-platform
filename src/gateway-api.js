@@ -8,8 +8,10 @@ const GATEWAY_VERSION = "v1";
 
 const GATEWAY_LOG_RANGES = Object.freeze({
   "15m": 15 * 60,
+  "30m": 30 * 60,
   "1h": 60 * 60,
-  "6h": 6 * 60 * 60,
+  "3h": 3 * 60 * 60,
+  "12h": 12 * 60 * 60,
   "24h": 24 * 60 * 60
 });
 
@@ -163,28 +165,32 @@ async function handleGatewayStatus(request, env) {
   const retrievedAtUnix = Math.floor(retrievedAt.getTime() / 1000);
   const systemLogFromUnix = retrievedAtUnix - logRange.seconds;
 
-  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult, systemLogResult] = await Promise.allSettled([
+  const [diagnosticsResult, usageResult, historyStorageResult, operationalResult, emergencyBufferResult, systemLogResult, systemLogCountResult] = await Promise.allSettled([
     getReadOnlyDiagnostics(env.DB, { recentLimit: 100 }),
     getCloudflareD1Usage(env),
     getHistoryStorageStatus(env),
     getOperationalStatus(env.DB),
     getHistoryEmergencyBufferStatus(env.DB),
     getSystemEventLog(env.DB, {
-      limit: null,
+      limit: 500,
       since: systemLogFromUnix,
       until: retrievedAtUnix,
       pageSize: 500
-    })
+    }),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
   ]);
 
   const systemLogEvents = systemLogResult.status === "fulfilled" ? systemLogResult.value : [];
   const systemLogError = systemLogResult.status === "rejected"
     ? sanitizeDiagnosticText(systemLogResult.reason?.message || String(systemLogResult.reason))
     : null;
+  const systemLogTotalCount = systemLogCountResult.status === "fulfilled"
+    ? Number(systemLogCountResult.value?.count || 0)
+    : null;
 
-  // The 24h log is already fully materialized by getSystemEventLog().
-  // Build integrity/load metadata from that same result so /status does not
-  // issue additional D1 reads just to calculate the summary.
+  // /status intentionally returns only the newest 500 events. Full-window logs are
+  // exported as one R2-backed JSON file by /api/admin/system-log/export, avoiding
+  // giant Worker responses and isolate-memory pressure.
   const systemLogSummary = (() => {
     const services = {};
     const statuses = {};
@@ -206,7 +212,9 @@ async function handleGatewayStatus(request, env) {
     }
 
     return {
-      event_count: systemLogEvents.length,
+      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      returned_event_count: systemLogEvents.length,
+      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
       trace_count: traceIds.size,
       services,
       statuses,
@@ -218,7 +226,8 @@ async function handleGatewayStatus(request, env) {
         ? systemLogEvents[0]?.created_at ?? null
         : null,
       page_size: 500,
-      complete_window_read: systemLogResult.status === "fulfilled"
+      complete_window_read: false,
+      full_window_available_via_export: true
     };
   })();
 
@@ -267,9 +276,15 @@ async function handleGatewayStatus(request, env) {
         to: retrievedAt.toISOString(),
         duration_seconds: logRange.seconds
       },
-      event_count: systemLogEvents.length,
+      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      returned_event_count: systemLogEvents.length,
+      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
       summary: systemLogSummary,
       events: systemLogEvents,
+      export: {
+        available: Boolean(env.ARCHIVE),
+        endpoint: "/api/admin/system-log/export?range=" + encodeURIComponent(logRange.key)
+      },
       error: systemLogError
     },
     runtime: {
