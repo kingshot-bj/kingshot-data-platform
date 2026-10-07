@@ -47,7 +47,7 @@ import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
-import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility } from "./user-eligibility.js";
+import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility, registerUserMightyApiKey, revokeUserMightyApiKey } from "./user-eligibility.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
@@ -1860,7 +1860,7 @@ async function handleMyAdvancedApi(request, env) {
         apiKey
       });
 
-      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);
+      const eligibility = await evaluateAdvancedEligibility(env.DB, auth.user_id);\n      const vipEligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
       await trackServiceUsage(env, auth, "MIGHTPULSE_API_KEY_CONTRIBUTE", {
         targetType: "USER",
         targetId: auth.user_id,
@@ -1901,6 +1901,91 @@ async function handleMyAdvancedApi(request, env) {
       "MIGHTPULSE_API_KEY_ALREADY_REGISTERED"
     ].includes(code) ? 400 : 500;
     return json({ ok: false, error: code, message: userMessage }, status);
+  }
+}
+
+async function handleMyVipApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+
+  try {
+    if (request.method === "GET") {
+      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
+      return json({ ok: true, ...eligibility });
+    }
+
+    if (request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const apiKey = String(body?.api_key || "").trim();
+      if (!apiKey) return json({ ok: false, error: "MIGHTY_API_KEY_REQUIRED", message: "Mighty APIキーを入力してください。" }, 400);
+
+      await registerUserMightyApiKey(env.DB, {
+        env,
+        userId: auth.user_id,
+        apiKey,
+        label: "ユーザーMighty APIキー"
+      });
+
+      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
+      await trackServiceUsage(env, auth, "MIGHTY_API_KEY_REGISTER", {
+        targetType: "USER",
+        targetId: auth.user_id,
+        metadata: { credential: "USER_MIGHTY" }
+      });
+      if (eligibility.promoted) {
+        await trackServiceUsage(env, auth, "VIP_PROMOTED", {
+          targetType: "USER",
+          targetId: auth.user_id,
+          metadata: { reason: "TWO_USER_CONTRIBUTED_KEYS_AND_MIGHTY_KEY" }
+        });
+      }
+
+      return json({
+        ok: true,
+        promoted: Boolean(eligibility.promoted),
+        role: eligibility.role,
+        regularKeyCount: eligibility.regularKeyCount,
+        regularKeyRequired: eligibility.regularKeyRequired,
+        hasMightyKey: eligibility.hasMightyKey,
+        mightyKey: eligibility.mightyKey
+      });
+    }
+
+    if (request.method === "DELETE") {
+      const changed = await revokeUserMightyApiKey(env.DB, auth.user_id);
+      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
+      await trackServiceUsage(env, auth, "MIGHTY_API_KEY_REVOKE", {
+        targetType: "USER",
+        targetId: auth.user_id
+      });
+      return json({
+        ok: true,
+        revoked: Boolean(changed?.changed),
+        demoted: Boolean(eligibility.demoted),
+        role: eligibility.role
+      });
+    }
+
+    return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  } catch (error) {
+    console.error("my_vip_api_failed", error?.code || error?.message || error);
+    const code = error?.code || "MY_VIP_API_FAILED";
+    const status = [
+      "MIGHTY_API_KEY_REQUIRED",
+      "MIGHTY_API_KEY_INVALID",
+      "MIGHTY_API_KEY_ALREADY_REGISTERED",
+      "MIGHTY_API_KEY_RATE_LIMITED",
+      "MIGHTY_API_KEY_REQUIRED",
+      "MIGHTY_API_TEMPORARY_ERROR",
+      "MIGHTY_API_KEY_VALIDATION_FAILED"
+    ].includes(code) ? 400 : 500;
+    return json({
+      ok: false,
+      error: code,
+      message: error?.userMessage || "Mighty APIキーの処理に失敗しました。"
+    }, status);
   }
 }
 
@@ -3969,7 +4054,7 @@ export default {
       }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
-      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
+      if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);\n      if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
       if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
