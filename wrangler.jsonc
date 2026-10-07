@@ -42,6 +42,10 @@
       {
         "binding": "LOAD_TEST_QUEUE",
         "queue": "eagleeye-load-test"
+      },
+      {
+        "binding": "SYSTEM_EVENT_QUEUE",
+        "queue": "eagleeye-system-events"
       }
     ],
     "consumers": [
@@ -60,6 +64,14 @@
         "max_retries": 5,
         "max_concurrency": 1,
         "dead_letter_queue": "eagleeye-load-test-dlq"
+      },
+      {
+        "queue": "eagleeye-system-events",
+        "max_batch_size": 100,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "max_concurrency": 1,
+        "dead_letter_queue": "eagleeye-system-events-dlq"
       }
     ]
   },
