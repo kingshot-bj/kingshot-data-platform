@@ -1565,3 +1565,59 @@ Cloudflare公式仕様上、Previewはproductionとは別のPreview-safe resourc
 - Secrets/API keysをUI/JSON/logへ出さない
 - 本番Deployは全監査完了まで行わない
 - 実装済み / E2E済み / 本番反映済みを混同しない
+
+
+# 2026-10-07 — System Event Queue実装後 全コード再監査
+
+## 監査範囲
+- Repository tree: 141 files
+- src: 48 JavaScript
+- migrations: 53 SQL
+- .github/workflows: 5
+- public/tools HTML: 2
+- scripts: 2 MJS
+- wrangler.jsonc
+- 新規System Event Queue / D1 retryを含む現行main
+
+## 検証結果
+- src 48 JS: import/exportを除去したWorker構文parseを全件実施し、PASS。
+- 追加された `src/d1-retry.js` / `src/system-event-queue.js` もPASS。
+- scripts 2 MJS: syntax確認PASS。
+- public/tools HTML内script: PASS。
+- migrations: 現行53本の番号・存在を再確認。最新0048〜0052のSQL構造を確認。
+- 0008が2ファイル存在する既存履歴は確認済み。既存本番履歴との整合を壊す改番は実施しない。
+- Workflow 5本とwrangler Queue/D1設定を確認。
+- 0052 notification stateとDiscord通知コードのtable/index対応を確認。
+
+## 監査で発見した問題と修正
+### 1. D1 transient retry helperのimport漏れ
+- `src/data-collection-engine.js` が `withD1TransientRetry()` を使用していたがimportが無かった。
+- 構文上は検出できず、本番実行時ReferenceErrorになる問題。
+- 修正済み。
+- commit: `673e0cbdcb1e172c1defa36741b1580a031aa136`
+
+### 2. System Event Queue consumerのretry責務重複
+- D1 batch失敗時に `message.retry()` とhandler `throw` を併用していた。
+- Queue runtimeのretry policyに責務を一本化。
+- invalid messageは先にackし、valid messageはhandler throwでmax_retries/DLQへ進む構造へ修正。
+- commit: `082134b1ad6b596f110a1260e1f9785e23ac2f2e`
+
+## 監査上の注意
+- `recordApiPoolSuccess/Failure` はD1更新後にSystem Logを記録する複合処理で、現在 `data-collection-engine.js` からD1 transient retry対象になっている。
+- D1の「書込み成功後にレスポンスだけ失われた」ケースでは、再実行時にSystem Logイベントが重複生成され得る。
+- 現時点では機能破壊とは断定しないが、System Event Queue化後の次回負荷試験で重複イベント有無を観測する重点項目とする。
+- 必要なら次段階でAPI Pool success/failure eventの安定event_id化を検討する。
+- 本監査ではこの点を理由に既存API Pool処理を勝手に変更していない。
+
+## 現在の判定
+**コード監査: 主要コード全体を再確認。重大な実行時不整合2件を発見し修正済み。**
+ただし、以下は未確認:
+- Cloudflare Queue実体
+- Version upload
+- Production D1 migration適用状態
+- Version URL Smoke Test
+- Production E2E
+- System Event Queue 1k/5k/10k burst
+- 20 kingdom regression
+
+したがって、**本番Deploy可能性の判定はまだ最終確定しない。**
