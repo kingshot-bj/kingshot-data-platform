@@ -438,79 +438,28 @@ function getRoleWatchlistLimit(limits, role, type) {
 }
 
 async function ensurePlayerVisibilityTable(db) {
+  // Stable schema is provisioned by migrations/0009.
+  // The current migration set includes min_role, so runtime DDL/ALTER is forbidden here.
+  if (!db) return;
   if (playerVisibilitySchemaPromise) return playerVisibilitySchemaPromise;
   playerVisibilitySchemaPromise = (async () => {
-    await db.prepare(`
-      CREATE TABLE IF NOT EXISTS player_visibility_settings (
-        item_key TEXT PRIMARY KEY,
-        category TEXT NOT NULL,
-        label TEXT NOT NULL,
-        description TEXT,
-        min_role TEXT NOT NULL DEFAULT 'BASIC',
-        basic_enabled INTEGER NOT NULL DEFAULT 0,
-        advanced_enabled INTEGER NOT NULL DEFAULT 0,
-        admin_enabled INTEGER NOT NULL DEFAULT 1,
-        owner_enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at INTEGER NOT NULL,
-        updated_by TEXT
-      )
-    `).run();
-
-    const columns = await db.prepare("PRAGMA table_info(player_visibility_settings)").all();
-    const hasMinRole = (columns.results || []).some(col => col.name === "min_role");
-    let legacyRows = [];
-    if (!hasMinRole) {
-      // Capture legacy thresholds before ALTER adds the BASIC default.
-      const legacy = await db.prepare(
-        "SELECT item_key, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings"
-      ).all();
-      legacyRows = legacy.results || [];
-      await db.prepare("ALTER TABLE player_visibility_settings ADD COLUMN min_role TEXT NOT NULL DEFAULT 'BASIC'").run();
-    }
-
-    // Read all existing rows once. The old implementation issued one SELECT per
-    // visibility item, multiplying D1 row reads during cold Worker isolates.
     const existingRows = await db.prepare(
       "SELECT item_key, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled FROM player_visibility_settings"
     ).all();
     const existingByKey = new Map(
       (existingRows.results || []).map(row => [String(row.item_key), row])
     );
-
     const now = Math.floor(Date.now() / 1000);
     const statements = [];
-
-    if (!hasMinRole && legacyRows.length) {
-      for (const row of legacyRows) {
-        const minRole =
-          Number(row.basic_enabled) === 1 ? "BASIC" :
-          Number(row.advanced_enabled) === 1 ? "ADVANCED" :
-          Number(row.admin_enabled) === 1 ? "ADMIN" : "OWNER";
-        statements.push(
-          db.prepare(
-            "UPDATE player_visibility_settings SET min_role = ? WHERE item_key = ?"
-          ).bind(minRole, row.item_key)
-        );
-      }
-    }
-
     for (const item of PLAYER_VISIBILITY_ITEMS) {
       if (existingByKey.has(item.key)) continue;
-
       const minRole = ["base_identity","base_power","base_kills","base_activity","alliance_identity"].includes(item.key)
         ? "BASIC"
         : "ADVANCED";
-
-      statements.push(db.prepare(`
-        INSERT INTO player_visibility_settings
-          (item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by)
-        VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?, NULL)
-        ON CONFLICT(item_key) DO NOTHING
-      `).bind(
-        item.key, item.category, item.label, item.description, minRole, now
-      ));
+      statements.push(db.prepare(
+        "INSERT INTO player_visibility_settings (item_key, category, label, description, min_role, basic_enabled, advanced_enabled, admin_enabled, owner_enabled, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?, NULL) ON CONFLICT(item_key) DO NOTHING"
+      ).bind(item.key, item.category, item.label, item.description, minRole, now));
     }
-
     if (statements.length) await db.batch(statements);
   })();
   try {
@@ -521,7 +470,7 @@ async function ensurePlayerVisibilityTable(db) {
   }
 }
 
-async function getPlayerVisibilitySettings(db) {
+function getPlayerVisibilitySettings(db) {
   await ensurePlayerVisibilityTable(db);
   const now = Date.now();
   if (playerVisibilityCache && now - playerVisibilityCache.at < CONFIG_CACHE_TTL_MS) return playerVisibilityCache.rows;
