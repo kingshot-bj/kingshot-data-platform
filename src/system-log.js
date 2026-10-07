@@ -40,7 +40,7 @@ export async function recordSystemEvent(db, input = {}) {
     if (db && typeof globalThis !== "undefined") {
       const queue = systemEventQueue;
       if (queue && typeof queue.send === "function") {
-        await queue.send(event);
+        await queue.send({ type: "SYSTEM_EVENT", ...event });
         return event;
       }
     }
