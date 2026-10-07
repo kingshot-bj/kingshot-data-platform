@@ -171,3 +171,23 @@ Active run ID:
 **「まず20hが216KBになる原因を実コードから調査。status endpointのrange処理 → system log取得範囲 → LIMIT/pagination → レスポンスサイズ制限 → 6hとの差分の順で洗う。」**
 
 この問題を解決してから、20時間ログを使ったLoad Test全体分析へ進む。
+
+## 2026-10-07 — 24h System Log single-file export implementation
+
+- /status / Gateway の System Log は、指定期間の全件をレスポンスへ詰め込まない方式へ変更。
+- Gateway のログ期間を 15m / 30m / 1h / 3h / 12h / 24h に統一。
+- /status は最新500件を表示し、期間全体の件数を event_count で返す。500件を超える場合は truncated=true。
+- 全期間のログ取得は管理者専用 /api/admin/system-log/export?range=24h を追加。
+- D1を500件ずつカーソル取得し、R2へ 1本のJSONファイルとしてストリーム保存。巨大JSONをWorkerのレスポンスへ直接返さない。
+- ダウンロード: /api/admin/system-log/export/download?key=...
+- ADMIN / OWNER のみ利用可能。R2 binding が無い場合は明示的に失敗。
+- 管理画面 /admin/system-log に期間選択と「24時間分を1ファイル取得」を追加。
+- 既存 /api/admin/system-log に until パラメータを追加し、指定時間帯のログ取得も可能にした。
+- 24h INTERNAL_ERROR の再発防止として、Gateway の全件 materialize を廃止。
+
+### デプロイについて
+
+- main への変更はすべてコミット済み。
+- 2026-10-07 の直前ハンドオフ cd253b1... から main は7コミット先行。
+- リポジトリ内には Cloudflare Workers の GitHub Actions デプロイ workflow は存在しないため、Cloudflare Dashboard 側の Git 自動デプロイ設定そのものはこのGitHub接続から変更できない。
+- 今回は main へ全変更を流し込んだ状態。Cloudflare Git連携が有効ならpushをトリガーに反映される。別途GitHub Actionsを追加して二重デプロイにはしない。
