@@ -1409,3 +1409,78 @@ Phase 1 K01〜K10から開始する。
 - 本番Deployは再チェック完了まで行わない。
 - 「コード存在」と「実装完成」「E2E確認済み」「本番反映済み」を混同しない。
 - 進捗表示は何分の何で報告。
+
+
+# 2026-10-07 — System Event Log Queue化 実装
+
+## 実装内容
+承認済みの「System Event Log専用Queue化」計画をmainへ実装した。
+
+### 構成
+```
+recordSystemEvent()
+    ↓
+eagleeye-system-events
+    ↓
+handleSystemEventQueue()
+    ↓
+D1 batch() / INSERT OR IGNORE
+    ↓
+system_event_log
+    ↓ 24h retention
+R2 Archive
+```
+
+### 変更ファイル
+- `src/system-log.js`
+  - `setSystemEventQueue()` を追加。
+  - Productionで `SYSTEM_EVENT_QUEUE` が利用可能ならSystem EventをQueueへ送信。
+  - Queue送信失敗時は既存D1直書きへfallbackし、監査ログの欠落を防止。
+  - 呼び出し側の `recordSystemEvent()` APIは変更していない。
+  - D1 fallbackは `INSERT OR IGNORE` に変更し、event_id重複時の二重行を防止。
+- `src/system-event-queue.js`
+  - 新規Queue Consumer。
+  - 最大100件を `DB.batch()` でまとめてD1へ保存。
+  - 不正メッセージはack。
+  - D1 batch失敗時はretry。
+  - `event_id` primary key + `INSERT OR IGNORE` によりQueue retry時の重複行を防止。
+- `src/index.js`
+  - System Event Queue Consumerを既存Queue handlerへ接続。
+  - fetch/queue開始時にQueue bindingをSystem Log保存層へ設定。
+  - 既存Load Test Queue / Service Usage Queueの処理は維持。
+- `wrangler.jsonc`
+  - producer: `SYSTEM_EVENT_QUEUE -> eagleeye-system-events`
+  - consumer: batch 100 / timeout 30s / retry 5 / concurrency 1
+  - DLQ: `eagleeye-system-events-dlq`
+  - Preview側は既存方針に合わせてconsumer bindingを追加せず、未binding時はD1 fallback。
+
+## 設計上の重要点
+- System Logの内容を削減・間引きしていない。
+- 現在状態を持つAPI Pool / Watchlist / Ranking等のD1 current-state writeはQueue化していない。
+- System Log UI/APIは既存 `system_event_log` を読むため、数秒程度のeventual consistencyはあるが機能経路は維持。
+- Queue障害時もD1 fallbackがあるため、保存経路を完全に切断しない。
+- Consumer側はbatch D1 writeで大量の1件ずつINSERTを避ける。
+- Queue retry / DLQで一時的D1障害時のログ欠落を抑止する。
+
+## 実装コミット
+- `66ccf5c8ae1075caeaa09cffbbe349519e945afe` — System Event Queue consumer
+- `8330ac1ab53b065fc930ad1474a0abfb855a0fad` — System Log Queue persistence
+- `b1af6b62134e525a1c7487faf26f293dd778f433` — Queue consumer routing
+- `7bfe0e16556b31344f87e55753355125aec8fb0c` — Wrangler Queue configuration
+- `03b4daca3ddf22f5b53cbead0ea7baa4f592492a` — Queue message type tagging
+
+## 検証状況
+- GitHub上の現行mainから変更後3 JS / wrangler設定を再取得し、import接続・Queue routing・batch SQL・retry/ack経路を確認。
+- この実行環境からGitHub cloneによるローカルNode構文検証はネットワーク制約で実行できなかったため、**syntax-check PASSとはまだ記録しない**。
+- Cloudflare上のQueue作成・Version upload・本番Deploy・本番E2Eも未実施。
+
+## 次の必須確認
+1. `eagleeye-system-events` と `eagleeye-system-events-dlq` がCloudflare Queueとして存在することを確認。
+2. Wrangler Version upload前に構文チェック。
+3. Version URLでSystem Logを含むSmoke Test。
+4. 小規模event burstでQueue backlog → D1 batch保存 → System Log表示を確認。
+5. 1k / 5k / 10k event burstでD1 rows read/write、p95、Queue backlog、DLQを比較。
+6. 既存20王国Load Testを再実行し、`D1_ERROR: Network connection lost` とSystem Log負荷が改善したか確認。
+7. 改善確認後に次の負荷集中箇所（Diagnostics等）へ進む。
+
+**本実装は「コード実装済み」だが、本番反映・E2E確認済みではない。**
