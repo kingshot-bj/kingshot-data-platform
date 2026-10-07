@@ -56,7 +56,8 @@ import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
-import { recordSystemEvent, systemTraceId } from "./system-log.js";
+import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
+import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
 
@@ -3975,6 +3976,7 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
 
 export default {
   async fetch(request, env, executionContext) {
+    setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
     try {
@@ -4127,9 +4129,18 @@ export default {
     }
   },
   async queue(batch, env) {
+    setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const messages = batch?.messages || [];
+    const systemEventMessages = messages.filter(message => message?.body?.type === "SYSTEM_EVENT");
     const loadTestMessages = messages.filter(message => message?.body?.type === "KINGDOM_LOAD_TEST_RUN");
-    const serviceUsageMessages = messages.filter(message => message?.body?.type !== "KINGDOM_LOAD_TEST_RUN");
+    const serviceUsageMessages = messages.filter(message =>
+      message?.body?.type !== "KINGDOM_LOAD_TEST_RUN" &&
+      message?.body?.type !== "SYSTEM_EVENT"
+    );
+
+    if (systemEventMessages.length) {
+      await handleSystemEventQueue({ ...batch, messages: systemEventMessages }, env);
+    }
 
     for (const message of loadTestMessages) {
       try {
