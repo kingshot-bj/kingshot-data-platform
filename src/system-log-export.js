@@ -103,7 +103,7 @@ async function createSystemLogExport(db, bucket, { range = "24h", traceId = null
             },
             event_count: eventCount,
             events: null
-          }).replace(\"\\\"events\\\":null\", \"\\\"events\\\":[\")));
+          }).replace('"events":null', '"events":[')));
           return;
         }
 
