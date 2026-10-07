@@ -6208,11 +6208,40 @@ async function renderPlayerPage(request, env) {
 function filterPlayerForRole(player, role, payload = null, settings = null) {
   if (!player) return player;
   if (!payload || !settings) {
-    if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return player;
+    // Visibility settings are authoritative. Never fail open when they are unavailable.
     const visible = { ...player };
     delete visible.vip;
     delete visible.x;
     delete visible.y;
+    delete visible.uid;
+    delete visible.governor_id;
+    delete visible.fid;
+    delete visible.nick_name;
+    delete visible.kid;
+    delete visible.power;
+    delete visible.town_center_level;
+    delete visible.kills;
+    delete visible.online;
+    delete visible.last_active_at;
+    delete visible.last_login;
+    delete visible.avatar_url;
+    delete visible.language;
+    delete visible.shield_endtime;
+    delete visible.burn_endtime;
+    delete visible.office;
+    if (visible.alliance) {
+      const a = { ...visible.alliance };
+      delete a.aid;
+      delete a.abbr;
+      delete a.name;
+      delete a.rank;
+      delete a.rank_label;
+      delete a.power;
+      delete a.count;
+      delete a.flag_url;
+      delete a.leader_name;
+      visible.alliance = a;
+    }
     return visible;
   }
   const visible = { ...player };
