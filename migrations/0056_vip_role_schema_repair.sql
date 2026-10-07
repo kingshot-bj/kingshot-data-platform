@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_user_mighty_user_status
 CREATE INDEX IF NOT EXISTS idx_user_mighty_updated
   ON user_mighty_credentials(updated_at DESC);
 
--- Rebuild users only when the current table does not already accept VIP.
+-- Rebuild users so the role CHECK constraint accepts VIP.
 -- SQLite cannot alter a CHECK constraint in place.
 CREATE TABLE users_vip_0056 (
   user_id TEXT PRIMARY KEY,
