@@ -434,7 +434,12 @@ async function getWatchlistLimits(db) {
 }
 
 function getRoleWatchlistLimit(limits, role, type) {
-  const row = (limits || []).find(item => String(item.role).toUpperCase() === String(role).toUpperCase());
+  const normalizedRole = String(role || "").toUpperCase();
+  let row = (limits || []).find(item => String(item.role).toUpperCase() === normalizedRole);
+  // VIP inherits Advanced watchlist capacity unless a dedicated VIP limit is configured.
+  if (!row && normalizedRole === "VIP") {
+    row = (limits || []).find(item => String(item.role).toUpperCase() === "ADVANCED");
+  }
   return row ? Number(type === "kingdom" ? row.kingdom_limit : row.player_limit) : 0;
 }
 
