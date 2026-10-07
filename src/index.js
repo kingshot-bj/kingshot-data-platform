@@ -7280,6 +7280,17 @@ async function handleOwnerUserRoleApi(request, env) {
   if (!targetUserId || !["BASIC","ADVANCED","VIP","ADMIN","OWNER"].includes(role)) return json({ok:false,error:"INVALID_USER_OR_ROLE"},400);
   const target=await env.DB.prepare("SELECT user_id,discord_id,role FROM users WHERE user_id=? LIMIT 1").bind(targetUserId).first();
   if(!target) return json({ok:false,error:"USER_NOT_FOUND"},404);
+  if (role === "VIP") {
+    const vipEligibility = await evaluateVipEligibility(env.DB, { env, userId: targetUserId });
+    if (!vipEligibility.eligible) {
+      return json({
+        ok: false,
+        error: "VIP_ELIGIBILITY_REQUIRED",
+        message: "VIPは通常APIキー2本とMighty APIキー1本が有効なユーザーのみ設定できます。",
+        eligibility: vipEligibility
+      }, 409);
+    }
+  }
   if(target.user_id===guard.auth.user_id && role!=="OWNER") return json({ok:false,error:"SELF_OWNER_DOWNGRADE_FORBIDDEN"},409);
   const now=Math.floor(Date.now()/1000);
   await env.DB.prepare("UPDATE users SET role=?,updated_at=? WHERE user_id=?").bind(role,now,targetUserId).run();
@@ -7350,7 +7361,7 @@ async function renderOwnerAdminPage(request,env){
   const guard=await requireOwner(request,env);
   if(guard.error)return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
   const [users,logs,kingdomCounts,playerCounts]=await Promise.all([
-    env.DB.prepare("SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'ADVANCED' THEN 2 ELSE 3 END,u.last_login_at DESC").all(),
+    env.DB.prepare("SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'VIP' THEN 2 WHEN 'ADVANCED' THEN 3 ELSE 4 END,u.last_login_at DESC").all(),
     env.DB.prepare("SELECT audit_id,actor_discord_id,action,target_discord_id,details_json,created_at FROM owner_audit_log ORDER BY created_at DESC LIMIT 50").all(),
     env.DB.prepare("SELECT discord_id, COUNT(*) AS count FROM kingdom_watchlists GROUP BY discord_id").all(),
     env.DB.prepare("SELECT discord_id, COUNT(*) AS count FROM player_watchlists GROUP BY discord_id").all()
