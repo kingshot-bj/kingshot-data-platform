@@ -1,4 +1,5 @@
 import { mightPulseFetch } from "./mightpulse.js";
+import { withD1TransientRetry } from "./d1-retry.js";
 import {
   configureApiPoolEncryption,
   leaseApiKey,
