@@ -56,6 +56,7 @@ import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
+import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } from "./system-log-export.js";
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
@@ -3890,6 +3891,8 @@ export default {
       if (url.pathname === "/api/admin/kingdom-ranking-export") return await handleAdminKingdomRankingExport(request, env);
       if (url.pathname === "/api/admin/diagnostics") return await handleAdminDiagnosticsApi(request, env);
       if (url.pathname === "/api/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleAdminSystemLogApi(request, env, guard.auth); }
+      if (url.pathname === "/api/admin/system-log/export") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleAdminSystemLogExportApi(request, env, guard.auth); }
+      if (url.pathname === "/api/admin/system-log/export/download") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleAdminSystemLogExportDownloadApi(request, env, guard.auth); }
       if (url.pathname === "/api/admin/discord/roles") return await handleDiscordRolesLookupApi(request, env);
       if (url.pathname === "/api/admin/monitoring-profile") return await handleMonitoringProfileApi(request, env);
       if (url.pathname === "/api/admin/r2-archive-objects") return await handleR2ArchiveObjectsApi(request, env);
