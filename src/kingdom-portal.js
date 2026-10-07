@@ -276,7 +276,8 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
     return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>Mighty機能を利用するにはDiscordログインが必要です。</div></main>");
   }
   const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
-  if (eligibility.role !== "VIP" || !eligibility.eligible) {
+  const canUseMighty = ["VIP", "ADMIN", "OWNER"].includes(String(eligibility.role || "").toUpperCase());
+  if (!canUseMighty || !eligibility.eligible) {
     return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>VIP機能です。通常APIキー2本と有効なMighty APIキー1本を登録すると利用できます。<br><br>通常APIキー："+eligibility.regularKeyCount+" / "+eligibility.regularKeyRequired+"<br>Mighty APIキー："+(eligibility.hasMightyKey?"有効":"未登録・無効")+"</div></main>");
   }
   const traceId=systemTraceId("kingdom-mighty");
