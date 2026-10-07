@@ -161,6 +161,10 @@ async function handleGatewayStatus(request, env) {
   const url = new URL(request.url);
   const logRange = resolveGatewayLogRange(url.searchParams.get("range"));
 
+  if (url.searchParams.get("full") === "1") {
+    return await handleGatewayFullLogExport(request, env, logRange);
+  }
+
   const retrievedAt = new Date();
   const retrievedAtUnix = Math.floor(retrievedAt.getTime() / 1000);
   const systemLogFromUnix = retrievedAtUnix - logRange.seconds;
@@ -307,6 +311,90 @@ async function handleGatewayStatus(request, env) {
         GOOGLE_SHEETS_SERVICE_ACCOUNT: Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID),
         GATEWAY: Boolean(env.EAGLEEYE_GATEWAY_TOKEN)
       }
+    }
+  });
+}
+
+async function handleGatewayFullLogExport(request, env, logRange) {
+  const retrievedAt = new Date();
+  const retrievedAtUnix = Math.floor(retrievedAt.getTime() / 1000);
+  const systemLogFromUnix = retrievedAtUnix - logRange.seconds;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let cursorCreatedAt = null;
+      let cursorEventId = null;
+      let first = true;
+      const enqueueText = value => controller.enqueue(encoder.encode(value));
+
+      try {
+        enqueueText(JSON.stringify({
+          ok: true,
+          format: "eagleeye-system-log-v1",
+          range: {
+            preset: logRange.key,
+            from: new Date(systemLogFromUnix * 1000).toISOString(),
+            to: retrievedAt.toISOString(),
+            duration_seconds: logRange.seconds
+          },
+          events: []
+        }).replace('"events":[]', '"events":['));
+
+        while (true) {
+          let sql = `SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,
+            actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,
+            completed_at,elapsed_ms,error_code,message,metadata_json,created_at
+            FROM system_event_log
+            WHERE created_at>=? AND created_at<=?`;
+          const binds = [systemLogFromUnix, retrievedAtUnix];
+
+          if (cursorCreatedAt != null) {
+            sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
+            binds.push(cursorCreatedAt, cursorCreatedAt, cursorEventId);
+          }
+
+          sql += " ORDER BY created_at DESC, event_id DESC LIMIT ?";
+          binds.push(500);
+
+          const result = await env.DB.prepare(sql).bind(...binds).all();
+          const rows = result.results || [];
+          if (!rows.length) break;
+
+          for (const row of rows) {
+            const event = {
+              ...row,
+              metadata: row.metadata_json
+                ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })()
+                : null
+            };
+            delete event.metadata_json;
+            enqueueText((first ? "" : ",") + JSON.stringify(event));
+            first = false;
+          }
+
+          if (rows.length < 500) break;
+          const last = rows[rows.length - 1];
+          cursorCreatedAt = Number(last.created_at);
+          cursorEventId = String(last.event_id);
+        }
+
+        enqueueText("]}");
+        controller.close();
+      } catch (error) {
+        console.error("gateway_full_system_log_export_failed", error?.message || error);
+        controller.error(error);
+      }
+    }
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "content-disposition": 'attachment; filename="system-log.json"',
+      "x-eagleeye-gateway": GATEWAY_VERSION,
+      "x-eagleeye-system-log-export": "stream"
     }
   });
 }
