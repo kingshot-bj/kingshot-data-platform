@@ -4026,7 +4026,7 @@ export default {
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
       if (url.pathname === "/alliance") return eagleEyeHtmlResponse(await renderAlliancePage(request, env));
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
-      if (url.pathname === "/kingdom/mighty") return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env));
+      if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
       if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));
       if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
