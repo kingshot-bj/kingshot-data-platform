@@ -1656,3 +1656,50 @@ Cloudflare公式仕様上、Previewはproductionとは別のPreview-safe resourc
 - Preview isolation: BLOCKED
 - Production migration 0053: 未適用
 - Production deploy / E2E: 未実施
+
+
+## 2026-10-07 本番優先・全コード運用経路監査 追加
+
+### 新規発見：scheduled handler の未接続
+現行 `src/index.js` の `scheduled()` は以下3処理のみ実行している。
+- API Pool Auto Recovery
+- Kingdom Catalog Daily Refresh
+- Kingdom Discord Notifications
+
+一方、以下の実装は `index.js` にimportされているが、Workerの実行経路から呼び出されていないことを確認した。
+- `runKingdomRankingRoller()`
+- `runAllianceRoller()`
+- `runPlayerRoller()`
+- `drainHistoryEmergencyBuffer()`
+- `runDiagnosticHealthChecks()`
+- `runDataRetentionJob()`
+- `runKingdomSeeder()`
+- `releaseExpiredLeases()` はimportのみで未使用
+
+これは単なる未使用コードではなく、以下の運用機能がCronから自動実行されないことを意味する。
+1. Operator側のRanking / Alliance / Player background collection
+2. R2障害時のHistory Emergency Buffer drain
+3. 定期Diagnostic probe
+4. Data Retention cleanup / System Event retention
+5. Kingdom Seeder
+
+特に `drainHistoryEmergencyBuffer()` と `runDataRetentionJob()` の未接続は、本番運用上の重要確認事項。
+また、これらのローラーを「Cron/ローラー/Seeder」として期待する既存handoff記述と、現行Worker実装に不一致がある。
+
+### 本番優先監査で確認済み
+- API入口の主要ADMIN/OWNER handlerは各handler自身でguardを実施。
+- Player/Watchlist系の認証入口はACTIVEユーザーを要求。
+- Player Visibility / Change History は fail-closed 修正済み。
+- Global Collection Semaphore → API Pool lease → MightPulse → accounting → semaphore release の順序を確認。
+- R2_ONLY / ranking_snapshots広域readなしを再確認。
+- request-time DDLなしを再確認。
+
+### 現時点の本番Deploy判定
+- コード権限/Visibility: PASS
+- API Pool / Semaphore経路: PASS
+- R2_ONLY / bounded history read: PASS
+- request-time DDL: PASS
+- scheduled運用ジョブ接続: BLOCKED（修正要）
+- Preview isolation: 今回の本番優先判定では保留
+- Production migration 0053: 未適用
+- Production deploy/E2E: 未実施
