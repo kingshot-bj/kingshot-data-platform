@@ -121,8 +121,8 @@ ensureIndex(
 );
 
 if (!tableExists("watchlist_limits")) {
-  write("CREATE TABLE watchlist_limits (role TEXT PRIMARY KEY CHECK(role IN ('BASIC','ADVANCED','ADMIN','OWNER')), kingdom_limit INTEGER NOT NULL DEFAULT 1, player_limit INTEGER NOT NULL DEFAULT 5, updated_at INTEGER NOT NULL, updated_by TEXT)");
-  write("INSERT INTO watchlist_limits(role,kingdom_limit,player_limit,updated_at,updated_by) VALUES ('BASIC',1,5,strftime('%s','now'),NULL),('ADVANCED',3,20,strftime('%s','now'),NULL),('ADMIN',10,50,strftime('%s','now'),NULL),('OWNER',50,200,strftime('%s','now'),NULL)");
+  write("CREATE TABLE watchlist_limits (role TEXT PRIMARY KEY CHECK(role IN ('BASIC','ADVANCED','VIP','ADMIN','OWNER')), kingdom_limit INTEGER NOT NULL DEFAULT 1, player_limit INTEGER NOT NULL DEFAULT 5, updated_at INTEGER NOT NULL, updated_by TEXT)");
+  write("INSERT INTO watchlist_limits(role,kingdom_limit,player_limit,updated_at,updated_by) VALUES ('BASIC',1,5,strftime('%s','now'),NULL),('ADVANCED',3,20,strftime('%s','now'),NULL),('VIP',3,20,strftime('%s','now'),NULL),('ADMIN',10,50,strftime('%s','now'),NULL),('OWNER',50,200,strftime('%s','now'),NULL)");
 }
 if (!tableExists("diagnostic_events")) {
   write("CREATE TABLE diagnostic_events (event_id TEXT PRIMARY KEY,trace_id TEXT NOT NULL,service TEXT NOT NULL,feature TEXT NOT NULL,operation TEXT NOT NULL,status TEXT NOT NULL,error_code TEXT,message TEXT,provider TEXT,target_type TEXT,target_id TEXT,started_at INTEGER NOT NULL,completed_at INTEGER NOT NULL,elapsed_ms INTEGER NOT NULL DEFAULT 0,source_observed_at INTEGER,rows_received INTEGER,rows_saved INTEGER,metadata_json TEXT,created_at INTEGER NOT NULL)");
