@@ -470,7 +470,7 @@ async function ensurePlayerVisibilityTable(db) {
   }
 }
 
-function getPlayerVisibilitySettings(db) {
+async function getPlayerVisibilitySettings(db) {
   await ensurePlayerVisibilityTable(db);
   const now = Date.now();
   if (playerVisibilityCache && now - playerVisibilityCache.at < CONFIG_CACHE_TTL_MS) return playerVisibilityCache.rows;
