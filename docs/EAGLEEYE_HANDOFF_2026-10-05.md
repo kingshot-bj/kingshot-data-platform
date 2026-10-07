@@ -1484,3 +1484,84 @@ R2 Archive
 7. 改善確認後に次の負荷集中箇所（Diagnostics等）へ進む。
 
 **本実装は「コード実装済み」だが、本番反映・E2E確認済みではない。**
+
+
+# 2026-10-07 — 全横断監査 継続結果（request-time DDL / Preview isolation）
+
+## 今回の修正
+1. `src/status-ops.js`
+   - Collection Semaphore snapshot取得失敗時のfallback capacityが26になっていたため、migration 0036の1000-slot設計に合わせて1000へ修正。
+   - 実処理上限ではなくStatus表示値の不整合修正。
+   - commit: `6cda1bef653a4a42cce7937680f94ebc89b4faa4`
+
+2. `src/history-emergency-buffer.js`
+   - migration 0015で既にschema provision済みなのに、request-timeでCREATE TABLE / CREATE INDEXを行っていた処理を撤去。
+   - commit: `cdabe63318d0d6235118cca1e4aa24fb0c991a6c`
+
+3. `src/index.js`
+   - migration 0035でschema provision済みのapi_request_locksについてrequest-time CREATE TABLEを撤去。
+   - migration 0009でschema provision済みのplayer_visibility_settingsについてrequest-time CREATE TABLE / PRAGMA / ALTERを撤去。
+   - migration 0012でschema provision済みのplayer_watchlistsについてrequest-time CREATE TABLE / CREATE INDEXを撤去。
+   - kingdom_watchlist_jobs / ranking_current等のfreshness compatibility ALTERも撤去。現行migration schemaを正とする。
+   - commits:
+     - `b201a61ece1f52f03d7c1ad2809dfe79f16cf927`
+     - `deb4aaec887edfc35a23f2f00e2b130c9efe4e8c`
+     - `812be62c09eb9ba43d9138143ac667619cef088e`
+     - `beddc004b2b6590cf4ea9fccdbe5602bbcadfdb9`
+   - 再確認結果: `src/index.js` にrequest-time CREATE/ALTER/DROP/PRAGMA table_infoは残っていない。
+
+## R2_ONLY / ranking_snapshots監査
+- `wrangler.jsonc` の `HISTORY_STORAGE_MODE` は明示的に `R2_ONLY`。
+- ranking current readは `kingdom_ranking_current`。
+- `ranking_snapshots` はR2 archiveのsource/history compatibilityとしてコードに残るが、R2_ONLYの通常writeでは1件/順位のD1 history INSERTを行わない。
+- Ranking historyのD1 readは target-specific `kid + board + target_id + LIMIT` の互換fallbackのみ。広域ranking_snapshots readは追加していない。
+- retentionは旧D1 history cleanup用として残っている。
+- R2 archive失敗時のbounded emergency bufferは既存設計として維持。R2_ONLY通常経路へのD1 history fallbackには戻していない。
+
+## Migration監査
+- migration files: 53
+- versions: 0001〜0052を網羅
+- 0008のみ歴史的に2ファイル存在:
+  - 0008_data_retention.sql
+  - 0008_kingdom_watchlist_jobs.sql
+- これは既存本番migration履歴との整合性を壊す可能性があるため改番しない。
+- 0015 history emergency buffer / 0019 watchlist runtime schema / 0035 API request locks / 0036 semaphore slots / 0048〜0052 R2・通知系を確認。
+
+## Preview isolation — 本番Deploy前のBLOCKER候補
+現行 `wrangler.jsonc` の `previews` はD1/R2をProductionと同じresource ID/nameにしている。
+- Preview D1: production `eagleeye-db`
+- Preview R2: production `eagleeye-archive`
+- Preview OAuth callbackもproduction Worker URLを指定。
+
+Cloudflare公式仕様上、Previewはproductionとは別のPreview-safe resourceを `previews` に明示することが推奨され、D1は `previews.d1_databases`、R2は `preview_bucket_name` / Preview R2 binding等で分離可能。
+したがって、Previewを実データに対して安全に使うには別D1/R2 resourceを用意して設定する必要がある。未知のresource ID/nameを推測して変更してはいけないため、現時点では設定変更せずBLOCKERとして記録。
+参照: Cloudflare Workers Preview configuration / resource isolation。
+
+## Workflow監査
+- D1 Apply Pending Migrations: manual dispatchのみ。Production migration前にschema drift guardあり。
+- D1 Schema Reconciliation: `RECONCILE_PRODUCTION` の明示入力がないとProduction mutation不可。
+- Legacy Load Test Schema Recovery: deprecated + hard fail。
+- Status comparator Pages: main pushでGitHub PagesへDeploy。
+- Hero Gear asset collector: manual dispatchのみ。
+- 本監査中にProduction migration / Deploy / Promotionは実行していない。
+
+## 現在判定
+**全コード監査は継続中。Production Deployはまだ禁止。**
+
+次の重点:
+1. 46 JSのroute/function接続最終確認
+2. 全migrationと実コードSQL schema参照の最終突合
+3. R2 archive key / read formatの全経路確認
+4. Preview resource isolationを含むwrangler最終設計
+5. 30工程台帳との突合
+6. syntax / version smoke / E2E gate整理
+7. Production D1 migration履歴照合
+8. Deploy Candidate判定
+
+絶対条件:
+- ranking_snapshots広域read復活禁止
+- R2_ONLY維持
+- API Pool / Global Semaphore / Safety Gate迂回禁止
+- Secrets/API keysをUI/JSON/logへ出さない
+- 本番Deployは全監査完了まで行わない
+- 実装済み / E2E済み / 本番反映済みを混同しない
