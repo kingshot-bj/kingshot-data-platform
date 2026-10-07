@@ -426,7 +426,7 @@ async function getWatchlistLimits(db) {
   const now = Date.now();
   if (watchlistLimitsCache && now - watchlistLimitsCache.at < CONFIG_CACHE_TTL_MS) return watchlistLimitsCache.rows;
   const rows = await db.prepare(
-    "SELECT role, kingdom_limit, player_limit, updated_at, updated_by FROM watchlist_limits ORDER BY CASE role WHEN 'BASIC' THEN 1 WHEN 'ADVANCED' THEN 2 WHEN 'ADMIN' THEN 3 ELSE 4 END"
+    "SELECT role, kingdom_limit, player_limit, updated_at, updated_by FROM watchlist_limits ORDER BY CASE role WHEN 'BASIC' THEN 1 WHEN 'ADVANCED' THEN 2 WHEN 'VIP' THEN 3 WHEN 'ADMIN' THEN 4 ELSE 5 END"
   ).all();
   const result = rows.results || [];
   watchlistLimitsCache = { at: now, rows: result };
@@ -486,7 +486,7 @@ async function getPlayerVisibilitySettings(db) {
 function visibilityEnabled(settings, itemKey, role) {
   const row = (settings || []).find(item => item.item_key === itemKey);
   if (!row) return role === "OWNER";
-  const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+  const roleRank = { BASIC: 1, ADVANCED: 2, VIP: 3, ADMIN: 4, OWNER: 5 };
   const userRank = roleRank[String(role).toUpperCase()] || 0;
   const minRank = roleRank[String(row.min_role || "OWNER").toUpperCase()] || 4;
   return userRank >= minRank;
@@ -2189,7 +2189,7 @@ async function renderMyPlayerPage(request, env) {
     }
     html+='<div class="muted" style="margin-top:12px">現在 '+esc(limits.registeredKingdoms||0)+' / 2 王国、'+esc(limits.activeAccounts||0)+' アカウントを登録中</div></div>';
     html+='<div class="card"><h2 style="margin:0 0 6px">KingShotアカウントを追加</h2><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype" style="margin-top:14px">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div>';
-    const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","ADMIN","OWNER"].includes(role);
+    const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
     const keyCount=Number(a.mightPulseKeyCount||0); const keyLimit=Number(a.mightPulseKeyLimit||3);
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+' / '+esc(keyLimit)+'</div>';
@@ -5245,7 +5245,7 @@ async function handlePlayerVisibilityApi(request, env) {
       const kingdomLimit = Number(body.kingdom_limit);
       const playerLimit = Number(body.player_limit);
 
-      if (!["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(role) ||
+      if (!["BASIC", "ADVANCED", "VIP", "ADMIN", "OWNER"].includes(role) ||
           !Number.isInteger(kingdomLimit) || kingdomLimit < 0 || kingdomLimit > 1000 ||
           !Number.isInteger(playerLimit) || playerLimit < 0 || playerLimit > 5000) {
         return json({ ok: false, error: "INVALID_WATCHLIST_LIMIT" }, 400);
@@ -5272,7 +5272,7 @@ async function handlePlayerVisibilityApi(request, env) {
     if (!PLAYER_VISIBILITY_ITEMS.some(item => item.key === itemKey)) {
       return json({ ok: false, error: "UNKNOWN_VISIBILITY_ITEM" }, 400);
     }
-    if (!["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(minRole)) {
+    if (!["BASIC", "ADVANCED", "VIP", "ADMIN", "OWNER"].includes(minRole)) {
       return json({ ok: false, error: "INVALID_MIN_ROLE" }, 400);
     }
     if (guard.auth.role === "ADMIN" && minRole === "OWNER") {
@@ -5316,10 +5316,10 @@ async function renderPlayerVisibilityPage(request, env) {
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
 
   const rows = settings.map(item => {
-    const minRole = ["BASIC", "ADVANCED", "ADMIN", "OWNER"].includes(String(item.min_role || "").toUpperCase())
+    const minRole = ["BASIC", "ADVANCED", "VIP", "ADMIN", "OWNER"].includes(String(item.min_role || "").toUpperCase())
       ? String(item.min_role).toUpperCase()
       : "OWNER";
-    const options = ["BASIC", "ADVANCED", "ADMIN", "OWNER"].map(role =>
+    const options = ["BASIC", "ADVANCED", "VIP", "ADMIN", "OWNER"].map(role =>
       "<option value='" + role + "'" + (role === minRole ? " selected" : "") + ">" + role + "以上</option>"
     ).join("");
     const disabledOwner = guard.auth.role === "ADMIN" && minRole === "OWNER" ? " disabled" : "";
@@ -7229,7 +7229,7 @@ async function handleOwnerUserRoleApi(request, env) {
   const guard = await requireOwner(request, env); if (guard.error) return guard.error;
   if (request.method !== "POST") return json({ ok:false,error:"METHOD_NOT_ALLOWED" },405);
   const body = await request.json().catch(() => ({})), targetUserId=String(body.user_id||"").trim(), role=String(body.role||"").trim().toUpperCase();
-  if (!targetUserId || !["BASIC","ADVANCED","ADMIN","OWNER"].includes(role)) return json({ok:false,error:"INVALID_USER_OR_ROLE"},400);
+  if (!targetUserId || !["BASIC","ADVANCED","VIP","ADMIN","OWNER"].includes(role)) return json({ok:false,error:"INVALID_USER_OR_ROLE"},400);
   const target=await env.DB.prepare("SELECT user_id,discord_id,role FROM users WHERE user_id=? LIMIT 1").bind(targetUserId).first();
   if(!target) return json({ok:false,error:"USER_NOT_FOUND"},404);
   if(target.user_id===guard.auth.user_id && role!=="OWNER") return json({ok:false,error:"SELF_OWNER_DOWNGRADE_FORBIDDEN"},409);
@@ -7368,7 +7368,7 @@ function draw(){
   ue.innerHTML=rows.map(function(u){
     var self=u.user_id===ownerId;
     var actions=button("履歴","history",u.user_id,"secondary",false);
-    ["BASIC","ADVANCED","ADMIN","OWNER"].forEach(function(role){
+    ["BASIC","ADVANCED","VIP","ADMIN","OWNER"].forEach(function(role){
       if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
     });
     if(u.status==="ACTIVE"){
