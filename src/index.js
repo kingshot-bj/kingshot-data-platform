@@ -5923,8 +5923,8 @@ function renderChangesShell(message, governorId, cards = "") {
 
 function isChangeVisibleForRole(change, role, settings = null) {
   if (!settings) {
-    if (role === "ADVANCED" || role === "ADMIN" || role === "OWNER") return true;
-    return !["vip", "x", "y"].includes(String(change.field_name || ""));
+    // Visibility settings are authoritative. Never fail open when unavailable.
+    return false;
   }
   const field = String(change.field_name || "");
   const key = field === "vip" ? "base_vip"
@@ -5967,9 +5967,10 @@ async function renderPlayerHistoryPage(request, env) {
     const result = await env.DB.prepare(
       'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT 100'
     ).bind(governorId).all();
+    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const rows = (result.results || []).map(row => {
       let p = {};
-      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role); } catch {}
+      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role, JSON.parse(row.payload_json), visibilitySettings); } catch {}
       return { ...row, player: p };
     });
     if (!rows.length) return renderHistoryShell("このプレイヤーの履歴はまだありません。", governorId);
