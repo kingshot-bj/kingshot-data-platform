@@ -291,24 +291,9 @@ async function runDataRetentionJob(env) {
 
 const API_REQUEST_LOCK_TTL_SECONDS = 180;
 
-let apiRequestLockSchemaPromise = null;
-
 async function ensureApiRequestLockSchema(db) {
-  if (apiRequestLockSchemaPromise) return apiRequestLockSchemaPromise;
-  apiRequestLockSchemaPromise = db.prepare(`
-    CREATE TABLE IF NOT EXISTS api_request_locks (
-      lock_key TEXT PRIMARY KEY,
-      lock_token TEXT NOT NULL,
-      lock_until INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )
-  `).run().then(() => undefined);
-  try {
-    return await apiRequestLockSchemaPromise;
-  } catch (error) {
-    apiRequestLockSchemaPromise = null;
-    throw error;
-  }
+  // Schema is provisioned by migrations/0035. Never perform request-time DDL.
+  return Boolean(db);
 }
 
 async function acquireApiRequestLock(env, lockKey, ttlSeconds = API_REQUEST_LOCK_TTL_SECONDS) {
