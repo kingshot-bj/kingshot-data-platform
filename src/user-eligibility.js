@@ -2,8 +2,11 @@ import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { addApiPoolKey } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
+import { getUserMightyCredential, registerUserMightyKey, revokeUserMightyKey } from "./user-mighty.js";
 
 const ADVANCED_ROLE = "ADVANCED";
+const VIP_ROLE = "VIP";
+const VIP_REGULAR_KEY_COUNT = 2;
 export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
 
 async function registerUserMightPulseApiKeyInternal(db, {
@@ -173,4 +176,85 @@ export async function evaluateAdvancedEligibility(db, userId) {
     eventType: "D1_WRITE", service: "user_eligibility", feature: "eligibility",
     operation: "EVALUATE_ADVANCED_ELIGIBILITY", targetType: "USER", targetId: userId
   }, () => evaluateAdvancedEligibilityInternal(db, userId));
+}
+
+
+export async function getVipEligibility(db, { env, userId } = {}) {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) {
+    return {
+      eligible: false,
+      role: null,
+      regularKeyCount: 0,
+      regularKeyRequired: VIP_REGULAR_KEY_COUNT,
+      hasMightyKey: false,
+      mightyKeyStatus: null,
+      mightyKey: null
+    };
+  }
+
+  const [user, keys, mighty] = await Promise.all([
+    db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first(),
+    db.prepare(
+      "SELECT key_id, status, contributed_at FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+    ).bind(normalizedUserId).all(),
+    getUserMightyCredential(db, { env, userId: normalizedUserId })
+  ]);
+
+  const regularKeyCount = (keys.results || []).filter(row => ["AVAILABLE","COOLDOWN","ERROR","DISABLED"].includes(String(row.status || "").toUpperCase())).length;
+  const hasMightyKey = Boolean(mighty && mighty.status === "AVAILABLE");
+  const eligible = regularKeyCount >= VIP_REGULAR_KEY_COUNT && hasMightyKey;
+
+  return {
+    eligible,
+    role: user?.role || null,
+    userStatus: user?.status || null,
+    regularKeyCount,
+    regularKeyRequired: VIP_REGULAR_KEY_COUNT,
+    hasMightyKey,
+    mightyKeyStatus: mighty?.status || null,
+    mightyKey: mighty ? {
+      credential_id: mighty.credential_id,
+      key_fingerprint: mighty.key_fingerprint,
+      status: mighty.status,
+      last_verified_at: mighty.last_verified_at,
+      last_success_at: mighty.last_success_at,
+      last_error_at: mighty.last_error_at,
+      last_error_code: mighty.last_error_code,
+      last_error_message: mighty.last_error_message
+    } : null
+  };
+}
+
+export async function evaluateVipEligibility(db, { env, userId } = {}) {
+  const normalizedUserId = String(userId || "").trim();
+  const eligibility = await getVipEligibility(db, { env, userId: normalizedUserId });
+  if (!normalizedUserId || !eligibility.role || !["BASIC","ADVANCED","VIP"].includes(String(eligibility.role).toUpperCase())) {
+    return { ...eligibility, changed: false, promoted: false, demoted: false };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (eligibility.eligible && eligibility.role !== VIP_ROLE) {
+    const result = await db.prepare(
+      "UPDATE users SET role=?, updated_at=? WHERE user_id=? AND role IN ('BASIC','ADVANCED') AND status='ACTIVE'"
+    ).bind(VIP_ROLE, now, normalizedUserId).run();
+    return { ...eligibility, role: result?.meta?.changes === 1 ? VIP_ROLE : eligibility.role, changed: result?.meta?.changes === 1, promoted: result?.meta?.changes === 1, demoted: false };
+  }
+
+  if (!eligibility.eligible && eligibility.role === VIP_ROLE) {
+    const result = await db.prepare(
+      "UPDATE users SET role='ADVANCED', updated_at=? WHERE user_id=? AND role='VIP' AND status='ACTIVE'"
+    ).bind(now, normalizedUserId).run();
+    return { ...eligibility, role: result?.meta?.changes === 1 ? "ADVANCED" : eligibility.role, changed: result?.meta?.changes === 1, promoted: false, demoted: result?.meta?.changes === 1 };
+  }
+
+  return { ...eligibility, changed: false, promoted: false, demoted: false };
+}
+
+export async function registerUserMightyApiKey(db, options = {}) {
+  return registerUserMightyKey(db, options);
+}
+
+export async function revokeUserMightyApiKey(db, userId) {
+  return revokeUserMightyKey(db, userId);
 }
