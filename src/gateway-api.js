@@ -338,8 +338,7 @@ async function handleGatewayFullLogExport(request, env, logRange) {
             to: retrievedAt.toISOString(),
             duration_seconds: logRange.seconds
           },
-          events: []
-        }).replace('"events":[]', '"events":['));
+        }).replace(/}$/, ',"events":['));
 
         while (true) {
           let sql = `SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,
