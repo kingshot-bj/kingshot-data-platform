@@ -201,8 +201,10 @@ export async function getVipEligibility(db, { env, userId } = {}) {
     getUserMightyCredential(db, { env, userId: normalizedUserId })
   ]);
 
-  const regularKeyCount = (keys.results || []).filter(row => ["AVAILABLE","COOLDOWN","ERROR","DISABLED"].includes(String(row.status || "").toUpperCase())).length;
-  const hasMightyKey = Boolean(mighty && mighty.status === "AVAILABLE");
+  // VIP entitlement is based on registered, non-revoked credentials.
+  // Temporary rate limits or upstream errors must not silently remove VIP.
+  const regularKeyCount = (keys.results || []).filter(row => String(row.status || "").toUpperCase() !== "REVOKED").length;
+  const hasMightyKey = Boolean(mighty);
   const eligible = regularKeyCount >= VIP_REGULAR_KEY_COUNT && hasMightyKey;
 
   return {
