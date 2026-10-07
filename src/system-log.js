@@ -2,6 +2,9 @@ const SYSTEM_LOG_MAX_MESSAGE = 2000;
 const SYSTEM_LOG_MAX_METADATA_BYTES = 12000;
 
 let systemLogSchemaPromise = null;
+let systemEventQueue = null;
+
+export function setSystemEventQueue(queue) { systemEventQueue = queue || null; }
 
 async function ensureSystemLogSchema(db) {
   // Schema is provisioned by migrations/0028_system_event_log.sql.
@@ -34,7 +37,20 @@ export async function recordSystemEvent(db, input = {}) {
     httpMethod:clean(input.httpMethod,16), httpPath:clean(input.httpPath,300), httpStatus:input.httpStatus==null?null:Number(input.httpStatus), startedAt, completedAt,
     elapsedMs:input.elapsedMs==null?Math.max(0,(completedAt-startedAt)*1000):Number(input.elapsedMs), errorCode:clean(input.errorCode,160), message:clean(input.message), metadataJson:safeJson({ ...(input.metadata && typeof input.metadata === "object" ? input.metadata : {}), ...(input.runId != null ? { runId:String(input.runId) } : {}), ...(input.jobId != null ? { jobId:String(input.jobId) } : {}), ...(input.leaseId != null ? { leaseId:String(input.leaseId) } : {}) }), createdAt:now };
   try {
-    await db.prepare("INSERT INTO system_event_log (event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,completed_at,elapsed_ms,error_code,message,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(
+    if (db && typeof globalThis !== "undefined") {
+      const queue = systemEventQueue;
+      if (queue && typeof queue.send === "function") {
+        await queue.send(event);
+        return event;
+      }
+    }
+  } catch (error) {
+    // Queue送信失敗時は既存D1直書きへフォールバックし、監査ログを失わない。
+    console.error("system_event_queue_send_failed", error?.message || error);
+  }
+
+  try {
+    await db.prepare("INSERT OR IGNORE INTO system_event_log (event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,completed_at,elapsed_ms,error_code,message,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(
       event.eventId,event.traceId,event.parentTraceId,event.eventType,event.service,event.feature,event.operation,event.status,event.actorType,event.actorId,event.targetType,event.targetId,event.httpMethod,event.httpPath,event.httpStatus,event.startedAt,event.completedAt,event.elapsedMs,event.errorCode,event.message,event.metadataJson,event.createdAt).run();
     return event;
   } catch(error) { console.error("system_event_log_write_failed",error?.message||error); return null; }
