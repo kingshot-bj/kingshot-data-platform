@@ -177,7 +177,9 @@ async function handleGatewayStatus(request, env) {
       until: retrievedAtUnix,
       pageSize: 500
     }),
-    env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
+    env.DB
+      ? env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
+      : Promise.reject(new Error("D1_UNAVAILABLE"))
   ]);
 
   const systemLogEvents = systemLogResult.status === "fulfilled" ? systemLogResult.value : [];
