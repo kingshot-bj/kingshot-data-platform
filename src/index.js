@@ -5327,7 +5327,7 @@ async function handlePlayerVisibilityApi(request, env) {
       return json({ ok: false, error: "OWNER_SETTING_REQUIRES_OWNER" }, 403);
     }
 
-    const roleRank = { BASIC: 1, ADVANCED: 2, ADMIN: 3, OWNER: 4 };
+    const roleRank = { BASIC: 1, ADVANCED: 2, VIP: 3, ADMIN: 4, OWNER: 5 };
     const threshold = roleRank[minRole];
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(
@@ -7220,7 +7220,7 @@ async function handleOwnerUsersApi(request, env) {
   const guard = await requireOwner(request, env); if (guard.error) return guard.error;
   const url = new URL(request.url), q = String(url.searchParams.get("q") || "").trim(), like = "%" + q + "%";
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 100), 1), 250);
-  const result = await env.DB.prepare(`SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.updated_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id WHERE (?='' OR u.discord_id LIKE ? OR COALESCE(u.username,'') LIKE ? OR COALESCE(u.global_name,'') LIKE ?) GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'ADVANCED' THEN 2 ELSE 3 END,u.last_login_at DESC LIMIT ?`)
+  const result = await env.DB.prepare(`SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.updated_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id WHERE (?='' OR u.discord_id LIKE ? OR COALESCE(u.username,'') LIKE ? OR COALESCE(u.global_name,'') LIKE ?) GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'VIP' THEN 2 WHEN 'ADVANCED' THEN 3 ELSE 4 END,u.last_login_at DESC LIMIT ?`)
     .bind(q, like, like, like, limit).all();
   const users = result.results || [];
   const [kingdomCounts, playerCounts] = await Promise.all([
