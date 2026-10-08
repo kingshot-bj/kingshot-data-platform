@@ -3,6 +3,8 @@ import { withD1TransientRetry } from "./d1-retry.js";
 import {
   configureApiPoolEncryption,
   leaseApiKey,
+  leaseMightyApiKey,
+  markApiPoolKeyNotMighty,
   recordApiPoolSuccess,
   recordApiPoolFailure,
   getApiPoolAvailability
@@ -45,7 +47,8 @@ export async function collectMightPulseThroughGuards(env, {
   globalLimiter = null,
   useGlobalSemaphore = true,
   timeoutMs,
-  maxRetries
+  maxRetries,
+  mightyOnly = false
 } = {}) {
   if (!env?.DB) throw new Error("DB_NOT_CONFIGURED");
   if (!path) throw new Error("MIGHTPULSE_PATH_REQUIRED");
@@ -64,12 +67,9 @@ export async function collectMightPulseThroughGuards(env, {
       releaseGlobal = await semaphore.acquire();
     }
 
-    lease = await withD1TransientRetry(() => leaseApiKey(env.DB, {
-      poolTypes,
-      purpose,
-      targetType,
-      targetId
-    }));
+    lease = await withD1TransientRetry(() => (mightyOnly
+      ? leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId })
+      : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId })));
 
     if (!lease) {
       const availability = await withD1TransientRetry(() => getApiPoolAvailability(env.DB, {
@@ -114,6 +114,20 @@ export async function collectMightPulseThroughGuards(env, {
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
+      const mightyRequired = mightyOnly && status === 403 && (
+        String(error?.details?.error || "").toLowerCase() === "mighty_required" ||
+        String(error?.details?.message || "").toLowerCase().includes("mighty_required")
+      );
+
+      if (mightyRequired) {
+        await withD1TransientRetry(() => markApiPoolKeyNotMighty(env.DB, {
+          keyId: lease.key_id,
+          leaseId: lease.lease_id,
+          errorCode: "MIGHTY_REQUIRED"
+        }));
+        lease = null;
+      }
+
       const cooldown = status === 429
         ? 60
         : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR"
@@ -144,6 +158,35 @@ export async function collectMightPulseThroughGuards(env, {
       await Promise.resolve(releaseGlobal()).catch(() => {});
     }
   }
+}
+
+export async function collectMightyOnly(env, {
+  path,
+  endpoint = path,
+  targetType,
+  targetId,
+  purpose,
+  query = null,
+  globalLimiter = null,
+  useGlobalSemaphore = true,
+  timeoutMs,
+  maxRetries,
+  poolTypes = DEFAULT_POOL_TYPES
+} = {}) {
+  return collectMightPulseThroughGuards(env, {
+    path,
+    endpoint,
+    targetType,
+    targetId,
+    purpose,
+    query,
+    globalLimiter,
+    useGlobalSemaphore,
+    timeoutMs,
+    maxRetries,
+    poolTypes,
+    mightyOnly: true
+  });
 }
 
 export async function collectKingdomRanking(env, kid, board, {
