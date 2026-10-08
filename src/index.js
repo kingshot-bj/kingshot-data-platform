@@ -4034,6 +4034,7 @@ export default {
       if (url.pathname === "/api/admin/api-raw-history") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleApiRawHistoryApi(request, env, guard.auth); }
       if (url.pathname === "/api/admin/api-pool/move") return await handleApiPoolMove(request, env);
       if (url.pathname === "/api/admin/api-pool/revoke") return await handleApiPoolRevoke(request, env);
+      if (url.pathname === "/api/admin/api-pool/mighty-check") return await handleApiPoolMightyCheck(request, env);
       if (url.pathname === "/api/admin/api-pool/health-check") return await handleApiPoolHealthCheck(request, env);
       if (url.pathname === "/api/admin/api-pool/delete") return await handleApiPoolDelete(request, env);
       if (url.pathname === "/api/admin/api-pool/test-player") return await handleApiPoolTestPlayer(request, env);
@@ -4930,6 +4931,114 @@ async function handleOwnerApiPoolReassign(request, env) {
   } catch (error) {
     console.error("Owner API pool reassign error:", error);
     return json({ ok: false, error: error?.message || "API_POOL_REASSIGN_FAILED" }, 400);
+  }
+}
+
+
+
+async function handleApiPoolMightyCheck(request, env) {
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  try {
+    const contentType = request.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+      ? await request.json()
+      : Object.fromEntries((await request.formData()).entries());
+    const keyId = String(body.key_id || "").trim();
+    if (!keyId) return json({ ok: false, error: "KEY_ID_REQUIRED" }, 400);
+
+    const key = await env.DB.prepare(
+      "SELECT key_id, provider, pool_type, status FROM api_pool_keys WHERE key_id = ? LIMIT 1"
+    ).bind(keyId).first();
+    if (!key) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
+    if (key.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
+
+    configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+    const lease = await leaseApiKeyForHealthCheck(env.DB, {
+      keyId,
+      purpose: "API_POOL_MIGHTY_CHECK",
+      targetType: "API_KEY",
+      targetId: keyId
+    });
+
+    let mightyCapable = false;
+    let checkStatus = "UNKNOWN";
+    let errorCode = null;
+    try {
+      const result = await mightPulseFetch(env, "/kvk/matchups", {
+        apiKey: lease.api_key,
+        operation: "API_POOL_MIGHTY_CHECK",
+        targetType: "API_KEY",
+        targetId: keyId
+      });
+      mightyCapable = Number(result.status) >= 200 && Number(result.status) < 300;
+      checkStatus = mightyCapable ? "CONFIRMED" : "UNKNOWN";
+      await recordApiPoolSuccess(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        poolType: lease.pool_type,
+        endpoint: "/kvk/matchups",
+        targetType: "API_KEY",
+        targetId: keyId,
+        purpose: "API_POOL_MIGHTY_CHECK",
+        httpStatus: result.status,
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      });
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      errorCode = error?.code || null;
+      if (status === 403 || error?.code === "MIGHTY_REQUIRED") {
+        checkStatus = "NOT_MIGHTY";
+        mightyCapable = false;
+      } else if (status === 401) {
+        checkStatus = "ERROR";
+        mightyCapable = false;
+      } else {
+        checkStatus = "UNKNOWN";
+      }
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const disable = status === 401;
+      const keepAvailable = !disable && cooldown === 0;
+      await recordApiPoolFailure(env.DB, {
+        keyId: lease.key_id,
+        leaseId: lease.lease_id,
+        poolType: lease.pool_type,
+        endpoint: "/kvk/matchups",
+        targetType: "API_KEY",
+        targetId: keyId,
+        purpose: "API_POOL_MIGHTY_CHECK",
+        httpStatus: status,
+        errorCode: error?.code || "MIGHTPULSE_MIGHTY_CHECK_FAILED",
+        errorMessage: error?.message || null,
+        cooldownSeconds: cooldown,
+        disable,
+        keepAvailable
+      });
+      if (status !== 403) {
+        await env.DB.prepare(
+          "UPDATE api_pool_keys SET mighty_capable = ?, mighty_checked_at = ?, mighty_check_status = ?, mighty_last_error_code = ?, updated_at = ? WHERE key_id = ?"
+        ).bind(0, Math.floor(Date.now() / 1000), checkStatus, errorCode, Math.floor(Date.now() / 1000), keyId).run();
+        return json({ ok: false, error: error?.code || "MIGHTY_CHECK_FAILED", status, mighty_capable: false, mighty_check_status: checkStatus });
+      }
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      "UPDATE api_pool_keys SET mighty_capable = ?, mighty_checked_at = ?, mighty_check_status = ?, mighty_last_error_code = ?, updated_at = ? WHERE key_id = ?"
+    ).bind(mightyCapable ? 1 : 0, now, checkStatus, errorCode, now, keyId).run();
+
+    return json({
+      ok: true,
+      key_id: keyId,
+      mighty_capable: mightyCapable,
+      mighty_check_status: checkStatus,
+      mighty_checked_at: now
+    });
+  } catch (error) {
+    console.error("API pool Mighty check error:", error);
+    return json({ ok: false, error: error?.message || "API_POOL_MIGHTY_CHECK_FAILED" }, 400);
   }
 }
 
