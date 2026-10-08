@@ -171,7 +171,7 @@ export async function runKingdomCatalogDiscovery(env, {
     const nextPage = rows.length < safePageSize ? 1 : targetPage + 1;
     await env.DB.prepare(
       "UPDATE kingdom_catalog_discovery SET next_page = ?, state = 'IDLE', pages_checked = pages_checked + 1, kingdoms_seen = kingdoms_seen + ?, last_page_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE discovery_key = ?"
-    ) .bind(nextPage, uniqueCandidates.length, now, now, now, DISCOVERY_KEY).run();
+    ).bind(nextPage, uniqueCandidates.length, now, now, now, DISCOVERY_KEY).run();
 
     await recordDiagnostic(env.DB, {
       service: "kingdom_catalog",
@@ -182,9 +182,9 @@ export async function runKingdomCatalogDiscovery(env, {
       targetType: "PAGE",
       targetId: String(targetPage),
       rowsReceived: rows.length,
-      rowsSaved: statements.length,
+      rowsSaved,
       message: "王国Catalogの1ページ取得が完了しました。",
-      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms: statements.length, existingKingdoms: uniqueCandidates.length - statements.length }
+      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms, updatedKingdoms, existingKingdoms: uniqueCandidates.length - newKingdoms - updatedKingdoms }
     });
     await recordSystemEvent(env.DB, {
       traceId,
