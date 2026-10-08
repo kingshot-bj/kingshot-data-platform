@@ -150,6 +150,20 @@ export async function leaseMightyApiKey(db, {
   });
 }
 
+export async function setApiPoolMightyMetadata(db, {
+  keyId,
+  mightyCapable = false,
+  status = null,
+  errorCode = null
+} = {}) {
+  if (!keyId) return;
+  const now = Math.floor(Date.now() / 1000);
+  const checkStatus = status || (mightyCapable ? "CONFIRMED" : "NOT_MIGHTY");
+  await db.prepare(
+    "UPDATE api_pool_keys SET mighty_capable = ?1, mighty_checked_at = ?2, mighty_check_status = ?3, mighty_last_error_code = ?4, updated_at = ?2 WHERE key_id = ?5"
+  ).bind(mightyCapable ? 1 : 0, now, checkStatus, errorCode, keyId).run();
+}
+
 export async function markApiPoolKeyNotMighty(db, {
   keyId,
   leaseId,
