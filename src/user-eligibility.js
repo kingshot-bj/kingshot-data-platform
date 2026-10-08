@@ -4,7 +4,7 @@ import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.j
 import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
 const VIP_ROLE = "VIP";
-export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
+export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = Number.POSITIVE_INFINITY;
 
 async function registerUserMightPulseApiKeyInternal(db, {
   env,
@@ -36,13 +36,10 @@ async function registerUserMightPulseApiKeyInternal(db, {
     "SELECT key_id, key_fingerprint, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
   ).bind(normalizedUserId).all();
   const activeKeys = existingKeys.results || [];
-  if (activeKeys.length >= MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS) {
-    const error = new Error("MIGHTPULSE_API_KEY_LIMIT_REACHED");
-    error.code = "MIGHTPULSE_API_KEY_LIMIT_REACHED";
-    error.userMessage = "登録できるMightPulse APIキーは最大3本です。";
-    throw error;
-  }
-
+  // User-contributed MightPulse keys are intentionally not capped.
+  // Mighty users are a separate, prioritized pool, so each user may register
+  // as many valid non-duplicate keys as needed. Duplicate fingerprints and
+  // revoked-key exclusion remain enforced below.
   // Validate the contributed key independently of the user's KingShot link.
   // A user may contribute an API key before registering any player account.
   try {
