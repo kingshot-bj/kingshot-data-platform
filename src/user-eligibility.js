@@ -1,11 +1,10 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
-import { addApiPoolKey, setApiPoolMightyMetadata } from "./api-pool.js";
+import { addApiPoolKey, setApiPoolMightyMetadata, leaseApiKeyForHealthCheck, releaseApiLease, recordApiPoolSuccess, recordApiPoolFailure } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
 const VIP_ROLE = "VIP";
-const VIP_USER_KEY_COUNT = 3;
-export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
+export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = null;
 
 async function registerUserMightPulseApiKeyInternal(db, {
   env,
@@ -37,13 +36,6 @@ async function registerUserMightPulseApiKeyInternal(db, {
     "SELECT key_id, key_fingerprint, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
   ).bind(normalizedUserId).all();
   const activeKeys = existingKeys.results || [];
-  if (activeKeys.length >= MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS) {
-    const error = new Error("MIGHTPULSE_API_KEY_LIMIT_REACHED");
-    error.code = "MIGHTPULSE_API_KEY_LIMIT_REACHED";
-    error.userMessage = "MightPulse APIキーは1ユーザーにつき最大3本まで提供できます。";
-    throw error;
-  }
-
   // Validate the contributed key independently of the user's KingShot link.
   // A user may contribute an API key before registering any player account.
   try {
@@ -204,58 +196,57 @@ export async function evaluateAdvancedEligibility(db, userId) {
 }
 
 
-export async function getVipEligibility(db, { userId } = {}) {
-  const normalizedUserId = String(userId || "").trim();
-  if (!normalizedUserId) {
-    return {
-      eligible: false,
-      role: null,
-      regularKeyCount: 0,
-      regularKeyRequired: VIP_USER_KEY_COUNT,
-      hasMightyKey: false,
-      mightyKeyStatus: null,
-      mightyKey: null
-    };
+async function checkExistingUserMightyKeys(db, { env, userId } = {}) {
+  const load = async () => (await db.prepare(
+    "SELECT key_id, key_fingerprint, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+  ).bind(String(userId || "")).all()).results || [];
+  let keys = await load();
+  if (keys.some(row => Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED")) return keys;
+  if (!env?.EAGLEEYE_SESSION_SECRET) return keys;
+
+  for (const row of keys) {
+    if (String(row.mighty_check_status || "").toUpperCase() !== "UNCONFIRMED") continue;
+    let lease = null;
+    try {
+      lease = await leaseApiKeyForHealthCheck(db, { keyId: row.key_id, purpose: "USER_MIGHTY_MIGRATION_CHECK", targetType: "USER", targetId: userId });
+      const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs: 15000, maxRetries: 1 });
+      await recordApiPoolSuccess(db, { keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type, endpoint: "/kvk/matchups", targetType: "USER", targetId: userId, purpose: "USER_MIGHTY_MIGRATION_CHECK", httpStatus: result.status });
+      await setApiPoolMightyMetadata(db, { keyId: row.key_id, mightyCapable: true, status: "CONFIRMED" });
+      break;
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      if (lease) {
+        if (status === 403) {
+          await setApiPoolMightyMetadata(db, { keyId: row.key_id, mightyCapable: false, status: "NOT_MIGHTY", errorCode: "MIGHTY_REQUIRED" });
+          await releaseApiLease(db, lease.lease_id);
+        } else {
+          await recordApiPoolFailure(db, { keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type, endpoint: "/kvk/matchups", targetType: "USER", targetId: userId, purpose: "USER_MIGHTY_MIGRATION_CHECK", httpStatus: status, errorCode: error?.code || "MIGHTY_CHECK_FAILED", errorMessage: error?.message || null, cooldownSeconds: status === 429 ? 60 : (status >= 500 || error?.retryable ? 15 : 0), disable: status === 401 });
+        }
+      }
+      if (status !== 403) break;
+    }
   }
+  return load();
+}
 
-  const [user, keys] = await Promise.all([
-    db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first(),
-    db.prepare(
-      "SELECT key_id, key_fingerprint, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
-    ).bind(normalizedUserId).all()
-  ]);
+export async function getVipEligibility(db, { env, userId } = {}) {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return { eligible: false, role: null, keyCount: 0, hasMightyKey: false, mightyKeyStatus: null, mightyKey: null, apiKeys: [] };
 
-  const contributedKeys = keys.results || [];
-  const regularKeyCount = contributedKeys.length;
-  const mightyKey = contributedKeys.find(row =>
-    Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED"
-  ) || null;
+  const user = await db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first();
+  const contributedKeys = await checkExistingUserMightyKeys(db, { env, userId: normalizedUserId });
+  const mightyKey = contributedKeys.find(row => Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED") || null;
   const hasMightyKey = Boolean(mightyKey);
-  const eligible = regularKeyCount >= VIP_USER_KEY_COUNT && hasMightyKey;
 
   return {
-    eligible,
+    eligible: hasMightyKey,
     role: user?.role || null,
     userStatus: user?.status || null,
-    regularKeyCount,
-    regularKeyRequired: VIP_USER_KEY_COUNT,
+    keyCount: contributedKeys.length,
     hasMightyKey,
     mightyKeyStatus: mightyKey?.mighty_check_status || null,
-    mightyKey: mightyKey ? {
-      key_id: mightyKey.key_id,
-      key_fingerprint: mightyKey.key_fingerprint ? String(mightyKey.key_fingerprint).slice(-8) : null,
-      status: mightyKey.status,
-      mighty_checked_at: mightyKey.mighty_checked_at,
-      mighty_check_status: mightyKey.mighty_check_status
-    } : null,
-    apiKeys: contributedKeys.map(row => ({
-      key_id: row.key_id,
-      status: row.status,
-      contributed_at: row.contributed_at,
-      mighty_capable: Number(row.mighty_capable) === 1,
-      mighty_check_status: row.mighty_check_status,
-      mighty_checked_at: row.mighty_checked_at
-    }))
+    mightyKey: mightyKey ? { key_id: mightyKey.key_id, key_fingerprint: mightyKey.key_fingerprint ? String(mightyKey.key_fingerprint).slice(-8) : null, status: mightyKey.status, mighty_checked_at: mightyKey.mighty_checked_at, mighty_check_status: mightyKey.mighty_check_status } : null,
+    apiKeys: contributedKeys.map(row => ({ key_id: row.key_id, status: row.status, contributed_at: row.contributed_at, mighty_capable: Number(row.mighty_capable) === 1, mighty_check_status: row.mighty_check_status, mighty_checked_at: row.mighty_checked_at }))
   };
 }
 
