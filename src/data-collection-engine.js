@@ -140,7 +140,7 @@ export async function collectMightPulseThroughGuards(env, {
       const disable = status === 401 || status === 403;
       const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
 
-      await withD1TransientRetry(() => recordApiPoolFailure(env.DB, {
+      if (lease) await withD1TransientRetry(() => recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
         poolType: lease.pool_type,
