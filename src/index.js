@@ -1931,7 +1931,7 @@ async function handleMyMightyCheckApi(request, env) {
     for (const row of keys) {
       let lease = null;
       try {
-        lease = await leaseUserMightyCheckApiKey(env.DB, { userId: auth.user_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
+        lease = await leaseApiKeyForHealthCheck(env.DB, { keyId: row.key_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
         const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1 });
         checked++;
         confirmed = row.key_id;
