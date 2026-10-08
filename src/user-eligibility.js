@@ -204,25 +204,40 @@ export async function getVipEligibility(db, { userId } = {}) {
 export async function evaluateVipEligibility(db, { userId } = {}) {
   const normalizedUserId = String(userId || "").trim();
   const eligibility = await getVipEligibility(db, { userId: normalizedUserId });
-  if (!normalizedUserId || !eligibility.role || !["BASIC","ADVANCED","VIP"].includes(String(eligibility.role).toUpperCase())) {
+  const role = String(eligibility.role || "").toUpperCase();
+
+  if (!normalizedUserId || !role || !["BASIC","ADVANCED","VIP","ADMIN","OWNER"].includes(role)) {
     return { ...eligibility, changed: false, promoted: false, demoted: false };
   }
 
+  // ADMIN / OWNER already outrank VIP. They must never be downgraded or
+  // promoted to VIP, but confirmed Mighty eligibility should still unlock
+  // the VIP/Mighty feature set.
+  if (eligibility.eligible && ["ADMIN","OWNER"].includes(role)) {
+    return {
+      ...eligibility,
+      changed: false,
+      promoted: false,
+      demoted: false,
+      featureEligible: true
+    };
+  }
+
   const now = Math.floor(Date.now() / 1000);
-  if (eligibility.eligible && eligibility.role !== VIP_ROLE) {
+  if (eligibility.eligible && role !== VIP_ROLE) {
     const result = await db.prepare(
       "UPDATE users SET role=?, updated_at=? WHERE user_id=? AND role IN ('BASIC','ADVANCED') AND status='ACTIVE'"
     ).bind(VIP_ROLE, now, normalizedUserId).run();
-    return { ...eligibility, role: result?.meta?.changes === 1 ? VIP_ROLE : eligibility.role, changed: result?.meta?.changes === 1, promoted: result?.meta?.changes === 1, demoted: false };
+    return { ...eligibility, role: result?.meta?.changes === 1 ? VIP_ROLE : eligibility.role, changed: result?.meta?.changes === 1, promoted: result?.meta?.changes === 1, demoted: false, featureEligible: true };
   }
 
-  if (!eligibility.eligible && eligibility.role === VIP_ROLE) {
+  if (!eligibility.eligible && role === VIP_ROLE) {
     const result = await db.prepare(
       "UPDATE users SET role='ADVANCED', updated_at=? WHERE user_id=? AND role='VIP' AND status='ACTIVE'"
     ).bind(now, normalizedUserId).run();
-    return { ...eligibility, role: result?.meta?.changes === 1 ? "ADVANCED" : eligibility.role, changed: result?.meta?.changes === 1, promoted: false, demoted: result?.meta?.changes === 1 };
+    return { ...eligibility, role: result?.meta?.changes === 1 ? "ADVANCED" : eligibility.role, changed: result?.meta?.changes === 1, promoted: false, demoted: result?.meta?.changes === 1, featureEligible: false };
   }
 
-  return { ...eligibility, changed: false, promoted: false, demoted: false };
+  return { ...eligibility, changed: false, promoted: false, demoted: false, featureEligible: Boolean(eligibility.eligible) };
 }
 
