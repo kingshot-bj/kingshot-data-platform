@@ -8795,7 +8795,6 @@ async function renderHome(request, env) {
     : "<span>BJ</span>";
 
   const mascotSrc = EAGLEEYE_BJNYAN.dashboard;
-  const mascotFetchSrc = EAGLEEYE_BJNYAN.player || mascotSrc;
   const loginBlock = session
     ? `<a class="ee-profile" href="/status"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile" href="/api/auth/discord"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b>ログイン</b><small>${roleLabel}</small></span></a>`;
@@ -8837,17 +8836,19 @@ async function renderHome(request, env) {
 </div>
 <script>
 (function(){
-  var mascot=document.getElementById("bjMascot"),state=document.getElementById("bjState"),title=document.getElementById("bjTitle"),sub=document.getElementById("bjSub");
+  var mascot=document.getElementById("bjMascot"),mascotImg=mascot.querySelector(".ee-mascot-img"),state=document.getElementById("bjState"),title=document.getElementById("bjTitle"),sub=document.getElementById("bjSub");
+  var mascotStates={normal:"/assets/eagleeye/bjnyan/001_normal.png",searching:"/assets/eagleeye/bjnyan/009_searching.png",fetching:"/assets/eagleeye/bjnyan/010_data_fetching.png",analysis:"/assets/eagleeye/bjnyan/034_analysis.png",complete:"/assets/eagleeye/bjnyan/021_data_complete.png"};
   var phases=[
-    {state:"観測中",title:"EagleEyeは観測中",sub:"データの変化を待っています",cls:""},
-    {state:"検索中",title:"BJにゃんが探しています",sub:"プレイヤー・王国データを確認中",cls:"is-fetching"},
-    {state:"解析中",title:"データを解析しています",sub:"変化を見つけています",cls:""},
-    {state:"確認完了",title:"観測データを確認しました",sub:"次の変化を待っています",cls:""}
+    {state:"観測中",title:"EagleEyeは観測中",sub:"データの変化を待っています",cls:"",img:"normal"},
+    {state:"検索中",title:"BJにゃんが探しています",sub:"プレイヤー・王国データを確認中",cls:"is-fetching",img:"searching"},
+    {state:"解析中",title:"データを解析しています",sub:"変化を見つけています",cls:"",img:"analysis"},
+    {state:"確認完了",title:"観測データを確認しました",sub:"次の変化を待っています",cls:"",img:"complete"}
   ];
   var index=0;
   function phase(){
     var p=phases[index%phases.length];
     mascot.className="ee-mascot "+p.cls;
+    if(mascotImg){ mascotImg.style.display=""; mascotImg.src=mascotStates[p.img]||mascotStates.normal; }
     state.textContent=p.state;title.textContent=p.title;sub.textContent=p.sub;
     index++;
   }
