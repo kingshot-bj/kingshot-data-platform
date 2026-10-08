@@ -1,5 +1,5 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
-import { addApiPoolKey } from "./api-pool.js";
+import { addApiPoolKey, decryptSecret } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
@@ -33,7 +33,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
   }
 
   const existingKeys = await db.prepare(
-    "SELECT key_id, key_fingerprint, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+    "SELECT key_id, key_fingerprint, encrypted_key, status, contributed_at FROM api_pool_keys WHERE provider = 'MIGHTPULSE' AND pool_type = 'USER_CONTRIBUTED' AND contributed_by_user_id = ? AND status != 'REVOKED' ORDER BY contributed_at ASC"
   ).bind(normalizedUserId).all();
   const activeKeys = existingKeys.results || [];
   // User-contributed MightPulse keys are intentionally not capped.
@@ -114,6 +114,23 @@ export async function getAdvancedEligibility(db, userId) {
   ]);
 
   const contributedKeys = apiKey?.results || [];
+  const apiKeys = await Promise.all(contributedKeys.map(async row => {
+    let apiKeyPrefix = null;
+    try {
+      const decrypted = await decryptSecret(row.encrypted_key);
+      const prefixLength = Math.min(12, decrypted.length);
+      apiKeyPrefix = prefixLength > 0 ? decrypted.slice(0, prefixLength) + (decrypted.length > prefixLength ? "…" : "") : null;
+    } catch {
+      apiKeyPrefix = null;
+    }
+    return {
+      key_id: row.key_id,
+      key_fingerprint: row.key_fingerprint ? String(row.key_fingerprint).slice(0, 8) : null,
+      api_key_prefix: apiKeyPrefix,
+      status: row.status,
+      contributed_at: row.contributed_at
+    };
+  }));
   const hasPlayerLink = Boolean(playerLink);
   const hasMightPulseKey = contributedKeys.length > 0;
   const eligible = hasPlayerLink && hasMightPulseKey;
@@ -127,12 +144,7 @@ export async function getAdvancedEligibility(db, userId) {
     role: user?.role || null,
     userStatus: user?.status || null,
     playerLink: playerLink || null,
-    apiKeys: contributedKeys.map(row => ({
-      key_id: row.key_id,
-      key_fingerprint: row.key_fingerprint ? String(row.key_fingerprint).slice(0, 8) : null,
-      status: row.status,
-      contributed_at: row.contributed_at
-    }))
+    apiKeys
   };
 }
 
