@@ -8816,7 +8816,7 @@ async function renderHome(request, env) {
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
-<section class="ee-heading"><div class="ee-heading-copy"><div class="ee-kicker">KINGSHOT DATA PLATFORM</div><div class="ee-title">いま、何が起きてる？</div></div><div class="ee-live"><i></i> LIVE</div></section>
+<section class="ee-heading"><div class="ee-heading-copy"><div class="ee-kicker">KINGSHOT DATA PLATFORM</div><div class="ee-title">EagleEye Observer</div></div><div class="ee-live"><i></i> LIVE</div></section>
 <section class="ee-stage" id="bjStage">
 <div class="ee-stage-label">BJNYAN / OBSERVER</div><div class="ee-stage-state" id="bjState">観測中</div>
 <div class="ee-mascot" id="bjMascot"><img class="ee-mascot-img" src="${mascotSrc}" alt="BJにゃん" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"><span class="ee-mascot-fallback" style="display:none">BJ</span></div>
