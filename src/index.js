@@ -5273,9 +5273,19 @@ async function handleApiPoolDelete(request, env) {
     if (!keyId) return json({ ok: false, error: "KEY_ID_REQUIRED" }, 400);
 
     const row = await env.DB.prepare(
-      "SELECT key_id, status FROM api_pool_keys WHERE key_id = ? LIMIT 1"
+      "SELECT key_id, status, leased_until, lease_id FROM api_pool_keys WHERE key_id = ? LIMIT 1"
     ).bind(keyId).first();
     if (!row) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
+
+    const now = Math.floor(Date.now() / 1000);
+    if (row.leased_until && Number(row.leased_until) > now) {
+      return json({
+        ok: false,
+        error: "API_POOL_KEY_LEASED",
+        message: "このAPIキーは現在リース中（処理中）のため削除できません。処理完了またはリース期限切れ後に削除してください。",
+        leased_until: Number(row.leased_until)
+      }, 409);
+    }
 
     // Hard delete: remove leases and usage history, then remove the encrypted key record.
     await env.DB.batch([
@@ -5783,7 +5793,7 @@ async function renderApiPoolAdminPage(request, env) {
         "<div class='detail-item'><small>最終エラー</small><b>" + escapeHtml(k.last_error_code || "-") + "</b></div>" +
         "<div class='detail-item'><small>APIキー識別</small><b>" + escapeHtml(k.api_key_prefix || "-") + "</b></div>" +
         "<div class='detail-item'><small>Fingerprint</small><b>" + escapeHtml(k.key_fingerprint || "-") + "</b></div>" +
-      "</div><div class='actions'><button type='button' class='action ok' data-mighty-check='" + escapeHtml(k.key_id) + "'>⚡ Mighty判定</button></div>" + ownerControls + "</div>" +
+      "</div><div class='actions'><button type='button' class='action ok' data-mighty-check='" + escapeHtml(k.key_id) + "'>⚡ Mighty判定</button><button type='button' class='action danger' data-delete-key='" + escapeHtml(k.key_id) + "'>🗑️ キーを削除</button></div>" + ownerControls + "</div>" +
     "</details>";
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
@@ -5807,10 +5817,18 @@ async function renderApiPoolAdminPage(request, env) {
   if(reassignButton){
     event.preventDefault();
     event.stopPropagation();
-    reassign(reassignButton.dataset.reassignKey);
+    reassign(reassignButton.dataset.reassignKey, reassignButton);
+    return;
+  }
+  const deleteButton=event.target.closest('[data-delete-key]');
+  if(deleteButton){
+    event.preventDefault();
+    event.stopPropagation();
+    deleteKey(deleteButton.dataset.deleteKey);
+    return;
   }
 });
-async function mightyCheck(id){if(!confirm('このキーでMighty判定を実行しますか？\\nMighty専用APIを1回呼び出します。'))return;const r=await fetch('/api/admin/api-pool/mighty-check',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({key_id:id})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok){alert(d.error||'Mighty判定に失敗しました');return}alert(d.mighty_capable?'⚡ Mighty対応キーです':'通常キーです');location.reload()}async function reassign(id){const u=document.getElementById('reassignUser')?.value;if(!u){alert('変更先ユーザーを選択してください');return}if(!confirm('このAPIキーの提供者を変更しますか？'))return;const r=await fetch('/api/owner/api-pool/reassign',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({key_id:id,user_id:u})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok){alert(d.error||'変更に失敗しました');return}location.reload()};</script></main></body></html>`;
+async function mightyCheck(id){if(!confirm('このキーでMighty判定を実行しますか？\\nMighty専用APIを1回呼び出します。'))return;const r=await fetch('/api/admin/api-pool/mighty-check',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({key_id:id})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok){alert(d.error||'Mighty判定に失敗しました');return}alert(d.mighty_capable?'⚡ Mighty対応キーです':'通常キーです');location.reload()}async function reassign(id,button){const row=button?.closest('[data-key-id]');const select=row?.querySelector('[data-reassign-user]');const u=select?.value||'';if(!u){alert('変更先ユーザーを選択してください');return}if(!confirm('このAPIキーの提供者を変更しますか？'))return;const r=await fetch('/api/owner/api-pool/reassign',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({key_id:id,user_id:u})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok){alert(d.error||'変更に失敗しました');return}location.reload()};async function deleteKey(id){if(!confirm('このAPIキーを完全に削除しますか？\\n\\nAPIキー本体だけでなく、このキーのリース情報・使用履歴も削除されます。'))return;const r=await fetch('/api/admin/api-pool/delete',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({key_id:id})});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok){alert(d.message||d.error||'キーの削除に失敗しました');return}location.reload()};</script></main></body></html>`;
 }
 
 
