@@ -4,6 +4,7 @@ import {
   configureApiPoolEncryption,
   leaseApiKey,
   leaseMightyApiKey,
+  leaseUserMightyApiKey,
   markApiPoolKeyNotMighty,
   recordApiPoolSuccess,
   recordApiPoolFailure,
@@ -48,7 +49,8 @@ export async function collectMightPulseThroughGuards(env, {
   useGlobalSemaphore = true,
   timeoutMs,
   maxRetries,
-  mightyOnly = false
+  mightyOnly = false,
+  userId = null
 } = {}) {
   if (!env?.DB) throw new Error("DB_NOT_CONFIGURED");
   if (!path) throw new Error("MIGHTPULSE_PATH_REQUIRED");
@@ -68,7 +70,9 @@ export async function collectMightPulseThroughGuards(env, {
     }
 
     lease = await withD1TransientRetry(() => (mightyOnly
-      ? leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId })
+      ? (userId
+        ? leaseUserMightyApiKey(env.DB, { userId, purpose, targetType, targetId })
+        : leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId }))
       : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId })));
 
     if (!lease) {
@@ -158,6 +162,37 @@ export async function collectMightPulseThroughGuards(env, {
       await Promise.resolve(releaseGlobal()).catch(() => {});
     }
   }
+}
+
+export async function collectUserMightyOnly(env, {
+  userId,
+  path,
+  endpoint = path,
+  targetType,
+  targetId,
+  purpose,
+  query = null,
+  globalLimiter = null,
+  useGlobalSemaphore = true,
+  timeoutMs,
+  maxRetries
+} = {}) {
+  if (!userId) throw new Error("USER_ID_REQUIRED");
+  return collectMightPulseThroughGuards(env, {
+    path,
+    endpoint,
+    targetType,
+    targetId,
+    purpose,
+    query,
+    globalLimiter,
+    useGlobalSemaphore,
+    timeoutMs,
+    maxRetries,
+    poolTypes: ["USER_CONTRIBUTED"],
+    mightyOnly: true,
+    userId
+  });
 }
 
 export async function collectMightyOnly(env, {
