@@ -1,4 +1,4 @@
-import { collectMightPulseThroughGuards, collectMightyOnly } from "./data-collection-engine.js";
+import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly } from "./data-collection-engine.js";
 import { evaluateVipEligibility } from "./user-eligibility.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
@@ -277,14 +277,14 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
   const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
   const canUseMighty = ["VIP", "ADMIN", "OWNER"].includes(String(eligibility.role || "").toUpperCase());
   if (!canUseMighty || !eligibility.eligible) {
-    return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>VIP機能です。MightPulse APIキー3本をPoolへ提供し、そのうち1本以上がMighty対応として確認されると利用できます。<br><br>APIキー："+eligibility.regularKeyCount+" / "+eligibility.regularKeyRequired+"<br>Mighty対応キー："+(eligibility.hasMightyKey?"確認済み":"未確認")+"</div></main>");
+    return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>VIP機能です。Mighty対応のMightPulse APIキーを登録すると利用できます。<br><br>登録APIキー："+eligibility.keyCount+"本<br>Mighty対応："+(eligibility.hasMightyKey?"確認済み":"未確認")+"</div></main>");
   }
   const traceId=systemTraceId("kingdom-mighty");
   await recordSystemEvent(env.DB,{traceId,eventType:"START",service:"kingdom_mighty",feature:"mighty",operation:"READ_EVENTS_KVK",status:"STARTED",targetType:"KINGDOM",targetId:String(kid)}).catch(()=>{});
   let events=null,kvk=null,errors=[];
-  try { events=await collectMightyOnly(env,{path:"/kingdoms/"+encodeURIComponent(kid)+"/events",endpoint:"/kingdoms/:kid/events",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_EVENTS",timeoutMs:15000,maxRetries:2}); }
+  try { events=await collectUserMightyOnly(env,{userId:auth.user_id,path:"/kingdoms/"+encodeURIComponent(kid)+"/events",endpoint:"/kingdoms/:kid/events",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_EVENTS",timeoutMs:15000,maxRetries:2}); }
   catch(e) { errors.push("Events: "+String(e?.code||e?.message||e)); }
-  try { kvk=await collectMightyOnly(env,{path:"/kingdoms/"+encodeURIComponent(kid)+"/kvk",endpoint:"/kingdoms/:kid/kvk",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_KVK",timeoutMs:15000,maxRetries:2}); }
+  try { kvk=await collectUserMightyOnly(env,{userId:auth.user_id,path:"/kingdoms/"+encodeURIComponent(kid)+"/kvk",endpoint:"/kingdoms/:kid/kvk",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_KVK",timeoutMs:15000,maxRetries:2}); }
   catch(e) { errors.push("KvK: "+String(e?.code||e?.message||e)); }
   await recordSystemEvent(env.DB,{traceId,eventType:"COMPLETE",service:"kingdom_mighty",feature:"mighty",operation:"READ_EVENTS_KVK",status:errors.length?"WARNING":"SUCCESS",targetType:"KINGDOM",targetId:String(kid),message:errors.length?errors.join(" | "):"Mighty Events / KvK取得完了"}).catch(()=>{});
   return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty Events / KvK</h1>"+(errors.length?"<div class='empty'>"+errors.map(esc).join("<br>")+"</div>":"")+"<section><h2>Events</h2><pre>"+esc(JSON.stringify(events?.result?.data||events?.result||{},null,2))+"</pre></section><section><h2>KvK</h2><pre>"+esc(JSON.stringify(kvk?.result?.data||kvk?.result||{},null,2))+"</pre></section></main>");
