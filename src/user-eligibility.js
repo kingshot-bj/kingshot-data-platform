@@ -221,7 +221,7 @@ export async function getVipEligibility(db, { userId } = {}) {
   const [user, keys] = await Promise.all([
     db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first(),
     db.prepare(
-      "SELECT key_id, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+      "SELECT key_id, key_fingerprint, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
     ).bind(normalizedUserId).all()
   ]);
 
@@ -243,7 +243,7 @@ export async function getVipEligibility(db, { userId } = {}) {
     mightyKeyStatus: mightyKey?.mighty_check_status || null,
     mightyKey: mightyKey ? {
       key_id: mightyKey.key_id,
-      key_fingerprint: String(mightyKey.key_id || "").slice(-8),
+      key_fingerprint: mightyKey.key_fingerprint ? String(mightyKey.key_fingerprint).slice(-8) : null,
       status: mightyKey.status,
       mighty_checked_at: mightyKey.mighty_checked_at,
       mighty_check_status: mightyKey.mighty_check_status
