@@ -5748,7 +5748,7 @@ async function renderApiPoolAdminPage(request, env) {
     const isLeased = k.leased_until && Number(k.leased_until) > now;
     const status = isLeased ? "LEASED" : k.status;
     const mighty = String(k.mighty_check_status || "UNCONFIRMED").toUpperCase();
-    const mightyConfirmed = mighty === "CONFIRMED";
+    const mightyConfirmed = mighty === "CONFIRMED" || Number(k.mighty_capable) === 1;
     const mightyInUse = Boolean(isLeased) && /MIGHTY/i.test(String(k.lease_purpose || ""));
     const mightyClass = mightyConfirmed ? (mightyInUse ? " mighty-confirmed mighty-in-use" : " mighty-confirmed") : "";
     const mightyLabel = mightyInUse ? "⚡ MIGHTY使用中" : mightyConfirmed ? "⚡ MIGHTY対応" : mighty === "NOT_MIGHTY" ? "通常キー" : "未確認";
