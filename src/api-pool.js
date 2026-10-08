@@ -134,6 +134,25 @@ export async function leaseApiKey(db, options = {}) {
   return claimApiPoolKey(db, options);
 }
 
+export async function leaseUserMightyCheckApiKey(db, {
+  userId,
+  purpose = "USER_MIGHTY_CHECK",
+  targetType = "USER",
+  targetId = null,
+  leaseSeconds = LEASE_SECONDS
+} = {}) {
+  if (!userId) throw new Error("USER_ID_REQUIRED");
+  return claimApiPoolKey(db, {
+    provider: PROVIDER,
+    poolTypes: ["USER_CONTRIBUTED"],
+    purpose,
+    targetType,
+    targetId,
+    leaseSeconds,
+    contributedByUserId: String(userId)
+  });
+}
+
 export async function leaseUserMightyApiKey(db, {
   userId,
   purpose = "USER_MIGHTY_API_REQUEST",
