@@ -1900,6 +1900,8 @@ async function handleMyAdvancedApi(request, env) {
     const userMessage = error?.userMessage || (
       code === "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION"
         ? "先にKingShot領主IDを登録してください。"
+        : code === "MIGHTPULSE_API_KEY_LIMIT_REACHED"
+        ? "登録できるMightPulse APIキーは最大3本です。"
         : "Advanced昇格条件の処理に失敗しました。"
     );
     const status = [
@@ -1907,7 +1909,8 @@ async function handleMyAdvancedApi(request, env) {
       "MIGHTPULSE_PLAYER_NOT_AVAILABLE",
       "MIGHTPULSE_PLAYER_MISMATCH",
       "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION",
-      "MIGHTPULSE_API_KEY_ALREADY_REGISTERED"
+      "MIGHTPULSE_API_KEY_ALREADY_REGISTERED",
+      "MIGHTPULSE_API_KEY_LIMIT_REACHED"
     ].includes(code) ? 400 : 500;
     return json({ ok: false, error: code, message: userMessage }, status);
   }
