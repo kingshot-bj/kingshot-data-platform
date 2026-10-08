@@ -4219,46 +4219,69 @@ html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033
 const EAGLEEYE_THEME_SCRIPT = `
 <script id="eagleeye-theme-script">
 (function(){
-  try {
-    var saved="";
-    try { saved=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) { saved=""; }
-    var theme=saved==="light"||saved==="dark"?saved:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
-    document.documentElement.setAttribute("data-eagle-theme",theme);
-    var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
-    var isPreviewHost=window.location.hostname!==productionHost;
-    document.documentElement.setAttribute("data-eagleeye-env",isPreviewHost?"preview":"production");
-    if(isPreviewHost){
-      var previewBanner=document.createElement("div");
-      previewBanner.className="eagle-preview-banner";
-      previewBanner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
-      document.documentElement.setAttribute("data-eagle-preview","1");
-      function mountPreviewBanner(){ if(!document.querySelector(".eagle-preview-banner")) document.body.appendChild(previewBanner); }
-      if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",mountPreviewBanner); else mountPreviewBanner();
-    }
-    // Global browser-side guard: do not allow the same mutating API request
-    // to be sent twice concurrently from one EagleEye page/tab.
-    // Server-side locks remain the authoritative protection for concurrent tabs/clients.
-    if(!window.__eagleEyeMutatingRequestGuardInstalled){
-      window.__eagleEyeMutatingRequestGuardInstalled=true;
-      var eagleEyePendingMutations=new Set();
-      var eagleEyeOriginalFetch=window.fetch.bind(window);
-      window.fetch=function(input,init){
-        var method=String((init&&init.method)||((input&&input.method)||"GET")).toUpperCase();
-        if(["POST","PUT","PATCH","DELETE"].indexOf(method)<0) return eagleEyeOriginalFetch(input,init);
-        var url=typeof input==="string"?input:(input&&input.url)||"";
-        var body=init&&init.body!=null?String(init.body):"";
-        var key=method+" "+url+" "+body;
-        if(eagleEyePendingMutations.has(key)){
-          var duplicateError=new Error("同じ操作が現在実行中です。処理完了を待ってください。");
-          duplicateError.code="CLIENT_REQUEST_IN_PROGRESS";
-          return Promise.reject(duplicateError);
-        }
-        eagleEyePendingMutations.add(key);
-        return eagleEyeOriginalFetch(input,init).finally(function(){eagleEyePendingMutations.delete(key);});
-      };
-    }
+  function applySavedTheme(){
+    try {
+      var saved="";
+      try { saved=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) {}
+      var preferred=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark";
+      var theme=(saved==="light"||saved==="dark")?saved:preferred;
+      document.documentElement.setAttribute("data-eagle-theme",theme);
+    } catch(e) {}
+  }
 
-    function setup(){
+  function markEnvironment(){
+    try {
+      var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
+      var isPreviewHost=window.location.hostname!==productionHost;
+      document.documentElement.setAttribute("data-eagleeye-env",isPreviewHost?"preview":"production");
+      if(isPreviewHost){
+        document.documentElement.setAttribute("data-eagle-preview","1");
+        function mountPreviewBanner(){
+          try {
+            if(document.body&&!document.querySelector(".eagle-preview-banner")){
+              var banner=document.createElement("div");
+              banner.className="eagle-preview-banner";
+              banner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
+              document.body.appendChild(banner);
+            }
+          } catch(e) {}
+        }
+        if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",mountPreviewBanner,{once:true});
+        else mountPreviewBanner();
+      }
+    } catch(e) {}
+  }
+
+  function installMutatingRequestGuard(){
+    try {
+      if(window.__eagleEyeMutatingRequestGuardInstalled) return;
+      window.__eagleEyeMutatingRequestGuardInstalled=true;
+      var pending=new Set();
+      var originalFetch=window.fetch.bind(window);
+      window.fetch=function(input,init){
+        try {
+          var method=String((init&&init.method)||((input&&input.method)||"GET")).toUpperCase();
+          if(["POST","PUT","PATCH","DELETE"].indexOf(method)<0) return originalFetch(input,init);
+          var url=typeof input==="string"?input:(input&&input.url)||"";
+          var body=init&&init.body!=null?String(init.body):"";
+          var key=method+" "+url+" "+body;
+          if(pending.has(key)){
+            var duplicateError=new Error("同じ操作が現在実行中です。処理完了を待ってください。");
+            duplicateError.code="CLIENT_REQUEST_IN_PROGRESS";
+            return Promise.reject(duplicateError);
+          }
+          pending.add(key);
+          return originalFetch(input,init).finally(function(){pending.delete(key);});
+        } catch(e) {
+          return originalFetch(input,init);
+        }
+      };
+    } catch(e) {}
+  }
+
+  function installRoleBar(){
+    try {
+      if(!document.body) return null;
       var roleBar=document.querySelector(".eagle-role-bar");
       if(!roleBar){
         roleBar=document.createElement("div");
@@ -4266,17 +4289,41 @@ const EAGLEEYE_THEME_SCRIPT = `
         roleBar.setAttribute("aria-label","EagleEye ロール");
         roleBar.innerHTML="<span class=\"eagle-role-bar-label\">ROLE</span><span class=\"eagle-role-item\" data-role=\"BASIC\">BASIC</span><span class=\"eagle-role-item\" data-role=\"ADVANCED\">ADVANCED</span><span class=\"eagle-role-item vip\" data-role=\"VIP\">⚡ VIP</span><span class=\"eagle-role-item admin\" data-role=\"ADMIN\">ADMIN</span><span class=\"eagle-role-item owner\" data-role=\"OWNER\">OWNER</span>";
         document.body.insertBefore(roleBar,document.body.firstChild);
+      }
+      if(!document.querySelector(".eagle-role-bar-spacer")){
         var spacer=document.createElement("div");
         spacer.className="eagle-role-bar-spacer";
         document.body.insertBefore(spacer,document.body.children[1]||null);
       }
-      function paintRole(role){
-        role=String(role||"").toUpperCase();
-        roleBar.querySelectorAll("[data-role]").forEach(function(item){item.classList.toggle("current",item.getAttribute("data-role")===role);});
-      }
-      try{
-        fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.ok)paintRole(d.role);}).catch(function(){});
-      }catch(e){}
+      return roleBar;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function paintRole(role){
+    try {
+      var roleBar=document.querySelector(".eagle-role-bar");
+      if(!roleBar) return;
+      role=String(role||"").toUpperCase();
+      roleBar.querySelectorAll("[data-role]").forEach(function(item){
+        item.classList.toggle("current",item.getAttribute("data-role")===role);
+      });
+    } catch(e) {}
+  }
+
+  function loadRole(){
+    try {
+      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+        .then(function(r){return r.ok?r.json():null;})
+        .then(function(d){if(d&&d.ok)paintRole(d.role);})
+        .catch(function(){});
+    } catch(e) {}
+  }
+
+  function installThemeToggle(){
+    try {
+      if(!document.body) return;
       var existing=document.querySelector(".theme-toggle");
       var btn=document.querySelector(".eagle-theme-toggle");
       if(!btn){
@@ -4288,21 +4335,42 @@ const EAGLEEYE_THEME_SCRIPT = `
         document.body.appendChild(btn);
       }
       function paint(){
-        var isLight=document.documentElement.getAttribute("data-eagle-theme")==="light";
-        btn.textContent=isLight?"☀️":"🌙";
-        btn.setAttribute("aria-label",isLight?"ダークモードに切替":"ライトモードに切替");
-        if(existing) existing.style.display="none";
+        try {
+          var isLight=document.documentElement.getAttribute("data-eagle-theme")==="light";
+          btn.textContent=isLight?"☀️":"🌙";
+          btn.setAttribute("aria-label",isLight?"ダークモードに切替":"ライトモードに切替");
+          if(existing) existing.style.display="none";
+        } catch(e) {}
       }
       btn.onclick=function(){
-        var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
-        document.documentElement.setAttribute("data-eagle-theme",next);
-        try { window.localStorage.setItem("eagleeye-theme",next); } catch(e) {}
-        paint();
+        try {
+          var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
+          document.documentElement.setAttribute("data-eagle-theme",next);
+          try { window.localStorage.setItem("eagleeye-theme",next); } catch(e) {}
+          paint();
+        } catch(e) {}
       };
       paint();
-    }
-    if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",setup); else setup();
-  } catch(e) {}
+    } catch(e) {}
+  }
+
+  function setup(){
+    // Each component is isolated so one Safari/WebKit restriction cannot
+    // suppress the remaining global UI.
+    applySavedTheme();
+    markEnvironment();
+    installMutatingRequestGuard();
+    installRoleBar();
+    installThemeToggle();
+    loadRole();
+  }
+
+  try {
+    if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",setup,{once:true});
+    else setup();
+  } catch(e) {
+    try { setup(); } catch(_) {}
+  }
 })();
 </script>`;
 
