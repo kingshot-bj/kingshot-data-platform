@@ -268,26 +268,225 @@ export async function handleKingdomPortalApi(request, env) {
 }
 
 export async function renderKingdomMightyPage(request, env, auth = null) {
-  const url=new URL(request.url);
-  const kid=Number(url.searchParams.get("kid"));
-  if(!Number.isInteger(kid)||kid<1) return page("Mighty","<main class='wrap'><div class='empty'>kidを指定してください。</div></main>");
-  if(!auth || auth.status !== "ACTIVE") {
-    return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>Mighty機能を利用するにはDiscordログインが必要です。</div></main>");
+  const url = new URL(request.url);
+  const kid = Number(url.searchParams.get("kid"));
+  if (!Number.isInteger(kid) || kid < 1) return page("Mighty", "<main class='wrap'><div class='empty'>王国IDを指定してください。</div></main>");
+
+  if (!auth || auth.status !== "ACTIVE") {
+    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>Mighty機能</h1><div class='empty'>Mighty機能を利用するにはDiscordログインが必要です。</div></main>");
   }
+
   const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
   const canUseMighty = ["VIP", "ADMIN", "OWNER"].includes(String(eligibility.role || "").toUpperCase());
   if (!canUseMighty || !eligibility.eligible) {
-    return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty機能</h1><div class='empty'>VIP機能です。Mighty対応のMightPulse APIキーを登録すると利用できます。<br><br>登録APIキー："+eligibility.keyCount+"本<br>Mighty対応："+(eligibility.hasMightyKey?"確認済み":"未確認")+"</div></main>");
+    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>Mighty機能</h1><div class='empty'>VIP機能です。Mighty対応のMightPulse APIキーを登録すると利用できます。<br><br>登録APIキー：" + eligibility.keyCount + "本<br>Mighty対応：" + (eligibility.hasMightyKey ? "確認済み" : "未確認") + "</div></main>");
   }
-  const traceId=systemTraceId("kingdom-mighty");
-  await recordSystemEvent(env.DB,{traceId,eventType:"START",service:"kingdom_mighty",feature:"mighty",operation:"READ_EVENTS_KVK",status:"STARTED",targetType:"KINGDOM",targetId:String(kid)}).catch(()=>{});
-  let events=null,kvk=null,errors=[];
-  try { events=await collectUserMightyOnly(env,{userId:auth.user_id,path:"/kingdoms/"+encodeURIComponent(kid)+"/events",endpoint:"/kingdoms/:kid/events",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_EVENTS",timeoutMs:15000,maxRetries:2}); }
-  catch(e) { errors.push("Events: "+String(e?.code||e?.message||e)); }
-  try { kvk=await collectUserMightyOnly(env,{userId:auth.user_id,path:"/kingdoms/"+encodeURIComponent(kid)+"/kvk",endpoint:"/kingdoms/:kid/kvk",targetType:"KINGDOM",targetId:String(kid),purpose:"MIGHTY_KINGDOM_KVK",timeoutMs:15000,maxRetries:2}); }
-  catch(e) { errors.push("KvK: "+String(e?.code||e?.message||e)); }
-  await recordSystemEvent(env.DB,{traceId,eventType:"COMPLETE",service:"kingdom_mighty",feature:"mighty",operation:"READ_EVENTS_KVK",status:errors.length?"WARNING":"SUCCESS",targetType:"KINGDOM",targetId:String(kid),message:errors.length?errors.join(" | "):"Mighty Events / KvK取得完了"}).catch(()=>{});
-  return page("Mighty","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>Mighty Events / KvK</h1>"+(errors.length?"<div class='empty'>"+errors.map(esc).join("<br>")+"</div>":"")+"<section><h2>Events</h2><pre>"+esc(JSON.stringify(events?.result?.data||events?.result||{},null,2))+"</pre></section><section><h2>KvK</h2><pre>"+esc(JSON.stringify(kvk?.result?.data||kvk?.result||{},null,2))+"</pre></section></main>");
+
+  const traceId = systemTraceId("kingdom-mighty");
+  await recordSystemEvent(env.DB, {
+    traceId,
+    eventType: "START",
+    service: "kingdom_mighty",
+    feature: "mighty",
+    operation: "READ_EVENTS_KVK",
+    status: "STARTED",
+    targetType: "KINGDOM",
+    targetId: String(kid)
+  }).catch(() => {});
+
+  let events = null, kvk = null, errors = [];
+  try {
+    events = await collectUserMightyOnly(env, {
+      userId: auth.user_id,
+      path: "/kingdoms/" + encodeURIComponent(kid) + "/events",
+      endpoint: "/kingdoms/:kid/events",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      purpose: "MIGHTY_KINGDOM_EVENTS",
+      timeoutMs: 15000,
+      maxRetries: 2
+    });
+  } catch (e) {
+    errors.push("イベント: " + String(e?.code || e?.message || e));
+  }
+  try {
+    kvk = await collectUserMightyOnly(env, {
+      userId: auth.user_id,
+      path: "/kingdoms/" + encodeURIComponent(kid) + "/kvk",
+      endpoint: "/kingdoms/:kid/kvk",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      purpose: "MIGHTY_KINGDOM_KVK",
+      timeoutMs: 15000,
+      maxRetries: 2
+    });
+  } catch (e) {
+    errors.push("KvK: " + String(e?.code || e?.message || e));
+  }
+
+  await recordSystemEvent(env.DB, {
+    traceId,
+    eventType: "COMPLETE",
+    service: "kingdom_mighty",
+    feature: "mighty",
+    operation: "READ_EVENTS_KVK",
+    status: errors.length ? "WARNING" : "SUCCESS",
+    targetType: "KINGDOM",
+    targetId: String(kid),
+    message: errors.length ? errors.join(" | ") : "Mighty Events / KvK取得完了"
+  }).catch(() => {});
+
+  const eventPayload = events?.result?.data || events?.result || {};
+  const kvkPayload = kvk?.result?.data || kvk?.result || {};
+  const eventData = eventPayload && typeof eventPayload === "object" ? eventPayload : {};
+  const categories = Array.isArray(eventData.categories) ? eventData.categories : [];
+
+  const eventCategoryNames = {
+    Deals: "お得情報",
+    Events: "イベント",
+    Deal: "お得情報"
+  };
+  const eventNames = {
+    "Hero Rally": "英雄ラリー",
+    "Hero Roulette": "英雄ルーレット",
+    "Treasure Cove": "トレジャーコーブ"
+  };
+
+  const labelMap = {
+    ok: "状態",
+    kid: "王国",
+    date: "対象日",
+    count: "イベント数",
+    categories: "カテゴリ",
+    events: "イベント",
+    name: "名称",
+    category: "カテゴリ",
+    when: "開催期間",
+    begin_ts: "開始日時",
+    end_ts: "終了日時",
+    date_ts: "日時",
+    kingdom: "王国",
+    kingdom_id: "王国番号",
+    opponent: "対戦相手",
+    opponents: "対戦相手",
+    matchup: "対戦組み合わせ",
+    matchups: "対戦組み合わせ",
+    round: "ラウンド",
+    start: "開始",
+    end: "終了",
+    start_ts: "開始日時",
+    end_ts: "終了日時",
+    status: "状態"
+  };
+
+  const translateLabel = key => {
+    const raw = String(key || "");
+    if (labelMap[raw]) return labelMap[raw];
+    return raw.replace(/_/g, " ").replace(/(^| )([a-z])/g, (_, p, ch) => p + ch.toUpperCase());
+  };
+
+  const fmtDate = value => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return new Date(n * 1000).toLocaleString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const fmtDateOnly = value => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    return new Date(n * 1000).toLocaleDateString("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    });
+  };
+
+  const eventStatus = (begin, end) => {
+    const now = Math.floor(Date.now() / 1000);
+    const b = Number(begin || 0), e = Number(end || 0);
+    if (b && e && now >= b && now < e) return { cls: "live", label: "開催中" };
+    if (b && now < b) return { cls: "upcoming", label: "開催予定" };
+    if (e && now >= e) return { cls: "ended", label: "終了" };
+    return { cls: "unknown", label: "期間不明" };
+  };
+
+  const eventRows = categories.map(category => {
+    const categoryName = eventCategoryNames[category?.name] || String(category?.name || "イベント");
+    const rows = (Array.isArray(category?.events) ? category.events : []).map(event => {
+      const title = eventNames[event?.name] || String(event?.name || "名称未取得");
+      const original = event?.name && eventNames[event.name] ? "<small class='original-name'>" + esc(event.name) + "</small>" : "";
+      const status = eventStatus(event?.begin_ts, event?.end_ts);
+      const begin = fmtDate(event?.begin_ts);
+      const end = fmtDate(event?.end_ts);
+      const period = begin && end ? begin + " ～ " + end : String(event?.when || "開催期間不明");
+      return "<article class='mighty-event " + status.cls + "'>" +
+        "<div class='event-top'><span class='event-status " + status.cls + "'>" + status.label + "</span><span class='event-category'>" + esc(categoryName) + "</span></div>" +
+        "<h3>" + esc(title) + "</h3>" + original +
+        "<div class='event-period'>🗓 " + esc(period) + "</div>" +
+        "</article>";
+    }).join("");
+    return rows ? "<section class='mighty-section'><div class='section-heading'><div><span class='section-kicker'>EVENTS</span><h2>" + esc(categoryName) + "</h2></div><span class='count-pill'>" + (Array.isArray(category?.events) ? category.events.length : 0) + "件</span></div><div class='event-grid'>" + rows + "</div></section>" : "";
+  }).join("");
+
+  const renderValue = (value, depth = 0) => {
+    if (value === null || value === undefined || value === "") return "<span class='muted'>—</span>";
+    if (typeof value === "boolean") return value ? "はい" : "いいえ";
+    if (typeof value === "number") return Number.isInteger(value) ? num(value) : esc(value);
+    if (typeof value === "string") return esc(value);
+
+    if (Array.isArray(value)) {
+      if (!value.length) return "<span class='muted'>なし</span>";
+      if (depth >= 3) return "<span class='muted'>" + esc(JSON.stringify(value)) + "</span>";
+      return "<div class='kvk-list'>" + value.map(item => "<div class='kvk-list-item'>" + renderValue(item, depth + 1) + "</div>").join("") + "</div>";
+    }
+
+    if (depth >= 3) return "<span class='muted'>" + esc(JSON.stringify(value)) + "</span>";
+
+    const entries = Object.entries(value).filter(([key, val]) => val !== null && val !== undefined && val !== "");
+    if (!entries.length) return "<span class='muted'>なし</span>";
+
+    return "<div class='kvk-fields'>" + entries.map(([key, val]) => {
+      const label = translateLabel(key);
+      let display = renderValue(val, depth + 1);
+      if (/_ts$/.test(key) && Number(val) > 0) display = esc(fmtDate(val) || String(val));
+      return "<div class='kvk-field'><small>" + esc(label) + "</small><strong>" + display + "</strong></div>";
+    }).join("") + "</div>";
+  };
+
+  const kvkHtml = kvkPayload && typeof kvkPayload === "object"
+    ? renderValue(kvkPayload)
+    : "<div class='empty'>KvKデータがありません。</div>";
+
+  const eventDate = eventData.date ? String(eventData.date) : null;
+  const eventCount = Number(eventData.count || categories.reduce((n, c) => n + (Array.isArray(c?.events) ? c.events.length : 0), 0));
+
+  return page("Mighty Events / KvK", "<main class='wrap mighty-page'>" +
+    "<a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a>" +
+    "<div class='mighty-hero'>" +
+      "<div><div class='eyebrow'>MIGHTY / KVK</div><h1>王国 " + kid + " <span>· Mighty</span></h1><p>イベント・KvK情報</p></div>" +
+      "<div class='mighty-badge'>⚡ Mighty API 接続済み</div>" +
+    "</div>" +
+    (errors.length ? "<div class='notice warn'>⚠️ " + errors.map(esc).join("<br>") + "</div>" : "") +
+    "<div class='summary-grid'>" +
+      "<div class='summary-card'><small>イベント日</small><strong>" + esc(eventDate || "—") + "</strong></div>" +
+      "<div class='summary-card'><small>イベント数</small><strong>" + esc(eventCount) + "<span>件</span></strong></div>" +
+      "<div class='summary-card'><small>最終取得</small><strong>" + esc(new Date().toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" })) + "</strong></div>" +
+    "</div>" +
+    (eventRows || "<section class='mighty-section'><div class='empty'>イベントデータがありません。</div></section>") +
+    "<section class='mighty-section kvk-section'><div class='section-heading'><div><span class='section-kicker'>KVK</span><h2>KvK情報</h2></div></div>" + kvkHtml + "</section>" +
+    "<details class='raw-details'><summary>API原文を確認</summary><div class='raw-grid'><pre>" + esc(JSON.stringify(eventPayload, null, 2)) + "</pre><pre>" + esc(JSON.stringify(kvkPayload, null, 2)) + "</pre></div></details>" +
+    "</main>" +
+    "<style>" +
+      ".mighty-page{padding-bottom:60px}.mighty-hero{margin-top:14px;padding:20px;border:1px solid #334155;border-radius:18px;background:linear-gradient(135deg,#17233a,#111827);display:flex;justify-content:space-between;align-items:center;gap:14px}.mighty-hero h1{margin:4px 0;font-size:28px}.mighty-hero h1 span{color:#fbbf24;font-size:18px}.mighty-hero p{margin:6px 0 0;color:#94a3b8}.mighty-badge{padding:9px 12px;border:1px solid #b45309;border-radius:999px;background:#2a1c08;color:#fbbf24;font-weight:900;font-size:12px;white-space:nowrap}.notice.warn{margin-top:12px;padding:12px 14px;border:1px solid #92400e;border-radius:12px;background:#2a1c08;color:#fde68a}.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}.summary-card{padding:13px;border:1px solid #334155;border-radius:12px;background:#111c31}.summary-card small{display:block;color:#94a3b8;font-size:11px}.summary-card strong{display:block;margin-top:4px;font-size:18px}.summary-card strong span{font-size:12px;color:#94a3b8;margin-left:3px}.mighty-section{margin-top:18px}.section-heading{display:flex;justify-content:space-between;align-items:end;gap:10px;margin-bottom:9px}.section-kicker{display:block;color:#f59e0b;font-size:10px;font-weight:900;letter-spacing:1.7px}.section-heading h2{margin:2px 0;font-size:21px}.count-pill{padding:5px 8px;border:1px solid #334155;border-radius:999px;color:#cbd5e1;font-size:11px}.event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mighty-event{padding:13px;border:1px solid #334155;border-left:3px solid #64748b;border-radius:12px;background:#111c31}.mighty-event.live{border-left-color:#22c55e}.mighty-event.upcoming{border-left-color:#f59e0b}.mighty-event.ended{border-left-color:#64748b;opacity:.72}.event-top{display:flex;gap:6px;justify-content:space-between;align-items:center}.event-status{padding:4px 7px;border-radius:999px;font-size:10px;font-weight:900;border:1px solid #334155}.event-status.live{color:#86efac;border-color:#166534;background:#052e16}.event-status.upcoming{color:#fde68a;border-color:#92400e;background:#2a1c08}.event-status.ended{color:#94a3b8}.event-category{color:#94a3b8;font-size:10px}.mighty-event h3{margin:10px 0 2px;font-size:16px}.original-name{color:#64748b}.event-period{margin-top:8px;color:#cbd5e1;font-size:12px;line-height:1.5}.kvk-section{padding-top:2px}.kvk-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kvk-field{padding:11px;border:1px solid #334155;border-radius:10px;background:#111c31}.kvk-field small{display:block;color:#64748b;font-size:10px}.kvk-field strong{display:block;margin-top:4px;overflow-wrap:anywhere}.kvk-list{display:grid;gap:7px}.kvk-list-item{padding:9px;border:1px solid #334155;border-radius:9px;background:#111c31}.muted{color:#64748b}.raw-details{margin-top:18px;border:1px solid #334155;border-radius:12px;background:#0b1220}.raw-details summary{cursor:pointer;padding:12px;color:#94a3b8;font-weight:800}.raw-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 10px 10px}.raw-grid pre{margin:0;padding:10px;overflow:auto;max-height:420px;color:#cbd5e1;font-size:10px;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:650px){.mighty-hero{align-items:flex-start;flex-direction:column}.mighty-badge{white-space:normal}.summary-grid{grid-template-columns:1fr 1fr}.summary-card:last-child{grid-column:1/-1}.event-grid,.kvk-fields,.raw-grid{grid-template-columns:1fr}}" +
+    "</style>" +
+    "</main>");
 }
 
 export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
