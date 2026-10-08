@@ -5261,7 +5261,7 @@ async function handleApiPoolHealthCheck(request, env) {
 }
 
 async function handleApiPoolDelete(request, env) {
-  const guard = await requireAdmin(request, env);
+  const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
   try {
     const contentType = request.headers.get("content-type") || "";
