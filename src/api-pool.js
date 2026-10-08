@@ -27,9 +27,21 @@ export async function addApiPoolKey(db, { provider = PROVIDER, poolType, label =
 
 export async function listApiPoolKeys(db) {
   const result = await db.prepare(
-    "SELECT key_id, provider, pool_type, label, key_fingerprint, status, contributed_by_user_id, consent_version, contributed_at, revoked_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day, quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code, created_at, updated_at FROM api_pool_keys ORDER BY pool_type, created_at"
+    "SELECT key_id, provider, pool_type, label, key_fingerprint, encrypted_key, status, contributed_by_user_id, consent_version, contributed_at, revoked_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day, quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code, created_at, updated_at FROM api_pool_keys ORDER BY pool_type, created_at"
   ).all();
-  return result.results || [];
+  const rows = result.results || [];
+  return Promise.all(rows.map(async row => {
+    let apiKeyPrefix = null;
+    try {
+      const decrypted = await decryptSecret(row.encrypted_key);
+      const prefixLength = Math.min(12, decrypted.length);
+      apiKeyPrefix = prefixLength > 0 ? decrypted.slice(0, prefixLength) + (decrypted.length > prefixLength ? "…" : "") : null;
+    } catch {
+      apiKeyPrefix = null;
+    }
+    const { encrypted_key, ...safeRow } = row;
+    return { ...safeRow, api_key_prefix: apiKeyPrefix };
+  }));
 }
 
 export async function getApiPoolKeysWithContributors(db) {
