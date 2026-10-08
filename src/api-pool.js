@@ -81,7 +81,8 @@ async function claimApiPoolKey(db, {
   targetType = null,
   targetId = null,
   leaseSeconds = LEASE_SECONDS,
-  reserveAvailableKeys = 0
+  reserveAvailableKeys = 0,
+  mightyOnly = false
 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
@@ -96,11 +97,14 @@ async function claimApiPoolKey(db, {
   // placeholders generated for the dynamic pool-type IN list. D1/SQLite
   // assigns anonymous parameters differently when numbered parameters are
   // present, causing a binding-count error for multi-pool leases.
+  const mightyCondition = mightyOnly
+    ? " AND mighty_capable = 1 AND mighty_check_status = 'CONFIRMED'"
+    : "";
   const reserveCondition = reserve > 0
     ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN') AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
     : "";
   const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?, leased_until = ?, lease_job_id = ?, lease_purpose = ?, lease_target_type = ?, lease_target_id = ?, updated_at = ? " +
-    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
+    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN')" + mightyCondition AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
     reserveCondition +
     " ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
     "RETURNING key_id, provider, pool_type, encrypted_key";
@@ -124,6 +128,38 @@ async function claimApiPoolKey(db, {
 }
 export async function leaseApiKey(db, options = {}) {
   return claimApiPoolKey(db, options);
+}
+
+export async function leaseMightyApiKey(db, {
+  purpose = "MIGHTY_API_REQUEST",
+  targetType = null,
+  targetId = null,
+  jobId = null,
+  poolTypes = ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"],
+  leaseSeconds = LEASE_SECONDS
+} = {}) {
+  return claimApiPoolKey(db, {
+    provider: PROVIDER,
+    poolTypes,
+    purpose,
+    targetType,
+    targetId,
+    jobId,
+    leaseSeconds,
+    mightyOnly: true
+  });
+}
+
+export async function markApiPoolKeyNotMighty(db, {
+  keyId,
+  leaseId,
+  errorCode = "MIGHTY_REQUIRED"
+} = {}) {
+  if (!keyId || !leaseId) return;
+  const now = Math.floor(Date.now() / 1000);
+  await db.prepare(
+    "UPDATE api_pool_keys SET mighty_capable = 0, mighty_checked_at = ?1, mighty_check_status = 'NOT_MIGHTY', mighty_last_error_code = ?2, last_error_code = ?2, last_error_at = ?1, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?1 WHERE key_id = ?3 AND lease_id = ?4"
+  ).bind(now, errorCode, keyId, leaseId).run();
 }
 
 export async function leaseApiKeyForHealthCheck(db, {
