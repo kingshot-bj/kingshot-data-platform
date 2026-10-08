@@ -2217,20 +2217,16 @@ async function renderMyPlayerPage(request, env) {
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
     const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
-    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">Mightyユーザーの場合、登録済みのMightPulse APIキーがMighty対応か確認できます。自己申告だけではVIPになりません。</p>'+
+    html+='<div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ VIPロールへの昇格</h2><p class="muted" style="margin:0 0 12px">Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。</p>'+
       '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
       '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
-      '<label class="label" style="margin-top:16px">Mightyユーザーですか？</label>'+
-      '<div style="display:flex;gap:10px"><button class="btn mighty-declare" data-value="yes" style="margin-top:0;flex:1">はい</button><button class="btn mighty-declare" data-value="no" style="margin-top:0;flex:1;background:#334155;color:#f8fafc">いいえ</button></div>'+
-      '<div id="mighty-check-area" style="display:none;margin-top:12px"><button class="btn" id="mighty-check">⚡ Mighty対応を確認</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
-      (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ Mighty対応確認済みです。</div>':"")+
-      '<div class="muted" style="margin-top:12px">「はい」は自己申告のみです。VIP判定は登録済みAPIキーで実際にMighty専用APIを確認した結果で決まります。</div></div>';
+      '<div id="mighty-check-area" style="margin-top:12px"><button class="btn" id="mighty-check">⚡ '+(mightyStatus==="CONFIRMED"?"VIPロールを再確認":"VIPロールへの昇格を確認")+'</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
+      (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ VIP / Mighty対応確認済みです。</div>':"")+
+      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいてVIP判定を行います。</div></div>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
-    const mightyArea=document.getElementById("mighty-check-area");
-    document.querySelectorAll(".mighty-declare").forEach(b=>b.onclick=()=>{ const yes=b.dataset.value==="yes"; if(mightyArea) mightyArea.style.display=yes?"block":"none"; });
     const mightyButton=document.getElementById("mighty-check");
     if(mightyButton) mightyButton.onclick=checkMighty;
   }
