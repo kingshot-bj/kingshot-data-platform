@@ -4216,6 +4216,7 @@ html[data-eagle-theme="light"] .badge{background:#fff7ed !important;color:#b4530
 
 .eagle-preview-banner{display:none;position:fixed;left:12px;top:12px;z-index:10000;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;background:rgba(68,39,0,.96);color:#fde68a;font-size:11px;font-weight:900;letter-spacing:.04em;box-shadow:0 8px 22px rgba(0,0,0,.25);backdrop-filter:blur(8px)}html[data-eagle-preview="1"] .eagle-preview-banner{display:block}.eagle-theme-toggle{position:fixed;right:14px;top:14px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
 html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033;border-color:#cbd5e1}
+.eagle-role-bar{position:fixed;left:0;right:0;top:0;z-index:9998;display:flex;align-items:center;justify-content:center;gap:6px;padding:6px 46px 6px 10px;background:rgba(10,15,28,.94);border-bottom:1px solid #334155;box-shadow:0 6px 18px rgba(0,0,0,.2);backdrop-filter:blur(10px);font-size:10px;font-weight:900;letter-spacing:.04em;white-space:nowrap;overflow-x:auto}.eagle-role-bar-label{color:#64748b;margin-right:3px}.eagle-role-item{padding:4px 7px;border:1px solid #334155;border-radius:999px;color:#64748b;background:#111827}.eagle-role-item.current{color:#f8fafc;border-color:#64748b;background:#1e293b}.eagle-role-item.vip.current,.eagle-role-item.vip{color:#f6d365;border-color:#a16207;background:rgba(120,75,0,.22);text-shadow:0 0 8px rgba(246,211,101,.25)}.eagle-role-item.admin.current,.eagle-role-item.owner.current{color:#fde68a;border-color:#d97706;background:rgba(120,53,15,.28)}html[data-eagle-theme="light"] .eagle-role-bar{background:rgba(255,255,255,.94);border-color:#d6deea}.eagle-role-bar-spacer{height:34px}
 </style>`;
 
 const EAGLEEYE_THEME_SCRIPT = `
@@ -4260,6 +4261,24 @@ const EAGLEEYE_THEME_SCRIPT = `
     }
 
     function setup(){
+      var roleBar=document.querySelector(".eagle-role-bar");
+      if(!roleBar){
+        roleBar=document.createElement("div");
+        roleBar.className="eagle-role-bar";
+        roleBar.setAttribute("aria-label","EagleEye ロール");
+        roleBar.innerHTML="<span class=\"eagle-role-bar-label\">ROLE</span><span class=\"eagle-role-item\" data-role=\"BASIC\">BASIC</span><span class=\"eagle-role-item\" data-role=\"ADVANCED\">ADVANCED</span><span class=\"eagle-role-item vip\" data-role=\"VIP\">⚡ VIP</span><span class=\"eagle-role-item admin\" data-role=\"ADMIN\">ADMIN</span><span class=\"eagle-role-item owner\" data-role=\"OWNER\">OWNER</span>";
+        document.body.insertBefore(roleBar,document.body.firstChild);
+        var spacer=document.createElement("div");
+        spacer.className="eagle-role-bar-spacer";
+        document.body.insertBefore(spacer,document.body.children[1]||null);
+      }
+      function paintRole(role){
+        role=String(role||"").toUpperCase();
+        roleBar.querySelectorAll("[data-role]").forEach(function(item){item.classList.toggle("current",item.getAttribute("data-role")===role);});
+      }
+      try{
+        fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.ok)paintRole(d.role);}).catch(function(){});
+      }catch(e){}
       var existing=document.querySelector(".theme-toggle");
       var btn=document.querySelector(".eagle-theme-toggle");
       if(!btn){
