@@ -129,7 +129,7 @@ export async function getAdvancedEligibility(db, userId) {
     playerLink: playerLink || null,
     apiKeys: contributedKeys.map(row => ({
       key_id: row.key_id,
-      key_fingerprint: row.key_fingerprint ? String(row.key_fingerprint).slice(-8) : null,
+      key_fingerprint: row.key_fingerprint ? String(row.key_fingerprint).slice(0, 8) : null,
       status: row.status,
       contributed_at: row.contributed_at
     }))
