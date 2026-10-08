@@ -82,7 +82,8 @@ async function claimApiPoolKey(db, {
   targetId = null,
   leaseSeconds = LEASE_SECONDS,
   reserveAvailableKeys = 0,
-  mightyOnly = false
+  mightyOnly = false,
+  contributedByUserId = null
 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
@@ -100,6 +101,9 @@ async function claimApiPoolKey(db, {
   const mightyCondition = mightyOnly
     ? " AND mighty_capable = 1 AND mighty_check_status = 'CONFIRMED'"
     : "";
+  const contributorCondition = contributedByUserId
+    ? " AND contributed_by_user_id = ?"
+    : "";
   const reserveCondition = reserve > 0
     ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN') AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
     : "";
@@ -110,7 +114,7 @@ async function claimApiPoolKey(db, {
     "RETURNING key_id, provider, pool_type, encrypted_key";
   const bindings = [
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
-    provider ?? PROVIDER, ...eligiblePoolTypes, now, now
+    provider ?? PROVIDER, ...eligiblePoolTypes, ...(contributedByUserId ? [contributedByUserId] : []), now, now
   ];
   if (reserve > 0) bindings.push(provider ?? PROVIDER, ...eligiblePoolTypes, now, now, reserve);
   const row = await db.prepare(sql).bind(...bindings).first();
@@ -128,6 +132,28 @@ async function claimApiPoolKey(db, {
 }
 export async function leaseApiKey(db, options = {}) {
   return claimApiPoolKey(db, options);
+}
+
+export async function leaseUserMightyApiKey(db, {
+  userId,
+  purpose = "USER_MIGHTY_API_REQUEST",
+  targetType = null,
+  targetId = null,
+  jobId = null,
+  leaseSeconds = LEASE_SECONDS
+} = {}) {
+  if (!userId) throw new Error("USER_ID_REQUIRED");
+  return claimApiPoolKey(db, {
+    provider: PROVIDER,
+    poolTypes: ["USER_CONTRIBUTED"],
+    purpose,
+    targetType,
+    targetId,
+    jobId,
+    leaseSeconds,
+    mightyOnly: true,
+    contributedByUserId: String(userId)
+  });
 }
 
 export async function leaseMightyApiKey(db, {
