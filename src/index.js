@@ -2217,7 +2217,8 @@ async function renderMyPlayerPage(request, env) {
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
     const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
-    html+='<div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ VIPロールへの昇格</h2><p class="muted" style="margin:0 0 12px">Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。</p>'+
+    const isElevatedMightyRole=["ADMIN","OWNER"].includes(String(v.role||role).toUpperCase());
+    html+='<div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ '+(isElevatedMightyRole?"Mighty機能の利用確認":"VIPロールへの昇格")+'</h2><p class="muted" style="margin:0 0 12px">'+(isElevatedMightyRole?"Mighty対応を確認すると、VIP向けMighty機能を利用できます。現在の管理者ロールは変更されません。":"Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。")+'</p>'+
       '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
       '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
       '<div id="mighty-check-area" style="margin-top:12px"><button class="btn" id="mighty-check">⚡ '+(mightyStatus==="CONFIRMED"?"VIPロールを再確認":"VIPロールへの昇格を確認")+'</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
@@ -2259,7 +2260,7 @@ async function renderMyPlayerPage(request, env) {
       const r=await fetch("/api/me/vip/mighty-check",{method:"POST",credentials:"same-origin",cache:"no-store"});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      if(d.status==="CONFIRMED"){msg.className="ok";msg.textContent="⚡ Mighty対応を確認しました。VIP権限を更新しました。";setTimeout(load,500);}
+      if(d.status==="CONFIRMED"){msg.className="ok";msg.textContent=`⚡ Mighty対応を確認しました。`+(["ADMIN","OWNER"].includes(String(d.role||"").toUpperCase())?"管理者ロールは維持したまま、Mighty機能を利用できます。":"VIP権限を更新しました。");setTimeout(load,500);}
       else if(d.status==="NOT_MIGHTY"){msg.className="warn";msg.textContent="登録済みのAPIキーではMighty対応を確認できませんでした。";setTimeout(load,500);}
       else {msg.className="warn";msg.textContent=d.message||"一時的に判定できませんでした。時間を置いて再確認してください。";button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
