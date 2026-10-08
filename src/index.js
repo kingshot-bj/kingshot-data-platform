@@ -1918,84 +1918,25 @@ async function handleMyVipApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
-  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
 
-  try {
-    if (request.method === "GET") {
-      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
-      return json({ ok: true, ...eligibility });
-    }
-
-    if (request.method === "POST") {
-      const body = await request.json().catch(() => null);
-      const apiKey = String(body?.api_key || "").trim();
-      if (!apiKey) return json({ ok: false, error: "MIGHTY_API_KEY_REQUIRED", message: "Mighty APIキーを入力してください。" }, 400);
-
-      await registerUserMightyApiKey(env.DB, {
-        env,
-        userId: auth.user_id,
-        apiKey,
-        label: "ユーザーMighty APIキー"
-      });
-
-      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
-      await trackServiceUsage(env, auth, "MIGHTY_API_KEY_REGISTER", {
-        targetType: "USER",
-        targetId: auth.user_id,
-        metadata: { credential: "USER_MIGHTY" }
-      });
-      if (eligibility.promoted) {
-        await trackServiceUsage(env, auth, "VIP_PROMOTED", {
-          targetType: "USER",
-          targetId: auth.user_id,
-          metadata: { reason: "TWO_USER_CONTRIBUTED_KEYS_AND_MIGHTY_KEY" }
-        });
-      }
-
-      return json({
-        ok: true,
-        promoted: Boolean(eligibility.promoted),
-        role: eligibility.role,
-        regularKeyCount: eligibility.regularKeyCount,
-        regularKeyRequired: eligibility.regularKeyRequired,
-        hasMightyKey: eligibility.hasMightyKey,
-        mightyKey: eligibility.mightyKey
-      });
-    }
-
-    if (request.method === "DELETE") {
-      const changed = await revokeUserMightyApiKey(env.DB, auth.user_id);
-      const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
-      await trackServiceUsage(env, auth, "MIGHTY_API_KEY_REVOKE", {
-        targetType: "USER",
-        targetId: auth.user_id
-      });
-      return json({
-        ok: true,
-        revoked: Boolean(changed?.changed),
-        demoted: Boolean(eligibility.demoted),
-        role: eligibility.role
-      });
-    }
-
-    return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  } catch (error) {
-    console.error("my_vip_api_failed", error?.code || error?.message || error);
-    const code = error?.code || "MY_VIP_API_FAILED";
-    const status = [
-      "MIGHTY_API_KEY_REQUIRED",
-      "MIGHTY_API_KEY_INVALID",
-      "MIGHTY_API_KEY_ALREADY_REGISTERED",
-      "MIGHTY_API_KEY_RATE_LIMITED",
-      "MIGHTY_API_KEY_REQUIRED",
-      "MIGHTY_API_TEMPORARY_ERROR",
-      "MIGHTY_API_KEY_VALIDATION_FAILED"
-    ].includes(code) ? 400 : 500;
+  if (request.method !== "GET") {
     return json({
       ok: false,
-      error: code,
-      message: error?.userMessage || "Mighty APIキーの処理に失敗しました。"
-    }, status);
+      error: "MIGHTY_CREDENTIAL_REGISTRATION_REMOVED",
+      message: "別途Mighty APIキーを登録する必要はありません。登録済みのMightPulse APIキーから自動判定します。"
+    }, 410);
+  }
+
+  try {
+    const eligibility = await evaluateVipEligibility(env.DB, { userId: auth.user_id });
+    return json({ ok: true, ...eligibility });
+  } catch (error) {
+    console.error("my_vip_api_failed", error?.code || error?.message || error);
+    return json({
+      ok: false,
+      error: error?.code || "MY_VIP_API_FAILED",
+      message: error?.userMessage || "VIP条件の確認に失敗しました。"
+    }, 500);
   }
 }
 
