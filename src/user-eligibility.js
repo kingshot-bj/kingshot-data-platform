@@ -203,7 +203,7 @@ export async function getVipEligibility(db, { userId } = {}) {
 
 export async function evaluateVipEligibility(db, { userId } = {}) {
   const normalizedUserId = String(userId || "").trim();
-  const eligibility = await getVipEligibility(db, { env, userId: normalizedUserId });
+  const eligibility = await getVipEligibility(db, { userId: normalizedUserId });
   if (!normalizedUserId || !eligibility.role || !["BASIC","ADVANCED","VIP"].includes(String(eligibility.role).toUpperCase())) {
     return { ...eligibility, changed: false, promoted: false, demoted: false };
   }
