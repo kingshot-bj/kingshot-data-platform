@@ -1925,22 +1925,25 @@ async function handleMyMightyCheckApi(request, env) {
   try {
     configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
     const keysResult = await env.DB.prepare(
-      "SELECT key_id, mighty_capable, mighty_check_status FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY CASE WHEN mighty_check_status='CONFIRMED' THEN 0 ELSE 1 END, contributed_at ASC"
+      "SELECT key_id, mighty_capable, mighty_check_status FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY CASE WHEN mighty_check_status='CONFIRMED' THEN 1 ELSE 0 END, contributed_at ASC"
     ).bind(auth.user_id).all();
     const keys = keysResult.results || [];
     if (!keys.length) return json({ ok:false, error:"NO_MIGHTPULSE_KEYS", message:"先にMightPulse APIキーを登録してください。" }, 409);
 
-    let checked = 0, confirmed = null, transient = false;
+    let checked = 0, confirmed = 0, transient = false;
     for (const row of keys) {
       let lease = null;
       try {
         lease = await leaseApiKeyForHealthCheck(env.DB, { keyId: row.key_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
         const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1 });
         checked++;
-        confirmed = row.key_id;
+        confirmed++;
         await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
-        break;
+        // Do not stop after the first confirmed key. Up to three user-contributed
+        // keys are allowed, and every key must be checked so the API pool can
+        // actually rotate across all confirmed Mighty-capable keys.
+        continue;
       } catch (error) {
         const status = Number(error?.status || 0);
         if (lease) {
@@ -1958,9 +1961,16 @@ async function handleMyMightyCheckApi(request, env) {
       }
     }
 
-    if (confirmed) {
+    if (confirmed > 0) {
       const eligibility = await evaluateVipEligibility(env.DB, { userId:auth.user_id });
-      return json({ ok:true, mighty_capable:true, status:"CONFIRMED", checked_key_count:checked, ...eligibility });
+      return json({
+        ok:true,
+        mighty_capable:true,
+        status:"CONFIRMED",
+        checked_key_count:checked,
+        confirmed_key_count:confirmed,
+        ...eligibility
+      });
     }
     if (transient && checked === 0) {
       const eligibility = await getVipEligibility(env.DB, { userId:auth.user_id });
