@@ -367,3 +367,78 @@ VIPは**金文字・ゴールド系**で特別感を出す。
 - `eagleEyeHtmlResponse()` は現在43箇所から利用されている。
 - ロールバーのブラウザ側取得は各ページで `/api/me/advanced` を呼ぶため、D1 Rows Read削減の観点では今後最適化候補。ただし今回のVIP UI修正では権限取得経路を変更していない。
 - main反映済みだが、Cloudflare本番deploy・実機本番確認は別扱い。
+
+
+## 2026-10-08 — 共通UI実装後の全画面コード監査
+
+### 監査結果
+共通ロールバーについて、主要HTMLルートをコード上で再確認した。
+
+- `/my-player`
+- `/players`
+- `/player-watchlist`
+- `/kingdom-watchlist`
+- `/kingdom-catalog`
+- `/kingdom`
+- `/kingdom/rankings`
+- `/kingdom/alliances`
+- `/alliance`
+- `/kingdom/compare`
+- `/kingdom/changes`
+- `/kingdom/mighty`
+- `/kingdom-watchlist/analytics`
+- `/status`
+- `/admin`
+- `/admin/diagnostics`
+- `/admin/system-log`
+- `/admin/data-coverage`
+- `/admin/data-retention`
+- `/admin/player-visibility`
+- `/admin/kingdom-rankings`
+- `/admin/api-pool`
+- `/admin/api-raw-data`
+- `/admin/mightpulse-probe`
+- `/admin/mightpulse-research`
+- `/admin/google-drive`
+- `/owner`
+- `/owner/player-link-support`
+- `/owner/kingdom-load-test`
+- `/owner/kingdom-catalog-r2-backfill`
+- `/support`
+- ホーム `/`
+
+上記は `eagleEyeHtmlResponse()` または同等の `applyEagleEyeTheme()` を経由するため、共通ロールUIの注入対象になっている。
+
+### 発見・修正したUI干渉
+ADMIN系2画面に残っていた固定バッジが、共通ロールバーおよびテーマ切替ボタンと同じ上部領域を使用していた。
+
+対象:
+- `/admin/player-visibility` の `.badge`
+- `/admin/data-retention` の `.admin-badge`
+
+対応:
+- 固定配置を廃止。
+- 通常フローのインラインバッジへ変更。
+- これによりロールバー / テーマ切替 / ページ固有バッジの重なりを解消。
+
+修正コミット:
+- `c03b1f5feb70ddf5c2162972cf29a59c644f1e1d` — `fix: prevent admin badges from overlapping global UI`
+
+### VIP導線再確認
+- `Mightyユーザーですか？` 残存なし。
+- `.mighty-declare` 残存なし。
+- VIP昇格ボタンは `/api/me/vip/mighty-check` の実判定へ接続。
+- 自己申告によるVIP昇格経路は復活していない。
+- 確認済み時の再確認導線も存在。
+
+### 共通UIの既知事項
+- ロールバーは固定上部、テーマ切替ボタンはその下の領域に配置。
+- PREVIEWバナーもテーマ切替と同じ上部帯を使用するが、ロールバーとは高さを分離済み。
+- ロールバーは横スクロール可能でiPhone幅でも全ロールを表示可能。
+- ロール取得は各HTMLページで `/api/me/advanced` を1回実行するため、D1 Rows Read削減の観点では将来の最適化候補。
+- `/status-json-comparator` / `status-json-comparator.html` は静的Assetを直接返す特殊な比較用画面で、通常のEagleEye UIルートとは別経路。今回の共通ロールバー監査対象からは除外した。
+
+### デプロイ状態
+- 今回はコード監査とUI干渉修正のみ。
+- mainへのコミットは完了。
+- Cloudflare本番deployおよび実機本番確認は未実施。
