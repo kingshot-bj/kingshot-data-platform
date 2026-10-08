@@ -191,3 +191,54 @@ Active run ID:
 - 2026-10-07 の直前ハンドオフ cd253b1... から main は7コミット先行。
 - リポジトリ内には Cloudflare Workers の GitHub Actions デプロイ workflow は存在しないため、Cloudflare Dashboard 側の Git 自動デプロイ設定そのものはこのGitHub接続から変更できない。
 - 今回は main へ全変更を流し込んだ状態。Cloudflare Git連携が有効ならpushをトリガーに反映される。別途GitHub Actionsを追加して二重デプロイにはしない。
+
+
+## 2026-10-08 — Player UI退化調査・次スレ引き継ぎ
+
+### 現在のユーザー依頼
+「英雄の星表示など色々消えている。修正すると同時に、他にも同様の退化がないか全機能チェックする。」
+
+### 重要な調査結果
+現行 main HEAD は `58f20295be3e56ff5ce3bc4289da4a8854b1ae20`。
+Player Detail 周辺で、過去のリッチ表示が大幅に簡略化されていることをコード上で確認済み。
+
+過去のリッチ版 `e84328f0a16c6c00e172773cbc9000badcabc3ee` には存在していたが、現行HEADでは消失/簡略化されている主なもの:
+- 英雄の5分割星表示（`renderSegmentedHeroStar`）
+- 英雄星表示用CSS（`.hero-stars-row`, `.hero-stars`, `.hero-star` 等）
+- 英雄装備の画像・スロット・強化Lv・名称表示（`.hero-gear-section` 等）
+- 英雄スキル表示
+- 専属装備表示
+- MightPulse Optional Assets の抽出・表示
+- 過去のリッチ英雄カード構造
+
+現行 `renderPlayerAdvancedSections()` は英雄名・アイコン・Lv・星ラベル・品質・戦力・簡易装備文字列程度まで簡略化されている。
+
+関連する過去コミット:
+- `e84328f0a16c6c00e172773cbc9000badcabc3ee` rich player detail / segmented star
+- `b4ef7bd2cca5611eb82062157b36906b42343d8e` hero gear images
+- `cc32a919348000d7ac0c47a703b50735653d7acf` MightPulse optional assets
+- `e1340c1661258b68c906d2cb4b9fa676fbad989d` hero power fallback/localize
+- `dec8020bfb3e37aac53ca9253480342b3010d72e` player profile localization/UI readability
+- `fa6f8a18b2dca995a3ea8666d16925294856982a` player visibility applied to cached profiles/history
+- `92ceb2a2684206df0a81fe2d0d043128c3110c2f` I-4 player API/detail page
+
+### 修正状況
+まだ実装・コミットはしていない。
+次スレで以下を実施すること:
+1. 現行 `src/index.js` の player detail 関数・CSS・データ抽出箇所を正確に取得。
+2. 上記の過去リッチ実装から必要部分だけを現行へ移植。
+3. 現行の VIP / Mighty / eligibility / role / visibility 処理は絶対に壊さない。
+4. 英雄星・装備・スキル・専属装備・Optional Assets 等を復元。
+5. その後、今回のような「大規模リファクタで過去機能が消えた」退化が他にないか、現行mainと過去の機能実装/コミットを横断比較して全機能監査する。
+6. 退化候補は「削除された」「簡略化された」「データは残るがUI/APIから出なくなった」「権限条件が変わった」の4分類で洗い出す。
+7. 修正は必要なものを実コードへ反映し、コミットまで行う。デプロイは別。
+8. 構文/静的チェック可能なら実施し、未実施なら明記。
+9. 本番確認済みとは言わない。
+
+### 特に注意
+- ユーザーは「要確認」ではなく、実際に確認・修正まで進めることを求めている。
+- 調査だけで止めず、可能なものは実装まで進める。
+- `ranking_snapshots` の広範囲読み取りを復活させない。
+- D1負荷を増やすだけの無駄な取得・書き込みを避ける。
+- 「main反映」「deploy済み」「本番確認済み」を厳密に分離する。
+- 直近では API Pool UI、VIP/Mighty、System Log、Load Test、Kingdom Catalog 等の変更が入っているため、退化監査ではこれらの新機能を壊していないかも確認対象。
