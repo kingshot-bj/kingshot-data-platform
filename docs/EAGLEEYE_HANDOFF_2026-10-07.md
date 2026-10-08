@@ -442,3 +442,11 @@ ADMIN系2画面に残っていた固定バッジが、共通ロールバーお�
 - 今回はコード監査とUI干渉修正のみ。
 - mainへのコミットは完了。
 - Cloudflare本番deployおよび実機本番確認は未実施。
+
+
+### 追加修正 — 静的比較画面も共通UI対象へ
+`/status-json-comparator` / `/status-json-comparator.html` は静的Asset直返しだったため、共通 `eagleEyeHtmlResponse()` を通すよう変更。
+
+- 修正コミット: `39356a61ea48d9e6e9c4cd180bcf28c429fd02aa`
+- これにより比較用画面にもロールバー・テーマ切替・共通UIが適用される。
+- Asset自体が非200の場合は元Responseをそのまま返す。
