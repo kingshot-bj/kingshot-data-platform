@@ -57,6 +57,30 @@ if (Number(hasMinRole) === 0) {
   process.exit(0);
 }
 
+// 0053 may be reconciled only when the later VIP/API-Pool migrations have
+// not already left physical schema behind. If they have, stop rather than
+// guessing which migration history was lost.
+const laterSchema = run(
+  "SELECT " +
+    "(SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='user_mighty_credentials') AS mighty_table, " +
+    "(SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_capable') AS mighty_capable, " +
+    "(SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_checked_at') AS mighty_checked_at, " +
+    "(SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_check_status') AS mighty_check_status, " +
+    "(SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_last_error_code') AS mighty_last_error_code"
+)[0] ?? {};
+
+if (
+  Number(laterSchema.mighty_table) > 0 ||
+  Number(laterSchema.mighty_capable) > 0 ||
+  Number(laterSchema.mighty_checked_at) > 0 ||
+  Number(laterSchema.mighty_check_status) > 0 ||
+  Number(laterSchema.mighty_last_error_code) > 0
+) {
+  throw new Error(
+    "Cannot reconcile 0053 safely: later VIP/API-Pool schema already exists without recorded 0053-0057 history. Stop and investigate migration drift first."
+  );
+}
+
 console.log(
   "Detected known production drift: " +
     MIGRATION +
