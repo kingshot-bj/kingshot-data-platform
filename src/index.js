@@ -4219,7 +4219,8 @@ const EAGLEEYE_THEME_SCRIPT = `
 <script id="eagleeye-theme-script">
 (function(){
   try {
-    var saved=localStorage.getItem("eagleeye-theme");
+    var saved="";
+    try { saved=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) { saved=""; }
     var theme=saved==="light"||saved==="dark"?saved:(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");
     document.documentElement.setAttribute("data-eagle-theme",theme);
     var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
@@ -4294,7 +4295,7 @@ const EAGLEEYE_THEME_SCRIPT = `
       btn.onclick=function(){
         var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
         document.documentElement.setAttribute("data-eagle-theme",next);
-        localStorage.setItem("eagleeye-theme",next);
+        try { window.localStorage.setItem("eagleeye-theme",next); } catch(e) {}
         paint();
       };
       paint();
