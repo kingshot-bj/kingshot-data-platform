@@ -337,3 +337,33 @@ VIPは**金文字・ゴールド系**で特別感を出す。
 ### 注意
 
 今回の要望は**まだ実装していない**。このハンドオフには「実装方針」と「次スレでの実装項目」を残しただけ。
+
+## 2026-10-08 — UIロール表示・VIP導線 実装反映
+
+### 実装済み
+- 共通テーマの `EAGLEEYE_THEME_SCRIPT` に全画面共通ロールバーを実装済み。
+- `eagleEyeHtmlResponse()` → `applyEagleEyeTheme()` 経由で共通テーマ/ロールUIを各HTMLへ注入。
+- ロールバーは BASIC / ADVANCED / VIP / ADMIN / OWNER を常時表示し、現在ロールを `current` で強調。
+- VIPはゴールド文字＋ゴールド枠＋控えめなglow。
+- ADMIN / OWNERもロール階層として表示。
+- ロール取得は既存の `/api/me/advanced` を利用し、権限判定ロジックをUI側へ再実装していない。
+- 既存実装コミット:
+  - `9dc2014179aa531fd6b9f02ab441e36c41f50d35` — global role ladder
+  - `b3a18becae5ad64d615e15363bf6d89b288d5de0` — floating controlsとの干渉修正
+
+### VIP昇格UI
+2026-10-08 commit `7a564c6bcb6c87f103cdbf1f12f600163b84f949` で以下を実装:
+- 「Mightyユーザーですか？」の自己申告UIを削除。
+- 「はい / いいえ」ボタンを削除。
+- 見出しを `⚡ VIPロールへの昇格` に変更。
+- 説明を「Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。」へ変更。
+- ボタンを `⚡ VIPロールへの昇格を確認` に変更。
+- 確認済み時は `⚡ VIP / Mighty対応確認済みです。` を表示。
+- VIP判定の実体である `/api/me/vip/mighty-check` は変更していない。
+- 自己申告ではなく、登録済みAPIキーを実際にMighty専用APIで確認する既存仕様を維持。
+
+### 現時点の注意
+- 共通ロールバーはすでにmainへ実装済みだったため、今回のVIP変更で重複実装はしていない。
+- `eagleEyeHtmlResponse()` は現在43箇所から利用されている。
+- ロールバーのブラウザ側取得は各ページで `/api/me/advanced` を呼ぶため、D1 Rows Read削減の観点では今後最適化候補。ただし今回のVIP UI修正では権限取得経路を変更していない。
+- main反映済みだが、Cloudflare本番deploy・実機本番確認は別扱い。
