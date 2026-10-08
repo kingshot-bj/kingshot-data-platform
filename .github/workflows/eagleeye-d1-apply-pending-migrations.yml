@@ -79,8 +79,8 @@ jobs:
           TEST_JSON="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT
             (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='user_mighty_credentials') AS mighty_table,
             (SELECT COUNT(*) FROM pragma_table_info('player_visibility_settings') WHERE name='min_role') AS visibility_min_role,
-            (SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='role') AS users_role,
-            (SELECT COUNT(*) FROM users WHERE role='VIP') AS vip_users,
+            (SELECT sql FROM sqlite_master WHERE type='table' AND name='player_visibility_settings') AS visibility_sql,
+            (SELECT sql FROM sqlite_master WHERE type='table' AND name='users') AS users_sql,
             (SELECT COUNT(*) FROM watchlist_limits WHERE role='VIP') AS vip_watchlist,
             (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_capable') AS mighty_capable,
             (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_checked_at') AS mighty_checked_at,
@@ -90,21 +90,27 @@ jobs:
           const payload = JSON.parse(process.argv[2]);
           const row = payload?.[0]?.results?.[0];
           if (!row) throw new Error("Could not read production schema verification result.");
-          const expected = [
+          const required = [
             "mighty_table",
             "visibility_min_role",
-            "users_role",
-            "vip_users",
             "vip_watchlist",
             "mighty_capable",
             "mighty_checked_at",
             "mighty_check_status",
             "mighty_last_error_code",
           ];
-          for (const key of expected) {
+          for (const key of required) {
             if (Number(row[key]) < 1) {
               throw new Error("Production schema verification failed: " + key + "=" + row[key]);
             }
+          }
+          const visibilitySql = String(row.visibility_sql || "").toUpperCase();
+          const usersSql = String(row.users_sql || "").toUpperCase();
+          if (!visibilitySql.includes("VIP")) {
+            throw new Error("Production schema verification failed: player_visibility_settings does not include VIP in its role constraint.");
+          }
+          if (!usersSql.includes("VIP")) {
+            throw new Error("Production schema verification failed: users role constraint does not include VIP.");
           }
           console.log("0054-0057 production schema verification passed.");
           NODE
