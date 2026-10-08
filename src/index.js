@@ -8796,9 +8796,9 @@ async function renderHome(request, env) {
     ? `<a class="ee-profile" href="/status"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile" href="/api/auth/discord"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b>ログイン</b><small>${roleLabel}</small></span></a>`;
   const adminItem = auth && (auth.role === "ADMIN" || auth.role === "OWNER")
-    ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/026_system_monitoring.png" alt=""><span>管理</span></a>` : "";
+    ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span>管理</span></a>` : "";
   const ownerItem = auth && auth.role === "OWNER"
-    ? `<a class="owner" href="/owner"><img src="/assets/eagleeye/bjnyan/033_dashboard.png" alt=""><span>Owner Control</span></a>` : "";
+    ? `<a class="owner" href="/owner"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>Owner Control</span></a>` : "";
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
 :root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
@@ -8823,16 +8823,16 @@ async function renderHome(request, env) {
     <p>KingShotのプレイヤー・王国・ランキングを<br>データで観測しています。</p>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
-  <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/033_dashboard.png" alt="BJにゃん">
+  <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/15_search_complete.png" alt="BJにゃん">
 </section>
 <div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
-  <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/011_ranking_check.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
-  <a class="ee-tile primary" href="/player-watchlist"><img src="/assets/eagleeye/bjnyan/014_watchlist_monitoring.png" alt=""><strong>ウォッチリスト</strong><small>変化を追跡</small><b class="badge" id="playerBadge">0</b></a>
-  <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/012_player_research.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
-  <a class="ee-tile" href="/kingdom"><img src="/assets/eagleeye/bjnyan/013_kingdom_research.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
-  <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/026_system_monitoring.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
-  <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/033_dashboard.png" alt=""><strong>マイKingshot</strong><small>自分のデータ</small></a>
+  <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
+  <a class="ee-tile primary" href="/player-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>変化を追跡</small><b class="badge" id="playerBadge">0</b></a>
+  <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
+  <a class="ee-tile" href="/kingdom"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
+  <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
+  <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><strong>マイKingshot</strong><small>自分のデータ</small></a>
 </section>
 <section class="ee-summary">
   <div class="ee-stat"><div class="ee-stat-label">PLAYER WATCH</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div><div class="ee-stat-sub">監視中のプレイヤー</div></div>
@@ -8840,7 +8840,7 @@ async function renderHome(request, env) {
   <div class="ee-stat"><div class="ee-stat-label">MY KINGSHOT</div><div class="ee-stat-value">DATA</div><div class="ee-stat-sub">登録データへ</div></div>
   <div class="ee-stat"><div class="ee-stat-label">EAGLEEYE</div><div class="ee-stat-value"><em>LIVE</em></div><div class="ee-stat-sub">観測システム稼働中</div></div>
 </section>
-<button class="ee-more" id="moreButton" type="button"><span class="ee-more-copy"><img src="/assets/eagleeye/bjnyan/026_system_monitoring.png" alt=""><span><strong>その他の機能</strong><small>サポート・管理・王国監視など</small></span></span><b>›</b></button>
+<button class="ee-more" id="moreButton" type="button"><span class="ee-more-copy"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span><strong>その他の機能</strong><small>サポート・管理・王国監視など</small></span></span><b>›</b></button>
 </div></main>
 <nav class="ee-nav">
 <a class="active" href="/"><span class="ee-nav-icon">⌂</span><span>ホーム</span></a>
@@ -8853,8 +8853,8 @@ async function renderHome(request, env) {
   <div class="ee-drawer-panel">
     <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
     <div class="ee-drawer-grid">
-      <a href="/kingdom-watchlist"><img src="/assets/eagleeye/bjnyan/014_watchlist_monitoring.png" alt=""><span>王国監視</span></a>
-      <a href="/support"><img src="/assets/eagleeye/bjnyan/031_help.png" alt=""><span>サポート</span></a>
+      <a href="/kingdom-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><span>王国監視</span></a>
+      <a href="/support"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>サポート</span></a>
       ${adminItem}
       ${ownerItem}
     </div>
