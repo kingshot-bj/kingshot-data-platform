@@ -2218,12 +2218,12 @@ async function renderMyPlayerPage(request, env) {
     const vipKeyCount=Number(d.vip?.keyCount||keyCount);
     const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
-    if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>'<div class="row"><span>APIキー '+(i+1)+'</span><span class="value '+(d.vip?.apiKeys?.[i]?.mighty_capable?'warn':'ok')+'">'+(d.vip?.apiKeys?.[i]?.mighty_capable?'⚡ Mighty対応':'✓ 提供済み')+'</span></div>').join('')+'</div>';
+    if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="row" style="align-items:flex-start;gap:12px"><span>APIキー '+(i+1)+'</span><span style="text-align:right"><span class="value '+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty対応':'✓ 提供済み')+'</span>'+(prefix?'<div class="muted" style="margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'+esc(prefix)+'</div>':'')+'</span></div>';}).join('')+'</div>';
     html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      '<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>'+
+      '<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div>'+
       '<div id="key-msg"></div></div>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
