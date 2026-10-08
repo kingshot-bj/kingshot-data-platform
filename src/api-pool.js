@@ -504,7 +504,7 @@ async function encryptSecret(secret) {
   return "v1." + toBase64(iv) + "." + toBase64(new Uint8Array(ciphertext));
 }
 
-async function decryptSecret(value) {
+export async function decryptSecret(value) {
   const parts = String(value || "").split(".");
   if (parts.length !== 3 || parts[0] !== "v1") throw new Error("INVALID_ENCRYPTED_API_KEY");
   const key = await deriveEncryptionKey();
