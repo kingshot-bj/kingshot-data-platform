@@ -5793,7 +5793,7 @@ async function renderApiPoolAdminPage(request, env) {
         "<div class='detail-item'><small>最終エラー</small><b>" + escapeHtml(k.last_error_code || "-") + "</b></div>" +
         "<div class='detail-item'><small>APIキー識別</small><b>" + escapeHtml(k.api_key_prefix || "-") + "</b></div>" +
         "<div class='detail-item'><small>Fingerprint</small><b>" + escapeHtml(k.key_fingerprint || "-") + "</b></div>" +
-      "</div><div class='actions'><button type='button' class='action ok' data-mighty-check='" + escapeHtml(k.key_id) + "'>⚡ Mighty判定</button><button type='button' class='action danger' data-delete-key='" + escapeHtml(k.key_id) + "'>🗑️ キーを削除</button></div>" + ownerControls + "</div>" +
+      "</div><div class='actions'><button type='button' class='action ok' data-mighty-check='" + escapeHtml(k.key_id) + "'>⚡ Mighty判定</button>" + (guard.auth.role === "OWNER" ? "<button type='button' class='action danger' data-delete-key='" + escapeHtml(k.key_id) + "'>🗑️ キーを削除</button>" : "") + "</div>" + ownerControls + "</div>" +
     "</details>";
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
