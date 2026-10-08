@@ -1901,7 +1901,7 @@ async function handleMyAdvancedApi(request, env) {
       code === "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION"
         ? "先にKingShot領主IDを登録してください。"
         : code === "MIGHTPULSE_API_KEY_LIMIT_REACHED"
-        ? "登録できるMightPulse APIキーは最大3本です。"
+        ? "MightPulse APIキーの登録上限に達しました。"
         : "Advanced昇格条件の処理に失敗しました。"
     );
     const status = [
@@ -1940,9 +1940,9 @@ async function handleMyMightyCheckApi(request, env) {
         confirmed++;
         await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
-        // Do not stop after the first confirmed key. Up to three user-contributed
-        // keys are allowed, and every key must be checked so the API pool can
-        // actually rotate across all confirmed Mighty-capable keys.
+        // Do not stop after the first confirmed key. Every user-contributed
+        // key must be checked so the API pool can rotate across all confirmed
+        // Mighty-capable keys.
         continue;
       } catch (error) {
         const status = Number(error?.status || 0);
@@ -2215,9 +2215,10 @@ async function renderMyPlayerPage(request, env) {
     const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
     const keyCount=Number(a.mightPulseKeyCount||0);
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
-    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本</div>';
-    if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>'<div class="row"><span>APIキー '+(i+1)+'</span><span class="value ok">✓ 提供済み</span></div>').join('')+'</div>';
-    const canAddKey=keyCount < 3;
+    const vipKeyCount=Number(d.vip?.keyCount||keyCount);
+    const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
+    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
+    if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>'<div class="row"><span>APIキー '+(i+1)+'</span><span class="value '+(d.vip?.apiKeys?.[i]?.mighty_capable?'warn':'ok')+'">'+(d.vip?.apiKeys?.[i]?.mighty_capable?'⚡ Mighty対応':'✓ 提供済み')+'</span></div>').join('')+'</div>';
     html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
