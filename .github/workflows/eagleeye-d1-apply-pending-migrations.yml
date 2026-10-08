@@ -70,6 +70,45 @@ jobs:
           set -euo pipefail
           wrangler d1 migrations apply eagleeye-db --remote
 
+      - name: Verify 0054-0057 production schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          TEST_JSON="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='user_mighty_credentials') AS mighty_table,
+            (SELECT COUNT(*) FROM pragma_table_info('player_visibility_settings') WHERE name='min_role') AS visibility_min_role,
+            (SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='role') AS users_role,
+            (SELECT COUNT(*) FROM users WHERE role='VIP') AS vip_users,
+            (SELECT COUNT(*) FROM watchlist_limits WHERE role='VIP') AS vip_watchlist,
+            (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_capable') AS mighty_capable,
+            (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_checked_at') AS mighty_checked_at,
+            (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_check_status') AS mighty_check_status,
+            (SELECT COUNT(*) FROM pragma_table_info('api_pool_keys') WHERE name='mighty_last_error_code') AS mighty_last_error_code;")"
+          node - <<'NODE' "$TEST_JSON"
+          const payload = JSON.parse(process.argv[2]);
+          const row = payload?.[0]?.results?.[0];
+          if (!row) throw new Error("Could not read production schema verification result.");
+          const expected = [
+            "mighty_table",
+            "visibility_min_role",
+            "users_role",
+            "vip_users",
+            "vip_watchlist",
+            "mighty_capable",
+            "mighty_checked_at",
+            "mighty_check_status",
+            "mighty_last_error_code",
+          ];
+          for (const key of expected) {
+            if (Number(row[key]) < 1) {
+              throw new Error("Production schema verification failed: " + key + "=" + row[key]);
+            }
+          }
+          console.log("0054-0057 production schema verification passed.");
+          NODE
+
       - name: Verify collection semaphore slots
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
