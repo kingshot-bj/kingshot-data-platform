@@ -100,32 +100,78 @@ export async function runKingdomCatalogDiscovery(env, {
     const uniqueCandidates = [...new Map(candidates.map(item => [item.kid, item])).values()];
     const existing = uniqueCandidates.length
       ? await env.DB.prepare(
-          "SELECT kid FROM kingdom_catalog WHERE kid IN (" + candidates.map(() => "?").join(",") + ")"
+          "SELECT kid, name, status, region, language, source_observed_at, last_seen_at, updated_at FROM kingdom_catalog WHERE kid IN (" + uniqueCandidates.map(() => "?").join(",") + ")"
         ).bind(...uniqueCandidates.map(item => item.kid)).all()
       : { results: [] };
-    const existingKids = new Set((existing.results || []).map(row => Number(row.kid)));
-    const statements = uniqueCandidates
-      .filter(item => !existingKids.has(item.kid))
-      .map(({ row, kid }) => env.DB.prepare(
-        "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(
-        kid,
-        row.name ?? row.kingdom_name ?? null,
-        row.status ?? null,
-        row.region ?? row.zone ?? null,
-        row.language ?? row.lang ?? null,
-        null,
-        Number(row.source_observed_at ?? row.observed_at ?? 0) || null,
-        now,
-        now,
-        now
-      ));
+    const existingByKid = new Map((existing.results || []).map(row => [Number(row.kid), row]));
+    const inserts = [];
+    const updates = [];
+    for (const { row, kid } of uniqueCandidates) {
+      const incomingName = row.name ?? row.kingdom_name ?? null;
+      const incomingStatus = row.status ?? null;
+      const incomingRegion = row.region ?? row.zone ?? null;
+      const incomingLanguage = row.language ?? row.lang ?? null;
+      const incomingObservedAt = Number(row.source_observed_at ?? row.observed_at ?? 0) || null;
+      const currentRow = existingByKid.get(Number(kid));
+
+      if (!currentRow) {
+        inserts.push(env.DB.prepare(
+          "INSERT INTO kingdom_catalog (kid, name, status, region, language, raw_json, source_observed_at, first_seen_at, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(
+          kid,
+          incomingName,
+          incomingStatus,
+          incomingRegion,
+          incomingLanguage,
+          null,
+          incomingObservedAt,
+          now,
+          now,
+          now
+        ));
+        continue;
+      }
+
+      // Catalog discovery is also a metadata refresh. Only write rows whose
+      // upstream metadata actually changed (or whose source observation is newer).
+      // Missing upstream fields do not erase a value already known locally.
+      const nextName = row.name !== undefined || row.kingdom_name !== undefined ? incomingName : currentRow.name;
+      const nextStatus = row.status !== undefined ? incomingStatus : currentRow.status;
+      const nextRegion = row.region !== undefined || row.zone !== undefined ? incomingRegion : currentRow.region;
+      const nextLanguage = row.language !== undefined || row.lang !== undefined ? incomingLanguage : currentRow.language;
+      const sourceObservedChanged = incomingObservedAt != null
+        && incomingObservedAt !== Number(currentRow.source_observed_at || 0);
+      const metadataChanged =
+        nextName !== currentRow.name ||
+        nextStatus !== currentRow.status ||
+        nextRegion !== currentRow.region ||
+        nextLanguage !== currentRow.language;
+
+      if (metadataChanged || sourceObservedChanged) {
+        updates.push(env.DB.prepare(
+          "UPDATE kingdom_catalog SET name = ?, status = ?, region = ?, language = ?, source_observed_at = ?, last_seen_at = ?, updated_at = ? WHERE kid = ?"
+        ).bind(
+          nextName,
+          nextStatus,
+          nextRegion,
+          nextLanguage,
+          sourceObservedChanged ? incomingObservedAt : currentRow.source_observed_at,
+          now,
+          now,
+          kid
+        ));
+      }
+    }
+    const statements = [...inserts, ...updates];
     if (statements.length) await env.DB.batch(statements);
 
+    const rowsSaved = statements.length;
+    const newKingdoms = inserts.length;
+    const updatedKingdoms = updates.length;
     const nextPage = rows.length < safePageSize ? 1 : targetPage + 1;
     await env.DB.prepare(
       "UPDATE kingdom_catalog_discovery SET next_page = ?, state = 'IDLE', pages_checked = pages_checked + 1, kingdoms_seen = kingdoms_seen + ?, last_page_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE discovery_key = ?"
-    ).bind(nextPage, statements.length, now, now, now, DISCOVERY_KEY).run();
+    ) .bind(nextPage, uniqueCandidates.length, now, now, now, DISCOVERY_KEY).run();
 
     await recordDiagnostic(env.DB, {
       service: "kingdom_catalog",
@@ -149,9 +195,9 @@ export async function runKingdomCatalogDiscovery(env, {
       status: "SUCCESS",
       targetType: "PAGE",
       targetId: String(targetPage),
-      metadata: { page: targetPage, rowsReceived: rows.length, rowsSaved: statements.length, nextPage, newKingdoms: statements.length, existingKingdoms: candidates.length - statements.length }
+      metadata: { page: targetPage, rowsReceived: rows.length, rowsSaved: rowsSaved, nextPage, newKingdoms, updatedKingdoms, existingKingdoms: uniqueCandidates.length - newKingdoms - updatedKingdoms }
     });
-    return { ok: true, page: targetPage, rowsReceived: rows.length, rowsSaved: statements.length, nextPage };
+    return { ok: true, page: targetPage, rowsReceived: rows.length, rowsSaved, newKingdoms, updatedKingdoms, nextPage };
   } catch (error) {
     await env.DB.prepare(
       "UPDATE kingdom_catalog_discovery SET state = 'FAILED', last_error = ?, updated_at = ? WHERE discovery_key = ?"
