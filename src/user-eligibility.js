@@ -179,6 +179,12 @@ export async function evaluateAdvancedEligibility(db, userId) {
 }
 
 
+function isMightyCredentialTableMissing(error) {
+  const message = String(error?.message || error?.cause?.message || error || "");
+  return /(?:no such table|table .* does not exist).*user_mighty_credentials/i.test(message)
+    || /user_mighty_credentials.*(?:no such table|does not exist)/i.test(message);
+}
+
 export async function getVipEligibility(db, { env, userId } = {}) {
   const normalizedUserId = String(userId || "").trim();
   if (!normalizedUserId) {
@@ -198,7 +204,13 @@ export async function getVipEligibility(db, { env, userId } = {}) {
     db.prepare(
       "SELECT key_id, status, contributed_at FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
     ).bind(normalizedUserId).all(),
-    getUserMightyCredential(db, { env, userId: normalizedUserId })
+    getUserMightyCredential(db, { env, userId: normalizedUserId }).catch(error => {
+      // Mighty credentials are an optional feature. If the production DB is
+      // running before migration 0054/0056 has been applied, opening
+      // /my-player must still work and simply show "未登録".
+      if (isMightyCredentialTableMissing(error)) return null;
+      throw error;
+    })
   ]);
 
   // VIP entitlement is based on registered, non-revoked credentials.
