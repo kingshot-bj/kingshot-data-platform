@@ -450,3 +450,23 @@ ADMIN系2画面に残っていた固定バッジが、共通ロールバーお�
 - 修正コミット: `39356a61ea48d9e6e9c4cd180bcf28c429fd02aa`
 - これにより比較用画面にもロールバー・テーマ切替・共通UIが適用される。
 - Asset自体が非200の場合は元Responseをそのまま返す。
+
+
+### 2026-10-08 — iPhone実機で共通UI欠落を確認・修正
+iPhone実機スクリーンショットで /my-player を確認したところ、VIP昇格UIは正常表示された一方、共通ロールバーとテーマ切替ボタンが表示されていなかった。
+
+コード監査で EAGLEEYE_THEME_SCRIPT 全体が1つの try/catch に包まれ、冒頭の localStorage.getItem() 例外が発生した場合に、ロールバー・テーマ切替を含む共通UI初期化全体が中断する構造を確認。
+
+対応:
+- localStorage.getItem() を個別 try/catch 化。
+- localStorage.setItem() も個別 try/catch 化。
+- ストレージアクセス不能でも共通UI初期化を継続するよう修正。
+
+修正コミット:
+- bc9a998c77ca43254ec4fad9d990a9cdce3c427e — fix: harden global UI against storage access errors
+
+### 実機確認時の期待値
+- ロールバー: BASIC / ADVANCED / ⚡ VIP / ADMIN / OWNER
+- 現在ロール: OWNERを強調表示
+- テーマ切替ボタン: 右上
+- VIPカード: ⚡ VIPロールへの昇格
