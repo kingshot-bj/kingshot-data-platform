@@ -183,14 +183,17 @@ export async function getVipEligibility(db, { userId } = {}) {
 
   const user = await db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first();
   const contributedKeys = (await db.prepare("SELECT key_id, key_fingerprint, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC").bind(normalizedUserId).all()).results || [];
-  const mightyKey = contributedKeys.find(row => Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED") || null;
-  const hasMightyKey = Boolean(mightyKey);
+  const mightyKeys = contributedKeys.filter(row => Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED");
+  const mightyKey = mightyKeys[0] || null;
+  const hasMightyKey = mightyKeys.length > 0;
 
   return {
     eligible: hasMightyKey,
     role: user?.role || null,
     userStatus: user?.status || null,
     keyCount: contributedKeys.length,
+    mightyKeyCount: mightyKeys.length,
+    mightyKeyTotal: contributedKeys.length,
     hasMightyKey,
     mightyKeyStatus: mightyKey?.mighty_check_status || null,
     mightyKey: mightyKey ? { key_id: mightyKey.key_id, key_fingerprint: mightyKey.key_fingerprint ? String(mightyKey.key_fingerprint).slice(-8) : null, status: mightyKey.status, mighty_checked_at: mightyKey.mighty_checked_at, mighty_check_status: mightyKey.mighty_check_status } : null,
