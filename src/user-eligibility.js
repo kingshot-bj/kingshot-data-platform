@@ -1,12 +1,10 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
-import { addApiPoolKey } from "./api-pool.js";
+import { addApiPoolKey, setApiPoolMightyMetadata } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
-import { getUserMightyCredential, registerUserMightyKey, revokeUserMightyKey } from "./user-mighty.js";
-
 const ADVANCED_ROLE = "ADVANCED";
 const VIP_ROLE = "VIP";
-const VIP_REGULAR_KEY_COUNT = 2;
+const VIP_USER_KEY_COUNT = 3;
 export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = 3;
 
 async function registerUserMightPulseApiKeyInternal(db, {
@@ -81,7 +79,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
     throw error;
   }
 
-  return addApiPoolKey(db, {
+  const added = await addApiPoolKey(db, {
     provider: "MIGHTPULSE",
     poolType: "USER_CONTRIBUTED",
     label,
@@ -89,6 +87,33 @@ async function registerUserMightPulseApiKeyInternal(db, {
     contributedByUserId: normalizedUserId,
     consentVersion: "USER_CONTRIBUTED_V1"
   });
+
+  // No separate personal Mighty credential is required anymore. A contributed
+  // key is automatically tested against the Mighty-only endpoint and its pool
+  // metadata is updated so the confirmed key can be used by EagleEye's
+  // dedicated Mighty pool.
+  try {
+    const mightyResult = await mightPulseFetch(env, "/kvk/matchups", {
+      apiKey: key,
+      timeoutMs: 15000,
+      maxRetries: 1
+    });
+    await setApiPoolMightyMetadata(db, {
+      keyId: added.key_id,
+      mightyCapable: Number(mightyResult?.status || 0) >= 200 && Number(mightyResult?.status || 0) < 300,
+      status: "CONFIRMED"
+    });
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    await setApiPoolMightyMetadata(db, {
+      keyId: added.key_id,
+      mightyCapable: false,
+      status: status === 403 ? "NOT_MIGHTY" : "UNCONFIRMED",
+      errorCode: status === 403 ? "MIGHTY_REQUIRED" : (error?.code || "MIGHTY_CHECK_FAILED")
+    });
+  }
+
+  return added;
 }
 
 export async function getAdvancedEligibility(db, userId) {
@@ -179,64 +204,58 @@ export async function evaluateAdvancedEligibility(db, userId) {
 }
 
 
-function isMightyCredentialTableMissing(error) {
-  const message = String(error?.message || error?.cause?.message || error || "");
-  return /(?:no such table|table .* does not exist).*user_mighty_credentials/i.test(message)
-    || /user_mighty_credentials.*(?:no such table|does not exist)/i.test(message);
-}
-
-export async function getVipEligibility(db, { env, userId } = {}) {
+export async function getVipEligibility(db, { userId } = {}) {
   const normalizedUserId = String(userId || "").trim();
   if (!normalizedUserId) {
     return {
       eligible: false,
       role: null,
       regularKeyCount: 0,
-      regularKeyRequired: VIP_REGULAR_KEY_COUNT,
+      regularKeyRequired: VIP_USER_KEY_COUNT,
       hasMightyKey: false,
       mightyKeyStatus: null,
       mightyKey: null
     };
   }
 
-  const [user, keys, mighty] = await Promise.all([
+  const [user, keys] = await Promise.all([
     db.prepare("SELECT user_id, role, status FROM users WHERE user_id = ? LIMIT 1").bind(normalizedUserId).first(),
     db.prepare(
-      "SELECT key_id, status, contributed_at FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
-    ).bind(normalizedUserId).all(),
-    getUserMightyCredential(db, { env, userId: normalizedUserId }).catch(error => {
-      // Mighty credentials are an optional feature. If the production DB is
-      // running before migration 0054/0056 has been applied, opening
-      // /my-player must still work and simply show "未登録".
-      if (isMightyCredentialTableMissing(error)) return null;
-      throw error;
-    })
+      "SELECT key_id, status, contributed_at, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY contributed_at ASC"
+    ).bind(normalizedUserId).all()
   ]);
 
-  // VIP entitlement is based on registered, non-revoked credentials.
-  // Temporary rate limits or upstream errors must not silently remove VIP.
-  const regularKeyCount = (keys.results || []).filter(row => String(row.status || "").toUpperCase() !== "REVOKED").length;
-  const hasMightyKey = Boolean(mighty);
-  const eligible = regularKeyCount >= VIP_REGULAR_KEY_COUNT && hasMightyKey;
+  const contributedKeys = keys.results || [];
+  const regularKeyCount = contributedKeys.length;
+  const mightyKey = contributedKeys.find(row =>
+    Number(row.mighty_capable) === 1 && String(row.mighty_check_status || "").toUpperCase() === "CONFIRMED"
+  ) || null;
+  const hasMightyKey = Boolean(mightyKey);
+  const eligible = regularKeyCount >= VIP_USER_KEY_COUNT && hasMightyKey;
 
   return {
     eligible,
     role: user?.role || null,
     userStatus: user?.status || null,
     regularKeyCount,
-    regularKeyRequired: VIP_REGULAR_KEY_COUNT,
+    regularKeyRequired: VIP_USER_KEY_COUNT,
     hasMightyKey,
-    mightyKeyStatus: mighty?.status || null,
-    mightyKey: mighty ? {
-      credential_id: mighty.credential_id,
-      key_fingerprint: mighty.key_fingerprint,
-      status: mighty.status,
-      last_verified_at: mighty.last_verified_at,
-      last_success_at: mighty.last_success_at,
-      last_error_at: mighty.last_error_at,
-      last_error_code: mighty.last_error_code,
-      last_error_message: mighty.last_error_message
-    } : null
+    mightyKeyStatus: mightyKey?.mighty_check_status || null,
+    mightyKey: mightyKey ? {
+      key_id: mightyKey.key_id,
+      key_fingerprint: String(mightyKey.key_id || "").slice(-8),
+      status: mightyKey.status,
+      mighty_checked_at: mightyKey.mighty_checked_at,
+      mighty_check_status: mightyKey.mighty_check_status
+    } : null,
+    apiKeys: contributedKeys.map(row => ({
+      key_id: row.key_id,
+      status: row.status,
+      contributed_at: row.contributed_at,
+      mighty_capable: Number(row.mighty_capable) === 1,
+      mighty_check_status: row.mighty_check_status,
+      mighty_checked_at: row.mighty_checked_at
+    }))
   };
 }
 
@@ -265,10 +284,3 @@ export async function evaluateVipEligibility(db, { env, userId } = {}) {
   return { ...eligibility, changed: false, promoted: false, demoted: false };
 }
 
-export async function registerUserMightyApiKey(db, options = {}) {
-  return registerUserMightyKey(db, options);
-}
-
-export async function revokeUserMightyApiKey(db, userId) {
-  return revokeUserMightyKey(db, userId);
-}
