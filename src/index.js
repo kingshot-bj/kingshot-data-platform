@@ -2223,7 +2223,7 @@ async function renderMyPlayerPage(request, env) {
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">最大3本まで登録できます。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px">MightPulse APIキーは最大3本までです。</div>')+
+      '<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>'+
       '<div id="key-msg"></div></div>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
