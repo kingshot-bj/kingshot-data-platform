@@ -1,5 +1,5 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
-import { addApiPoolKey, decryptSecret } from "./api-pool.js";
+import { addApiPoolKey, decryptSecret, leaseApiKeyForHealthCheck, releaseApiLease, recordApiPoolSuccess, recordApiPoolFailure, setApiPoolMightyMetadata } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
 import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
@@ -84,9 +84,98 @@ async function registerUserMightPulseApiKeyInternal(db, {
     consentVersion: "USER_CONTRIBUTED_V1"
   });
 
+  // Registration now performs the Mighty capability check immediately.
+  // The ordinary /kingdoms validation above proves the key is a valid
+  // MightPulse key; this second request determines whether it can access
+  // Mighty-only endpoints. A transient Mighty-check failure must not cancel
+  // an otherwise valid key registration.
+  let mightyCheckStatus = "UNCONFIRMED";
+  let mightyCapable = false;
+  let mightyErrorCode = null;
+  let mightyLease = null;
+  try {
+    mightyLease = await leaseApiKeyForHealthCheck(db, {
+      keyId: added.key_id,
+      purpose: "USER_MIGHTY_CHECK",
+      targetType: "USER",
+      targetId: normalizedUserId
+    });
+    await mightPulseFetch(env, "/kvk/matchups", {
+      apiKey: mightyLease.api_key,
+      timeoutMs: 15000,
+      maxRetries: 1
+    });
+    await recordApiPoolSuccess(db, {
+      keyId: added.key_id,
+      leaseId: mightyLease.lease_id,
+      poolType: "USER_CONTRIBUTED",
+      endpoint: "/kvk/matchups",
+      targetType: "USER",
+      targetId: normalizedUserId,
+      purpose: "USER_MIGHTY_CHECK",
+      httpStatus: 200
+    });
+    await setApiPoolMightyMetadata(db, {
+      keyId: added.key_id,
+      mightyCapable: true,
+      status: "CONFIRMED",
+      errorCode: null
+    });
+    mightyCheckStatus = "CONFIRMED";
+    mightyCapable = true;
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    mightyErrorCode = status === 401 || status === 403
+      ? "MIGHTY_REQUIRED"
+      : status === 429
+      ? "MIGHTY_RATE_LIMITED"
+      : status >= 500 || error?.retryable
+      ? "MIGHTY_TEMPORARY_ERROR"
+      : "MIGHTY_CHECK_FAILED";
 
+    if (mightyLease) {
+      if (status === 403) {
+        await setApiPoolMightyMetadata(db, {
+          keyId: added.key_id,
+          mightyCapable: false,
+          status: "NOT_MIGHTY",
+          errorCode: mightyErrorCode
+        });
+        await releaseApiLease(db, mightyLease.lease_id);
+        mightyCheckStatus = "NOT_MIGHTY";
+      } else {
+        await recordApiPoolFailure(db, {
+          keyId: added.key_id,
+          leaseId: mightyLease.lease_id,
+          poolType: "USER_CONTRIBUTED",
+          endpoint: "/kvk/matchups",
+          targetType: "USER",
+          targetId: normalizedUserId,
+          purpose: "USER_MIGHTY_CHECK",
+          httpStatus: status || 0,
+          errorCode: mightyErrorCode,
+          errorMessage: error?.message || "Mighty check failed",
+          keepAvailable: true
+        });
+        const now = Math.floor(Date.now() / 1000);
+        await db.prepare(
+          "UPDATE api_pool_keys SET mighty_capable = 0, mighty_checked_at = ?1, mighty_check_status = 'UNCONFIRMED', mighty_last_error_code = ?2, updated_at = ?1 WHERE key_id = ?3"
+        ).bind(now, mightyErrorCode, added.key_id).run();
+      }
+    } else {
+      const now = Math.floor(Date.now() / 1000);
+      await db.prepare(
+        "UPDATE api_pool_keys SET mighty_capable = 0, mighty_checked_at = ?1, mighty_check_status = 'UNCONFIRMED', mighty_last_error_code = ?2, updated_at = ?1 WHERE key_id = ?3"
+      ).bind(now, mightyErrorCode, added.key_id).run();
+    }
+  }
 
-  return added;
+  return {
+    ...added,
+    mighty_capable: mightyCapable,
+    mighty_check_status: mightyCheckStatus,
+    mighty_last_error_code: mightyErrorCode
+  };
 }
 
 export async function getAdvancedEligibility(db, userId) {
