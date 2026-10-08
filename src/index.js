@@ -1907,7 +1907,6 @@ async function handleMyAdvancedApi(request, env) {
       "MIGHTPULSE_PLAYER_NOT_AVAILABLE",
       "MIGHTPULSE_PLAYER_MISMATCH",
       "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION",
-      "MIGHTPULSE_API_KEY_LIMIT_REACHED",
       "MIGHTPULSE_API_KEY_ALREADY_REGISTERED"
     ].includes(code) ? 400 : 500;
     return json({ ok: false, error: code, message: userMessage }, status);
@@ -2143,26 +2142,24 @@ async function renderMyPlayerPage(request, env) {
     html+='<div class="muted" style="margin-top:12px">現在 '+esc(limits.registeredKingdoms||0)+' / 2 王国、'+esc(limits.activeAccounts||0)+' アカウントを登録中</div></div>';
     html+='<div class="card"><h2 style="margin:0 0 6px">KingShotアカウントを追加</h2><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype" style="margin-top:14px">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div>';
     const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
-    const keyCount=Number(a.mightPulseKeyCount||0); const keyLimit=Number(a.mightPulseKeyLimit||3);
+    const keyCount=Number(a.mightPulseKeyCount||0);
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
-    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+' / '+esc(keyLimit)+'</div>';
+    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本</div>';
     if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>'<div class="row"><span>APIキー '+(i+1)+'</span><span class="value ok">✓ 提供済み</span></div>').join('')+'</div>';
-    const canAddKey=keyCount<keyLimit;
+    const canAddKey=true;
     html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+
       keyHtml+
-      (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">最大'+esc(keyLimit)+'本まで提供できます。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px">MightPulse APIキーの提供上限（'+esc(keyLimit)+'本）に達しています。</div>')+
+      (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px"></div>')+
       '<div id="key-msg"></div></div>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
-    const regularReady=Number(v.regularKeyCount||0)>=Number(v.regularKeyRequired||3);
-    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">VIP条件：MightPulse APIキー3本をPoolへ提供し、そのうち1本以上がMighty対応として確認済みであること。別途Mighty APIキーを登録する必要はありません。</p>'+
-      '<div class="check"><span class="check-icon '+(regularReady?"ok":"")+'">'+(regularReady?"✓":"")+'</span><span>MightPulse APIキー '+esc(v.regularKeyCount||0)+' / '+esc(v.regularKeyRequired||3)+'</span></div>'+
-      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応キー '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
+    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">登録したMightPulse APIキーをMighty専用APIでも自動確認します。Mighty対応キーが1本以上あればVIP、なければAdvancedです。</p>'+
+      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
       '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
-      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを自動判定してMighty機能に使用します。</div></div>';
+      '<div class="muted" style="margin-top:12px">APIキー登録時に通常認証とMighty認証を行います。既存キーも初回確認時に自動判定します。</div></div>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
