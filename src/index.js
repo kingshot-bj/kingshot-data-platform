@@ -22,7 +22,7 @@ import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRa
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
-import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
+import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, leaseUserMightyCheckApiKey, releaseApiLease, setApiPoolMightyMetadata, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
@@ -1913,6 +1913,64 @@ async function handleMyAdvancedApi(request, env) {
   }
 }
 
+async function handleMyMightyCheckApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+
+  try {
+    configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+    const keysResult = await env.DB.prepare(
+      "SELECT key_id, mighty_capable, mighty_check_status FROM api_pool_keys WHERE provider='MIGHTPULSE' AND pool_type='USER_CONTRIBUTED' AND contributed_by_user_id=? AND status != 'REVOKED' ORDER BY CASE WHEN mighty_check_status='CONFIRMED' THEN 0 ELSE 1 END, contributed_at ASC"
+    ).bind(auth.user_id).all();
+    const keys = keysResult.results || [];
+    if (!keys.length) return json({ ok:false, error:"NO_MIGHTPULSE_KEYS", message:"先にMightPulse APIキーを登録してください。" }, 409);
+
+    let checked = 0, confirmed = null, transient = false;
+    for (const row of keys) {
+      let lease = null;
+      try {
+        lease = await leaseUserMightyCheckApiKey(env.DB, { userId: auth.user_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
+        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1 });
+        checked++;
+        confirmed = row.key_id;
+        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
+        await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
+        break;
+      } catch (error) {
+        const status = Number(error?.status || 0);
+        if (lease) {
+          if (status === 403) {
+            checked++;
+            await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:false, status:"NOT_MIGHTY", errorCode:"MIGHTY_REQUIRED" });
+            await releaseApiLease(env.DB, lease.lease_id);
+          } else {
+            transient = true;
+            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401 });
+          }
+        }
+        if (status === 403) continue;
+        if (status === 401 || status === 429 || status >= 500 || error?.retryable) continue;
+      }
+    }
+
+    if (confirmed) {
+      const eligibility = await evaluateVipEligibility(env.DB, { userId:auth.user_id });
+      return json({ ok:true, mighty_capable:true, status:"CONFIRMED", checked_key_count:checked, ...eligibility });
+    }
+    if (transient && checked === 0) {
+      const eligibility = await getVipEligibility(env.DB, { userId:auth.user_id });
+      return json({ ok:true, mighty_capable:Boolean(eligibility.hasMightyKey), status:"UNDETERMINED", checked_key_count:checked, ...eligibility, message:"一時的な通信・レート制限のためMighty判定を確定できませんでした。時間を置いて再確認してください。" });
+    }
+    const eligibility = await evaluateVipEligibility(env.DB, { userId:auth.user_id });
+    return json({ ok:true, mighty_capable:false, status:"NOT_MIGHTY", checked_key_count:checked, ...eligibility, message:"登録済みのAPIキーではMighty対応を確認できませんでした。" });
+  } catch (error) {
+    console.error("my_mighty_check_failed", error?.code || error?.message || error);
+    return json({ ok:false, error:error?.code || "MY_MIGHTY_CHECK_FAILED", message:error?.userMessage || "Mighty対応確認に失敗しました。" }, Number(error?.status) >= 400 ? Number(error.status) : 500);
+  }
+}
+
 async function handleMyVipApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -2146,24 +2204,28 @@ async function renderMyPlayerPage(request, env) {
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本</div>';
     if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>'<div class="row"><span>APIキー '+(i+1)+'</span><span class="value ok">✓ 提供済み</span></div>').join('')+'</div>';
-    const canAddKey=true;
-    html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
-      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
-      '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
-      '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+
-      keyHtml+
-      (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px"></div>')+
+    const canAddKey=keyCount < 3;
+    html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+\
+      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+\
+      '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+\
+      '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+\
+      (canAddKey?'<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">最大3本まで登録できます。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、キー本体は画面やログには表示しません。</div>':'<div class="muted" style="margin-top:12px">MightPulse APIキーは最大3本までです。</div>')+\
       '<div id="key-msg"></div></div>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
-    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">登録したMightPulse APIキーをMighty専用APIでも自動確認します。Mighty対応キーが1本以上あればVIP、なければAdvancedです。</p>'+
-      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
-      '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
-      '<div class="muted" style="margin-top:12px">APIキー登録時に通常認証とMighty認証を行います。既存キーも初回確認時に自動判定します。</div></div>';
+    const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
+    html+='<div class="card"><h2 style="margin:0 0 6px">VIP拡張機能</h2><p class="muted" style="margin:0 0 12px">Mightyユーザーの場合、登録済みのMightPulse APIキーがMighty対応か確認できます。自己申告だけではVIPになりません。</p>'+\
+      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+\
+      '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+\
+      '<label class="label" style="margin-top:16px">Mightyユーザーですか？</label>'+\
+      '<div style="display:flex;gap:10px"><button class="btn mighty-declare" data-value="yes" style="margin-top:0;flex:1">はい</button><button class="btn mighty-declare" data-value="no" style="margin-top:0;flex:1;background:#334155;color:#f8fafc">いいえ</button></div>'+\
+      '<div id="mighty-check-area" style="display:none;margin-top:12px"><button class="btn" id="mighty-check">⚡ Mighty対応を確認</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+\
+      (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ Mighty対応確認済みです。</div>':"")+\
+      '<div class="muted" style="margin-top:12px">「はい」は自己申告のみです。VIP判定は登録済みAPIキーで実際にMighty専用APIを確認した結果で決まります。</div></div>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
-    if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
+    if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;\n    const mightyArea=document.getElementById("mighty-check-area");\n    document.querySelectorAll(".mighty-declare").forEach(b=>b.onclick=()=>{ const yes=b.dataset.value==="yes"; if(mightyArea) mightyArea.style.display=yes?"block":"none"; });\n    const mightyButton=document.getElementById("mighty-check");\n    if(mightyButton) mightyButton.onclick=checkMighty;
   }
   async function save(){
     const input=document.getElementById("gid"), type=document.getElementById("atype"), msg=document.getElementById("msg"), button=document.getElementById("save");
@@ -2186,6 +2248,18 @@ async function renderMyPlayerPage(request, env) {
     const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
     await load();
+  }
+  async function checkMighty(){
+    const button=document.getElementById("mighty-check"), msg=document.getElementById("mighty-msg");
+    button.disabled=true; button.textContent="確認中…"; msg.className="muted"; msg.textContent="登録済みのAPIキーを確認しています。";
+    try{
+      const r=await fetch("/api/me/vip/mighty-check",{method:"POST",credentials:"same-origin",cache:"no-store"});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      if(d.status==="CONFIRMED"){msg.className="ok";msg.textContent="⚡ Mighty対応を確認しました。VIP権限を更新しました。";setTimeout(load,500);}
+      else if(d.status==="NOT_MIGHTY"){msg.className="warn";msg.textContent="登録済みのAPIキーではMighty対応を確認できませんでした。";setTimeout(load,500);}
+      else {msg.className="warn";msg.textContent=d.message||"一時的に判定できませんでした。時間を置いて再確認してください。";button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
+    }catch(e){msg.className="error";msg.textContent=e.message||String(e);button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
   }
   async function registerKey(){
     const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
@@ -4014,7 +4088,7 @@ export default {
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
-      if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
+      if (url.pathname === "/api/me/vip/mighty-check") return await handleMyMightyCheckApi(request, env);\n      if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
       if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
       if (url.pathname === "/api/owner/api-pool/reassign") return await handleOwnerApiPoolReassign(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
