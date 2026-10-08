@@ -27,9 +27,49 @@ export async function addApiPoolKey(db, { provider = PROVIDER, poolType, label =
 
 export async function listApiPoolKeys(db) {
   const result = await db.prepare(
-    "SELECT key_id, provider, pool_type, label, key_fingerprint, status, contributed_by_user_id, consent_version, contributed_at, revoked_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day, quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, created_at, updated_at FROM api_pool_keys ORDER BY pool_type, created_at"
+    "SELECT key_id, provider, pool_type, label, key_fingerprint, status, contributed_by_user_id, consent_version, contributed_at, revoked_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day, quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code, created_at, updated_at FROM api_pool_keys ORDER BY pool_type, created_at"
   ).all();
   return result.results || [];
+}
+
+export async function getApiPoolKeysWithContributors(db) {
+  const keys = await listApiPoolKeys(db);
+  const userIds = [...new Set(keys.map(k => String(k.contributed_by_user_id || "")).filter(Boolean))];
+  if (!userIds.length) return keys.map(k => ({ ...k, contributor: null }));
+
+  const placeholders = userIds.map(() => "?").join(",");
+  const [usersResult, linksResult] = await Promise.all([
+    db.prepare("SELECT user_id, discord_id, username, global_name FROM users WHERE user_id IN (" + placeholders + ")").bind(...userIds).all(),
+    db.prepare(
+      "SELECT l.user_id, l.governor_id, l.kingdom_id, l.account_type, p.nick_name, p.kid FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id IN (" + placeholders + ") AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC"
+    ).bind(...userIds).all()
+  ]);
+
+  const users = new Map((usersResult.results || []).map(u => [String(u.user_id), u]));
+  const links = new Map();
+  for (const row of (linksResult.results || [])) {
+    const uid = String(row.user_id);
+    if (!links.has(uid)) links.set(uid, row);
+  }
+
+  return keys.map(key => {
+    const uid = String(key.contributed_by_user_id || "");
+    const user = users.get(uid);
+    const link = links.get(uid);
+    return {
+      ...key,
+      contributor: user ? {
+        user_id: user.user_id,
+        discord_id: user.discord_id,
+        username: user.username,
+        global_name: user.global_name,
+        governor_id: link?.governor_id || null,
+        governor_name: link?.nick_name || null,
+        kingdom_id: link?.kingdom_id ?? link?.kid ?? null,
+        account_type: link?.account_type || null
+      } : null
+    };
+  });
 }
 
 async function claimApiPoolKey(db, {
