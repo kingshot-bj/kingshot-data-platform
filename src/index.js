@@ -22,7 +22,7 @@ import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRa
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
-import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
+import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
@@ -4104,6 +4104,7 @@ export default {
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
       if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
       if (url.pathname === "/api/owner/player-link-support") return await handleOwnerPlayerLinkSupportApi(request, env);
+      if (url.pathname === "/api/owner/api-pool/reassign") return await handleOwnerApiPoolReassign(request, env);
       if (url.pathname === "/api/player/refresh") return await handlePlayerRefresh(request, env);
       if (url.pathname === "/api/player") return await handlePlayerApi(request, env);
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
@@ -4756,7 +4757,7 @@ async function handleApiPoolKeys(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   try {
-    const keys = await listApiPoolKeys(env.DB);
+    const keys = await getApiPoolKeysWithContributors(env.DB);
     return json({ ok: true, keys: keys.map(k => ({
       ...k,
       key_fingerprint: k.key_fingerprint ? String(k.key_fingerprint).slice(0, 16) + "…" : null,
@@ -4868,6 +4869,67 @@ async function handleApiPoolRevoke(request, env) {
   } catch (error) {
     console.error("API pool revoke error:", error);
     return json({ ok: false, error: error?.message || "API_POOL_REVOKE_FAILED" }, 400);
+  }
+}
+
+
+
+async function handleOwnerApiPoolReassign(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  try {
+    const contentType = request.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+      ? await request.json()
+      : Object.fromEntries((await request.formData()).entries());
+    const keyId = String(body.key_id || "").trim();
+    const newUserId = String(body.user_id || "").trim();
+    if (!keyId || !newUserId) return json({ ok: false, error: "KEY_ID_AND_USER_ID_REQUIRED" }, 400);
+
+    const [key, target] = await Promise.all([
+      env.DB.prepare("SELECT key_id, provider, pool_type, status, contributed_by_user_id FROM api_pool_keys WHERE key_id = ? LIMIT 1").bind(keyId).first(),
+      env.DB.prepare("SELECT user_id, discord_id, username, global_name FROM users WHERE user_id = ? LIMIT 1").bind(newUserId).first()
+    ]);
+    if (!key) return json({ ok: false, error: "API_POOL_KEY_NOT_FOUND" }, 404);
+    if (key.status === "REVOKED") return json({ ok: false, error: "API_POOL_KEY_REVOKED" }, 409);
+    if (!target) return json({ ok: false, error: "USER_NOT_FOUND" }, 404);
+    if (key.pool_type !== "USER_CONTRIBUTED") return json({ ok: false, error: "ONLY_USER_CONTRIBUTED_KEYS_CAN_BE_REASSIGNED" }, 409);
+
+    const previousUserId = key.contributed_by_user_id ? String(key.contributed_by_user_id) : null;
+    const now = Math.floor(Date.now() / 1000);
+    if (previousUserId === newUserId) {
+      return json({ ok: true, key_id: keyId, contributed_by_user_id: newUserId, changed: false });
+    }
+
+    await env.DB.prepare(
+      "UPDATE api_pool_keys SET contributed_by_user_id = ?, updated_at = ? WHERE key_id = ?"
+    ).bind(newUserId, now, keyId).run();
+
+    const [previous, previousLink, targetLink] = await Promise.all([
+      previousUserId
+        ? env.DB.prepare("SELECT user_id, discord_id, username, global_name FROM users WHERE user_id = ? LIMIT 1").bind(previousUserId).first()
+        : Promise.resolve(null),
+      previousUserId
+        ? env.DB.prepare("SELECT l.governor_id, l.kingdom_id, p.nick_name FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1").bind(previousUserId).first()
+        : Promise.resolve(null),
+      env.DB.prepare("SELECT l.governor_id, l.kingdom_id, p.nick_name FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1").bind(newUserId).first()
+    ]);
+    await writeOwnerAuditLog(env, guard.auth, "API_POOL_OWNER_REASSIGN", newUserId, target.discord_id, {
+      key_id: keyId,
+      previous_user_id: previousUserId,
+      previous_discord_id: previous?.discord_id || null,
+      new_user_id: newUserId,
+      new_discord_id: target.discord_id,
+      previous_governor_id: previousLink?.governor_id || null,
+      previous_governor_name: previousLink?.nick_name || null,
+      new_governor_id: targetLink?.governor_id || null,
+      new_governor_name: targetLink?.nick_name || null
+    });
+    return json({ ok: true, key_id: keyId, contributed_by_user_id: newUserId, changed: true });
+  } catch (error) {
+    console.error("Owner API pool reassign error:", error);
+    return json({ ok: false, error: error?.message || "API_POOL_REASSIGN_FAILED" }, 400);
   }
 }
 
