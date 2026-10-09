@@ -409,3 +409,10 @@
 - Retention jobはWorker scheduled/queueからの呼び出しが未確認で、実行/本番データ変化は確認していない。
 - 次はGateway API、MightPulse probe/research、R2 backfill、残るMigration列/Index照合と機能分類を進める。
 
+## 2026-10-10 棚卸し進捗 — Load Test CSV route mismatch
+
+- 台帳更新コミット: `35b30142833702bceec0cda3d6d541595f20ca30`
+- 追加のUI/API接続候補: `admin-kingdom-load-test.js`にCSV handler `handleOwnerKingdomLoadTestExportApi`と履歴画面リンク `/api/owner/kingdom-load-test/export?run_id=` があるが、`index.js`からimportされず、router分岐もない。
+- このためCSV exportリンクがCSVを返さずfallbackへ到達する可能性。handler側にOWNER guardも見当たらないため、接続する場合は認可ガードが必須。今回、ルート接続/コード修正は行っていない。
+- ルート/接続の要確認候補は現時点で3件: Player Compareのhandler/page未解決2件、Load Test CSV export未登録1件。
+
