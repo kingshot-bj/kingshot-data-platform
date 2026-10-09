@@ -516,3 +516,10 @@
 - `eagleeye-d1-schema-reconciliation.yml`は手動入力`RECONCILE_PRODUCTION`、Time Travel情報記録、`reconcile-d1-schema.mjs --apply`、事後検証を含む。Production D1を書き換えるため、この棚卸しでは実行していない。
 - Workflow定義を見ただけでは、実際のProduction migration history/Schema状態は分からない。Remote D1の読み取りも実施していない。
 
+## 2026-10-10 棚卸し進捗 — Schema Reconciliation coverage limit
+
+- 台帳更新コミット: `247858a18d4464550d9f52c146225e9798e177d7`
+- `scripts/reconcile-d1-schema.mjs`は特定のdrift補修リストを処理するが、Migration 0057のMighty metadata列、0058のuser_kingdom_ranking_preferences、0054/0056のuser_mighty_credentialsを検証/補修する記述は見当たらない。
+- そのため、reconciliation workflowの実行を「Migration 0001–0058全体のschema一致保証」と解釈しない。対象範囲を仕様として確認する必要がある。
+- Production script/workflowは実行していない。
+
