@@ -1671,3 +1671,32 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **機能信頼性監査: 90%**。70–90%区間のCron/Queue起動、Safety Gate呼出し、API Pool状態遷移、Retention/R2 readback候補を優先度付きで統合した。残り10%は監査結論・機能別テスト行列・再開手順を最終化する。
 - すべて静的所見。build/runtime/E2E/Productionは未検証。コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼出しなし。
 - D1 Free reads最優先。広範囲 `ranking_snapshots` retrievalを追加・復活させない。
+
+
+## 2026-10-10 機能信頼性監査 — 100%（静的監査フェーズ完了）
+
+### 完了範囲
+- Worker HTTP/Cron/Queueの起動経路、Safety Gate、API Poolの状態遷移、Retention/R2 archive/readback、既知SQL列差、route-handler接続、Preview binding共有の静的照合を一巡し、根拠と優先度を記録した。
+- **監査フェーズ進捗: 10/10 = 100%。** これは今回定義した静的監査・報告・引継ぎ成果物の完了率であり、システム実装率・本番稼働率・全機能正常率ではない。
+- **実行検証: 未実施。** 静的監査で挙げた候補は実環境で再現した確定バグとは区別する。
+
+### 次段階の検証行列（実施前に別途許可・隔離環境が必要）
+| 順 | 対象 | 検証方法 | 合格条件 | 現状 |
+|---|---|---|---|---|
+| 1 | SQL列不一致（source_observed_at / ranking_snapshot_id / source_first_at / source_last_at） | 新規の隔離D1へMigrationを順序適用し、各対象SQLをprepare/fixtureで実行 | schemaと全SQLが一致、欠落列なし | 未実施。Production/共有Preview禁止 |
+| 2 | Player Compare / Load Test export route | build/import確認、mock requestでroute smoke | routeが存在するhandlerに到達し、認可/HTTP statusが仕様通り | 未実施 |
+| 3 | Watchlist Cron起動 | mock D1/APIを使う隔離Workerでscheduled entry実行 | due jobのみ開始し、失敗時も設定間隔/再試行規則を守る | 未実施。Queue/外部APIなしのmock限定 |
+| 4 | RetentionとHistory Emergency Buffer | isolated D1/R2 fixtureでarchive→delete→drain→readbackを検証 | archive成功前にD1を削除しない、bufferの再処理が冪等、失敗は追跡可能 | 未実施 |
+| 5 | Change Events retention readback | D1イベントをR2 archiveし、Retention後にAPI/画面の結果を比較 |保持仕様の範囲で履歴が欠落せず、重複もしない | 未実施 |
+| 6 | Safety Gate metrics欠損 | null/undefined/0/閾値直前/閾値到達のunit test | メトリクス不明時に明示的なCAUTION等になり、低優先度処理が意図せず許可されない | 未実施 |
+| 7 | Mighty key state transitions | mock DBでAVAILABLE/ERROR/DISABLED/REVOKEDそれぞれの再確認を検証 | REVOKED禁止、DISABLED方針を維持し、成功/失敗とmetadataが矛盾しない | 未実施 |
+| 8 | Player Visibility権限 | BASIC/ADVANCED/VIP/ADMIN/OWNERのmock auth matrix | UIとAPIの権限境界が仕様と一致、直接APIアクセスも遮断 | 未実施 |
+| 9 | Queue ack/retry/DLQ | isolated Queueのみでvalid/invalid/D1 batch failureを試験 | ack/retry/DLQが設計通り、重複配送で二重保存しない | 未実施。Production Queue禁止 |
+| 10 | D1 reads/query plans | isolated D1で限定fixtureとEXPLAIN QUERY PLAN、SQL回数計測 | 対象キー/board範囲の限定検索、不要な広範囲読み取りなし | 未実施。広範囲ranking_snapshots取得は追加しない |
+
+### 変更・運用の境界
+- この完了は監査成果物の完了を意味し、修正・deploy・production verificationの許可を意味しない。
+- 次の作業は、P0候補の仕様決定と隔離環境の準備。コード修正前に候補ごとに期待動作と受入条件を確定する。
+- Production D1/R2/Queue、外部API、OAuth、Discord、Google実操作は、ユーザーの別途明示許可まで行わない。
+- PreviewはProductionとD1/R2を共有しているため使用しない。
+- D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリを絶対に追加・復活させない。
