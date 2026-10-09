@@ -691,3 +691,35 @@ HTMLエスケープはHTML注入対策であり、内容の秘匿化とは別で
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | 公開 `/status` エラー文面 | Cloudflare使用量の詳細はADMIN/OWNERに制限されるが、Pool/Watchlist/MightPulseの一部エラー文面は公開HTMLに表示されることを確認。 | メッセージ生成元を追跡し、公開表示に内部情報が含まれないか確認する。 |
+
+
+## フェーズA-1/ B — GETリクエストによる高コスト処理の起動（優先度: 高）
+
+対象: `src/admin-kingdom-load-test.js` の `handleOwnerKingdomLoadTestApi()`、`src/index.js` の `handleAdminKingdomRankingApi()`、`handlePlayerApi()`。
+
+### 確認できたコード上の挙動
+
+- `handleOwnerKingdomLoadTestApi()` は `request.method !== "GET"` を405で拒否する一方、王国リストを受け取り、Safety Gateを評価し、Run/Jobレコードを作成し、Load Test Queueへメッセージを送る。つまり、負荷テスト開始という副作用を持つ処理がGETで起動される。
+- `handleAdminKingdomRankingApi()` は `refresh=1` をGETクエリで受け取り、MightPulseからランキングを取得し、D1/R2の保存処理を実行する。
+- `handlePlayerApi()` は `refresh=1` をGETクエリで受け取り、API Pool経由でMightPulseから取得し、観測データとプレイヤー状態を保存する。
+- `handlePlayerRefresh()` はメソッド制限を持たず、対象IDがあれば取得・保存処理へ進む。
+
+### リスク評価
+
+GETはブラウザーのリンク遷移・プリフェッチ等から意図せず呼ばれやすい。Owner/Adminの認証があることだけでは、状態変更や外部API消費を伴うGETのCSRF/誤起動リスクは解消しない。特にLoad Testは最大1000王国を受け付けるため、意図しない起動がAPI Pool・D1・Queueを消費する可能性がある。
+
+現行UIがGETで呼び出している経路もあるため、サーバーだけをPOSTへ変えるのではなく、UI呼び出し・CSRF対策・Safety Gate・Queue起動を一体で確認する必要がある。
+
+### 次の作業
+
+1. Load Test開始をPOSTへ移し、bodyでパラメータを受け取る設計を検討する。認証Cookieを使うため、Origin/CSRFトークン等の検証方針も確認する。
+2. ランキングrefreshとプレイヤーrefreshも、読み取りGETと更新POSTを分離する方針を検討する。
+3. 実装変更前に、既存UI・iPhone Safari・同一Run二重起動防止・Safety Gate・Queue失敗時の回復を回帰テスト項目にする。
+
+### 判定
+
+コード上のHTTPメソッドと副作用の不一致は確認済み。実際のCSRF再現、外部サイトからの起動、ブラウザープリフェッチによる起動は未実施。コード修正・デプロイは行っていない。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | GETで起動されるLoad Test/refresh | Load Test開始、ランキング更新、プレイヤー更新がGET経路で実行されうることを確認。 | UIと連動してメソッド・CSRF対策を設計し、別工程で修正する。 |
