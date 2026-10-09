@@ -523,3 +523,10 @@
 - そのため、reconciliation workflowの実行を「Migration 0001–0058全体のschema一致保証」と解釈しない。対象範囲を仕様として確認する必要がある。
 - Production script/workflowは実行していない。
 
+## 2026-10-10 棚卸し進捗 — Reconciliation migration cutoff
+
+- 台帳更新コミット: `2f6c27e991d8a5d2142f1b70f45eabada0f1172a`
+- `scripts/reconcile-d1-schema.mjs`のrequired migration listは0043までで止まり、現行の0044–0058を全件対象にしていない。
+- さらにMighty metadata、R2 latest pointer/index、User Kingdom Ranking Preferences、Discord Notification State等の検証/補修が見当たらないため、このWorkflowだけでは現行schema全体を保証しない。
+- 実行していない。Production migration history/schemaは未取得。
+
