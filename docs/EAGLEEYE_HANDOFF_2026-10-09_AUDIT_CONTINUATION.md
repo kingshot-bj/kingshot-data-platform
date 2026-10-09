@@ -215,3 +215,15 @@
 - 0040 SeederはOFFSET paginationのためCatalogが変化したときのskip/duplicate可能性を要確認。0047はランキングとplayers双方が存在する王国のみ初期統計に含める保守的設計。
 - 次：ローラー/Seederのリポジトリ全体の起動経路、Cron/Queue接続、残りMigrationとSQL/インデックス、HTTP routeの認証・ACTIVE・method照合を継続する。
 - コード変更・Migration変更・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Freeの読み取り量を最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Migration 0030〜0039・進捗60%）
+
+- 機能台帳にMigration 0030〜0039と定期実行経路/Semaphoreの監査結果を追記し、raw GitHubから追記と60%表示を検証した。監査台帳コミット：54ae8e1c80d14373fe0dcf7cc42aab8eeae80f68
+- **全体進捗目安：60%**。作業管理上の概算であり、コード行数の網羅率・本番動作確認率ではない。
+- 0030〜0033のLoad Test履歴/待機メトリクス列、0034〜0036のCollection Semaphore/個別lease slots、0035 API request locks、0037〜0038 Kingdom Catalog、0039 Ranking Roller stateを現行ソースと部分照合。実Migration適用履歴・本番スキーマ・Query Planは未確認。
+- src/index.jsのscheduled()が直接実行するのはAPI Pool自動復旧、Kingdom Catalog日次refresh、Discord通知の3経路。runKingdomSeeder / runKingdomRankingRoller / runAllianceRoller / runPlayerRollerはimportされているが、確認したscheduled()とHTTP route範囲では呼び出しを確認できていない。未接続と断定せず、全リポジトリ参照確認を継続する。
+- Kingdom Catalog discoveryは開始時にstateをRUNNINGへ更新し、日次schedulerはstateがRUNNINGならスキップする。処理停止後に古いRUNNINGを回復する別経路の有無を確認する。stuck状態が実際に発生した証拠はない。
+- collection-semaphore.jsのrefreshCollectionPermit()はlease延長関数だが、確認したsrc内の呼び出し経路で利用箇所を確認できていない。既定leaseは180秒で、長時間処理時にslotが再取得可能になるリスク候補。実際のlease超過・同時実行違反は未確認。
+- 次：Seeder/Rollerの全参照と呼び出し元、Discoveryのstuck復旧、HTTP routeの認証/ACTIVE/method、残りMigration/SQL参照を継続する。
+- コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
