@@ -136,3 +136,25 @@
 - 同一キーへの読み取り→マージ→上書きに排他制御/条件付き書き込みが見当たらず、Queueバッチが並行処理された場合に片方のイベントを後続PUTが消す可能性も記録。いずれも静的所見で、実際のR2欠落・並行配送・コスト影響は未検証。
 - 次はHTTP routeの認証・ACTIVE・method一覧の穴埋め、またはMigration/SQL/index対応の確認を継続する。アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、Queue操作、収集/負荷テストは禁止。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（進捗目安・Migration 0058・Queue指摘の訂正）
+
+### 全体進捗目安
+- **全体：約40%（暫定）**。コード行数の網羅率・本番動作確認率ではなく、監査ワークストリームの状態に基づく作業管理上の概算。
+- 主ルート分類 70%、HTTPルート認証/ACTIVE/method照合 35%、Migration/SQL/index照合 20%、Cron/Queue/R2接続照合 45%、テスト基盤・実行時検証 10%を目安として記録。全体は単純平均ではなく横断監査の重みを加味した概算で、範囲拡大時は修正する。
+- 進捗の詳細は監査MD末尾の「監査進捗（2026-10-09 時点・暫定）」を参照。
+
+### 今回の確認
+- Migration 0058 `user_kingdom_ranking_preferences` と `handleKingdomRankingPreferencesApi()` を確認。現行 `src/index.js` ではPOSTのUPSERT経路は見えるが、当該テーブルのSELECT/読取APIは見つからなかった。画面初期化や別モジュールでの読取有無を次に確認する。未実装とはまだ断定しない。
+- **前回のSystem Event Queue指摘を訂正：** 最新 `src/index.js` のHTTP `fetch()` 入口に `setSystemEventQueue(env.SYSTEM_EVENT_QUEUE)` が存在することを確認した。「fetch経路ではbinding設定がない」という前回の静的懸念は撤回する。実際のQueue送信率・配送動作は未計測。
+- 監査MDと本引き継ぎを更新し、GitHubから再取得して追記内容を検証すること。
+
+### 次に行うこと
+1. 王国ランキング設定のフロントエンド保存呼び出し・再表示時の初期化経路を追う。
+2. Migration 0001〜0058を段階的に照合し、テーブル/列/UNIQUE/INDEXと現行SQLの対応を記録する。番号重複の0008は適用履歴を見ずに不具合断定しない。
+3. HTTP routeごとの認証・ACTIVE・method表を継続して穴埋めする。
+4. 進捗率を更新する場合は、今回確認した範囲と残作業を明示し、根拠なく数値を上下させない。
+
+- アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テストは許可が出るまで行わない。
+- **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
