@@ -97,26 +97,41 @@ export async function renderKingdomDetailPage(request, env) {
   return page("王国 "+kid, html);
 }
 
-export async function renderKingdomRankingsPage(request, env) {
+export async function renderKingdomRankingsPage(request, env, auth = null) {
   const url = new URL(request.url);
-  const kid = Number(url.searchParams.get("kid"));
-  const selected = String(url.searchParams.get("board") || "personal_power");
-  if (!Number.isInteger(kid) || kid < 1) return page("王国ランキング","<div class='empty'>kidを指定してください。</div>");
+  let pref = null, linked = null;
+  if (auth?.status === "ACTIVE" && env.DB) {
+    pref = await env.DB.prepare("SELECT kid, boards_json, primary_board FROM user_kingdom_ranking_preferences WHERE user_id = ? LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    linked = await env.DB.prepare("SELECT kingdom_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+  }
+  const requestedKid = String(url.searchParams.get("kid") || "").trim();
+  const savedKid = Number(pref?.kid || linked?.kingdom_id || 0);
+  const kid = /^\\d+$/.test(requestedKid) ? Number(requestedKid) : savedKid;
+  const storedBoards = (() => { try { const a = JSON.parse(pref?.boards_json || "[]"); return Array.isArray(a) ? a.filter(b => BOARDS.some(x => x[0] === b)) : []; } catch { return []; } })();
+  const selected = String(url.searchParams.get("board") || pref?.primary_board || storedBoards[0] || "personal_power");
+  const selectedBoards = storedBoards.length ? storedBoards : [selected];
+  if (!Number.isInteger(kid) || kid < 1) {
+    const options = BOARDS.map(([b,l]) => "<label class='board-option'><input type='checkbox' name='boards' value='"+esc(b)+"' "+(b==="personal_power"?"checked":"")+"><span>"+esc(l)+"</span></label>").join("");
+    return page("王国ランキング", "<main class='wrap'><h1>ランキング</h1><form class='rank-settings' method='get' action='/kingdom/rankings'><label>王国ID<input name='kid' type='number' min='1' inputmode='numeric' placeholder='王国ID' required></label><details open><summary>表示するランキング</summary><div class='board-options'>"+options+"</div></details><button type='submit'>ランキングを表示</button></form><p class='empty'>登録済み領主から王国を特定できません。王国IDを選択してください。</p></main>");
+  }
   const row = await catalogRow(env.DB,kid);
-  if (!row) return page("王国ランキング","<div class='empty'>王国が見つかりません。</div>");
+  if (!row) return page("王国ランキング","<main class='wrap'><h1>王国ランキング</h1><div class='empty'>王国が見つかりません。王国IDを確認してください。</div><a href='/kingdom-catalog'>王国カタログ</a></main>");
   const boards = await env.DB.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
   const available = (boards.results||[]).map(x=>x.board);
-  const board = available.includes(selected) ? selected : (available[0]||selected);
+  const board = available.includes(selected) ? selected : (available.includes(selectedBoards[0]) ? selectedBoards[0] : (available[0]||selected));
   const rows = await env.DB.prepare("SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = ? ORDER BY rank ASC LIMIT 100").bind(kid,board).all();
   const label=BOARDS.find(x=>x[0]===board)?.[1]||board;
-  const boardLinks=BOARDS.map(([b,l])=>"<a class='"+(b===board?"active":"")+"' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(b)+"'>"+esc(l)+"</a>").join("");
+  const boardLinks=BOARDS.filter(([b])=>!storedBoards.length||storedBoards.includes(b)).map(([b,l])=>"<a class='"+(b===board?"active":"")+"' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(b)+"'>"+esc(l)+"</a>").join("");
   const body=(rows.results||[]).map(r=>{
     const player=String(r.target_type||"PLAYER")==="PLAYER";
     const href=player?"/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id):"/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.target_id);
-    const star=player?" <button class='star' data-g='"+esc(r.governor_id||r.target_id)+"'>☆</button>":"";
+    const star=player?" <button class='star' type='button' data-g='"+esc(r.governor_id||r.target_id)+"'>☆</button>":"";
     return "<div class='rank'><b>#"+esc(r.rank)+"</b><a href='"+href+"'>"+esc(r.nick_name||r.name||r.abbr||r.target_id)+"</a><span>"+num(r.score)+"</span><small>"+rankDelta(r.previous_rank,r.rank)+"</small>"+star+"</div>";
   }).join("");
-  return page("王国ランキング", "<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(label)+"</h1><div class='actions'><a href='/kingdom/changes?kid="+kid+"&board="+encodeURIComponent(board)+"'>順位変化を見る →</a></div><div class='boardtabs'>"+boardLinks+"</div><div class='list'>"+(body||"<div class='empty'>データなし</div>")+"</div><script>document.querySelectorAll('.star').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=await fetch('/api/player-watchlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({governor_id:b.dataset.g})});if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok)throw new Error('登録に失敗しました');b.textContent='★'}catch(e){alert(e.message);b.disabled=false}})</script></main>");
+  const options=BOARDS.map(([b,l])=>"<label class='board-option'><input type='checkbox' name='boards' value='"+esc(b)+"' "+(selectedBoards.includes(b)?"checked":"")+"><span>"+esc(l)+"</span></label>").join("");
+  const settings="<details class='rank-settings' id='rank-settings'><summary>ランキング設定</summary><form id='rank-pref-form'><label>王国ID<input name='kid' type='number' min='1' value='"+kid+"' required></label><div class='board-options'>"+options+"</div><label>最初に表示するランキング<select name='primary_board'>"+BOARDS.map(([b,l])=>"<option value='"+esc(b)+"' "+(b===board?"selected":"")+">"+esc(l)+"</option>").join("")+"</select></label><button type='submit'>設定を保存</button><span id='pref-status' role='status'></span></form></details>";
+  const html="<main class='wrap'><div class='rank-head'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><button type='button' id='open-rank-settings'>設定</button></div><h1>"+esc(label)+"</h1>"+settings+"<div class='actions'><a href='/kingdom/changes?kid="+kid+"&board="+encodeURIComponent(board)+"'>順位変化を見る →</a></div><div class='boardtabs'>"+boardLinks+"</div><div class='list'>"+(body||"<div class='empty'>このランキングのデータはまだありません。</div>")+"</div><style>.rank-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.rank-head button,.rank-settings button{border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:800;padding:10px 13px}.rank-settings{margin:14px 0;padding:14px;border:1px solid #334155;border-radius:12px;background:#162238}.rank-settings summary{font-weight:800;cursor:pointer}.rank-settings label{display:block;margin:10px 0}.rank-settings input[type=number],.rank-settings select{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #475569;border-radius:8px;background:#0f172a;color:#fff}.board-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}.board-option{display:flex!important;align-items:center;gap:8px;margin:0!important;padding:9px;border:1px solid #334155;border-radius:8px;font-size:13px}.board-option input{accent-color:#f59e0b}.rank-settings form{margin-top:12px}@media(max-width:520px){.board-options{grid-template-columns:1fr}}</style><script>const sf=document.getElementById('rank-settings');document.getElementById('open-rank-settings').onclick=()=>{sf.open=!sf.open;sf.scrollIntoView({behavior:'smooth',block:'start'})};document.getElementById('rank-pref-form').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;const boards=[...f.querySelectorAll('input[name=boards]:checked')].map(x=>x.value);const status=document.getElementById('pref-status');if(!boards.length){status.textContent='ランキングを1つ以上選択してください';return}const primary=f.elements.primary_board.value;if(!boards.includes(primary)){status.textContent='最初に表示するランキングも選択してください';return}try{const r=await fetch('/api/kingdom-rankings/preferences',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({kid:Number(f.elements.kid.value),boards,primary_board:primary})});const d=await r.json();if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'保存に失敗しました');location.href='/kingdom/rankings?kid='+encodeURIComponent(f.elements.kid.value)+'&board='+encodeURIComponent(primary)}catch(err){status.textContent=err.message||'保存に失敗しました'}};document.querySelectorAll('.star').forEach(b=>b.onclick=async()=>{b.disabled=true;try{const r=await fetch('/api/player-watchlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({governor_id:b.dataset.g})});if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok)throw new Error('登録に失敗しました');b.textContent='★'}catch(e){alert(e.message);b.disabled=false}})</script></main>";
+  return page("王国ランキング", html);
 }
 
 export async function renderAllianceListPage(request, env) {
