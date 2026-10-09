@@ -326,3 +326,12 @@
 - 次はMigrationの列定義/制約/Indexと実SQLをテーブル単位で双方向照合し、R2移行対象の保存/読出し経路を整理する。
 - 変更禁止事項とD1制約は継続。コード修正や本番操作は行わない。
 
+## 2026-10-10 棚卸し進捗 — D1/R2保存経路
+
+- 台帳更新コミット: `04b8f0c431be75119f44b412d07cbf2a6180f3ff`
+- 王国Catalog、同盟Catalog、プレイヤー履歴、王国ランキング履歴、System Event Log、History Emergency Bufferの保存/読出しを初期マッピング。
+- 追加の静的候補: `wrangler.jsonc` のR2 binding名は `ARCHIVE`。一方、`alliance-catalog.js` / `kingdom-ranking-roller.js` / `player-roller.js` は `env.R2_ARCHIVE` を参照。これらのローラーは起動経路未接続候補でもあるため、現状は「binding名不一致候補」として記録し、修正していない。
+- R2保存→D1 payload NULL化の順序、R2履歴のlist/getページング、Retention/Emergency Bufferの実行経路は引き続き確認が必要。
+- 次はMigration列/制約/Indexと利用SQLの照合を続け、特に主要テーブル（api_pool_keys、users、players、kingdom_catalog、kingdom_ranking_current、watchlists、system_event_log）から埋める。
+- D1 Free読み取り最優先。広範囲 `ranking_snapshots` クエリ禁止。コード/本番操作は行わない。
+
