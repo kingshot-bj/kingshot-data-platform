@@ -283,3 +283,12 @@
 - Change EventsはRetentionでR2 archive後にD1から削除される一方、index.jsにD1直接参照の履歴クエリがある。R2 readback未接続なら古い履歴が画面/APIから消える可能性。
 - ユーザー提供APIキーのMighty再判定は `status != 'REVOKED'` を対象とし、成功時のmetadata更新がAVAILABLEへ戻すため、DISABLED/ERRORの意図しない再有効化がないか確認する。
 - 進捗 **50%**。次は各候補の呼び出し経路を確定し、Retention/Buffer/Queue/Safety Gate/API Poolの起動・状態遷移を追う。
+
+
+## 2026-10-10 機能信頼性監査 — 60%到達
+
+- `drainHistoryEmergencyBuffer` のimportとモジュール実装はあるが、`src/index.js` 全体に関数呼び出しが見当たらない。Workerのscheduled/queue/request経路から呼ばれていない可能性が高いため、repo全体の呼び出し・外部triggerを確認する。
+- Player Change APIはD1 `change_events` を直接SELECTする。Retention後のR2読戻しがその経路に見当たらず、古いイベントがAPI/画面から欠ける候補。
+- Mighty判定成功時のmetadata更新はstatusをAVAILABLEへ戻す。再判定対象にREVOKED以外が含まれるため、DISABLED/ERRORが成功時に復活する可能性。管理者による無効化を尊重すべきか仕様確認する。
+- Safety Gateのnull使用率がNORMALに分類される経路を再確認。未修正。
+- 進捗 **60%**。次はQueue/Cronと他モジュールを横断し、Buffer起動・Retention復旧・Safety Gate呼び出し・API Pool状態遷移の接続を確定する。
