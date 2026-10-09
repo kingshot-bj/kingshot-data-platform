@@ -1066,3 +1066,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - したがって、これらの処理を現在の `wrangler.jsonc` のまま実行した場合、R2 bucketがundefinedとなり、R2_ONLYの履歴保存に失敗する、または同盟履歴アーカイブがスキップ/失敗する可能性が高い。
 - これらローラーはWorker入口から呼び出されていないように見えるため、現時点で定期実行中の障害とは断定しない。ただし、ローラー配線を有効化する前のブロッカー。既存の正しい `env.ARCHIVE` 参照と統一し、R2保存→D1更新の順序を含めてテストする必要がある。
 - 今回、コード修正・ローラー起動・R2への書き込みは行っていない。
+
+
+### [中・運用リスク] API Pool暗号化鍵がDiscordセッション署名用Secretと結合
+- `src/index.js` の `requireAdmin()` と `src/data-collection-engine.js` は、`configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET)` を呼び、`src/api-pool.js` はその値を使ってAPI PoolキーをAES-GCM暗号化/復号する。
+- このため、`EAGLEEYE_SESSION_SECRET` を変更すると、既存の `api_pool_keys.encrypted_key` は旧鍵で暗号化されたままになり、新しいSecretでは復号できなくなる可能性が高い。Discordセッションの無効化目的のSecretローテーションがMightPulse API Pool全体の停止につながり得る。
+- Secret値そのものはGitに存在せず、現時点でローテーション予定・過去の実施履歴も未確認。
+- 対応時はAPI Pool専用の安定した暗号化Secretを分離するか、鍵バージョンを持たせた再暗号化手順を設計する。移行前に既存キーを安全に復号できる状態を維持し、暗号化/復号・ローテーションの検証を必須とする。今回は変更していない。
