@@ -895,6 +895,25 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - 現行スクリプト内に `mighty_capable` / `mighty_checked_at` / `mighty_check_status` / `mighty_last_error_code` の追加/検証、Migration 0058の `user_kingdom_ranking_preferences`、Migration 0054/0056の `user_mighty_credentials`、Migration 0048/0050/0051の `kingdom_catalog` / `alliance_catalog` / `players` の `r2_latest_key` と専用Index、Migration 0052の `discord_notification_state` の検証は見当たらない。
 - よってこのWorkflowを実行したことだけで、全Migration 0001–0058のスキーマが現行コードと一致したと判定しない。実行前後にmigration historyと全重要テーブルの列/Indexを独立に検証する必要がある。
 - この指摘はスクリプトの現行範囲についての静的確認。意図的に対象を絞っている可能性があり、直ちに不具合/変更要求とはしない。
+### 主要テーブルの制約/Indexと利用SQLの照合（部分完了）
+
+| テーブル | 主キー/一意制約 | 主なIndex（Migrationで確認） | SQL/機能との対応 | 状態 |
+|---|---|---|---|---|
+| `users` | `user_id` PK、`discord_id` UNIQUE、role/status CHECK（0056最終形） | `idx_users_role`、`idx_users_status`、`idx_users_last_login_at` | OAuth、me API、Owner User Management、role eligibility | 列/基本Indexは確認。全SQLの列単位照合は未完了 |
+| `api_pool_keys` | `key_id` PK | pool/status、provider/status、cooldown、user_contributed、lease composite Index | API Pool lease/health/usage/Mighty metadata、VIP eligibility | 0006+0017+0025+0057を重ねて最終形を照合中 |
+| `players` | `governor_id` PK | kid、alliance、power、nick_name、R2 latest pointer | Player Search/Profile/Watchlist、roller、R2 payload | 0004+0051。部分一致LIKEのIndex効率は未確認 |
+| `player_snapshots` | `snapshot_id` PK | player/time、governor/time、observed_at | Player History API/画面、Retention/R2 archive | 0004+0011。画面/APIのD1/R2経路差あり |
+| `kingdom_ranking_current` | composite PK (`kid, board, target_type, target_id`) | PK中心。現在順位はkid+board+rankで絞るSQLあり | Portal/Watchlist/Admin ranking refresh | Admin read helperが存在しない`ranking_snapshot_id`列をSELECTする候補 |
+| `kingdom_catalog` | `kid` PK | `idx_kingdom_catalog_status`、`idx_kingdom_catalog_r2_latest` | Discovery/Detail/Compare/Backfill | 0037+0038+0048。R2 pointer/boardsの列照合中 |
+| `alliance_catalog` | composite PK (`kid, aid`) | kid+abbr、last_seen、R2 latest pointer | Alliance list/detail/roller/notifications | 0041+0050。通知target_idの意味/形式も要確認 |
+| `kingdom_watchlists` | `watchlist_id` PK | owner、due/enabled | list/create/refresh/cancel/toggle/delete | 0007+後続。job/lock cleanupと所有者境界を確認中 |
+| `player_watchlists` | `watchlist_id` PK | user/discord、governor/player | list/add/toggle/delete、Player Profile | 0012。上限チェックと同時登録は未テスト |
+| `user_player_links` | active governor、active user+governor、active MAIN per user+kingdomにpartial UNIQUE | user/status、governor/status、kingdom | My Player MAIN/SUB・ownership transfer | 0022–0026とensureSchemaの最終形を照合中 |
+| `system_event_log` | `event_id` PK | created_at、trace/created_at、operation/created_at、status/created_at | System Log/Diagnostics/Export/Retention | 0028と現行SQLの列を照合中 |
+| `change_events` | `event_id` PK | target/time、type/time、player/type/time | Player/Kingdom changes、Discord notification、Retention | D1/R2 readbackとtarget_id形式に要確認点あり |
+
+- この表は主要テーブルの部分照合。全MigrationのCHECK/UNIQUE/foreign key/Index列・列順・query planまで完了したという意味ではない。
+- Indexが存在することは、実際のquery planがそのIndexを使うことの証明ではない。D1 Free readsを優先し、本番での無制限EXPLAIN/COUNT/SELECTは実施しない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
 以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
