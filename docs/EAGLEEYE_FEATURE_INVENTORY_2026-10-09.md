@@ -921,3 +921,21 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 ### 正規表現監査の横断メモ
 - `src/index.js` にも同種の過剰エスケープ候補があり、`normalizeMightPulseTimestamp()` の数字/小数文字列判定、管理王国ランキングAPI/CSV・Google Sheets出力の王国番号判定、管理ランキング画面の表示条件、`Last active Nd ago` 翻訳に影響する可能性がある。
 - これらは単にソース上の文字列だけでなく、JavaScript正規表現として実際に数字へ一致するかをテストで確定する。現時点では未修正。
+
+
+## 監査追記：Worker設定・Preview差分・Owner APIメソッド（2026-10-09 続き）
+
+### [中 / Preview構成差分] SYSTEM_EVENT_QUEUEのPreview bindingがない
+- 本番の `wrangler.jsonc` には `SYSTEM_EVENT_QUEUE` producerと `eagleeye-system-events` consumerがあるが、`previews.queues.producers` にはSERVICE_USAGE_QUEUEとLOAD_TEST_QUEUEのみでSYSTEM_EVENT_QUEUEがない。またPreview側にはconsumer設定もない。
+- Previewでsystem event記録がキュー送信を前提とする経路に入ると、本番と異なるフォールバック/失敗挙動になる可能性がある。
+- PreviewでのQueue送信時に直接D1へフォールバックするか、エラーになるかは実行未確認。Previewは本番D1/R2を参照する設定にもなっているため、Previewを本番データから隔離する必要性も含めて別途確認する。今回Previewを起動していない。
+
+### [中 / メソッド制限の不統一] API Pool管理の変更ハンドラー
+- `handleApiPoolAdd`、`handleApiPoolMove`、`handleApiPoolRevoke`、`handleApiPoolHealthCheck` などはADMINガードを持つが、関数冒頭でPOST等の明示的メソッド制限が見当たらない。
+- JSON/FormDataのボディを受け取るため、想定外のPUT/PATCH等でも処理経路に到達する可能性がある。ADMIN/OWNER権限自体は検証しているが、HTTPメソッドの契約・監査ログ・二重送信防止の観点で統一が必要。
+- GETで実際に更新が成立するとは確認していない。メソッド別の実行テストは未実施であり、現段階では実装不統一として記録する。
+
+### [確認済み] Migration Reconciliationの安全停止策
+- 本番D1 Schema Reconciliation workflowは手動起動のみで、`RECONCILE_PRODUCTION` の明示入力を要求し、事前のD1 Time Travel bookmarkとMigration状態を記録する。
+- 旧Load Test Schema Recovery workflowはdeprecatedで、実行時に明示的に失敗終了する。
+- ただし前節のとおり、Reconciliation後の検証はSemaphoreスロット数とMigration履歴中心で、全インデックスの完全一致までは検証していない。
