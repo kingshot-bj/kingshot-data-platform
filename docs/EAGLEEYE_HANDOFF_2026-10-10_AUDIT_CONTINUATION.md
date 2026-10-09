@@ -1,0 +1,116 @@
+# EagleEye 本体・全機能監査 引き継ぎ — 2026-10-10
+
+## 1. この引き継ぎの目的
+
+次スレッドで、EagleEye本体の全機能棚卸し・静的コード監査を中断地点から再開するための作業指示書。監査はまだ完了していない。最初からやり直さず、機能台帳の既存記録を読み、未完了領域を続けること。
+
+- Repository: `kingshot-bj/kingshot-data-platform`
+- Branch: `main`
+- 機能台帳（最優先で読む）: [EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md](./EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md)
+- 機能台帳URL: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md
+- 本引き継ぎURL: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_HANDOFF_2026-10-10_AUDIT_CONTINUATION.md
+- 直近の台帳更新コミット: `c42afdd203255790613c866ee0d2bcb53967e29b`
+
+## 2. 進捗と報告ルール
+
+### 現在の進捗
+
+機能台帳のチェックリスト方式では **6/9項目 = 66.7%（表示67%）**。これはチェックリスト項目の完了割合であり、全機能の実装率・正常率・本番適用率ではない。台帳内に残る過去の重み付き概算44%などとは算定方法が異なるため、直接比較しない。
+
+完了済みの初期チェック:
+- [x] `src/`全ファイル名と責務の初期分類
+- [x] `src/index.js`の完全一致ルートと特殊prefix/callback/fallback
+- [x] `migrations/`全ファイル名と0008番号重複
+- [x] `wrangler.jsonc`の主要binding/Cron/Queue/Preview差分
+- [x] Workflow・スクリプト・公開アセット一覧
+- [x] ルート呼び出し名・import・対象モジュールのexportを静的照合（候補を台帳化。実行時確認は未実施）
+
+未完了の4項目:
+- [ ] 全Migrationのテーブル/列/制約/Indexと現行SQLの双方向照合完了
+- [ ] 全画面のUI機能、ボタン、フォーム、API呼び出し、権限、空/失敗状態の棚卸し完了
+- [ ] 実装あり/未接続/重複/未実装/仕様未確定を機能ごとに確定
+- [ ] テスト可能性と本番E2E確認項目を機能ごとに定義
+
+### 10%ずつ進める約束
+
+ユーザーの指示は「10パーセントずつやって、10パーセント終わったら教えて」。監査を継続し、次の進捗報告の目標は**現在67%から約77%相当**。未完了のチェック項目を完了したと見せかけて率を上げないこと。進捗が10ポイント進んだら、その時点でユーザーに報告する。進捗率を報告する際は、チェックリストの分子/分母、今回完了した作業、未完了事項を明示する。
+
+## 3. 次に実施する監査
+
+優先順位1: **Migrationと現行SQLの双方向照合を継続する。**
+
+1. `migrations/`の全ファイルを番号だけでなくファイル名単位で並べる。番号0008の重複に注意。
+2. Migration 0001から最新まで、CREATE/ALTER/DROP、テーブル再構築、列追加/削除/改名、UNIQUE/CHECK/FOREIGN KEY、Index、データ移行を追い、各テーブルの最終スキーマを作る。
+3. `src/`全体のSQL文字列・SQL helperについてSELECT/INSERT/UPDATE/DELETEの列、JOIN、WHERE、ORDER BY、UPSERT条件と最終スキーマを照合する。
+4. DDLがリクエスト中に実行される箇所（特に `src/user-player-link.js` の `ensureSchema()`）をMigrationとの二重管理として確認する。
+5. Indexの存在だけでD1読み取り削減を断定しない。実Query Planや本番Insightsを見ていない場合は未確認と明記する。
+6. 確認済み所見を台帳へ追記し、根拠・影響候補・確度・未確認事項・修正前に必要な確認を記載する。
+
+優先順位2: 全画面のUI操作→API→認可→DB/R2→成功/失敗表示の対応表を完成させる。特にmethod、role guard、ACTIVE/DISABLED状態、空データ、APIエラー、二重押し、外部サービス失敗、Retention後の読み戻しを確認する。
+
+優先順位3: 機能ごとの状態分類とテスト行列を確定する。ソースに関数が存在することと、実際に起動・接続されること、正常動作することを混同しない。
+
+## 4. 既知の要確認事項 — 重複調査を避けて継続
+
+### Migration / SQL / schema
+- `getLatestAdminKingdomRankingSnapshot()` が `kingdom_ranking_current.ranking_snapshot_id` をSELECTしている一方、Migration 0019のテーブル定義に列が見当たらない。Admin Ranking表示/refreshやGoogle Sheets exportへの影響候補。静的照合のみ。
+- Migration 0008の `kingdom_watchlist_jobs` 定義とMigration 0019の `CREATE TABLE IF NOT EXISTS` 定義に `source_first_at` / `source_last_at` の差がある。後続ALTERの有無と現行SQLを追う。実D1状態は未確認。
+- `src/user-player-link.js` の `ensureSchema()` が実行時DDLを行う。Migration 0022/0023/0026との関係と、リクエスト時に実行される条件を確認する。
+- `scripts/reconcile-d1-schema.mjs` のrequired migration listは0043までで、現行0044–0058全体のschema一致を保証しない。Production script/workflowは実行しない。
+- Migrationファイルは59件、0008番号重複あり。番号の大小だけで実際の適用順・本番適用済み状態を断定しない。
+
+### Route / handler接続
+- `/api/player-compare` が呼ぶ `handlePlayerCompareApi` は `src/index.js`で定義/importが見当たらず、`src/player-compare.js`にもhandler exportが見当たらない。
+- `/player/compare` が呼ぶ `renderPlayerComparePage` は定義/importが見当たらず、`src/player-compare.js`にもpage exportが見当たらない。
+- `handleOwnerKingdomLoadTestExportApi` とUI上の `/api/owner/kingdom-load-test/export?run_id=` URLがあるが、`src/index.js`にimport/router分岐が見当たらない。handler接続を検討する場合はOWNER認可が必要。修正・接続はしない。
+
+### データ保持・読み戻し
+- `/api/player/history` は `getPlayerHistory()` 経由でD1/R2を読む一方、`/player/history`は `player_snapshots` をD1から直接読む。Retention後に画面/API結果が異なる可能性。
+- `change_events`はR2 archive対象だが専用R2 readbackが見当たらず、Player/Kingdom ChangesはD1直接参照のように見える。Retention後の古いイベント表示は未確認。
+- `runDataRetentionJob`、Seeder、Kingdom Ranking Roller、Alliance Roller、Player Roller、history emergency buffer排出などは、Workerイベント入口からの起動が見当たらない候補。実行されていると断定しない。
+
+### 権限・副作用・運用
+- `/admin/player-visibility`の画面はADMINを許可する一方、`/api/admin/player-visibility`はOWNER guardに見える。仕様上の権限境界を確認する。
+- `/api/admin/kingdom-rankings?refresh=1`はGETで外部API取得・順位差分計算・D1保存を行う候補。副作用を実行して確認しない。
+- Safety GateでCloudflare metrics欠損の`null`が0扱いになりNORMAL判定へ落ちる可能性。
+- Preview設定はProductionと同じD1 database ID/R2 bucketを指定している。PreviewのQueue namespace/consumer分離は未確認で、Previewから副作用処理を起動しない。
+- `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` とGoogle Drive callback routeの不一致候補。実OAuthを実行しない。
+- R2 binding名 `R2_ARCHIVE` とWranglerの `ARCHIVE` の参照差候補。環境設定を実行変更せず、静的照合で確かめる。
+
+上記は既存台帳に根拠や詳細がある。ここでは要約のみ。必ず機能台帳内の該当節を読んでから追跡し、同じ候補を別名で重複登録しないこと。
+
+## 5. 絶対に守る制約
+
+- **D1 Freeの読み取り量を最優先する。**
+- **広範囲な `ranking_snapshots` 取得クエリを絶対に復活させない。**
+- ユーザーの明示許可がない限り、アプリコード、Migration、Workflowを変更しない。
+- デプロイ、本番D1更新、Queue操作、収集ジョブ、ロードテスト、外部API呼び出しを行わない。
+- 本番Migration履歴/Cloudflare実設定を取得済みのように表現しない。
+- Secret、APIキー、Cookieなどの機密値を記録しない。
+- ビルド/HTTP/E2Eを実行していない場合は「静的監査のみ」と明記する。
+- 発見した候補を確定バグと言い切らず、再現確認の有無と確度を分ける。
+
+## 6. 台帳更新と作業報告
+
+各まとまりの作業後に `docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md` を更新する。根拠、影響、確度、未確認事項、次に必要な確認を残す。次スレ終了時には本引き継ぎも追記・更新し、台帳と引き継ぎの進捗率を一致させる。
+
+ユーザーへは10ポイント相当の進捗に達した時点で報告する。報告内容:
+- 現在の進捗率と算定方式
+- 今回完了したまとまり
+- 新しく見つけた重要候補
+- 未完了項目
+- 次の監査対象
+- コード変更/本番操作を行っていないこと
+
+## 7. 次スレに貼り付ける開始文
+
+以下をそのまま次スレに貼り付ける。
+
+> EagleEye本体の全機能監査を続行してください。まず次の2ファイルをGitHub mainから読み、内容を確認してください。
+>
+> 1. `docs/EAGLEEYE_HANDOFF_2026-10-10_AUDIT_CONTINUATION.md`
+> 2. `docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md`
+>
+> 進捗はチェックリスト方式で現在67%（6/9項目）。ユーザー指示により10ポイントずつ進め、次は約77%相当まで実作業を進めてから報告してください。最初の作業はMigration 0001–最新のDDLとsrc全体のSQL列/制約/Indexの双方向照合です。既存の不一致候補を重複登録せず、ファイル名単位で確認してください。
+>
+> アプリコード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API実行は禁止です。D1 Free readsを最優先し、広範囲 `ranking_snapshots` 取得を絶対に復活させないでください。静的確認と実行時確認を区別し、根拠・影響候補・確度・未確認事項を機能台帳へ追記してください。10ポイント進んだ時点で、進捗率と完了内容をユーザーに報告してください。
