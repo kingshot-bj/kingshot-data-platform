@@ -1628,3 +1628,27 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - `setApiPoolMightyMetadata()` の成功分岐はstatusをAVAILABLEへ更新する。ユーザー提供キーのMighty再判定はstatus != REVOKEDの行を検索対象にしているため、DISABLED/ERRORキーを成功時にAVAILABLEへ戻す可能性がある。意図した状態遷移か、管理者の無効化を尊重すべきか仕様確認が必要。
 - Safety Gate欠損メトリクスはnull→0→NORMALとなる経路を確認。修正はまだ行わず、呼び出し元と仕様を確定する。
 - 進捗 **60%**。静的追跡を継続。コード/Migration/Workflow変更、build、隔離DBテスト、本番操作は未実施。
+
+
+## 2026-10-10 機能信頼性監査 — 80%到達（Cron / Queue起動経路横断）
+
+### 今回の完了範囲
+- `src/index.js` のWorker入口 `scheduled()` / `queue()` と、関連モジュールのexport/import/呼び出しを再照合した。静的調査のみで、WorkerイベントやQueueは実行していない。
+- `scheduled()` の本文で確認できる起動先は `runApiPoolAutoRecovery`、`runKingdomCatalogDailyRefresh`、`runKingdomDiscordNotifications`。ここから `runKingdomWatchlistJobs`、`runDataRetentionJob`、`drainHistoryEmergencyBuffer`、Seeder/Roller群を呼ぶ記述は確認できない。
+- リポジトリ内参照を追跡した範囲では、`runKingdomWatchlistJobs`、`runDataRetentionJob`、`drainHistoryEmergencyBuffer`、`runKingdomSeeder`、`runKingdomRankingRoller`、`runAllianceRoller`、`runPlayerRoller` は定義/importがある一方、Workerイベントからの呼出しが見つからない。未接続候補として優先度を上げる。別の外部起動経路・別entrypointの存在は未確認。
+- `wrangler.jsonc` のPreview設定はProductionと同じD1 database IDおよびR2 bucketを指定している。さらにPreviewのQueue producer設定はProductionより少なく、Preview consumersも記載されていない。Previewは隔離テスト環境として扱えない。
+- Queue本体の `SYSTEM_EVENT` は `handleSystemEventQueue` へ、Load Testは個別consumerへ、残りはService Usage consumerへ振り分けられる静的経路を確認。Queue実在状態、DLQ、retry、実際の配送・ack動作は未確認。
+
+### 追加の高優先度候補
+1. **Watchlist Cron起動経路欠落候補（P0）**: `runKingdomWatchlistJobs` は定義されているが、Workerの `scheduled()` からの呼出しが見つからない。ユーザーが設定した王国ウォッチリストが定期実行されない可能性。過去の実行ログ/別triggerは未確認。
+2. **Retention起動経路欠落候補（P0）**: `runDataRetentionJob` は `runRetentionCleanup` とSystem Log archiveを呼ぶが、親関数のWorker入口からの呼出しが見つからない。Retentionの自動実行が保証されない可能性。
+3. **History Emergency Buffer drain起動経路欠落候補（P0）**: importと実装はあるが、Worker入口から呼ぶ箇所が見つからない。Buffer内の退避履歴が自動排出されず滞留する可能性。
+4. **Seeder/Roller起動経路欠落候補（P1）**: Kingdom Seeder / Ranking Roller / Alliance Roller / Player Rollerはexport/importがあるが、Cron/Queueからの呼出しが見つからない。Catalog Discoveryが動くことは全王国データ収集の定期実行を意味しない。
+5. **Preview非隔離（P0・テストブロック）**: Productionと同じD1/R2を参照。Previewテストは引き続き実施しない。
+
+### 進捗と制約
+- **機能信頼性監査: 80%**。70%から今回のCron/Queue/関数呼出しの横断照合を完了した。残り20%は発見事項の優先度統合、接続・DB・権限・保持の候補の重複整理、監査結論と隔離テスト行列の最終化。
+- これは静的監査チェックリストの進捗であり、実装完成率・本番正常率ではない。
+- build、HTTP smoke、D1/R2/Queue実行、Browser E2E、Preview/Production testは未実施。
+- コード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。
+- D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。
