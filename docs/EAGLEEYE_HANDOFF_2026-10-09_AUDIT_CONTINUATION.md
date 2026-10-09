@@ -486,3 +486,11 @@
 - Service UsageはQueue→R2 gzip NDJSON。送信失敗時のqueued:false、Archive unavailable時のretry/DLQ、read-modify-writeによるR2 I/O増幅/競合を記録。
 - Kingdom Collection Coverageの統計がWatchlist収集のみを反映する可能性を記録。全収集カバレッジとの定義を確認する。
 
+## 2026-10-10 棚卸し進捗 — Active vs dormant collection pipelines
+
+- 台帳更新コミット: `751151f4a04ee6ac01d40e88c303ab50443444d0`
+- 5分Cronからの`runKingdomCatalogDailyRefresh()`は`runKingdomCatalogDiscovery()`を呼び、王国Catalogの発見/更新を行うが、Seeder/Rollersは連鎖起動しない。
+- Seeder/Kingdom Ranking Roller/Alliance Roller/Player Rollerは実装/進捗テーブルがある一方、現Worker scheduled/queueからの起動が見つからない。
+- したがって「王国Catalogがある」=「ランキング/同盟/Playerが全王国で定期収集されている」ではない。Watchlist、Player Profile、Admin manual refresh、Load Testがそれぞれ別の収集経路。
+- kingdom_collection_statsもWatchlist collection successに結びついているように見えるため、Coverage表示の意味を確認する。
+
