@@ -1263,3 +1263,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - Worker入口にQueue consumerとしての `KINGDOM_WATCHLIST_RUN` メッセージ処理はなく、Queue consumerは `KINGDOM_LOAD_TEST_RUN` / `SYSTEM_EVENT` / Service Usageを処理する。サーバー側の `runKingdomWatchlistJobs()` も未接続。
 - そのため、作成後に画面を閉じる・ブラウザ通信が止まると、途中のジョブが残っても自動継続しない可能性がある。画面を開き続けることが処理完了条件になっていないか、実際のUI操作で確認する必要がある。
 - 対応時はWorker側のQueue/Cron継続処理を明示的に接続するか、ブラウザ継続が仕様ならUI上で明確に説明する。D1コストを抑えるため、未期限の監視一覧全件走査をそのまま5分Cronへ接続しない。
+
+
+### [中〜高] Cron内のAPI Pool自動復旧が外部APIを最大4キー逐次プローブし、1回の実行が長時間化する可能性
+- `scheduled()` は最初に `runApiPoolAutoRecovery(env, { limit: 4 })` を `await` し、その後にCatalog DiscoveryとDiscord通知を順番に実行する。
+- `runApiPoolAutoRecovery()` は対象キーを最大4本、逐次処理し、`getMightPulsePlayer()` に明示的な `timeoutMs/maxRetries` を渡していない。共通 `mightPulseFetch()` の既定値は1回100秒、最大3回再試行。
+- 4キー全てでタイムアウト/通信エラーが起きると、再試行待機を含めて非常に長い時間を消費し、Cron実行時間の上限や後続のCatalog/Discord処理に影響する可能性がある。ここでは最大時間の理論値を本番実測値として扱わない。
+- 対応時はヘルスチェック専用の短いタイムアウト・再試行回数、1回あたりのキー上限、後続ジョブとの分離を検討し、外部APIが応答しない状態でのCron時間をテストする。今回は自動復旧を実行していない。
