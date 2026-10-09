@@ -902,3 +902,38 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - 作成内容: 画面/API入口、ソースモジュール、Migration、Cloudflare設定、Workflow、スクリプト、アセット、機能領域の初期マッピング。
 - この時点で「全機能棚卸し完了」とは判定しない。上記の未完了チェックがすべて埋まった後にのみ完了とする。
 
+
+## 2026-10-10 進捗記録 — 第2回・進捗率の算定
+
+### 全体進捗：23%（静的棚卸し）
+
+この率はファイル数/行数ではなく、以下の作業領域の重み付き概算。初回マッピングを完了扱いにしても、画面/API/DB接続や実動作確認が終わっていないため、まだ初期段階とする。
+
+| 作業領域 | 重み | 現在の達成度 | 加重点 | 根拠 |
+|---|---:|---:|---:|---|
+| リポジトリ/構成/入口の初期台帳 | 10% | 100% | 10.0% | src、Migration、route、Worker、Workflow、設定の初回列挙を記録済み |
+| Route→handler/page→定義/importの照合 | 20% | 35% | 7.0% | 110 path入口の照合と未解決参照候補の記録。全モジュールの呼出元確認は未完了 |
+| 画面UI→API→処理の対応付け | 25% | 10% | 2.5% | index.jsのUI要素/API文字列を初回抽出。ボタンごとのmethod・認可・成功/失敗状態の対応表は未完成 |
+| Migration/SQL→テーブル・列・Indexの双方向照合 | 25% | 0% | 0% | ファイル名/概要の列挙のみ。列・制約・Indexと全SQLの照合は未完了 |
+| Worker/Cron/Queue/権限/外部連携の接続照合 | 15% | 20% | 3.0% | scheduled/queue入口と一部認可・OAuth・外部連携を静的確認。全呼出元と実設定の照合は未完了 |
+| テスト観点・本番確認条件の整理 | 5% | 0% | 0% | 一部の未確認事項を記録したが、機能別の完全なテスト行列は未完成 |
+| **合計** | **100%** |  | **22.5% ≒ 23%** | 概算。対象範囲/分母は以後の発見により更新し、率の変更理由を記録する |
+
+### 今回の追加確認（index.jsと関連モジュール）
+
+- `src/index.js`: 9,024行。静的なHTML/JS生成コード内にbuttonタグ70件、formタグ7件、inputタグ19件、inline `onclick` 29件、`addEventListener` 19件を検出。
+- `fetch()`呼び出し37箇所、文字列として静的に抽出できたURLは21種類。テンプレート文字列/動的生成/他モジュールの呼出は単純抽出で漏れるため、これはUI対応表の完成数ではない。
+- `handleOwnerKingdomLoadTestExportApi` は `src/admin-kingdom-load-test.js` で定義され、`src/index.js` にimportされているが、ルート分岐の接続は確認できない。UI側に `/api/owner/kingdom-load-test/export?run_id=` の参照もあるため、**未接続候補として維持**。handlerにOWNER guardがない可能性もあるため、接続するなら認可確認が必要。変更/実行確認は未実施。
+- `runKingdomSeeder`、`runKingdomRankingRoller`、`runAllianceRoller`、`runPlayerRoller` は各モジュールでexport定義がある。`src/index.js` にはimportがあるが、Workerイベント入口からの呼出しは見つかっていない。別モジュールからの呼出/外部トリガーの有無は引き続き確認が必要。
+- `runDataRetentionJob` は `src/index.js` 内に定義され、内部でRetention cleanupとSystem Log archiveを呼ぶが、同ファイル内の起動呼出しは見つかっていない。Retentionの起動経路は未確定として扱う。
+- `drainHistoryEmergencyBuffer` はexport/importを確認したが、Workerイベント入口からの呼出しは見つかっていない。別呼出元がないと確定するにはrepo-wide照合が必要。
+- プレイヤー比較の `/api/player-compare` と `/player/compare` は、引き続き未解決参照候補。ビルド/HTTPによる再現は未実施。
+
+### 次に行う作業
+
+1. 画面のHTML生成関数単位でボタン/フォーム/イベント/API URLを抽出し、route一覧と突合する。まずWatchlist、Player、API Pool、Owner/Load Test、System Status/Diagnosticsを対象にする。
+2. 未接続候補の関数について、定義・import・全ソース内の呼出元・Workerイベント入口を区別して追跡する。
+3. Migrationの各ファイルからCREATE/ALTER/DROP、列、Index、制約を抽出し、SQL側のSELECT/INSERT/UPDATE/DELETEと双方向照合する。
+4. 未解決候補を「静的に未接続」「定義未発見」「実行時未確認」に分け、根拠のないバグ断定をしない。
+
+この進捗率は**コードの静的棚卸し**の進み具合であり、本番機能の正常率ではない。コード変更、Migration適用、デプロイ、Queue操作、外部API/負荷テストは引き続き行っていない。
