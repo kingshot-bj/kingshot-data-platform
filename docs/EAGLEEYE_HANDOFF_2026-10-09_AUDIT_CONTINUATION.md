@@ -117,3 +117,10 @@
 - 追加監査コミット：`fb2370b6202a7d57f07cc5e57162d041c7a2786e`。管理者ランキングAPI/画面/出力の王国ID正規表現に過剰エスケープ候補を確認。通常の数字IDが拒否される可能性がある。加えて、MightPulse timestamp文字列正規化とLast active表記変換にも同種の候補。いずれも静的所見で、実リクエスト/ユニットテストは未実施。
 - アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Preview/Queue）
+
+- 追加監査コミット：`e987f33807b375a7586f36ce7298cf5084106d77`。`wrangler.jsonc` のProduction/Preview Queue差分を確認。Previewは `SYSTEM_EVENT_QUEUE` producer bindingと3 consumer設定が欠ける一方、D1 `database_id` とR2 bucketはProductionと同じ指定。Previewのイベント処理差分および本番データ共有リスクを監査MDへ追記。実デプロイ・配送試験は未実施。
+- Queue handlerの静的確認では、System EventはD1 batch成功後ack・失敗時retry、Service UsageはR2未設定/書き込み失敗時retry。Cloudflare上の実配送・再試行・DLQ移送は未検証。
+- 次は全ルートのHTTP method / ACTIVE認可表を完成させ、D1 SQL・Migration・インデックスの照合へ進む。引き続きコード変更・デプロイ・本番DB更新・収集/負荷テスト起動は禁止。
