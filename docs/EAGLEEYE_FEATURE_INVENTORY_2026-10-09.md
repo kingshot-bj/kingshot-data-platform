@@ -1292,3 +1292,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 移管先に既存ACTIVEリンクがある分岐は、同じ領主IDの別ACTIVE行を許さないUNIQUE INDEXと整合しないため、通常ケースの代替経路にはならない。
 - 対応時は所有者の検証後、旧リンクの無効化と新リンクの作成、申請のRESOLVED化を一貫した原子的処理にまとめ、失敗時に旧所有者のリンクが失われないことを保証する。D1 batch/トランザクションの実際の原子性を確認し、成功・UNIQUE競合・INSERT失敗・再実行のテストを用意する。
 - 本番の移管操作は実施していないため、実際の本番スキーマ適用状態は未確認。ただし、mainのMigrationとコードの順序から見て、実装上の重大な不整合候補として最優先に扱う。
+
+
+### [中] `diagnostic_events` がRetention対象に含まれず、D1内で増え続ける可能性
+- `src/diagnostics.js` はAPIや処理の成功/警告/失敗を `diagnostic_events` に記録する。
+- `src/retention.js` の `RETENTION_TABLES` に `diagnostic_events` が含まれておらず、R2アーカイブ/削除の対象になっていない。現行の `runDataRetentionJob()` も未接続だが、仮に接続してもこのテーブルはRetention設定に従って整理されない。
+- SUCCESSイベントはWorker isolate内で5分間抑制されるものの、分散した複数isolateでは抑制が共有されず、WARN/FAILEDは継続して記録される。長期運用でD1ストレージが増える可能性がある。
+- 対応時は診断イベントの必要保持期間、R2アーカイブの要否、最低限残す最新状態を決めてRetentionへ組み込む。現時点のテーブル行数・サイズは未確認。
