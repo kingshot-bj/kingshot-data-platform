@@ -852,3 +852,39 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | src/migrations/workflows初回棚卸し | src 51モジュール、migration 59ファイル、主要workflowの構成を確認。DDLの初回分類を実施したが、本番適用状態と全テーブル利用コードの対応は未完了。 | 残りモジュールの依存関係を整理し、主要テーブル/インデックスとクエリを対応付ける。 |
+
+
+## 監査追記：OAuth設定・Status公開経路・重複資産（2026-10-09 続き）
+
+### [高 / 設定不一致] Google Drive OAuth Redirect URIが専用Callbackルートと一致していない
+- `wrangler.jsonc` の本番・Preview設定で、`GOOGLE_DRIVE_OAUTH_REDIRECT_URI` がDiscord用と同じ `/api/auth/callback` になっている。
+- Google Drive認証コード交換も同じ環境変数を `redirect_uri` に使用する一方、専用Callbackハンドラーは `/api/admin/google-drive/callback` にルーティングされている。
+- この設定のままでは、Googleからの認証応答がDiscord Callbackへ送られ、Google Driveのstate検証・認証コード交換に到達しない可能性が高い。OAuth設定画面のURLを実際に確認する前提で、設定とGoogle Cloud側の登録URIを修正計画の最優先候補とする。
+- 本番のCloudflare Variables/SecretsおよびGoogle Cloud Consoleの実設定は参照していないため、Wranglerファイル外で上書きされている可能性は未確認。コード変更・OAuth接続テストは未実施。
+
+### [高 / D1負荷] 公開Statusページがアクセスのたびに診断と運用状況を問い合わせる
+- `/status` は公開ルートで、アクセスごとに `getSystemDiagnostics(... recentLimit: 100)` と `getOperationalStatus()` を実行する。
+- `getOperationalStatus()` は複数のD1集計に加え、ウォッチリスト詳細・有効なAPI Poolリース詳細などを取得する。前記の通りウォッチリスト全件読み込みも含む。
+- ページには60秒ごとの自動更新があり、匿名アクセスでも診断・運用状況のD1クエリが発生する構成。アクセス頻度・Cloudflareキャッシュ設定・実行回数制限は未確認。
+- D1 Free読み取り量の方針上、公開画面向けに必要最小限の集計を返す経路、キャッシュ、レート制限、診断詳細取得の分離を優先検討する。現時点では読み取り量を実測していない。
+
+### [中] Status JSON Comparatorの公開用コピーが2系統あり、内容が大きく異なる
+- Workerの `/status-json-comparator` は `public/status-json-comparator.html` を配信する。
+- GitHub Pages workflow `.github/workflows/status-comparator-pages.yml` は `tools/status-json-comparator.html` を `index.html` として公開する。
+- 現在、`public/` 側は約24 KB / 387行、`tools/` 側は約9.5 KB / 151行で、内容が大きく異なる。両者が意図的に別バージョンなのか、旧版が残っているのかは不明。
+- D1/Cloudflare利用量JSONの比較結果がアクセス先によって違う可能性があるため、正本を決めて同期するか、意図した機能差を明文化する必要がある。自動同期テストは見当たらない。
+
+### [中 / 保守性] 未参照の可能性がある実装ファイル
+- `src/index.js` には `src/user-mighty.js` のimport/関数呼び出しが見当たらず、同モジュールのMighty資格情報処理とは別に、現在は `src/user-eligibility.js` を経由するMightPulseキー登録・Mighty判定処理が存在する。
+- 同様に `src/d1-retry.js` の `withD1TransientRetry` / `isD1TransientError` は `src/index.js` から参照されていない。
+- これらはindex.js以外から参照されている可能性があるため、現時点では「リポジトリ全体で未使用」と断定しない。全モジュール間のimport参照を照合し、旧実装・重複実装・未接続機能として機能台帳に分類する。
+
+### [確認制限] 自動テスト・CI
+- ルートの一覧には `package.json`、専用testディレクトリ、一般的なテスト実行workflowが見当たらず、確認できたworkflowは手動Migration/Schema Reconciliation、Status Comparator Pages、Hero Gear Asset収集が中心。
+- これはテストが存在しないことの完全な証明ではないが、本監査で自動テストを起動して全ルート・SQL・UIを検証できる仕組みは確認できていない。
+- 今回はGitHub上の静的コード確認のみ。構文検査、ユニットテスト、E2E、実API、本番DB、OAuth接続テストは実施していない。
+
+### 追加確認事項
+- Google Drive OAuth URIはコード上の明確な不一致として最優先で扱う。ただし本番実設定が別途上書きされているかを先に確認し、監査中は修正しない。
+- 公開Statusは「サービス稼働状況の公開」と「内部詳細・D1コスト」の境界を再点検する。
+- Status Comparatorの正本・同期方式、未参照モジュールの全体参照、テスト手段を機能台帳の残件として管理する。
