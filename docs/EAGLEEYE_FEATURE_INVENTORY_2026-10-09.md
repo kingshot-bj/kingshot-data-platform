@@ -376,3 +376,61 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | OAuth / Support / Gateway / API Pool | Discord OAuth state、Support署名とロール制限、Gateway Bearer token、API Pool pool type検証を確認。Google Drive callback URI不一致候補、PreviewのSystem Event producer欠落候補、API Pool Moveのリース整合性とHTTPメソッド制限を要確認として追加。 | 高優先度のGoogle OAuth経路を設定修正前に確認し、残るプレイヤー・ランキング・ウォッチリストAPIの認可監査を継続する。 |
+
+
+---
+
+## 次スレ引き継ぎ — 機能台帳監査の続き（2026-10-09）
+
+### 作業対象
+
+- Repository: kingshot-bj/kingshot-data-platform
+- Branch: main
+- 監査台帳: docs/EAGLEEYE_FEATURE_INVENTORY_2026-10-09.md
+- 主な対象: src/index.js のルート、各APIハンドラー、Workerイベント処理
+- 目的: 機能の棚卸しをコード根拠で完成させ、全体像を把握した後に機能単位で監査・改善する。次スレでは新機能実装ではなく、この監査の続きから再開する。
+
+### ここまでの確認事項
+
+1. src/index.js の主ルーターに明示された画面/API入口を分類し、台帳に追記した。
+2. scheduled() はAPI Pool自動復旧、王国Catalog日次更新、王国Discord通知の3処理を呼び出す。
+3. queue() は SYSTEM_EVENT、KINGDOM_LOAD_TEST_RUN、その他Service Usageの3分類を処理する。負荷テストQueueは成功時ack、例外時retry。
+4. wrangler.jsonc のCron、D1/R2/Assets binding、本番Queue/DLQ構成、手動起動のD1 migration workflowを照合した。本番Cloudflare環境での実発火・migration適用を確認したわけではない。
+5. 共通テーマ処理として EAGLEEYE_THEME_CSS、EAGLEEYE_THEME_SCRIPT、applyEagleEyeTheme()、eagleEyeHtmlResponse() を確認した。ライト/ダーク切替はlocalStorageベース。ロールバーとクライアント側の重複操作防止も既存コードにある。全画面適用とE2Eは未検証。
+6. Discord OAuth / Support / Gateway / API Poolの一部ハンドラーを確認した。Supportの署名検証・権限検査、GatewayのBearer token、API Poolのロール制限・pool type検証などはコード上で確認した。
+7. Google Drive OAuthについて、wrangler.jsonc の GOOGLE_DRIVE_OAUTH_REDIRECT_URI が /api/auth/callback を指す一方、WorkerのGoogle Drive callback routeは /api/admin/google-drive/callback となっている不整合候補を発見した。この監査中は修正していない。設定とGoogle Cloud側の許可URIを再確認し、実際のOAuth往復は別途検証する。
+8. Preview Queue設定では SYSTEM_EVENT_QUEUE producerが定義されていない可能性がある一方、Workerはこのbindingを参照する。Previewの要件・設定を要確認。
+9. API PoolのMove処理では、リース中のキー移動に対する整合性とHTTPメソッド制限が要確認。即時不具合とは断定していない。
+10. 各項目はコード確認であり、本番E2E確認済みを意味しない。
+
+### 次スレで最初に行うこと
+
+**まず既存台帳と main の現行コードを再取得し、直近の記録と重複しないようにしてから監査を続ける。**
+
+1. src/index.js の残りのAPIハンドラーを追い、特に以下を1つずつ確認する。
+   - プレイヤー検索・詳細・更新・履歴・比較API
+   - プレイヤーウォッチリストAPI
+   - 王国ウォッチリスト・履歴・データAPI
+   - 王国ランキング・ランキング設定・エクスポートAPI
+   - プレイヤー項目表示制御・データ保持API
+   - Ownerのユーザー管理、ロール変更、ステータス変更、監査ログ、連携サポートAPI
+   - 負荷テストとCatalog R2バックフィルAPI
+2. 各APIについて、HTTPメソッド制限、認証/ロール認可、入力検証、SQL bind、エラー応答、レート・消費コスト、秘密情報の返却有無を記録する。
+3. 明示的にルーターで requireAdmin / requireOwner を呼んでいないAPIは、それだけで脆弱性と断定せず、ハンドラー内部と呼び出し先で認可を確認する。
+4. 動的パス、クエリパラメータ、別モジュールのルートも漏れなく拾い、入口一覧を完成させる。
+5. scheduled() / queue() はWorkerコード上の流れまで確認済み。必要に応じて wrangler.jsonc と関連モジュールを照合するが、本番発火はログなしで確認済み扱いにしない。
+6. 調査で問題候補が見つかった場合は、先に台帳へ根拠・影響範囲・再現条件・優先度を記録する。監査の途中で無断で修正・デプロイしない。
+7. ルート監査が終わったら、フェーズAの残り（src/全モジュールの依存関係、migrationとDB利用箇所、public/アセット、ロールと画面の対応、外部連携）へ進む。
+
+### 監査上の厳守事項
+
+- D1の読み書き量を重視し、広範囲な ranking_snapshots 読み取りを復活させない。
+- R2_ONLY方針、Safety Gate、既存の権限境界を維持する。
+- APIキー、トークン、秘密情報をログやMDに書かない。
+- 「コードあり」「テスト確認済み」「本番E2E確認済み」を明確に分離する。
+- コード修正・mainへのコミット・デプロイ・本番E2Eは別々の作業段階として記録する。
+- 次スレではこのMDを読み直し、直近の未完了項目から再開する。ユーザーに同じ情報を聞き直さない。
+
+### 引き継ぎ時点の結論
+
+src/index.js のルート棚卸しは途中まで進行。Workerイベント入口・Cloudflare設定・OAuth/Support/Gateway/API Poolの一部確認とリスク候補の記録は済んだが、**全APIの認可監査および全機能棚卸しは未完了**。次はプレイヤー／ランキング／ウォッチリスト系APIの内部監査を続ける。
