@@ -627,3 +627,44 @@ src/index.js のルート棚卸しは途中まで進行。Workerイベント入�
 - テスト: 未実施。
 - 修正: 未実施。
 - 次の確認: PENDING/FAILED混在時の件数・bytes計算、排出失敗→再試行→容量上限、D1緊急バッファの実データをテストする。容量判定の対象状態を統一し、排出経路を確認した後に修正する。
+
+
+## フェーズA-2 追加 — バックグラウンド収集機能の接続状態 / R2 binding照合（2026-10-09）
+
+対象: `src/index.js`、`src/kingdom-ranking-roller.js`、`src/player-roller.js`、`src/alliance-catalog.js`、`src/kingdom-seeder.js`、`wrangler.jsonc`。
+
+### 要確認 — 実装済みローラーがWorkerの実行経路につながっていない（優先度: 高・仕様確認が必要）
+
+`src/index.js` では次の関数をimportしているが、現行 `index.js` 内に呼び出し箇所が見当たらず、確認した `src/全モジュール` の参照検索でも定義・import以外の実行呼び出しを確認できなかった。
+
+- `runKingdomRankingRoller()`
+- `runPlayerRoller()`
+- `runAllianceRoller()`
+- `runKingdomSeeder()`
+
+現在の `scheduled()` はAPI Pool自動復旧、王国Catalog日次更新、王国Discord通知のみを呼び出す。上記4つの関数はそれぞれ小バッチ・カーソル・診断ログ等を実装しているが、WorkerのCron/Queue/HTTPルートから実行されていない可能性が高い。
+
+**判定:** これらを定期収集機能として運用する設計なら、実装だけ存在して起動経路が未接続という重要な欠落候補。一方、現在意図的に停止中・将来用の機能である可能性はコードだけでは確定できないため、仕様確認前に「障害」と断定しない。次にSystem Status表示、DBの各collection_state、過去ログ、引き継ぎ文書を照合する。
+
+### 要修正候補 — R2 binding名の不一致（優先度: 高）
+
+`wrangler.jsonc` のproductionおよびpreview設定で確認できるR2 binding名は `ARCHIVE`。一方、次の収集関数は `env.R2_ARCHIVE` を参照している。
+
+- `src/kingdom-ranking-roller.js`: `saveKingdomRankingBoard()` に `archiveBucket: env.R2_ARCHIVE` を渡す。
+- `src/player-roller.js`: `materializePlayer()` に `env.R2_ARCHIVE` を渡す。
+- `src/alliance-catalog.js`: `env.R2_ARCHIVE` が存在する場合だけR2履歴保存を試みる。
+
+`wrangler.jsonc` には `R2_ARCHIVE` というbindingが見当たらないため、設定ファイルどおりの環境ではこれらの処理にR2 bucketが渡らない可能性が高い。特にAlliance RollerはR2 bucketがなければ変更履歴を緊急バッファへ退避した後にエラーにする実装で、Player/Ranking RollerもR2_ONLYの履歴保存時に緊急バッファへ進む可能性がある。
+
+ローラー自体の起動経路が現時点で確認できていないため、実際にこの不整合が本番で発火しているとは断定しない。しかし、関数を起動する設計であれば、起動接続と同時にbinding名を必ず確認・修正すべきである。実行環境にDashboard側の別bindingが設定されているかは未確認。
+
+### 次の確認
+
+1. 4つの収集関数が現在運用対象か、停止中/未接続の予定機能かを引き継ぎMD・Status・DB state・直近ログで確認する。
+2. 運用対象なら、起動頻度・1回の件数・同時実行数・Safety Gate・D1/API消費を確認し、Cronに直接大量処理を追加せず小バッチ設計を検討する。
+3. `env.ARCHIVE` と `env.R2_ARCHIVE` の全コード検索を完了し、Cloudflare設定と名称を統一する。
+4. R2保存成功・失敗・緊急バッファ排出を含むE2Eテストを用意する。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | ローラー/Seeder起動経路とR2 binding | 収集ローラー3種とSeederは定義/importされているが、Workerからの実行呼び出しを確認できず。コードは `R2_ARCHIVE`、Cloudflare設定は `ARCHIVE` で名称不一致を確認。 | 機能が運用対象かを確認し、実行経路・DB state・本番ログを照合する。必要なら起動接続とbinding修正を別の実装作業として計画する。 |
