@@ -1368,3 +1368,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/status-ops.js` の集計SQLは `WHERE leased_until IS NOT NULL` の全行を `active_count` とし、その中で `leased_until <= now` を `expired_active_count` として別途数える。
 - そのため `activeLeases` は実際には「リース情報が残っている行数」であり、期限切れリースを除いた有効リース数ではない。画面でActiveとExpiredを別々に表示する場合、期限切れ分を二重に数える/誤解させる可能性がある。
 - `releaseExpiredLeases()` が定期処理から未呼び出しである点と合わせ、Status表示が実稼働リース数を正確に示すよう集計定義を修正する必要がある。今回、API Poolのリース状態は変更していない。
+
+
+### [中] StatusのlatestKeyは最終更新キーではなく「最終エラー時刻が最も新しいキー」を選ぶ
+- `src/status-ops.js` の `latestKeyResult` は `ORDER BY COALESCE(last_error_at, 0) DESC, updated_at DESC LIMIT 1` でキーを1件選ぶ。
+- そのため、最後にエラーを起こしたキーが選ばれ、後から正常に使われた別キーがあっても、画面上の「最新キー」表示が古いエラー情報を持ち続ける可能性がある。選ばれたキー自体がAVAILABLEでも、古い `last_error_message` が公開ステータスに出ることがある。
+- 「最終更新キー」「直近エラー」「現在のPool全体状態」を別の指標として定義し、公開ステータスには集計値を優先する。現時点では実データ上の表示内容は未確認。
