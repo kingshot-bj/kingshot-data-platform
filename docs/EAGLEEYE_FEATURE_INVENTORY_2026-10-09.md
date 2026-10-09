@@ -1203,3 +1203,15 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `renderKingdomCatalogR2BackfillPage()` は画面生成時に `kingdom_catalog` の未アーカイブ候補を `COUNT(*)` し、状態が `RUNNING` の場合は3秒後にページを再読み込みする。
 - バックフィルが通常どおり短時間で進行している間は限定的だが、Worker中断などで `RUNNING` が残ると、Ownerが画面を開いている間、3秒ごとに同じCOUNTクエリが繰り返される可能性がある。
 - stale RUNNING状態の回復条件を設けるとともに、進捗取得を軽量化/更新間隔を延長することを検討する。D1 Query Insightsで実測していないため、読み取り量の実数は未確認。
+
+
+#### 追加確認：Mightyメタデータ不整合はMighty再判定以外のAPI 401でも起こり得る
+- `src/data-collection-engine.js` の通常収集エラー処理も、HTTP 401/403時は `recordApiPoolFailure(... disable:true)` でキーをDISABLEDにするが、`mighty_capable` / `mighty_check_status` は更新しない。
+- `recordApiPoolFailure()` は運用状態・エラー・リースを更新するだけで、Mighty判定メタデータを失効させない。よって前項の資格判定不整合は `handleMyMightyCheckApi()` に限定されず、通常の収集処理で無効キーとなった場合にも発生し得る。
+- 401/403の意味は上流APIの仕様を確認して区別し、資格メタデータの解除と一時障害時の維持を一貫した共通処理にする必要がある。
+
+### [中] D1一時エラーの自動再試行がAPI Poolの非冪等なリース取得を二重実行する可能性
+- `src/data-collection-engine.js` は `leaseApiKey()` / `leaseMightyApiKey()` を `withD1TransientRetry()` で再試行する。
+- `claimApiPoolKey()` は呼び出しごとに新しい `leaseId` を生成し、原子的なUPDATEでキーを1本確保する。D1側でUPDATEが成功した後に応答だけがネットワークエラーとなった場合、再試行は新しい `leaseId` で別のキーを確保し、最初のキーのリースが120秒残る可能性がある。
+- 再現確認はできていないが、リース取得は単純な読み取りと違い、同じ操作を再試行しても同じ結果にならない非冪等操作。D1の一時障害時にAPI Poolの有効キー数を一時的に減らし得る。
+- 対応時は呼び出し側で再試行を避けるか、再試行間で同一の操作ID/lease IDを使う冪等なclaim方式を検討する。今回、D1障害を発生させる試験は行っていない。
