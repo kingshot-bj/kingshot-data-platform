@@ -1619,3 +1619,12 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - Change Events: `src/index.js` のプレイヤー/王国変更履歴クエリはD1 `change_events` を直接参照している箇所がある。Retentionはchange_eventsをR2へアーカイブ後、D1行を削除する。R2 readbackが接続されているかは未確認で、削除後に画面/APIから見えなくなる候補。
 - API Pool Mighty metadata: `src/index.js` のユーザー提供キー再判定処理は `status != 'REVOKED'` のキーを検索し、成功時に `setApiPoolMightyMetadata(... mightyCapable:true ...)` を呼ぶ。関数側は成功時にstatusをAVAILABLEへ戻すため、DISABLED/ERRORキーも再有効化される可能性。意図した状態遷移か要確認。
 - 進捗 **50%**。実行テスト・コード修正・DB更新・デプロイは未実施。
+
+
+## 2026-10-10 機能信頼性監査 — 60%到達
+
+- `src/index.js` 全体の静的検索で `drainHistoryEmergencyBuffer(` の呼び出しを確認できず。importのみで、`src/history-emergency-buffer.js`内に処理本体/exportはあるが、現行Workerのscheduled/queue/request経路から呼ばれていない可能性が高い。実行経路は引き続きリポジトリ全体で確認。
+- Player Change APIの一方は `src/index.js` で `change_events` を直接SELECTしており、Retention後のR2 readback呼び出しはその処理経路に見当たらない。Retentionが古いイベントをR2へarchiveしてD1から削除した後、API/画面の履歴が欠ける可能性。
+- `setApiPoolMightyMetadata()` の成功分岐はstatusをAVAILABLEへ更新する。ユーザー提供キーのMighty再判定はstatus != REVOKEDの行を検索対象にしているため、DISABLED/ERRORキーを成功時にAVAILABLEへ戻す可能性がある。意図した状態遷移か、管理者の無効化を尊重すべきか仕様確認が必要。
+- Safety Gate欠損メトリクスはnull→0→NORMALとなる経路を確認。修正はまだ行わず、呼び出し元と仕様を確定する。
+- 進捗 **60%**。静的追跡を継続。コード/Migration/Workflow変更、build、隔離DBテスト、本番操作は未実施。
