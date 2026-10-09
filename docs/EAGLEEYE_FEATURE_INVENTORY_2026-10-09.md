@@ -1335,3 +1335,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/player-compare.js` からは `normalizeCompareGovernorIds` と `buildPlayerCompareSeries` をimportしているが、どちらも `index.js` 内ではimport行以外に使用されていない。同モジュールにも `handlePlayerCompareApi` のexportは見当たらない。
 - そのため、`/api/player-compare` へのアクセスは未定義関数参照で例外となり、共通catchによりHTTP 500を返す可能性が高い。比較画面のAPI依存を含め、比較機能が正常動作するか確認が必要。
 - 実API呼び出しは未実施。修正時はhandlerを実装/正しいmoduleからimportし、認証・ACTIVE確認・比較対象ID上限・可視性設定・SQL/R2取得上限をテストする。今回はコード変更していない。
+
+
+### [低〜中・UI台帳] UI Foundationモジュールは現行画面へ未接続
+- `src/eagleeye-ui.js` はBJにゃん画像の用途別マッピング `EAGLEEYE_BJNYAN` とカラーToken `EAGLEEYE_UI_TOKENS` を定義している。
+- `src/index.js` は両方をimportしているが、import行以外の参照が見当たらない。現行画面のテーマ/共通ボタンガード/ロールバーは `index.js` 内の `EAGLEEYE_THEME_SCRIPT` 等で別実装されている。
+- そのため、`eagleeye-ui.js` のTokenやBJにゃんマッピングを変更しても、現行UIには反映されない可能性が高い。将来の全面UI変更時は、このモジュールを実際のレンダラーへ接続するか、不要なら役割を整理する。
+- 今回はUIを変更していない。機能台帳では「定義済み」と「画面で使用中」を分けて扱う。
