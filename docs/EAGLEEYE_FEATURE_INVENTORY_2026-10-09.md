@@ -822,3 +822,33 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 全APIのACTIVE確認、ロール条件、HTTPメソッド、ユーザー所有権照合、外部API実行の制限をルート単位で完了させる。
 - `/api/kingdom-watchlist/history` / `data` の権限不足候補、`/api/player/refresh` のメソッド制限不足候補は優先度高めで要再現確認。
 - D1使用量はコードからの推定にとどまる。Query Insights、本番メトリクス、実際のテーブル件数なしに消費量を断定しない。
+
+
+## フェーズA-3 — リポジトリ構成・migrationの初回全件棚卸し（2026-10-09）
+
+### リポジトリ構成
+
+- `src/` は51個のJavaScriptモジュールを確認。Worker入口、データ取得、API Pool、D1/R2保存、ランキング、Catalog、UI、Owner管理、Discord/Google連携、診断・ログ・負荷テストに分類して監査を継続中。
+- `migrations/` は59個のSQLファイルを確認（連番0001〜0058に加え、同じ0008番号の別migrationが存在）。
+- `.github/workflows/` にはD1 migration適用、D1 schema reconciliation、0053 production drift repair、Status JSON比較、ヒーロー装備アセット収集等のworkflowが存在する。
+- リポジトリルートには `package.json` と `tests/` ディレクトリが見当たらず、今回の構成確認時点では標準的な自動テストスイートを確認できなかった。scriptsにはD1 schema reconciliation、production drift reconciliation、hero gear asset collectionがある。実行可能なテスト手段の全容は未確認。
+
+### migration初回照合で確認したこと
+
+- 0001〜0058のDDLを初回棚卸しし、主要テーブル・インデックス・ALTER TABLE・テーブル再構築・データ移行の存在を分類した。
+- 0003、0026、0055、0056などにはSQLiteの制約変更のためのテーブル再構築がある。過去migrationとしての定義確認であり、これらを再実行する指示ではない。
+- 0011/0012/0045などにはプレイヤー履歴、ウォッチリスト、変更イベントの検索用インデックスがある。ウォッチリスト変更イベントの負荷は、インデックスが存在しないと決めつけず、実行計画と実データ量で判断する。
+- 0034/0036はグローバルSemaphoreを作成・初期化し、0036では1000スロットを事前生成する。
+- 0048〜0051はCatalog/Alliance/PlayerのR2最新キー参照列とインデックスを追加し、0049はCatalogバックフィル状態テーブルを追加する。
+- 0053〜0056は表示権限・VIPロール/Watchlist上限のスキーマ整合性に関する変更を含む。0056ではusersとwatchlist_limitsを再構築するため、本番適用状態とmigration記録の一致が重要。
+- 0058はユーザー別ランキング設定テーブルを作成する。
+
+### 未確認事項
+
+- 本番D1で59ファイルすべてが適用済みか、適用順序が正常か、手動schema修復との不整合がないかは、Cloudflare D1への本番照会結果なしでは確定できない。
+- migration workflowは手動起動であり、ファイルがmainにあることは本番適用済みを意味しない。
+- 全テーブルの全カラム・全インデックスを利用コードと一対一で対応付ける作業は未完了。次のフェーズで高頻度クエリ・R2 pointer・collection state・Owner audit・retentionの順に利用コードと照合する。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | src/migrations/workflows初回棚卸し | src 51モジュール、migration 59ファイル、主要workflowの構成を確認。DDLの初回分類を実施したが、本番適用状態と全テーブル利用コードの対応は未完了。 | 残りモジュールの依存関係を整理し、主要テーブル/インデックスとクエリを対応付ける。 |
