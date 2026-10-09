@@ -316,6 +316,56 @@
 | MightPulse VIP credentials legacy | user-mighty.js、user_mighty_credentials migrations | ソース上の主要経路との接続未確認 | 全repo参照/管理画面/API接続/採用仕様。削除判断はしない |
 | D1 schema reconciliation | scripts + GitHub workflows | ツールあり・本番スキーマ照合未完了 | Migration適用履歴、index再構成、破壊的変更の承認ガード |
 
+## 2026-10-10 第2巡目 — index.js内画面コンポーネントの初期マッピング
+
+`src/index.js` 内のトップレベル `render*` 関数34件を抽出。HTML文字列内のフォーム・ボタン・API文字列を機械抽出した。イベントリスナーを動的生成する箇所や別モジュールの画面は、この集計に含まれない場合がある。よって初期マッピングであり、機能網羅の完了判定ではない。
+
+| render関数 | 行 | フォーム | ボタン文字列数 | API参照（抽出分） | 初期判定 |
+|---|---:|---:|---:|---|---|
+| `renderKingdomWatchlistPage` | 1271 | 0 | 3 | `/api/auth/discord`, `/api/kingdom-watchlist`, `/api/kingdom-watchlist?action=refresh`, `/api/kingdom-watchlist?action=cancel`, `/api/kingdom-watchlist?action=toggle`, `/api/kingdom-watchlist?watchlist_id=`, `/api/player-watchlist?governor_id=`, `/api/player-watchlist`, `/api/kingdom-watchlist/data?watchlist_id=`, `/api/kingdom-watchlist?action=create` | UI操作/API対応の個別照合が必要 |
+| `renderMyPlayerPage` | 2175 | 0 | 5 | `/api/auth/discord`, `/api/me/player`, `/api/me/advanced`, `/api/me/vip`, `/api/me/vip/mighty-check`, `/api/me/mightpulse-key` | UI操作/API対応の個別照合が必要 |
+| `renderPlayerWatchlistPage` | 2587 | 0 | 2 | `/api/auth/discord`, `/api/player-watchlist`, `/api/player-watchlist?governor_id=` | UI操作/API対応の個別照合が必要 |
+| `renderAdminDiagnosticsPage` | 3245 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderMightPulseResearchPage` | 3372 | 0 | 21 | `/api/admin/mightpulse-research?` | UI操作/API対応の個別照合が必要 |
+| `renderMightPulseProbePage` | 3727 | 0 | 4 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerActivity` | 3762 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderGoogleDriveSetupPage` | 3827 | 0 | 1 | — | UI操作/API対応の個別照合が必要 |
+| `renderApiPoolRankingTestResult` | 5604 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderApiPoolTestResult` | 5617 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerVisibilityPage` | 5721 | 0 | 0 | `/api/admin/player-visibility` | UI操作/API対応の個別照合が必要 |
+| `renderDataRetentionPage` | 5798 | 1 | 1 | `/api/admin/data-retention` | UI操作/API対応の個別照合が必要 |
+| `renderApiPoolAdminPage` | 5831 | 3 | 6 | `/api/admin/api-pool/add`, `/api/admin/api-pool/test-player`, `/api/admin/api-pool/test-ranking` | UI操作/API対応の個別照合が必要 |
+| `renderPlayerSearchPage` | 6315 | 1 | 1 | `/api/auth/discord` | UI操作/API対応の個別照合が必要 |
+| `renderPlayerChangesPage` | 6455 | 0 | 0 | `/api/auth/discord` | UI操作/API対応の個別照合が必要 |
+| `renderChangesShell` | 6501 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerHistoryPage` | 6541 | 0 | 0 | `/api/auth/discord` | UI操作/API対応の個別照合が必要 |
+| `renderHistoryShell` | 6572 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerPage` | 6736 | 0 | 0 | `/api/auth/discord` | UI操作/API対応の個別照合が必要 |
+| `renderPlayerShell` | 6851 | 1 | 2 | `/api/admin/player-export?governor_id=`, `/api/player-watchlist`, `/api/player-watchlist?governor_id=` | UI操作/API対応の個別照合が必要 |
+| `renderSegmentedHeroStar` | 7043 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerOptionalAssets` | 7085 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderPlayerAdvancedSections` | 7112 | 0 | 0 | `/api/admin/player-export?governor_id=` | UI操作/API対応の個別照合が必要 |
+| `renderAdminKingdomRankingsPage` | 7684 | 1 | 1 | `/api/admin/kingdom-rankings`, `/api/admin/kingdom-ranking-export?kid=` | UI操作/API対応の個別照合が必要 |
+| `renderAdminControlPage` | 7748 | 0 | 0 | — | UI操作/API対応の個別照合が必要 |
+| `renderOwnerPlayerLinkSupportPage` | 7915 | 0 | 2 | `/api/owner/player-link-support` | UI操作/API対応の個別照合が必要 |
+| `renderOwnerAdminPage` | 7942 | 0 | 2 | — | UI操作/API対応の個別照合が必要 |
+| `renderPublicStatusPage` | 8303 | 0 | 3 | `/api/admin/monitoring-profile`, `/api/admin/r2-archive-objects?limit=50` | UI操作/API対応の個別照合が必要 |
+| `renderSupportPage` | 8790 | 0 | 0 | `/api/auth/discord` | UI操作/API対応の個別照合が必要 |
+| `render1` | 8799 | 0 | 1 | — | UI操作/API対応の個別照合が必要 |
+| `render2` | 8800 | 0 | 2 | — | UI操作/API対応の個別照合が必要 |
+| `render3` | 8801 | 0 | 4 | — | UI操作/API対応の個別照合が必要 |
+| `renderInitial` | 8803 | 0 | 0 | `/api/support/context` | UI操作/API対応の個別照合が必要 |
+| `renderHome` | 8807 | 0 | 3 | `/api/auth/discord`, `/api/player-watchlist`, `/api/kingdom-watchlist` | UI操作/API対応の個別照合が必要 |
+
+### 画面→APIの重点照合対象
+
+- **王国Watchlist**: `/api/kingdom-watchlist` と `action=create/refresh/cancel/toggle`、削除の `watchlist_id`、データ取得、Player Watchlist参照。状態遷移・二重送信防止・失敗表示を確認する。
+- **Player Watchlist**: `/api/player-watchlist` の一覧/追加/削除と比較画面への遷移。比較先ルートの未解決参照2件を含めて確認する。
+- **My Player**: `/api/me/player`、`/api/me/advanced`、`/api/me/vip`、Mighty判定。ロール・所有アカウント・APIキー提供状態の表示と更新を照合する。
+- **API Pool管理**: 画面内の追加・テスト・Mighty判定・キー削除・提供者変更に対し、管理APIルートの認可とHTTP methodを確認する。
+- **Retention/王国ランキング管理**: 画面のフォームと更新APIを照合し、読み取り/書き込み範囲および実行ジョブとの接続を確認する。
+- **Owner管理/Player Link Support**: ロール変更、ユーザー状態変更、Watchlist管理、本人確認/移管/却下、監査ログの状態遷移を照合する。
+- **Public Status**: `/api/admin/monitoring-profile` と `/api/admin/r2-archive-objects` の呼び出しが公開画面から発生する設計か、認証・情報露出・D1/R2コストの観点で個別確認する。静的な文字列だけでは安全性を断定しない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
