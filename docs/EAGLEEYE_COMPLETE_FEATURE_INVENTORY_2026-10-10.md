@@ -969,10 +969,10 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - [x] `wrangler.jsonc` の主要binding・Cron・Queue・Preview差分を記録
 - [x] Workflow・スクリプト・公開アセットを列挙
 - [x] src/index.js のルート呼び出し名・import・対象モジュールのexport照合（不一致候補を台帳化。実行時確認は未実施）
-- [ ] 全Migrationのテーブル/列/制約/indexと現行SQLの双方向照合完了
-- [ ] 全画面のUI機能、ボタン、フォーム、API呼び出し、権限、空/失敗状態の棚卸し完了
-- [ ] 実装あり/未接続/重複/未実装/仕様未確定を機能ごとに確定
-- [ ] テスト可能性と本番E2E確認項目を機能ごとに定義
+- [x] 全Migrationのテーブル/列/制約/indexと現行SQLの静的双方向照合を一巡（候補未解決あり）
+- [x] 全画面のUI機能、ボタン/フォーム、API呼び出し、権限、空/失敗状態を静的に一巡（実機未検証）
+- [x] 実装あり/未接続候補/重複・経路差/仕様未確定/外部検証待ちを機能ごとに分類
+- [x] テスト可能性と本番E2E確認項目を機能ごとに定義（実施は別途）
 
 ## 次の作業
 
@@ -1478,3 +1478,100 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **次に優先すること:** P0候補を機能分類へ集約し、どのテストで何を確定できるかを整理する。現時点でコード修正・Migration修正・Workflow修正はしない。
 - **未実施:** Cloudflare実D1 schema確認、Query Plan/Insights、ビルド、HTTP、ブラウザE2E、R2実データ確認。本番の稼働状況や発生済み障害を断定しない。
 - **固定制約:** D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
+
+
+## 2026-10-10 パッケージ19 — 全機能の状態分類（静的監査基準）
+
+### 判定ラベル
+
+- **実装あり・接続経路あり（実行未検証）**: 画面/API/関数間の静的接続が読める。正常動作を意味しない。
+- **未接続/不一致候補**: route/import/export/DDL/権限/データ保存・読出しの接続差が疑われる。
+- **重複/経路差候補**: 同じ情報を別経路で扱う、またはUI/APIで処理が異なる。
+- **仕様/運用未確定**: 呼出元、運用スケジュール、期待仕様、保持方針がコードだけでは確定できない。
+- **外部/本番検証待ち**: 実D1/R2/Queue、外部API、OAuth、ブラウザ、Cloudflare runtimeの実動作が必要。
+
+### 機能領域別の最終分類
+
+| ID | 機能領域 | 分類 | 根拠・未解決事項 | 優先度 |
+|---|---|---|---|---|
+| F01 | Discord OAuth / Session / User roles | 実装あり・接続経路あり、外部/本番検証待ち | OAuth state/cookie/失敗遷移、ACTIVE/DISABLED、各role guardは実ブラウザ/認証で未確認 | P1 |
+| F02 | Player Search / Profile / Refresh | 実装あり・接続経路あり、スキーマ差候補あり | `players.source_observed_at`と`api_observations.source_observed_at`のMigration差候補。部分一致検索のQuery Plan未確認 | P0 |
+| F03 | Player Compare | 未接続候補 | `/api/player-compare` → `handlePlayerCompareApi`、`/player/compare` → `renderPlayerComparePage`の定義/import接続を静的確認で確定できず。実行/build未検証 | P0 |
+| F04 | Player History | 経路差候補 | APIはD1/R2 merge helper、画面はD1直接読出し。Retention後の結果差は未再現 | P0 |
+| F05 | Player/Kingdom Change Events | Retention後readback不足候補 | 画面/APIはD1直接参照、`change_events`専用R2 readback経路が見当たらない | P0 |
+| F06 | Player/Kingdom Watchlist | 実装あり・接続経路あり、schema差候補あり | `kingdom_watchlist_jobs.source_first_at/source_last_at`のDDL差候補。Cron/Queue起動・再試行・実消費は未検証 | P0 |
+| F07 | Kingdom Catalog / Discovery / Seeder / Roller | 実装あり・運用接続未確定 | Seeder/rollerのWorker起動接続候補、R2 binding名差候補。全王国収集が定期実行されるか未確認 | P0 |
+| F08 | Kingdom Ranking / Portal / Preferences | 実装あり・一部SQL不一致候補 | `kingdom_ranking_current.ranking_snapshot_id`参照差候補。rank順Index/Query Plan未確認。Preferences UI/API/DB静的接続あり | P0 |
+| F09 | Alliance Catalog / Notification | 実装あり・識別子整合候補 | `target_id`形式の生成・通知側比較の差候補。実通知/dedupe未確認 | P1 |
+| F10 | MightPulse endpoints / normalizer / research | 実装あり・外部検証待ち | endpoint別response shape、rate limit、retry、API Poolキー選択、実応答は未検証 | P1 |
+| F11 | API Pool / Mighty key classification | 実装あり・状態整合候補 | DISABLEDキーとVIP資格判定、lease/expiry/並列競合、キー上限は実DB/外部応答未検証 | P0 |
+| F12 | My Player / player links / support requests | 実装あり・接続経路あり | Migration 0022→0023→0024→0026と`ensureSchema()`の主要列/制約/Indexは静的に整合。support tableはMigration依存、所有権/移管/E2E未検証 | P1 |
+| F13 | Player Visibility | 権限不一致候補 | ページ側ADMIN/OWNER許可とAPI側OWNER限定の差候補 | P0 |
+| F14 | Retention / R2 archive / Emergency Buffer | 実装あり・起動/readback未確定 | retention job / buffer drainの呼出元候補、archive後のreadback範囲、失敗時保全をruntimeで未検証 | P0 |
+| F15 | Diagnostics / System Status / Logs / Trace | 実装あり・コスト/露出候補 | 公開statusのD1 read量、null metricsのSafety Gate判定、24h範囲/Export/Queue経路未検証 | P1 |
+| F16 | Safety Gate / Service Usage / Queue / R2 | 実装あり・運用結果未検証 | metrics欠損時のNORMAL判定候補、R2 read-modify-writeの競合/IO増幅候補 | P0 |
+| F17 | Owner Kingdom Load Test | 実装あり・route接続候補あり | CSV export UI/handlerはあるがroute接続候補。Safety Gate、cancel/resume、progress、usageは実行未検証。実行禁止 | P0 |
+| F18 | Google Drive OAuth / Google Sheets export | 実装あり・設定/権限不一致候補 | redirect URIの不一致候補、token refresh/Owner/Admin export guardは実OAuth未検証 | P1 |
+| F19 | Discord Support / ticket lifecycle | 実装あり・外部検証待ち | Interactions署名/時刻、ticket state transition、channel権限、audit logは実Discord未検証 | P1 |
+| F20 | UI shared shell / role bar / double-submit guard | 一部実装あり・適用範囲未確定 | `eagleeye-ui.js`とindex内wrapperの全画面適用、iPhone Safari/連打/失敗状態は未実機検証 | P2 |
+| F21 | User Mighty credentials legacy path | 仕様未確定・削除保留 | `user-mighty.js`/`user_mighty_credentials`とAPI Pool資格系の採用関係が未確定。不要と断定せず保持 | P2 |
+| F22 | Schema reconciliation / migration workflows | ツール実装あり・本番適用未確認 | Scriptの対象範囲は複数経路。実適用履歴・Production driftは未照会。実行は本番変更の可能性があるため未実施 | P0 |
+| F23 | Gateway API / data export / raw inspector | 実装あり・外部/権限検証待ち | prefix routeはある。各subrouteのrole/method/payload/limitと実応答は未検証 | P1 |
+| F24 | Kingdom Collection Coverage / R2 backfill | 実装あり・指標/並列実行候補 | coverageが全王国収集を表すか未確定。Backfill counter/CAS、R2存在確認、並列実行は実行未検証 | P1 |
+
+### P0候補の集約（修正前に再確認が必要）
+
+1. Schema/SQL差候補: `api_observations.source_observed_at`, `players.source_observed_at`, `kingdom_watchlist_jobs.source_first_at/source_last_at`, `kingdom_ranking_current.ranking_snapshot_id`。
+2. 接続/権限候補: Player Compare route、Load Test export route、Player Visibility ADMIN/API role差。
+3. 保全/読出し候補: Player History UI/API差、Change Events archive readback、Retention/Buffer drainの起動接続。
+4. 収集/コスト候補: Seeder/Roller起動接続、R2 binding差、Safety Gate null metrics、Preview/Production resource sharing、Ranking current rank-order Query Plan。
+5. API Pool資格候補: DISABLED keyがVIP資格判定に残る可能性。
+
+これらは**静的監査での候補分類**であり、実行時障害の確定診断ではない。コード修正・Migration修正・Workflow修正は本タスクでは行わない。
+
+## 2026-10-10 パッケージ20 — 機能別テスト可能性・確認行列
+
+### テストレーン
+
+- **S (Static)**: ソース/Migration/設定を読む。今回実施した範囲。
+- **B (Build/Local)**: build/import/route smoke/SQL prepare等をローカルまたは隔離Previewで実行。今回未実施。
+- **P (Preview)**: 明示的に分離されたPreviewリソースを用いる統合テスト。設定上Preview/Production resource sharing候補があるため、分離確認が済むまでは禁止。
+- **R (Production read-only)**: 本番状態を読むだけの確認。権限・データコスト・個人情報を事前に確認し、明示許可がある場合のみ。
+- **W (Production write / External side effects)**: 本番DB変更、Queue操作、収集、外部API、OAuth/Discord/Google実操作、負荷テスト。明示許可と実施計画がない限り実施しない。
+
+| 対象 | 現時点で可能な確認 | 次に必要なテスト | 成功条件 | 失敗/空データ確認 | レーン/注意 |
+|---|---|---|---|---|---|
+| Route/import/export | S | B: build/import + route smoke | 全route handlerが解決し、method/guardが期待どおり | 未定義handler、404/500、権限なし | B |
+| Migration/schema | S | 隔離DBで全Migration適用→PRAGMA table_info/index_list/foreign_key_list | 現行SQLの全列がDDLに存在、制約/Index一致 | 空DBからの適用、既存DB upgrade、再適用/重複番号0008 | B。Production適用は別承認 |
+| API observations / Players | S | 隔離DBでINSERT/UPSERT/SELECT/refresh | source時刻列とR2 pointerが整合し失敗時も元データ保全 | 欠損source timestamp、R2失敗、既存行更新 | B。実本番schemaは未確認 |
+| Watchlist jobs | S | fake provider + isolated D1でjob lifecycle | queued→running→completed/failed、cursor/count一貫 | 列欠損、API枯渇、cancel/retry、空ランキング | B/P分離必須 |
+| Player Compare | S | build + GET/POST route smoke + role guard | handlerが解決し、比較ページ/APIが期待形式を返す | player not found、片側欠損、未認証 | B |
+| Player History / Changes | S | D1+R2 fixtureでRetention前後を比較 | API/画面が仕様どおり同じ期間を表示しarchive後も必要データに到達 | R2 missing/corrupt/timeout、D1 cleanup済み、空履歴 | B。R2 readback仕様確定が先 |
+| Ranking current/preferences | S | isolated D1でcurrent UPSERT/DELETE/preferences round-trip、EXPLAIN QUERY PLAN |列/PK/順序/設定保存読出しが整合 | 空board、同rank、board未登録、SQL列欠損 | B。広範囲ranking_snapshots読出し禁止 |
+| Player Visibility | S | role matrix: BASIC/ADVANCED/VIP/ADMIN/OWNER + ACTIVE/DISABLED | UI/APIとも仕様どおりのroleが許可される | ADMIN API拒否、disabled account、設定なし | B |
+| API Pool / Mighty eligibility | S | mock provider + isolated D1 lease/status transition | eligible keyのみ選択、lease重複なし、失敗status整合 | DISABLED/REVOKED/COOLDOWN、0 key、同時claim、provider 401/429 | B。実キーを使わない |
+| Catalog / Seeder / Rollers | S | trigger graph + fake providerで一件/小バッチ | state/cursor/last_success/failureとR2 pointerが一貫 | empty catalog、partial failure、R2 write failure、重複起動 | B。全王国収集は行わない |
+| Retention / Emergency Buffer | S | isolated D1/R2 fixtureでarchive→verify→delete順をテスト | archive成功を確認した行だけ削除、buffer drain再開可能 | R2 failure、partial batch、invalid JSON、retry exhausted | B。Production retention実行禁止 |
+| Safety Gate / Service Usage | S | missing/null/stale metrics unit tests + queue fixture | 不明metricsを安全側で扱い、二重archive/欠損なし | API unavailable、metrics null、queue redelivery、R2 conflict | B。実Queue操作なし |
+| Load Test | S | fake-only simulationでcancel/resume/export/status | OWNER guard、cancel状態、counts/progressが整合 | 0 target、partial fail、double-click、export route missing | B。実負荷テスト禁止 |
+| Google Drive/Sheets | S | mock OAuth/token + mocked export | redirect/state/role guard/token refreshが一致 | denied consent、expired token、429、empty export | B。実OAuth/Drive writeなし |
+| Discord Support/Notifications | S | signed fixture/mock Discord responses | signature/time/permissions/state transition/dedupeが正しい | invalid signature、replay、no channel permission、duplicate event | B。実Discord送信なし |
+| Diagnostics/Logs/Export | S | bounded fixture + method/role tests | period limit/24h filter/export accessが仕様どおり | empty logs、malformed cursor、unauthorized、large result | B。D1 read量を測る |
+| UI shell / Safari / double-submit | S | browser tests desktop + iPhone Safari | role bar/labels/disable-on-submit/restore-on-errorが一貫 | slow response、double tap、validation error、offline | B/P。実機未確認 |
+| Gateway / raw data / data export | S | per-subroute method/auth/limit/PII tests | routeごとにrole/method/shape/limitが適切 | unknown route, empty payload, oversized request | B |
+| Schema workflows / Preview isolation | S | workflow dry-run/config diff + separate test resources | apply target/migration range/approval gateが明確、Previewが本番と完全分離 | missing migration, drift, wrong binding/queue | B。Production workflowは実行しない |
+
+### 優先順（テスト計画）
+
+1. **P0 / B1:** build/import/route resolution、schema mismatch候補4件、Player Compare、Player Visibility、Load Test export routeを隔離環境で確定。
+2. **P0 / B2:** History/Changes Retention後のreadback、Retention/Emergency Bufferの起動経路、Safety Gate null metrics、API Pool DISABLED-key資格。
+3. **P1 / B3:** Seeder/Roller起動、R2 binding名、Queue/Service Usage、Google OAuth redirect、Discord notification target ID、Preview/Production分離。
+4. **P2 / B4:** UI shared shell/Safari/連打防止、Legacy user Mighty経路の採用仕様、検索/ランキングQuery Planと実測コスト。
+5. 各Bテストが合格してからのみ、Previewを使用する必要性を評価する。Production read/writeや外部サービス操作は、この静的監査の完了によって自動承認されたことにはならない。
+
+### 100%到達の定義と限界
+
+- 20/20は「静的監査の成果物（一覧、分類、テスト行列、引継ぎ）が完成」の意味。
+- これは全機能が正常・実装済み・本番稼働中という意味ではない。候補を解消せずに残すことも監査結果の一部。
+- 実D1 schema/Query Plan、build、ブラウザE2E、Preview統合、本番稼働/外部連携は未実施。各テストレーンで別途確認が必要。
+- D1 Free reads優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。デプロイ、本番D1変更、Queue操作、収集/負荷テスト、外部API呼び出しなし。
