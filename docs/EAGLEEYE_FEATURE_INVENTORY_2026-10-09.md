@@ -1794,3 +1794,49 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 次はローラー/Seederの実際の起動経路をリポジトリ全体で確認し、全ルートの認証・ACTIVE・method照合と残りMigration/SQLを継続する。
 - コード変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テストは禁止を維持する。
 - **D1 Freeの読み取り量を最優先し、ranking_snapshots の広範囲読み取りを絶対に復活させない。**
+
+
+---
+
+## 2026-10-09 継続監査：Migration 0030〜0039・Semaphore・定期実行接続
+
+### Migration 0030〜0039の静的照合
+
+- **0030〜0033 Load Test履歴/待機メトリクス：** kingdom_load_test_runs にAPI concurrency、成功/失敗数、保存行数、経過時間、API Pool待機値、待機分布JSON等を追加。SQL定義は列追加のみで、現行の本番スキーマ・再実行履歴は未確認。既存コードのINSERT/UPDATEでこれらの列が常に全て更新されるかは引き続き照合対象。
+- **0034〜0036 Collection Semaphore：** 0034は旧カウンター行、0036は最大1000個の個別lease slotとlease indexを作成。src/collection-semaphore.js は1回のUPDATEで空き/期限切れslotを確保し、token一致でreleaseし、期限切れslotを再取得する方式。リクエスト時DDLは行わない。
+- **0035 API Request Locks：** api_request_locks(lock_key, lock_token, lock_until, updated_at) と lock_until indexを作成。src/index.js の acquireApiRequestLock/releaseApiRequestLock は期限切れlockのみ置換し、tokenで解放する構造を確認。期限切れ後に元処理がまだ継続していた場合の二重実行可能性はTTL設計と実処理時間に依存し、実測は未実施。
+- **0037〜0038 Kingdom Catalog：** kingdom_catalogの基本列/status indexと、boards_json/boards_observed_atを追加。src/kingdom-catalog.js、src/kingdom-catalog-store.js、R2 backfillの現在のSQL参照と大枠で対応。0038はALTER TABLEを直接実行するため、Migration管理外で再実行されると失敗する性質があるが、通常の一度限り適用では不具合とは断定しない。
+- **0039 Ranking Roller state：** kingdom_ranking_collection_stateのカーソル/状態/成功失敗カウンターを作成し、固定state_key行を初期化。src/kingdom-ranking-roller.js が参照・更新する列と対応している。
+- Migration 0030〜0039のSQLファイルを確認したが、実適用履歴・本番スキーマ・Query Plan・Load Test履歴行の実データは未確認。
+
+### 実行経路の照合
+
+- 最新src/index.jsのscheduled()が実際に呼ぶ定期処理は、API Pool自動復旧、Kingdom Catalog日次refresh、Discord Change Event通知の3つ。wrangler.jsoncのCron頻度は5分ごと。
+- runKingdomSeeder、runKingdomRankingRoller、runAllianceRoller、runPlayerRollerはindex.jsからimportされているが、確認したscheduled()およびHTTP route範囲で起動呼び出しは見つからない。現時点で「自動定期実行中」とは扱わない。外部/別モジュールからの呼び出しを完全に否定するには全リポジトリ参照確認が残る。
+- runKingdomCatalogDailyRefresh()は discovery state がRUNNINGの場合にスキップする。しかし、Discovery本体は開始時にstateをRUNNINGへ更新してから外部API処理を行うため、途中でWorkerが停止してstateが残った場合、次回以降のrefreshが永続的にスキップされる可能性がある。FAILED/古いRUNNINGを復旧する経路が別にあるか未確認。実際のstuck状態は未確認。
+- src/collection-semaphore.js のrefreshCollectionPermit()は期限がまだ有効なtokenだけを延長する。確認したsrc/全体の呼び出し経路ではこの関数の利用箇所を確認できていない。collection-semaphore limiterの返す関数はreleaseのみ。長時間処理が180秒のleaseを超えるとslotが再取得可能になる可能性があるため、呼び出し全体の照合を継続する。実際の超過や同時実行違反は未確認。
+- SeederとRanking RollerはORDER BY kid LIMIT ? OFFSET ? でCatalogをページングし、Ranking Rollerは別途COUNT(*)で総件数を取得。Catalogが処理中に増減した場合のOFFSETずれ候補を記録。D1の実読み取りコストは未計測。
+
+### 監査上の区分
+
+- 静的に確認したこと：Migration定義、現在のソース参照、scheduled()の直接呼び出し、Semaphore lease更新関数の実装。
+- 未確認：本番Migration適用状況、Worker実行ログ、定期処理の実稼働頻度、Semaphore lease超過、Discovery stateのstuck発生、D1 Query Plan/消費量。
+- コード変更・Migration変更・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshots の広範囲読み取りを絶対に復活させない。**
+
+---
+
+## 最新監査進捗（2026-10-09・Migration 0030〜0039監査後）
+
+**全体進捗目安：60%**（作業管理上の概算。コード行数の網羅率・本番動作確認率ではない）
+
+| 監査ワークストリーム | 状態 | 進捗目安 |
+|---|---|---:|
+| 機能台帳・主ルート分類 | 主ルートの入口分類済み。個別ハンドラー照合は継続 | 75% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/session、Owner API一部、watchlist、Mighty判定、Ownerバックフィル入口を部分確認。全ルート照合は未完了 | 42% |
+| Migration・SQL・制約・インデックス | 0030〜0058の複数範囲を部分照合。初期Migration・全SQL参照・本番適用履歴は未確認 | 48% |
+| Cron・Queue・R2・定期処理接続 | scheduled()の直接呼び出し、Queue/R2一部、Semaphoreとローラー候補を確認。起動経路の全体照合は未完了 | 60% |
+| テスト基盤・実行時検証 | 静的監査中心。Migration適用履歴、Query Plan、実行時/本番E2Eは未確認 | 10% |
+
+- 60%は今回のMigration 0030〜0039、定期実行経路、Semaphoreの部分照合を反映した暫定値。監査完了や本番検証完了を意味しない。
+- 次はローラー/Seederの全参照と呼び出し元、Discoveryのstuck復旧、API route認証/ACTIVE/method、残りMigration/SQL参照を継続する。
