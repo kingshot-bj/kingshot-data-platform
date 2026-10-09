@@ -880,7 +880,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### Schema reconciliation scriptの範囲
 
-- `scripts/reconcile-d1-schema.mjs`はverify-onlyと `--apply`を分け、`write()`はapply時のみSQLを実行する設計。API Pool lease列/Index、watchlist limits、diagnostic/system log、watchlist jobs/locks、current ranking tables、user_player_links/support、load-test schema、Semaphore slots、Catalog/Roller state、Alliance/Player stateなどを対象にする。
+- `scripts/reconcile-d1-schema.mjs`はverify-onlyと `--apply`を分け、`write()`はapply時のみSQLを実行する設計。required migration listは0043までで止まり、現行Migration 0044–0058を全件対象にしていない。API Pool lease列/Index、watchlist limits、diagnostic/system log、watchlist jobs/locks、current ranking tables、user_player_links/support、load-test schema、Semaphore slots、Catalog/Roller state、Alliance/Player stateなど、旧来の既知driftを対象にする。
 - このスクリプトはMigrationを再実行するだけでなく、既存データの変換/不足schemaの補修を含む。Productionへ適用する場合は入力確認、Time Travel bookmark、schema/migration history差分、実行後検証を一体で扱う。
 - `scripts/reconcile-0053-production-drift.mjs`もRemote D1を対象にするため、実行前にread-only/modifyの両方の挙動を確認する。今回どのスクリプトも実行していない。
 - Workflow一覧を確認したことは、ProductionのMigration適用済み状態を確認したことを意味しない。実際の `d1_migrations` とスキーマは未取得。
