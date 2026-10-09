@@ -1058,3 +1058,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 ### ローラー配線を修正する前に必要な判断
 - 「実装済み」台帳と「本番で稼働中」台帳を分ける。関数・UIが存在すること、ルートがあること、Cron/Queueに接続されること、実環境で成功したことを別々の状態として記録する。
 - ローラーを接続する場合は、D1 Free読み取り量を優先し、既存のAPI Poolと収集Semaphoreを迂回させない。特に複数王国×複数ボードの並列数を固定せず、利用可能キー数・Safety Gate・負荷上限に合わせて設計する。
+
+
+### [高・潜在障害] 3つの収集ローラーが存在しないR2 binding名 `R2_ARCHIVE` を参照
+- `wrangler.jsonc` のR2バインディング名は本番/previewとも `ARCHIVE`。
+- 一方、`src/player-roller.js` は `materializePlayer(..., env.R2_ARCHIVE, ...)`、`src/kingdom-ranking-roller.js` は `saveKingdomRankingBoard(..., archiveBucket: env.R2_ARCHIVE, ...)`、`src/alliance-catalog.js` は `env.R2_ARCHIVE` の有無を見て同盟履歴をR2保存する。
+- したがって、これらの処理を現在の `wrangler.jsonc` のまま実行した場合、R2 bucketがundefinedとなり、R2_ONLYの履歴保存に失敗する、または同盟履歴アーカイブがスキップ/失敗する可能性が高い。
+- これらローラーはWorker入口から呼び出されていないように見えるため、現時点で定期実行中の障害とは断定しない。ただし、ローラー配線を有効化する前のブロッカー。既存の正しい `env.ARCHIVE` 参照と統一し、R2保存→D1更新の順序を含めてテストする必要がある。
+- 今回、コード修正・ローラー起動・R2への書き込みは行っていない。
