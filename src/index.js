@@ -8823,7 +8823,7 @@ async function renderHome(request, env) {
     <p>KingShotのプレイヤー・王国・ランキングを<br>データで観測しています。</p>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
-  <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/15_search_complete.png" alt="BJにゃん">
+  <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section>
 <div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
