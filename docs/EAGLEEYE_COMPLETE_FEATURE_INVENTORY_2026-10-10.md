@@ -748,6 +748,34 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Ticket stateの主保存先がDiscord channel/topicで、専用D1 ticket tableを確認できない。Discord channel削除/権限変更/Topic改変時の復旧・監査方法を仕様として確認する。
 - Interactionは署名検証あり。close/reopenの権限がDiscord member role IDsと ` + tick + `DISCORD_SUPPORT_ROLE_ID` + tick + ` に依存するため、実Guild/Role configの確認が必要。
 - 本棚卸しではDiscordチャンネル作成/更新、slash command登録、通知を実行していない。
+## 2026-10-10 第18巡目 — Safety Gate / Service Usage / Collection Coverage
+
+### Safety Gate
+
+- ` + tick + `safety-gate.js` + tick + `はCloudflare利用率、API Pool reserve、分単位/日単位のremaining quota、operation priorityを使ってNORMAL/CAUTION/WARNING/CRITICAL/HARD_STOPと許可可否を評価する。HARD_STOPはforceでも迂回不可。
+- PriorityはWATCHLIST 100、NORMAL 80、FORCED 60、CATALOG 50、SEEDER 40、ALLIANCE_ROLLER 30、PLAYER_ROLLER 20、LOAD_TEST 10。CRITICALではWATCHLIST未満を止める設計。
+- **静的な欠損メトリクス候補:** ` + tick + `maxUsagePercent()` + tick + `は有効なCloudflare値がなければ` + tick + `null` + tick + `を返すが、` + tick + `getSafetyState(null)` + tick + `が` + tick + `Number(null) === 0` + tick + `としてNORMALへ評価される経路がある。Cloudflare metricsが全欠損のときSafety GateがCAUTION/UNKNOWNでなくNORMAL扱いになる可能性がある。未計測/欠損と0%を区別するテストが必要。
+- Safety Gateの実使用経路、全呼び出し元がCloudflare metricsを渡すか、欠損時のfail-safe方針は未完了。
+
+### Service Usage Queue / R2 Archive
+
+- ` + tick + `recordServiceUsage()` + tick + `はeventを作成して ` + tick + `SERVICE_USAGE_QUEUE` + tick + `へ非同期送信する。Worker ` + tick + `queue()` + tick + `はLoad Test/System Event以外のメッセージをService Usage consumerへ渡す。
+- ` + tick + `service-usage-archive.js` + tick + `はR2の既存オブジェクトを読み、イベントをmergeしてgzip NDJSONとして再書き込みする。Queue設定はbatch size 100、timeout 30秒、retry 5、concurrency 1、DLQあり。
+- Queueが未設定/送信失敗の場合、` + tick + `enqueueServiceUsage()` + tick + `は ` + tick + `queued:false` + tick + `を返す経路がある。呼び出し側が戻り値を無視する場合はService Usageイベントが失われる可能性がある。
+- R2のread-modify-writeは同じアーカイブwindowに対する読み書きが増え、同時更新があればlost update候補となる。Queue concurrency=1の設定はあるが、Worker/再試行を含む実行競合は未検証。
+- Service UsageをD1へ全件書き込む設計ではなく、Queue→R2へ集約する方式。R2 object size、読み書き回数、再試行/DLQを確認する。
+
+### Kingdom Collection Coverage
+
+- ` + tick + `kingdom_collection_stats` + tick + `は初回/最終収集時刻、総収集回数、operator/user別回数、last_sourceを保持。` + tick + `recordKingdomCollectionSuccess()` + tick + `はupsertで累積値を更新する。
+- 現行呼び出し箇所は王国Watchlist job completionに結びついているように見えるため、Statsが全王国収集を意味するのか、Watchlist収集のみを意味するのかを仕様確認する。
+- ` + tick + `/admin/data-coverage` + tick + `と ` + tick + `getKingdomCollectionCoverage()` + tick + `はCatalog総数と統計表の件数/収集回数を表示する。0047のbackfill対象条件と実際のカバレッジ定義を照合する。
+
+### この領域の未完了項目
+
+- Safety Gate欠損値の扱いは優先度高。0%、UNKNOWN、未取得の意味を分ける仕様を先に決める。
+- Service Usage queue unavailable/Archive unavailable時の通知・復旧・DLQ消化方法を確認する。棚卸し中にQueueを手動操作しない。
+- Collection Coverageは統計テーブルに記録される対象イベントを特定し、UIの説明と数字の意味を一致させる。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
