@@ -335,3 +335,15 @@
 - 次はMigration列/制約/Indexと利用SQLの照合を続け、特に主要テーブル（api_pool_keys、users、players、kingdom_catalog、kingdom_ranking_current、watchlists、system_event_log）から埋める。
 - D1 Free読み取り最優先。広範囲 `ranking_snapshots` クエリ禁止。コード/本番操作は行わない。
 
+## 2026-10-10 棚卸し進捗 — 主要スキーマの最終形
+
+- 台帳更新コミット: `a50a845ec155f9bc54d92c94b628b0739c9dbb33`
+- 主要Migrationの最終形に関する注意を追加:
+  - `users`: 0001ではなく0056のVIP/OWNER対応CHECK制約を最終形として確認する。
+  - `api_pool_keys`: 0006基本列 + 0017 lease列 + 0057 Mighty metadata列。
+  - `kingdom_ranking_current`: 現在順位/previous_rankの読み取り基準。広範囲`ranking_snapshots`取得は禁止。
+  - `kingdom_catalog`: 0037基本列 + 0038 boards列 + 0048 R2 pointer/index。
+  - `system_event_log`: 0028のイベント/trace/operation/status列。SQL内の`trace_tree`は再帰CTE名でありテーブルではない。
+  - `user_player_links`: Migration 0022–0026と`ensureSchema()`の定義差を要照合。同関数はisolate内Promiseで初回実行を共有するため、毎リクエストDDLと断定しない。
+- 次は主要テーブルの列・CHECK/UNIQUE・Indexと利用SQLの列単位照合、続いて全Migrationの未照合項目を埋める。
+
