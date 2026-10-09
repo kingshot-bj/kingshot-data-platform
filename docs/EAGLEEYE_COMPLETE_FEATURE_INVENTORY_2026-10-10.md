@@ -418,6 +418,23 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - D1 Free読み取り量を最優先する。
 - ` + tick + `ranking_snapshots` + tick + ` の広範囲取得クエリを復活させない。
 - R2への移行を調査する際は、D1読み取り削減のためにR2オブジェクト全件列挙や無制限の読み込みを安易に追加しない。R2のlist/get回数とページングも確認対象にする。
+### 主要テーブルの最終形・SQL対応の確認ポイント
+
+| テーブル | Migrationで確認した最終形の重要点 | コード利用/次の確認 |
+|---|---|---|
+| `users` | 0001のCHECKはBASIC/ADVANCED/ADMIN。0056でBASIC/ADVANCED/VIP/ADMIN/OWNERを許可するよう再構築 | 0056を最終形として権限/ロール判定を照合する。古い0001だけで現行VIP非対応と判断しない |
+| `api_pool_keys` | 0006の基本キー/クォータ列に0017のlease列、0057のMighty metadata列が追加される | `api-pool.js`と`user-eligibility.js`が参照。各SELECT/UPDATEの列名と状態遷移を列単位で照合する |
+| `kingdom_ranking_current` | 0019で(kid, board, target_type, target_id)の主キー、previous_rank/observed_at/source_observed_at等を保持 | 現在順位/前回順位の取得元。D1読み取り最適化の基準とし、`ranking_snapshots`の広範囲取得を追加しない |
+| `ranking_snapshots` | 0007の履歴スナップショット表。複数の検索用Indexあり | 履歴保存/必要範囲の検索に用途を限定。広範囲SELECTを復活させない |
+| `kingdom_catalog` | 0037の基本列に0038のboards列、0048のR2 latest key/Indexが追加 | `kingdom-catalog-store.js`、R2 backfill、Portalの読み書きと、R2保存後にD1 payloadをNULL化する順序を照合 |
+| `system_event_log` | 0028でevent/trace/operation/status/metadata列と主要Indexを作成 | `system-log.js`、Queue、export、Retentionの列互換を確認。`trace_tree`はSQL内の再帰CTE名であり、別テーブルとして扱わない |
+| `user_player_links` | 0022–0026で複数アカウント、MAIN/SUB、active governor/mainの一意制約を導入 | `src/user-player-link.js`の`ensureSchema`はCREATE TABLE/INDEX IF NOT EXISTSを実行。モジュール内Promiseで初回実行を共有するが、cold isolateでのDDLとMigrationとの定義差を照合する |
+
+### Request-time schema処理の初期確認
+
+- ` + tick + `src/index.js` + tick + ` 自体には、直接の ` + tick + `CREATE TABLE/CREATE INDEX/ALTER TABLE` + tick + ` 文は見つからなかった。
+- ` + tick + `src/user-player-link.js` + tick + ` には ` + tick + `ensureSchema(db)` + tick + ` があり、テーブルと複数Indexを ` + tick + `IF NOT EXISTS` + tick + ` で作成する。モジュールスコープのPromiseで同一Worker isolate内の初回実行を共有するため、毎リクエスト実行と断定しない。
+- Migration 0022–0026の最終テーブル定義とこのensureSchema定義の完全一致、cold startでのD1操作コスト、実行時頻度は未確認。不要なスキーマ作成処理の削除/変更はこの棚卸しでは行わない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
