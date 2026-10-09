@@ -889,6 +889,12 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 - GitHub Actionsの ` + tick + `CLOUDFLARE_API_TOKEN` + tick + `、` + tick + `CLOUDFLARE_ACCOUNT_ID` + tick + `はGitHub Secrets参照。secret値自体は取得/表示していない。
 - Production D1変更Workflowのdispatch権限、Environment protection、required reviewers、Time Travel復旧手順を確認する。YAML上の文字列入力確認だけで承認フロー全体の安全性を断定しない。
+### Schema Reconciliationの適用範囲に関する注意
+
+- ` + tick + `scripts/reconcile-d1-schema.mjs` + tick + `は名前上はSchema Reconciliationだが、実装は特定の既知drift（API Pool lease列/Index、Watchlist/Diagnostics/System Log、User Player Link、Load Test、Semaphore、Catalog/Roller state等）を検査/補修するリスト型の処理。
+- 現行スクリプト内に ` + tick + `mighty_capable` + tick + ` / ` + tick + `mighty_checked_at` + tick + ` / ` + tick + `mighty_check_status` + tick + ` / ` + tick + `mighty_last_error_code` + tick + ` の追加/検証、Migration 0058の ` + tick + `user_kingdom_ranking_preferences` + tick + `、Migration 0054/0056の ` + tick + `user_mighty_credentials` + tick + `の検証は見当たらない。
+- よってこのWorkflowを実行したことだけで、全Migration 0001–0058のスキーマが現行コードと一致したと判定しない。実行前後にmigration historyと全重要テーブルの列/Indexを独立に検証する必要がある。
+- この指摘はスクリプトの現行範囲についての静的確認。意図的に対象を絞っている可能性があり、直ちに不具合/変更要求とはしない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
 以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
