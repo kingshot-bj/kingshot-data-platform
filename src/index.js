@@ -8818,9 +8818,6 @@ async function renderHome(request, env) {
 <main class="ee-main"><div class="ee-screen">
 <section class="ee-welcome">
   <div class="ee-welcome-copy">
-    <div class="ee-kicker">KINGSHOT DATA PLATFORM</div>
-    <h1>ようこそ、EagleEyeへ</h1>
-    <p>KingShotのプレイヤー・王国・ランキングを<br>データで観測しています。</p>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
