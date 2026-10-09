@@ -1215,3 +1215,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `claimApiPoolKey()` は呼び出しごとに新しい `leaseId` を生成し、原子的なUPDATEでキーを1本確保する。D1側でUPDATEが成功した後に応答だけがネットワークエラーとなった場合、再試行は新しい `leaseId` で別のキーを確保し、最初のキーのリースが120秒残る可能性がある。
 - 再現確認はできていないが、リース取得は単純な読み取りと違い、同じ操作を再試行しても同じ結果にならない非冪等操作。D1の一時障害時にAPI Poolの有効キー数を一時的に減らし得る。
 - 対応時は呼び出し側で再試行を避けるか、再試行間で同一の操作ID/lease IDを使う冪等なclaim方式を検討する。今回、D1障害を発生させる試験は行っていない。
+
+
+### [高・潜在データ損失] Retention cleanupはR2 bindingがないとアーカイブせずに古いD1行を削除する経路がある
+- `src/retention.js` の `runRetentionCleanupInternal(db, { archiveBucket = null })` は、`shouldArchive` を `archiveBucket` の真偽値で決める。
+- `archiveBucket` が未設定の場合、R2アーカイブ分岐を通らず、通常のDELETE分岐で保持期間を超えた `api_observations`、スナップショット、`change_events`、`owner_audit_log` 等を削除する。R2_ONLY運用の期待（アーカイブ成功後に削除）と不一致。
+- 現在 `runRetentionCleanup()` は `runDataRetentionJob()` 内でのみ呼ばれているように見え、その親ジョブ自体もWorker入口から呼び出されていないため、現時点で定期実行中のデータ損失が起きているとは断定しない。ただし将来Cron/手動実行経路を接続した際の重大なブロッカー。
+- 修正時はR2 bindingがない/未設定なら即時エラーで停止し、アーカイブ対象テーブルをアーカイブせず削除する分岐を許可しない。R2保存成功→D1削除の順序をテストする。今回はRetentionを実行していない。
