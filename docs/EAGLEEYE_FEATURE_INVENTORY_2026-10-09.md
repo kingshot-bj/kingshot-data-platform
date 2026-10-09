@@ -1638,13 +1638,13 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 ## 監査進捗（2026-10-09 時点・暫定）
 
-**全体進捗目安：43%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
+**全体進捗目安：44%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
 
 | 監査ワークストリーム | 状態 | 進捗目安 |
 |---|---|---:|
 | 機能台帳・主ルート分類 | 主ルートの入口分類済み。個別ハンドラー照合は継続 | 70% |
-| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/sessionとOwner APIの一部、watchlist等をサンプル確認。全ルート照合は未完了 | 35% |
-| Migration・SQL・制約・インデックス | 0008番号重複等の既知項目と0054〜0058の一部を確認。全Migration照合は未完了 | 20% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/sessionとOwner APIの一部、watchlist、Mighty判定APIをサンプル確認。全ルート照合は未完了 | 37% |
+| Migration・SQL・制約・インデックス | 0008番号重複等の既知項目と0054〜0058の一部、現行Mighty判定経路との接続を確認。全Migration照合は未完了 | 27% |
 | Cron・Queue・R2・定期処理接続 | scheduled/queueとR2経路を部分確認。全機能の接続・実動作は未確認 | 45% |
 | テスト基盤・実行時検証 | 自動テスト入口を継続調査中。本番E2E・実負荷検証は未実施 | 10% |
 
@@ -1671,3 +1671,31 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `registerUserMightyKey()` は既存登録をSELECTで確認してからINSERTする。DB側の部分UNIQUE INDEXが最終的な重複防止を担うため、同一ユーザーの同時登録が競合した際のエラー応答・ユーザー向けメッセージは別途確認対象とする。実際の競合は未試験。
 - 実DB照会・Migration再適用・API呼び出し試験は行っていない。コード変更・デプロイ・本番DB更新は禁止を維持する。
 - D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。
+
+
+### 2026-10-09 継続監査：Mighty判定APIの401経路・資格状態の扱い
+
+対象：`src/index.js` の `handleMyMightyCheckApi()`（現行API Poolの登録キーを判定する経路）。静的コード確認のみ。
+
+#### [中] 401のみの判定結果が「一時的な判定不能」へ誤分類される可能性
+
+- 各ユーザー提供キーを判定するcatch内で、HTTP 403以外は `transient = true` にする。一方、`checked++` は成功応答と403の分岐でしか増えず、401では増えない。
+- 401は `recordApiPoolFailure(... disable: status === 401)` へ渡され、キーは無効化される想定だが、その後も `transient=true`、`checked=0` のままループを抜ける。
+- 最後の分岐 `if (transient && checked === 0)` に入り、全キーが401だったケースでも `status:"UNDETERMINED"` を返す可能性がある。これは無効キーの確定結果を一時障害扱いにするため、画面表示・再判定・VIP資格の説明が実際のキー状態と一致しないおそれがある。
+- 429、5xx、timeout/network error等の一時障害と、401による認証失敗を別カテゴリにして集計する必要がある。修正案は401時に `checked` を増やす/一時障害フラグを立てない等だが、複数キー混在時の期待仕様を先に決めてから実装する。
+- 実API応答・画面表示・資格更新の再現試験は未実施。本番APIキーへのアクセスや再判定は行っていない。
+
+#### 登録テーブル/モジュールの接続確認メモ
+
+- `src/index.js` の現行Mighty判定経路は `api_pool_keys` を参照し、`handleMyAdvancedApi()` から `registerUserMightPulseApiKey()` を使って通常のユーザー提供キーを登録する。
+- 今回確認した主要ファイル（`src/index.js`、`src/user-eligibility.js`、`src/api-pool.js`、`src/mightpulse.js`、`src/data-collection-engine.js`、`src/gateway-api.js`、`src/kingdom-portal.js`、`src/retention.js`、`src/status-ops.js`、`src/admin-kingdom-load-test.js`）では、別モジュール `src/user-mighty.js` や `user_mighty_credentials` テーブルへの参照を確認できなかった。
+- このため `user-mighty.js` とMigration 0054のテーブルは、少なくとも上記の主要経路からは未接続の可能性がある。ただし、今回未確認の残りの `src/` ファイル・管理用スクリプト等に参照があるかは未確定なので、リポジトリ全体の未使用コードとはまだ断定しない。
+- 0054のテーブル/モジュールを正式な機能として使う設計か、旧実装の残骸かを確認し、API Pool方式との二重管理を避ける。確認が終わるまで削除・統合はしない。
+
+#### 次の監査対象
+
+- Mighty判定APIの401/403/429/5xx/通信障害の各分岐と、`recordApiPoolFailure()` / `setApiPoolMightyMetadata()` / VIP資格再評価の整合性を追う。
+- `src/` 全体で `user-mighty.js` と `user_mighty_credentials` の参照有無を確認し、Migration 0054の利用実態を確定する。
+- その後、HTTP routeごとの認証・ACTIVE・method照合と残りのMigration/SQL/index照合を継続する。
+- コード変更・Migration変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テスト起動は禁止を維持する。
+- **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
