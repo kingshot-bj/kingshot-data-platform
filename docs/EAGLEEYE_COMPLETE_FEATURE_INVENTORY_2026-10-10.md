@@ -642,6 +642,11 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - GatewayのBearer token設定/ローテーション/実環境アクセス元、full exportのサイズ制限/streaming挙動は未確認。
 - MightPulse Probe/Researchの全候補、API Poolキー選択、失敗分類、再試行、出力先/研究用蓄積をAPI単位で照合する。
 - R2 backfillはOwner UI/APIだけでなくMigration state、D1 pointer、R2 object catalog、再開/失敗時の状態遷移を一体で棚卸しする。
+### 全ソースのAPI文字列とルーター照合（第1回）
+
+- ` + tick + `src/index.js` + tick + `以外の ` + tick + `src/` + tick + `ファイル50件を対象に、静的文字列として書かれた `/api/...` 参照をルーターの完全一致パス/特殊prefixと照合した。
+- この文字列抽出でルーター未登録として残ったものは ` + tick + `/api/owner/kingdom-load-test/export?run_id=` + tick + ` のみ。handler/UIリンクは存在するが、import/route接続がないことを確認済み。
+- この結果は静的な文字列照合の範囲。実行時に組み立てるURL、外部クライアント、未使用の古い呼び出し元の存在までは否定しない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
