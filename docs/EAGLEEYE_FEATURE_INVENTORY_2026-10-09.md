@@ -1162,3 +1162,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/service-usage.js` はQueue bindingがない場合、または `queue.send()` が失敗した場合に警告を出して `queued:false` を返し、元のユーザー操作を失敗させない設計。
 - その場合、イベントをD1や別バッファへ退避する処理はこのモジュール内にないため、Service Usage分析の記録が欠落する可能性がある。これはユーザー操作をログ障害から保護する意図的なトレードオフだが、分析データの完全性は保証されない。
 - 運用要件として「ログ欠落を許容する」か「別経路へ退避する」かを明確にし、Queue障害時のログ・DLQ・件数差分を監視する。今回はQueueを停止した試験は行っていない。
+
+
+#### [高・環境分離の追加確認] PreviewのQueue producerも本番と同名Queueを参照
+- `wrangler.jsonc` の `previews.queues.producers` は `eagleeye-service-usage` と `eagleeye-load-test` を指定しており、本番側のproducer/consumerと同じQueue名を使っている。preview側にはこれらQueueのconsumer定義がない。
+- Queue名がCloudflare上で本番と共有される設定であれば、previewから送信したService Usageやロードテストメッセージを本番側consumerが処理する可能性がある。さらにpreviewのD1/R2も本番と同じリソースを参照しているため、preview上のOwner操作が本番データ更新・MightPulse API消費につながり得る。
+- Cloudflare側でpreview Queue bindingが実際にどのQueueリソースへ解決されるかは未確認だが、設定ファイル上の環境分離不足は明確なリスク。preview用Queueを別名で作成してbindingするか、previewからQueue producerを外し、書き込み/外部API実行を禁止するガードが必要。
+- 実際にpreviewからQueue送信はしていない。環境分離確認が終わるまで、preview環境でOwnerロードテストやバックフィルを実行しない。
