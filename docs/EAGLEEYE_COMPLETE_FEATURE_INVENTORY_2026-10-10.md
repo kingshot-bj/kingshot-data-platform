@@ -1328,3 +1328,12 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **`ranking_snapshot_id`:** 0001〜0058のMigrationを確認した範囲で、`kingdom_ranking_current` に当該列を追加するDDLは見当たらない。0019のCREATE定義にも存在しない。一方、`src/index.js:getLatestAdminKingdomRankingSnapshot()` が `kingdom_ranking_current` からSELECTしているため、列不一致候補は高確度。
 - **重要な区別:** `src/ranking-store.js` の `buildKingdomRankingInsertStatements()` が `ranking_snapshot_id` を使うのは別テーブル `ranking_snapshots` へのINSERTであり、それ自体は不一致ではない。問題候補は `kingdom_ranking_current` を読むAdmin ranking helper側に限定して記録する。
 - **制限:** これはMigrationファイルと確認したSQLコードの静的照合。適用済みMigrationの実履歴、実DB schema、ルート実行結果は未確認。修正は行っていない。
+
+
+### G. `scripts/reconcile-d1-schema.mjs` とMigration 0044–0058の対応範囲
+
+- **静的根拠:** reconcile scriptの `MIGRATIONS` 配列は `0017_api_pool_atomic_lease.sql` から `0043_alliance_collection_state.sql` までを列挙し、0044–0058を含まない。
+- **機能例:** Migration 0058は `user_kingdom_ranking_preferences` と `idx_user_kingdom_ranking_preferences_kid` を作成し、`src/index.js` は同テーブルへINSERT/UPSERTする。reconcile scriptには同テーブル名の参照がない。
+- **他の未掲載候補:** 0057のAPI Pool Mighty metadata列、0054/0056のMighty credentials、0053/0055のPlayer Visibility role/schema変更などもreconcile scriptの文字列検索では対応定義が見当たらない。
+- **評価:** このscriptが0044–0058の新しいスキーマを再構築/修復する役割も担う想定なら、現状のMigrationリストとDDL補修対象の追随不足候補。scriptが過去スキーマの限定的な照合専用である可能性もあるため、運用上の目的・呼出元を確認するまでは確定バグ扱いしない。
+- **未確認:** scriptの運用手順、CI/Workflowからの呼出し、本番で使われているか、0058のテーブルが実DBにあるか。実行はしていない。
