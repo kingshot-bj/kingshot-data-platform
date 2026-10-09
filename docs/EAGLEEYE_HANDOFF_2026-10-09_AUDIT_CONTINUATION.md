@@ -347,3 +347,12 @@
   - `user_player_links`: Migration 0022–0026と`ensureSchema()`の定義差を要照合。同関数はisolate内Promiseで初回実行を共有するため、毎リクエストDDLと断定しない。
 - 次は主要テーブルの列・CHECK/UNIQUE・Indexと利用SQLの列単位照合、続いて全Migrationの未照合項目を埋める。
 
+## 2026-10-10 棚卸し進捗 — Watchlist end-to-end
+
+- 台帳更新コミット: `38b45a7b3f2aac27169fd9d71c0ddad9000957a3`
+- Player WatchlistのGET/POST/PATCH/DELETE、Kingdom Watchlistのlist/create/refresh/cancel/toggle/delete、データ表示/順位履歴をAPI→DBの初期マップとして記録。
+- Kingdom Watchlist data pathは`kingdom_ranking_current`中心で、同盟略称CTE、player watchlist、上位Governor ID、playersを参照。広範囲`ranking_snapshots`取得は見当たらず、禁止ルールを維持。
+- Refreshは`handleKingdomWatchlistApi`から`processKingdomWatchlistJob`を直接awaitするHTTP経路を確認。Queue負荷テスト経路とは別物として、タイムアウト/二重送信/ロックの実測が必要。
+- 次はMy Player/ユーザー連携/ADVANCED・VIP/Mighty資格の登録・状態遷移をAPI→DB→API Poolで照合する。
+- 全体棚卸しは未完了。動作テスト/本番計測はしていない。
+
