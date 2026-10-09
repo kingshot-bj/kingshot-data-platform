@@ -1234,3 +1234,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/retention.js` の `keepLatestPerTarget` SQLは、同じ `target_type/target_id` の `newer.observed_at > api_observations.observed_at` を条件に古い行を削除対象にする。
 - `observed_at` は秒単位の整数で保存されるため、同一対象に同じ秒内で複数回観測が保存されると、観測時刻が等しい行同士は互いを「newer」と判定しない。その結果、保持期間を超えた同一秒の複数行が残り続ける可能性がある。
 - 対応時は `observed_at` に加えて `rowid`（または `created_at` と一意キー）で順序を決め、対象ごとに1行だけ残す条件へ修正する。実データで同一秒の重複数を確認してから影響を見積もる。今回はRetentionを実行していない。
+
+
+### [高・機能未接続] 王国ウォッチリストの定期実行関数がCronから呼ばれていない
+- `src/index.js` に `runKingdomWatchlistJobs(env)` が定義されている。この関数は `kingdom_watchlists.enabled=1` と `interval_hours` / `last_run_at` を見て、期限到来した監視をジョブ化し、Safety Gate・ロック・既存ジョブ継続・1時間ごとのジョブ履歴掃除を行う設計。
+- しかし関数名の呼び出しは定義箇所以外に見当たらず、`scheduled()` にも呼び出しがない。現行CronはAPI Pool復旧、Catalog Discovery、Discord通知だけを実行している。
+- そのため、`interval_hours` を設定していても、サーバー側で期限到来を検知して自動更新する経路は現行mainから確認できない。ユーザーが画面を開いて手動/画面側の更新処理を実行している間は別だが、画面を閉じた状態で定期更新が続くとは判断できない。
+- 同関数内にあるSafety Gate・ジョブ掃除も実行されていない可能性が高い。実際のCronログで動作確認は未実施。
+- 対応時はCronへ接続する前に、前述のSafety Gate/API Pool使用量、同時実行ロック、D1読み取り量、実行時間、1回あたり処理件数を確認し、少量の王国で段階検証する。今回、Cron設定・本番ジョブは変更していない。
