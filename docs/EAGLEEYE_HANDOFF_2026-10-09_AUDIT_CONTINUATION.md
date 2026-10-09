@@ -446,3 +446,11 @@
 - Player Visibility APIのOWNER-only mismatch候補を継続記録。
 - 次はMigration/SQLの列・Index双方向照合と、Owner/User管理・Discord Support・MightPulse endpointの残りを整理する。
 
+## 2026-10-10 棚卸し進捗 — MightPulse endpoints / collection engine
+
+- 台帳更新コミット: `6ace08a31b13c53ad24c10fe6a02ce85db23fa38`
+- Player base/rich/ranks、Kingdom ranking/all boards/detail、Top Alliances/rosters、Events、KvK/KvK scoresのendpoint helperと用途を整理。
+- `getMightPulseTopKingdomAllianceRosters`はランキング取得後、各同盟rosterを逐次取得するN+1 API call経路。ローラーを接続する前にPool消費/同時実行/上限を確認する。
+- `data-collection-engine.js`のGuard/Service Usage/trace経路と、endpoint helperの存在、ローラーの定期起動を別々に管理する。
+- 次は全Migration列/制約/Index照合と、残る機能領域の重複/未接続候補をまとめる。
+
