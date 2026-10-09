@@ -9,13 +9,13 @@
 - 機能台帳（最優先で読む）: [EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md](./EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md)
 - 機能台帳URL: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md
 - 本引き継ぎURL: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_HANDOFF_2026-10-10_AUDIT_CONTINUATION.md
-- 直近の台帳更新コミット: `c42afdd203255790613c866ee0d2bcb53967e29b`
+- 直近の台帳更新コミット: `54eb2edd3672b20ac3213dc5d275264c3ea4b5a6`
 
 ## 2. 進捗と報告ルール
 
 ### 現在の進捗
 
-最新の進捗は末尾の「70%到達時点」を参照。旧チェックリストは「6/9」と「未完了4項目」が併記され分母に不整合があったため、10項目に整理し **7/10 = 70%** とした。これは監査チェックリストの完了割合であり、全機能の実装率・正常率・本番適用率ではない。
+最新の進捗は末尾の「80%到達時点」を参照。旧10項目チェックリストは、作業量の大きく異なる「全Migration/全SQL照合」と単純な一覧確認が同じ1項目だったため、成果物ベースの20作業パッケージへ詳細化した。最新は **16/20 = 80%**。これは監査作業の進捗であり、全機能の実装率・正常率・本番適用率ではない。過去の70%報告は当時の10項目基準のチェックポイントとして履歴に残す。
 
 完了済みの初期チェック:
 - [x] `src/`全ファイル名と責務の初期分類
@@ -33,7 +33,7 @@
 
 ### 10%ずつ進める約束
 
-ユーザーの指示は「10パーセントずつやって、10パーセント終わったら教えて」。監査を継続し、ユーザー指定の最初の報告目標は70%で、到達済み。未完了のチェック項目を完了したと見せかけて率を上げないこと。進捗が10ポイント進んだら、その時点でユーザーに報告する。進捗率を報告する際は、チェックリストの分子/分母、今回完了した作業、未完了事項を明示する。
+ユーザーの指示は進捗を10ポイントずつ進め、指定到達点で報告すること。現在は20作業パッケージの16/20 = 80%に到達。作業パッケージは成果物ベースで定義し、未完了作業を完了扱いにしない。進捗率を報告する際は、チェックリストの分子/分母、今回完了した作業、未完了事項を明示する。
 
 ## 3. 次に実施する監査
 
@@ -178,3 +178,25 @@
 - 重要な未解決候補は継続: `kingdom_ranking_current.ranking_snapshot_id`の列参照差、`kingdom_watchlist_jobs.source_first_at/source_last_at`のMigration差。静的根拠は強いが、実D1 schema/実行時エラーは未確認。
 - GitHub mainの静的確認のみ。コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。D1 Free reads優先。広範囲な`ranking_snapshots`取得なし。
 - 次回再開時は台帳を先に読み、項目8の残りのテーブル/SQL照合から継続する。全監査完了と誤認しない。
+
+
+## 2026-10-10 80%到達時点 — 最新の再開地点
+
+- **現在の進捗: 16/20作業パッケージ = 80%。** 旧70%は10項目チェックリスト基準の中間報告。全Migration/全SQL照合のような大きい項目と単純な一覧確認が同じ1点だったため、成果物単位に20項目へ詳細化した。実装率・本番正常率ではない。
+- 今回完了した2作業パッケージ:
+  1. `kingdom_ranking_current` のMigration 0019 DDL、`src/ranking-store.js`のUPSERT/DELETE、`src/index.js`と`src/kingdom-portal.js`のRead経路を照合。Migration 0001–0058に専用secondary indexのCREATEは見当たらず、PKは(kid, board, target_type, target_id)。`WHERE kid=? AND board=? ORDER BY rank`は索引でrank順まで満たせるか未確認で、Query Plan/実消費量は測っていない。Admin helperの`ranking_snapshot_id`不一致候補は継続。
+  2. Player History/Change EventsとRetention/R2 readback経路を照合。`/api/player/history`はD1/R2 merge helperを使うが、`/player/history`はD1の`player_snapshots`を直接読む。Retention後に表示差が出る可能性。Player/Kingdom ChangesはD1直接readで、`change_events`用R2 readback関数が見当たらず、Retentionで削除済みの古いイベントは現行経路から復元できない可能性。
+- 継続中の重要候補:
+  - `kingdom_ranking_current.ranking_snapshot_id`参照差
+  - `kingdom_watchlist_jobs.source_first_at/source_last_at`のMigration差
+  - Player History UI/APIのRetention後の読み戻し差
+  - Change EventsのR2 archive後のreadback不足候補
+  - `kingdom_ranking_current`のrank順Index/Query Plan確認
+- 残り4作業パッケージ:
+  17. 全Migrationとsrc全SQLの残り全テーブル/列/制約/Indexの完全な双方向照合
+  18. 全画面の全操作→API→認可→DB/R2→成功/失敗表示の棚卸し
+  19. 全機能の状態分類（実装あり/未接続/重複/未実装/仕様未確定）
+  20. 機能別テスト可能性・本番E2E確認行列
+- 最新の機能台帳: `docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md`、更新コミット`54eb2edd3672b20ac3213dc5d275264c3ea4b5a6`。
+- 今回はGitHub mainの静的確認のみ。アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。D1 Free reads優先。広範囲な`ranking_snapshots`取得クエリを追加・復活させていない。
+- 次回はまず機能台帳を読み、パッケージ17の残りスキーマ照合を続ける。全監査完了とは扱わない。
