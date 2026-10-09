@@ -502,3 +502,10 @@
 - 主要な静的候補は台帳末尾のP0/P1候補へ集約済み。現時点でコード修正・デプロイ・本番DB変更・Queue操作・負荷/外部APIテストは行っていない。
 - 次の作業は主要Migration/SQLの列・制約・Index照合。D1 Free reads最優先、広範囲`ranking_snapshots`取得禁止。
 
+## 2026-10-10 棚卸し進捗 — SQL/schema列の不一致を1件確認
+
+- 台帳更新コミット: `8666c04cdb7ff51dd27ca40d4caa7d940be349b5`
+- `getLatestAdminKingdomRankingSnapshot()`が`kingdom_ranking_current`から`ranking_snapshot_id`をSELECTしているが、Migration 0019のテーブル定義に同列がないことを確認。
+- 影響候補: Admin Kingdom Rankingsの通常読出し/refreshおよびGoogle Sheets exportがno-such-columnエラーとなる可能性。ソース/Migration上の静的照合のみで、実D1クエリ実行や修正は未実施。
+- 次のSQL照合では、主要テーブルのSELECT/INSERT/UPDATE列をMigrationの最終スキーマに合わせて確認し、同種の不一致を探す。
+
