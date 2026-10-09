@@ -1978,3 +1978,40 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 - 90%は初期MigrationとEmergency Buffer/lease経路の照合を反映した作業管理上の概算。全ルート/全SQLの最終確認と実行時検証は残るため、完了とは扱わない。
 - 次は最終クロスチェック：ルート定義とハンドラー/認証・ACTIVE・method、import済み未接続候補、Retention/Buffer/Queueの呼び出し、Migration重複番号と適用手順、台帳内の指摘の重複/訂正をまとめて確認する。
+
+
+---
+
+## 2026-10-09 静的監査一巡完了（100%）
+
+**全体コードの静的監査一巡：100%完了。** これはmainブランチを対象に、機能/ルート入口、Migration 0001〜0058、主要SQL/索引、Cron/Queue/R2、既知の認証・状態管理・保存経路を一巡して、確認済み事項と未解決候補を台帳へ整理したという作業上の完了基準。全コード行の形式検証、実行時検証、本番正常性の保証を意味しない。
+
+### 最終クロスチェック結果
+
+- src/index.jsのHTTPルート分岐を抽出し、ルートから呼ばれるローカル関数とimport関数の存在を確認。75のユニークなhandle系参照を静的抽出し、ローカル定義/importのいずれにも解決しないものとして handlePlayerCompareApi を再確認。/player/compare の renderPlayerComparePage も定義/importを確認できず、既存の未定義参照候補と整合。実ビルド/HTTPアクセスは未実施。
+- 主要なimport済みAPI handler（Gateway、Discord Support、API Raw Inspector、Kingdom Portal、Owner Load Test、Admin System Log/Export）を確認。内部ガードを確認できたhandlerについて、認証状態/role/HTTP methodの検証を照合。すべての個別分岐・外部依存を実行テストしたわけではなく、既存台帳の未確認ルートは残存課題として維持。
+- Migration 0001〜0058のファイル群を番号帯ごとに静的確認。重複番号0008、後続Migrationでrole CHECKを拡張する構成、DDL再実行時の性質は記録済み。適用済みMigration履歴と本番DB schemaはアクセス/検証していない。
+- Cron/Queue/R2では、scheduled()の直接呼び出し、Preview/Production差分、System Event Queue設定の訂正、R2アーカイブ/Retention/History Emergency Buffer、Seeder/Roller起動候補を照合。未接続・stuck・競合候補は静的所見として残し、本番障害と断定していない。
+- 監査項目は「確認済み」「問題候補」「未確認」に区別し、未実施の実行時試験を完了扱いにしない。個別の指摘はこの台帳の各セクションを参照。
+
+### 残る検証フェーズ（静的監査100%とは別）
+
+- 本番Migration適用履歴と実スキーマの照合。
+- Query Plan / D1 reads / R2操作量の確認。ただしD1負荷を増やす全履歴クエリは使用しない。
+- 安全なテスト環境でのbuild/unit/HTTP/E2E、Discord通知、R2バックフィル競合、Queue retry、Retention境界の検証。
+- 優先度順に問題候補をトリアージし、修正許可を得た後にのみコード修正/デプロイを計画する。
+
+### 作業制約の再確認
+
+- この監査ではアプリコード、Migration、Workflowを変更していない。デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テストも実行していない。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 監査進捗の最終状態
+
+| 項目 | 状態 |
+|---|---|
+| 静的監査一巡 | **100% 完了** |
+| 実行時・本番検証 | 別フェーズ。未完了 |
+| コード修正・デプロイ | 未実施。許可待ち |
+| 次工程 | 監査指摘の重大度順整理と、安全な検証計画 |
