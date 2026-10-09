@@ -647,6 +647,13 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - ` + tick + `src/index.js` + tick + `以外の ` + tick + `src/` + tick + `ファイル50件を対象に、静的文字列として書かれた `/api/...` 参照をルーターの完全一致パス/特殊prefixと照合した。
 - この文字列抽出でルーター未登録として残ったものは ` + tick + `/api/owner/kingdom-load-test/export?run_id=` + tick + ` のみ。handler/UIリンクは存在するが、import/route接続がないことを確認済み。
 - この結果は静的な文字列照合の範囲。実行時に組み立てるURL、外部クライアント、未使用の古い呼び出し元の存在までは否定しない。
+### Player Visibility / Watchlist Limitsの認可不一致候補
+
+- ` + tick + `/admin/player-visibility` + tick + `のページレンダラー ` + tick + `renderPlayerVisibilityPage()` + tick + ` は ` + tick + `requireAdmin()` + tick + ` を使用し、ADMIN/OWNER向け画面を表示する。
+- しかし対応API ` + tick + `/api/admin/player-visibility` + tick + ` の ` + tick + `handlePlayerVisibilityApi()` + tick + ` は ` + tick + `requireOwner()` + tick + ` を使用している。` + tick + `requireOwner()` + tick + ` は ` + tick + `auth.role !== 'OWNER'` + tick + ` を403にする。
+- 同API内部には ` + tick + `guard.auth.role === 'ADMIN'` + tick + ` の分岐（OWNER設定を拒否する処理）が複数あるが、` + tick + `requireOwner()` + tick + `を通過した後ではADMINになり得ない。画面の認可とAPIの認可が一致しない静的候補。
+- 影響候補: ADMINでページ表示できても、初期設定取得/保存のAPIが403になり、Player VisibilityとWatchlist Limitsの管理ができない。OWNERでの操作は別途実行テスト未確認。
+- 修正方針はまだ決めない。まず仕様上ADMINに許可する範囲（OWNER role/OWNER-only visibility項目を除く）を確定し、API直叩き/画面操作のテストケースを定義する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
