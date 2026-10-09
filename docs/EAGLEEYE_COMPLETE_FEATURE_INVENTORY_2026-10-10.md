@@ -914,6 +914,13 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 - この表は主要テーブルの部分照合。全MigrationのCHECK/UNIQUE/foreign key/Index列・列順・query planまで完了したという意味ではない。
 - Indexが存在することは、実際のquery planがそのIndexを使うことの証明ではない。D1 Free readsを優先し、本番での無制限EXPLAIN/COUNT/SELECTは実施しない。
+### Preview/Productionのリソース・Queue共有に関するリスク
+
+- `wrangler.jsonc`のPreview環境は、Productionと同じD1 database IDおよびR2 bucketを指定している。`EAGLEEYE_ENV=preview`だけではCloudflare bindingの実リソースを分離しない。
+- PreviewのQueue producersには`SERVICE_USAGE_QUEUE`と`LOAD_TEST_QUEUE`があり、同じqueue名を参照する。一方、consumer設定はtop-levelのProduction構成にあり、PreviewのLoad Test producerから送信されたメッセージがProduction consumerで処理される可能性がある。
+- Previewには`SYSTEM_EVENT_QUEUE` producerがない。`recordSystemEvent()`はQueueがない場合/送信失敗時にD1へ直接INSERTするため、Previewのイベントが共有D1（Production database ID）へ書かれる可能性がある。
+- これは設定ファイル/コード経路からの静的リスク。Cloudflare上のqueue namespace/binding実挙動や本番データ影響は実測していない。
+- **PreviewからLoad Test/収集API/Service Usage/System Eventを起動する前に、D1/R2/Queueの分離を確認する。** 今回はPreview/Productionの操作を一切行っていない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
 以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
@@ -929,6 +936,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 7. **Retention/Emergency Bufferの起動経路:** `runDataRetentionJob`は呼び出し元がなく、`drainHistoryEmergencyBuffer`もWorkerイベントから呼ばれていないように見える。実際にRetention/Buffer drainが走るか未確定。
 8. **Safety Gate missing metrics:** 全Cloudflare metrics欠損で`maxUsagePercent()`がnullを返し、`getSafetyState(null)`が0%/NORMAL扱いになる可能性。
 9. **VIP資格とDisabled API key:** Mighty metadataがCONFIRMEDのまま`api_pool_keys.status='DISABLED'`となったキーが、VIP資格判定に残る可能性。
+11. **Preview/Production環境分離リスク:** PreviewはProductionと同じD1/R2 IDを指定し、Service Usage/Load Test producerは同名Queue、System Event Queueは未設定。Preview操作がProduction DB/Queue consumerへ影響する可能性がある。
 10. **Admin Kingdom Ranking SQL列不一致:** `getLatestAdminKingdomRankingSnapshot()`が`kingdom_ranking_current`から`ranking_snapshot_id`をSELECTするが、Migration 0019の同テーブルにはその列がない。管理者ランキングの通常読出し/refreshとGoogle Sheets exportがSQLエラーとなる可能性。
 
 ### P1候補 — 収集/通知/コスト/設定整合
