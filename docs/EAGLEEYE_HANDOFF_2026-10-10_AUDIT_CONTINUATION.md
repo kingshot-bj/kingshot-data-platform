@@ -128,3 +128,12 @@
 - 進捗は引き続き **6/9 = 67%**。今回の作業は未完了のMigration/SQL双方向照合項目の途中であり、10ポイント相当の到達条件を満たしていないため、率は上げていない。
 - 次の作業: 0001–0058全Migrationとsrc全体のSQLについて、既存の不一致候補を重複起票せずに列参照・DDL・Indexを照合する。次に `kingdom_watchlist_jobs` の両列の現行参照とALTER履歴、`user_player_links` の0022/0024/0026の列・CHECK・partial unique indexをファイル単位で確認する。
 - 実行制約は継続: コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。D1 Free reads最優先。広範囲 `ranking_snapshots` 取得クエリを復活させない。
+
+
+### 追加追跡結果（source_first_at/source_last_at と user_player_links）
+
+- `src/index.js` で `kingdom_watchlist_jobs.source_first_at/source_last_at` のINSERT/UPDATE/SELECTが複数確認できた。Watchlistの進捗/完了表示にも使われる。
+- `scripts/reconcile-d1-schema.mjs` は両列を含むCREATE TABLE定義を持つが、既存テーブルへ列追加する `addColumn()` は当該2列について見つからなかった。後続Migration 0020–0058を確認してALTERの有無を確定すること。列不一致候補は現行SQL参照まで根拠が増えたが、本番D1の状態は未確認。
+- `user_player_links` は0022初期形状、0023の公式確認列/サポート申請、0024のpartial UNIQUE、0026の複数アカウント対応再構築を順序込みで確認。0022の `UNIQUE(user_id)` は0026最終形状では外れるため、0022単体との比較で不一致と誤判定しない。
+- 台帳をコミット `8a69d7d2ba5681411aa1a6445261532049fc5982` で更新した。
+- 進捗は引き続き **67%（6/9）**。Migration/SQLの全件双方向照合は未完了であり、77%報告条件には未到達。
