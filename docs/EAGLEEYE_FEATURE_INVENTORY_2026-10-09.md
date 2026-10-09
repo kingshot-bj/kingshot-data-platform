@@ -908,3 +908,16 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `0034_global_collection_semaphore.sql` は `collection_semaphore` カウンターテーブルを作成し、`0036_collection_semaphore_slots.sql` はスロット方式の `collection_semaphore_slots` を追加する。
 - 現在の `src/collection-semaphore.js` は `collection_semaphore_slots` を利用する。旧 `collection_semaphore` はReconciliationスクリプトにも保持・初期化処理が残っている。
 - 互換性/復旧用途で意図的に残している可能性があるため削除候補と断定しない。実際の参照箇所、移行履歴、復旧手順を照合し、未使用テーブルかレガシー復旧用かを機能台帳で明確にする。
+
+
+## 監査追記：Hero Gear Asset Collectorの正規表現（2026-10-09 続き）
+
+### [中 / スクリプト機能不全候補] HTML画像抽出用正規表現のバックスラッシュ過剰エスケープ
+- `scripts/collect-hero-gear-assets.mjs` の `extractImageUrls()` で、画像タグ検出が `/<img\\\\b.../`、OG画像メタタグ検出が `/<meta\\\\b.../` 相当のソースになっている。通常のHTMLタグで使う単語境界 `\b` ではなく、バックスラッシュを含む文字列を探す正規表現になっている可能性が高い。
+- srcset候補の分割にも `split(/\\\\s+/)` 相当があり、空白文字ではなくバックスラッシュを含む文字列にしか一致しない可能性がある。
+- 通常の `<img src="...">` / `<meta property="og:image"...>` を拾えず、srcset候補もdescriptor付きURLを正しく分離できないおそれがある。
+- GitHub ActionsのHero Gear Asset Collectorは手動実行workflowで、今回起動していない。HTMLのサンプル入力に対する単体テストを作ってから修正する候補として記録。コード変更・workflow実行は未実施。
+
+### 正規表現監査の横断メモ
+- `src/index.js` にも同種の過剰エスケープ候補があり、`normalizeMightPulseTimestamp()` の数字/小数文字列判定、管理王国ランキングAPI/CSV・Google Sheets出力の王国番号判定、管理ランキング画面の表示条件、`Last active Nd ago` 翻訳に影響する可能性がある。
+- これらは単にソース上の文字列だけでなく、JavaScript正規表現として実際に数字へ一致するかをテストで確定する。現時点では未修正。
