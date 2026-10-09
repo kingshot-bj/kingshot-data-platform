@@ -612,6 +612,36 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - ` + tick + `/player/history` + tick + `とPlayer Changes系の画面/APIは、Retention後にR2アーカイブ済みの行を表示しない可能性がある。これは静的な経路差候補であり、データ欠落の実再現は未実施。
 - ` + tick + `runDataRetentionJob` + tick + `の起動経路自体も未接続候補なので、実際にRetentionが走っているか/どの設定値かは本番DBを変更せず別途確認する。
 - 本棚卸しではR2全件listやアーカイブの全件読出しを追加しない。D1 Free読み取りを優先し、必要なR2 readbackは対象範囲・ページング・費用を明示して設計する。
+## 2026-10-10 第12巡目 — Gateway API / MightPulse Probe・Research / R2 Backfill
+
+### Gateway API
+
+- Prefix route: ` + tick + `/api/gateway/v1/*` + tick + `。実装されているpathは ` + tick + `/api/gateway/v1/status` + tick + ` と ` + tick + `/api/gateway/v1/diagnostics` + tick + `。
+- 両方GET限定、` + tick + `EAGLEEYE_GATEWAY_TOKEN` + tick + `設定必須、Bearer/token認証。read-onlyとして診断/運用状態/Cloudflare利用量/History Storage状態/System Logを返す。
+- Statusの通常応答は直近500件を返す制限付きで、対象期間全件をメモリに展開しない設計。` + tick + `?full=1` + tick + `はstreaming log export経路を持つ。
+- Gateway Statusは複数のD1/Analytics/Storage診断を並列実行するため、呼び出し頻度・range・full exportの読み取り量とWorkerメモリを確認する。実呼び出しは未実施。
+
+### MightPulse Probe / Research / Ranking Test
+
+| 機能 | 入口/実装 | 初期判定 |
+|---|---|---|
+| MightPulse Probe画面/API | `/admin/mightpulse-probe` / `/api/admin/mightpulse-probe` | Player/Kingdom/Ranking等の取得検証UIとAPI。外部API使用量を伴うためテスト未実行 |
+| MightPulse Research画面/API | `/admin/mightpulse-research` / `/api/admin/mightpulse-research` | 候補endpointの調査・payload要約・候補一覧を実装。Google Apps Script署名等の連携は別途照合 |
+| Ranking/Player Admin test | `/api/admin/rankings/player` / `/api/admin/rankings/board` | API Pool/MightPulseを使った個別取得テスト経路あり。role guard、response保存、D1/外部APIコストは未検証 |
+| API Raw Inspector | `/admin/api-raw-data` / `/api/admin/api-raw-data` / `/api/admin/api-raw-history` | `api_observations`をもとにraw payload/history/画像参照を確認する管理者画面。secret sanitizationとlimit/retentionの確認が必要 |
+
+### Kingdom Catalog R2 Backfill
+
+- Owner page: ` + tick + `/owner/kingdom-catalog-r2-backfill` + tick + `。routerで ` + tick + `requireOwner()` + tick + ` を確認し、POST action ` + tick + `run` + tick + `/` + tick + `run_all` + tick + ` を処理する。
+- ` + tick + `runKingdomCatalogR2Backfill()` + tick + `はD1の ` + tick + `r2_latest_key IS NULL` + tick + ` かつraw/boards payloadがある行を対象に、R2保存後にD1 payloadをNULL化する。バッチサイズは通常1–100、run_allも1回100件までで段階実行。
+- 実行後は ` + tick + `verifyKingdomCatalogR2Backfill()` + tick + `でR2 object存在、pointer、raw/boards NULL状態を確認し、失敗時はmigration stateをFAILEDへ更新する実装。
+- これはOwner手動操作で外部R2書き込みとD1更新を伴うため、この棚卸しでは実行していない。対象件数、同時実行競合、進捗復帰、実R2内容の確認は未完了。
+
+### この領域の未完了項目
+
+- GatewayのBearer token設定/ローテーション/実環境アクセス元、full exportのサイズ制限/streaming挙動は未確認。
+- MightPulse Probe/Researchの全候補、API Poolキー選択、失敗分類、再試行、出力先/研究用蓄積をAPI単位で照合する。
+- R2 backfillはOwner UI/APIだけでなくMigration state、D1 pointer、R2 object catalog、再開/失敗時の状態遷移を一体で棚卸しする。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
