@@ -550,3 +550,10 @@
 - Reconciliation scriptのrequired migration listは0043までで、現行0044–0058を網羅しない。
 - コード変更/本番操作なし。次は主要テーブルの列/制約/IndexとSQL照合を継続する。
 
+## 2026-10-10 棚卸し進捗 — 主要テーブルの制約/Indexマップ
+
+- 台帳更新コミット: `94d3fa13682c14c81ee42738a2df630c91c55440`
+- users、api_pool_keys、players/player_snapshots、kingdom_ranking_current、kingdom_catalog、alliance_catalog、Watchlists、user_player_links、system_event_log、change_eventsの主キー/一意制約/主要Indexを部分照合。
+- SQL/schemaの不一致候補: Admin ranking queryが`kingdom_ranking_current.ranking_snapshot_id`をSELECTするが、その列はMigration 0019の最終形にない。
+- Index定義を確認したことはquery planでの使用やD1 read削減の証明ではない。全Migration/全SQLの双方向照合は継続。
+
