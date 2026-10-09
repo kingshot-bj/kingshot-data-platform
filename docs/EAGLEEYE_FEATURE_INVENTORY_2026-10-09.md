@@ -1228,3 +1228,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `drainHistoryEmergencyBufferInternal()` は `PENDING/FAILED` 行をSELECTした後、各行を `WHERE buffer_id = ?` だけで `DRAINING` に更新してアーカイブを開始する。更新条件に元のstatusを含めず、UPDATEの変更件数も確認していない。
 - 複数の排出処理が同時起動した場合、同じ行を双方が選択してR2へ重複保存する可能性がある。R2アーカイブキーにUUIDが含まれる履歴形式では、重複オブジェクトが増えるおそれもある。
 - 排出関数自体が現在のWorker入口から呼ばれていないように見えるため、現時点で同時実行中とは判定しない。Cron等へ接続する前に、`UPDATE ... WHERE status IN ('PENDING','FAILED')` と変更件数によるclaim、または一意な処理ロックを検討する。
+
+
+### [中] `api_observations` の「対象ごとの最新行を残す」Retention条件は同一秒の観測を区別できない
+- `src/retention.js` の `keepLatestPerTarget` SQLは、同じ `target_type/target_id` の `newer.observed_at > api_observations.observed_at` を条件に古い行を削除対象にする。
+- `observed_at` は秒単位の整数で保存されるため、同一対象に同じ秒内で複数回観測が保存されると、観測時刻が等しい行同士は互いを「newer」と判定しない。その結果、保持期間を超えた同一秒の複数行が残り続ける可能性がある。
+- 対応時は `observed_at` に加えて `rowid`（または `created_at` と一意キー）で順序を決め、対象ごとに1行だけ残す条件へ修正する。実データで同一秒の重複数を確認してから影響を見積もる。今回はRetentionを実行していない。
