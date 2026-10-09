@@ -1123,3 +1123,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 公開APIのアクセス頻度に応じて、読み取りだけでなくSystem Eventの書き込み・Queue処理も増える。公開データ閲覧の全件を永続イベントに残す必要があるか、集計/サンプリング/レート制限/短期ログ化が必要かを要確認。
 - また、このハンドラー自体にはHTTPメソッド制限が見当たらない。現状は読み取り中心だが、GETに限定するなどAPI契約を明確にする余地がある。
 - 本番負荷・イベント発生量は未確認。今回、APIを呼び出したりコードを変更したりしていない。
+
+
+### [確認済み] 現行コードにランキング履歴の広範囲な `ranking_snapshots` 読み取りは見当たらない
+- `src/index.js`、`src/ranking-store.js`、`src/retention.js`、`src/r2-archive.js`、`src/admin-kingdom-load-test.js`、`src/kingdom-portal.js`、`src/status-ops.js` を対象に、`FROM/JOIN ranking_snapshots` のSQLを再照合した。
+- `ranking-store.js` で確認できたD1履歴参照は `kid + board + target_id` で対象を絞り、`ORDER BY observed_at DESC LIMIT ?` を付ける形。履歴保存側には `INSERT INTO ranking_snapshots` があるが、広範囲な全件履歴取得は確認できなかった。
+- この確認は上記ファイルの静的コード監査であり、将来の変更や別ファイルの新規クエリまで保証するものではない。D1読み取りコストを抑えるため、広範囲取得を復活させず、追加実装時も対象キー・期間・件数を制限する。
