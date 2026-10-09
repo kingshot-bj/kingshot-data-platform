@@ -360,7 +360,7 @@
 ### 画面→APIの重点照合対象
 
 - **王国Watchlist**: `/api/kingdom-watchlist` と `action=create/refresh/cancel/toggle`、削除の `watchlist_id`、データ取得、Player Watchlist参照。状態遷移・二重送信防止・失敗表示を確認する。
-- **Player Watchlist**: `/api/player-watchlist` の一覧/追加/削除と比較画面への遷移。比較先ルートの未解決参照2件を含めて確認する。
+- **Player Watchlist**: `/api/player-watchlist` の一覧/追加/削除と比較画面への遷移。比較先ルートの未解決参照と、負荷テストCSV exportの未登録ルート候補を含めて確認する。
 - **My Player**: `/api/me/player`、`/api/me/advanced`、`/api/me/vip`、Mighty判定。ロール・所有アカウント・APIキー提供状態の表示と更新を照合する。
 - **API Pool管理**: 画面内の追加・テスト・Mighty判定・キー削除・提供者変更に対し、管理APIルートの認可とHTTP methodを確認する。
 - **Retention/王国ランキング管理**: 画面のフォームと更新APIを照合し、読み取り/書き込み範囲および実行ジョブとの接続を確認する。
@@ -635,12 +635,15 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - [x] 定義/importの存在を照合
 - [ ] ビルド/HTTPアクセスによる実行確認（未実施）
 
-**未解決の参照候補が2件残る。**
+**ルート定義/接続の要確認候補が3件残る（未解決参照2件＋UI呼び出し先未登録1件）。**
 
 | パス | 参照名 | 静的確認結果 | 影響候補 |
 |---|---|---|---|
 | `/api/player-compare` | `handlePlayerCompareApi` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当ハンドラーなし | API呼び出し時にReferenceErrorとなる可能性 |
 | `/player/compare` | `renderPlayerComparePage` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当画面関数なし | 画面アクセス時にReferenceErrorとなる可能性 |
+| `/api/owner/kingdom-load-test/export?run_id=...` | `handleOwnerKingdomLoadTestExportApi` | `admin-kingdom-load-test.js` にCSV handlerとUIリンクあり。ただし `index.js` からimportされず、router分岐もない | CSV exportリンクが意図したCSVを返さず、fallbackへ到達する可能性 |
+
+`admin-kingdom-load-test.js` には `handleOwnerKingdomLoadTestExportApi` が定義され、負荷テスト履歴UIも `/api/owner/kingdom-load-test/export?run_id=` を呼び出すが、Worker routerのimport/分岐に接続されていない。handler側にOWNERガードも見当たらないため、ルートを接続する場合はOWNER認可をrouterまたはhandlerで必ず適用する必要がある。現時点では接続/修正していない。
 
 `player-compare.js` には `normalizeCompareGovernorIds`、`buildPlayerCompareSeries`、`extractOptionalPlayerAssets` の比較用ロジックはあるが、ルートが呼ぶAPIハンドラーとページレンダラーは確認できない。これは静的な接続欠落候補であり、ビルドや実リクエストによる再現はしていない。修正はまだ行わない。
 
