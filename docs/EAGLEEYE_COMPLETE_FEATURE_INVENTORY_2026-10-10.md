@@ -776,6 +776,26 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Safety Gate欠損値の扱いは優先度高。0%、UNKNOWN、未取得の意味を分ける仕様を先に決める。
 - Service Usage queue unavailable/Archive unavailable時の通知・復旧・DLQ消化方法を確認する。棚卸し中にQueueを手動操作しない。
 - Collection Coverageは統計テーブルに記録される対象イベントを特定し、UIの説明と数字の意味を一致させる。
+## 2026-10-10 第19巡目 — 実際の収集パイプラインとデータ鮮度
+
+| パイプライン | 起動元 | 処理内容 | 初期判定 |
+|---|---|---|---|
+| Kingdom Catalog discovery | 5分Cronの`scheduled()` → `runKingdomCatalogDailyRefresh()` | `runKingdomCatalogDiscovery()`がMightPulse経由で王国Catalogを発見/更新し、`kingdom_catalog_discovery`のcursor/stateを更新 | 実際のscheduled接続あり。daily refresh内でSeeder/Rollerを呼んでいない |
+| Kingdom Seeder | 起動経路未確認 | `runKingdomSeeder()`がCatalogを順次処理し、詳細payloadを取得してCatalog保存 | 実装あり・未接続候補 |
+| Kingdom Ranking Roller | 起動経路未確認 | `runKingdomRankingRoller()`がCatalog cursor/board cursorを進め、`kingdom_ranking_current`等へ保存 | 実装あり・未接続候補 |
+| Alliance Roller | 起動経路未確認 | `runAllianceRoller()`がcurrent alliance rankingから対象を決め、同盟詳細/rosterを取得しCatalog/Change Eventsを更新 | 実装あり・未接続候補 |
+| Player Roller | 起動経路未確認 | `runPlayerRoller()`がランキング対象Playerを取得して`players`/observation等を保存 | 実装あり・未接続候補 |
+| Kingdom Watchlist collection | ユーザーAPIのcreate/refreshとLoad Test Queueから呼出 | job/lock/cursorでランキングと上位Playerを取得。`kingdom_collection_stats`を更新する経路あり | 実装あり。通常Watchlist refreshは同期HTTP await経路も持つ |
+| Player Profile lookup/refresh | ユーザーが`/player`やAPIを呼ぶ | キャッシュ/observationを確認し、必要時にAPI Pool経由でMightPulse取得・Materialize | 実装あり。ユーザー操作が外部API使用量を発生させる |
+| Admin ranking refresh | ADMINが`/api/admin/kingdom-rankings?refresh=1`を呼ぶ | MightPulse取得、順位差分計算、current/history/change event保存 | 実装あり。GET side effectとして要注意 |
+| Load Test collection | OWNERが開始 → `LOAD_TEST_QUEUE` | 王国/ランキング/上位Playerの収集・保存・Cloudflare消費量計測 | Queue接続あり。実行は本棚卸しで行っていない |
+
+### 収集網羅性に関する重要な未確定点
+
+- ` + tick + `scheduled()` + tick + `が直接起動するのはAPI Pool recovery、Catalog daily refresh、Discord notificationsの3処理。Catalog daily refreshはDiscoveryのみを呼び、Seeder/Ranking Roller/Alliance Roller/Player Rollerを連鎖起動しない。
+- そのため、Catalogに王国が登録されていることは、その王国のランキング/同盟/Playerデータが定期収集されていることを意味しない。非Watchlist王国の鮮度/網羅性は別に確認する。
+- Watchlistが実質的な通常収集経路なのか、ローラーは将来用/Owner手動用なのか、機能仕様を確定する必要がある。ローラーを接続する場合はAPI Pool reserve、Semaphore、R2 binding、D1 reads/writes、停止復帰を先に検証する。
+- ` + tick + `kingdom_collection_stats` + tick + `はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
