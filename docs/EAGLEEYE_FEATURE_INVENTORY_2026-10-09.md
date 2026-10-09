@@ -1183,3 +1183,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - しかし `getVipEligibility()` が判定する条件は、ユーザー提供キーのうち `mighty_capable=1` かつ `mighty_check_status='CONFIRMED'` のキーが1本以上あること。通常キー2本の存在・キー全体の運用状態は判定条件に含まれていない。
 - これはエラーメッセージが古い仕様を残しているのか、実装に通常キー本数の条件が不足しているのか、要件が不明なため現時点で断定できない。VIP資格の正式条件を決め、実装・Owner UI・利用者向け説明を一致させる。
 - 今回、ユーザーロールの変更やAPIキー操作は行っていない。
+
+
+### [中〜高] Ownerの領主所有権サポート処理が長期Owner監査ログへ記録されない
+- `handleOwnerPlayerLinkSupportApi()` の `REJECT` 分岐は `user_player_link_support_requests` を `REJECTED` に更新して応答するが、`writeOwnerAuditLog()` や `recordSystemEvent()` を直接呼び出していない。
+- `VERIFY_TRANSFER` 分岐は `verifyAndTransferPlayerLink()` を呼び、`runSystemOperation()` によるSystem Event記録は行われるが、`owner_audit_log` への明示的なOwner監査記録は見当たらない。
+- 所有権移管は旧ユーザーのリンクを無効化し、申請者へ `ADMIN_VERIFIED` のMAINリンクを付与する高権限操作。System Event LogはRetention/アーカイブ実行経路の未確認問題もあるため、長期Owner監査ログが欠けると、後日「誰が何を根拠に移管/却下したか」を追跡しにくい。
+- 対応時は却下・移管の両方で、実行者、申請ID、対象領主ID、旧/新ユーザーID、処理結果、理由をOwner監査ログへ記録する。個人情報を必要以上に記録しない範囲で監査証跡を整える。今回は移管・却下操作を行っていない。
