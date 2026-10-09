@@ -1348,3 +1348,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/index.js` の `/player/compare` ルートは `renderPlayerComparePage(request, env)` を呼ぶが、main内に関数定義もimportもなく、出現箇所はルート呼び出し1箇所のみ。
 - よってAPIだけでなく、比較画面のページレンダラーも未定義関数参照となり、アクセス時に共通catchでHTTP 500となる可能性が高い。
 - `src/player-compare.js` の比較用ヘルパーはimportされているが、現行indexから利用されていない。比較機能は「画面/APIルートだけが残り、実装が未接続または削除された状態」の可能性が高く、UI全面変更前に機能要件と実装有無を確認する。
+
+
+### [中] 領主所有権サポート申請にOPEN状態の重複防止・状態遷移条件がない
+- `createOwnershipSupportRequestInternal()` は、同一の `requester_user_id + governor_id` に対する既存OPEN/UNDER_REVIEW申請を確認せず、新しい申請行をINSERTする。Migration `0023_player_link_support.sql` にも未解決申請の一意制約はない。
+- `handleOwnerPlayerLinkSupportApi()` のREJECT処理は `WHERE request_id = ?` だけで更新し、元のstatusがOPEN/UNDER_REVIEWかを条件にしていない。移管処理側も、取得した申請のstatusが未解決であることを明示的に検証していない。
+- 連続送信や複数Ownerの同時操作で重複申請・状態の巻き戻しが起きる可能性がある。移管処理のUNIQUE制約衝突問題を直す際は、申請状態の原子的なclaim（OPEN/UNDER_REVIEWから処理中へ）と終端状態への条件付き更新も併せて設計する。
+- 本番の重複申請数は未確認。申請作成・却下・移管は今回実行していない。
