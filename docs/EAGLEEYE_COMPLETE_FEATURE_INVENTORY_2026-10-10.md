@@ -366,6 +366,34 @@
 - **Retention/王国ランキング管理**: 画面のフォームと更新APIを照合し、読み取り/書き込み範囲および実行ジョブとの接続を確認する。
 - **Owner管理/Player Link Support**: ロール変更、ユーザー状態変更、Watchlist管理、本人確認/移管/却下、監査ログの状態遷移を照合する。
 - **Public Status**: `/api/admin/monitoring-profile` と `/api/admin/r2-archive-objects` の呼び出しが公開画面から発生する設計か、認証・情報露出・D1/R2コストの観点で個別確認する。静的な文字列だけでは安全性を断定しない。
+## 2026-10-10 第3巡目 — Migrationと実SQLのテーブル層照合
+
+MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブルの作成/変更経路と利用モジュールを確認した。ここでは列・制約・Indexの完全な双方向照合までは完了していない。
+
+| 対象 | Migration上の定義/変更 | ソース側の確認 | 初期判定 |
+|---|---|---|---|
+| `api_leases` | Migration 0006で作成。0017で旧ACTIVE leaseをEXPIREDにして、新lease列を`api_pool_keys`へ移行 | `src/api-pool.js`のclaim/lease/releaseは`api_pool_keys`の列を操作。`src/index.js`ではAPIキー削除時の`DELETE FROM api_leases`を確認 | 旧方式の残存テーブル候補。削除/廃止判断は保留 |
+| `collection_semaphore` | Migration 0034でカウンター方式のSemaphore作成 | `src/collection-semaphore.js`は`collection_semaphore_slots`を参照。`collection_semaphore`の実行SQL参照は確認できない | 旧方式/未使用候補 |
+| `collection_semaphore_slots` | Migration 0036で1000枠のlease slotを作成しIndex追加 | `src/collection-semaphore.js`のacquire/release/refresh/snapshotが参照 | 現行実装に接続 |
+| `user_mighty_credentials` | Migration 0054/0056で資格情報テーブルを作成/再定義 | `src/user-mighty.js`に暗号化/登録/検証/失効ロジックあり。ただし`src/index.js`からimportされず、資格判定の`src/user-eligibility.js`は`api_pool_keys`のUSER_CONTRIBUTEDキーを使用 | 別系統の実装/未接続候補。現行VIP設計との関係を確定するまで削除禁止 |
+| `kingdom_seeder_state` / `kingdom_ranking_collection_state` / `alliance_collection_state` / `player_collection_state` | Migration 0040–0043で各ローラーの進捗状態を管理 | 対応するローラー関数とSQLは存在するが、`index.js`からローラーを起動する呼び出しが見つからない | 機能実装あり・起動経路未接続候補 |
+| `history_emergency_buffer` | Migration 0015で状態/作成時刻Indexを作成 | `src/history-emergency-buffer.js`にenqueue/archive/drainあり。`index.js`は`drainHistoryEmergencyBuffer`をimportするだけで呼び出しがない | drain起動経路未接続候補 |
+| `data_retention_settings` / `system_event_log` | Migration 0008/0020–0021/0028で設定・ログテーブルとIndexを定義 | `index.js`に`runDataRetentionJob`はあるが、その呼び出しが見つからない。内側のcleanup/archiveもその親関数経由 | Retention定期実行が未接続の可能性。意図/外部起動経路を要確認 |
+| `alliance_collection_state` | Migration 0041で作成。0043はコメント上、0041で定義済みのため意図的なno-op | 現行コードにstate参照あり | 0043自体は未適用漏れと断定しない |
+
+### この巡回で確定した制約
+
+- Migration番号0008は2ファイルある。台帳では番号だけでなく完全なファイル名を識別子にする。
+- Migration 0017はAPI lease管理を `api_pool_keys` へ移行した旨を明記している。旧 `api_leases` は削除済みと扱わず、現行参照を確認したうえで移行履歴として管理する。
+- Migration 0034の `collection_semaphore` と0036の `collection_semaphore_slots` は同じ名前の単純な置換ではない。現行実装はslot方式を参照する。
+- Migration 0043は意図的なno-opと記載されているため、空に近いSQLを直ちに不具合と判定しない。
+- D1の実適用履歴・本番の実スキーマ・Query Planは未取得。ソースとMigrationの整合性評価は静的範囲に限定する。
+
+### 次に照合する項目
+
+1. MigrationごとにCREATE/ALTER TABLEの列定義、CHECK制約、UNIQUE条件、Indexを抽出し、利用SQLが列名・条件に一致するか確認する。
+2. `src/index.js`内の主要テーブル参照を機能ごとに割り当て、読み取り/書き込み/削除の全経路を照合する。
+3. R2移行対象（kingdom_catalog / alliance_catalog / players / ranking・player history）のD1 payload削除順序、R2 pointer、読み取りfallbackを別表にする。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
