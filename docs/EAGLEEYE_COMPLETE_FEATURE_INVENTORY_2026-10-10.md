@@ -941,7 +941,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - [x] `migrations/` の全ファイル名と番号重複を記録
 - [x] `wrangler.jsonc` の主要binding・Cron・Queue・Preview差分を記録
 - [x] Workflow・スクリプト・公開アセットを列挙
-- [ ] 各画面/APIが参照する実装関数と定義/呼び出し元の照合完了
+- [x] src/index.js のルート呼び出し名・import・対象モジュールのexport照合（不一致候補を台帳化。実行時確認は未実施）
 - [ ] 全Migrationのテーブル/列/制約/indexと現行SQLの双方向照合完了
 - [ ] 全画面のUI機能、ボタン、フォーム、API呼び出し、権限、空/失敗状態の棚卸し完了
 - [ ] 実装あり/未接続/重複/未実装/仕様未確定を機能ごとに確定
@@ -1176,3 +1176,30 @@ Migration/SQL照合の作業領域を5%から10%へ更新。0040–0058の19フ�
 2. `kingdom_collection_stats` / R2 key / Roller state / Load Test historyの各列について、現行SQLで参照・更新される箇所を双方向で追跡する。
 3. 次にPlayer History/ChangesのD1/R2経路差をhandlerと画面関数で照合する。
 4. D1消費は静的なSQL形状とIndexから先に評価し、調査目的の全件SELECTや本番負荷テストを実行しない。
+
+## 2026-10-10 監査進捗 — 10ポイント区切り到達（チェックリスト方式）
+
+### ルート・handler・import/exportの静的照合
+
+src/index.js のroute/call names -> local definitions/imports -> imported module exportsを静的照合した。
+
+- /api/player-compare は handlePlayerCompareApi を呼ぶが、src/index.jsに定義/importがなく、src/player-compare.jsにもhandler exportがない。
+- /player/compare は renderPlayerComparePage を呼ぶが、定義/importがなく、src/player-compare.jsにもpage exportがない。
+- handleOwnerKingdomLoadTestExportApi は src/admin-kingdom-load-test.js でexportされ、Owner負荷テストUIからCSV URLが生成される。一方、src/index.jsのimportとroute分岐が見当たらず、CSV URLはWorker routerへ接続されていない候補。
+- DIAGNOSTIC_SERVICES は src/diagnostics.js 末尾でnamed exportされていることを確認。単純な宣言検索では漏れるexport listも確認対象に含めた。
+- 上記はソース静的照合による接続不一致候補であり、ビルドやHTTP実行での再現確認はしていない。修正は行っていない。
+
+### Migration 0001–0039のDDL初回通読
+
+- Migration 0001–0039のCREATE/ALTER/DROP、主な列、CHECK、Index、データ移行を通読した。0008は同番号ファイルが2つあるため、番号だけで順序・適用状態を断定しない。
+- kingdom_ranking_current はMigration 0019で定義される一方、既存台帳に記録済みの ranking_snapshot_id 参照不一致候補がある。現行コードのSELECT/INSERT/UPDATE全列を最終スキーマへ双方向照合する作業は継続。
+- Migration 0008の kingdom_watchlist_jobs 定義とMigration 0019の CREATE TABLE IF NOT EXISTS 定義には source_first_at / source_last_at の差がある。IF NOT EXISTSだけでは既存テーブルに列は追加されないため、後続ALTERの有無と実際の参照列を次の照合対象にする。現時点では静的候補として記録し、実D1で確認していない。
+- src/user-player-link.js の ensureSchema() はテーブルとIndexを実行時にCREATEする。Migration 0022/0023/0026にも同じモデルの定義・再構築があるため、互換性用DDLの必要性と本番リクエストでの実行経路を確認対象にする。今回は実行していない。
+- D1本番照会、Migration適用、デプロイ、Queue操作、収集/負荷テストは実施していない。ranking_snapshotsの広範囲取得クエリも追加・実行していない。
+
+### 進捗率 — 次の10ポイント区切り
+
+- チェックリスト方式：**6/9項目 = 66.7%（表示上67%）**。前回の56%から次の約10ポイント区切りに到達。
+- 今回完了扱いにしたのは、ルート呼び出し名・import・exportの静的照合。見つかった接続不一致候補は未修正のまま明示的に記録した。
+- この67%は「棚卸しチェック項目の完了割合」であり、全機能の実装率・正常率・本番適用率ではない。過去記録にある重み付き概算（23–25%等）は別方式の途中記録で、チェックリスト方式の値と直接比較しない。
+- 未完了の大項目：Migrationと全SQLの列/制約/Index双方向照合、全画面のUI操作→API→認可/DB/エラー状態の対応付け、機能ごとの実装状態確定、機能別テスト/E2E確認条件。
