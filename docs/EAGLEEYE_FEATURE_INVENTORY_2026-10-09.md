@@ -1931,3 +1931,50 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 - 80%はMigration 0010〜0019とD1索引/watchlist schemaの部分照合を反映した作業管理上の概算。監査完了・本番検証完了を意味しない。
 - 次はMigration 0001〜0009、Emergency Buffer/leaseの完全な呼び出し経路、HTTP routeの認証・ACTIVE・method一覧を継続する。
+
+
+---
+
+## 2026-10-09 継続監査：Migration 0001〜0009・初期スキーマ照合
+
+### 初期Migrationの静的照合
+
+- **0001〜0003 users/roles：** usersの基本列と索引を確認。0003はusersを再構築してOWNERをrole CHECKに追加。後続0056はVIPを追加するため、最終スキーマ判断には後続Migrationを含める。実データ移行結果と本番適用履歴は未確認。
+- **0002 api_observations：** API observationのtarget/provider/endpoint/time索引を作成。後続0011のtarget/time索引はアクセスパターンを追加補強している。索引の重複コスト・Query Planは未確認。
+- **0004 players/player_snapshots：** player current列とplayer snapshotsを作成。src/player-store.js / ranking-store.js / retention.jsの参照列を部分確認し、今回の範囲で明確な列名不一致は見つからなかった。
+- **0005 change_events：** target/type/observationの索引を作成。後続0045は対象・変更種別・検知時刻を含む複合indexを追加。古いindexが冗長かどうかは実クエリとQuery Planで判断する必要がある。
+- **0006 api_pool：** api_pool_keys、api_pool_usage、旧api_leasesを作成。後続0017はapi_pool_keysにlease列を追加して新方式へ移行し、旧ACTIVE leaseをEXPIREDにする。現行コードの大部分はapi_pool_keys側のleaseを使用する一方、Ownerのキー削除経路はapi_leasesも削除しているため、legacy table参照が完全に除去済みとは扱わない。
+- **0007 rankings：** ranking_snapshots/player_rank_snapshots/kingdom_watchlistsを作成。後続0011〜0013で索引最適化、0019でkingdom_ranking_currentとwatchlist job系へ拡張されている。旧ランキング履歴の存在だけを理由に広範囲SELECTを復活させない。
+- **0008番号重複：** data_retentionとkingdom_watchlist_jobsの2ファイルが同じ番号。ファイル名だけでは実適用失敗の証明にならず、適用履歴とデプロイ手順を確認する必要がある。両方のDDLはIF NOT EXISTS中心だが、後続の列追加Migrationを含む適用順の保証は未確認。
+- **0009 player_visibility_settings：** visibility設定行を初期投入する。後続0055でVIPを含む制約へ再構築されるため、0009だけを最終ロール構成と扱わない。
+- 初期Migrationと現行ソースを部分照合したが、全列・全クエリの網羅、実DBのschema、migration履歴、実データに対する移行結果は未確認。
+
+### Emergency Buffer / API Leaseの呼び出し経路
+
+- src/history-emergency-buffer.jsはPENDING/FAILED行を古い順に取得し、DRAININGへ更新後にR2保存成功でD1行を削除、失敗時はFAILED・attempts・last_errorを更新する構造を確認。
+- 確認したsrc/index.jsにはdrainHistoryEmergencyBufferとarchiveSystemEventLogを呼ぶ診断/運用経路が存在するが、scheduled()本体から直接drainHistoryEmergencyBufferを呼ぶ経路は確認できていない。自動排出が必要な設計なら起動経路を要確認。FAILED行の自動再試行は関数が呼ばれる頻度に依存する。
+- api-pool.jsにはreleaseExpiredLeases()がある。現行のlease管理がapi_pool_keys側へ移行しているため、旧api_leasesの掃除・参照が必要な経路と、移行後の期限切れlease recoveryを分けて追跡する。今回、本番lease行数・復旧処理の実行頻度は未確認。
+
+### 監査上の区分
+
+- 静的に確認したこと：0001〜0009のテーブル/列/制約/index、後続Migrationとのrole/lease/schema変遷、Emergency BufferのR2成功後削除順序。
+- 未確認：実Migration適用履歴、本番データの移行結果、Queue/cronによるbuffer排出頻度、legacy api_leasesの実残存行、Query Plan/実読み取り量。
+- コード変更・Migration変更・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+---
+
+## 最新監査進捗（2026-10-09・Migration 0001〜0009監査後）
+
+**全体進捗目安：90%**（作業管理上の概算。コード行数の網羅率・本番動作確認率ではない）
+
+| 監査ワークストリーム | 状態 | 進捗目安 |
+|---|---|---:|
+| 機能台帳・主ルート分類 | 主ルート分類済み。個別ハンドラー/未定義参照の最終確認中 | 90% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/session、主要Owner/Watchlist/Mighty/Player Link APIを部分確認。全ルート表の最終突合せ中 | 72% |
+| Migration・SQL・制約・インデックス | 0001〜0058の全Migrationファイルを段階的に確認。ただし現行SQLとの全照合、本番適用履歴、Query Planは未完了 | 85% |
+| Cron・Queue・R2・定期処理接続 | 主要定期処理、Queue/R2、Semaphore、Retention、Emergency Bufferを部分確認。起動経路/再試行の最終突合せ中 | 78% |
+| テスト基盤・実行時検証 | 静的監査中心。実Migration適用履歴、Query Plan、実行時/本番E2Eは未確認 | 10% |
+
+- 90%は初期MigrationとEmergency Buffer/lease経路の照合を反映した作業管理上の概算。全ルート/全SQLの最終確認と実行時検証は残るため、完了とは扱わない。
+- 次は最終クロスチェック：ルート定義とハンドラー/認証・ACTIVE・method、import済み未接続候補、Retention/Buffer/Queueの呼び出し、Migration重複番号と適用手順、台帳内の指摘の重複/訂正をまとめて確認する。
