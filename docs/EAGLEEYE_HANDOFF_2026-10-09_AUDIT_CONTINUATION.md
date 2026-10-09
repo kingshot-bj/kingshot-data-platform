@@ -478,3 +478,11 @@
 - InteractionはEd25519署名検証あり。Ticket stateは専用D1 tableではなくDiscord channel/topicを中心に管理しているように見えるため、Discord側でchannel/topicが変更/削除された場合の復旧要件を確認する。
 - 実Discord操作/コマンド登録は行っていない。
 
+## 2026-10-10 棚卸し進捗 — Safety Gate / Service Usage / Coverage
+
+- 台帳更新コミット: `437ce0d4861d43e03a53f2d35238fe3dacc65616`
+- Safety Gateのpriority/reserve/quota/Cloudflare usage stateを整理。
+- 重要候補: `maxUsagePercent()`が全metrics欠損でnullを返し、`getSafetyState(null)`が数値0としてNORMAL扱いする可能性。欠損と実測0を分離するテストが必要。修正は未実施。
+- Service UsageはQueue→R2 gzip NDJSON。送信失敗時のqueued:false、Archive unavailable時のretry/DLQ、read-modify-writeによるR2 I/O増幅/競合を記録。
+- Kingdom Collection Coverageの統計がWatchlist収集のみを反映する可能性を記録。全収集カバレッジとの定義を確認する。
+
