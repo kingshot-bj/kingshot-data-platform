@@ -668,3 +668,26 @@ src/index.js のルート棚卸しは途中まで進行。Workerイベント入�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | ローラー/Seeder起動経路とR2 binding | 収集ローラー3種とSeederは定義/importされているが、Workerからの実行呼び出しを確認できず。コードは `R2_ARCHIVE`、Cloudflare設定は `ARCHIVE` で名称不一致を確認。 | 機能が運用対象かを確認し、実行経路・DB state・本番ログを照合する。必要なら起動接続とbinding修正を別の実装作業として計画する。 |
+
+
+## フェーズA-2 追加 — 公開Statusページの内部エラー文面表示（優先度: 中・秘匿情報レビュー）
+
+対象: `src/index.js` の `renderPublicStatusPage()`、`src/status-ops.js` の `getOperationalStatus()`。
+
+公開ルート `/status` は、Cloudflare使用量の詳細をADMIN/OWNER以外には隠す分岐がある一方、公開ページ自体は `getOperationalStatus(env.DB)` と `getSystemDiagnostics()` の結果を取得する。
+
+確認したHTML生成では、次の内部エラー文面がエスケープされたうえで公開ページに表示される。
+
+- API Poolの最新キーに紐づく `lastErrorMessage`
+- 王国ウォッチリストの最新ジョブに紐づく `lastError`
+- MightPulse診断イベントの `last_error_code` または `last_message`
+
+HTMLエスケープはHTML注入対策であり、内容の秘匿化とは別である。エラー文面が一般化された固定メッセージか、上流レスポンスや内部識別子を含みうる文字列かを確認する必要がある。公開Statusの運用方針として状態・件数を見せること自体は意図的だが、詳細エラー文面まで公開する必要があるかは別途判断する。
+
+- 現時点でAPIキー本体が表示されている事実は確認していない。
+- 直ちに秘密情報の漏えいと断定せず、公開応答に含まれる可能性のある情報をレビュー対象として記録する。
+- 次の確認: `recordApiPoolFailure()`、ウォッチリスト失敗処理、診断ログの全メッセージ生成元を追跡し、token/key/Discord ID/内部ID/生レスポンスの混入有無を確認する。公開表示はエラーコードと定型文に限定する案を検討する。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | 公開 `/status` エラー文面 | Cloudflare使用量の詳細はADMIN/OWNERに制限されるが、Pool/Watchlist/MightPulseの一部エラー文面は公開HTMLに表示されることを確認。 | メッセージ生成元を追跡し、公開表示に内部情報が含まれないか確認する。 |
