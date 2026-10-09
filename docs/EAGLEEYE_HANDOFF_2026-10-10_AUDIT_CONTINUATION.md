@@ -148,3 +148,11 @@
 - 進捗は引き続き67%（6/9）。Migrationファイルの静的横断は進めたが、src全体の列/Index双方向照合とUI/API/DB接続の棚卸しは未完了。77%へはまだ更新しない。
 - 次はreconcile scriptの呼出元/運用説明を静的検索し、`kingdom_ranking_current`を参照する全SQL、DDLとIndexの対応、Migration 0058の読出し/保存経路を追跡する。
 - 安全制約を継続。コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。広範囲`ranking_snapshots`取得なし。
+
+### 追加確認：schema reconciliation Workflowの役割
+
+- `.github/workflows/eagleeye-d1-schema-reconciliation.yml` は本番変更前に明示確認を要求し、reconcile scriptの対象0017–0043を検証している。0044–0058が同scriptの配列にないことだけで不具合とは断定しない。
+- `.github/workflows/eagleeye-d1-apply-pending-migrations.yml` は別途0053 production drift scriptを呼び、通常Migration適用後に0054–0057の要素を検証する。0053–0057は別経路で扱われることを確認。0058の専用検証は確認できていないが、通常Migration適用対象である想定。本番適用状況は不明。
+- `source_first_at/source_last_at` は0008が作成した既存テーブルに0019のCREATE TABLE IF NOT EXISTSでは追加されず、0020–0058にも該当ALTERが見当たらない。新規環境でも列欠落が残る可能性が高いという評価に更新。実D1の状態は未確認。
+- 機能台帳の評価更新コミット: `e8dd61693164e3fbbea9c45ccf1adf105831ec2b`。
+- Workflow/スクリプトは静的に読むのみ。起動、Cloudflare接続、D1変更は一切行っていない。
