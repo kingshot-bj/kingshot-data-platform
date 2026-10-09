@@ -104,14 +104,15 @@
 
 ## 2026-10-09 継続監査追記（OAuth/session）
 
-- 直近の監査記録更新コミット：`07c0a74b16dd5a4f0ff85e189f47071b98d0193b`
+- 直近の監査記録更新コミット：`bfd92211898f2eab13a631e637d1a77ca0e3a261`
 - 監査記録：[`EAGLEEYE_FEATURE_INVENTORY_2026-10-09.md`](./EAGLEEYE_FEATURE_INVENTORY_2026-10-09.md)
 - 今回、`src/index.js` のDiscord OAuth開始/callback、Cookie発行、`getAuthenticatedUser()`、Owner管理APIの一部を再確認。
 - 新規追加した要確認事項：
   1. OAuth stateはHMAC署名と10分の時刻確認があるが、開始ブラウザとの照合と一度きりの消費が見当たらず、ログインCSRFの可能性がある。実攻撃は未実施。
   2. D1のユーザー保存失敗を捕捉した後もセッションCookieを発行するため、callbackはログイン完了に見えても後続のD1ユーザー照会で未認証になる可能性がある。D1障害試験は未実施。
 - Owner管理APIのうちユーザー一覧/ロール/状態/監査ログ/ウォッチリスト関連、API Pool再割当は、ルーター直下に認可ガードがないものでもハンドラー内部の`requireOwner()`を確認。未確認の別ルートへ一般化しない。
-- `/player/compare` 未定義レンダラーと不正Cookie例外は既存記録にあるため重複追記していない。
+- `/player/compare` 未定義レンダラーは既存記録にあるため重複追記していない。
+- セッションCookieの不正形式についても追記確認：`parseCookie()` の `decodeURIComponent()` だけでなく、`verifyPayload()` 内の署名部分 `decodeBase64Url()` も例外捕捉前に実行されるため、不正セッションCookieが共通catch経由で500になる可能性。既存の不正Cookie所見を拡張し、重複項目は作成していない。
 - 監査全体は未完了。全ルート認証・メソッド・ACTIVE状態の照合、Migration/SQL全体照合、Cron/Queue/R2の接続照合を続ける。
 - アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
