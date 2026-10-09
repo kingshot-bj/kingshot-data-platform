@@ -390,3 +390,12 @@
 - Mightyページはユーザー資格を確認したうえでevents/KvKを別々に取得するため、1画面表示で外部APIを複数消費する。実API計測はしていない。
 - 次はPlayer Profile/Search/History/Changes/Exportの画面とAPIの対応を埋める。
 
+## 2026-10-10 棚卸し進捗 — Player Profile/Search/History
+
+- 台帳更新コミット: `10779db9eefa647044e1e954059378adc8155b5c`
+- Player Search/Profile/Refresh、Player History API/画面、Rank History API、Changes API/画面、Hero/Equipment/optional assets、ADMIN exportの接続を整理。
+- 重要な経路差候補: `/api/player/history` は `getPlayerHistory()` 経由でD1/R2を読む一方、`/player/history` は `player_snapshots` をD1から直接SELECTしている。R2 archive後に画面/API結果が異なる可能性があり、次巡回で確認する。
+- `/player`サーバー画面と`/api/player`、`/api/player/refresh`は取得処理が重複する可能性。`/api/player/rank-history`は対応画面/呼び出しが未確認。
+- Player Searchの部分一致LIKEはD1読み取りコスト候補。計測や本番Query Planは未実施。
+- 次は残る主要Migrationの列/制約/Index、API認可/HTTP method、機能の未接続/重複/仕様未確定の分類を進める。
+
