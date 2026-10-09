@@ -304,3 +304,14 @@
 - 次は監査残り20%として、候補の優先度と重複を統合し、各候補に根拠ファイル/行・影響・確度・未確認点を揃え、隔離環境で実行すべきテスト行列を最終化する。コード修正は行わない。
 - 未実施: build、route smoke、isolated D1 Migration/fixtures、Query Plan、browser/Safari E2E、Preview integration、Production read/write、Queue操作、外部API/OAuth/Discord/Google実操作。
 - 制約: D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリを追加・復活させない。コード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
+
+
+## 2026-10-10 機能信頼性監査 — 90%到達
+
+- **現在: 90%**。今回、Safety Gateの実呼出し、Owner Load Test開始経路、Mighty再確認→health-check lease→API Pool状態更新、System Event Queueのack/retry構造を静的に追跡し、既知候補を優先度順に統合した。
+- Safety Gate: Cloudflare metrics全欠損でusagePercent=null、`getSafetyState(null)`がNORMALになる候補。特に低優先度Load Test開始時のメトリクス欠損を安全側に扱えるか要確認。コード未修正。
+- Mighty key: Mighty再確認対象はREVOKED以外。health-check leaseはDISABLED/ERRORも許可し、成功時の`recordApiPoolSuccess`はlease一致キーをAVAILABLEにする。管理者のDISABLED指定を成功確認が解除してよいか仕様未確認。
+- System Event Queueは無効メッセージをack、有効メッセージのD1 batch失敗時はthrowしてretry可能にする静的実装。実Queue/DLQ/Retryの動作は未確認。
+- P0候補: SQL列不一致、Player Compare route-handler、Watchlist Cron起動、Retention/Buffer起動、PreviewのD1/R2共有、Safety Gate欠損値。P1候補: Change Events R2 readback、Seeder/Roller接続、Load Test export route、Mighty DISABLED状態、Player Visibility認可差。詳細根拠は機能台帳。
+- 残り10%: 全候補の確度・影響・未確認を最終統合し、隔離環境用テスト行列と再開手順を整える。build/実行テスト/Productionは未実施。
+- 禁止事項を継続: アプリ/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。Previewは本番D1/R2を共有しているため実行しない。D1 Free reads最優先、広範囲な`ranking_snapshots`取得なし。
