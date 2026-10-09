@@ -1623,22 +1623,22 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 ### 2026-10-09 継続監査：Migration 0058 と王国ランキング設定APIの読取経路
 
-#### [中・機能未接続候補] 保存APIは確認できるが、設定を読み戻すSQL経路が見つからない
+#### [監査結果を訂正] Migration 0058 と王国ランキング設定APIの保存・読み戻し経路
 
-- **確認箇所：** `migrations/0058_user_kingdom_ranking_preferences.sql`、`src/index.js` の `handleKingdomRankingPreferencesApi()` とルーター（約3994行、約7340〜7360行）。
+- **確認箇所：** `migrations/0058_user_kingdom_ranking_preferences.sql`、`src/index.js` の `handleKingdomRankingPreferencesApi()`、`src/kingdom-portal.js` の `renderKingdomRankingsPage()`。
 - Migration 0058はユーザーごとの `kid`、`boards_json`、`primary_board` を保存するテーブルと `kid` インデックスを作成する。
-- ルーターは `/api/kingdom-rankings/preferences` をハンドラーへ接続しているが、ハンドラーはACTIVEユーザー確認後にPOSTのみ受け付け、`user_kingdom_ranking_preferences` へINSERT/UPSERTする。現行 `src/index.js` の参照確認では、このテーブルに対するSELECT/読取APIは見当たらない。
-- **想定影響：** 設定の保存はできても、ページ再表示時に保存済み設定を読み戻して初期値へ反映する機能が別モジュール等に存在しなければ、永続化が利用者体験につながらない可能性がある。画面全体・別モジュールの参照を完全網羅したわけではないため、未実装と断定はしない。
-- **D1観点：** `user_id` はPRIMARY KEYのため、ユーザー単位の読取を実装する場合は `WHERE user_id = ?` の単一行参照で足りる。全ユーザー設定の一括SELECTにしない。
-- **根拠の強さ：** Migrationと `src/index.js` の静的確認。画面操作・API実動作・本番データ確認は未実施。
-- **次の確認：** フロントエンドの設定保存呼び出しと画面初期化経路を確認し、保存後の読取・再表示が必要な仕様か確定する。コード変更・デプロイは別途許可まで行わない。
+- `src/index.js` は `/api/kingdom-rankings/preferences` をハンドラーへ接続し、ACTIVEユーザーとPOSTメソッドを確認してからUPSERTする。
+- **前回の「SELECT/読取経路が見つからない」という暫定所見は訂正する。** `src/kingdom-portal.js` の `renderKingdomRankingsPage()` は、ACTIVEユーザーの場合に `SELECT kid, boards_json, primary_board FROM user_kingdom_ranking_preferences WHERE user_id = ? LIMIT 1` を実行し、保存済み王国・ボード・主ボードをページ初期表示へ反映する。ルーターも `/kingdom/rankings` で認証ユーザーを取得してこのページ関数へ渡している。
+- よって保存と読み戻しの主要経路は静的コード上でつながっている。ページ描画時にはユーザー設定1行と、連携領主1行のSELECTが実行される。D1 Free観点ではどちらも `user_id = ?` で絞った単一行検索であり、広範囲読取ではない。実行時の実消費量は未計測。
+- **根拠の強さ：** Migration、ルーター、保存API、画面レンダラーの静的照合。ブラウザーE2E・本番データ確認は未実施。
+- 今回はアプリコード変更・デプロイ・本番DB更新を行っていない。
 
 
 ---
 
 ## 監査進捗（2026-10-09 時点・暫定）
 
-**全体進捗目安：40%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
+**全体進捗目安：42%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
 
 | 監査ワークストリーム | 状態 | 進捗目安 |
 |---|---|---:|
