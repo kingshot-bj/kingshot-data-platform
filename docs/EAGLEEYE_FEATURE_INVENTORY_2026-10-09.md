@@ -1568,3 +1568,26 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `/api/admin/diagnostics` はハンドラー内部で `requireAdmin()` を実行することを確認。ルーター直下にガードがないことだけを理由に認可欠落とは判定しない。
 - 今回は静的コード監査のみ。アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+---
+
+### 2026-10-09 継続監査：Preview Queue binding と実行環境の分離
+
+#### [中〜高・Preview構成差分] PreviewにSYSTEM_EVENT_QUEUE producer bindingがなく、Queue consumer設定もない
+
+- **確認箇所：** `wrangler.jsonc` のproduction設定（約36〜76行）と `previews` 設定（約85〜127行）。
+- ProductionのQueue producerには `SERVICE_USAGE_QUEUE`、`LOAD_TEST_QUEUE`、`SYSTEM_EVENT_QUEUE` が定義され、consumerにはサービス利用ログ・ロードテスト・システムイベントの3キューが登録されている。
+- Preview側producerは `SERVICE_USAGE_QUEUE` と `LOAD_TEST_QUEUE` のみで、`SYSTEM_EVENT_QUEUE` がない。Preview側にはconsumer設定もない。
+- 一方、`src/index.js` は `queue()` で `setSystemEventQueue(env.SYSTEM_EVENT_QUEUE)` を呼び、イベント記録側はこのbindingを利用する構成。Preview環境でシステムイベントをQueue経由で記録する機能は、productionと同じようには動作しない可能性がある。
+- さらにPreviewのD1設定はProductionと同じ `database_id`、R2も同じ `eagleeye-archive` を指定している。Previewを独立環境として扱う想定ならデータ分離されていない。Previewで実行したテストが本番データへ触れる危険があるため、**Previewを本番と同等の安全なテスト環境とみなさないこと**。
+- **判定：** Wrangler設定ファイル上の差分は確認済み。Cloudflare上の実デプロイ設定、Previewリクエスト時の実際のbinding値・キュー配送は未確認。現在の設定変更・デプロイは行っていない。
+- **推奨確認：** Previewの目的を「本番共有の限定プレビュー」か「独立テスト環境」か明文化する。独立環境が必要ならD1/R2/Queueを分離する。共有が意図的なら、Previewからの書き込み・負荷テスト・イベント記録をどう制限するかを明記し、Queue binding欠落を意図した差分か確認する。
+
+#### Queue consumer接続の静的確認
+
+- `wrangler.jsonc` のProductionには3 consumerがあり、`src/index.js` の `queue()` は `SYSTEM_EVENT`、`KINGDOM_LOAD_TEST_RUN`、その他サービス利用イベントを分岐して対応するハンドラーへ渡している。
+- `src/system-event-queue.js` はD1 batch成功後に有効メッセージをackし、batch失敗時は未ackメッセージをretry対象にする。形式不正メッセージはログ記録後ackする設計。
+- `src/service-usage-archive.js` はR2未設定時・保存失敗時にretryし、形式不正メッセージはackする設計。
+- これはコード経路の静的確認であり、実際のQueue配送、再試行、DLQ移送は未試験。
+- 今回もアプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを復活させない。
