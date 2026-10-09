@@ -454,3 +454,11 @@
 - `data-collection-engine.js`のGuard/Service Usage/trace経路と、endpoint helperの存在、ローラーの定期起動を別々に管理する。
 - 次は全Migration列/制約/Index照合と、残る機能領域の重複/未接続候補をまとめる。
 
+## 2026-10-10 棚卸し進捗 — 共通UI基盤
+
+- 台帳更新コミット: `4da7a76851f6e19b61b8936d4a54c293fe7ad014`
+- 共通Theme Script/CSSのlight/dark、Preview banner、上部ロールバー、mutating fetch guard、button/form二重操作防止の実装を棚卸し。
+- ロールバーは`/api/me/advanced`から現在roleを取得する設計。テーマ/ロールバー/二重操作防止が全HTML routeへ適用されるかは未確認。
+- iPhone Safariでの全画面E2Eは未実施。共通ガードの存在だけで全操作保護済みとは判定しない。
+- 次はOwner/User管理とSupport状態遷移、Migration列/Index照合を進める。
+
