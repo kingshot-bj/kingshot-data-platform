@@ -289,3 +289,19 @@
 - 既知の要照合点: `handlePlayerCompareApi` / `renderPlayerComparePage`、Seeder/Roller/Retention/Emergency Buffer/Watchlist Schedulerの起動経路、`R2_ARCHIVE` と実binding `ARCHIVE`、Google Drive OAuth Redirect URI、Preview/Productionのリソース共有。
 - 作業制約: アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行わない。D1 Free読み取り量を最優先し、`ranking_snapshots` の広範囲取得クエリは絶対に復活させない。
 
+## 2026-10-10 棚卸し進捗 — ルート/Worker接続の第1巡目
+
+- 更新台帳: [EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md](./EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md)
+- 台帳更新コミット: `7d798cc37987196a3a72df5be0f3e8c62f043571`
+- `src/index.js` の110パス入口を関数定義・変数定義・相対importと照合。2件の未解決参照候補を確認:
+  - `/api/player-compare` → `handlePlayerCompareApi`（定義/importが見つからない）
+  - `/player/compare` → `renderPlayerComparePage`（定義/importが見つからない）
+  - `player-compare.js` には比較ロジックはあるが、上記のルートハンドラー/ページ関数は確認できない。実行再現・修正は未実施。
+- Workerの実起動経路:
+  - `scheduled()`: API Pool自動復旧、王国Catalog日次更新、Discord変更通知。
+  - `queue()`: System Event、Load Test、Service Usageの3 consumer系統。
+  - 未接続候補: `runKingdomSeeder`、`runKingdomRankingRoller`、`runAllianceRoller`、`runPlayerRoller`、`runDataRetentionJob`、`drainHistoryEmergencyBuffer`。特にRetention helper内のcleanup/archive呼び出しは、親ジョブ自体が起動されないように見える。
+- これらは静的な接続候補であり、意図的な未使用・別起動経路・実害の有無はまだ確定していない。コード修正を先行しない。
+- 次: 全画面のフォーム/ボタン/イベントハンドラー/fetch先を抽出し、画面→API→関数→DB/外部APIをマッピングする。その後Migration/SQLの双方向照合。
+- 不変条件: D1 Free読み取り最優先、`ranking_snapshots`広範囲取得クエリ禁止。コード変更、デプロイ、本番DB更新、Queue操作、収集/負荷テスト起動は禁止。
+
