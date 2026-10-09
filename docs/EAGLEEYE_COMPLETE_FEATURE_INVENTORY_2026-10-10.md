@@ -1437,3 +1437,26 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - GitHub `main`の静的ソースとMigrationのみ確認。ビルド、ブラウザE2E、実D1 schema、Query Plan、Cloudflare Insights、実R2データは未確認。
 - アプリコード/Migration/Workflowの変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
 - D1 Free readsを優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させていない。
+
+
+### 2026-10-10 継続監査追記 — API Observations / Players の列定義差候補
+
+#### K. `api_observations.source_observed_at`
+
+- **Migration側:** `migrations/0002_api_observations.sql` の `api_observations` CREATE TABLE定義に `source_observed_at` はない。Migration 0001–0058を確認した範囲で、同テーブルへ当該列を追加するALTERは見当たらない。
+- **現行SQL側:** `src/api-observations.js` のINSERT列リストに `source_observed_at` がある。`src/api-raw-inspector.js` は同列をSELECTし、`src/player-store.js` の最新Observation取得でも同列を読む。
+- **Reconcile側:** `scripts/reconcile-d1-schema.mjs` の該当するaddColumn処理に、この列の補修は見当たらない。
+- **影響/確度:** Migration 0002形状のDBに対してこのINSERT/SELECTが実行されると、列不存在によるSQLエラーとなる可能性が高い。DDLとSQLの静的な不一致候補は高確度。実D1 schema、当該SQLの本番実行、実際のエラーは未確認。
+
+#### L. `players.source_observed_at`
+
+- **Migration側:** `migrations/0004_players.sql` の `players` CREATE TABLE定義に `source_observed_at` はない。Migration 0001–0058を確認した範囲で、同列を `players` へ追加するALTERは見当たらない。`migrations/0051_players_r2_index.sql` が追加するのは `r2_latest_key` であり、source時刻列ではない。
+- **現行SQL側:** `src/player-store.js` の `INSERT INTO players`、UPSERT更新句で `source_observed_at` を使用する。ほかに `r2_latest_key` は0051で追加されるため別扱い。
+- **Reconcile側:** `scripts/reconcile-d1-schema.mjs` で `players.source_observed_at` を追加する `addColumn()` は見当たらない。
+- **影響/確度:** Migration 0004形状のDBではPlayer materializationのINSERT/UPDATEが失敗する可能性が高い。静的な列定義差は高確度。実D1 schema、実行時エラー、本番への影響は未確認。
+
+#### 2候補に関する注意
+
+- これはMigrationファイルと現行コードの静的照合結果であり、Cloudflare D1へ接続してschemaを読んだ結果ではない。
+- 既知の `kingdom_ranking_current.ranking_snapshot_id`、`kingdom_watchlist_jobs.source_first_at/source_last_at` と同様、修正はせず台帳に候補として記録する。
+- 次の確認では、`api_observations` と `players` の全INSERT/UPDATE/SELECT列をMigrationの最終形と照合し、他テーブルの未確認差分を引き続き追う。
