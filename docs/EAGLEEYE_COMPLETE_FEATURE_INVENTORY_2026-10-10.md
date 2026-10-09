@@ -1350,3 +1350,10 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - 0008 `kingdom_watchlist_jobs` DDLで作成された既存テーブルに対し、0019は `CREATE TABLE IF NOT EXISTS` で同テーブルを再定義するだけであり列追加はしない。0020–0058のMigrationにも `source_first_at/source_last_at` をADD COLUMNするALTERは見当たらない。
 - よって、Migrationを番号順に新規適用しただけの環境でも、初回作成時の0008形状が残る可能性が高く、現行コードのINSERT/UPDATE/SELECTと不整合になる。これは静的なMigration設計上の高確度候補（新規DBへの適用時も問題になり得る）として扱う。本番D1の実状態・適用済みMigration・実行時障害は未確認。
 
+
+### J. Migration 0058の保存API接続 — 読出し経路は未確認
+
+- Migration 0058は `user_kingdom_ranking_preferences` を作成する。`src/index.js` には `handleKingdomRankingPreferencesApi()` と `/api/kingdom-rankings/preferences` のルートがあり、認証済みユーザーの `kid/boards_json/primary_board` をINSERT/UPSERTする。
+- `src/index.js` 全文の文字列検索では、このテーブルをSELECTする処理、GETで保存済み設定を返す処理、または同API URLを呼ぶクライアント側fetchは確認できなかった。現時点で「保存APIはあるが、保存値の読出し/UIからの呼出しが未接続の可能性」を候補として追加する。
+- 確度は中。UIが別ファイル/別経路でAPIを呼ぶ可能性、ユーザー設定をまだ書き込み専用で提供している仕様の可能性が残る。HTML生成部分、関連JS資産、APIルートの利用者を次に確認する。実行時のネットワーク検証は行っていない。
+
