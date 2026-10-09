@@ -1387,3 +1387,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - しかし `getSafetyState(usagePercent)` は先に `Number(usagePercent)` へ変換するため、`Number(null) === 0` となり、データ欠落時も `NORMAL` を返す。コメント上は数値でない値を `CAUTION` とする意図だが、nullではその分岐に入らない。
 - そのため、Cloudflare Analytics/APIが未設定・障害・レスポンス形式変更等で使用量を取得できないときに、Safety Gateが「使用量0%」として扱い、リソース監視が効いている前提で処理を許可する可能性がある。
 - 対応時はnull/undefined/空文字を数値変換前に明示判定し、テレメトリ欠落時はCAUTIONまたはより安全な制限状態にする。null・undefined・0・正常値・閾値超過を含む単体テストが必要。今回はSafety Gateを使う負荷処理は起動していない。
+
+
+### [中] Safety Gateは利用可能APIキーが0本でも許可判定になり得る
+- `evaluateSafetyGate()` はPool枠保護で `if (available > 0 && available <= reserve)` を条件にしているため、`availablePoolKeys === 0` の場合はこの理由でブロックしない。
+- `plannedRequests > 0` かつ利用可能キーが0本なら実際の収集はAPI Poolのリース取得で失敗するため、Safety Gate段階で止められず、不要なジョブ起動・D1更新・失敗ログを増やす可能性がある。
+- 対応時は「利用可能キー0本」と「予約枠以下」を別条件にし、0本なら優先度に関係なく新規作業をブロックするか、明示的に予約キーを使用する設計にする。Watchlistが予約枠を使える仕様との整合性もテストする。
+- 本番でSafety Gateを起動していないため、現時点での実害は未確認。
