@@ -416,3 +416,11 @@
 - このためCSV exportリンクがCSVを返さずfallbackへ到達する可能性。handler側にOWNER guardも見当たらないため、接続する場合は認可ガードが必須。今回、ルート接続/コード修正は行っていない。
 - ルート/接続の要確認候補は現時点で3件: Player Compareのhandler/page未解決2件、Load Test CSV export未登録1件。
 
+## 2026-10-10 棚卸し進捗 — Gateway / Probe / Research / Backfill
+
+- 台帳更新コミット: `095f156952d370250c41d3d5cb4504f1aed2bf2e`
+- Gateway APIのstatus/diagnostics、Bearer token認証、直近500件の制限付きログとfull export経路を整理。
+- MightPulse Probe/Research、Player/Ranking admin test、API Raw Inspectorの画面/APIを機能台帳へ追加。
+- OwnerのKingdom Catalog R2 backfillは通常1–100件/run_all最大100件のバッチ、R2保存後D1 payload NULL化、事後検証/FAILED state更新の経路を整理。実行していない。
+- 引き続きD1 Free readsを最優先。Gateway diagnostics/Cloudflare AnalyticsやR2 backfillを棚卸しのために実行しない。
+
