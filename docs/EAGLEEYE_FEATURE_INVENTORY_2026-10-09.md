@@ -997,3 +997,27 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/` の主要なAPI、認証、API Pool、プレイヤー/ランキング保存、R2アーカイブ、Retention、診断、外部連携モジュールを継続して照合中。
 - 正規表現の候補は `src/index.js`、補助アセット収集スクリプト、Google Sheets署名、Cloudflare使用量分類にまたがっている。修正着手時は全リポジトリを検索し、機能別テストを追加してからまとめて直す。
 - 本追記時点でも本番操作・DB変更・デプロイは未実施。
+
+
+## 監査追記：ユーザー領主リンクのスキーマ処理・外部API設定（2026-10-09 続き）
+
+### [中〜高] ユーザー領主リンク機能がリクエスト経路でDDLを実行
+- `src/user-player-link.js` の `ensureSchema(db)` は、初回呼び出し時に `CREATE TABLE IF NOT EXISTS` と複数の `CREATE INDEX IF NOT EXISTS` を実行する。
+- 一方、`migrations/0022_user_player_links.sql` と `migrations/0026_user_player_links_multi_account.sql` でテーブル・インデックスはMigration管理されている。現行コードでは `getUserPlayerLinks`、`getUserPlayerLinksWithPlayers`、`findActiveGovernorOwner`、登録処理などから `ensureSchema` が呼ばれる。
+- Worker isolateごとにモジュール内Promiseのキャッシュが初期化されるため、コールドスタート後の最初の該当リクエストで複数DDLが実行され得る。Migration管理とリクエスト時DDLの二重管理になっており、初回遅延・スキーマ変更の追跡困難・D1負荷の観点から要整理。
+- これは直ちにデータ破損を意味しない。既存MigrationとDDLの差分を比較し、必要なスキーマはMigrationへ集約し、通常リクエストからDDLを外す方針を検討する。今回は変更していない。
+
+### [確認済み・運用上の注意] Google Sheets連携には別々の2経路がある
+- `src/google-sheets.js` は、設定に応じてGoogle Apps Script Web App（HMAC署名付きPOST）またはGoogle Sheets API（Service Account JWT）を使い分ける。
+- したがって、OAuth設定・Refresh TokenだけではGoogle Sheets連携の正常性を判定できない。使用する経路に応じて、`GOOGLE_SHEETS_WEBAPP_URL` / `GOOGLE_SHEETS_WEBAPP_SECRET` または `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` と、対象スプレッドシートへの共有権限を確認する必要がある。
+- Web App署名のBase64URL変換に関する正規表現候補は直前の節に記録済み。どちらの経路を本番で使っているか、環境変数の値は未確認（Secret値は記録しない）。
+
+### [中] ユーザー提供MightPulseキー数は無制限設計で、一覧取得・検証コストも件数依存
+- `src/user-eligibility.js` はユーザー提供キー数を明示的に無制限としている。Advanced判定では該当ユーザーのキーを全件取得し、各キーの表示用プレフィックス復号を並列で行う。
+- 登録時はMightPulse APIへ疎通確認し、キーの重複チェックと保存を行う。キー数が増えた場合、Eligibility画面のD1読み取り・復号・Promise並列数が増える可能性がある。
+- 既存の「キー上限」の要件が共有API Poolだけを対象とするのか、ユーザー提供キーも対象なのかは未確定。上限仕様を確認し、必要なら件数制限・ページング・表示時の復号を見直す。今回、APIキー登録や外部API呼び出しは実行していない。
+
+### [中] リポジトリ内のD1 schema reconciliationは安全確認を備えるが、本番状態との照合は未実施
+- `eagleeye-d1-schema-reconciliation.yml` は `RECONCILE_PRODUCTION` の明示入力、Time Travel情報の取得、適用前のMigration一覧取得、適用後検証を含む。
+- 通常のMigration適用workflowも、既知の本番スキーマ差分を先に検査し、適用済みMigrationの確認と0054〜0057関連のスキーマ検証を行う。
+- ただし、この監査ではworkflowを起動していないため、本番のMigration履歴・実テーブル・インデックスが現在のmainと一致するかは未確定。実行済みログを見ずに「本番適用済み」とは扱わない。
