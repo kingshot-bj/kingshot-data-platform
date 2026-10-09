@@ -1277,3 +1277,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - Workerの `/status-json-comparator` / `/status-json-comparator.html` ルートは `public/status-json-comparator.html` を配信する。一方、`status-comparator-pages.yml` は `tools/status-json-comparator.html` を `_site/index.html` にコピーしてGitHub Pagesへ公開する。
 - GitHub Pages workflowは `tools/status-json-comparator.html` の変更でのみ自動実行され、Worker公開版の変更ではPages版が更新されない。ユーザーがどちらを開くかによって機能・UIが違う状態になり得る。
 - 2つを意図的に別機能として保守しているかは未確認。正規版を1つに決めるか、同期手順を明示して比較テストを用意する。今回、HTMLの統合や公開設定変更は行っていない。
+
+
+### [低〜中・セキュリティ強化] Discord Interactions署名検証はtimestampの新鮮さを検証していない
+- `src/discord-support.js` は `X-Signature-Ed25519` と `X-Signature-Timestamp` を使い、timestamp + raw bodyのEd25519署名を検証している。
+- ただし、timestampが存在することは確認するものの、現在時刻との差（許容時間窓）を検証していない。また、`interaction.id` を永続的に重複排除する処理もこの検証経路では見当たらない。
+- Discordからの署名済みリクエストが何らかの経路で記録・取得された場合、同じ署名済み本文の再送を防ぐ追加防御がない。チケット作成等の操作が重複する可能性は、各操作の状態チェックを含めて要検証。
+- 対応時は署名検証に加えてtimestampの許容時間窓とinteraction IDの冪等性を検討する。通常のDiscord署名検証は実装済みであり、今回、偽造リクエストや再送テストは行っていない。
