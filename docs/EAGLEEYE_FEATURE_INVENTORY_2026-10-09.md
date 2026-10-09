@@ -1021,3 +1021,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `eagleeye-d1-schema-reconciliation.yml` は `RECONCILE_PRODUCTION` の明示入力、Time Travel情報の取得、適用前のMigration一覧取得、適用後検証を含む。
 - 通常のMigration適用workflowも、既知の本番スキーマ差分を先に検査し、適用済みMigrationの確認と0054〜0057関連のスキーマ検証を行う。
 - ただし、この監査ではworkflowを起動していないため、本番のMigration履歴・実テーブル・インデックスが現在のmainと一致するかは未確定。実行済みログを見ずに「本番適用済み」とは扱わない。
+
+
+### [中〜高] マイ領主登録のアカウント上限チェックに並行登録競合の余地
+- `src/user-player-link.js` の `saveUserPlayerLinkInternal()` は、既存ACTIVEリンクをSELECTし、王国数・MAIN/SUB数をアプリケーション側で確認した後にINSERTする。
+- Migration `0026_user_player_links_multi_account.sql` と `ensureSchema()` には、領主ID重複・同一ユーザー同一領主・同一ユーザー同一王国のMAIN重複を防ぐUNIQUE INDEXはある。一方、同一ユーザー/王国のSUB件数上限や登録王国数上限をDBレベルで原子的に保証する制約は見当たらない。
+- そのため、同じユーザーがほぼ同時に別のSUBアカウントを登録した場合、両リクエストが上限チェックを通過してからINSERTし、無料上限を超える可能性がある。異なる王国を同時登録する場合も2王国上限の競合候補。
+- 実際に競合を再現したわけではない。対応時は同一ユーザー単位の原子的な制御（適切なトランザクション/ロック/DB制約の組合せ）を検討し、並行登録テストを用意する。UIの二度押し防止だけでは別リクエスト・別端末からの競合を防げない。
