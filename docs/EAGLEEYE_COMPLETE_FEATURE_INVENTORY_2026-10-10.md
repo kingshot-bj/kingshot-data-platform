@@ -1268,3 +1268,36 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - 既知の要確認候補を再確認し、重複登録しないこと: `kingdom_ranking_current.ranking_snapshot_id` の列不一致、`kingdom_watchlist_jobs.source_first_at/source_last_at` のMigration間差、`src/user-player-link.js` の実行時DDL、schema reconciliation scriptが0043までしか必須Migrationを列挙しない点。
 - ルート接続候補: `/api/player-compare` の `handlePlayerCompareApi`、`/player/compare` の `renderPlayerComparePage`、Owner Load Test CSV export handlerの未接続。既存記録の根拠と確度を参照し、修正はまだ行わない。
 - 安全制約: アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは禁止。D1 Free reads最優先。広範囲 `ranking_snapshots` 取得クエリを絶対に復活させない。
+
+
+## 2026-10-10 監査追記 — Migration/SQL双方向照合の追加証拠（静的）
+
+### 既存候補の再確認・根拠補強（重複起票なし）
+
+#### A. `kingdom_ranking_current.ranking_snapshot_id` 列参照
+
+- **現行SQL側の根拠:** `src/index.js` の `getLatestAdminKingdomRankingSnapshot()` が `SELECT ranking_snapshot_id, kid, board, ... FROM kingdom_ranking_current` を発行する。
+- **DDL側の根拠:** `migrations/0019_watchlist_runtime_schema.sql` の `CREATE TABLE IF NOT EXISTS kingdom_ranking_current` は `kid, board, target_type, target_id, rank, previous_rank, score, uid, governor_id, nick_name, aid, abbr, name, observed_at, source_observed_at, source_observation_id, updated_at` を定義し、`ranking_snapshot_id` は含まない。
+- **補助証拠:** `scripts/reconcile-d1-schema.mjs` 内の `kingdom_ranking_current` CREATE TABLE定義にも `ranking_snapshot_id` は含まれない。
+- **評価:** 静的な列不一致候補の確度は高い。Admin Kingdom Rankingの読出し経路でSQLエラーとなる可能性があり、同関数を使うrefresh/export経路への影響も追跡対象。ただし本番D1の実スキーマ、Migration適用状態、該当ルートの実行結果は未確認のため、実行時障害としては未確定。
+- **修正前に必要な確認:** すべてのMigrationで列の後付けがないことを再検索し、関数の全呼び出し元・catch/HTTP応答を追跡する。修正は許可を得るまで行わない。
+
+#### B. `kingdom_watchlist_jobs.source_first_at/source_last_at` の定義差
+
+- **Migration 0008:** `migrations/0008_kingdom_watchlist_jobs.sql` のCREATE TABLEには `source_first_at` / `source_last_at` がない。
+- **Migration 0019:** `migrations/0019_watchlist_runtime_schema.sql` のCREATE TABLEには両列があるが、`IF NOT EXISTS`のため、先に0008が適用されて既存テーブルが存在する環境へは列追加を行わない。
+- **互換DDL:** `scripts/reconcile-d1-schema.mjs` のテーブル作成定義は両列を含む。ただしテーブルが既存の場合に同スクリプトが列を追加するかどうかは、該当のadditive-column処理と対象テーブルのrequired-column定義を含めて引き続き確認する必要がある。
+- **評価:** Migration履歴上の差は確認済み。実DBに列がないと断定はできない。現行SQLが両列を参照する箇所と、既存テーブルへのALTER履歴の有無を次の照合対象とする。
+
+#### C. `user_player_links` 実行時DDLとMigration
+
+- **実行時DDL:** `src/user-player-link.js` の `ensureSchema()` は `CREATE TABLE IF NOT EXISTS user_player_links`、複数のIndex作成を実行する。取得・保存・無効化・所有権移管の関数から呼ばれるため、少なくともこれらの処理経路ではDBアクセス時にスキーマ確認DDLが発行される設計。
+- **Migration側:** `migrations/0022_user_player_links.sql` に同テーブルの定義があり、後続の `scripts/reconcile-d1-schema.mjs` も `official_verified_at` / `official_verified_by_user_id` 列と複数Indexを追加・確認する構成を持つ。
+- **評価:** Migrationと実行時DDL/repair scriptの三重管理が存在する。列・CHECK・Indexの完全な同値性、リクエストごとのDDL実行回数、D1読み取り/書き込みコストは未確定。今回、本番やローカルDBでDDLを実行していない。
+
+### 今回の監査境界
+
+- GitHub `main` の静的ファイルのみを根拠とした。実D1のschema、Migration適用履歴、Query Plan、Cloudflare Insightsは確認していない。
+- D1 Free reads最優先。全件データSELECTや本番クエリは実行していない。
+- `ranking_snapshots` の広範囲取得を追加・復活させていない。既存の履歴参照は特定kid/board/target_idとLIMITで絞られている箇所を確認したが、全SQL網羅確認の完了を意味しない。
+- アプリコード、Migration、Workflowの変更、デプロイ、本番DB更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。
