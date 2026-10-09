@@ -1889,3 +1889,45 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 - 70%はMigration 0020〜0029、Retention、Player Link、System Logの部分照合を反映した作業管理上の概算。監査完了・本番検証完了を意味しない。
 - 次はMigration 0010〜0019と初期Migrationの参照を確認し、全ルート認証/ACTIVE/method表、定期処理起動経路、RetentionのR2/D1境界を継続する。
+
+
+---
+
+## 2026-10-09 継続監査：Migration 0010〜0019・D1索引・watchlist schema
+
+### Migration 0010〜0019の静的照合
+
+- **0010 Owner Control：** login_historyとowner_audit_logの列、時刻/対象検索用indexを確認。src/index.jsのOwner監査・ログイン履歴SQLと大枠で対応。
+- **0011〜0013 D1 read optimization：** ranking_snapshotsの対象/時刻索引、player_snapshots/player_rank_snapshotsのgovernor/time索引、change_events/api_observationsのtarget/time索引を作成し、0013で重複するランキング索引を削除。これは既存スキーマの履歴/差分参照向け索引の記録であり、ranking_snapshotsの広範囲SELECTを復活させる根拠にはしない。現在のQuery Plan・実読み取り量は未確認。
+- **0012 Player Watchlist：** player_watchlistsのUNIQUE(discord_id, governor_id)とuser/player用indexを作成。現在のコードでenabledとDiscord ID/領主IDを使う参照に大枠で対応。
+- **0014 Player Identity History：** 名称遷移の軽量履歴とgovernor/name索引を作成。Retentionのplayer_identity_history_daysとも対応。
+- **0015 History Emergency Buffer：** payload・byte count・attempts・status・更新時刻を保持するテーブルとstatus/created indexを作成。R2保存失敗時の退避と排出処理は別途接続/失敗状態の確認を継続する。
+- **0016〜0017 API Pool lease：** lease期限索引を追加し、api_pool_keysにlease metadataを移行。旧api_leasesのACTIVE行を一度EXPIREDにするMigration。現行api-pool.jsはapi_pool_keys側のlease列を参照する。実Migration適用履歴・期限切れleaseの本番件数は未確認。
+- **0018 runtime schema cleanup：** watchlist_limitsとdiagnostic_eventsをMigrationで作成。role CHECKはBASIC/ADVANCED/ADMIN/OWNERでVIPがないが、後続0056でwatchlist_limitsを再構築しVIPを加えるため、0018単体を最終スキーマと扱わない。
+- **0019 Watchlist runtime schema：** kingdom_watchlist_jobs/locks、kingdom_ranking_current、kingdom_ranking_board_stateを作成。現行コードの列・主キーに大枠で対応。0019のCREATE TABLE IF NOT EXISTS自体は再実行可能だが、後続のALTER TABLEは適用履歴の管理が必要。
+- 上記は0010〜0019のMigration定義と一部の現行SQLを静的照合したもの。実適用履歴・本番スキーマ・Query Plan・本番D1使用量は未確認。
+
+### 次に残す確認点
+
+- History Emergency BufferのR2失敗→バッファ→排出→削除までの失敗耐性、リトライ上限、FAILED行の再処理方針。
+- API Poolのlegacy api_leases参照が残っていないか、lease期限/cleanupの実際の経路を確認。
+- Migration 0001〜0009、重複番号0008、request-time schema helper、主要SQL/インデックスと認証ルートの最終突合せを継続。
+- アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+---
+
+## 最新監査進捗（2026-10-09・Migration 0010〜0019監査後）
+
+**全体進捗目安：80%**（作業管理上の概算。コード行数の網羅率・本番動作確認率ではない）
+
+| 監査ワークストリーム | 状態 | 進捗目安 |
+|---|---|---:|
+| 機能台帳・主ルート分類 | 主ルート分類済み。個別ハンドラーと未定義参照の最終照合は継続 | 82% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/session、Owner API一部、watchlist、Mighty判定、Player Link Support、Owner backfillを部分確認。全ルート表の穴埋めは継続 | 55% |
+| Migration・SQL・制約・インデックス | 0010〜0058を複数範囲で部分照合。0001〜0009、実適用履歴、全SQL参照は未完了 | 68% |
+| Cron・Queue・R2・定期処理接続 | scheduled()、Queue/R2、Semaphore、ローラー候補、Retention、Emergency Bufferを部分確認。起動経路の全体照合は未完了 | 68% |
+| テスト基盤・実行時検証 | 静的監査中心。実Migration適用履歴、Query Plan、実行時/本番E2Eは未確認 | 10% |
+
+- 80%はMigration 0010〜0019とD1索引/watchlist schemaの部分照合を反映した作業管理上の概算。監査完了・本番検証完了を意味しない。
+- 次はMigration 0001〜0009、Emergency Buffer/leaseの完全な呼び出し経路、HTTP routeの認証・ACTIVE・method一覧を継続する。
