@@ -654,6 +654,24 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - 同API内部には ` + tick + `guard.auth.role === 'ADMIN'` + tick + ` の分岐（OWNER設定を拒否する処理）が複数あるが、` + tick + `requireOwner()` + tick + `を通過した後ではADMINになり得ない。画面の認可とAPIの認可が一致しない静的候補。
 - 影響候補: ADMINでページ表示できても、初期設定取得/保存のAPIが403になり、Player VisibilityとWatchlist Limitsの管理ができない。OWNERでの操作は別途実行テスト未確認。
 - 修正方針はまだ決めない。まず仕様上ADMINに許可する範囲（OWNER role/OWNER-only visibility項目を除く）を確定し、API直叩き/画面操作のテストケースを定義する。
+## 2026-10-10 第13巡目 — Admin設定画面・管理操作の権限/Method
+
+| 機能 | Page/API | Method/認可 | 動作/注意 |
+|---|---|---|---|
+| Retention設定 | `/admin/data-retention` / `/api/admin/data-retention` | ADMIN/OWNER、GET=設定取得、POST=設定更新 | 設定保存のみ。Retention cleanup自体を実行するAPI/ボタンではない |
+| Player Visibility/Watchlist Limits | `/admin/player-visibility` / `/api/admin/player-visibility` | Page=ADMIN/OWNER、API=OWNER限定 | Page/API role mismatch候補を上記に記録。APIはGET/POST、ADMINのOWNER-only項目を拒否する分岐があるが、requireOwnerでADMINが先に拒否される |
+| Admin Kingdom Rankings | `/admin/kingdom-rankings` / `/api/admin/kingdom-rankings` | ADMIN/OWNERガード。handlerに明示method制限は見当たらない | `?refresh=1`で外部API Pool取得、順位変化計算、D1保存を行う。GETによる副作用/再送/プリフェッチを要確認 |
+| Kingdom Ranking Export | `/api/admin/kingdom-ranking-export` | ADMIN/OWNER、kid/board検証、既存ランキング必須 | Google Sheetsへ出力してService Usageを記録 |
+| Admin Diagnostics | `/admin/diagnostics` / `/api/admin/diagnostics` | Page/API双方ADMINガード | ページの自動更新間隔とAPI/DB読み取り量を確認する |
+| Admin System Log | `/admin/system-log` / `/api/admin/system-log*` | RouterでADMINガード | read/export/downloadを分けている。期間/limit/R2 archiveと整合を確認 |
+| Monitoring Profile | `/api/admin/monitoring-profile` | ACTIVEなADMIN/OWNER、GET/POST | cookieにprofileを保存する。Cloudflare planの実契約/請求情報と、画面のローカル表示を区別する |
+| R2 Object Inventory | `/api/admin/r2-archive-objects` | ACTIVEなADMIN/OWNER、GETのみ、limit最大値/Prefixを制限 | R2 listを行うため、page size・prefix・limit・再読み込み頻度を確認する |
+
+### 管理画面操作の横断ルール
+
+- Pageを見られることとAPI操作が許可されることは別。特にADMIN/OWNER差、ACTIVE/DISABLED状態、HTTP method、対象user_id/key_idの所有境界を機能ごとに確認する。
+- 読み取りに見えるGETでも、` + tick + `refresh=1` + tick + `のように外部API取得/DB保存を伴う経路がある。GET side effectは仕様上の意図を確認し、再送/ブラウザ先読み/キャッシュの影響をテストする。
+- 本棚卸しではGET refresh、Pool Health Check、MightPulse Probe、負荷テスト、R2 backfillを起動していない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
