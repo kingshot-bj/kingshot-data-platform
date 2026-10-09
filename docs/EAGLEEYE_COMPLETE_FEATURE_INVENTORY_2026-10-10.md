@@ -1319,3 +1319,12 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **0026:** 旧テーブルを `user_player_links_v2` に移行し、`kingdom_id`、`account_type`、verification列を含む最終形状へ再構築。旧 `UNIQUE(user_id)` 制約は複数アカウント対応のため最終形状から外れ、代わりにACTIVE governor/user-governor/main-account用partial UNIQUE Indexを作成する。
 - **現行コードとの関係:** `src/user-player-link.js` の `ensureSchema()` は最終形状相当のテーブルと複数Indexを作成するが、`user_player_link_support_requests` はこの関数内では作成しない。サポート申請テーブルはMigration 0023/reconcile scriptに依存するように見える。Migration未適用環境での挙動は未確認。
 - **判定:** Migration 0022だけを最終形状として比較すると誤判定になるため、0023/0024/0026を順序込みで評価する必要がある。現在の最終スキーマとIndexの完全一致、実適用状態、リクエスト時DDLの頻度は未確認。
+
+
+### F. Migration 0001–0058横断検索 — 2候補の履歴照合結果
+
+- **対象範囲:** `migrations/` 内のSQLファイル59件（`0008_*.sql`が2ファイル存在するため番号ではなくファイル名で識別）。現行ファイル名一覧では0001〜0058を確認。
+- **`source_first_at/source_last_at`:** 0008の `0008_kingdom_watchlist_jobs.sql` にはなく、0019に定義あり。0020〜0058のMigration群を確認した範囲で、両列を `ALTER TABLE kingdom_watchlist_jobs ADD COLUMN` する履歴は見当たらない。0046が同テーブルへ追加するのは `collection_source` 列で、source時刻列ではない。よって「Migration履歴に既存テーブル向け列追加が見当たらない」という静的根拠は強い。実DBに列がないとまでは断定しない。
+- **`ranking_snapshot_id`:** 0001〜0058のMigrationを確認した範囲で、`kingdom_ranking_current` に当該列を追加するDDLは見当たらない。0019のCREATE定義にも存在しない。一方、`src/index.js:getLatestAdminKingdomRankingSnapshot()` が `kingdom_ranking_current` からSELECTしているため、列不一致候補は高確度。
+- **重要な区別:** `src/ranking-store.js` の `buildKingdomRankingInsertStatements()` が `ranking_snapshot_id` を使うのは別テーブル `ranking_snapshots` へのINSERTであり、それ自体は不一致ではない。問題候補は `kingdom_ranking_current` を読むAdmin ranking helper側に限定して記録する。
+- **制限:** これはMigrationファイルと確認したSQLコードの静的照合。適用済みMigrationの実履歴、実DB schema、ルート実行結果は未確認。修正は行っていない。
