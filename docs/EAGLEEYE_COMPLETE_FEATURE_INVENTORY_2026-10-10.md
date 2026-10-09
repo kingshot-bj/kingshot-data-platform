@@ -1652,3 +1652,22 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - build、HTTP smoke、D1/R2/Queue実行、Browser E2E、Preview/Production testは未実施。
 - コード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。
 - D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。
+
+
+## 2026-10-10 機能信頼性監査 — 90%到達（優先度統合・安全経路）
+
+### 今回の追加照合
+- `evaluateSafetyGate()` の実呼出しを確認: Watchlist起動処理（関数自体はscheduledから未接続候補）とOwner Load Test開始経路。Cloudflare利用率が全項目欠損すると `maxUsagePercent()` はnull、`getSafetyState(null)` は `Number(null) === 0` でNORMALになる。特に低優先度Load Testで、メトリクス不明時に想定より開始許可へ傾く可能性がある。現行コードは未修正。
+- `handleMyMightyCheckApi()` はREVOKED以外のUSER_CONTRIBUTEDキーを再確認対象にする。health-check leaseはAVAILABLE/ERROR/DISABLED/COOLDOWNを許可し、成功時の `recordApiPoolSuccess()` はlease一致キーのstatusをAVAILABLEへ更新する。Mighty確認成功を「キーの利用再有効化」と同一視してよいか仕様未確認。管理者がDISABLEDにしたキーを尊重する要件なら状態遷移上の候補となる。REVOKEDは検索から除外。
+- Load TestのSafety Gateは `plannedRequests=1` とし、キュー式・スロットル式実行に対して全体予定件数で開始を拒否しない設計意図がコメントにある。実際のリクエストごとのAPI Pool lease/quota guardは静的経路を確認したが、実負荷・使用量は未測定。
+- System Event Queue consumerは無効メッセージをackし、有効メッセージのD1 batch失敗時はthrowしてretry可能にする実装。Queue/DLQの実配送・再試行動作は未確認。
+
+### 優先度統合（静的監査の推奨順）
+- **P0 / 隔離テストより先に設計確認:** (1) schema列不一致候補（source_observed_at、ranking_snapshot_id、watchlist job source_first/source_last）、(2) Player Compare handler接続、(3) Watchlist Cron起動経路、(4) Retention/Emergency Buffer起動経路、(5) PreviewのD1/R2共有を解消する隔離環境、(6) Safety Gateの欠損メトリクス処理。
+- **P1 / データ完全性・運用:** (7) Change Events R2 readback、(8) Seeder/Roller起動接続、(9) Load Test export route、(10) Mighty再確認時のDISABLED状態の扱い、(11) Player Visibilityの画面/API認可差。
+- **P2 / 追加確認:** Player History画面とAPIのRetention後差分、Google Drive callback設定候補、Index/query plan、Queue実環境/DLQ、Migration適用履歴。
+
+### 進捗
+- **機能信頼性監査: 90%**。70–90%区間のCron/Queue起動、Safety Gate呼出し、API Pool状態遷移、Retention/R2 readback候補を優先度付きで統合した。残り10%は監査結論・機能別テスト行列・再開手順を最終化する。
+- すべて静的所見。build/runtime/E2E/Productionは未検証。コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼出しなし。
+- D1 Free reads最優先。広範囲 `ranking_snapshots` retrievalを追加・復活させない。
