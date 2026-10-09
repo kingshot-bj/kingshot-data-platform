@@ -163,3 +163,8 @@
 - `src/index.js` 全文検索では、保存値をSELECTするAPI/UI経路、またはこのAPI URLを呼び出すクライアント側fetchが見つからなかった。保存APIの呼出し/読出しが未接続の可能性を台帳に追加した（確度中、仕様/別ファイル利用は未確認）。
 - 台帳更新コミット: `bbb0239060efc2958bdf478ffa749a45412f93b7`。
 - 次はUI/JS資産とルート登録の接続を追跡する。静的調査のみ。進捗は67%のまま。
+### 0058設定APIのUI接続を追加確認・訂正
+
+- `src/kingdom-portal.js` でランキング設定フォームから `fetch('/api/kingdom-rankings/preferences', {method:'POST', ...})` を呼ぶこと、ランキングページ表示時に `user_kingdom_ranking_preferences` をSELECTすることを確認。
+- よって直前の「保存APIのUI呼出し/読出し未接続」候補は取り下げる。静的なUI→API→DB保存→DB読出しの接続はある。ブラウザ実動作・本番Migration状態は未確認。
+- 台帳訂正コミット: `8663bb0c1ad51f3c1d70738e8081cad1e267b708`。
