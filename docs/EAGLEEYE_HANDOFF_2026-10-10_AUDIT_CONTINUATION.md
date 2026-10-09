@@ -292,3 +292,15 @@
 - Mighty判定成功時のmetadata更新はstatusをAVAILABLEへ戻す。再判定対象にREVOKED以外が含まれるため、DISABLED/ERRORが成功時に復活する可能性。管理者による無効化を尊重すべきか仕様確認する。
 - Safety Gateのnull使用率がNORMALに分類される経路を再確認。未修正。
 - 進捗 **60%**。次はQueue/Cronと他モジュールを横断し、Buffer起動・Retention復旧・Safety Gate呼び出し・API Pool状態遷移の接続を確定する。
+
+
+## 2026-10-10 機能信頼性監査 — 80%到達 / 次の継続点
+
+- **現在: 80%（70%地点からCron/Queue起動経路横断を完了）**。実装率・本番正常率ではない。静的監査のみ。
+- `src/index.js` の `scheduled()` は `runApiPoolAutoRecovery`、`runKingdomCatalogDailyRefresh`、`runKingdomDiscordNotifications` を呼ぶ。ここに `runKingdomWatchlistJobs`、`runDataRetentionJob`、`drainHistoryEmergencyBuffer`、Seeder/Roller群の呼出しがない。
+- Repo-wide静的検索でも、`runKingdomWatchlistJobs`、`runDataRetentionJob`、`drainHistoryEmergencyBuffer`、`runKingdomSeeder`、`runKingdomRankingRoller`、`runAllianceRoller`、`runPlayerRoller` は定義/import以外のWorker起動呼出しが見つからない。未接続候補として台帳へ追記。別外部triggerは未確認。
+- PreviewはProductionと同じD1 database ID / R2 bucketを参照し、Queue設定もProductionと一致しない。隔離が成立していないためPreviewテストは禁止を継続。
+- Queue consumerの静的振り分けは確認したが、実Queue配送、ack/retry/DLQ、Cloudflare実設定は未確認。
+- 次は監査残り20%として、候補の優先度と重複を統合し、各候補に根拠ファイル/行・影響・確度・未確認点を揃え、隔離環境で実行すべきテスト行列を最終化する。コード修正は行わない。
+- 未実施: build、route smoke、isolated D1 Migration/fixtures、Query Plan、browser/Safari E2E、Preview integration、Production read/write、Queue操作、外部API/OAuth/Discord/Google実操作。
+- 制約: D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリを追加・復活させない。コード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
