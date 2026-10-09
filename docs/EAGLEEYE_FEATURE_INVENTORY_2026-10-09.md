@@ -1591,3 +1591,14 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/service-usage-archive.js` はR2未設定時・保存失敗時にretryし、形式不正メッセージはackする設計。
 - これはコード経路の静的確認であり、実際のQueue配送、再試行、DLQ移送は未試験。
 - 今回もアプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを復活させない。
+
+
+---
+
+### 2026-10-09 継続監査：System Event Queue の呼び出し経路
+
+- `src/system-log.js` の `recordSystemEvent()` は、モジュール変数 `systemEventQueue` が利用できる場合はQueue送信し、それ以外は `system_event_log` へ直接INSERTする。
+- `src/index.js` 全体の参照検索では、`setSystemEventQueue(env.SYSTEM_EVENT_QUEUE)` は `queue()` 内の1箇所のみ。HTTP `fetch()` 経路でこの設定関数を呼ぶ箇所は見つからなかった。
+- Cloudflare WorkersのHTTP処理とQueue consumerで同じモジュール状態が共有されるとは限らないため、HTTP起点のイベントがD1直接書き込みへ回る可能性がある。Queue経由の記録がどの程度使われているかは未計測。
+- これは静的コード上の懸念であり、実環境での再現は未実施。実装変更・デプロイ・本番DB更新・Queue操作は行っていない。
+- 次回、Queue送信とD1直接書き込みの実際の割合を安全に確認する方法を検討する。D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを復活させない。
