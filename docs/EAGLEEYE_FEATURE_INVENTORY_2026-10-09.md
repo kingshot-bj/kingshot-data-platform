@@ -888,3 +888,23 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - Google Drive OAuth URIはコード上の明確な不一致として最優先で扱う。ただし本番実設定が別途上書きされているかを先に確認し、監査中は修正しない。
 - 公開Statusは「サービス稼働状況の公開」と「内部詳細・D1コスト」の境界を再点検する。
 - Status Comparatorの正本・同期方式、未参照モジュールの全体参照、テスト手段を機能台帳の残件として管理する。
+
+
+## 監査追記：D1 Schema ReconciliationのMigration/Index完全性（2026-10-09 続き）
+
+### [中〜高 / 本番スキーマ照合の抜け候補] Migration履歴をまとめて記録する一方、一部インデックスを再構成していない
+- `scripts/reconcile-d1-schema.mjs` は `--apply` 時に `0017_api_pool_atomic_lease.sql` から `0043_alliance_collection_state.sql` までを `d1_migrations` に `INSERT OR IGNORE` する。
+- 同スクリプトはテーブル・列・主要インデックスの一部を補修するが、ソース確認上、少なくとも以下のMigration由来インデックスを明示的に `ensureIndex()` していない：
+  - `0019_watchlist_runtime_schema.sql`: `idx_kingdom_watchlist_jobs_active`, `idx_kingdom_watchlist_jobs_updated`
+  - `0020_audit_history_r2_retention.sql`: `idx_login_history_logged_in_at`, `idx_owner_audit_created`
+  - `0021_api_pool_identity_r2_retention.sql`: `idx_api_pool_usage_used_at`, `idx_player_identity_history_last_seen`
+  - `0023_player_link_support.sql`: `idx_player_link_support_requester`, `idx_player_link_support_governor`
+  - `0025_api_pool_user_contributed_index.sql`: `idx_api_pool_keys_user_contributed`
+  - `0027_diagnostic_status_created_index.sql`: `idx_diagnostic_events_status_created`
+- これらのインデックスが本番に既に存在すれば問題は顕在化しない。ただし、物理スキーマから欠落している場合でもMigration履歴だけ記録されると通常の `wrangler d1 migrations apply` が再実行しないため、欠落が残る可能性がある。
+- 実際の本番インデックス一覧は未取得のため、欠落確定ではない。Reconciliation実行前に上記インデックスを含む全DDLを現行Migrationと比較し、スクリプトの補修対象と事後検証項目を完全一致させる必要がある。Reconciliation/本番変更は今回実施していない。
+
+### [中 / 旧スキーマ残存候補] コレクションSemaphoreの旧カウンターテーブル
+- `0034_global_collection_semaphore.sql` は `collection_semaphore` カウンターテーブルを作成し、`0036_collection_semaphore_slots.sql` はスロット方式の `collection_semaphore_slots` を追加する。
+- 現在の `src/collection-semaphore.js` は `collection_semaphore_slots` を利用する。旧 `collection_semaphore` はReconciliationスクリプトにも保持・初期化処理が残っている。
+- 互換性/復旧用途で意図的に残している可能性があるため削除候補と断定しない。実際の参照箇所、移行履歴、復旧手順を照合し、未使用テーブルかレガシー復旧用かを機能台帳で明確にする。
