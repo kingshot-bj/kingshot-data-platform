@@ -1539,3 +1539,32 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - **全ルートの認証/メソッド/ACTIVE状態照合、全Migration/SQL照合、Cron/Queue/R2接続照合は未完了。** 監査全体の完了率は今回の作業だけで再計算・断定しない。
 - アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、API収集/負荷テスト起動は行っていない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+---
+
+### 2026-10-09 継続監査：数値正規表現の過剰エスケープ確認
+
+#### [高・機能不全候補] 管理者向け王国ランキングAPIの王国ID検証が数字を受け付けない
+
+- **確認箇所：** `src/index.js` の `handleAdminKingdomRankingApi()`（約7556行）、`handleAdminKingdomRankingExport()`（約7623行）、`renderAdminKingdomRankingsPage()`（約7684行）。
+- 3箇所の王国ID検証に `/^\\\\d+$/.test(kid)` という正規表現が使われている。JavaScriptの正規表現リテラルでは `\\d` は数字クラスではなく、バックスラッシュと文字dを表すため、通常の数字文字列（例 `300`）が検証を通らない可能性が高い。
+- API側は `INVALID_KID` を返し、画面側はランキング取得分岐に入らないため、管理者ランキング画面の初期取得・更新・出力に影響する可能性がある。
+- **根拠の強さ：** ソース上の正規表現を確認。実際のHTTPリクエストによる再現は未実施。修正は監査中のため行っていない。
+- **推奨対応：** 正規表現を修正し、API取得・更新・画面表示・エクスポートの数値ID正常系と不正ID異常系をテストする。
+
+#### [中・日時表示/正規化] 数値文字列を扱う正規表現も過剰エスケープの可能性
+
+- **確認箇所：** `normalizeMightPulseTimestamp()`（約562〜574行）、`translateLastLogin()`（約7302〜7308行）。
+- `normalizeMightPulseTimestamp()` の数値判定は `/^\\\\d+(?:\\\\.\\\\d+)?$/`、`translateLastLogin()` の日・時間・分の文字列変換も `(\\\\d+)` を使っている。ソース表記どおりなら数字を通常どおり照合せず、数値文字列のUnix時刻正規化や `Last active 3d ago` 等の日本語化が期待どおりに動かない可能性がある。
+- **根拠の強さ：** ソース上の正規表現を確認。実際の入力値に対するユニットテスト・画面表示は未実施。
+- **推奨対応：** 数値/小数のtimestamp文字列、秒・ミリ秒の境界値、`Last active 3d ago` / `2h` / `15m` / `just now` を対象にテストする。コード変更は別途許可後に実施する。
+
+#### 今回の追加確認範囲
+
+- プレイヤーウォッチリストGETのSQLは、ランキング順位を `kingdom_ranking_current` と `previous_rank` から取得する設計であり、対象コード内に旧来の `ranking_snapshots` 全履歴スキャンは見当たらない。引き続きこの制約を維持する。
+- `handleKingdomRankingHistoryApi()`、`handleKingdomWatchlistDataApi()`、`handleKingdomWatchlistApi()` は認証ユーザーの存在を確認するが、入口で `auth.status === "ACTIVE"` を確認しない。既存の「王国ウォッチリストAPIのACTIVE状態チェック不足」所見を再確認したため、重複項目は追加していない。
+- `handleKingdomWatchlistApi()` のGET listは、各watchlistごとに最新jobを個別SELECTし、staleな進行中jobを検知すると同じGET内でUPDATEする。既存のN+1/GET副作用所見を再確認し、重複追加していない。
+- `/api/admin/diagnostics` はハンドラー内部で `requireAdmin()` を実行することを確認。ルーター直下にガードがないことだけを理由に認可欠落とは判定しない。
+- 今回は静的コード監査のみ。アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
