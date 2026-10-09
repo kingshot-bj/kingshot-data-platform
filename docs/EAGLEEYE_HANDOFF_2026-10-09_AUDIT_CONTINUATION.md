@@ -373,3 +373,12 @@
 - これらはコード上の接続確認であり、HTTP/E2E・role bypass・本番API消費テストは未実施。負荷テストやヘルス確認を棚卸しのために起動しない。
 - 次はSystem Status/Diagnostics/System Log/Retention、Google Drive OAuth、Discord Supportを接続整理し、Migrationの列/Index双方向照合に戻る。
 
+## 2026-10-10 棚卸し進捗 — Status/Diagnostics/Logs/Drive/Support
+
+- 台帳更新コミット: `a22f3109bc8c95a37e9088d6fdcab3b589cdf41f`
+- /status、Admin Diagnostics、System Log/Export、System Event Queue、Retention/Archive、Google Drive OAuth、Discord Supportの入口/認可/保存先を整理。
+- 追加候補: `wrangler.jsonc` の `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` が `/api/auth/callback` を指す一方、Google Drive callback routeは `/api/admin/google-drive/callback`。実OAuthは未実施。
+- `renderPublicStatusPage` はD1診断・運用状態・Cloudflare Analytics・R2 probe等を集約し、60秒更新を表示。実際のD1 reads/Analyticsコストは計測していない。
+- `runDataRetentionJob` はcleanup/archiveを内包するがWorker scheduled/queueから呼び出される箇所が見つからない。System Event Queueが接続されていることと、Retentionが動いていることは分けて扱う。
+- 次は主要Migrationの列/制約/IndexとSQLを照合し、残る機能領域の入口・状態遷移・UI動作を埋める。
+
