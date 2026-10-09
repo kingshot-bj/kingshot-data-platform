@@ -1407,7 +1407,7 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **Retentionの安全順序:** `src/retention.js` は対象行を選択し、`archiveD1RowsToR2()` 成功後にrowidでD1削除する実装。これは「アーカイブ確認前に削除しない」設計だが、アーカイブされた全テーブルに対してアプリ側readbackが実装済みであることまでは意味しない。
 - **未確認:** Retention jobが本番で定期起動されているか、設定値/実行結果、実際に削除された行、R2 objectの中身、Cloudflare環境での挙動は未確認。今回、Retention処理やDB/R2操作を実行していない。
 
-### 進捗チェックリストの粒度を詳細化 — 現在80%
+### 進捗チェックリストの粒度を詳細化 — 80%到達時点（履歴）
 
 従来の10項目チェックリストは「全Migration/全SQL照合」など作業量の大きい項目と、一覧確認の項目が同じ1点として扱われていたため、監査作業パッケージを20項目に詳細化した。旧70%はその時点の10項目基準による履歴として保持する。現在値は、明示した20パッケージの完了数による **16/20 = 80%**。これは監査作業の進捗であり、アプリの実装率・本番正常率・本番適用率ではない。
 
@@ -1460,3 +1460,20 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - これはMigrationファイルと現行コードの静的照合結果であり、Cloudflare D1へ接続してschemaを読んだ結果ではない。
 - 既知の `kingdom_ranking_current.ranking_snapshot_id`、`kingdom_watchlist_jobs.source_first_at/source_last_at` と同様、修正はせず台帳に候補として記録する。
 - 次の確認では、`api_observations` と `players` の全INSERT/UPDATE/SELECT列をMigrationの最終形と照合し、他テーブルの未確認差分を引き続き追う。
+
+
+## 2026-10-10 90%到達チェックポイント — 静的監査一巡完了
+
+- **進捗: 18/20作業パッケージ = 90%。** 80%時点の16/20から、パッケージ17・18を完了として記録。これは静的監査の作業完了率であり、機能実装率・本番正常率・本番適用率ではない。
+- **パッケージ17完了:** Migration 0001–0058（重複番号0008はファイル名で区別）と現行SQLを一巡し、主要なテーブル定義・列参照・UPSERT/DELETE・Index・Retention/R2の保存/読出し経路を突合。列定義差、未接続の可能性、Index/Query Plan要確認を解消済みとはせず、すべて候補として台帳化。実DB schemaの取得やSQL実行はしていない。
+- **追加で記録した高優先度の列差候補:**
+  - `api_observations.source_observed_at`: Migration 0002定義にないが、INSERT/SELECTで使用。
+  - `players.source_observed_at`: Migration 0004定義にないが、Player UPSERTで使用。
+  - 既知の `kingdom_ranking_current.ranking_snapshot_id`、`kingdom_watchlist_jobs.source_first_at/source_last_at` も継続候補。
+- **パッケージ18完了:** 全画面・API入口一覧と、ユーザー画面、Watchlist、Kingdom Portal、Player/History/Changes、My Player/VIP、API Pool、Admin/Owner、Diagnostics/Logs、Google連携、Discord Support、Retention/R2 Backfill、Load Testの操作フローを静的に一巡。UI→API→権限→DB/R2の接続が確認できたものと、handler未接続候補・権限差・エラー/空状態・R2読戻しの不足候補を区別して記録した。実際のブラウザ操作やE2Eは行っていない。
+- **残り2パッケージ:**
+  19. 全機能を「実装あり/未接続/重複/未実装/仕様未確定」に機能単位で最終分類。
+  20. 機能別テスト可能性・本番E2E確認行列を完成。
+- **次に優先すること:** P0候補を機能分類へ集約し、どのテストで何を確定できるかを整理する。現時点でコード修正・Migration修正・Workflow修正はしない。
+- **未実施:** Cloudflare実D1 schema確認、Query Plan/Insights、ビルド、HTTP、ブラウザE2E、R2実データ確認。本番の稼働状況や発生済み障害を断定しない。
+- **固定制約:** D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
