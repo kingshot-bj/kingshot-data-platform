@@ -1638,7 +1638,7 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 ## 監査進捗（2026-10-09 時点・暫定）
 
-**全体進捗目安：42%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
+**全体進捗目安：43%**（作業管理上の概算。コード行数ベースの網羅率や本番動作確認率ではない）
 
 | 監査ワークストリーム | 状態 | 進捗目安 |
 |---|---|---:|
@@ -1651,3 +1651,23 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 進捗は各領域の作業状態を目安化したもので、上記の単純平均ではなく、横断監査の重みを加味した概算。新たな大きな領域が見つかった場合は下方修正もあり得る。
 - 監査所見は静的コード上の候補と実動作確認済みを区別する。アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、APIキー再登録、収集ジョブ・負荷テストは許可が出るまで行わない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+---
+
+### 2026-10-09 継続監査：Migration 0054〜0057 と現行SQLのスキーマ照合
+
+#### 確認できた対応関係
+
+- `0054_vip_mighty_credentials.sql` の `user_mighty_credentials` は、`src/user-mighty.js` の登録・取得・失効・API呼び出しSQLで使用する列と対応している。ユーザーごとにREVOKED以外を1件に制限する部分UNIQUE INDEXと、`key_fingerprint` のUNIQUEも確認した。
+- `0056_vip_role_schema_repair.sql` は `users.role` のCHECK制約へVIPを追加し、`watchlist_limits` にVIP行を追加する。再作成後の `users` は `user_id`、`discord_id`、ユーザー名/アバター、role/status、日時列を維持し、role/status/last_loginのインデックスを再作成している。確認できた先行Migrationでは、この再構築で失われる追加列は見当たらなかった。
+- `0055_player_visibility_vip.sql` は `player_visibility_settings.min_role` のCHECK制約にVIPを含め、既存値を許容ロールへ正規化して移行する。
+- `0057_api_pool_mighty_metadata.sql` が追加する `mighty_capable`、`mighty_checked_at`、`mighty_check_status`、`mighty_last_error_code` は、`src/api-pool.js` のSELECT/UPDATEで参照されていることを確認した。
+- 上記の範囲では、Migration列名と現行SQLの明確な不一致は見つからなかった。これは0054〜0057の部分照合結果であり、全Migration・実DBスキーマの一致を保証するものではない。
+
+#### 要確認・未検証
+
+- Migrationの実適用履歴、各環境の実スキーマ、0057を含む本番適用済み状態は確認していない。特に `ALTER TABLE ... ADD COLUMN` を含むMigrationは、履歴管理が壊れて同じMigrationが再実行されると失敗し得るが、通常のMigration runnerが一度だけ適用する前提ではそれだけで不具合とは判定しない。
+- `registerUserMightyKey()` は既存登録をSELECTで確認してからINSERTする。DB側の部分UNIQUE INDEXが最終的な重複防止を担うため、同一ユーザーの同時登録が競合した際のエラー応答・ユーザー向けメッセージは別途確認対象とする。実際の競合は未試験。
+- 実DB照会・Migration再適用・API呼び出し試験は行っていない。コード変更・デプロイ・本番DB更新は禁止を維持する。
+- D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。
