@@ -862,18 +862,43 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Watchlistが実質的な通常収集経路なのか、ローラーは将来用/Owner手動用なのか、機能仕様を確定する必要がある。ローラーを接続する場合はAPI Pool reserve、Semaphore、R2 binding、D1 reads/writes、停止復帰を先に検証する。
 - ` + tick + `kingdom_collection_stats` + tick + `はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
 
-## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
+## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
-これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
+以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
 
-1. `handlePlayerCompareApi` と `renderPlayerComparePage` のルート参照に対し、定義/importの存在が見つからないという既存所見。build/route試験は未実施。
-2. `runKingdomSeeder` / `runKingdomRankingRoller` / `runAllianceRoller` / `runPlayerRoller` は実装/importがあるが、Worker起動経路への接続を確認できていない。
-3. `runRetentionCleanup`、`drainHistoryEmergencyBuffer`、`releaseExpiredLeases` など、実装関数と定期実行経路の接続を個別に照合する必要がある。
-4. 3つの収集ローラーが `R2_ARCHIVE` を参照する可能性があり、現行 `wrangler.jsonc` のbinding `ARCHIVE` と一致するか要確認。
-5. Google Drive OAuth redirect URIの設定が実装Callbackと不一致の候補。
-6. PreviewはProductionと同じD1/R2 resource IDを指定し、Queue bindingにも差分がある。
-7. Watchlist scheduler / retention / emergency buffer / load-test export などに未接続候補がある。
-8. `ranking_snapshots` の広範囲取得クエリは復活させない。既存のランキング履歴・R2移行経路は低コスト優先で照合する。
+### P0候補 — 機能入口/権限/保全に直接影響
+
+1. **Player Compare route未解決:** `/api/player-compare` → `handlePlayerCompareApi`、`/player/compare` → `renderPlayerComparePage`。定義/importが見つからず、比較ロジックだけが存在する。
+2. **Load Test CSV export route未登録:** UI/handler `handleOwnerKingdomLoadTestExportApi` はあるが、`/api/owner/kingdom-load-test/export` のimport/routeがない。接続する場合はOWNER guardが必須。
+3. **Player Visibility role mismatch:** pageはADMIN/OWNERを許可するが、`/api/admin/player-visibility` はOWNER限定。ADMINがAPIを使えない可能性。
+4. **Player History D1/R2 mismatch:** APIはD1/R2履歴関数を使うが、画面は`player_snapshots`をD1直接SELECT。Retention後に結果が異なる可能性。
+5. **Change Events archive readback:** `change_events`はRetentionでR2保存後にD1削除されるが、Player/Kingdom Changesの画面/APIはD1直接参照で、専用R2 readbackが確認できない。
+6. **Google Drive OAuth redirect mismatch候補:** `wrangler.jsonc`のredirectは`/api/auth/callback`、Google Drive handler routeは`/api/admin/google-drive/callback`。
+7. **Retention/Emergency Bufferの起動経路:** `runDataRetentionJob`は呼び出し元がなく、`drainHistoryEmergencyBuffer`もWorkerイベントから呼ばれていないように見える。実際にRetention/Buffer drainが走るか未確定。
+8. **Safety Gate missing metrics:** 全Cloudflare metrics欠損で`maxUsagePercent()`がnullを返し、`getSafetyState(null)`が0%/NORMAL扱いになる可能性。
+9. **VIP資格とDisabled API key:** Mighty metadataがCONFIRMEDのまま`api_pool_keys.status='DISABLED'`となったキーが、VIP資格判定に残る可能性。
+
+### P1候補 — 収集/通知/コスト/設定整合
+
+10. **Seeder/Roller群の未接続:** `runKingdomSeeder`、`runKingdomRankingRoller`、`runAllianceRoller`、`runPlayerRoller`は実装があるがscheduled/queueからの呼び出しが見つからない。Catalog discoveryは動くが、それだけで全王国のランキング/同盟/Playerが定期収集されるわけではない。
+11. **R2 binding名:** 上記Roller群の一部が`env.R2_ARCHIVE`を参照する一方、`wrangler.jsonc`は`ARCHIVE` bindingを定義。
+12. **Alliance Discord notification target_id:** `alliance-catalog.js`が`kid:aid`、ランキング側が`aid`中心でtarget_idを生成し、通知側が完全一致比較する候補。実データ/通知送信未確認。
+13. **Collection Coverageの意味:** `kingdom_collection_stats`がWatchlist collection successに結びついているように見え、全王国収集カバレッジを表すか未確定。
+14. **R2 Service Usage read-modify-write:** 既存オブジェクト読出し→merge→再書込のためI/O増幅/競合候補。Queue concurrency=1の設定はあるが実際の競合/再試行は未検証。
+15. **R2 backfill concurrency:** Catalog backfillのUPDATE結果行数/CASを確認せず進捗counterを進める可能性があり、並列実行で重複/カウンターずれ候補。
+16. **Preview/Production resource sharing:** PreviewもProductionと同じD1/R2 resource IDを指定し、Queue bindingにも差分がある。
+17. **User Mighty legacy path:** `user_mighty_credentials` / `user-mighty.js`は現行API Poolベース資格判定とは別系統。削除判断は保留。
+18. **API method side effects:** `/api/admin/kingdom-rankings?refresh=1`はGET経路で外部API取得/D1保存を行う。ブラウザ先読み/再送/キャッシュ影響を確認。
+19. **Player Search D1 cost:** `LIKE '%q%'`の部分一致検索はIndexを活用しにくい可能性がある。Query Plan/計測未実施。
+20. **API/画面の重複候補:** `/player`サーバー画面と`/api/player`/`/api/player/refresh`、Player History/Changesの画面とAPI、`/api/player/rank-history`の利用画面がそれぞれ重複/未接続候補。
+
+### 既知の固定条件
+
+- D1 Free読み取り量を最優先。
+- `ranking_snapshots`の広範囲取得クエリは絶対に復活させない。
+- これらは機能棚卸しで検出した候補。コード修正・本番DB更新・デプロイ・Queue操作・負荷/外部APIテストは未実施。
+- Migration番号0008は2ファイルあるため、番号だけでなく完全なファイル名で管理する。
+
 
 ## G. 棚卸しの完了条件
 
@@ -890,11 +915,13 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ## 次の作業
 
-1. まず `src/index.js` の各ルート参照先が定義・importされているかを網羅照合し、未定義/未接続候補を確定する。
-2. 各画面のHTML生成内にあるフォーム・ボタン・fetch先を抽出し、画面→API→関数→DB/外部APIを対応付ける。
-3. Migration 0001–0058をテーブル・列・制約・index単位に分解し、全SQL参照との双方向マッピングを作る。
-4. Cron / Queue / UIポーリング / 手動管理画面を起点に、各ジョブの呼出経路・状態遷移・失敗時挙動を確定する。
-5. 実装と接続の棚卸しが終わるまで修正は始めない。問題候補は別途、根拠・影響・再現テストを揃えて優先順位付けする。
+1. **主要Migration列/制約/Indexと現行SQLの双方向照合**。まず`users`、`api_pool_keys`、`players/player_snapshots`、`kingdom_catalog`、`kingdom_ranking_current`、Watchlists、`system_event_log`を完了させる。
+2. **各画面のボタン/フォーム/イベント/API対応を完了**。特に外部モジュール内UI、Owner/User管理、MightPulse Probe/Research、R2 backfill、Data Coverage。
+3. **認可/HTTP method matrixを完成**。ADMIN/OWNER差、ACTIVE/DISABLED、GET副作用、handler側guard、外部APIを呼ぶGET経路を全件確認する。
+4. **R2 retention/readback matrixを完成**。どのテーブルをアーカイブ後も画面/APIから読むのか、D1に残すのか、cold archiveとして保存するだけかを確定する。
+5. 各機能を「実装あり・接続済み」「実装あり・未接続候補」「未実装/未解決参照」「重複」「仕様未確定」「未検証」に分類し、再現テストを定義する。
+6. 棚卸し完了までは修正を始めない。修正が必要な候補は、仕様確認→影響範囲→テスト→実装の順に進める。
+
 
 ## 初回記録
 
