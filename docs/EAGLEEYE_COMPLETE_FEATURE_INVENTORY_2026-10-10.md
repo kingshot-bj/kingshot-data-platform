@@ -465,6 +465,24 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - Player Watchlist GETはランキング現在値と変更イベントを取得するため、登録件数/上限が大きい場合のクエリコストを確認する。D1 Free reads優先で、取得範囲とIndex利用を評価する。
 - ` + tick + `ensurePlayerWatchlistSchema()` + tick + ` は ` + tick + `index.js` + tick + ` 内で ` + tick + `return Boolean(db)` + tick + ` のみ。Migration 0012がスキーマを供給する想定で、request-time DDLは行わない。
 - ここでは実際のユーザー操作や本番DB計測をしていない。UI/HTTP method、同時実行、失敗後再試行、D1 readsは未検証。
+## 2026-10-10 第6巡目 — My Player / ADVANCED / VIP / Mightyの接続
+
+| 機能 | 入口 | 実装/DB接続 | 棚卸し結果 |
+|---|---|---|---|
+| マイプレイヤー表示 | `/my-player` → `/api/me/player` GET | ACTIVEユーザーの `user_player_links` と `players` を取得し、MAIN/SUB・王国別の登録上限を返す | UI/API接続あり。無料枠は最大2王国、各王国MAIN 1 + SUB 1として表示 |
+| 領主ID登録 | `/api/me/player` POST | 既存playersを確認。未取得の場合はAPI Pool経由でMightPulse取得→観測保存/Player materialize→user_player_links登録 | 接続あり。API Poolキー不足、404、ID競合、王国/アカウント上限を分岐処理 |
+| 領主ID解除 | `/api/me/player` DELETE | 登録者のlinkをDISABLED化し、Service Usageを記録 | 接続あり。解除後のADVANCED/VIP状態更新タイミングは個別確認が必要 |
+| ADVANCED状態/キー提供 | `/api/me/advanced` GET/POST と別名 `/api/me/mightpulse-key` | `api_pool_keys`へUSER_CONTRIBUTEDキーを暗号化保存。`/kingdoms`で通常キーを検証後、`/kvk/matchups`でMighty対応を自動確認 | 自動判定経路あり。登録時に通常API検証＋Mighty API検証の2段階。ユーザー提供キー数にコード上の上限なし |
+| VIP資格表示 | `/api/me/vip` GET | `api_pool_keys`のMighty metadataと`users.role`を参照 | 登録済みの個別Mighty credential登録は廃止され、GET以外は410を返す実装 |
+| Mighty再確認 | `/api/me/vip/mighty-check` POST | ユーザー提供キーを順にleaseし、`/kvk/matchups`を呼び、成功/失敗・Mighty metadata・資格判定を更新 | 接続あり。401/403/429/5xxと一時エラー時の状態整合を実行テストする必要あり |
+| ロール昇格/降格 | `user-eligibility.js` | 領主リンクとユーザー提供キーでADVANCEDを判定。確認済みMightyキーがあればBASIC/ADVANCEDからVIPへ、VIP資格を失うとADVANCEDへ戻す。ADMIN/OWNERはロール維持 | ロール遷移ロジックあり。競合更新/disabled keyの扱いに静的確認候補あり |
+
+### 未解決の状態整合候補
+
+- ` + tick + `getVipEligibility()` + tick + ` は ` + tick + `api_pool_keys` + tick + ` のキーを ` + tick + `status != 'REVOKED'` + tick + ` で取得し、Mighty判定を ` + tick + `mighty_capable=1` + tick + ` かつ ` + tick + `mighty_check_status='CONFIRMED'` + tick + ` で判定している。` + tick + `DISABLED` + tick + ` 状態のキーでもMighty metadataがCONFIRMEDのままなら資格判定に残る可能性がある。
+- Mighty再確認APIでは401時に ` + tick + `recordApiPoolFailure(... disable: status===401)` + tick + ` を呼ぶが、その経路で ` + tick + `setApiPoolMightyMetadata(... NOT_MIGHTY)` + tick + ` を呼ぶ処理は見当たらない。全キー401で ` + tick + `checked===0` + tick + ` の場合にUNDETERMINEDを返す分岐もあり、資格とキー状態の整合を実テストで確認する必要がある。
+- これは既存監査で記録された静的候補の再整理。コード修正やロール変更は行わない。
+- ` + tick + `user_mighty_credentials` + tick + ` / ` + tick + `user-mighty.js` + tick + ` は現行のキー提供/資格判定経路とは別系統に見える。` + tick + `/api/me/vip` + tick + `の410応答と併せ、未使用/旧実装の扱いは仕様確認まで保留する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
