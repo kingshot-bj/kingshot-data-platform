@@ -1610,3 +1610,12 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - `src/player-store.js` のPlayer履歴は、R2_ONLYでR2 archive失敗時にhistory emergency bufferへ退避する経路と、履歴読み取り時にR2を参照する経路を確認。Buffer drainの実行起動元・再試行・完了状態の連携は未確認。
 - `src/api-pool.js` の通常貸出条件はstatus AVAILABLE/COOLDOWNを対象にする。Mighty metadataの状態更新関数 `setApiPoolMightyMetadata()` はMighty確認成功時にAVAILABLEへ更新するため、キーのDISABLED/REVOKED等を不当に再有効化しないか状態遷移の呼び出し元を追う。
 - 進捗 **40%**。実行テスト、DB変更、デプロイ、外部API呼び出しは未実施。
+
+
+## 2026-10-10 機能信頼性監査 — 50%到達
+
+- Safety Gate: `maxUsagePercent()` は全メトリクスがundefinedならnullを返す。呼び出し先 `getSafetyState(usagePercent)` は `Number(null) === 0` を使いNORMALへ分類するため、使用率不明が正常判定になる経路を確認。これは実行前にコードで追える静的な不具合候補。
+- History Emergency Buffer: `src/index.js` 内では `drainHistoryEmergencyBuffer` のimportはあるが、呼び出し元を確認できなかった。scheduled/queue/requestの全起動経路を引き続き確認する。bufferにPENDING/FAILEDが残ったときの再処理が起動しない可能性。
+- Change Events: `src/index.js` のプレイヤー/王国変更履歴クエリはD1 `change_events` を直接参照している箇所がある。Retentionはchange_eventsをR2へアーカイブ後、D1行を削除する。R2 readbackが接続されているかは未確認で、削除後に画面/APIから見えなくなる候補。
+- API Pool Mighty metadata: `src/index.js` のユーザー提供キー再判定処理は `status != 'REVOKED'` のキーを検索し、成功時に `setApiPoolMightyMetadata(... mightyCapable:true ...)` を呼ぶ。関数側は成功時にstatusをAVAILABLEへ戻すため、DISABLED/ERRORキーも再有効化される可能性。意図した状態遷移か要確認。
+- 進捗 **50%**。実行テスト・コード修正・DB更新・デプロイは未実施。
