@@ -1601,3 +1601,12 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - `handleOwnerKingdomLoadTestExportApi` は `src/admin-kingdom-load-test.js` に実装され、`src/index.js` にimportもあるが、`/api/owner/kingdom-load-test/export` のルート分岐が存在しない。
 - `renderPlayerVisibilityPage()` は `requireAdmin()`、`handlePlayerVisibilityApi()` は `requireOwner()`。ADMIN画面/APIの認可差を確認。
 - 進捗 **30%**。コード修正、Migration適用、build、D1実行、ブラウザテスト、本番操作は未実施。候補は静的証拠として記録し、仕様確認と隔離テスト後に修正する。
+
+
+## 2026-10-10 機能信頼性監査 — 40%到達
+
+- `src/safety-gate.js` の `maxUsagePercent()` は候補メトリクスを `Number(v)` に変換してから有限値だけを残す。JavaScriptでは `Number(null) === 0` のため、nullのメトリクスが0%として集計される可能性がある。欠損時の最終判定・呼び出し側のnull処理を要確認。静的候補であり、実行結果は未確認。
+- `src/retention.js` は `change_events` をRetention対象としてR2 archive/delete対象に含める。削除後にPlayer/Kingdom Changes APIがR2から履歴を復元するかは未確認。読み戻しの接続を追加追跡する。
+- `src/player-store.js` のPlayer履歴は、R2_ONLYでR2 archive失敗時にhistory emergency bufferへ退避する経路と、履歴読み取り時にR2を参照する経路を確認。Buffer drainの実行起動元・再試行・完了状態の連携は未確認。
+- `src/api-pool.js` の通常貸出条件はstatus AVAILABLE/COOLDOWNを対象にする。Mighty metadataの状態更新関数 `setApiPoolMightyMetadata()` はMighty確認成功時にAVAILABLEへ更新するため、キーのDISABLED/REVOKED等を不当に再有効化しないか状態遷移の呼び出し元を追う。
+- 進捗 **40%**。実行テスト、DB変更、デプロイ、外部API呼び出しは未実施。
