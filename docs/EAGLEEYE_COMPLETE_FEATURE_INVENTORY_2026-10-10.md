@@ -1203,3 +1203,26 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - 今回完了扱いにしたのは、ルート呼び出し名・import・exportの静的照合。見つかった接続不一致候補は未修正のまま明示的に記録した。
 - この67%は「棚卸しチェック項目の完了割合」であり、全機能の実装率・正常率・本番適用率ではない。過去記録にある重み付き概算（23–25%等）は別方式の途中記録で、チェックリスト方式の値と直接比較しない。
 - 未完了の大項目：Migrationと全SQLの列/制約/Index双方向照合、全画面のUI操作→API→認可/DB/エラー状態の対応付け、機能ごとの実装状態確定、機能別テスト/E2E確認条件。
+
+## 2026-10-10 進捗記録 — 第4回・進捗率の更新
+
+### 全体進捗：44%（静的棚卸し・概算）
+
+第3回の39%以降、Owner User/Player Link Support、Discord Support、Safety Gate/Service Usage、実際の収集パイプライン、GitHub Actionsの副作用、主要SQL列とMigrationの不一致候補を追加した。
+
+| 作業領域 | 重み | 現在の達成度 | 加重点 | 根拠 |
+|---|---:|---:|---:|---|
+| リポジトリ/構成/入口の初期台帳 | 10% | 100% | 10.0% | src/Migration/route/Workflow/assetsを列挙 |
+| Route→handler/page→定義/importの照合 | 20% | 50% | 10.0% | 110 pathとsrc内API文字列を照合。未解決/未登録候補3件。全method/guardは未完了 |
+| 画面UI→API→処理の対応付け | 25% | 35% | 8.75% | 主要機能領域の画面/API/DB経路を記録。全ボタン/フォームの成功/失敗状態は未完成 |
+| Migration/SQL→テーブル・列・Indexの双方向照合 | 25% | 20% | 5.0% | 主要テーブルを確認し、Admin Rankingの列不一致候補を発見。全Migration/SQLは未照合 |
+| Worker/Cron/Queue/権限/外部連携の接続照合 | 15% | 60% | 9.0% | scheduled/queue、外部OAuth、Owner/Admin guard、schema workflow、Safety Gateを整理 |
+| テスト観点・本番確認条件の整理 | 5% | 25% | 1.25% | P0/P1候補、実行禁止の本番操作、E2E観点を整理。全機能テスト行列は未完成 |
+| **合計** | **100%** |  | **44.0%** | 概算。実装完成率や本番正常率ではない |
+
+### 第4回で追加した重要所見
+
+- `getLatestAdminKingdomRankingSnapshot()`のSELECTが`kingdom_ranking_current.ranking_snapshot_id`を参照するが、Migration 0019の同テーブルに列がない。Admin Ranking読出し/refreshとGoogle Sheets exportへの影響候補。
+- `scripts/reconcile-d1-schema.mjs`のrequired migration listは0043まで。現行0044–0058の完全照合/補修を保証しない。
+- Safety GateのCloudflare metrics欠損時のNORMAL扱い候補、Retention後のPlayer History/Change Events readback差、Player Visibility APIのrole mismatchを継続記録。
+- すべて静的確認。コード変更、実D1クエリ、デプロイ、Queue操作、外部API/負荷テストは行っていない。
