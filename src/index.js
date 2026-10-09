@@ -3991,6 +3991,7 @@ export default {
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
+      if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
@@ -4066,7 +4067,7 @@ export default {
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
       if (url.pathname === "/kingdom-catalog") { return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
-      if (url.pathname === "/kingdom/rankings") return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env));
+      if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
       if (url.pathname === "/alliance") return eagleEyeHtmlResponse(await renderAlliancePage(request, env));
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
@@ -7334,6 +7335,28 @@ function formatUnix(value) {
   const date = new Date(Number(value) * 1000);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+}
+
+async function handleKingdomRankingPreferencesApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const body = await request.json().catch(() => ({}));
+  const kid = Number(body.kid);
+  if (!Number.isInteger(kid) || kid < 1) return json({ ok: false, error: "INVALID_KINGDOM_ID", message: "王国IDを確認してください。" }, 400);
+  const kingdom = await env.DB.prepare("SELECT kid FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first();
+  if (!kingdom) return json({ ok: false, error: "KINGDOM_NOT_FOUND", message: "王国カタログに存在する王国を指定してください。" }, 404);
+  const allowedBoards = ["personal_power","kills","town_center","hero_total","troop_power","building_power","research_power","hero_no_equip","hero_equip","gov_gear","gov_charm","pet_power","island_prosperity","migrant_score","mystic_trial","coliseum","forest_of_life","crystal_cave","knowledge_nexus","molten_fort","radiant_spire","master_power","rebel_conquest","single_hero","alliance_power","alliance_kills"];
+  const boards = [...new Set(Array.isArray(body.boards) ? body.boards.map(v => String(v)) : [])].filter(v => allowedBoards.includes(v));
+  if (!boards.length) return json({ ok: false, error: "BOARD_REQUIRED", message: "ランキングを1つ以上選択してください。" }, 400);
+  const primary = String(body.primary_board || boards[0]);
+  if (!boards.includes(primary)) return json({ ok: false, error: "INVALID_PRIMARY_BOARD", message: "最初に表示するランキングは選択済みのランキングから指定してください。" }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(`INSERT INTO user_kingdom_ranking_preferences (user_id,kid,boards_json,primary_board,created_at,updated_at)
+    VALUES (?,?,?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET kid=excluded.kid,boards_json=excluded.boards_json,primary_board=excluded.primary_board,updated_at=excluded.updated_at`)
+    .bind(String(auth.user_id), kid, JSON.stringify(boards), primary, now, now).run();
+  return json({ ok: true, kid, boards, primary_board: primary });
 }
 
 async function getAuthenticatedUser(request, env) {
