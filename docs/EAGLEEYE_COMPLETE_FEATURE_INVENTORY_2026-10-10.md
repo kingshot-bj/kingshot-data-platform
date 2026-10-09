@@ -732,6 +732,22 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Owner UI/APIが ` + tick + `owner_audit_log` + tick + `に記録する操作と、記録しない閲覧操作を区別する。全ての管理操作に監査記録があるとはまだ断定しない。
 - User一覧は ` + tick + `login_history` + tick + `をjoinしてlogin countを算出し、別クエリで全Watchlist件数を集計する。D1 Free read制約下では検索頻度/ユーザー数/Indexの影響を確認する。
 - Login History / Owner Audit LogはRetentionでR2へ移行される対象。長期保管が要件なら、アーカイブ後の閲覧/Export要件を明確にする。
+## 2026-10-10 第17巡目 — Discord Support ticket lifecycle
+
+| 操作 | 入口/認証 | 処理 | 状態 |
+|---|---|---|---|
+| Support context | `/api/support/context` GET、ACTIVEユーザー | `getSupportIncidentContext`で障害/サービスの文脈を返す | 接続あり。表示に必要な診断情報の最小化を確認 |
+| Ticket作成 | `/support` → `/api/support` POST、ACTIVEユーザー | 入力検証/カテゴリ解決、Discordチャンネル作成、初期メッセージ/permission overwrites、チャンネルtopicへticket ID/user/statusを記録 | 実装あり。D1の専用ticket tableは確認できず、Discord channel/topicが状態管理の中心 |
+| Discord close/reopen interaction | `/api/discord/interactions` POST | Ed25519署名とtimestampを検証。設定Support roleを確認し、channel topicのstatusをCLOSED/OPENへ変更 | 実装あり。署名・ロール・実際のDiscord権限は未検証 |
+| Slash command registration | `/api/admin/discord-support/register-command` POST、ACTIVE ADMIN/OWNER相当 | Discord Application Commandsを登録/更新 | 実装あり。外部Discord APIへ登録はしていない |
+| Support diagnostics | `discord-support.js` | 作成/終了/再開の成功失敗をdiagnostic eventとして記録、必要に応じ通知 | 接続あり。失敗後再試行と診断イベント保持は未検証 |
+
+### Ticket lifecycleの確認ポイント
+
+- Ticket ID形式検証、カテゴリ/サブカテゴリ検証、重複案件409、チャンネル作成失敗時の後片付け、Close/Reopen時のchannel topic更新を実装。
+- Ticket stateの主保存先がDiscord channel/topicで、専用D1 ticket tableを確認できない。Discord channel削除/権限変更/Topic改変時の復旧・監査方法を仕様として確認する。
+- Interactionは署名検証あり。close/reopenの権限がDiscord member role IDsと ` + tick + `DISCORD_SUPPORT_ROLE_ID` + tick + ` に依存するため、実Guild/Role configの確認が必要。
+- 本棚卸しではDiscordチャンネル作成/更新、slash command登録、通知を実行していない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
