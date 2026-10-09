@@ -462,3 +462,12 @@
 - iPhone Safariでの全画面E2Eは未実施。共通ガードの存在だけで全操作保護済みとは判定しない。
 - 次はOwner/User管理とSupport状態遷移、Migration列/Index照合を進める。
 
+## 2026-10-10 棚卸し進捗 — Owner/User/Player Link Support
+
+- 台帳更新コミット: `4bc1c7db78d84dedd0d42f585092da2652be876a`
+- Owner User List/search、Role/Status変更、Watchlist管理、Login History、Owner Audit Log、Player Link Supportを入口/認可/DB操作で整理。
+- Owner APIはACTIVE+OWNERのguardを通す。VIPロール変更には資格判定がある。自分の停止/自己Watchlist管理などの拒否条件もコード上で確認。
+- User一覧はlogin_history join/集計、全Watchlist件数集計を伴う。D1 reads優先で、ユーザー数増加時のコストを要確認。
+- Login History/Owner Audit LogはRetentionでR2へ移行する対象のため、アーカイブ後に管理画面で参照可能かは未確定。
+- 次はDiscord Supportの状態遷移と残るMigration/SQLの列/Index照合を続ける。
+
