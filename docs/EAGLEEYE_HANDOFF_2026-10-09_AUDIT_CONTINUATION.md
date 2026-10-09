@@ -261,3 +261,14 @@
 - api-pool.jsのreleaseExpiredLeases()と旧api_leases参照、api_pool_keys側のlease recoveryの役割を分けて最終照合する。
 - 次は全ルートとハンドラー/認証/ACTIVE/method、import済み未接続候補、Retention/Buffer/Queueの呼び出し、Migration重複番号の適用手順、台帳内の指摘の重複/訂正を最終クロスチェックする。
 - コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 静的監査一巡完了（100%）— 次工程への引き継ぎ
+
+- 機能台帳を更新し、raw GitHubから100%の記録と最終クロスチェック結果を検証した。台帳コミット：4652f7320603e339ad2e63978fc92273122e3f6e
+- **静的コード監査の一巡は100%完了。** これはmainブランチの機能/ルート入口、Migration 0001〜0058、主要SQL/index、Cron/Queue/R2、認証・状態管理・保存経路の静的レビューを一巡し、指摘/未確認事項を台帳化したという意味。実行時テスト、本番スキーマ検証、D1 Query Plan/消費量確認は未完了であり、100%完了とは扱わない。
+- src/index.jsのルート参照を静的抽出し、handle系75のユニーク参照を確認。handlePlayerCompareApiは定義/importを確認できず、/player/compareのrenderPlayerComparePageも定義/importが見つからない既知候補として最終クロスチェックに記録。実ビルド・HTTPアクセスは未実施。
+- Gateway、Discord Support、API Raw Inspector、Kingdom Portal、Owner Load Test、Admin System Log/Exportのimport済みhandlerを部分照合。認証/role/methodの個別チェックと未確認項目は台帳に残した。
+- Migration 0001〜0058の静的レビューを一巡。重複番号0008、後続Migrationでのrole CHECK拡張、request-time schema helper、Retention/Buffer/Queueの未確認経路は既知課題として維持。
+- 次工程は、監査台帳から重大度順の修正候補を整理し、安全なテスト環境で検証計画を作ること。コード修正・Migration/Workflow変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テストは、ユーザーから許可されるまで実施しない。
+- **D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
