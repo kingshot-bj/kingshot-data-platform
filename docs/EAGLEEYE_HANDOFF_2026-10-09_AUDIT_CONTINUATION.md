@@ -424,3 +424,10 @@
 - OwnerのKingdom Catalog R2 backfillは通常1–100件/run_all最大100件のバッチ、R2保存後D1 payload NULL化、事後検証/FAILED state更新の経路を整理。実行していない。
 - 引き続きD1 Free readsを最優先。Gateway diagnostics/Cloudflare AnalyticsやR2 backfillを棚卸しのために実行しない。
 
+## 2026-10-10 棚卸し進捗 — 全src API文字列照合
+
+- 台帳更新コミット: `d068dfe9e89a3d1bbfcb91eb3ca22eb8be865b47`
+- `src/index.js`以外のsrcファイル50件の静的`/api/...`文字列参照をrouter定義と照合。
+- 未登録の呼び出し先は現在確認できた範囲で `/api/owner/kingdom-load-test/export?run_id=` のみ。handler/UIリンクがあるがimport/route未接続。
+- 動的に構築するURLや外部利用者はこの静的抽出では網羅しない。次は列/制約/Index照合とAPI権限・methodの全件表を続ける。
+
