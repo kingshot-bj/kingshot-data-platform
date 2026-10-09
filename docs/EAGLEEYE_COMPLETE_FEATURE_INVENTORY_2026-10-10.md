@@ -1386,3 +1386,54 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
   10. [ ] 機能状態分類と機能別テスト/E2E確認行列
 - 既知候補：`kingdom_ranking_current.ranking_snapshot_id`の列参照差、`kingdom_watchlist_jobs.source_first_at/source_last_at`のMigration差。静的根拠は強いが、本番D1の実schema・実行時エラーは未確認。
 - GitHub mainの静的確認のみ。アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しはなし。D1 Free reads優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させていない。
+
+
+### 2026-10-10 継続監査：ランキングcurrentと履歴Retention経路の追加照合
+
+#### I. `kingdom_ranking_current` のDDL・Read/Write・Index照合
+
+- **DDL:** Migration 0019の `kingdom_ranking_current` は複合PRIMARY KEY `(kid, board, target_type, target_id)`。列は `kid/board/target_type/target_id/rank/previous_rank/score/uid/governor_id/nick_name/aid/abbr/name/observed_at/source_observed_at/source_observation_id/updated_at`。
+- **Write:** `src/ranking-store.js` は同じ列群へINSERT ... ON CONFLICTでcurrent値を更新し、除外対象を `kid+board+target_type+target_id` でDELETEする。DDLとの列名対応に目立つ差は見つからなかった。
+- **Read:** `src/ranking-store.js`、`src/index.js`、`src/kingdom-portal.js`からkid/boardで絞りrank順に読む経路、top-N、board stateとのJOIN、alliance/playerランキング表示などを確認。Admin helperの `ranking_snapshot_id` 参照は前記の列不一致候補として継続管理し、今回も重複起票しない。
+- **Index:** Migration 0001–0058をファイル名単位で検索した結果、`kingdom_ranking_current` に対する専用secondary indexのCREATEは見当たらず、Migration 0019の複合PRIMARY KEYが確認できる主な索引定義。既存の `idx_ranking_snapshots_*` は別テーブル `ranking_snapshots` 用で、current tableのIndexとして数えない。
+- **性能上の確認候補:** 多数の読み取り経路が `WHERE kid=? AND board=? ORDER BY rank` を使う。複合PRIMARY KEYはkid/boardでの絞り込みに合う一方、rank順まで同じ索引で満たすとは限らず、ソートが必要となる可能性がある。実Query Plan/Cloudflare D1 read consumptionは確認していないため、Index追加を即提案・実施せず、計測前の性能候補として記録する。D1 Free readsへの影響を推測だけで断定しない。
+- **列不一致候補:** `src/index.js:getLatestAdminKingdomRankingSnapshot()` の `ranking_snapshot_id` SELECTと、Migration 0019のcurrent DDLに同列がない点は継続。Migration 0001–0058でcurrent tableに同列を追加するDDLも見当たらない。実D1 schema/ルート実行結果は未確認。
+
+#### J. Player History / Change Events / Retention後の読戻し経路
+
+- **Player History API:** `/api/player/history` は `getPlayerHistory(env.DB, governorId, limit, env.ARCHIVE)` を使う。helperはD1 `player_snapshots` とR2履歴を読み、`observation_id`で重複を統合し、時刻順に返す。R2読出し失敗は診断記録/ログに出し、R2_ONLY条件下でD1 fallbackを試みるコードがある。
+- **Player History画面:** `/player/history` の `renderPlayerHistoryPage()` は `player_snapshots` をD1から直接SELECTし、R2 readback helperを呼んでいない。RetentionはR2アーカイブ成功後にD1行を削除するため、保持期間を超えてD1から削除された履歴はAPIと画面で表示結果が異なる可能性がある。コード上の経路差は確認済み、実データでの再現は未確認。
+- **Change Events:** `/api/player/changes` と `/player/changes` は `change_events` をD1から直接SELECTする。R2 archive moduleには `change_events` 用の専用list/readback関数が見当たらない。Retentionが `change_events` をR2保存後にD1削除する設定の場合、削除済み古いイベントは現行のAPI/画面から復元されない可能性がある。
+- **Retentionの安全順序:** `src/retention.js` は対象行を選択し、`archiveD1RowsToR2()` 成功後にrowidでD1削除する実装。これは「アーカイブ確認前に削除しない」設計だが、アーカイブされた全テーブルに対してアプリ側readbackが実装済みであることまでは意味しない。
+- **未確認:** Retention jobが本番で定期起動されているか、設定値/実行結果、実際に削除された行、R2 objectの中身、Cloudflare環境での挙動は未確認。今回、Retention処理やDB/R2操作を実行していない。
+
+### 進捗チェックリストの粒度を詳細化 — 現在80%
+
+従来の10項目チェックリストは「全Migration/全SQL照合」など作業量の大きい項目と、一覧確認の項目が同じ1点として扱われていたため、監査作業パッケージを20項目に詳細化した。旧70%はその時点の10項目基準による履歴として保持する。現在値は、明示した20パッケージの完了数による **16/20 = 80%**。これは監査作業の進捗であり、アプリの実装率・本番正常率・本番適用率ではない。
+
+1. [x] srcファイル一覧の確定
+2. [x] srcモジュール責務の初期分類
+3. [x] index.jsの完全一致ルート一覧
+4. [x] prefix/callback/fallbackなど特殊ルーティングの棚卸し
+5. [x] Migration全ファイル名の一覧化
+6. [x] Migration番号重複・履歴上の主要変更点の初期整理
+7. [x] wrangler.jsoncの主要binding/Cron/Queue確認
+8. [x] PreviewとProductionの設定差分候補確認
+9. [x] Workflow一覧と静的な役割確認
+10. [x] scripts・公開アセット一覧の確認
+11. [x] route呼出し/import/exportの静的照合
+12. [x] 未定義handler/未接続route候補の台帳化
+13. [x] user_player_links最終列/CHECK/Indexと実行時DDLの照合
+14. [x] ranking preferencesのUI→API→DB接続とschema reconcileの役割確認
+15. [x] kingdom_ranking_currentのDDL・read/write・Index利用パターン照合
+16. [x] Player History / Change EventsのRetention・R2 readback経路照合
+17. [ ] 全Migrationとsrc全SQLの完全な双方向照合（残りの全テーブル/列/制約/Index）
+18. [ ] 全画面の全ボタン/フォーム→API→権限→DB/R2→成功/失敗表示の棚卸し
+19. [ ] 全機能を実装あり/未接続/重複/未実装/仕様未確定に分類
+20. [ ] 機能別テスト可能性・本番E2E確認行列の完成
+
+### 今回の実施境界
+
+- GitHub `main`の静的ソースとMigrationのみ確認。ビルド、ブラウザE2E、実D1 schema、Query Plan、Cloudflare Insights、実R2データは未確認。
+- アプリコード/Migration/Workflowの変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。
+- D1 Free readsを優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させていない。
