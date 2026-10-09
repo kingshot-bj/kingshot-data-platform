@@ -293,3 +293,38 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 |---|---|---|---|
 | 2026-10-09 | `src/index.js` 内部ハンドラーのサンプル | 認証ヘルパー、API Pool管理、Owner管理、ランキング設定、Gatewayの保護・入力検証を一部確認。全APIの網羅確認は未完了。API Pool移動・追加の下位検証とリース整合性を要確認。 | APIルートを残りも1件ずつ確認し、Cron/Queue設定との照合を完了する。 |
 | 2026-10-09 | `scheduled()` / `queue()` | 3つのScheduled処理とQueueメッセージ3分類・配送先をコード上で確認。Cloudflare側の設定・本番発火は未確認。 | `wrangler.jsonc` とworkflowを照合し、機能別モジュール一覧へ進む。 |
+
+
+### フェーズA-1 — Cloudflare設定とWorkerイベント入口の照合（2026-10-09）
+
+対象: `wrangler.jsonc`、D1 migration workflow、`src/index.js` の `scheduled()` / `queue()`、`src/kingdom-catalog-scheduler.js`。
+
+#### コード・設定で確認したこと
+
+- `wrangler.jsonc` のCronは `*/5 * * * *`（5分ごと）。`scheduled()` 内ではAPI Pool自動復旧、王国Catalog日次更新、Discord通知の3処理を呼び出す。Catalog側はDBの `kingdom_catalog_discovery` 状態を確認し、stateがRUNNINGなら重複実行をスキップする。
+- production設定にはD1 binding `DB)、R2 binding `ARCHIVE)、静的Assets binding `ASSETS` が定義されている。履歴モードは `R2_ONLY`。
+- production Queue producer/consumerには `eagleeye-service-usage`、`eagleeye-load-test`、`eagleeye-system-events` が定義され、各consumerに最大再試行5回、DLQが設定されている。Load Test consumerはbatch size 1 / concurrency 1。System EventとService Usageはbatch size 100 / concurrency 1。
+- D1 migration workflowは `workflow_dispatch` による手動起動であり、コードの変更だけでは本番migration適用を意味しない。workflowには適用前のschema drift guardと、適用後の一部schema検証がある。
+- `src/discord-support.js` の確認範囲では、Discord interaction署名検証用のEd25519処理があり、問い合わせ入力にはカテゴリ経路・件名長・本文長・詳細値長の検証がある。ただしinteraction handler全体の処理経路と署名検証の呼び出し位置は、完全監査としては継続確認が必要。
+
+#### 要確認・リスク候補
+
+1. **Preview設定とWorker Queueコードの差分:** `wrangler.jsonc` の `previews.queues.producers` には `SERVICE_USAGE_QUEUE` と `LOAD_TEST_QUEUE` しか記載されず、`SYSTEM_EVENT_QUEUE` が見当たらない。一方、Workerの `queue()` は `SYSTEM_EVENT` メッセージを処理し、`setSystemEventQueue(env.SYSTEM_EVENT_QUEUE)` を呼び出す。Preview環境でSystem Eventのenqueueが必要な場合に機能しない可能性があるため、意図した仕様か確認する。現時点ではPreviewでの実動作未確認。
+2. `wrangler.jsonc` にはGoogle Drive OAuth Redirect URIとして `/api/auth/callback` が設定されている。Discord OAuth callbackも同じパスを使っているため、Google Drive OAuthの実際の開始・callback経路とredirect URIの一致を調べる。ここでは設定文字列の一致だけを確認しており、障害とは断定しない。
+3. `wrangler.jsonc` のQueue定義はコード上で確認できたが、Cloudflare側で実際にQueue・DLQ・Cronが存在して有効か、直近の実行成功を示すものではない。
+4. migration workflowに記載されたschema検証範囲は一部migration/テーブルに限られる。台帳にあるすべてのmigrationの本番適用状況は別途照合が必要。
+
+### フェーズA-1 状態更新
+
+- [x] `src/index.js` の明示ルートを分類
+- [x] Scheduled/Queueの呼び出しとメッセージ分類を確認
+- [x] `wrangler.jsonc` のCron・bindings・Queue構成をコードと照合
+- [x] D1 migration workflowが手動起動であることを確認
+- [ ] 全APIハンドラーの認証・入力検証を網羅
+- [ ] Discord interaction/OAuth/Support/Gatewayの全経路を確認
+- [ ] Preview/Productionの設定差分の意図と動作を確認
+- [ ] フェーズAの他ファイル・DB・アセット・ロールマッピングへ進む
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | `wrangler.jsonc` / Workerイベント | Cron・本番Queue構成・DLQ・D1 migration workflowを確認。PreviewのSystem Event producer欠落候補とGoogle Drive callback設定を要確認として記録。実際のCloudflare側稼働は未確認。 | Preview設定の意図を確認対象に残し、残りのAPI認可監査と全体マッピングを続ける。 |
