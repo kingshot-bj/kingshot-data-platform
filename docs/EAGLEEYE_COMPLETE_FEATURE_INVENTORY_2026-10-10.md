@@ -1337,3 +1337,16 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - **他の未掲載候補:** 0057のAPI Pool Mighty metadata列、0054/0056のMighty credentials、0053/0055のPlayer Visibility role/schema変更などもreconcile scriptの文字列検索では対応定義が見当たらない。
 - **評価:** このscriptが0044–0058の新しいスキーマを再構築/修復する役割も担う想定なら、現状のMigrationリストとDDL補修対象の追随不足候補。scriptが過去スキーマの限定的な照合専用である可能性もあるため、運用上の目的・呼出元を確認するまでは確定バグ扱いしない。
 - **未確認:** scriptの運用手順、CI/Workflowからの呼出し、本番で使われているか、0058のテーブルが実DBにあるか。実行はしていない。
+
+### H. Reconcile workflowの役割確認 — 0044–0058の未掲載を単独バグと断定しない
+
+- `.github/workflows/eagleeye-d1-schema-reconciliation.yml` は明示的な本番確認文字列を要求し、`scripts/reconcile-d1-schema.mjs --apply` を実行する設計。検証も0017–0043を対象にしている。よって同scriptの0017–0043範囲は意図的な限定範囲の可能性が高く、0044–0058が列挙されない事実だけで不具合とは断定しない。
+- `.github/workflows/eagleeye-d1-apply-pending-migrations.yml` は別途 `scripts/reconcile-0053-production-drift.mjs` を実行し、通常Migration適用後に0054–0057のスキーマ要素を検証する。0053–0057については別経路が存在することを確認。
+- ただしMigration 0058の `user_kingdom_ranking_preferences` はreconcile scriptおよび確認したWorkflowの専用検証に見当たらず、通常のpending Migration適用で作成される想定。Migration未適用状態でAPIが呼ばれた場合の動作や本番適用履歴は未確認。
+- `scripts/reconcile-0053-production-drift.mjs` と上記Workflowは本番D1を変更し得る。今回、内容を静的に読むのみで、Workflow起動・スクリプト実行・Cloudflareアクセスは行っていない。
+
+### I. `kingdom_watchlist_jobs` の列不一致評価を更新
+
+- 0008 `kingdom_watchlist_jobs` DDLで作成された既存テーブルに対し、0019は `CREATE TABLE IF NOT EXISTS` で同テーブルを再定義するだけであり列追加はしない。0020–0058のMigrationにも `source_first_at/source_last_at` をADD COLUMNするALTERは見当たらない。
+- よって、Migrationを番号順に新規適用しただけの環境でも、初回作成時の0008形状が残る可能性が高く、現行コードのINSERT/UPDATE/SELECTと不整合になる。これは静的なMigration設計上の高確度候補（新規DBへの適用時も問題になり得る）として扱う。本番D1の実状態・適用済みMigration・実行時障害は未確認。
+
