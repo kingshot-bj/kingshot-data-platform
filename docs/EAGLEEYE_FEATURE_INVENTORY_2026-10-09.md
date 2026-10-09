@@ -1312,3 +1312,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `runKingdomWatchlistJobs()` には、1時間ごとに `kingdom_watchlist_jobs` の `COMPLETED/FAILED` 行を24時間より古いものから最大100件削除する処理がある。
 - 前項のとおり、この関数は `scheduled()` から呼ばれていない。したがって、ジョブ掃除も実行されず、手動/画面操作で作られた完了・失敗ジョブが蓄積する可能性がある。
 - `kingdom_watchlist_jobs` は監視処理の進捗状態テーブルであり、永続履歴を大量に残す必要性は低いと考えられるが、実際の件数は未確認。Cron接続時に掃除も接続するか、独立した小バッチRetentionへ移す必要がある。
+
+
+### [中] Discord通知の重複防止状態がイベントごとに永続化され、Retention対象外
+- `src/discord-notifications.js` は各変更イベントに対して `CHANGE_EVENT:<event_id>` を `discord_notification_state` にINSERTし、送信成功後も行を削除しない。
+- `discord_notification_state` は `migrations/0052_discord_notification_state.sql` で作られ、`updated_at` インデックスはあるが、`src/retention.js` の保持対象には含まれていない。
+- 変更イベントが長期的に増えると、重複防止用テーブルもイベント数に比例して増える。通知処理は過去10分しか候補を読まないため、十分な安全期間後に古いclaimを整理できるか検討する。ただし、前項の通知漏れ問題を直す前に安易に削除期間を決めない。
+- 現在の状態行数・ストレージ量は未確認。今回、通知状態の削除は行っていない。
