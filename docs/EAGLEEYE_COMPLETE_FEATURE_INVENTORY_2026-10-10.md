@@ -1301,3 +1301,21 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - D1 Free reads最優先。全件データSELECTや本番クエリは実行していない。
 - `ranking_snapshots` の広範囲取得を追加・復活させていない。既存の履歴参照は特定kid/board/target_idとLIMITで絞られている箇所を確認したが、全SQL網羅確認の完了を意味しない。
 - アプリコード、Migration、Workflowの変更、デプロイ、本番DB更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。
+
+
+### D. `kingdom_watchlist_jobs.source_first_at/source_last_at` — 現行SQL参照まで確認
+
+- **現行SQL側:** `src/index.js` 内で両列をINSERT、UPDATE、SELECTし、Watchlistの進捗・完了レスポンスや画面表示に渡している。少なくともWatchlistジョブ開始、ランキング収集後の更新、プレイヤー収集後の更新、状態取得で参照される。
+- **Migration側:** 0008定義には両列がなく、0019定義にはある。後続Migration群で既存テーブルに両列を追加するALTERが必要。
+- **Reconciliation script:** `scripts/reconcile-d1-schema.mjs` は両列を含む `CREATE TABLE IF NOT EXISTS` 定義を持つが、同スクリプトの該当箇所には `kingdom_watchlist_jobs` の既存テーブルへ両列を追加する `addColumn()` 呼び出しが見当たらない。既存テーブルならCREATE文が既存定義を更新しないため、スクリプトがこの差を自動補修するとは確認できない。
+- **影響/確度:** 既存DBが0008形状のままで0019相当の列追加が適用されていない場合、Watchlist jobのINSERT/UPDATE/SELECTがSQLエラーとなる可能性がある。コード上の参照とDDL差は高確度、実DBに列が欠落しているか・本番で発生するかは未確認。
+- **安全な次確認:** Migration 0020–0058をファイル名単位で確認し、両列へのALTERが後続に存在しないことを確認する。Production DB・reconcile scriptは実行しない。
+
+### E. `user_player_links` — Migration再構築順序の列/制約照合
+
+- **0022:** 初期形状に `user_id TEXT NOT NULL UNIQUE`、`governor_id`、status/verification_method CHECKを定義。
+- **0023:** `official_verified_at` / `official_verified_by_user_id` を追加し、所有権サポート申請テーブルと2 Indexを作成。
+- **0024:** ACTIVE状態の `governor_id` を一意にするpartial UNIQUE Indexを追加。
+- **0026:** 旧テーブルを `user_player_links_v2` に移行し、`kingdom_id`、`account_type`、verification列を含む最終形状へ再構築。旧 `UNIQUE(user_id)` 制約は複数アカウント対応のため最終形状から外れ、代わりにACTIVE governor/user-governor/main-account用partial UNIQUE Indexを作成する。
+- **現行コードとの関係:** `src/user-player-link.js` の `ensureSchema()` は最終形状相当のテーブルと複数Indexを作成するが、`user_player_link_support_requests` はこの関数内では作成しない。サポート申請テーブルはMigration 0023/reconcile scriptに依存するように見える。Migration未適用環境での挙動は未確認。
+- **判定:** Migration 0022だけを最終形状として比較すると誤判定になるため、0023/0024/0026を順序込みで評価する必要がある。現在の最終スキーマとIndexの完全一致、実適用状態、リクエスト時DDLの頻度は未確認。
