@@ -374,6 +374,17 @@
 - これらが別の呼び出し元・外部トリガー・意図的な未使用コードなのかは未確定。削除/接続の判断はしない。
 - `scheduled()` は5分ごとに動く設定だが、上表にないローラーを「Cron実装済み」とは扱わない。
 
+
+### 4. 画面/API参照の初期抽出（静的）
+
+`src/index.js` 内でWorkerの `fetch()` ルーター定義より前にあるAPI文字列を抽出した。
+
+- API文字列参照: 27箇所
+- 一意な文字列: 21件
+- Queryを除いたパス: 15種類
+- 抽出できた主な画面側のAPI系統: Kingdom Watchlist（create/refresh/cancel/toggle/delete/data）、Player Watchlist、マイプレイヤー（player/advanced/VIP/Mighty check）、Discordログイン、Google Drive接続検証、MightPulse調査/Probe。
+- これは `index.js` 前半の文字列抽出結果に限る。後半に定義される管理画面、他モジュール、動的に組み立てるURLは別途対象。全ボタン/API対応の完了を意味しない。
+
 ### 3. この巡回での暫定優先順位
 
 1. **最優先の接続確認候補:** プレイヤー比較の2つのルート参照。
