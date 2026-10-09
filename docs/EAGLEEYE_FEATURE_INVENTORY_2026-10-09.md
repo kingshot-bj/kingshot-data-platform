@@ -1680,16 +1680,18 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 #### [中] 401のみの判定結果が「一時的な判定不能」へ誤分類される可能性
 
 - 各ユーザー提供キーを判定するcatch内で、HTTP 403以外は `transient = true` にする。一方、`checked++` は成功応答と403の分岐でしか増えず、401では増えない。
-- 401は `recordApiPoolFailure(... disable: status === 401)` へ渡され、キーは無効化される想定だが、その後も `transient=true`、`checked=0` のままループを抜ける。
-- 最後の分岐 `if (transient && checked === 0)` に入り、全キーが401だったケースでも `status:"UNDETERMINED"` を返す可能性がある。これは無効キーの確定結果を一時障害扱いにするため、画面表示・再判定・VIP資格の説明が実際のキー状態と一致しないおそれがある。
+- 401は `recordApiPoolFailure(... disable: status === 401)` へ渡され、キーの運用状態は `DISABLED` になる想定だが、その後も `transient=true`、`checked=0` のままループを抜ける。
+- 最後の分岐 `if (transient && checked === 0)` に入り、全キーが401だったケースでも `status:"UNDETERMINED"` を返す可能性がある。
+- さらに `getVipEligibility()` は `status != 'REVOKED'` のキーを取得したうえで、`mighty_capable=1` と `mighty_check_status='CONFIRMED'` のみで資格判定し、キー本体の `status='DISABLED'` を除外しない。401処理では `setApiPoolMightyMetadata()` も呼ばれないため、以前CONFIRMEDだったキーのMightyメタデータが残り、無効化後もVIP資格が残る可能性がある。
+- したがって、この経路には「判定結果の誤分類」に加えて「無効キーがVIP資格の根拠として残る」可能性がある。401を確定した判定として数えること、資格判定にキー運用状態を含めるか、401時にMightyメタデータを明示的に失効させるかを仕様として揃える必要がある。
 - 429、5xx、timeout/network error等の一時障害と、401による認証失敗を別カテゴリにして集計する必要がある。修正案は401時に `checked` を増やす/一時障害フラグを立てない等だが、複数キー混在時の期待仕様を先に決めてから実装する。
 - 実API応答・画面表示・資格更新の再現試験は未実施。本番APIキーへのアクセスや再判定は行っていない。
 
 #### 登録テーブル/モジュールの接続確認メモ
 
 - `src/index.js` の現行Mighty判定経路は `api_pool_keys` を参照し、`handleMyAdvancedApi()` から `registerUserMightPulseApiKey()` を使って通常のユーザー提供キーを登録する。
-- 今回確認した主要ファイル（`src/index.js`、`src/user-eligibility.js`、`src/api-pool.js`、`src/mightpulse.js`、`src/data-collection-engine.js`、`src/gateway-api.js`、`src/kingdom-portal.js`、`src/retention.js`、`src/status-ops.js`、`src/admin-kingdom-load-test.js`）では、別モジュール `src/user-mighty.js` や `user_mighty_credentials` テーブルへの参照を確認できなかった。
-- このため `user-mighty.js` とMigration 0054のテーブルは、少なくとも上記の主要経路からは未接続の可能性がある。ただし、今回未確認の残りの `src/` ファイル・管理用スクリプト等に参照があるかは未確定なので、リポジトリ全体の未使用コードとはまだ断定しない。
+- `src/` のJavaScript 51ファイルを参照検索し、`user-mighty.js` 自体を除く他の50ファイルでは `user-mighty.js` / `user_mighty_credentials` / 同モジュールの関数名を参照していないことを確認した。Migration 0054と0056はテーブル定義を持つが、アプリの現行ソースから呼び出されていないように見える。
+- したがって、現時点では `src/user-mighty.js` と `user_mighty_credentials` は未接続の実装候補として扱う。管理スクリプト、テスト、外部からの直接SQLなど `src/` 外の参照は別途確認が必要なため、削除・統合はまだ行わない。
 - 0054のテーブル/モジュールを正式な機能として使う設計か、旧実装の残骸かを確認し、API Pool方式との二重管理を避ける。確認が終わるまで削除・統合はしない。
 
 #### 次の監査対象
