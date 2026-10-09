@@ -156,3 +156,10 @@
 - `source_first_at/source_last_at` は0008が作成した既存テーブルに0019のCREATE TABLE IF NOT EXISTSでは追加されず、0020–0058にも該当ALTERが見当たらない。新規環境でも列欠落が残る可能性が高いという評価に更新。実D1の状態は未確認。
 - 機能台帳の評価更新コミット: `e8dd61693164e3fbbea9c45ccf1adf105831ec2b`。
 - Workflow/スクリプトは静的に読むのみ。起動、Cloudflare接続、D1変更は一切行っていない。
+
+### Migration 0058 APIの接続追跡
+
+- `/api/kingdom-rankings/preferences` は `handleKingdomRankingPreferencesApi()` に接続し、認証ユーザーのランキング設定を `user_kingdom_ranking_preferences` にINSERT/UPSERTする。
+- `src/index.js` 全文検索では、保存値をSELECTするAPI/UI経路、またはこのAPI URLを呼び出すクライアント側fetchが見つからなかった。保存APIの呼出し/読出しが未接続の可能性を台帳に追加した（確度中、仕様/別ファイル利用は未確認）。
+- 台帳更新コミット: `bbb0239060efc2958bdf478ffa749a45412f93b7`。
+- 次はUI/JS資産とルート登録の接続を追跡する。静的調査のみ。進捗は67%のまま。
