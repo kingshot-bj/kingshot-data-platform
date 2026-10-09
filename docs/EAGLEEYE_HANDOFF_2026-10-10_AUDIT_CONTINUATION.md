@@ -274,3 +274,12 @@
 - Player履歴はR2_ONLY保存失敗時のEmergency Buffer退避、読み取り時のR2参照を確認。Buffer drainの起動元・再試行・復旧経路を追跡中。
 - API Poolの通常貸出はAVAILABLE/COOLDOWN対象。Mighty確認成功時のAVAILABLEへの更新がDISABLED/REVOKEDキーを意図せず復活させないか、呼び出し元を追跡する。
 - 進捗 **40%**。次はchange event readback、buffer drain起動経路、Mighty metadata更新条件、Safety Gateの欠損データ分岐を確認する。
+
+
+## 2026-10-10 機能信頼性監査 — 50%到達
+
+- Safety Gateはメトリクスが全て不明で `maxUsagePercent()` がnullを返す場合、`getSafetyState(null)` 内の `Number(null) === 0` によりNORMAL判定へ進む経路がある。欠損時は安全側に倒れるべきか、仕様・呼び出し側を含めて確認する。
+- `drainHistoryEmergencyBuffer` はindex.jsでimportされるが呼び出し元を確認できず。Bufferに退避したデータの再処理起動経路が欠落していないか調査を継続。
+- Change EventsはRetentionでR2 archive後にD1から削除される一方、index.jsにD1直接参照の履歴クエリがある。R2 readback未接続なら古い履歴が画面/APIから消える可能性。
+- ユーザー提供APIキーのMighty再判定は `status != 'REVOKED'` を対象とし、成功時のmetadata更新がAVAILABLEへ戻すため、DISABLED/ERRORの意図しない再有効化がないか確認する。
+- 進捗 **50%**。次は各候補の呼び出し経路を確定し、Retention/Buffer/Queue/Safety Gate/API Poolの起動・状態遷移を追う。
