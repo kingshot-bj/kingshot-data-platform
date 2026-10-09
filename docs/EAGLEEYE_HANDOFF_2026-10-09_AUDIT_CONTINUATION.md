@@ -471,3 +471,10 @@
 - Login History/Owner Audit LogはRetentionでR2へ移行する対象のため、アーカイブ後に管理画面で参照可能かは未確定。
 - 次はDiscord Supportの状態遷移と残るMigration/SQLの列/Index照合を続ける。
 
+## 2026-10-10 棚卸し進捗 — Discord Support
+
+- 台帳更新コミット: `6c6b4c17e92ac221cb5e310752558118e049c12f`
+- Support context、ticket作成、Discord Interactionによるclose/reopen、slash command登録、診断記録の経路を整理。
+- InteractionはEd25519署名検証あり。Ticket stateは専用D1 tableではなくDiscord channel/topicを中心に管理しているように見えるため、Discord側でchannel/topicが変更/削除された場合の復旧要件を確認する。
+- 実Discord操作/コマンド登録は行っていない。
+
