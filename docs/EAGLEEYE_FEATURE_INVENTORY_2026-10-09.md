@@ -1088,3 +1088,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 現行 `src/index.js` からは `src/user-mighty.js` のimportがなく、`registerUserMightyKey` / `getUserMightyCredential` / `revokeUserMightyKey` / `callUserMightyApi` の呼び出しも見当たらない。現行のMighty判定は、ユーザー提供の通常MightPulseキーをAPI Poolへ登録し、`mighty_capable` / `mighty_check_status` で判定する方式。
 - `user_mighty_credentials` テーブルと関連Migrationは存在するため、現状は「旧実装が残存している」状態と考えられる。利用中データがないと確認できるまでは削除対象にしない。
 - 機能台帳では「現行経路」「未接続/旧実装」「Migration上だけ残存」を区別し、後日、参照・データ依存・ロールバック要件を確認してから整理判断する。
+
+
+### [高・機能未接続] OwnerロードテストのエクスポートAPIが画面から呼ばれるがルート未登録
+- `src/admin-kingdom-load-test.js` は `handleOwnerKingdomLoadTestExportApi()` をexportし、`renderOwnerKingdomLoadTestPage()` は `/api/owner/kingdom-load-test/export?run_id=...` へのダウンロードリンクを生成する。
+- `src/index.js` はこの関数をimportしているが、`fetch()` のルーティングに `/api/owner/kingdom-load-test/export` が存在せず、関数の呼び出しも見当たらない。
+- そのため、Ownerロードテスト画面の履歴エクスポートリンクは、現行mainのルーティングではエクスポートハンドラーへ到達せず、通常のホーム画面等へフォールバックする可能性が高い。
+- これはソース上でルート配線の欠落を確認したもので、本番で実際に押下したテストは未実施。修正時はOwner認可、GET制限、run_idの検証、CSV/JSON出力内容、ダウンロード応答を確認してからルートを追加する。今回は変更していない。
