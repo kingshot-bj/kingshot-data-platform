@@ -435,6 +435,36 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - ` + tick + `src/index.js` + tick + ` 自体には、直接の ` + tick + `CREATE TABLE/CREATE INDEX/ALTER TABLE` + tick + ` 文は見つからなかった。
 - ` + tick + `src/user-player-link.js` + tick + ` には ` + tick + `ensureSchema(db)` + tick + ` があり、テーブルと複数Indexを ` + tick + `IF NOT EXISTS` + tick + ` で作成する。モジュールスコープのPromiseで同一Worker isolate内の初回実行を共有するため、毎リクエスト実行と断定しない。
 - Migration 0022–0026の最終テーブル定義とこのensureSchema定義の完全一致、cold startでのD1操作コスト、実行時頻度は未確認。不要なスキーマ作成処理の削除/変更はこの棚卸しでは行わない。
+## 2026-10-10 第5巡目 — Watchlist機能のAPI/DB接続
+
+### Player Watchlist
+
+| 操作 | API/HTTP method | DB/動作 | 状態 |
+|---|---|---|---|
+| 一覧取得 | `/api/player-watchlist` GET | `player_watchlists` と `players` をJOIN。ランキング/変更表示で `kingdom_ranking_current`・`kingdom_ranking_board_state`・`change_events` を参照 | 接続あり。読み取りSQL/認可の詳細確認は継続 |
+| 登録/再有効化 | `/api/player-watchlist` POST | governor_id検証、既存行確認、enabled件数を照会し、上限確認後にUPSERT | 接続あり。上限と同時登録の競合は別途確認 |
+| 更新/有効無効切替 | `/api/player-watchlist` PATCH | 登録者本人の行を対象に更新し、上限チェックあり | 接続あり。全状態遷移は未検証 |
+| 削除 | `/api/player-watchlist` DELETE | 登録者本人の対象を削除 | 接続あり。実リクエスト未実施 |
+
+### Kingdom Watchlist
+
+| 操作 | API/HTTP method | DB/動作 | 状態 |
+|---|---|---|---|
+| 一覧/ジョブ状態 | `/api/kingdom-watchlist?action=list` GET | `kingdom_watchlists` と最新 `kingdom_watchlist_jobs` を参照。古い実行中jobをFAILEDにする整合処理もある | 接続あり。stale判定の時間条件は要テスト |
+| 新規登録 | `/api/kingdom-watchlist?action=create` POST | `watchlist_limits` を用いたロール別上限、既存watchlist確認、`kingdom_watchlist_jobs` 作成後に初回収集処理を起動 | 接続あり。二重登録/初回失敗時の復旧は要テスト |
+| 更新/再開 | `/api/kingdom-watchlist?action=refresh` POST | watchlist所有者とjobを照会し、進捗/カーソルを利用して収集処理を続行 | 接続あり。Queue経由ではなく同期HTTP経路となる場合の時間制約を確認 |
+| キャンセル | `/api/kingdom-watchlist?action=cancel` POST | job/watchlist状態を照合し、対象処理の停止状態へ更新 | 接続あり。競合/二重押し/キャンセル後の再開は未検証 |
+| 有効無効切替/削除 | `/api/kingdom-watchlist?action=toggle` POST / `?watchlist_id=` DELETE | watchlist所有者を基準に状態変更/削除。関連lock/job cleanupも実装 | 接続あり。各method/所有者境界をE2Eで確認する必要あり |
+| データ表示 | `/api/kingdom-watchlist/data?watchlist_id=` GET | `kingdom_ranking_current` から必要順位を取得し、CTEで同盟略称を補完。Player Watchlist、上位プレイヤーID候補、`players`を参照 | 現行順位テーブル中心の読み取りを確認。広範囲`ranking_snapshots`取得なし |
+| 順位履歴 | `/api/kingdom-watchlist/history` GET | `getRankingHistory`経由でD1/R2履歴を取得 | 接続あり。R2ページング/limitの実効性は要確認 |
+
+### Watchlist共通の注意点
+
+- ` + tick + `handlePlayerWatchlistApi` + tick + ` はACTIVEユーザーを確認してからDB操作する。Kingdom Watchlistは認証ユーザーを要求し、所有者IDで操作対象を絞るコードを確認した。個別APIの全method/権限境界はテスト未実施。
+- Kingdom Watchlist収集は ` + tick + `kingdom_watchlist_jobs` + tick + `、` + tick + `kingdom_watchlist_locks` + tick + `、` + tick + `api_request_locks` + tick + `、` + tick + `collection_semaphore_slots` + tick + `と連携する経路がある。各ロックのTTL/競合/Worker停止後の回復は静的確認と実測を分ける。
+- Player Watchlist GETはランキング現在値と変更イベントを取得するため、登録件数/上限が大きい場合のクエリコストを確認する。D1 Free reads優先で、取得範囲とIndex利用を評価する。
+- ` + tick + `ensurePlayerWatchlistSchema()` + tick + ` は ` + tick + `index.js` + tick + ` 内で ` + tick + `return Boolean(db)` + tick + ` のみ。Migration 0012がスキーマを供給する想定で、request-time DDLは行わない。
+- ここでは実際のユーザー操作や本番DB計測をしていない。UI/HTTP method、同時実行、失敗後再試行、D1 readsは未検証。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
