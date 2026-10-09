@@ -593,6 +593,25 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - ` + tick + `player_visibility_settings` + tick + `と ` + tick + `filterPlayerForRole()` + tick + ` / ` + tick + `filterPlayerProfileForRole()` + tick + ` / ` + tick + `isChangeVisibleForRole()` + tick + `が、基本プロフィール・同盟・Hero/Rank/Equipment・Change Eventsの表示範囲を制御する。
 - visibility設定取得に失敗した場合、基本フィールドを除外するfail-closed経路がある。ADMIN/OWNER用exportはAPI側でもADMINガードを持つ。
 - UI表示だけでは認可/可視性を保証できないため、API直叩き時のフィールド除外・role別結果は別途HTTPテストする。
+## 2026-10-10 第11巡目 — Retention対象とR2読出し機能の照合
+
+Retentionの実装は、対象テーブルから期限切れ行をバッチ取得し、許可されたテーブルをR2へ書いた後、元のD1 rowidを削除する方式。R2への保存成功だけで、UI/APIがアーカイブ済みデータを読めるとは限らない。
+
+| テーブル | Retention動作 | R2 readback | 現行画面/APIとの対応 |
+|---|---|---|---|
+| `api_observations` | 期限切れの古い観測をR2へ保存してD1削除。最新観測を保持する特別条件あり | `getLatestPlayerObservation`はD1の最新観測を読む | 最新表示の経路は残る想定。履歴全件の画面表示は別途確認 |
+| `player_snapshots` | R2へアーカイブ後、元D1行を削除 | `getPlayerHistory`がR2履歴を読む | APIはD1/R2対応だが、`/player/history`画面はD1を直接読むため、アーカイブ後の履歴が画面から欠落する可能性 |
+| `ranking_snapshots` | R2へアーカイブ後、元D1行を削除 | `listRankingHistoryFromR2` / `getRankingHistory`のR2経路あり | ランキング履歴API/画面のreadback経路を引き続き照合 |
+| `player_rank_snapshots` | R2へアーカイブ後、元D1行を削除 | `listPlayerRankHistoryFromR2` / `getPlayerRankHistory`あり | Rank History APIはR2対応。画面/利用箇所が未確認 |
+| `change_events` | R2へアーカイブ後、元D1行を削除 | アーカイブ処理は`archiveD1RowsToR2`にあるが、Change Event専用のR2 list/get関数は確認できない | `/player/changes`、`/api/player/changes`、`/kingdom/changes`はD1を直接参照。Retention後は古いイベントが表示から抜ける可能性 |
+| `login_history` / `owner_audit_log` / `api_pool_usage` / `player_identity_history` | 設定日数経過後にR2へアーカイブしてD1削除する対象 | 汎用アーカイブ保存あり。画面/API側でのアーカイブ横断読出しはこの巡回では未確認 | 「長期保存」と「画面で検索可能」を区別し、Owner履歴/使用量/名前履歴の要件を確認 |
+
+### 重要な結論
+
+- RetentionアーカイブはD1読み取り/容量の制御に役立つが、アーカイブ済みデータの画面/API再表示は各機能がR2 readbackを実装している場合に限られる。
+- ` + tick + `/player/history` + tick + `とPlayer Changes系の画面/APIは、Retention後にR2アーカイブ済みの行を表示しない可能性がある。これは静的な経路差候補であり、データ欠落の実再現は未実施。
+- ` + tick + `runDataRetentionJob` + tick + `の起動経路自体も未接続候補なので、実際にRetentionが走っているか/どの設定値かは本番DBを変更せず別途確認する。
+- 本棚卸しではR2全件listやアーカイブの全件読出しを追加しない。D1 Free読み取りを優先し、必要なR2 readbackは対象範囲・ページング・費用を明示して設計する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
