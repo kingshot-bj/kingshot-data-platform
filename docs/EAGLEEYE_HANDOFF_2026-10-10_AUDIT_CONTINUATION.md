@@ -252,3 +252,16 @@
 4. 変更は仕様・影響範囲を固めてから。現時点ではアプリコード、Migration、Workflow変更なし。
 
 進捗はこの監査フェーズ内の20%であり、システム完成率ではない。build/route smoke/isolated D1/Browser E2E/Preview/Production testsはいずれも未実施。D1 Free readsを最優先し、広範囲な `ranking_snapshots` retrievalを復活させない。
+
+
+## 2026-10-10 機能信頼性監査 — 30%到達
+
+追加照合で次を確認した。
+- `scripts/reconcile-d1-schema.mjs` に `players.source_observed_at` / `api_observations.source_observed_at` の追加補修が見当たらない。
+- `kingdom_ranking_current` のMigration/reconcile定義に `ranking_snapshot_id` がないが、`src/index.js` のSELECTで参照。
+- `kingdom_watchlist_jobs` の旧Migration 0008定義には `source_first_at/source_last_at` がない。後続Migration 0019とreconcileは列付きCREATE TABLE IF NOT EXISTSを持つだけで、既存表に対するADD COLUMNが見当たらない。
+- Player Compareのrouteはあるが、`handlePlayerCompareApi` / `renderPlayerComparePage` はindex.jsに定義もimportも確認できない。helper関数のimportは存在。
+- Owner Load Test CSV handlerは実装・import済みだが、対応API routeがない。
+- Player Visibilityの画面はADMINを許可し、APIはOWNER限定。
+
+現在 **30%**。次はRetention後のR2読戻し、change events、Safety Gateの欠損メトリクス、API Poolの無効キー適格性を静的追跡する。アプリ/Migration修正やデプロイはしない。
