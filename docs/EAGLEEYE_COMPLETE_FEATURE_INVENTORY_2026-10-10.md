@@ -1253,3 +1253,18 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - `scripts/reconcile-d1-schema.mjs`のrequired migration listは0043まで。現行0044–0058の完全照合/補修を保証しない。
 - Safety GateのCloudflare metrics欠損時のNORMAL扱い候補、Retention後のPlayer History/Change Events readback差、Player Visibility APIのrole mismatchを継続記録。
 - すべて静的確認。コード変更、実D1クエリ、デプロイ、Queue操作、外部API/負荷テストは行っていない。
+
+
+## 2026-10-10 次スレ引き継ぎチェックポイント
+
+- 現在のチェックリスト進捗は **6/9項目 = 66.7%（表示67%）**。次は未完了項目を実作業で完了させ、約10ポイント進んだ段階で報告する。進捗率はチェックリスト完了割合であり、全機能の実装率・正常率ではない。
+- 現時点で未完了のチェック項目:
+  1. Migration全件のテーブル/列/制約/Indexと現行SQLの双方向照合
+  2. 全画面のUI機能・ボタン・フォーム→API→認可/DB/R2→成功/失敗表示の対応付け
+  3. 機能単位で「実装あり/未接続/重複/未実装/仕様未確定」を確定
+  4. 機能別のテスト可能性・本番E2E確認条件を定義
+- 直近の重要な追加記録: PreviewとProductionが同じD1 database ID/R2 bucketを指定している。PreviewのQueue binding/consumerの実分離は未確認であり、Previewから副作用のある処理を起動しない。
+- 次の作業は Migration 0001–0058のDDLをファイル名単位で最終スキーマへ整理し、src全体のSELECT/INSERT/UPDATE/DELETE列、JOIN、WHERE、ORDER BY、Indexを双方向照合する。0008は同番号ファイルが2つあるためファイル名をキーに扱う。
+- 既知の要確認候補を再確認し、重複登録しないこと: `kingdom_ranking_current.ranking_snapshot_id` の列不一致、`kingdom_watchlist_jobs.source_first_at/source_last_at` のMigration間差、`src/user-player-link.js` の実行時DDL、schema reconciliation scriptが0043までしか必須Migrationを列挙しない点。
+- ルート接続候補: `/api/player-compare` の `handlePlayerCompareApi`、`/player/compare` の `renderPlayerComparePage`、Owner Load Test CSV export handlerの未接続。既存記録の根拠と確度を参照し、修正はまだ行わない。
+- 安全制約: アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは禁止。D1 Free reads最優先。広範囲 `ranking_snapshots` 取得クエリを絶対に復活させない。
