@@ -1502,3 +1502,40 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `ranking_snapshots` を広範囲に読むクエリは絶対に復活させない。ランキング履歴の改善は、既存の絞り込み・R2履歴・小さな索引を優先し、広範囲D1履歴SELECTで置き換えない。
 - 未確認の本番挙動を「再現済み」と書かない。静的所見、シナリオ試算、実測結果を明確に区別する。
 - APIキー、Cookie、Secretなどの値をログやMDに記録しない。
+
+
+---
+
+### 2026-10-09 継続監査：Discord OAuth state とセッション発行経路
+
+#### [高・セキュリティ要確認] Discord OAuth state が開始ブラウザに結び付いておらず、再利用も防いでいない
+
+- **確認箇所：** `src/index.js` の `startDiscordLogin()`（約4502行）、`handleDiscordCallback()`（約4562行）、`createStateToken()` / `verifyStateToken()`（約8993〜9012行）。
+- `startDiscordLogin()` は時刻とランダムUUIDを含むstateを生成し、HMAC署名した値をDiscord認証URLへ渡す。
+- `handleDiscordCallback()` はstateの署名と時刻を検証するが、ログイン開始時にブラウザへstate用Cookieを設定してcallback時に照合する処理、またはstateをD1等で一度きりに消費する処理は、この実装経路では確認できない。`verifyStateToken()` は発行から10分未満かを確認するだけで、成功後の無効化を行わない。
+- **想定影響：** state値を自分で発行し、自分のDiscordアカウントで得た有効なcallback URLを別のブラウザに開かせるログインCSRFが成立する可能性がある。これは静的コードからのセキュリティ懸念であり、実際の攻撃シナリオを実行して成立を確認したわけではない。
+- **推奨対応：** stateを開始ブラウザのSecure/HttpOnly/SameSite Cookie等と照合し、callback成功時に破棄する。Cookie方式だけに頼らず、stateの期限・一度きりの消費・複数タブの挙動をテストする。修正は全体監査後、別途許可を得て実施する。
+- **確認範囲：** 現行 `src/index.js` のDiscord OAuth経路を静的確認。実リクエスト・攻撃再現は未実施。
+
+#### [低〜中・可用性/UX] D1へのユーザー保存失敗を捕捉した後もセッションCookieを発行する
+
+- **確認箇所：** `handleDiscordCallback()`（約4653〜4683行）と `getAuthenticatedUser()`（約7362〜7382行）。
+- callbackは `upsertUser()` の失敗をcatchして処理を続け、署名済みセッションCookieを発行する。一方、後続の `getAuthenticatedUser()` はD1の `users` 行を照会できなければ `null` を返し、保護ページ/APIは未認証扱いになる。
+- **想定影響：** D1障害やユーザー保存失敗のタイミングで、ブラウザ上はログイン完了のリダイレクトが返る一方、次の保護操作ではログイン状態が成立しない可能性がある。認可がfail-closedになる点は維持されるが、callbackのコメントにある「認証を利用可能に保つ」という意図と実際の挙動が一致しない。
+- **推奨対応：** ユーザー行の保存に失敗した場合はセッションを発行せず、再試行を促すエラーを返すなど、結果を一貫させる。D1停止時の認証方針は別途決定し、保護APIの認可を弱めて回避しない。
+- **確認範囲：** 静的コード確認のみ。D1障害の注入やOAuth実動作試験は未実施。
+
+#### 今回のルート/認証監査で確認したこと
+
+- `/api/owner/users`、`/api/owner/users/watchlists`、`/api/owner/users/role`、`/api/owner/users/status`、`/api/owner/users/login-history`、`/api/owner/audit-log` はルーター直下にガードが見えないものがあるが、各ハンドラー先頭で `requireOwner()` を呼ぶことを確認した。現時点では、ルーターにガードがないという理由だけで認可欠落とは判定しない。
+- `/api/owner/api-pool/reassign` もハンドラー内部で `requireOwner()` とPOST制限を確認した。
+- `/player/compare` の `renderPlayerComparePage` 未定義候補、および不正Cookieの `decodeURIComponent()` 例外候補は既存記録にあることを確認し、重複追加していない。
+- `getAuthenticatedUser()` は署名検証後にD1のユーザー行を参照し、照会エラー時は未認証扱いで返すことを確認した。DISABLED状態を返した後の各ハンドラーの扱いは、全ルート照合を継続する。
+
+#### 監査チェックポイント更新
+
+- 今回は `src/index.js` のOAuth開始・callback・session cookie発行・認証ユーザー照会と、Owner管理APIの一部ハンドラーを静的確認した。
+- 新規の要確認事項は上記2件。どちらも本番再現済みではない。
+- **全ルートの認証/メソッド/ACTIVE状態照合、全Migration/SQL照合、Cron/Queue/R2接続照合は未完了。** 監査全体の完了率は今回の作業だけで再計算・断定しない。
+- アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、API収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
