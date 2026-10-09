@@ -514,6 +514,37 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - API PoolのUIはキー追加、Mighty判定、キー削除、Pool移動/再割当、Player/Ranking testを含む。画面のボタンとAPIのHTTP method/role guardの対応は全件テスト未完了。
 - キー削除は ` + tick + `api_pool_usage` + tick + ` も消すため、監査/利用量履歴の保存ポリシーを確定してから扱う。
 - API Poolの実利用量/残枠は実環境で確認していない。Load TestやHealth Checkをこの棚卸し中に起動していない。
+## 2026-10-10 第8巡目 — Diagnostics / System Log / Google Drive / Discord Support
+
+### System Status / Diagnostics / Logs
+
+| 機能 | 入口/処理 | 認可/保存先 | 初期判定 |
+|---|---|---|---|
+| 公開System Status | `/status` → `renderPublicStatusPage` | D1 diagnostics、運用状態、API Pool、Cloudflare Analytics、R2 probe等を集約 | 公開ページあり。60秒更新表示。詳細計測/外部API取得の読み取りコストと公開情報を確認する |
+| 詳細Diagnostics | `/admin/diagnostics` / `/api/admin/diagnostics` | ページ/handler内でADMINガード。`diagnostic_events`と運用状態を参照 | ADMIN限定経路あり。各監視状態が実データと一致するかは未検証 |
+| System Log | `/admin/system-log`、`/api/admin/system-log*` | Router側ADMINガード。`system_event_log`とtrace情報を参照/Export | 接続あり。24時間表示・Export範囲・Retention実行を別途確認 |
+| System Event Queue | Worker `fetch()/queue()` | fetch entryで`setSystemEventQueue`、Queue consumerが`handleSystemEventQueue`を実行 | Queue経路の接続あり。DLQ/再試行は本番設定確認が必要 |
+| Retention / System Log Archive | `runDataRetentionJob`内で`runRetentionCleanup`と`archiveSystemEventLog` | R2保存結果を診断イベントへ記録する実装 | 親ジョブのWorker起動経路が見つからないため、定期処理が実行されるか未確定 |
+
+### Google Drive OAuth / Archive Mirror
+
+- Owner向けの開始/検証: ` + tick + `/api/admin/google-drive/authorize` + tick + ` と ` + tick + `/api/admin/google-drive/verify` + tick + `。どちらもOWNERガードを持つ。
+- Callback実装: ` + tick + `/api/admin/google-drive/callback` + tick + `。OWNERガード、state token検証、OAuth code交換、Drive archive folder作成の経路を確認。
+- **静的設定不一致候補:** ` + tick + `wrangler.jsonc` + tick + ` の ` + tick + `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` + tick + ` は `/api/auth/callback` を指定している一方、Worker routerのGoogle Drive callbackは `/api/admin/google-drive/callback`。このままの設定ではGoogle OAuthがDiscord callbackへ戻る可能性がある。実OAuthフローは実行していないため、設定差分として要確認。
+- ` + tick + `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` + tick + ` の実環境値、Google Cloud Console側の許可Redirect URI、OAuth state/nonce、Refresh Tokenの保存先を本番変更なしで確認する必要がある。
+
+### Discord Support
+
+- `/support` は利用者向けサポートUI。` + tick + `/api/support/context` + tick + ` でカテゴリ/症状に対応するコンテキストを取得し、` + tick + `/api/support` + tick + ` で問い合わせ/チケット操作を行う。ユーザー認証情報をhandlerへ渡す。
+- `/api/discord/interactions` はDiscord Interaction署名検証を含む ` + tick + `discord-support.js` + tick + ` へ接続。チケット作成/終了/再開、権限設定、通知、診断記録を実装。
+- `/api/admin/discord-support/register-command` はACTIVEなADMIN/OWNER相当の権限チェックとPOST method checkを持つコードを確認。Discord APIへの登録は実行していない。
+- チケット状態遷移、Discord署名の実リクエスト検証、チャンネル作成、権限上書き、通知失敗時の再試行は未検証。
+
+### この領域の未完了項目
+
+- 公開Statusは全体状態を集約するため、ページロード/自動更新ごとのD1 reads、Cloudflare Analytics呼び出し、R2 probe回数を測る必要がある。ただし棚卸し中に本番アクセス負荷試験は行わない。
+- Admin Diagnosticsは表示されるローラー状態と、実際に起動するscheduled/queue処理の差を確認する。未接続ローラーを画面に表示しているだけの可能性を区別する。
+- System Logのarchive/retentionとHistory Emergency Bufferのdrainは別機能。片方が動いていることを他方の稼働証明にしない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
