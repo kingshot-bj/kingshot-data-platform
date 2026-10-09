@@ -992,3 +992,38 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 2. Player Profile/History/Changes/Watchlistを画面→API→D1/R2→Retentionで追跡し、画面とAPIの重複・アーカイブ後の読み出し差を確定する。
 3. API Pool全操作についてHTTP method、handler guard、DB副作用、外部API消費、二重押し防止を一覧化する。
 4. その後、Migrationと全SQLの列/Index単位照合へ進む。
+
+
+## 2026-10-10 進捗記録 — 第3回・全機能棚卸し進捗
+
+### 全体進捗：39%（静的棚卸し・概算）
+
+この進捗率は機能領域の棚卸し作業に対する概算であり、実装完成率/本番正常率ではない。前回23%から、Watchlist、Player Profile、Kingdom Portal、API Pool、Owner管理、System/Diagnostics、Google/Discord連携、Retention/R2、Safety Gate、収集経路のマッピングを追加した。
+
+| 作業領域 | 重み | 現在の達成度 | 加重点 | 根拠 |
+|---|---:|---:|---:|---|
+| リポジトリ/構成/入口の初期台帳 | 10% | 100% | 10.0% | src 51件、Migration 59件、route 110件、Workflow 5件、assets 17件を列挙 |
+| Route→handler/page→定義/importの照合 | 20% | 45% | 9.0% | 全exact routeと静的API文字列を照合。未解決/未登録候補3件。全method/guard/外部トリガーの照合は未完了 |
+| 画面UI→API→処理の対応付け | 25% | 30% | 7.5% | 19領域の機能経路を追加。index.jsのrender関数抽出済みだが、全ボタン/フォーム/失敗状態の対応は未完成 |
+| Migration/SQL→テーブル・列・Indexの双方向照合 | 25% | 15% | 3.75% | 主要テーブル、Retention/R2 readback、DDL差分候補を記録。全列/制約/Index/全SQLの双方向照合は未完了 |
+| Worker/Cron/Queue/権限/外部連携の接続照合 | 15% | 50% | 7.5% | scheduled/queue、ローラー未接続候補、認可不一致、OAuth redirect、API Pool/Safety Gateを静的確認 |
+| テスト観点・本番確認条件の整理 | 5% | 20% | 1.0% | 優先確認候補と一部E2E条件を記録。全機能のテスト行列は未完成 |
+| **合計** | **100%** |  | **38.75% ≒ 39%** | 重み/達成度は概算。対象範囲が増えたら根拠を更新する |
+
+### 現時点の主要発見（静的候補）
+
+- ルート/接続の要確認候補3件: Player Compare handler/page未解決2件、Load Test CSV exportの未登録route 1件。
+- Worker起動未接続候補: Seeder、Kingdom Ranking Roller、Alliance Roller、Player Roller、Retention parent job、History Emergency Buffer drain。
+- 設定/権限候補: Google Drive OAuth redirect不一致、Player Visibility page/APIのADMIN/OWNER差、RollerのR2 binding名不一致。
+- データ経路候補: Player History画面とAPIのD1/R2差、Change EventsのR2 archive後readback不足、VIP資格とDISABLED keyの状態不整合。
+- Safety/コスト候補: Cloudflare metrics欠損時のSafety GateがNORMAL扱いとなる可能性、Player Searchの部分一致、GETでのAdmin ranking refresh副作用、Service Usage R2 read-modify-write。
+- これらはすべて静的所見。再現/本番確認は未実施。
+
+### 次の巡回
+
+1. 主要Migration列/制約/IndexとSQLの双方向照合。
+2. 全画面のボタン/フォーム/イベント/HTTP method/role guard/成功・失敗状態の対応表を完成。
+3. R2 archive/readbackとRetentionの対象/閲覧仕様を確定。
+4. 未接続候補を「現仕様で必要」「意図的な旧実装」「将来用」「未実装」に分類。
+5. 本番変更なしで実施可能なテストと、Owner承認が必要な本番テストを分離。
+
