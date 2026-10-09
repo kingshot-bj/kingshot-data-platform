@@ -265,3 +265,12 @@
 - Player Visibilityの画面はADMINを許可し、APIはOWNER限定。
 
 現在 **30%**。次はRetention後のR2読戻し、change events、Safety Gateの欠損メトリクス、API Poolの無効キー適格性を静的追跡する。アプリ/Migration修正やデプロイはしない。
+
+
+## 2026-10-10 機能信頼性監査 — 40%到達
+
+- Safety Gateの `maxUsagePercent()` は `Number(v)` 後に有限値を選ぶため、nullが0%として扱われる可能性を確認。欠損メトリクス時の安全判定を追加確認する。
+- Retentionはchange_eventsをR2 archive後にD1から削除する。削除済み履歴のChanges API側R2 readbackがあるか未確定。
+- Player履歴はR2_ONLY保存失敗時のEmergency Buffer退避、読み取り時のR2参照を確認。Buffer drainの起動元・再試行・復旧経路を追跡中。
+- API Poolの通常貸出はAVAILABLE/COOLDOWN対象。Mighty確認成功時のAVAILABLEへの更新がDISABLED/REVOKEDキーを意図せず復活させないか、呼び出し元を追跡する。
+- 進捗 **40%**。次はchange event readback、buffer drain起動経路、Mighty metadata更新条件、Safety Gateの欠損データ分岐を確認する。
