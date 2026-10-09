@@ -116,6 +116,7 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | 初期台帳作成 | 機能分類と監査ルールを定義。全コード監査は未完了。 | フェーズAの全体マッピングを実施し、コード根拠で状態を更新する。 |
+| 2026-10-09 | `src/index.js` ルート棚卸し | 主ルーターの画面/API入口とWorkerイベント入口を分類。ハンドラー内部の認可・入力検証・本番動作は未確認。 | scheduled/queue処理の追跡と、ルート単位の権限監査へ進む。 |
 
 ## 完了条件
 
@@ -124,3 +125,114 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 - 実装状況とテスト・本番確認状況が分離されている。
 - 未確認事項、既知不具合、重複処理、負荷リスクが明示されている。
 - 修正ごとにテスト結果と関連コミットが追記されている。
+
+
+## フェーズA-1 — `src/index.js` ルート棚卸し（2026-10-09）
+
+対象: `main` の `src/index.js`。主ルーターの `fetch()`、`scheduled()`、`queue()` を確認。
+この一覧はルーターに明示された入口をまとめたもの。各ハンドラー内部のサブルート、HTTPメソッド別の挙動、認可の正しさ、実際の稼働可否は別途確認が必要。
+
+### Worker入口
+
+| 入口 | 現行コード上の処理 |
+|---|---|
+| HTTP `fetch(request, env, executionContext)` | URL pathnameでルーティング。未一致はホーム画面へ。例外はログ出力後に500 JSON |
+| Scheduled `scheduled(event, env, executionContext)` | API Pool自動復旧、王国Catalog更新、王国Discord通知を個別try/catchで実行 |
+| Queue `queue(batch, env)` | メッセージを `SYSTEM_EVENT`、`KINGDOM_LOAD_TEST_RUN`、その他（Service Usage）に分類。各処理の後半を含め追加追跡が必要 |
+
+### ページ・画面ルート
+
+| パス | 画面・目的 |
+|---|---|
+| `/` および未一致パス | ホーム画面（renderHome） |
+| `/players` | プレイヤー検索 |
+| `/player` | プレイヤー詳細 |
+| `/player/history` | プレイヤー履歴 |
+| `/player/changes` | プレイヤー変動 |
+| `/player/compare` | プレイヤー比較 |
+| `/my-player` | マイプレイヤー・登録/連携 |
+| `/player-watchlist` | プレイヤーウォッチリスト |
+| `/kingdom-watchlist` | 王国ウォッチリスト |
+| `/kingdom-watchlist/analytics` | 王国ウォッチリスト分析 |
+| `/kingdom-catalog` | 王国Catalog |
+| `/kingdom` | 王国詳細 |
+| `/kingdom/rankings` | 王国ランキング |
+| `/kingdom/alliances` | 王国同盟一覧 |
+| `/alliance` | 同盟詳細 |
+| `/kingdom/compare` | 王国比較 |
+| `/kingdom/mighty` | 王国Mighty情報 |
+| `/kingdom/changes` | 王国変動 |
+| `/status` | 公開システム状況 |
+| `/status-json-comparator`, `/status-json-comparator.html` | Status JSON比較用静的アセット |
+| `/support` | サポート画面 |
+| `/admin` | 管理画面 |
+| `/admin/google-drive` | Google Drive接続設定 |
+| `/admin/data-retention` | データ保持設定 |
+| `/admin/player-visibility` | プレイヤー項目表示設定 |
+| `/admin/kingdom-rankings` | 王国ランキング管理 |
+| `/admin/diagnostics` | システム診断 |
+| `/admin/system-log` | システムログ |
+| `/admin/data-coverage` | データ収集カバレッジ |
+| `/admin/mightpulse-probe` | MightPulse接続プローブ |
+| `/admin/api-raw-data` | API生データ確認 |
+| `/admin/mightpulse-research` | MightPulse調査 |
+| `/admin/api-pool` | API Pool管理 |
+| `/owner` | Owner管理画面 |
+| `/owner/player-link-support` | プレイヤー連携サポート管理 |
+| `/owner/kingdom-load-test` | 王国負荷テスト |
+| `/owner/kingdom-catalog-r2-backfill` | 王国Catalog R2バックフィル |
+
+### APIルート — 認証・ユーザー・プレイヤー
+
+- `/api/auth/discord`, `/api/auth/callback`, `/api/auth/logout`
+- `/api/me`, `/api/me/player`, `/api/me/advanced`, `/api/me/mightpulse-key`, `/api/me/vip`, `/api/me/vip/mighty-check`
+- `/api/player`, `/api/player/refresh`, `/api/player/history`, `/api/player/rank-history`, `/api/player/changes`, `/api/player-compare`
+- `/api/player-watchlist`
+- `/api/debug/player-gear`, `/api/debug/player-icons`
+
+### APIルート — 王国・ランキング・ウォッチリスト
+
+- `/api/kingdom-rankings/preferences`
+- `/api/kingdom-portal/ranking`, `/api/kingdom-portal/status`
+- `/api/kingdom-watchlist`, `/api/kingdom-watchlist/data`, `/api/kingdom-watchlist/history`
+
+### APIルート — 管理・データ基盤
+
+- `/api/admin/mightpulse/player`, `/api/admin/mightpulse-probe`, `/api/admin/mightpulse-research`
+- `/api/admin/rankings/player`, `/api/admin/rankings/board`
+- `/api/admin/data-retention`, `/api/admin/kingdom-catalog-r2-backfill`
+- `/api/admin/player-visibility`, `/api/admin/player-export`
+- `/api/admin/kingdom-rankings`, `/api/admin/kingdom-ranking-export`
+- `/api/admin/diagnostics`, `/api/admin/system-log`, `/api/admin/system-log/export`, `/api/admin/system-log/export/download`
+- `/api/admin/discord/roles`, `/api/admin/discord-support/register-command`
+- `/api/admin/monitoring-profile`, `/api/admin/r2-archive-objects`
+- `/api/admin/api-pool/keys`, `/api/admin/api-pool/add`, `/api/admin/api-pool/move`, `/api/admin/api-pool/revoke`, `/api/admin/api-pool/delete`, `/api/admin/api-pool/mighty-check`, `/api/admin/api-pool/health-check`, `/api/admin/api-pool/test-player`, `/api/admin/api-pool/test-ranking`
+- `/api/admin/api-raw-data`, `/api/admin/api-raw-history`
+- `/api/admin/google-drive/authorize`, `/api/admin/google-drive/verify`, `/api/admin/google-drive/callback`
+
+### APIルート — Owner・サポート・外部API
+
+- `/api/owner/kingdom-load-test`, `/api/owner/kingdom-load-test/status`, `/api/owner/kingdom-load-test/history`, `/api/owner/kingdom-load-test/cancel`, `/api/owner/kingdom-load-test/system-json`
+- `/api/owner/users`, `/api/owner/users/watchlists`, `/api/owner/users/role`, `/api/owner/users/status`, `/api/owner/users/login-history`, `/api/owner/audit-log`
+- `/api/owner/player-link-support`, `/api/owner/api-pool/reassign`
+- `/api/load-test/notice-status`
+- `/api/support`, `/api/support/context`, `/api/discord/interactions`
+- `/api/gateway/v1/*`（gateway handlerへ委譲）
+
+### ルート棚卸しで見えた注意点（要追加監査）
+
+1. **ルート入口だけでは認可完了と判定できない。** 例えば一部の `/api/admin/*` と `/api/owner/*` は入口で明示的な `requireAdmin` / `requireOwner` を呼ばず、各ハンドラー内の認可に依存しているように見える。各ハンドラーの認可を確認するまでは脆弱性とは断定しないが、優先監査項目とする。
+2. `/api/load-test/notice-status`、Discord interaction、gateway配下、Google Drive OAuth callbackなどは公開入口としての署名・セッション・state検証の有無をハンドラー側で確認する。
+3. `/api/debug/*` の本番公開要否、認証、返却情報を確認する。
+4. `scheduled()` は上記3処理を直接呼び出す。その他の定期処理がQueueやCron設定経由で起動するか、`wrangler.jsonc` とQueue handlerを照合する。
+5. ページHTMLは `src/index.js` 内のインライン生成と別モジュール（例：`src/kingdom-portal.js`）に分散している。全画面への共通テーマ適用は、個別のHTML生成箇所も監査してから判断する。
+6. ここに記載したルートはコード上で定義されている入口であり、全ルートの正常動作・権限・本番稼働を確認したものではない。
+
+### フェーズA-1 の進捗
+
+- [x] `src/index.js` の主ルーターに明示されたページ/API入口を分類
+- [ ] 各ルートハンドラー内部のメソッド・認証・入力検証を確認
+- [ ] `scheduled()` と `queue()` の全処理を追跡
+- [ ] 動的パス・クエリパラメータ・別モジュール内のサブルートを追加確認
+- [ ] 台帳の監査記録を更新
+
