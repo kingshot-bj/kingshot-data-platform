@@ -1,5 +1,8 @@
 # EagleEye 機能台帳・全体監査計画 — 2026-10-09
 
+> **2026-10-10 更新:** 画面/API入口・全srcモジュール・Migration・Workflow・静的アセットを一覧化した専用台帳を作成しました。機能棚卸しは開始段階であり、未接続/未実装/重複の全件確定は未完了です。詳細: [EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md](./EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md)。
+
+
 ## 目的
 
 EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・依存関係・検証状況を一覧化する。
