@@ -939,3 +939,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 本番D1 Schema Reconciliation workflowは手動起動のみで、`RECONCILE_PRODUCTION` の明示入力を要求し、事前のD1 Time Travel bookmarkとMigration状態を記録する。
 - 旧Load Test Schema Recovery workflowはdeprecatedで、実行時に明示的に失敗終了する。
 - ただし前節のとおり、Reconciliation後の検証はSemaphoreスロット数とMigration履歴中心で、全インデックスの完全一致までは検証していない。
+
+
+#### [高・コード上で確定] Google Drive OAuthのRedirect URIと実装コールバックルートが不一致
+- `wrangler.jsonc` の `GOOGLE_DRIVE_OAUTH_REDIRECT_URI`（通常varsおよびpreview vars）は `https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback` を指定している。
+- `src/index.js` ではGoogle Driveのコールバック処理を `/api/admin/google-drive/callback` にルーティングし、Discordログイン用の `/api/auth/callback` は別処理としている。
+- `src/google-drive.js` はOAuth認可URL生成と認可コード交換の両方に `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` をそのまま使う。このため、現在の設定値のままGoogle Drive認証を行うと、GoogleからDiscordログイン用コールバックへ戻り、Google Drive用の認可コード交換処理に到達しない可能性が高い。Google Cloud側の実際の登録値・本番動作は未確認だが、リポジトリ内の設定と実装の不一致は確認済み。
+- 修正は今回行わない。対応時はCloudflare vars/preview vars、Google Cloud OAuthクライアントの許可済みRedirect URI、`/api/admin/google-drive/callback` の3点を同時に合わせ、認証成功・拒否・state不正のテストを実施する。
