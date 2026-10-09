@@ -541,3 +541,12 @@
 - 67%はチェックリスト項目の完了割合で、機能の実装率/正常率/本番適用率ではない。過去の重み付き概算23–25%とは算定方式が違うため、直接比較しない。
 - 次はMigration 0001–0058の最終スキーマとsrc全体のSQL列を双方向照合し、画面ボタン/フォームからAPI、認可、DB/R2、成功・失敗表示まで機能単位で追う。
 - 厳守: コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API実行はしない。D1 Free reads最優先。ranking_snapshotsの広範囲取得は禁止。
+
+## 2026-10-10 棚卸し進捗 — 第4回進捗率
+
+- 最新台帳コミット: `d8aa8429b724e428567edc45810b5df92466e90b`
+- 静的棚卸し進捗を39%から**44%**へ更新。Owner/Support、Safety Gate/Service Usage、収集pipeline、Workflow副作用、SQL/schema mismatchを追加。
+- Migration/SQL双方向照合は20%程度。Admin Ranking queryの`ranking_snapshot_id`不一致候補を発見したが、全Migration/SQLは未照合。
+- Reconciliation scriptのrequired migration listは0043までで、現行0044–0058を網羅しない。
+- コード変更/本番操作なし。次は主要テーブルの列/制約/IndexとSQL照合を継続する。
+
