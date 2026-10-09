@@ -239,3 +239,13 @@
 - system_event_logは別のR2アーカイブ処理でR2保存後にD1削除する経路を確認。R2 binding未設定時の運用と、scheduled側からの呼び出し条件は継続確認する。
 - 次：Migration 0010〜0019と初期Migrationの照合、全ルート認証/ACTIVE/method表、定期処理起動経路、RetentionのR2/D1境界を継続する。
 - コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Migration 0010〜0019・進捗80%）
+
+- 機能台帳を更新し、raw GitHubから追記を検証した。台帳コミット：c6b6b1d2daa8d2675dd85cfc423eca60755a7045
+- **全体進捗目安：80%**。ユーザー希望により、100%到達までは詳細な途中報告を控えて監査と台帳更新を継続する。
+- Migration 0010〜0019を現行ソースと部分照合。Owner login/audit logs、D1 history indexes、Player Watchlist、identity history、History Emergency Buffer、API Pool lease移行、watchlist_limits/diagnostics、kingdom_watchlist_jobs/locks、kingdom_ranking_currentの定義を確認。
+- 0018のwatchlist_limits role CHECKにVIPがない点は後続0056で修復されるため、0018単体で最終スキーマ不整合とは扱わない。0011のranking_snapshots indexは既存の限定履歴クエリ向けであり、広範囲SELECT復活の根拠にしない。
+- 次：Migration 0001〜0009、Emergency BufferとAPI Pool leaseの呼び出し経路、HTTP route認証/ACTIVE/method表の最終突合せ。
+- コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
