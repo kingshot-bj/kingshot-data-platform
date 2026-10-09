@@ -1327,3 +1327,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `/api/player?...&refresh=1` と管理王国ランキングの `refresh=1` もGETリクエストから外部API取得・D1/R2保存へ進む経路がある。
 - これらはログイン済みユーザー/管理者が悪意あるリンク等を開いた場合、意図しないMightPulse API消費・D1読み書きを起こされるCSRF的なリスクがある。確認できた影響は主にリソース消費・データ更新であり、未認証ユーザーが直接操作できるという意味ではない。
 - 対応時は副作用を伴う操作をPOSTへ分離し、必要に応じてOrigin/CSRF検証を加える。GETのテストフォームをPOSTへ変更する場合はUIとAPIを同時に更新し、二重送信防止と回帰テストを行う。今回は外部API呼び出し・DB更新は行っていない。
+
+
+### [最優先・高] `/api/player-compare` のルートが未定義の `handlePlayerCompareApi` を呼び出している
+- `src/index.js` のルーティングには `if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);` がある。
+- しかし `main` の `src/index.js` 内に `handlePlayerCompareApi` の関数定義がなく、importもない。検索した出現箇所はルートの呼び出し1箇所のみ。
+- `src/player-compare.js` からは `normalizeCompareGovernorIds` と `buildPlayerCompareSeries` をimportしているが、どちらも `index.js` 内ではimport行以外に使用されていない。同モジュールにも `handlePlayerCompareApi` のexportは見当たらない。
+- そのため、`/api/player-compare` へのアクセスは未定義関数参照で例外となり、共通catchによりHTTP 500を返す可能性が高い。比較画面のAPI依存を含め、比較機能が正常動作するか確認が必要。
+- 実API呼び出しは未実施。修正時はhandlerを実装/正しいmoduleからimportし、認証・ACTIVE確認・比較対象ID上限・可視性設定・SQL/R2取得上限をテストする。今回はコード変更していない。
