@@ -1840,3 +1840,52 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 
 - 60%は今回のMigration 0030〜0039、定期実行経路、Semaphoreの部分照合を反映した暫定値。監査完了や本番検証完了を意味しない。
 - 次はローラー/Seederの全参照と呼び出し元、Discoveryのstuck復旧、API route認証/ACTIVE/method、残りMigration/SQL参照を継続する。
+
+
+---
+
+## 2026-10-09 継続監査：Migration 0020〜0029・Retention・Player Link・System Log
+
+### Migration 0020〜0029の静的照合
+
+- **0020〜0021 Retention/indexes：** data_retention_settingsにlogin_history_days、owner_audit_log_days、player_identity_history_daysを追加し、login_history、owner_audit_log、api_pool_usage、player_identity_historyの時刻列に索引を作成。src/retention.jsの設定更新対象と列名は対応している。実DB適用は未確認。
+- **0022〜0026 User Player Links：** 0022の単一アカウント形から、0026で複数王国・MAIN/SUB対応の形へ再構築し、部分UNIQUE INDEXを設定する。src/user-player-link.jsの現在の列/索引定義と0026の形は対応。旧行のkingdom_idはplayersに一致がなければ0へ移行される。既存の移行対象データで0が発生した件数は未確認。
+- **0023 Player Link Support：** support requestテーブルと状態制約、requester/governor検索用indexを作成。src/index.jsのOwner support APIはOPEN/UNDER_REVIEWの一覧、REJECT、VERIFY_TRANSFERを実装しており、確認したSQL列はMigrationと対応。
+- **0024 active governor unique：** 0026で同名の部分UNIQUE INDEXを再作成する。番号順に全Migrationを一度ずつ適用する通常フローでは0024→0026で意図的にテーブルを作り直している。移行途中に重複ACTIVE governorがあった場合のMigration実行成否は実データ/適用履歴なしでは判断できない。
+- **0025 API Pool user-contributed index：** provider/pool_type/contributed_by_user_id/contributed_at indexを作成。src/api-pool.jsの寄与者・pool種別に関するSQLの候補索引として整合するが、Query Planは未確認。
+- **0027 diagnostics index：** diagnostic_events(status, created_at DESC)を作成。最新WARNING/FAILED検索向けのコメントと整合。
+- **0028 system_event_log：** イベント本体とcreated_at/trace/operation/statusのindexを作成。src/system-log.jsのINSERTと参照列は対応。
+- **0029 load test runs：** kingdom_load_test_runsとstatus/updated_at indexを作成。0030〜0033、0044が後続で列を追加する構造。後続Migrationと合わせて評価する必要がある。
+- 0020〜0029はMigrationファイルと一部の現行ソースSQLを静的照合した。適用済み履歴、既存データ、Query Planは未確認。
+
+### 追加確認・問題候補
+
+- **[中・request-time DDL] User Player Links schema helper：** src/user-player-link.jsのensureSchema()はCREATE TABLE/INDEX IF NOT EXISTSを実行する。0022〜0026にMigration定義があるため、通常運用の各プロセスでschema helperが初回呼び出しされた際に複数DDLを実行する構造。D1読み取りではなく書き込み/DDLコストとMigration二重管理の観点で、呼び出し箇所・必要性を確認する。今回、実際の呼び出し頻度や本番のDDL実行は未確認。
+- **[中・Support requestの保存期間]** user_player_link_support_requestsは今回確認したRETENTION_TABLESに含まれず、専用の期限削除処理も確認できていない。本人確認/所有権移管の監査証跡として長期保持する仕様の可能性もあるため、単純な削除対象とはせず、保持方針の明文化を確認する。
+- **[中・system_event_logの保持経路]** src/retention.jsにはsystem_event_log用の別アーカイブ処理があり、R2書き込み確認後にD1削除する順序を確認。R2がない場合は処理をskipする実装だが、実際にscheduled側からarchiveSystemEventLogへどのbindingを渡すか、R2未設定時に他のRetention処理とどう扱いを分けるかは継続確認する。
+- **[低〜中・system log queue fallback]** src/system-log.jsはQueue送信失敗時にD1直接INSERTへfallbackする。QueueとD1の双方で同一イベントが保存されるかは通常経路でQueue成功時にreturnするため、Queue sendが成功した後のconsumer失敗時はQueue retryに依存する。配送/重複の実測は未実施。
+- **[D1コスト確認対象]** getRetentionSettings()は設定行がなければINSERTしてから再SELECTする。正常時は単一行SELECTだが、初期行がない状態で同時に呼ばれると初期化競合の可能性がある。Migrationでsettings行が必ず初期化されるかは初期Migrationまで照合して確認する。
+
+### 監査上の区分・次の作業
+
+- 静的に確認したこと：0020〜0029のDDL、User Player Linkの現在のschema helperとOwner support SQL、Retention table list/system log archive、System LogのQueue→D1 fallback。
+- 未確認：本番Migration適用履歴、旧リンクの実データ移行結果、DDL実行頻度、support request保持方針、R2未設定時の運用結果、Query Plan。
+- アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行っていない。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshots の広範囲読み取りを絶対に復活させない。**
+
+---
+
+## 最新監査進捗（2026-10-09・Migration 0020〜0029監査後）
+
+**全体進捗目安：70%**（作業管理上の概算。コード行数の網羅率・本番動作確認率ではない）
+
+| 監査ワークストリーム | 状態 | 進捗目安 |
+|---|---|---:|
+| 機能台帳・主ルート分類 | 主ルート分類済み。個別ハンドラー照合は継続 | 78% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/session、Owner API一部、watchlist、Mighty判定、Player Link Support、Owner backfillを部分確認。全ルート照合は未完了 | 48% |
+| Migration・SQL・制約・インデックス | 0020〜0058の複数範囲を部分照合。初期Migration・全SQL参照・本番適用履歴は未確認 | 58% |
+| Cron・Queue・R2・定期処理接続 | scheduled()、Queue/R2、Semaphore、ローラー候補、Retentionを部分確認。起動経路の全体照合は未完了 | 62% |
+| テスト基盤・実行時検証 | 静的監査中心。Migration適用履歴、Query Plan、実行時/本番E2Eは未確認 | 10% |
+
+- 70%はMigration 0020〜0029、Retention、Player Link、System Logの部分照合を反映した作業管理上の概算。監査完了・本番検証完了を意味しない。
+- 次はMigration 0010〜0019と初期Migrationの参照を確認し、全ルート認証/ACTIVE/method表、定期処理起動経路、RetentionのR2/D1境界を継続する。
