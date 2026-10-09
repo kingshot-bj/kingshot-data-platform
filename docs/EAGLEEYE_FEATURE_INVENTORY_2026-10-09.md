@@ -1299,3 +1299,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/retention.js` の `RETENTION_TABLES` に `diagnostic_events` が含まれておらず、R2アーカイブ/削除の対象になっていない。現行の `runDataRetentionJob()` も未接続だが、仮に接続してもこのテーブルはRetention設定に従って整理されない。
 - SUCCESSイベントはWorker isolate内で5分間抑制されるものの、分散した複数isolateでは抑制が共有されず、WARN/FAILEDは継続して記録される。長期運用でD1ストレージが増える可能性がある。
 - 対応時は診断イベントの必要保持期間、R2アーカイブの要否、最低限残す最新状態を決めてRetentionへ組み込む。現時点のテーブル行数・サイズは未確認。
+
+
+### [中] Ownerロードテスト履歴テーブルはRetention対象外で、実行履歴が蓄積する
+- `src/admin-kingdom-load-test.js` は `kingdom_load_test_runs` に実行履歴、進捗、メトリクス、Cloudflare使用量のbefore/after/delta JSON等を保存する。
+- `src/retention.js` の `RETENTION_TABLES` に `kingdom_load_test_runs` は含まれておらず、古い完了/失敗Runを削除・R2アーカイブする処理も同モジュール内では確認できない。画面/APIが最近のRunだけ返していても、DB行自体は残り続ける。
+- ロードテストの実行回数が増えるほどD1ストレージが増加する可能性がある。Cloudflare消費量JSONなどの列サイズも含め、保持期間・最新N件・R2アーカイブの要否を定義する。
+- 現在のRun件数/JSONサイズは未確認。今回はロードテストを起動せず、履歴削除も行っていない。
