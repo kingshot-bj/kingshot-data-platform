@@ -1357,3 +1357,10 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - `src/index.js` 全文の文字列検索では、このテーブルをSELECTする処理、GETで保存済み設定を返す処理、または同API URLを呼ぶクライアント側fetchは確認できなかった。現時点で「保存APIはあるが、保存値の読出し/UIからの呼出しが未接続の可能性」を候補として追加する。
 - 確度は中。UIが別ファイル/別経路でAPIを呼ぶ可能性、ユーザー設定をまだ書き込み専用で提供している仕様の可能性が残る。HTML生成部分、関連JS資産、APIルートの利用者を次に確認する。実行時のネットワーク検証は行っていない。
 
+
+### Jの再確認・訂正：ランキング設定APIはUIと接続済み
+
+- `src/kingdom-portal.js` を追加確認し、ランキング設定フォーム `#rank-pref-form` から `fetch('/api/kingdom-rankings/preferences', {method:'POST', ...})` が呼ばれることを確認。`/kingdom/rankings` 表示時には `user_kingdom_ranking_preferences` をSELECTし、保存済み `boards_json/primary_board` を利用する。
+- したがって「保存APIのUI呼出し/読出しが未接続」という前の候補は取り下げる。APIルート→UI保存処理→DB保存→ランキングページのDB読出しという静的な接続は確認済み。認証状態、DBデータ、実際のブラウザ操作での成功は未確認。
+- この訂正によりMigration 0058の機能接続候補は解消扱いとし、残る確認はMigration適用/実DB schemaの整合性のみ。
+
