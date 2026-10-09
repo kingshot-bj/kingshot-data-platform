@@ -124,3 +124,8 @@
 - 追加監査コミット：`e987f33807b375a7586f36ce7298cf5084106d77`。`wrangler.jsonc` のProduction/Preview Queue差分を確認。Previewは `SYSTEM_EVENT_QUEUE` producer bindingと3 consumer設定が欠ける一方、D1 `database_id` とR2 bucketはProductionと同じ指定。Previewのイベント処理差分および本番データ共有リスクを監査MDへ追記。実デプロイ・配送試験は未実施。
 - Queue handlerの静的確認では、System EventはD1 batch成功後ack・失敗時retry、Service UsageはR2未設定/書き込み失敗時retry。Cloudflare上の実配送・再試行・DLQ移送は未検証。
 - 次は全ルートのHTTP method / ACTIVE認可表を完成させ、D1 SQL・Migration・インデックスの照合へ進む。引き続きコード変更・デプロイ・本番DB更新・収集/負荷テスト起動は禁止。
+
+## 2026-10-09 継続監査追記（System Event Queue）
+
+- 追加監査コミット：`1bf6d58114167e56ad55cc75e71cdee3401f3a54`。`recordSystemEvent()` のQueue利用はモジュール変数 `systemEventQueue` に依存するが、`setSystemEventQueue()` の呼び出しは `queue()` 内の1箇所のみ。HTTP `fetch()` 経路でbindingを設定する箇所が見当たらず、HTTP起点のイベントがD1直接INSERTへフォールバックする可能性を静的懸念として記録。実環境の割合・Isolate挙動は未計測。
+- 次はHTTP routeごとの認証・ACTIVE・HTTP method照合と、Migration/SQL/indexの対応確認を継続する。変更・デプロイ・本番DB更新・収集/負荷テスト起動は禁止。
