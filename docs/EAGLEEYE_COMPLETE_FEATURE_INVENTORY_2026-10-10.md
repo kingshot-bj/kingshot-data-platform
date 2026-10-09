@@ -545,6 +545,26 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - 公開Statusは全体状態を集約するため、ページロード/自動更新ごとのD1 reads、Cloudflare Analytics呼び出し、R2 probe回数を測る必要がある。ただし棚卸し中に本番アクセス負荷試験は行わない。
 - Admin Diagnosticsは表示されるローラー状態と、実際に起動するscheduled/queue処理の差を確認する。未接続ローラーを画面に表示しているだけの可能性を区別する。
 - System Logのarchive/retentionとHistory Emergency Bufferのdrainは別機能。片方が動いていることを他方の稼働証明にしない。
+## 2026-10-10 第9巡目 — Kingdom Portal / Ranking / Alliance / Mighty
+
+| 画面/機能 | データ経路 | 画面動作/制限 | 棚卸し判定 |
+|---|---|---|---|
+| Kingdom Catalog/Detail | `kingdom-catalog-page.js`、`kingdom-portal.js`。`kingdom_catalog`のメタデータ/R2 payloadと`kingdom_ranking_current`、`kingdom_ranking_board_state` | 王国の基本情報、Power/Activity等の指標、Top Player/Alliance、ランキングボード、取得鮮度/R2状態。詳細payloadは対象王国のR2 keyを読む | 実装あり。R2失敗時のD1 legacy fallbackとR2読み取りコストを照合 |
+| Kingdom Rankings | `/kingdom/rankings` | `kingdom_ranking_current`からkid+boardで最大100行。ログイン時は`user_kingdom_ranking_preferences`と`user_player_links`から初期王国/ボードを解決 | 接続あり。設定保存APIはACTIVEユーザーのPOSTを要求 |
+| Ranking preferences | `/api/kingdom-rankings/preferences` POST | `kingdom_catalog`のkid存在、許可board、primary_boardが選択済みか検証して`user_kingdom_ranking_preferences`をUPSERT | 接続あり。保存後の画面反映はUI経路あり、E2E未確認 |
+| Alliance List/Detail | `/kingdom/alliances` / `/alliance` | 優先して`alliance_catalog`を読み、空なら`kingdom_ranking_current`へfallback。R2 keyがあれば同盟詳細/rosterを読み、最大100人表示 | 実装あり。alliance rollerの起動/bindingは別の未接続候補として管理 |
+| Kingdom Compare | `/kingdom/compare` | queryで最大4王国を受け、`kingdom_catalog`と各王国のR2 payloadを並列読出し、現在値/7日成長指標を比較 | 実装あり。入力上限は最大4王国 |
+| Ranking Changes | `/kingdom/changes` | `kingdom_ranking_current`のprevious_rank/current rankと、対象boardの`change_events`を使用。各最大100行 | 実装あり。前回順位→今回順位とIN/OUTを表示。広範囲`ranking_snapshots`取得なし |
+| Kingdom Portal API | `/api/kingdom-portal/ranking`、`/api/kingdom-portal/status` | rankingはkid/boardを検証して`kingdom_ranking_current`から最大100行。statusは`system_event_log`の最新イベントとCatalog件数を返す | rankingは公開パス、statusはrouterでADMIN guard。HTTP/E2E未確認 |
+| Watchlist Analytics | `/kingdom-watchlist/analytics` | ACTIVEユーザーの王国WatchlistとCatalogをJOINし、最終成功/鮮度差を表示 | ログイン必須。最大100件の一覧 |
+| Mighty Events / KvK | `/kingdom/mighty` | ACTIVEユーザーを要求し、`evaluateVipEligibility`でVIP/ADMIN/OWNERかつMighty資格を確認。ユーザー提供API Poolキーでeventsとkvkを個別取得 | 実装あり。2回の外部API呼び出し、15秒timeout・最大2 retries、System Event記録。実API使用量/失敗表示は未検証 |
+
+### Kingdom Portalのコスト/鮮度ルール
+
+- Detail/Rankings/Changes/Allianceは主に ` + tick + `kingdom_ranking_current` + tick + ` とCatalogを参照し、現在順位表示に ` + tick + `ranking_snapshots` + tick + ` の広範囲取得を使わない。
+- Kingdom Detail/Compare/Alliance Detailは選択された王国/同盟のR2 keyを読む。R2 listで全履歴を走査する経路と、既知keyを直接getする経路を区別する。
+- Kingdom PortalのMightyページはイベントAPIとKvK APIを別々に呼ぶため、ページ表示だけで外部APIを複数消費する。自動ポーリングや再読み込みを含む実使用量は未計測。
+- ` + tick + `renderKingdomRankingsPage` + tick + `は認証ユーザーの保存設定/リンク済み王国を参照するが、画面自体は公開ルートとして描画される。ログイン前後の表示・データ露出はE2Eで確認する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
