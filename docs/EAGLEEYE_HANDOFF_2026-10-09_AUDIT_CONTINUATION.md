@@ -194,3 +194,10 @@
 - 対応時は401を一時障害と分け、判定結果と資格ロジックの条件を統一する。今回の監査では実API呼び出し・ユーザー権限変更は行っていない。
 - `src/` のJavaScript 51ファイルを検索し、`src/user-mighty.js` を除く他の50ファイルに `user-mighty.js` / `user_mighty_credentials` / 同モジュール関数名への参照がないことを確認した。Migration 0054/0056のテーブル定義は現行ソースから未接続の可能性が高い。テスト・管理スクリプト等 `src/` 外の参照は未確認のため、削除・統合はしない。
 - 監査台帳を更新し、GitHubから再取得して反映を確認する。
+
+
+## 2026-10-09 追加監査：Discord通知
+- `alliance-catalog.js` stores alliance change target IDs as `kid:aid`, while `discord-notifications.js` compares the ranking target ID directly to that composite ID. If ranking target IDs are aid-only, alliance notifications may be omitted. Static finding; runtime test not performed.
+- `discord_notification_state` keeps successful dedupe keys and is not included in the inspected retention table list, so its rows may accumulate. Actual row count is unknown.
+- Reviewed migrations 0050-0053 in part. Migration 0053's role CHECK lacks VIP but later migration 0055 updates that constraint; do not treat 0053 alone as final schema.
+- Next: audit migrations 0040-0049, reconcile alliance target ID formats, and continue route auth/ACTIVE/method review. No code changes, deploys, production DB updates, queue operations, or collection/load tests. Keep D1 reads low; never restore broad `ranking_snapshots` reads.
