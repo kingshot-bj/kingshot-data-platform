@@ -1270,3 +1270,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `runApiPoolAutoRecovery()` は対象キーを最大4本、逐次処理し、`getMightPulsePlayer()` に明示的な `timeoutMs/maxRetries` を渡していない。共通 `mightPulseFetch()` の既定値は1回100秒、最大3回再試行。
 - 4キー全てでタイムアウト/通信エラーが起きると、再試行待機を含めて非常に長い時間を消費し、Cron実行時間の上限や後続のCatalog/Discord処理に影響する可能性がある。ここでは最大時間の理論値を本番実測値として扱わない。
 - 対応時はヘルスチェック専用の短いタイムアウト・再試行回数、1回あたりのキー上限、後続ジョブとの分離を検討し、外部APIが応答しない状態でのCron時間をテストする。今回は自動復旧を実行していない。
+
+
+### [中] Status JSON ComparatorがWorker公開版とGitHub Pages版で別実装
+- `public/status-json-comparator.html`（約24 KB）と `tools/status-json-comparator.html`（約9.5 KB）は同名機能だが、内容・サイズが一致しない。
+- Workerの `/status-json-comparator` / `/status-json-comparator.html` ルートは `public/status-json-comparator.html` を配信する。一方、`status-comparator-pages.yml` は `tools/status-json-comparator.html` を `_site/index.html` にコピーしてGitHub Pagesへ公開する。
+- GitHub Pages workflowは `tools/status-json-comparator.html` の変更でのみ自動実行され、Worker公開版の変更ではPages版が更新されない。ユーザーがどちらを開くかによって機能・UIが違う状態になり得る。
+- 2つを意図的に別機能として保守しているかは未確認。正規版を1つに決めるか、同期手順を明示して比較テストを用意する。今回、HTMLの統合や公開設定変更は行っていない。
