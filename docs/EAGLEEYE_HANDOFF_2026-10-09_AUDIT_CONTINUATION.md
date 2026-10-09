@@ -185,3 +185,12 @@
 - 進捗目安を全体43%→44%、HTTP route監査35%→37%、Migration/SQL/index照合20%→27%に更新。作業管理上の概算であり、コード網羅率・本番動作確認率ではない。
 - 次は401/403/429/5xx/通信障害の分岐と資格再評価の整合性、`user-mighty.js` / `user_mighty_credentials` のリポジトリ全体参照、残りMigration/SQLを継続確認する。
 - コード変更・Migration変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テスト起動は禁止。**D1 Free読み取りを最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+### Mighty判定APIの追加照合（401とVIP資格の整合性）
+
+- 追加確認で、401処理は `api_pool_keys.status` をDISABLEDにする一方、`mighty_capable/mighty_check_status` を更新していないことを確認した。
+- `getVipEligibility()` はREVOKED以外のキーを対象に `mighty_capable=1` かつ `mighty_check_status='CONFIRMED'` で資格判定し、キーの運用状態DISABLEDを除外しない。したがって、以前CONFIRMEDだったキーが401で無効化されても、VIP資格の根拠として残る可能性がある。401のみの場合は `transient=true` かつ `checked=0` によって `UNDETERMINED` で早期returnし、資格の再評価・降格も行われない可能性がある。
+- 対応時は401を一時障害と分け、判定結果と資格ロジックの条件を統一する。今回の監査では実API呼び出し・ユーザー権限変更は行っていない。
+- `src/` のJavaScript 51ファイルを検索し、`src/user-mighty.js` を除く他の50ファイルに `user-mighty.js` / `user_mighty_credentials` / 同モジュール関数名への参照がないことを確認した。Migration 0054/0056のテーブル定義は現行ソースから未接続の可能性が高い。テスト・管理スクリプト等 `src/` 外の参照は未確認のため、削除・統合はしない。
+- 監査台帳を更新し、GitHubから再取得して反映を確認する。
