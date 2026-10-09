@@ -399,3 +399,13 @@
 - Player Searchの部分一致LIKEはD1読み取りコスト候補。計測や本番Query Planは未実施。
 - 次は残る主要Migrationの列/制約/Index、API認可/HTTP method、機能の未接続/重複/仕様未確定の分類を進める。
 
+## 2026-10-10 棚卸し進捗 — Retention/R2 readback coverage
+
+- 台帳更新コミット: `9138dd641c1971ce58c92905c8435019c528fbe4`
+- Retention対象テーブルを、D1→R2 archive→D1 deleteと、アーカイブ済み行のR2 readback有無で照合。
+- 重要候補: `player_snapshots`はAPI(`getPlayerHistory`)がD1/R2対応だが、`/player/history`画面はD1直接SELECT。Retention後にUI/API結果が異なる可能性。
+- 重要候補: `change_events`はR2 archive対象だが、専用R2 readback関数が見つからず、Player/Kingdom Changesの画面/APIはD1直接参照。Retention後は古いイベントが表示から抜ける可能性。
+- `login_history` / `owner_audit_log` / `api_pool_usage` / `player_identity_history`もR2アーカイブ後に画面/APIで参照するかは未確認。「アーカイブ保存」と「画面検索可能」を区別する。
+- Retention jobはWorker scheduled/queueからの呼び出しが未確認で、実行/本番データ変化は確認していない。
+- 次はGateway API、MightPulse probe/research、R2 backfill、残るMigration列/Index照合と機能分類を進める。
+
