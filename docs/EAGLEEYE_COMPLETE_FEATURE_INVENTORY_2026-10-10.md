@@ -713,6 +713,25 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - ` + tick + `eagleEyeHtmlResponse(html)` + tick + `は ` + tick + `applyEagleEyeTheme(html)` + tick + `を通し、HTMLに` + tick + `<html` + tick + `が含まれる場合にテーマCSS/JSを挿入する。
 - ルート/ページの一部は直接 ` + tick + `Response` + tick + `を返し、他は` + tick + `eagleEyeHtmlResponse` + tick + `を使う。すべての画面に共通UIが適用されると断定せず、全ルートのreturn経路を確認する。
 - 二重送信防止のコードが存在することと、全画面の全操作が確実に保護されていることは別。HTML formの通常POST、fetch、外部リンク、独自イベント処理を個別照合する。
+## 2026-10-10 第16巡目 — Owner User Management / Player Link Support
+
+| 機能 | API/認可 | 主な動作 | 初期判定 |
+|---|---|---|---|
+| ユーザー一覧/検索 | `/api/owner/users`、OWNER | username/global_name/Discord IDの部分一致、role順/最終ログイン順、login count、Watchlist件数を返す | 実装あり。検索はLIKE部分一致とlogin_history join/集計を含むため、ユーザー数増加時のD1コスト確認が必要 |
+| ロール変更 | `/api/owner/users/role` POST、OWNER | BASIC/ADVANCED/VIP/ADMIN/OWNERを許可。VIPは資格確認し、Owner Audit Logへ記録 | 実装あり。VIP資格判定/ロール更新の同時実行は未検証 |
+| ユーザー状態変更 | `/api/owner/users/status` POST、OWNER | ACTIVE/DISABLED。自分自身の停止とOWNER停止を拒否し、Audit Logへ記録 | 実装あり。Disabled userの既存セッション/API拒否はE2E未確認 |
+| ユーザーWatchlist管理 | `/api/owner/users/watchlists`、OWNER | GETで対象ユーザーの王国/プレイヤーWatchlistを取得、DELETEで指定listを削除。王国側はjob/lockも削除しAudit Log記録 | 実装あり。自己管理は禁止。削除後の実行中job/競合は未検証 |
+| Login History | `/api/owner/users/login-history`、OWNER | `login_history`から対象ユーザーの最新最大500件 | 実装あり。R2 archive後の読み取りはD1中心で、古い履歴の検索要件を確認 |
+| Owner Audit Log | `/api/owner/audit-log`、OWNER | `owner_audit_log`の最新最大250件 | 実装あり。Retention後のR2 readbackは未確認 |
+| Player Link Support | `/owner/player-link-support` / `/api/owner/player-link-support`、OWNER | 申請者/競合者の情報、公式確認、所有権移管、旧リンク無効化、サポート案件状態を扱う | 実装あり。公式確認・移管・拒否の状態遷移と監査証跡は実テスト未実施 |
+
+### Owner管理の境界/未確認事項
+
+- ` + tick + `requireOwner()` + tick + `はACTIVEかつrole OWNERのみを通す。主要Owner APIの個別handlerでこのguardを呼ぶ。
+- Role APIはVIPを直接設定する前に ` + tick + `evaluateVipEligibility()` + tick + `を実行し、適格でなければ409を返す。
+- Owner UI/APIが ` + tick + `owner_audit_log` + tick + `に記録する操作と、記録しない閲覧操作を区別する。全ての管理操作に監査記録があるとはまだ断定しない。
+- User一覧は ` + tick + `login_history` + tick + `をjoinしてlogin countを算出し、別クエリで全Watchlist件数を集計する。D1 Free read制約下では検索頻度/ユーザー数/Indexの影響を確認する。
+- Login History / Owner Audit LogはRetentionでR2へ移行される対象。長期保管が要件なら、アーカイブ後の閲覧/Export要件を明確にする。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
