@@ -1176,3 +1176,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `HISTORY_STORAGE_MODE=R2_ONLY` でD1への通常履歴保存を避ける対象は、`player_snapshots` / `ranking_snapshots` / `player_rank_snapshots` 等の履歴テーブルであり、`api_observations` は別の観測記録テーブルとしてD1へ保存される。Retentionでは古い観測をR2へアーカイブし、対象ごとの最新行を残す設計。
 - これは直ちに仕様違反とは言えないが、「R2_ONLYなら生API payloadを含めてD1に履歴が一切入らない」と誤解しないこと。API取得頻度に応じてD1書き込み・ストレージが増えるため、保持対象・最新行の必要性・Query Insights/実使用量を確認する。
 - 現在の本番行数、payloadサイズ、Retention実行状況は未確認。広範囲な `ranking_snapshots` 読み取りを復活させる理由にはしない。
+
+
+### [低〜中・仕様整合性] OwnerのVIP付与エラーメッセージと実際の資格判定条件が一致しない
+- `handleOwnerUserRoleApi()` はVIP付与前に `evaluateVipEligibility()` を実行し、資格がなければ「通常APIキー2本とMighty APIキー1本が有効なユーザーのみ」と返す。
+- しかし `getVipEligibility()` が判定する条件は、ユーザー提供キーのうち `mighty_capable=1` かつ `mighty_check_status='CONFIRMED'` のキーが1本以上あること。通常キー2本の存在・キー全体の運用状態は判定条件に含まれていない。
+- これはエラーメッセージが古い仕様を残しているのか、実装に通常キー本数の条件が不足しているのか、要件が不明なため現時点で断定できない。VIP資格の正式条件を決め、実装・Owner UI・利用者向け説明を一致させる。
+- 今回、ユーザーロールの変更やAPIキー操作は行っていない。
