@@ -227,3 +227,15 @@
 - collection-semaphore.jsのrefreshCollectionPermit()はlease延長関数だが、確認したsrc内の呼び出し経路で利用箇所を確認できていない。既定leaseは180秒で、長時間処理時にslotが再取得可能になるリスク候補。実際のlease超過・同時実行違反は未確認。
 - 次：Seeder/Rollerの全参照と呼び出し元、Discoveryのstuck復旧、HTTP routeの認証/ACTIVE/method、残りMigration/SQL参照を継続する。
 - コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Migration 0020〜0029・進捗70%）
+
+- 機能台帳を更新し、raw GitHubから反映を検証した。台帳コミット：0d8cff1646940eb4e1f85af39edac2ff905067df
+- **全体進捗目安：70%**。ユーザー希望により、100%到達までは途中の詳細報告を行わず、監査作業と台帳更新を継続する。
+- Migration 0020〜0029を現行コードと部分照合。Retention設定列/時刻index、User Player Linksの単一アカウントからMAIN/SUB複数アカウントへの再構築、Support request API、API Pool user-contributed index、diagnostics index、system_event_log、load test runsを確認。
+- src/user-player-link.js のensureSchema()はCREATE TABLE/INDEX IF NOT EXISTSを実行しており、Migration 0022〜0026とschema定義が重複する。呼び出し頻度と本番DDL実行は未確認。D1コスト/二重管理の観点で追跡する。
+- user_player_link_support_requestsは確認したRetention table listに含まれない。長期の本人確認・所有権移管監査証跡として意図的に保持する可能性があるため、削除対象とは断定せず保持方針を確認する。
+- system_event_logは別のR2アーカイブ処理でR2保存後にD1削除する経路を確認。R2 binding未設定時の運用と、scheduled側からの呼び出し条件は継続確認する。
+- 次：Migration 0010〜0019と初期Migrationの照合、全ルート認証/ACTIVE/method表、定期処理起動経路、RetentionのR2/D1境界を継続する。
+- コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
