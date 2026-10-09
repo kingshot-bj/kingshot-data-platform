@@ -978,3 +978,22 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 正規表現候補は同じ原因で複数機能に波及している可能性があるため、単発修正ではなく、実ソースを対象に検索・fixtureテスト・呼び出し元確認をまとめて行う。
 - `ranking_snapshots` の広範囲取得を復活させない。履歴Retentionの処理は対象期間・バッチ件数を限定しているが、履歴表示APIやランキング取得経路は引き続き別途確認する。
 - 本追記は静的コード監査。テスト実行、本番API呼び出し、DB変更、デプロイは未実施。
+
+
+## 監査追記：Google Sheets署名とCloudflare Query Insights分類（2026-10-09 続き）
+
+### [高] Google Sheets Web App連携のHMAC署名をBase64URL化する正規表現に過剰エスケープ
+- `src/google-sheets.js` の `base64urlFromBytes()` は、署名バイト列をBase64化した後、`replace(/\\+/g, "-")` と `replace(/\\//g, "_")` でURLセーフ文字へ変換する実装になっている。
+- ソース上の正規表現リテラルが二重バックスラッシュになっているため、通常のBase64文字 `+` / `/` ではなくバックスラッシュ文字を探してしまう可能性が高い。HMAC-SHA256署名に `+` または `/` が含まれるとBase64URL変換が不足し、Google Apps Script側の署名検証に失敗する可能性がある。
+- 同ファイル内のService Account JWT用 `base64url()` は別の正規表現を使用しているため、署名処理の経路を分けて回帰テストする必要がある。
+- 実際のGoogle Sheets/Web Appへの送信は実行していない。修正時は既知の署名入力に対するBase64URL出力と、送信側/受信側のHMAC一致テストを用意する。
+
+### [中] Cloudflare Query Insightsの書き込みクエリ分類に過剰エスケープ候補
+- `src/cloudflare-analytics.js` のSQL分類処理は、他の既知ラベルに該当しないSQLについて `/\\b(INSERT|UPDATE|DELETE|REPLACE|UPSERT)\\b/` で書き込み判定を行う。
+- 正規表現リテラルがソース上で二重バックスラッシュになっているため、通常の単語境界として動かず、未分類の書き込みSQLが `Other Write` ではなく `Other` に分類される可能性がある。
+- D1の実使用量自体ではなく、Query Insightsの分類・可視化に影響する候補。分類器のテスト用SQL（INSERT/UPDATE/DELETE/SELECT、既知テーブル/未知テーブル）で確認する。修正・実行テストは未実施。
+
+### [監査範囲の補足]
+- `src/` の主要なAPI、認証、API Pool、プレイヤー/ランキング保存、R2アーカイブ、Retention、診断、外部連携モジュールを継続して照合中。
+- 正規表現の候補は `src/index.js`、補助アセット収集スクリプト、Google Sheets署名、Cloudflare使用量分類にまたがっている。修正着手時は全リポジトリを検索し、機能別テストを追加してからまとめて直す。
+- 本追記時点でも本番操作・DB変更・デプロイは未実施。
