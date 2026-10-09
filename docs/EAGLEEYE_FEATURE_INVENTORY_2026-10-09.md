@@ -434,3 +434,55 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 ### 引き継ぎ時点の結論
 
 src/index.js のルート棚卸しは途中まで進行。Workerイベント入口・Cloudflare設定・OAuth/Support/Gateway/API Poolの一部確認とリスク候補の記録は済んだが、**全APIの認可監査および全機能棚卸しは未完了**。次はプレイヤー／ランキング／ウォッチリスト系APIの内部監査を続ける。
+
+
+---
+
+## フェーズA-1 続き — プレイヤー / ウォッチリストAPI内部監査（2026-10-09）
+
+対象: `src/index.js` の `handlePlayerApi`、`handlePlayerRefresh`、`handlePlayerHistoryApi`、`handlePlayerChangesApi`、`handlePlayerRankHistoryApi`、`handlePlayerWatchlistApi`、`handleKingdomRankingHistoryApi`、`handleKingdomWatchlistDataApi`。
+
+### コード上で確認したこと
+
+- プレイヤー詳細・更新・履歴・変動・順位履歴はセッションからD1のユーザーを再取得し、主要な経路でACTIVE状態を確認している。
+- プレイヤー詳細・更新はMightPulse取得をAPI Pool経由で行い、取得結果を `materializePlayer()` で保存する。ロール別の表示フィルターを通してから応答する。
+- プレイヤー履歴は返却前にプレイヤー/プロフィールのロール別フィルターを適用する。プレイヤー変動APIも `isChangeVisibleForRole()` で表示可能な変更だけに絞る。
+- プレイヤーウォッチリストは利用者のDiscord IDで対象を絞り、追加時にロール別上限を確認する。追加は `ON CONFLICT(discord_id, governor_id)` による重複登録回避、PATCH/DELETEもDiscord IDを条件にしており、他利用者のリストを直接変更できない形になっている。
+- ウォッチリストの順位サマリーは `kingdom_ranking_current` と `kingdom_ranking_board_state` を参照する。コードコメントでも旧 `ranking_snapshots` のプレイヤー×ボード単位の相関サブクエリを避ける方針が明記されている。広範囲な `ranking_snapshots` 読み取りを復活させない。
+- 履歴・変動APIの件数上限は、プレイヤー履歴100、変動100、プレイヤー順位履歴200、王国順位履歴200。王国ウォッチリストデータのランキング表示はボード指定時100、複数ボード表示時は登録top_nを上限としている。
+- プレイヤーウォッチリストGETは対象ユーザーの全登録行を取得し、さらにランキング状態・変更イベントのサマリーを組み立てる。返却行数自体の明示的なページング上限は確認できなかった。
+
+### 要修正候補・追加調査事項
+
+#### 1. ACTIVE状態チェックの不一致（優先度: 高・要再現確認）
+
+`handleKingdomRankingHistoryApi` と `handleKingdomWatchlistDataApi` は `getAuthenticatedUser()` の結果が存在するかだけを確認し、`auth.status === "ACTIVE"` を確認していない。一方、`handlePlayerApi`、`handlePlayerRefresh`、`handlePlayerHistoryApi`、`handlePlayerChangesApi`、`handlePlayerRankHistoryApi`、`handlePlayerWatchlistApi` はACTIVE状態を確認する。
+
+`getAuthenticatedUser()` はユーザーがDISABLEDでもDBレコード自体を返す実装のため、無効化済みアカウントの既存セッションから、上記2つの王国APIにアクセスできる可能性がある。ルート/ハンドラーのコード差分に基づく要修正候補。無効化ユーザーのセッションを用いた実リクエスト再現は未実施。
+
+#### 2. HTTPメソッド制限の不一致（優先度: 中）
+
+`handlePlayerApi`、`handlePlayerRefresh`、`handlePlayerHistoryApi`、`handlePlayerChangesApi`、`handlePlayerRankHistoryApi` は、対象コード内に明示的なGET/POST等のメソッド制限が見当たらない。特に `handlePlayerRefresh` はリクエストを受けるとデータ取得・保存を実行するため、GET等の意図しないメソッドでも処理される可能性がある。クライアント側の呼び出し方法と仕様を確認し、読み取り系はGET、更新系はPOST等へ明示的に制限する方針を検討する。現時点では変更していない。
+
+#### 3. ウォッチリスト変更サマリーのD1負荷（優先度: 高・要クエリ計画確認）
+
+`handlePlayerWatchlistApi` のGETでは、`change_events` を `player_watchlists` とJOINし、各ウォッチ対象について `TOWN_CENTER_CHANGED` / `ALLIANCE_CHANGED` / power変更の最新行を `ROW_NUMBER()` で選ぶ。クエリに時間範囲条件がなく、対象プレイヤーの過去イベントが蓄積するほど走査量が増える可能性がある。インデックス定義・実際のD1 Query Plan/Query Insights・ウォッチリスト件数別の消費量を確認する。直ちに広範囲スキャンと断定はしないが、D1 Free read最優先のため優先調査対象とする。
+
+#### 4. ウォッチリスト上限チェックの同時実行（優先度: 中・要再現確認）
+
+プレイヤーウォッチリストの追加は、現在の有効件数をSELECTしてからINSERT/UPSERTする。複数の追加リクエストが同時に到着すると、双方が上限未満と判定してから登録する競合が起きる可能性がある。ユーザーごとの上限を厳密に守る必要があるか、D1側で直列化/トランザクション的な制御ができるか、並列リクエストで再現確認する。
+
+#### 5. ウォッチリストGETの全件返却（優先度: 中）
+
+`handlePlayerWatchlistApi` GETは当該ユーザーの登録行を全件返す。上限設定は追加時に検査されるが、設定変更や既存データにより大量行が存在する場合のレスポンスサイズと追加サマリークエリの負荷は未確認。実際のロール別上限と既存件数、クエリ計画を照合する。
+
+### この段階での判定
+
+- ルートと主要処理のコード確認: 一部確認。
+- テスト確認済み: なし（この監査では実APIリクエスト・D1 Query Plan・本番E2Eを実施していない）。
+- 修正・デプロイ: なし。
+- 続き: 王国ウォッチリスト全アクション、王国ランキングAPI、Owner API、エクスポートAPIの認可・メソッド・入力検証を監査し、その後migration/indexと照合する。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | プレイヤー/ウォッチリストAPI内部監査 | ロール別データフィルター、利用者単位のウォッチリスト操作、ランキングのcurrent-state参照を確認。王国APIのACTIVEチェック不一致、メソッド制限の不足候補、変更イベントクエリの負荷、上限チェック競合を追加調査事項として記録。 | 王国ウォッチリストとランキング、Owner/Export APIへ進み、全体マッピングとDBインデックス照合を続ける。 |
