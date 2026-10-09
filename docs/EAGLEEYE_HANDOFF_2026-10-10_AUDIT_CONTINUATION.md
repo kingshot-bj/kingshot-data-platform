@@ -114,3 +114,17 @@
 > 進捗はチェックリスト方式で現在67%（6/9項目）。ユーザー指示により10ポイントずつ進め、次は約77%相当まで実作業を進めてから報告してください。最初の作業はMigration 0001–最新のDDLとsrc全体のSQL列/制約/Indexの双方向照合です。既存の不一致候補を重複登録せず、ファイル名単位で確認してください。
 >
 > アプリコード/Migration/Workflow修正、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API実行は禁止です。D1 Free readsを最優先し、広範囲 `ranking_snapshots` 取得を絶対に復活させないでください。静的確認と実行時確認を区別し、根拠・影響候補・確度・未確認事項を機能台帳へ追記してください。10ポイント進んだ時点で、進捗率と完了内容をユーザーに報告してください。
+
+
+## 2026-10-10 継続監査セッション追記（途中経過）
+
+- 参照ファイルをGitHub `main` から再読込し、既存の67%チェックリスト地点から監査を継続した。最初からやり直していない。
+- 機能台帳に追加証拠を追記し、コミット `0611e7cc1d612e80f49125403cf009859ebccec0` で保存した。
+- 追加確認した静的根拠:
+  1. `src/index.js:getLatestAdminKingdomRankingSnapshot()` は `kingdom_ranking_current.ranking_snapshot_id` をSELECTする。
+  2. Migration 0019と `scripts/reconcile-d1-schema.mjs` の同テーブルCREATE定義には当該列がない。列不一致候補は強く支持されるが、本番実スキーマと実行時エラーは未確認。
+  3. Migration 0008の `kingdom_watchlist_jobs` 定義には `source_first_at/source_last_at` がなく、Migration 0019にはある。`CREATE TABLE IF NOT EXISTS` は既存テーブルへ列を追加しない。schema reconcile scriptにも同テーブルのCREATE定義はあるが、該当2列を既存テーブルへADD COLUMNする処理は確認できていない。現行SQL側の参照箇所と全Migration中のALTERを引き続き検索する。
+  4. `src/user-player-link.js` の `ensureSchema()` はリクエスト処理から呼ばれ、CREATE TABLE/INDEXを実行する。Migration 0022とschema reconcile scriptにも同モデルの定義/Index管理があり、三重管理の完全な同値性と実行コストは未確認。
+- 進捗は引き続き **6/9 = 67%**。今回の作業は未完了のMigration/SQL双方向照合項目の途中であり、10ポイント相当の到達条件を満たしていないため、率は上げていない。
+- 次の作業: 0001–0058全Migrationとsrc全体のSQLについて、既存の不一致候補を重複起票せずに列参照・DDL・Indexを照合する。次に `kingdom_watchlist_jobs` の両列の現行参照とALTER履歴、`user_player_links` の0022/0024/0026の列・CHECK・partial unique indexをファイル単位で確認する。
+- 実行制約は継続: コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。D1 Free reads最優先。広範囲 `ranking_snapshots` 取得クエリを復活させない。
