@@ -786,3 +786,39 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - ルーティング/主要モジュール/定期処理/Queue/Migration workflowの一次照合を継続中。
 - コード修正・Migration適用・本番操作・デプロイは実施していない。
 - 次に残る作業：全ルートと認可/HTTPメソッドの照合、SQLとMigration/インデックスの照合、残りのsrc/public/scripts/toolsの棚卸し、テスト構成・CIの確認、機能台帳の未確認項目を明示したうえで一巡完了判定。
+
+
+## 監査追記：ルート認可・HTTPメソッド・Status/D1負荷（2026-10-09 続き）
+
+### APIルート一次照合
+
+#### [高] 王国ウォッチリスト関連の一部APIはACTIVE状態を検証していない
+- `handleKingdomRankingHistoryApi`、`handleKingdomWatchlistDataApi`、`handleKingdomWatchlistApi` は `getAuthenticatedUser()` の存在だけを確認し、`auth.status === "ACTIVE"` を統一的に確認していない。
+- これらの関数は無効化ユーザーの認証情報も取得できる `getAuthenticatedUser()` の挙動と組み合わさるため、DISABLEDユーザーが履歴閲覧・ウォッチリスト操作を継続できる可能性がある。再現テスト未実施。
+- 他の主要API（プレイヤーウォッチリスト、マイプレイヤー、Advanced/VIP操作等）ではACTIVE確認を実装しており、認可方針の不統一がある。
+
+#### [中] プレイヤー更新APIでHTTPメソッド制限が見当たらない
+- `handlePlayerRefresh` はACTIVE認証を確認するが、関数内に明示的なHTTPメソッド制限が見当たらず、クエリの領主IDに対して外部API取得と保存処理を実行する。
+- `handlePlayerApi` もGET/POST等のメソッドを明示的に限定していない一方、`refresh=1` によってデータ更新経路に入る設計。
+- ブラウザの通常操作でどのメソッドが使用されるか、想定外メソッドが実際に更新処理へ到達するかは未検証。メソッド制限・更新APIと参照APIの分離を要確認。
+
+#### [確認済み] Ownerロードテスト / バックフィルの入口はOwnerガードを持つ
+- `/api/owner/kingdom-load-test/*` のルートはOwnerガードを通し、`/api/admin/kingdom-catalog-r2-backfill` は関数内で `requireOwner()` を通す。
+- Google Driveのauthorize/verify/callbackもOwner限定。Discord Supportのコマンド登録はACTIVEなADMIN/OWNERを要求。
+- ただし、`/api/load-test/notice-status` や各 `/api/admin/*` の一部は専用ハンドラー内の認証で保護する方式のため、ルート行だけで認証有無を判断しない。引き続き全ハンドラー本文まで照合する。
+
+### [高] システム状況画面の生成でウォッチリスト全件を読み込む
+- `src/status-ops.js` の `getOperationalStatus()` は `kingdom_watchlists` を `ORDER BY created_at ASC` で全件取得し、Discordユーザー別に集計している。ページ表示/更新頻度と件数次第でD1 read負荷が増える。
+- API Poolのリース詳細も `leased_until IS NOT NULL` の全件を取得し、`api_pool_keys` の件数に応じて増加する。
+- Ownerユーザー一覧APIでも王国・プレイヤーウォッチリストの全件GROUP BYを行っており、同様に件数依存の読み取りコストがある。
+- ステータス画面は60秒ごとの自動更新設定を持つ。実際のアクセス頻度は未確認だが、画面を開いている間は上記クエリが繰り返される構成となっている。
+- 対応検討時は単なる表示件数制限だけでなく、集計SQL化・必要項目の限定・更新頻度/キャッシュ・Query Insightsによる実測を比較する。現時点では変更しない。
+
+### [要確認] ユーザー提供MightPulseキー数の仕様
+- `src/user-eligibility.js` では `MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = Number.POSITIVE_INFINITY` とし、ユーザー提供キー数を意図的に上限なしとするコメントがある。
+- 以前の運用要件として認識している「MightPulse APIキー数の上限」と対象が同じかは未確定（システム共有キーとユーザー提供キーは別プール）。要件の対象・上限値を機能台帳で明確にし、コード上の仕様と照合する。現段階で仕様違反とは断定しない。
+
+### ルート監査の残件
+- 全APIのACTIVE確認、ロール条件、HTTPメソッド、ユーザー所有権照合、外部API実行の制限をルート単位で完了させる。
+- `/api/kingdom-watchlist/history` / `data` の権限不足候補、`/api/player/refresh` のメソッド制限不足候補は優先度高めで要再現確認。
+- D1使用量はコードからの推定にとどまる。Query Insights、本番メトリクス、実際のテーブル件数なしに消費量を断定しない。
