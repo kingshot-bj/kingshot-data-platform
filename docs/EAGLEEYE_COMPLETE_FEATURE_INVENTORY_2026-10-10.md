@@ -473,15 +473,15 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### R2 binding名の整合性候補
 
-- `wrangler.jsonc` はR2 bindingを ` + tick + `ARCHIVE` + tick + ` として定義している。
-- ` + tick + `alliance-catalog.js` + tick + `、` + tick + `kingdom-ranking-roller.js` + tick + `、` + tick + `player-roller.js` + tick + ` は ` + tick + `env.R2_ARCHIVE` + tick + ` を参照している。
+- `wrangler.jsonc` はR2 bindingを `ARCHIVE` として定義している。
+- `alliance-catalog.js`、`kingdom-ranking-roller.js`、`player-roller.js` は `env.R2_ARCHIVE` を参照している。
 - そのため、これらのローラーを現在のWorker環境から直接起動した場合、R2 bucketが取得できない可能性がある。ローラーの起動経路自体が未接続候補であるため、これは「静的なbinding名不一致候補」として記録し、現時点では修正しない。
-- ` + tick + `index.js` + tick + ` の既存API/Portal/履歴経路の多くは ` + tick + `env.ARCHIVE` + tick + ` を使用しており、binding名の一括置換を無条件に行わない。
+- `index.js` の既存API/Portal/履歴経路の多くは `env.ARCHIVE` を使用しており、binding名の一括置換を無条件に行わない。
 
 ### D1コストの固定条件
 
 - D1 Free読み取り量を最優先する。
-- ` + tick + `ranking_snapshots` + tick + ` の広範囲取得クエリを復活させない。
+- `ranking_snapshots` の広範囲取得クエリを復活させない。
 - R2への移行を調査する際は、D1読み取り削減のためにR2オブジェクト全件列挙や無制限の読み込みを安易に追加しない。R2のlist/get回数とページングも確認対象にする。
 ### 主要テーブルの最終形・SQL対応の確認ポイント
 
@@ -497,8 +497,8 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### Request-time schema処理の初期確認
 
-- ` + tick + `src/index.js` + tick + ` 自体には、直接の ` + tick + `CREATE TABLE/CREATE INDEX/ALTER TABLE` + tick + ` 文は見つからなかった。
-- ` + tick + `src/user-player-link.js` + tick + ` には ` + tick + `ensureSchema(db)` + tick + ` があり、テーブルと複数Indexを ` + tick + `IF NOT EXISTS` + tick + ` で作成する。モジュールスコープのPromiseで同一Worker isolate内の初回実行を共有するため、毎リクエスト実行と断定しない。
+- `src/index.js` 自体には、直接の `CREATE TABLE/CREATE INDEX/ALTER TABLE` 文は見つからなかった。
+- `src/user-player-link.js` には `ensureSchema(db)` があり、テーブルと複数Indexを `IF NOT EXISTS` で作成する。モジュールスコープのPromiseで同一Worker isolate内の初回実行を共有するため、毎リクエスト実行と断定しない。
 - Migration 0022–0026の最終テーブル定義とこのensureSchema定義の完全一致、cold startでのD1操作コスト、実行時頻度は未確認。不要なスキーマ作成処理の削除/変更はこの棚卸しでは行わない。
 ## 2026-10-10 第5巡目 — Watchlist機能のAPI/DB接続
 
@@ -525,10 +525,10 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### Watchlist共通の注意点
 
-- ` + tick + `handlePlayerWatchlistApi` + tick + ` はACTIVEユーザーを確認してからDB操作する。Kingdom Watchlistは認証ユーザーを要求し、所有者IDで操作対象を絞るコードを確認した。個別APIの全method/権限境界はテスト未実施。
-- Kingdom Watchlist収集は ` + tick + `kingdom_watchlist_jobs` + tick + `、` + tick + `kingdom_watchlist_locks` + tick + `、` + tick + `api_request_locks` + tick + `、` + tick + `collection_semaphore_slots` + tick + `と連携する経路がある。各ロックのTTL/競合/Worker停止後の回復は静的確認と実測を分ける。
+- `handlePlayerWatchlistApi` はACTIVEユーザーを確認してからDB操作する。Kingdom Watchlistは認証ユーザーを要求し、所有者IDで操作対象を絞るコードを確認した。個別APIの全method/権限境界はテスト未実施。
+- Kingdom Watchlist収集は `kingdom_watchlist_jobs`、`kingdom_watchlist_locks`、`api_request_locks`、`collection_semaphore_slots`と連携する経路がある。各ロックのTTL/競合/Worker停止後の回復は静的確認と実測を分ける。
 - Player Watchlist GETはランキング現在値と変更イベントを取得するため、登録件数/上限が大きい場合のクエリコストを確認する。D1 Free reads優先で、取得範囲とIndex利用を評価する。
-- ` + tick + `ensurePlayerWatchlistSchema()` + tick + ` は ` + tick + `index.js` + tick + ` 内で ` + tick + `return Boolean(db)` + tick + ` のみ。Migration 0012がスキーマを供給する想定で、request-time DDLは行わない。
+- `ensurePlayerWatchlistSchema()` は `index.js` 内で `return Boolean(db)` のみ。Migration 0012がスキーマを供給する想定で、request-time DDLは行わない。
 - ここでは実際のユーザー操作や本番DB計測をしていない。UI/HTTP method、同時実行、失敗後再試行、D1 readsは未検証。
 ## 2026-10-10 第6巡目 — My Player / ADVANCED / VIP / Mightyの接続
 
@@ -544,10 +544,10 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### 未解決の状態整合候補
 
-- ` + tick + `getVipEligibility()` + tick + ` は ` + tick + `api_pool_keys` + tick + ` のキーを ` + tick + `status != 'REVOKED'` + tick + ` で取得し、Mighty判定を ` + tick + `mighty_capable=1` + tick + ` かつ ` + tick + `mighty_check_status='CONFIRMED'` + tick + ` で判定している。` + tick + `DISABLED` + tick + ` 状態のキーでもMighty metadataがCONFIRMEDのままなら資格判定に残る可能性がある。
-- Mighty再確認APIでは401時に ` + tick + `recordApiPoolFailure(... disable: status===401)` + tick + ` を呼ぶが、その経路で ` + tick + `setApiPoolMightyMetadata(... NOT_MIGHTY)` + tick + ` を呼ぶ処理は見当たらない。全キー401で ` + tick + `checked===0` + tick + ` の場合にUNDETERMINEDを返す分岐もあり、資格とキー状態の整合を実テストで確認する必要がある。
+- `getVipEligibility()` は `api_pool_keys` のキーを `status != 'REVOKED'` で取得し、Mighty判定を `mighty_capable=1` かつ `mighty_check_status='CONFIRMED'` で判定している。`DISABLED` 状態のキーでもMighty metadataがCONFIRMEDのままなら資格判定に残る可能性がある。
+- Mighty再確認APIでは401時に `recordApiPoolFailure(... disable: status===401)` を呼ぶが、その経路で `setApiPoolMightyMetadata(... NOT_MIGHTY)` を呼ぶ処理は見当たらない。全キー401で `checked===0` の場合にUNDETERMINEDを返す分岐もあり、資格とキー状態の整合を実テストで確認する必要がある。
 - これは既存監査で記録された静的候補の再整理。コード修正やロール変更は行わない。
-- ` + tick + `user_mighty_credentials` + tick + ` / ` + tick + `user-mighty.js` + tick + ` は現行のキー提供/資格判定経路とは別系統に見える。` + tick + `/api/me/vip` + tick + `の410応答と併せ、未使用/旧実装の扱いは仕様確認まで保留する。
+- `user_mighty_credentials` / `user-mighty.js` は現行のキー提供/資格判定経路とは別系統に見える。`/api/me/vip`の410応答と併せ、未使用/旧実装の扱いは仕様確認まで保留する。
 ## 2026-10-10 第7巡目 — 管理者/Owner・API Pool・データ出力
 
 ### API Pool管理
@@ -562,14 +562,14 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### ロール/ユーザー管理・負荷テスト
 
-- `/owner` と `/api/owner/users*` はユーザー一覧、ロール/状態変更、Login History、各ユーザーのWatchlist参照、Owner Audit Logを提供するコードがある。主要なOwner APIはルーターまたはハンドラー内で ` + tick + `requireOwner()` + tick + ` を呼び出す。全入口の認可を個別照合する。
-- `/owner/kingdom-load-test` と `/api/owner/kingdom-load-test*` はOwner限定の負荷テスト画面、開始/キャンセル/状態/履歴/System JSONに接続。` + tick + `LOAD_TEST_QUEUE` + tick + `のconsumerは ` + tick + `runKingdomLoadTestQueue` + tick + ` を呼ぶ。実行は外部API/D1/Cloudflare消費を伴うため未起動。
+- `/owner` と `/api/owner/users*` はユーザー一覧、ロール/状態変更、Login History、各ユーザーのWatchlist参照、Owner Audit Logを提供するコードがある。主要なOwner APIはルーターまたはハンドラー内で `requireOwner()` を呼び出す。全入口の認可を個別照合する。
+- `/owner/kingdom-load-test` と `/api/owner/kingdom-load-test*` はOwner限定の負荷テスト画面、開始/キャンセル/状態/履歴/System JSONに接続。`LOAD_TEST_QUEUE`のconsumerは `runKingdomLoadTestQueue` を呼ぶ。実行は外部API/D1/Cloudflare消費を伴うため未起動。
 - `/api/load-test/notice-status` はOwner pathとは別ルート。handler内の認可、情報公開範囲、呼び出し頻度を個別確認する。
-- `/api/owner/player-link-support` は本人確認/移管/却下のサポート案件をOwner向けに処理する。` + tick + `user_player_link_support_requests` + tick + `の状態遷移とプレイヤー所有権移管の整合を確認する。
+- `/api/owner/player-link-support` は本人確認/移管/却下のサポート案件をOwner向けに処理する。`user_player_link_support_requests`の状態遷移とプレイヤー所有権移管の整合を確認する。
 
 ### Google Sheets出力
 
-- プレイヤーのセクション出力: `/api/admin/player-export`。` + tick + `requireAdmin()` + tick + `、セクション許可リスト、Player observationの取得、` + tick + `exportToGoogleSheet()` + tick + `、Service Usage記録を確認。
+- プレイヤーのセクション出力: `/api/admin/player-export`。`requireAdmin()`、セクション許可リスト、Player observationの取得、`exportToGoogleSheet()`、Service Usage記録を確認。
 - 王国ランキング出力: `/api/admin/kingdom-ranking-export`。ADMINガード、board/kid検証、事前に取得済みのranking rows、Google Sheets連携設定確認、Service Usage記録を確認。
 - Google Sheets transportはService AccountまたはApps Script Web Appを使う実装がある。認証/secret、リトライ、出力先の権限は実環境確認が必要。
 - ExportはADMIN/OWNER向け機能として扱い、BASIC/ADVANCED/VIPからの直接呼び出しがhandlerでも拒否されることをHTTPテストで確認する。
@@ -577,7 +577,7 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 ### API Pool / 管理画面の未完了項目
 
 - API PoolのUIはキー追加、Mighty判定、キー削除、Pool移動/再割当、Player/Ranking testを含む。画面のボタンとAPIのHTTP method/role guardの対応は全件テスト未完了。
-- キー削除は ` + tick + `api_pool_usage` + tick + ` も消すため、監査/利用量履歴の保存ポリシーを確定してから扱う。
+- キー削除は `api_pool_usage` も消すため、監査/利用量履歴の保存ポリシーを確定してから扱う。
 - API Poolの実利用量/残枠は実環境で確認していない。Load TestやHealth Checkをこの棚卸し中に起動していない。
 ## 2026-10-10 第8巡目 — Diagnostics / System Log / Google Drive / Discord Support
 
@@ -593,15 +593,15 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### Google Drive OAuth / Archive Mirror
 
-- Owner向けの開始/検証: ` + tick + `/api/admin/google-drive/authorize` + tick + ` と ` + tick + `/api/admin/google-drive/verify` + tick + `。どちらもOWNERガードを持つ。
-- Callback実装: ` + tick + `/api/admin/google-drive/callback` + tick + `。OWNERガード、state token検証、OAuth code交換、Drive archive folder作成の経路を確認。
-- **静的設定不一致候補:** ` + tick + `wrangler.jsonc` + tick + ` の ` + tick + `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` + tick + ` は `/api/auth/callback` を指定している一方、Worker routerのGoogle Drive callbackは `/api/admin/google-drive/callback`。このままの設定ではGoogle OAuthがDiscord callbackへ戻る可能性がある。実OAuthフローは実行していないため、設定差分として要確認。
-- ` + tick + `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` + tick + ` の実環境値、Google Cloud Console側の許可Redirect URI、OAuth state/nonce、Refresh Tokenの保存先を本番変更なしで確認する必要がある。
+- Owner向けの開始/検証: `/api/admin/google-drive/authorize` と `/api/admin/google-drive/verify`。どちらもOWNERガードを持つ。
+- Callback実装: `/api/admin/google-drive/callback`。OWNERガード、state token検証、OAuth code交換、Drive archive folder作成の経路を確認。
+- **静的設定不一致候補:** `wrangler.jsonc` の `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` は `/api/auth/callback` を指定している一方、Worker routerのGoogle Drive callbackは `/api/admin/google-drive/callback`。このままの設定ではGoogle OAuthがDiscord callbackへ戻る可能性がある。実OAuthフローは実行していないため、設定差分として要確認。
+- `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` の実環境値、Google Cloud Console側の許可Redirect URI、OAuth state/nonce、Refresh Tokenの保存先を本番変更なしで確認する必要がある。
 
 ### Discord Support
 
-- `/support` は利用者向けサポートUI。` + tick + `/api/support/context` + tick + ` でカテゴリ/症状に対応するコンテキストを取得し、` + tick + `/api/support` + tick + ` で問い合わせ/チケット操作を行う。ユーザー認証情報をhandlerへ渡す。
-- `/api/discord/interactions` はDiscord Interaction署名検証を含む ` + tick + `discord-support.js` + tick + ` へ接続。チケット作成/終了/再開、権限設定、通知、診断記録を実装。
+- `/support` は利用者向けサポートUI。`/api/support/context` でカテゴリ/症状に対応するコンテキストを取得し、`/api/support` で問い合わせ/チケット操作を行う。ユーザー認証情報をhandlerへ渡す。
+- `/api/discord/interactions` はDiscord Interaction署名検証を含む `discord-support.js` へ接続。チケット作成/終了/再開、権限設定、通知、診断記録を実装。
 - `/api/admin/discord-support/register-command` はACTIVEなADMIN/OWNER相当の権限チェックとPOST method checkを持つコードを確認。Discord APIへの登録は実行していない。
 - チケット状態遷移、Discord署名の実リクエスト検証、チャンネル作成、権限上書き、通知失敗時の再試行は未検証。
 
@@ -626,10 +626,10 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### Kingdom Portalのコスト/鮮度ルール
 
-- Detail/Rankings/Changes/Allianceは主に ` + tick + `kingdom_ranking_current` + tick + ` とCatalogを参照し、現在順位表示に ` + tick + `ranking_snapshots` + tick + ` の広範囲取得を使わない。
+- Detail/Rankings/Changes/Allianceは主に `kingdom_ranking_current` とCatalogを参照し、現在順位表示に `ranking_snapshots` の広範囲取得を使わない。
 - Kingdom Detail/Compare/Alliance Detailは選択された王国/同盟のR2 keyを読む。R2 listで全履歴を走査する経路と、既知keyを直接getする経路を区別する。
 - Kingdom PortalのMightyページはイベントAPIとKvK APIを別々に呼ぶため、ページ表示だけで外部APIを複数消費する。自動ポーリングや再読み込みを含む実使用量は未計測。
-- ` + tick + `renderKingdomRankingsPage` + tick + `は認証ユーザーの保存設定/リンク済み王国を参照するが、画面自体は公開ルートとして描画される。ログイン前後の表示・データ露出はE2Eで確認する。
+- `renderKingdomRankingsPage`は認証ユーザーの保存設定/リンク済み王国を参照するが、画面自体は公開ルートとして描画される。ログイン前後の表示・データ露出はE2Eで確認する。
 ## 2026-10-10 第10巡目 — Player Search/Profile/History/Changes/Export
 
 | 機能 | 入口/実装 | データ/権限 | 棚卸し判定 |
@@ -647,15 +647,15 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 
 ### Player領域の未解決/重複候補
 
-- **HistoryのD1/R2経路差:** ` + tick + `/api/player/history` + tick + `は ` + tick + `getPlayerHistory()` + tick + `を使う一方、` + tick + `/player/history` + tick + `は ` + tick + `player_snapshots` + tick + `を直接読む。Retention/R2 archive後にUIとAPIの結果が異なる可能性があり、データ保全観点で優先確認。
-- ` + tick + `/player` + tick + `のProfile UIが直接外部取得/Materializeを行う一方、` + tick + `/api/player` + tick + `と` + tick + `/api/player/refresh` + tick + `も存在する。重複APIが意図した外部利用向けか、現在の画面から未使用なのかを確定する。
-- ` + tick + `/api/player/rank-history` + tick + `はルートがあるが、画面上の対応する履歴リンクは見つからない。使用者/用途を確認する。
-- ` + tick + `/player/compare` + tick + `と` + tick + `/api/player-compare` + tick + `はルートのhandler/page参照が未解決。` + tick + `player-compare.js` + tick + `のロジックだけではページ/APIの入口を満たしていない。
-- Player Searchの ` + tick + `LIKE '%q%'` + tick + `条件は通常のB-tree prefix検索にならない可能性がある。検索範囲/Index/実D1読み取りはQuery Planまたは計測で確認するが、本棚卸し中は計測クエリを本番で実行しない。
+- **HistoryのD1/R2経路差:** `/api/player/history`は `getPlayerHistory()`を使う一方、`/player/history`は `player_snapshots`を直接読む。Retention/R2 archive後にUIとAPIの結果が異なる可能性があり、データ保全観点で優先確認。
+- `/player`のProfile UIが直接外部取得/Materializeを行う一方、`/api/player`と`/api/player/refresh`も存在する。重複APIが意図した外部利用向けか、現在の画面から未使用なのかを確定する。
+- `/api/player/rank-history`はルートがあるが、画面上の対応する履歴リンクは見つからない。使用者/用途を確認する。
+- `/player/compare`と`/api/player-compare`はルートのhandler/page参照が未解決。`player-compare.js`のロジックだけではページ/APIの入口を満たしていない。
+- Player Searchの `LIKE '%q%'`条件は通常のB-tree prefix検索にならない可能性がある。検索範囲/Index/実D1読み取りはQuery Planまたは計測で確認するが、本棚卸し中は計測クエリを本番で実行しない。
 
 ### 可視性ルール
 
-- ` + tick + `player_visibility_settings` + tick + `と ` + tick + `filterPlayerForRole()` + tick + ` / ` + tick + `filterPlayerProfileForRole()` + tick + ` / ` + tick + `isChangeVisibleForRole()` + tick + `が、基本プロフィール・同盟・Hero/Rank/Equipment・Change Eventsの表示範囲を制御する。
+- `player_visibility_settings`と `filterPlayerForRole()` / `filterPlayerProfileForRole()` / `isChangeVisibleForRole()`が、基本プロフィール・同盟・Hero/Rank/Equipment・Change Eventsの表示範囲を制御する。
 - visibility設定取得に失敗した場合、基本フィールドを除外するfail-closed経路がある。ADMIN/OWNER用exportはAPI側でもADMINガードを持つ。
 - UI表示だけでは認可/可視性を保証できないため、API直叩き時のフィールド除外・role別結果は別途HTTPテストする。
 ## 2026-10-10 第11巡目 — Retention対象とR2読出し機能の照合
@@ -674,16 +674,16 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 ### 重要な結論
 
 - RetentionアーカイブはD1読み取り/容量の制御に役立つが、アーカイブ済みデータの画面/API再表示は各機能がR2 readbackを実装している場合に限られる。
-- ` + tick + `/player/history` + tick + `とPlayer Changes系の画面/APIは、Retention後にR2アーカイブ済みの行を表示しない可能性がある。これは静的な経路差候補であり、データ欠落の実再現は未実施。
-- ` + tick + `runDataRetentionJob` + tick + `の起動経路自体も未接続候補なので、実際にRetentionが走っているか/どの設定値かは本番DBを変更せず別途確認する。
+- `/player/history`とPlayer Changes系の画面/APIは、Retention後にR2アーカイブ済みの行を表示しない可能性がある。これは静的な経路差候補であり、データ欠落の実再現は未実施。
+- `runDataRetentionJob`の起動経路自体も未接続候補なので、実際にRetentionが走っているか/どの設定値かは本番DBを変更せず別途確認する。
 - 本棚卸しではR2全件listやアーカイブの全件読出しを追加しない。D1 Free読み取りを優先し、必要なR2 readbackは対象範囲・ページング・費用を明示して設計する。
 ## 2026-10-10 第12巡目 — Gateway API / MightPulse Probe・Research / R2 Backfill
 
 ### Gateway API
 
-- Prefix route: ` + tick + `/api/gateway/v1/*` + tick + `。実装されているpathは ` + tick + `/api/gateway/v1/status` + tick + ` と ` + tick + `/api/gateway/v1/diagnostics` + tick + `。
-- 両方GET限定、` + tick + `EAGLEEYE_GATEWAY_TOKEN` + tick + `設定必須、Bearer/token認証。read-onlyとして診断/運用状態/Cloudflare利用量/History Storage状態/System Logを返す。
-- Statusの通常応答は直近500件を返す制限付きで、対象期間全件をメモリに展開しない設計。` + tick + `?full=1` + tick + `はstreaming log export経路を持つ。
+- Prefix route: `/api/gateway/v1/*`。実装されているpathは `/api/gateway/v1/status` と `/api/gateway/v1/diagnostics`。
+- 両方GET限定、`EAGLEEYE_GATEWAY_TOKEN`設定必須、Bearer/token認証。read-onlyとして診断/運用状態/Cloudflare利用量/History Storage状態/System Logを返す。
+- Statusの通常応答は直近500件を返す制限付きで、対象期間全件をメモリに展開しない設計。`?full=1`はstreaming log export経路を持つ。
 - Gateway Statusは複数のD1/Analytics/Storage診断を並列実行するため、呼び出し頻度・range・full exportの読み取り量とWorkerメモリを確認する。実呼び出しは未実施。
 
 ### MightPulse Probe / Research / Ranking Test
@@ -697,9 +697,9 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### Kingdom Catalog R2 Backfill
 
-- Owner page: ` + tick + `/owner/kingdom-catalog-r2-backfill` + tick + `。routerで ` + tick + `requireOwner()` + tick + ` を確認し、POST action ` + tick + `run` + tick + `/` + tick + `run_all` + tick + ` を処理する。
-- ` + tick + `runKingdomCatalogR2Backfill()` + tick + `はD1の ` + tick + `r2_latest_key IS NULL` + tick + ` かつraw/boards payloadがある行を対象に、R2保存後にD1 payloadをNULL化する。バッチサイズは通常1–100、run_allも1回100件までで段階実行。
-- 実行後は ` + tick + `verifyKingdomCatalogR2Backfill()` + tick + `でR2 object存在、pointer、raw/boards NULL状態を確認し、失敗時はmigration stateをFAILEDへ更新する実装。
+- Owner page: `/owner/kingdom-catalog-r2-backfill`。routerで `requireOwner()` を確認し、POST action `run`/`run_all` を処理する。
+- `runKingdomCatalogR2Backfill()`はD1の `r2_latest_key IS NULL` かつraw/boards payloadがある行を対象に、R2保存後にD1 payloadをNULL化する。バッチサイズは通常1–100、run_allも1回100件までで段階実行。
+- 実行後は `verifyKingdomCatalogR2Backfill()`でR2 object存在、pointer、raw/boards NULL状態を確認し、失敗時はmigration stateをFAILEDへ更新する実装。
 - これはOwner手動操作で外部R2書き込みとD1更新を伴うため、この棚卸しでは実行していない。対象件数、同時実行競合、進捗復帰、実R2内容の確認は未完了。
 
 ### この領域の未完了項目
@@ -709,14 +709,14 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - R2 backfillはOwner UI/APIだけでなくMigration state、D1 pointer、R2 object catalog、再開/失敗時の状態遷移を一体で棚卸しする。
 ### 全ソースのAPI文字列とルーター照合（第1回）
 
-- ` + tick + `src/index.js` + tick + `以外の ` + tick + `src/` + tick + `ファイル50件を対象に、静的文字列として書かれた `/api/...` 参照をルーターの完全一致パス/特殊prefixと照合した。
-- この文字列抽出でルーター未登録として残ったものは ` + tick + `/api/owner/kingdom-load-test/export?run_id=` + tick + ` のみ。handler/UIリンクは存在するが、import/route接続がないことを確認済み。
+- `src/index.js`以外の `src/`ファイル50件を対象に、静的文字列として書かれた `/api/...` 参照をルーターの完全一致パス/特殊prefixと照合した。
+- この文字列抽出でルーター未登録として残ったものは `/api/owner/kingdom-load-test/export?run_id=` のみ。handler/UIリンクは存在するが、import/route接続がないことを確認済み。
 - この結果は静的な文字列照合の範囲。実行時に組み立てるURL、外部クライアント、未使用の古い呼び出し元の存在までは否定しない。
 ### Player Visibility / Watchlist Limitsの認可不一致候補
 
-- ` + tick + `/admin/player-visibility` + tick + `のページレンダラー ` + tick + `renderPlayerVisibilityPage()` + tick + ` は ` + tick + `requireAdmin()` + tick + ` を使用し、ADMIN/OWNER向け画面を表示する。
-- しかし対応API ` + tick + `/api/admin/player-visibility` + tick + ` の ` + tick + `handlePlayerVisibilityApi()` + tick + ` は ` + tick + `requireOwner()` + tick + ` を使用している。` + tick + `requireOwner()` + tick + ` は ` + tick + `auth.role !== 'OWNER'` + tick + ` を403にする。
-- 同API内部には ` + tick + `guard.auth.role === 'ADMIN'` + tick + ` の分岐（OWNER設定を拒否する処理）が複数あるが、` + tick + `requireOwner()` + tick + `を通過した後ではADMINになり得ない。画面の認可とAPIの認可が一致しない静的候補。
+- `/admin/player-visibility`のページレンダラー `renderPlayerVisibilityPage()` は `requireAdmin()` を使用し、ADMIN/OWNER向け画面を表示する。
+- しかし対応API `/api/admin/player-visibility` の `handlePlayerVisibilityApi()` は `requireOwner()` を使用している。`requireOwner()` は `auth.role !== 'OWNER'` を403にする。
+- 同API内部には `guard.auth.role === 'ADMIN'` の分岐（OWNER設定を拒否する処理）が複数あるが、`requireOwner()`を通過した後ではADMINになり得ない。画面の認可とAPIの認可が一致しない静的候補。
 - 影響候補: ADMINでページ表示できても、初期設定取得/保存のAPIが403になり、Player VisibilityとWatchlist Limitsの管理ができない。OWNERでの操作は別途実行テスト未確認。
 - 修正方針はまだ決めない。まず仕様上ADMINに許可する範囲（OWNER role/OWNER-only visibility項目を除く）を確定し、API直叩き/画面操作のテストケースを定義する。
 ## 2026-10-10 第13巡目 — Admin設定画面・管理操作の権限/Method
@@ -735,7 +735,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 ### 管理画面操作の横断ルール
 
 - Pageを見られることとAPI操作が許可されることは別。特にADMIN/OWNER差、ACTIVE/DISABLED状態、HTTP method、対象user_id/key_idの所有境界を機能ごとに確認する。
-- 読み取りに見えるGETでも、` + tick + `refresh=1` + tick + `のように外部API取得/DB保存を伴う経路がある。GET side effectは仕様上の意図を確認し、再送/ブラウザ先読み/キャッシュの影響をテストする。
+- 読み取りに見えるGETでも、`refresh=1`のように外部API取得/DB保存を伴う経路がある。GET side effectは仕様上の意図を確認し、再送/ブラウザ先読み/キャッシュの影響をテストする。
 - 本棚卸しではGET refresh、Pool Health Check、MightPulse Probe、負荷テスト、R2 backfillを起動していない。
 ## 2026-10-10 第14巡目 — MightPulse endpoint / collection engine
 
@@ -753,15 +753,15 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### API Pool/Collection Guard
 
-- ` + tick + `data-collection-engine.js` + tick + `に ` + tick + `collectMightPulseThroughGuards` + tick + `、` + tick + `collectUserMightyOnly` + tick + `、` + tick + `collectMightyOnly` + tick + `、` + tick + `collectKingdomRanking` + tick + `、` + tick + `collectPlayerDetail` + tick + `、` + tick + `collectAllianceDetail` + tick + `があり、API Pool/Safety Gate/Service Usage/traceを伴う取得経路を提供する。
-- ` + tick + `mightpulse.js` + tick + `には共通fetch、timeout/retry/backoff、エラー分類、endpoint helperがある。endpoint helperの存在と、ローラーが定期起動されることは別判定。
-- ` + tick + `getMightPulseTopKingdomAllianceRosters` + tick + `は同盟ランキングを取得した後、各同盟のrosterを逐次取得する。上位10同盟なら少なくともランキング1回+roster最大10回となるため、API Pool枠/外部API制限を踏まえた利用上限が必要。
-- Seeder/Roller群は現行Worker起動経路未接続候補。機能を有効化する前に、R2 binding名（` + tick + `env.R2_ARCHIVE` + tick + ` vs ` + tick + `env.ARCHIVE` + tick + `）、Semaphore、retry、D1 reads/writes、途中停止後の再開をまとめて確認する。
+- `data-collection-engine.js`に `collectMightPulseThroughGuards`、`collectUserMightyOnly`、`collectMightyOnly`、`collectKingdomRanking`、`collectPlayerDetail`、`collectAllianceDetail`があり、API Pool/Safety Gate/Service Usage/traceを伴う取得経路を提供する。
+- `mightpulse.js`には共通fetch、timeout/retry/backoff、エラー分類、endpoint helperがある。endpoint helperの存在と、ローラーが定期起動されることは別判定。
+- `getMightPulseTopKingdomAllianceRosters`は同盟ランキングを取得した後、各同盟のrosterを逐次取得する。上位10同盟なら少なくともランキング1回+roster最大10回となるため、API Pool枠/外部API制限を踏まえた利用上限が必要。
+- Seeder/Roller群は現行Worker起動経路未接続候補。機能を有効化する前に、R2 binding名（`env.R2_ARCHIVE` vs `env.ARCHIVE`）、Semaphore、retry、D1 reads/writes、途中停止後の再開をまとめて確認する。
 
 ### Endpoint棚卸しの未完了項目
 
 - 各endpointの現行呼び出し元、キーPool選択（通常/Mighty/USER_CONTRIBUTED）、成功時保存先、失敗時metadata更新、retry回数、外部APIの実際の契約/レスポンスはまだ全件照合していない。
-- ` + tick + `/kingdom/mighty` + tick + `はevents/KvKを別々に取得する。Top alliance rosters helperはN+1 APIコールのため、現行ローラーを接続する前に消費モデルを定義する。
+- `/kingdom/mighty`はevents/KvKを別々に取得する。Top alliance rosters helperはN+1 APIコールのため、現行ローラーを接続する前に消費モデルを定義する。
 ## 2026-10-10 第15巡目 — 共通UI基盤 / ロールバー / 二重操作防止
 
 | 共通機能 | 実装位置 | 静的確認結果 | 未確認点 |
@@ -775,8 +775,8 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### 共通UIの適用範囲
 
-- ` + tick + `eagleEyeHtmlResponse(html)` + tick + `は ` + tick + `applyEagleEyeTheme(html)` + tick + `を通し、HTMLに` + tick + `<html` + tick + `が含まれる場合にテーマCSS/JSを挿入する。
-- ルート/ページの一部は直接 ` + tick + `Response` + tick + `を返し、他は` + tick + `eagleEyeHtmlResponse` + tick + `を使う。すべての画面に共通UIが適用されると断定せず、全ルートのreturn経路を確認する。
+- `eagleEyeHtmlResponse(html)`は `applyEagleEyeTheme(html)`を通し、HTMLに`<html`が含まれる場合にテーマCSS/JSを挿入する。
+- ルート/ページの一部は直接 `Response`を返し、他は`eagleEyeHtmlResponse`を使う。すべての画面に共通UIが適用されると断定せず、全ルートのreturn経路を確認する。
 - 二重送信防止のコードが存在することと、全画面の全操作が確実に保護されていることは別。HTML formの通常POST、fetch、外部リンク、独自イベント処理を個別照合する。
 ## 2026-10-10 第16巡目 — Owner User Management / Player Link Support
 
@@ -792,10 +792,10 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### Owner管理の境界/未確認事項
 
-- ` + tick + `requireOwner()` + tick + `はACTIVEかつrole OWNERのみを通す。主要Owner APIの個別handlerでこのguardを呼ぶ。
-- Role APIはVIPを直接設定する前に ` + tick + `evaluateVipEligibility()` + tick + `を実行し、適格でなければ409を返す。
-- Owner UI/APIが ` + tick + `owner_audit_log` + tick + `に記録する操作と、記録しない閲覧操作を区別する。全ての管理操作に監査記録があるとはまだ断定しない。
-- User一覧は ` + tick + `login_history` + tick + `をjoinしてlogin countを算出し、別クエリで全Watchlist件数を集計する。D1 Free read制約下では検索頻度/ユーザー数/Indexの影響を確認する。
+- `requireOwner()`はACTIVEかつrole OWNERのみを通す。主要Owner APIの個別handlerでこのguardを呼ぶ。
+- Role APIはVIPを直接設定する前に `evaluateVipEligibility()`を実行し、適格でなければ409を返す。
+- Owner UI/APIが `owner_audit_log`に記録する操作と、記録しない閲覧操作を区別する。全ての管理操作に監査記録があるとはまだ断定しない。
+- User一覧は `login_history`をjoinしてlogin countを算出し、別クエリで全Watchlist件数を集計する。D1 Free read制約下では検索頻度/ユーザー数/Indexの影響を確認する。
 - Login History / Owner Audit LogはRetentionでR2へ移行される対象。長期保管が要件なら、アーカイブ後の閲覧/Export要件を明確にする。
 ## 2026-10-10 第17巡目 — Discord Support ticket lifecycle
 
@@ -811,30 +811,30 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 - Ticket ID形式検証、カテゴリ/サブカテゴリ検証、重複案件409、チャンネル作成失敗時の後片付け、Close/Reopen時のchannel topic更新を実装。
 - Ticket stateの主保存先がDiscord channel/topicで、専用D1 ticket tableを確認できない。Discord channel削除/権限変更/Topic改変時の復旧・監査方法を仕様として確認する。
-- Interactionは署名検証あり。close/reopenの権限がDiscord member role IDsと ` + tick + `DISCORD_SUPPORT_ROLE_ID` + tick + ` に依存するため、実Guild/Role configの確認が必要。
+- Interactionは署名検証あり。close/reopenの権限がDiscord member role IDsと `DISCORD_SUPPORT_ROLE_ID` に依存するため、実Guild/Role configの確認が必要。
 - 本棚卸しではDiscordチャンネル作成/更新、slash command登録、通知を実行していない。
 ## 2026-10-10 第18巡目 — Safety Gate / Service Usage / Collection Coverage
 
 ### Safety Gate
 
-- ` + tick + `safety-gate.js` + tick + `はCloudflare利用率、API Pool reserve、分単位/日単位のremaining quota、operation priorityを使ってNORMAL/CAUTION/WARNING/CRITICAL/HARD_STOPと許可可否を評価する。HARD_STOPはforceでも迂回不可。
+- `safety-gate.js`はCloudflare利用率、API Pool reserve、分単位/日単位のremaining quota、operation priorityを使ってNORMAL/CAUTION/WARNING/CRITICAL/HARD_STOPと許可可否を評価する。HARD_STOPはforceでも迂回不可。
 - PriorityはWATCHLIST 100、NORMAL 80、FORCED 60、CATALOG 50、SEEDER 40、ALLIANCE_ROLLER 30、PLAYER_ROLLER 20、LOAD_TEST 10。CRITICALではWATCHLIST未満を止める設計。
-- **静的な欠損メトリクス候補:** ` + tick + `maxUsagePercent()` + tick + `は有効なCloudflare値がなければ` + tick + `null` + tick + `を返すが、` + tick + `getSafetyState(null)` + tick + `が` + tick + `Number(null) === 0` + tick + `としてNORMALへ評価される経路がある。Cloudflare metricsが全欠損のときSafety GateがCAUTION/UNKNOWNでなくNORMAL扱いになる可能性がある。未計測/欠損と0%を区別するテストが必要。
+- **静的な欠損メトリクス候補:** `maxUsagePercent()`は有効なCloudflare値がなければ`null`を返すが、`getSafetyState(null)`が`Number(null) === 0`としてNORMALへ評価される経路がある。Cloudflare metricsが全欠損のときSafety GateがCAUTION/UNKNOWNでなくNORMAL扱いになる可能性がある。未計測/欠損と0%を区別するテストが必要。
 - Safety Gateの実使用経路、全呼び出し元がCloudflare metricsを渡すか、欠損時のfail-safe方針は未完了。
 
 ### Service Usage Queue / R2 Archive
 
-- ` + tick + `recordServiceUsage()` + tick + `はeventを作成して ` + tick + `SERVICE_USAGE_QUEUE` + tick + `へ非同期送信する。Worker ` + tick + `queue()` + tick + `はLoad Test/System Event以外のメッセージをService Usage consumerへ渡す。
-- ` + tick + `service-usage-archive.js` + tick + `はR2の既存オブジェクトを読み、イベントをmergeしてgzip NDJSONとして再書き込みする。Queue設定はbatch size 100、timeout 30秒、retry 5、concurrency 1、DLQあり。
-- Queueが未設定/送信失敗の場合、` + tick + `enqueueServiceUsage()` + tick + `は ` + tick + `queued:false` + tick + `を返す経路がある。呼び出し側が戻り値を無視する場合はService Usageイベントが失われる可能性がある。
+- `recordServiceUsage()`はeventを作成して `SERVICE_USAGE_QUEUE`へ非同期送信する。Worker `queue()`はLoad Test/System Event以外のメッセージをService Usage consumerへ渡す。
+- `service-usage-archive.js`はR2の既存オブジェクトを読み、イベントをmergeしてgzip NDJSONとして再書き込みする。Queue設定はbatch size 100、timeout 30秒、retry 5、concurrency 1、DLQあり。
+- Queueが未設定/送信失敗の場合、`enqueueServiceUsage()`は `queued:false`を返す経路がある。呼び出し側が戻り値を無視する場合はService Usageイベントが失われる可能性がある。
 - R2のread-modify-writeは同じアーカイブwindowに対する読み書きが増え、同時更新があればlost update候補となる。Queue concurrency=1の設定はあるが、Worker/再試行を含む実行競合は未検証。
 - Service UsageをD1へ全件書き込む設計ではなく、Queue→R2へ集約する方式。R2 object size、読み書き回数、再試行/DLQを確認する。
 
 ### Kingdom Collection Coverage
 
-- ` + tick + `kingdom_collection_stats` + tick + `は初回/最終収集時刻、総収集回数、operator/user別回数、last_sourceを保持。` + tick + `recordKingdomCollectionSuccess()` + tick + `はupsertで累積値を更新する。
+- `kingdom_collection_stats`は初回/最終収集時刻、総収集回数、operator/user別回数、last_sourceを保持。`recordKingdomCollectionSuccess()`はupsertで累積値を更新する。
 - 現行呼び出し箇所は王国Watchlist job completionに結びついているように見えるため、Statsが全王国収集を意味するのか、Watchlist収集のみを意味するのかを仕様確認する。
-- ` + tick + `/admin/data-coverage` + tick + `と ` + tick + `getKingdomCollectionCoverage()` + tick + `はCatalog総数と統計表の件数/収集回数を表示する。0047のbackfill対象条件と実際のカバレッジ定義を照合する。
+- `/admin/data-coverage`と `getKingdomCollectionCoverage()`はCatalog総数と統計表の件数/収集回数を表示する。0047のbackfill対象条件と実際のカバレッジ定義を照合する。
 
 ### この領域の未完了項目
 
@@ -857,10 +857,10 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### 収集網羅性に関する重要な未確定点
 
-- ` + tick + `scheduled()` + tick + `が直接起動するのはAPI Pool recovery、Catalog daily refresh、Discord notificationsの3処理。Catalog daily refreshはDiscoveryのみを呼び、Seeder/Ranking Roller/Alliance Roller/Player Rollerを連鎖起動しない。
+- `scheduled()`が直接起動するのはAPI Pool recovery、Catalog daily refresh、Discord notificationsの3処理。Catalog daily refreshはDiscoveryのみを呼び、Seeder/Ranking Roller/Alliance Roller/Player Rollerを連鎖起動しない。
 - そのため、Catalogに王国が登録されていることは、その王国のランキング/同盟/Playerデータが定期収集されていることを意味しない。非Watchlist王国の鮮度/網羅性は別に確認する。
 - Watchlistが実質的な通常収集経路なのか、ローラーは将来用/Owner手動用なのか、機能仕様を確定する必要がある。ローラーを接続する場合はAPI Pool reserve、Semaphore、R2 binding、D1 reads/writes、停止復帰を先に検証する。
-- ` + tick + `kingdom_collection_stats` + tick + `はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
+- `kingdom_collection_stats`はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
 
 ### SQL列名の不一致候補 — Admin Kingdom Ranking
 
@@ -880,19 +880,19 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 ### Schema reconciliation scriptの範囲
 
-- ` + tick + `scripts/reconcile-d1-schema.mjs` + tick + `はverify-onlyと ` + tick + `--apply` + tick + `を分け、` + tick + `write()` + tick + `はapply時のみSQLを実行する設計。API Pool lease列/Index、watchlist limits、diagnostic/system log、watchlist jobs/locks、current ranking tables、user_player_links/support、load-test schema、Semaphore slots、Catalog/Roller state、Alliance/Player stateなどを対象にする。
+- `scripts/reconcile-d1-schema.mjs`はverify-onlyと `--apply`を分け、`write()`はapply時のみSQLを実行する設計。API Pool lease列/Index、watchlist limits、diagnostic/system log、watchlist jobs/locks、current ranking tables、user_player_links/support、load-test schema、Semaphore slots、Catalog/Roller state、Alliance/Player stateなどを対象にする。
 - このスクリプトはMigrationを再実行するだけでなく、既存データの変換/不足schemaの補修を含む。Productionへ適用する場合は入力確認、Time Travel bookmark、schema/migration history差分、実行後検証を一体で扱う。
-- ` + tick + `scripts/reconcile-0053-production-drift.mjs` + tick + `もRemote D1を対象にするため、実行前にread-only/modifyの両方の挙動を確認する。今回どのスクリプトも実行していない。
-- Workflow一覧を確認したことは、ProductionのMigration適用済み状態を確認したことを意味しない。実際の ` + tick + `d1_migrations` + tick + ` とスキーマは未取得。
+- `scripts/reconcile-0053-production-drift.mjs`もRemote D1を対象にするため、実行前にread-only/modifyの両方の挙動を確認する。今回どのスクリプトも実行していない。
+- Workflow一覧を確認したことは、ProductionのMigration適用済み状態を確認したことを意味しない。実際の `d1_migrations` とスキーマは未取得。
 
 ### Secrets/権限の確認項目
 
-- GitHub Actionsの ` + tick + `CLOUDFLARE_API_TOKEN` + tick + `、` + tick + `CLOUDFLARE_ACCOUNT_ID` + tick + `はGitHub Secrets参照。secret値自体は取得/表示していない。
+- GitHub Actionsの `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`はGitHub Secrets参照。secret値自体は取得/表示していない。
 - Production D1変更Workflowのdispatch権限、Environment protection、required reviewers、Time Travel復旧手順を確認する。YAML上の文字列入力確認だけで承認フロー全体の安全性を断定しない。
 ### Schema Reconciliationの適用範囲に関する注意
 
-- ` + tick + `scripts/reconcile-d1-schema.mjs` + tick + `は名前上はSchema Reconciliationだが、実装は特定の既知drift（API Pool lease列/Index、Watchlist/Diagnostics/System Log、User Player Link、Load Test、Semaphore、Catalog/Roller state等）を検査/補修するリスト型の処理。
-- 現行スクリプト内に ` + tick + `mighty_capable` + tick + ` / ` + tick + `mighty_checked_at` + tick + ` / ` + tick + `mighty_check_status` + tick + ` / ` + tick + `mighty_last_error_code` + tick + ` の追加/検証、Migration 0058の ` + tick + `user_kingdom_ranking_preferences` + tick + `、Migration 0054/0056の ` + tick + `user_mighty_credentials` + tick + `の検証は見当たらない。
+- `scripts/reconcile-d1-schema.mjs`は名前上はSchema Reconciliationだが、実装は特定の既知drift（API Pool lease列/Index、Watchlist/Diagnostics/System Log、User Player Link、Load Test、Semaphore、Catalog/Roller state等）を検査/補修するリスト型の処理。
+- 現行スクリプト内に `mighty_capable` / `mighty_checked_at` / `mighty_check_status` / `mighty_last_error_code` の追加/検証、Migration 0058の `user_kingdom_ranking_preferences`、Migration 0054/0056の `user_mighty_credentials`の検証は見当たらない。
 - よってこのWorkflowを実行したことだけで、全Migration 0001–0058のスキーマが現行コードと一致したと判定しない。実行前後にmigration historyと全重要テーブルの列/Indexを独立に検証する必要がある。
 - この指摘はスクリプトの現行範囲についての静的確認。意図的に対象を絞っている可能性があり、直ちに不具合/変更要求とはしない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
