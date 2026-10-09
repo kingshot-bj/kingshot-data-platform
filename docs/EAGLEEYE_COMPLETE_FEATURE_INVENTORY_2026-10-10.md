@@ -883,6 +883,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 7. **Retention/Emergency Bufferの起動経路:** `runDataRetentionJob`は呼び出し元がなく、`drainHistoryEmergencyBuffer`もWorkerイベントから呼ばれていないように見える。実際にRetention/Buffer drainが走るか未確定。
 8. **Safety Gate missing metrics:** 全Cloudflare metrics欠損で`maxUsagePercent()`がnullを返し、`getSafetyState(null)`が0%/NORMAL扱いになる可能性。
 9. **VIP資格とDisabled API key:** Mighty metadataがCONFIRMEDのまま`api_pool_keys.status='DISABLED'`となったキーが、VIP資格判定に残る可能性。
+10. **Admin Kingdom Ranking SQL列不一致:** `getLatestAdminKingdomRankingSnapshot()`が`kingdom_ranking_current`から`ranking_snapshot_id`をSELECTするが、Migration 0019の同テーブルにはその列がない。管理者ランキングの通常読出し/refreshがSQLエラーとなる可能性。
 
 ### P1候補 — 収集/通知/コスト/設定整合
 
