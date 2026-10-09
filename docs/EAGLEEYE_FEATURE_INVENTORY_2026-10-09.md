@@ -1319,3 +1319,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `discord_notification_state` は `migrations/0052_discord_notification_state.sql` で作られ、`updated_at` インデックスはあるが、`src/retention.js` の保持対象には含まれていない。
 - 変更イベントが長期的に増えると、重複防止用テーブルもイベント数に比例して増える。通知処理は過去10分しか候補を読まないため、十分な安全期間後に古いclaimを整理できるか検討する。ただし、前項の通知漏れ問題を直す前に安易に削除期間を決めない。
 - 現在の状態行数・ストレージ量は未確認。今回、通知状態の削除は行っていない。
+
+
+### [高・セキュリティ/コスト] 認証Cookie付きGETで外部API呼び出し・D1更新を起こせる経路がある
+- セッションCookieは `HttpOnly; Secure; SameSite=Lax`。Lax Cookieは、条件によってクロスサイトのトップレベルGET遷移に付与される。
+- API Pool管理画面の「プレイヤーをPool経由で取得」「王国ランキングをPool経由で取得」はGETフォームで、対応する `handleApiPoolTestPlayer()` / `handleApiPoolTestRanking()` はMightPulse APIを呼び、API Pool使用履歴や観測データ等を更新する。これらハンドラーは明示的なGET限定も持たない。
+- `/api/player?...&refresh=1` と管理王国ランキングの `refresh=1` もGETリクエストから外部API取得・D1/R2保存へ進む経路がある。
+- これらはログイン済みユーザー/管理者が悪意あるリンク等を開いた場合、意図しないMightPulse API消費・D1読み書きを起こされるCSRF的なリスクがある。確認できた影響は主にリソース消費・データ更新であり、未認証ユーザーが直接操作できるという意味ではない。
+- 対応時は副作用を伴う操作をPOSTへ分離し、必要に応じてOrigin/CSRF検証を加える。GETのテストフォームをPOSTへ変更する場合はUIとAPIを同時に更新し、二重送信防止と回帰テストを行う。今回は外部API呼び出し・DB更新は行っていない。
