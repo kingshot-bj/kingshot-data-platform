@@ -509,3 +509,10 @@
 - 影響候補: Admin Kingdom Rankingsの通常読出し/refreshおよびGoogle Sheets exportがno-such-columnエラーとなる可能性。ソース/Migration上の静的照合のみで、実D1クエリ実行や修正は未実施。
 - 次のSQL照合では、主要テーブルのSELECT/INSERT/UPDATE列をMigrationの最終スキーマに合わせて確認し、同種の不一致を探す。
 
+## 2026-10-10 棚卸し進捗 — GitHub Actions / D1 schema tools
+
+- 台帳更新コミット: `e241cb09f93dfa569a056a4e0645464dda44b777`
+- D1 pending migrations apply、Production schema reconciliation、deprecated schema recovery、hero gear asset collection、Status comparator Pages deployのtrigger/guard/副作用を整理。
+- `eagleeye-d1-schema-reconciliation.yml`は手動入力`RECONCILE_PRODUCTION`、Time Travel情報記録、`reconcile-d1-schema.mjs --apply`、事後検証を含む。Production D1を書き換えるため、この棚卸しでは実行していない。
+- Workflow定義を見ただけでは、実際のProduction migration history/Schema状態は分からない。Remote D1の読み取りも実施していない。
+
