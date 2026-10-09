@@ -1098,3 +1098,47 @@ Migration 0050–0058の9ファイルを読み、主要な追加/再構築対象
 2. `src/`全体のSQLからテーブル/列を抽出し、Migrationに存在しない参照・Migration後に未使用の列を候補化する。
 3. 0050/0051のR2 key、0052通知状態、0053–0056ロール/可視性/上限をコード参照と追加照合する。
 4. D1読み取りコストの評価は、広範囲の本番SELECTを実行せず、静的SQLと既存のIndex定義から始める。`ranking_snapshots`の広範囲取得クエリは復活させない。
+## 2026-10-10 進捗記録 — 第6回・Migration 0040–0049の部分照合
+
+### スキーマとコードの接続
+
+| Migration | 内容 | コード上の接続/要確認 |
+|---|---|---|
+| 0040 | `kingdom_seeder_state` | `kingdom-seeder.js`のSeeder実装/状態保存と接続候補。Worker起動経路は未確認のまま |
+| 0041 | `alliance_catalog` と `alliance_collection_state` | `alliance-catalog.js`にRoller実装あり。Worker起動経路は未確認 |
+| 0042 | `player_collection_state` | `player-roller.js`にRoller実装あり。Worker起動経路は未確認 |
+| 0043 | 意図的なno-op | 0041が状態テーブルを既に作成する前提の履歴整理。schema差分なし |
+| 0044 | `kingdom_load_test_runs` Cloudflare before/after/delta JSON列 | Load TestのCloudflare利用量記録/履歴表示との列単位照合を続ける |
+| 0045 | `change_events` player lookup複合Index | Player Change Eventsのtarget/type/time検索に対応する設計。全SQLのIndex利用確認は未完了 |
+| 0046 | `kingdom_collection_stats` + `kingdom_watchlist_jobs.collection_source` | `kingdom-collection-stats.js`、Watchlist job記録、Data Coverageとの対応候補 |
+| 0047 | 旧データからcollection statsをbackfill | `kingdom_ranking_current`と`players`を王国単位に集約するCTE。移行時に対象テーブル全体を読む可能性があるため、適用状況と実行コストは別途確認。棚卸し中に実行しない |
+| 0048 | `kingdom_catalog.r2_latest_key` + Index | `kingdom-catalog.js` / R2 backfillのD1軽量索引と接続候補 |
+| 0049 | `kingdom_catalog_r2_migration`の進捗状態 + backfill cursor Index | `kingdom-catalog-r2-backfill.js` / Owner backfill UI・状態JSONとの対応候補。処理は起動していない |
+
+### 追加の重要な区別
+
+- Seeder/Rollerの状態テーブルと実装関数があることは、定期実行が起動している証明ではない。現時点では `scheduled()` / `queue()` の接続が見つからない所見を維持する。
+- Migration 0047のbackfillは `ranking_snapshots` を広範囲取得するクエリではなく、`kingdom_ranking_current`と`players`から統計を作る移行SQL。ただし、全件集約の実行コストと適用状況は静的ソースだけでは確定しない。
+- `kingdom_catalog`、`alliance_catalog`、`players`のR2 key列は、詳細データをR2に移してD1を軽量な検索/現在値インデックスとして使う方針に対応する。R2保存済みpayloadの全読出し経路が正しいかは、画面/APIごとに別途照合する。
+- `kingdom_collection_stats`は王国Watchlist jobの成功記録と接続するコードがあるが、統計が全収集処理を代表するかは仕様未確定。UIの「収集済み」表示とカウント対象を一致させる必要がある。
+
+### 進捗率更新：25%
+
+Migration/SQL照合の作業領域を5%から10%へ更新。0040–0058の19ファイルについてDDL/主要対象を確認したが、0001–0039、全SQLの列/Index照合、現行本番適用状態は未確認。全体の加重点は25.0%となった。
+
+| 作業領域 | 重み | 達成度 | 加重点 |
+|---|---:|---:|---:|
+| 初期台帳 | 10% | 100% | 10.0% |
+| Route/handler/page照合 | 20% | 35% | 7.0% |
+| UI→API→処理の対応付け | 25% | 10% | 2.5% |
+| Migration/SQL双方向照合 | 25% | 10% | 2.5% |
+| Worker/Cron/Queue/権限/外部連携 | 15% | 20% | 3.0% |
+| テスト観点/本番確認条件 | 5% | 0% | 0% |
+| **合計** | **100%** |  | **25.0%** |
+
+### 次の作業
+
+1. Migration 0001–0039を確認し、既存テーブルの最終スキーマが後続ALTER/REBUILDを経てどうなるか履歴化する。
+2. `kingdom_collection_stats` / R2 key / Roller state / Load Test historyの各列について、現行SQLで参照・更新される箇所を双方向で追跡する。
+3. 次にPlayer History/ChangesのD1/R2経路差をhandlerと画面関数で照合する。
+4. D1消費は静的なSQL形状とIndexから先に評価し、調査目的の全件SELECTや本番負荷テストを実行しない。
