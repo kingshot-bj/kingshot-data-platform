@@ -530,3 +530,14 @@
 - さらにMighty metadata、R2 latest pointer/index、User Kingdom Ranking Preferences、Discord Notification State等の検証/補修が見当たらないため、このWorkflowだけでは現行schema全体を保証しない。
 - 実行していない。Production migration history/schemaは未取得。
 
+
+
+## 2026-10-10 引き継ぎ — 監査チェックリスト67%到達
+
+- 機能棚卸し台帳: docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md
+- チェックリスト方式の進捗: 6/9項目 = 66.7%（表示上67%）。前回56%から次の10ポイント区切りに到達。
+- src/index.jsのroute/call名とimport、対象moduleのexportを静的照合。未接続候補として /api/player-compare の handlePlayerCompareApi、/player/compare の renderPlayerComparePage、Owner Load Test CSV export handlerのroute未接続を記録。コード修正はしていない。
+- Migration 0001–0039のDDLを初回通読。kingdom_watchlist_jobsのsource_first_at/source_last_at列差、user-player-link.jsの実行時DDLを追加の照合対象として記録。既存の kingdom_ranking_current.ranking_snapshot_id 不一致候補も未解決。
+- 67%はチェックリスト項目の完了割合で、機能の実装率/正常率/本番適用率ではない。過去の重み付き概算23–25%とは算定方式が違うため、直接比較しない。
+- 次はMigration 0001–0058の最終スキーマとsrc全体のSQL列を双方向照合し、画面ボタン/フォームからAPI、認可、DB/R2、成功・失敗表示まで機能単位で追う。
+- 厳守: コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API実行はしない。D1 Free reads最優先。ranking_snapshotsの広範囲取得は禁止。
