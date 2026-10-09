@@ -438,3 +438,11 @@
 - API内部にはADMINのOWNER-only設定を拒否する分岐もあるため、ADMIN向け画面とAPI認可の不一致候補として記録。ADMINは画面表示できてもAPI読取/保存が403となる可能性がある。
 - 修正は行わず、仕様上のADMIN/OWNER権限境界とテストケースを先に確定する。
 
+## 2026-10-10 棚卸し進捗 — Admin settings method/permission map
+
+- 台帳更新コミット: `3a2022498fb1531e24903865467df6ed3b6c8c41`
+- Retention settings、Player Visibility/Watchlist Limits、Admin Kingdom Rankings、ranking export、Diagnostics/System Log、Monitoring Profile、R2 Object Inventoryのmethod/roleを整理。
+- 追加候補: `/api/admin/kingdom-rankings?refresh=1`はGET経路でMightPulse API Pool取得・順位変化計算・D1保存を実行。GET副作用/再送/先読みの影響を確認する必要がある。実行していない。
+- Player Visibility APIのOWNER-only mismatch候補を継続記録。
+- 次はMigration/SQLの列・Index双方向照合と、Owner/User管理・Discord Support・MightPulse endpointの残りを整理する。
+
