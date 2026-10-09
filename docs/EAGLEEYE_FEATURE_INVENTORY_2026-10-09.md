@@ -946,3 +946,35 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/index.js` ではGoogle Driveのコールバック処理を `/api/admin/google-drive/callback` にルーティングし、Discordログイン用の `/api/auth/callback` は別処理としている。
 - `src/google-drive.js` はOAuth認可URL生成と認可コード交換の両方に `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` をそのまま使う。このため、現在の設定値のままGoogle Drive認証を行うと、GoogleからDiscordログイン用コールバックへ戻り、Google Drive用の認可コード交換処理に到達しない可能性が高い。Google Cloud側の実際の登録値・本番動作は未確認だが、リポジトリ内の設定と実装の不一致は確認済み。
 - 修正は今回行わない。対応時はCloudflare vars/preview vars、Google Cloud OAuthクライアントの許可済みRedirect URI、`/api/admin/google-drive/callback` の3点を同時に合わせ、認証成功・拒否・state不正のテストを実施する。
+
+
+## 監査追記：正規表現の実動作・API Pool更新メソッド・テスト構成（2026-10-09 続き）
+
+### [高] 既存記録の正規表現問題を別モジュールにも確認
+実ソースの正規表現リテラルを確認したところ、文字クラス等を意図したバックスラッシュが二重になっている候補が複数あり、単なる表示上のエスケープではない可能性が高い。未修正・未実行テスト。
+
+- `src/index.js:569`：`normalizeMightPulseTimestamp()` の `/^\\d+(?:\\.\\d+)?$/` は、数字だけの文字列や小数文字列を想定どおり認識しない可能性がある。数値型のタイムスタンプは別分岐だが、APIから文字列で来る場合に日時正規化が失敗し得る。
+- `src/index.js:7550台〜7690台`：王国ID検証 `/^\\d+$/` が管理ランキングAPI、CSV出力、管理ランキング画面で使われる。数字だけの王国IDが拒否され、取得・出力が動かない可能性がある。
+- `src/index.js:7304-7306`：`Last active 12d ago` 等を翻訳する `/^(...) (\\d+)d ago$/` 系の正規表現が数値部分にマッチしない可能性がある。
+- `src/index.js:1382`：短縮数値の末尾ゼロを除去する `replace(/\\.?0+$|\\.$/,...)` も意図した小数表記を処理しない可能性がある。
+- これらは共通の回帰テストで、整数文字列・小数文字列・ISO日時・秒/ミリ秒タイムスタンプ・Last active各単位・短縮表示を検証してから一括修正すべき項目。コード監査だけでは本番影響の範囲は確定していない。
+
+### [高・補助スクリプト] ヒーロー装備アセット収集スクリプトのHTML抽出正規表現に過剰エスケープ候補
+- `scripts/collect-hero-gear-assets.mjs` の `extractImageUrls()` では、画像タグの境界を探す `/<img\\b.../`、metaタグの `/<meta\\b.../`、srcset分割の `/\\s+/` が二重バックスラッシュを含む形で記述されている。
+- JavaScriptの正規表現リテラルとしてこの記述が実行される場合、通常のHTMLタグ境界や空白にマッチせず、画像候補を抽出できない可能性が高い。GitHub Actionsの `hero-gear-assets.yml` から手動起動される補助ツールであり、本番Workerのリクエスト処理とは別系統。
+- スクリプト実行は行っていない。修正時は外部取得を伴わない小さなHTML fixtureで `img` / `srcset` / `og:image` の単体テストを用意する。
+
+### [中] API Poolの一部更新/検証ハンドラーに明示的HTTPメソッド制限がない
+- `handleApiPoolAdd`、`handleApiPoolMove`、`handleApiPoolRevoke`、`handleApiPoolDelete`、`handleApiPoolHealthCheck`、`handleApiPoolTestPlayer`、`handleApiPoolTestRanking` は関数冒頭でHTTPメソッドを限定していない。一方、`handleApiPoolMightyCheck` はPOSTのみを明示している。
+- 多くはADMIN/OWNER認証を行うが、JSON本文を読む経路ではPOST以外のメソッドでも処理へ入る可能性がある。権限のない利用者からの直接操作が可能と断定するものではないが、HTTP契約と副作用を伴う操作の保護方針が不統一。
+- 各ルートのUIが実際に使用するメソッド、GET/PUT/PATCH等での到達可否、CSRF対策・Cookie属性を確認する。今回、APIキーの追加/移動/失効/削除、外部API検証は実行していない。
+
+### テストとCIの確認状況
+- リポジトリのルートには `package.json` と独立した `tests/` ディレクトリが見当たらず、現時点で一般的な `npm test` / `npm run lint` を実行できる構成は確認できていない。
+- GitHub ActionsはD1 Migration/Reconciliation、補助アセット収集、Status JSON ComparatorのPages公開が中心。今回の確認範囲では、Worker全体の自動単体テスト・API/E2E回帰テストを実行するworkflowは見当たらない。
+- これは「テストが一切存在しない」と断定するものではない。リポジトリ内に標準的なテスト入口が見当たらないという監査結果であり、今後は実行可能なテストの所在とリリース前検証手順を確認する。
+
+### 監査継続方針
+- 正規表現候補は同じ原因で複数機能に波及している可能性があるため、単発修正ではなく、実ソースを対象に検索・fixtureテスト・呼び出し元確認をまとめて行う。
+- `ranking_snapshots` の広範囲取得を復活させない。履歴Retentionの処理は対象期間・バッチ件数を限定しているが、履歴表示APIやランキング取得経路は引き続き別途確認する。
+- 本追記は静的コード監査。テスト実行、本番API呼び出し、DB変更、デプロイは未実施。
