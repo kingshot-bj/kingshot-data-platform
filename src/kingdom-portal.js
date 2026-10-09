@@ -106,7 +106,7 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
   }
   const requestedKid = String(url.searchParams.get("kid") || "").trim();
   const savedKid = Number(pref?.kid || linked?.kingdom_id || 0);
-  const kid = /^\\d+$/.test(requestedKid) ? Number(requestedKid) : savedKid;
+  const kid = /^\d+$/.test(requestedKid) ? Number(requestedKid) : savedKid;
   const storedBoards = (() => { try { const a = JSON.parse(pref?.boards_json || "[]"); return Array.isArray(a) ? a.filter(b => BOARDS.some(x => x[0] === b)) : []; } catch { return []; } })();
   const selected = String(url.searchParams.get("board") || pref?.primary_board || storedBoards[0] || "personal_power");
   const selectedBoards = storedBoards.length ? storedBoards : [selected];
