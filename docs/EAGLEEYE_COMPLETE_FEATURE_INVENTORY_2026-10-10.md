@@ -316,6 +316,71 @@
 | MightPulse VIP credentials legacy | user-mighty.js、user_mighty_credentials migrations | ソース上の主要経路との接続未確認 | 全repo参照/管理画面/API接続/採用仕様。削除判断はしない |
 | D1 schema reconciliation | scripts + GitHub workflows | ツールあり・本番スキーマ照合未完了 | Migration適用履歴、index再構成、破壊的変更の承認ガード |
 
+## 2026-10-10 第1巡目 — ルート定義・Worker起動経路の照合結果
+
+### 1. ルート参照先の静的照合
+
+`src/index.js` の110件の完全一致パス入口を、同ファイル内の関数定義・変数定義・46件の相対import（131個のimport名）と照合した。
+
+- [x] 定義/importの存在を照合
+- [ ] ビルド/HTTPアクセスによる実行確認（未実施）
+
+**ルート定義/接続の要確認候補が3件残る（未解決参照2件＋UI呼び出し先未登録1件）。**
+
+| パス | 参照名 | 静的確認結果 | 影響候補 |
+|---|---|---|---|
+| `/api/player-compare` | `handlePlayerCompareApi` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当ハンドラーなし | API呼び出し時にReferenceErrorとなる可能性 |
+| `/player/compare` | `renderPlayerComparePage` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当画面関数なし | 画面アクセス時にReferenceErrorとなる可能性 |
+| `/api/owner/kingdom-load-test/export?run_id=...` | `handleOwnerKingdomLoadTestExportApi` | `admin-kingdom-load-test.js` にCSV handlerとUIリンクあり。ただし `index.js` からimportされず、router分岐もない | CSV exportリンクが意図したCSVを返さず、fallbackへ到達する可能性 |
+
+`admin-kingdom-load-test.js` には `handleOwnerKingdomLoadTestExportApi` が定義され、負荷テスト履歴UIも `/api/owner/kingdom-load-test/export?run_id=` を呼び出すが、Worker routerのimport/分岐に接続されていない。handler側にOWNERガードも見当たらないため、ルートを接続する場合はOWNER認可をrouterまたはhandlerで必ず適用する必要がある。現時点では接続/修正していない。
+
+`player-compare.js` には `normalizeCompareGovernorIds`、`buildPlayerCompareSeries`、`extractOptionalPlayerAssets` の比較用ロジックはあるが、ルートが呼ぶAPIハンドラーとページレンダラーは確認できない。これは静的な接続欠落候補であり、ビルドや実リクエストによる再現はしていない。修正はまだ行わない。
+
+### 2. Workerイベント入口と定期処理の照合
+
+`src/index.js` の `scheduled()` と `queue()` を確認した。
+
+| 処理 | 定義/接続 | 判定 |
+|---|---|---|
+| API Pool自動復旧 `runApiPoolAutoRecovery` | `scheduled()` から呼び出し | 接続あり |
+| 王国Catalog日次更新 `runKingdomCatalogDailyRefresh` | `scheduled()` から呼び出し | 接続あり |
+| Discord変更通知 `runKingdomDiscordNotifications` | `scheduled()` から呼び出し | 接続あり |
+| System Event Queue | `queue()` から `handleSystemEventQueue` を呼び出し | 接続あり |
+| Load Test Queue | `queue()` から `runKingdomLoadTestQueue` を呼び出し | 接続あり |
+| Service Usage Queue | `queue()` から `handleServiceUsageQueue` を呼び出し | 接続あり |
+| `runKingdomSeeder` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runKingdomRankingRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runAllianceRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runPlayerRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runDataRetentionJob` | 関数定義のみ。呼び出し箇所なし | 未接続候補 |
+| `drainHistoryEmergencyBuffer` | importのみ。呼び出し箇所なし | 未接続候補 |
+
+補足:
+
+- `runDataRetentionJob()` 内には `runRetentionCleanup()` と `archiveSystemEventLog()` の呼び出しがあるが、親関数 `runDataRetentionJob()` 自体が起動されていないため、これらも現在のWorkerイベント経由では到達しないように見える。
+- `drainHistoryEmergencyBuffer()` の公開ラッパーは `history-emergency-buffer.js` に存在するが、`index.js` からの呼び出しは確認できない。
+- これらが別の呼び出し元・外部トリガー・意図的な未使用コードなのかは未確定。削除/接続の判断はしない。
+- `scheduled()` は5分ごとに動く設定だが、上表にないローラーを「Cron実装済み」とは扱わない。
+
+
+### 4. 画面/API参照の初期抽出（静的）
+
+`src/index.js` 内でWorkerの `fetch()` ルーター定義より前にあるAPI文字列を抽出した。
+
+- API文字列参照: 27箇所
+- 一意な文字列: 21件
+- Queryを除いたパス: 15種類
+- 抽出できた主な画面側のAPI系統: Kingdom Watchlist（create/refresh/cancel/toggle/delete/data）、Player Watchlist、マイプレイヤー（player/advanced/VIP/Mighty check）、Discordログイン、Google Drive接続検証、MightPulse調査/Probe。
+- これは `index.js` 前半の文字列抽出結果に限る。後半に定義される管理画面、他モジュール、動的に組み立てるURLは別途対象。全ボタン/API対応の完了を意味しない。
+
+### 3. この巡回での暫定優先順位
+
+1. **最優先の接続確認候補:** プレイヤー比較の2つのルート参照。
+2. **データ鮮度/保全に関わる候補:** Seeder/Roller群、Retention job、History Emergency Bufferの起動経路。
+3. 次巡回で、各画面HTMLのフォーム・ボタン・`fetch()` を抽出し、対応API・認証・HTTP method・DB/外部APIまでマッピングする。
+4. その後、MigrationとSQL参照をテーブル/列/Index単位で双方向照合する。
+
 ## 2026-10-10 第2巡目 — index.js内画面コンポーネントの初期マッピング
 
 `src/index.js` 内のトップレベル `render*` 関数34件を抽出。HTML文字列内のフォーム・ボタン・API文字列を機械抽出した。イベントリスナーを動的生成する箇所や別モジュールの画面は、この集計に含まれない場合がある。よって初期マッピングであり、機能網羅の完了判定ではない。
@@ -796,6 +861,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - そのため、Catalogに王国が登録されていることは、その王国のランキング/同盟/Playerデータが定期収集されていることを意味しない。非Watchlist王国の鮮度/網羅性は別に確認する。
 - Watchlistが実質的な通常収集経路なのか、ローラーは将来用/Owner手動用なのか、機能仕様を確定する必要がある。ローラーを接続する場合はAPI Pool reserve、Semaphore、R2 binding、D1 reads/writes、停止復帰を先に検証する。
 - ` + tick + `kingdom_collection_stats` + tick + `はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
+
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
@@ -808,72 +874,6 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 6. PreviewはProductionと同じD1/R2 resource IDを指定し、Queue bindingにも差分がある。
 7. Watchlist scheduler / retention / emergency buffer / load-test export などに未接続候補がある。
 8. `ranking_snapshots` の広範囲取得クエリは復活させない。既存のランキング履歴・R2移行経路は低コスト優先で照合する。
-
-
-## 2026-10-10 第1巡目 — ルート定義・Worker起動経路の照合結果
-
-### 1. ルート参照先の静的照合
-
-`src/index.js` の110件の完全一致パス入口を、同ファイル内の関数定義・変数定義・46件の相対import（131個のimport名）と照合した。
-
-- [x] 定義/importの存在を照合
-- [ ] ビルド/HTTPアクセスによる実行確認（未実施）
-
-**ルート定義/接続の要確認候補が3件残る（未解決参照2件＋UI呼び出し先未登録1件）。**
-
-| パス | 参照名 | 静的確認結果 | 影響候補 |
-|---|---|---|---|
-| `/api/player-compare` | `handlePlayerCompareApi` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当ハンドラーなし | API呼び出し時にReferenceErrorとなる可能性 |
-| `/player/compare` | `renderPlayerComparePage` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当画面関数なし | 画面アクセス時にReferenceErrorとなる可能性 |
-| `/api/owner/kingdom-load-test/export?run_id=...` | `handleOwnerKingdomLoadTestExportApi` | `admin-kingdom-load-test.js` にCSV handlerとUIリンクあり。ただし `index.js` からimportされず、router分岐もない | CSV exportリンクが意図したCSVを返さず、fallbackへ到達する可能性 |
-
-`admin-kingdom-load-test.js` には `handleOwnerKingdomLoadTestExportApi` が定義され、負荷テスト履歴UIも `/api/owner/kingdom-load-test/export?run_id=` を呼び出すが、Worker routerのimport/分岐に接続されていない。handler側にOWNERガードも見当たらないため、ルートを接続する場合はOWNER認可をrouterまたはhandlerで必ず適用する必要がある。現時点では接続/修正していない。
-
-`player-compare.js` には `normalizeCompareGovernorIds`、`buildPlayerCompareSeries`、`extractOptionalPlayerAssets` の比較用ロジックはあるが、ルートが呼ぶAPIハンドラーとページレンダラーは確認できない。これは静的な接続欠落候補であり、ビルドや実リクエストによる再現はしていない。修正はまだ行わない。
-
-### 2. Workerイベント入口と定期処理の照合
-
-`src/index.js` の `scheduled()` と `queue()` を確認した。
-
-| 処理 | 定義/接続 | 判定 |
-|---|---|---|
-| API Pool自動復旧 `runApiPoolAutoRecovery` | `scheduled()` から呼び出し | 接続あり |
-| 王国Catalog日次更新 `runKingdomCatalogDailyRefresh` | `scheduled()` から呼び出し | 接続あり |
-| Discord変更通知 `runKingdomDiscordNotifications` | `scheduled()` から呼び出し | 接続あり |
-| System Event Queue | `queue()` から `handleSystemEventQueue` を呼び出し | 接続あり |
-| Load Test Queue | `queue()` から `runKingdomLoadTestQueue` を呼び出し | 接続あり |
-| Service Usage Queue | `queue()` から `handleServiceUsageQueue` を呼び出し | 接続あり |
-| `runKingdomSeeder` | importのみ。呼び出し箇所なし | 未接続候補 |
-| `runKingdomRankingRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
-| `runAllianceRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
-| `runPlayerRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
-| `runDataRetentionJob` | 関数定義のみ。呼び出し箇所なし | 未接続候補 |
-| `drainHistoryEmergencyBuffer` | importのみ。呼び出し箇所なし | 未接続候補 |
-
-補足:
-
-- `runDataRetentionJob()` 内には `runRetentionCleanup()` と `archiveSystemEventLog()` の呼び出しがあるが、親関数 `runDataRetentionJob()` 自体が起動されていないため、これらも現在のWorkerイベント経由では到達しないように見える。
-- `drainHistoryEmergencyBuffer()` の公開ラッパーは `history-emergency-buffer.js` に存在するが、`index.js` からの呼び出しは確認できない。
-- これらが別の呼び出し元・外部トリガー・意図的な未使用コードなのかは未確定。削除/接続の判断はしない。
-- `scheduled()` は5分ごとに動く設定だが、上表にないローラーを「Cron実装済み」とは扱わない。
-
-
-### 4. 画面/API参照の初期抽出（静的）
-
-`src/index.js` 内でWorkerの `fetch()` ルーター定義より前にあるAPI文字列を抽出した。
-
-- API文字列参照: 27箇所
-- 一意な文字列: 21件
-- Queryを除いたパス: 15種類
-- 抽出できた主な画面側のAPI系統: Kingdom Watchlist（create/refresh/cancel/toggle/delete/data）、Player Watchlist、マイプレイヤー（player/advanced/VIP/Mighty check）、Discordログイン、Google Drive接続検証、MightPulse調査/Probe。
-- これは `index.js` 前半の文字列抽出結果に限る。後半に定義される管理画面、他モジュール、動的に組み立てるURLは別途対象。全ボタン/API対応の完了を意味しない。
-
-### 3. この巡回での暫定優先順位
-
-1. **最優先の接続確認候補:** プレイヤー比較の2つのルート参照。
-2. **データ鮮度/保全に関わる候補:** Seeder/Roller群、Retention job、History Emergency Bufferの起動経路。
-3. 次巡回で、各画面HTMLのフォーム・ボタン・`fetch()` を抽出し、対応API・認証・HTTP method・DB/外部APIまでマッピングする。
-4. その後、MigrationとSQL参照をテーブル/列/Index単位で双方向照合する。
 
 ## G. 棚卸しの完了条件
 
@@ -901,3 +901,4 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - 対象: `main`。取得時点: 2026-10-10。
 - 作成内容: 画面/API入口、ソースモジュール、Migration、Cloudflare設定、Workflow、スクリプト、アセット、機能領域の初期マッピング。
 - この時点で「全機能棚卸し完了」とは判定しない。上記の未完了チェックがすべて埋まった後にのみ完了とする。
+
