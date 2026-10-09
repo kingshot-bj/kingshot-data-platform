@@ -315,3 +315,14 @@
 - P0候補: SQL列不一致、Player Compare route-handler、Watchlist Cron起動、Retention/Buffer起動、PreviewのD1/R2共有、Safety Gate欠損値。P1候補: Change Events R2 readback、Seeder/Roller接続、Load Test export route、Mighty DISABLED状態、Player Visibility認可差。詳細根拠は機能台帳。
 - 残り10%: 全候補の確度・影響・未確認を最終統合し、隔離環境用テスト行列と再開手順を整える。build/実行テスト/Productionは未実施。
 - 禁止事項を継続: アプリ/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。Previewは本番D1/R2を共有しているため実行しない。D1 Free reads最優先、広範囲な`ranking_snapshots`取得なし。
+
+
+## 2026-10-10 機能信頼性監査 — 100% / 静的監査フェーズ完了
+
+- **静的監査フェーズは10/10 = 100%で完了。** これは監査・優先度統合・テスト行列・引き継ぎの完了率であり、システム完成率ではない。
+- Worker起動経路、Cron/Queue、Safety Gate、API Pool状態遷移、Retention/R2 readback、既知schema/route候補を横断確認し、機能台帳に静的根拠と優先度を記録した。
+- 実行検証はすべて未実施。確定バグ/本番障害とは断定しない。次段階は別途許可のうえ隔離環境で検証し、P0候補を先に扱う。
+- 最初に実施すべき検証順: (1) 新規隔離D1でMigration/SQL schema整合、(2) Player CompareとLoad Test export route resolution、(3) Watchlist scheduled起動経路、(4) Retention/Buffer archive-drain、(5) Change Events retention readback、(6) Safety Gate欠損metrics unit test、(7) Mighty key状態遷移、(8) Player Visibility role matrix、(9) isolated Queue retry/DLQ、(10) D1 query plan/read budget。
+- PreviewはProductionと同じD1/R2を参照するため使用禁止。Production D1/R2/Queue操作、外部API/OAuth/Discord/Google実操作、負荷テスト、デプロイは行っていない。
+- D1 Free reads最優先。広範囲な `ranking_snapshots` 取得クエリを追加・復活させない。
+- 現在の次作業は監査の続きではなく、P0候補の仕様確認と隔離テスト環境の準備。コード修正は期待動作と受入条件の確定、明示許可後に行う。
