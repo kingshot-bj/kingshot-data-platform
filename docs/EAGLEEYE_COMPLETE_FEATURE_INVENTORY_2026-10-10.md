@@ -672,6 +672,31 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Pageを見られることとAPI操作が許可されることは別。特にADMIN/OWNER差、ACTIVE/DISABLED状態、HTTP method、対象user_id/key_idの所有境界を機能ごとに確認する。
 - 読み取りに見えるGETでも、` + tick + `refresh=1` + tick + `のように外部API取得/DB保存を伴う経路がある。GET side effectは仕様上の意図を確認し、再送/ブラウザ先読み/キャッシュの影響をテストする。
 - 本棚卸しではGET refresh、Pool Health Check、MightPulse Probe、負荷テスト、R2 backfillを起動していない。
+## 2026-10-10 第14巡目 — MightPulse endpoint / collection engine
+
+| MightPulse機能 | Provider endpoint | 呼び出し/用途 | 棚卸し判定 |
+|---|---|---|---|
+| Player base/rich | `/players/:governorId` with include=base/heroes/ranks/gov_gear | `getMightPulsePlayer`。Player Profile/Search/refreshとAPI Pool経由の詳細取得 | 実装あり。include差で外部API payload量が変わる |
+| Player ranks | `/players/:governorId` with include=ranks | `getMightPulsePlayerRanks`。Hero ranking等の取得候補 | 実装あり。現在の表示経路/鮮度を個別照合 |
+| Kingdom ranking board | `/kingdoms/:kid/ranks?board=...&limit=...` | `getMightPulseKingdomRanks`。limit 1–100を検証 | 実装あり。API Pool経由でD1 current rankingへ保存 |
+| Kingdom all boards | `/kingdoms/:kid?include=boards` | `getMightPulseKingdomAllRankings`。返却dataの存在を検証 | 実装あり。大きなpayload/boardsの保存・正規化を照合 |
+| Top Alliances | `/kingdoms/:kid/ranks?board=alliance_power` | `getMightPulseTopKingdomAlliances`。上位1–100の同盟要約を抽出 | 実装あり。レスポンスのrank/aid/abbr/name/score fallbackあり |
+| Alliance roster | `/alliances/:kid/:tag?include=info,roster` | `getMightPulseAlliance` / `getMightPulseTopKingdomAllianceRosters` | 実装あり。Top roster helperは各同盟ごとに逐次API呼び出し（N+1）を行うため、起動する場合のAPI Pool消費に注意 |
+| Kingdom detail | `/kingdoms/:kid?include=...` | `getMightPulseKingdom`。Catalog detailやall boards取得に使用 | 実装あり。include/limitを絞ること |
+| Mighty Events | `/kingdoms/:kid/events` | `getMightPulseKingdomEvents` / `collectUserMightyOnly` | VIP/ADMIN/OWNERのMighty資格経路で取得 |
+| KvK / KvK Scores | `/kingdoms/:kid/kvk` / `/kingdoms/:kid/kvk/scores` | `getMightPulseKingdomKvk`、`getMightPulseKingdomKvkScores` | 実装あり。UIはKvK endpointを呼ぶ。scoresのUI接続は未確認 |
+
+### API Pool/Collection Guard
+
+- ` + tick + `data-collection-engine.js` + tick + `に ` + tick + `collectMightPulseThroughGuards` + tick + `、` + tick + `collectUserMightyOnly` + tick + `、` + tick + `collectMightyOnly` + tick + `、` + tick + `collectKingdomRanking` + tick + `、` + tick + `collectPlayerDetail` + tick + `、` + tick + `collectAllianceDetail` + tick + `があり、API Pool/Safety Gate/Service Usage/traceを伴う取得経路を提供する。
+- ` + tick + `mightpulse.js` + tick + `には共通fetch、timeout/retry/backoff、エラー分類、endpoint helperがある。endpoint helperの存在と、ローラーが定期起動されることは別判定。
+- ` + tick + `getMightPulseTopKingdomAllianceRosters` + tick + `は同盟ランキングを取得した後、各同盟のrosterを逐次取得する。上位10同盟なら少なくともランキング1回+roster最大10回となるため、API Pool枠/外部API制限を踏まえた利用上限が必要。
+- Seeder/Roller群は現行Worker起動経路未接続候補。機能を有効化する前に、R2 binding名（` + tick + `env.R2_ARCHIVE` + tick + ` vs ` + tick + `env.ARCHIVE` + tick + `）、Semaphore、retry、D1 reads/writes、途中停止後の再開をまとめて確認する。
+
+### Endpoint棚卸しの未完了項目
+
+- 各endpointの現行呼び出し元、キーPool選択（通常/Mighty/USER_CONTRIBUTED）、成功時保存先、失敗時metadata更新、retry回数、外部APIの実際の契約/レスポンスはまだ全件照合していない。
+- ` + tick + `/kingdom/mighty` + tick + `はevents/KvKを別々に取得する。Top alliance rosters helperはN+1 APIコールのため、現行ローラーを接続する前に消費モデルを定義する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
