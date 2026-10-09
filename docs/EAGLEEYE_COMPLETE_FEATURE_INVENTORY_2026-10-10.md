@@ -565,6 +565,34 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - Kingdom Detail/Compare/Alliance Detailは選択された王国/同盟のR2 keyを読む。R2 listで全履歴を走査する経路と、既知keyを直接getする経路を区別する。
 - Kingdom PortalのMightyページはイベントAPIとKvK APIを別々に呼ぶため、ページ表示だけで外部APIを複数消費する。自動ポーリングや再読み込みを含む実使用量は未計測。
 - ` + tick + `renderKingdomRankingsPage` + tick + `は認証ユーザーの保存設定/リンク済み王国を参照するが、画面自体は公開ルートとして描画される。ログイン前後の表示・データ露出はE2Eで確認する。
+## 2026-10-10 第10巡目 — Player Search/Profile/History/Changes/Export
+
+| 機能 | 入口/実装 | データ/権限 | 棚卸し判定 |
+|---|---|---|---|
+| Player Search | `/players` | ACTIVEユーザー限定。`players`から名前/領主ID/王国/同盟名をLIKE検索し、power降順で最大30件 | 実装あり。先頭/部分一致検索のIndex利用とD1 readコストは要評価 |
+| Player Profile | `/player?governor_id=...` | ACTIVEユーザー限定。`api_observations`の最新payload/playersを読み、必要時にAPI Pool経由でMightPulse取得・Materialize。role visibility設定を適用 | 実装あり。通常/refresh/rich queryで外部API取得条件が変わる |
+| Player Refresh API | `/api/player/refresh` | API Poolから明示再取得、Materialize、可視性フィルタ、Service Usage記録 | route/handlerあり。現在のProfile UIは`/player?...&refresh=1`を使い、このAPIへの直接UI呼び出しは見つからない |
+| Player API | `/api/player` GET相当 | cache observationを再利用し、必要時に外部取得。visibility設定に基づきフィールドを除外 | route/handlerあり。Profile UIはサーバー側で同様の処理を行うため、重複/外部利用の仕様を確認 |
+| Player History API | `/api/player/history` | `getPlayerHistory`経由でD1/R2履歴を取得し、ロール別フィルタを適用。limit 1–100 | 接続あり。R2を含む履歴API |
+| Player History画面 | `/player/history` | `player_snapshots`をD1から直接SELECT、最新100行を表示 | APIとは別の読出し経路。R2へ移行済み/NULL化されたpayloadは画面に反映されない可能性があるため、重要な整合候補 |
+| Player Rank History API | `/api/player/rank-history` | `getPlayerRankHistory`にD1/R2 archive bucketを渡す | APIあり。対応する専用画面/現UI呼び出しは未確認 |
+| Player Changes | `/player/changes` と `/api/player/changes` | `change_events`を対象Governor IDで取得し、role visibilityに基づき非表示項目を除外 | 画面/API両方あり。現画面はサーバー側で直接SELECT、APIは別実装 |
+| Player Optional Assets/Hero/Equipment | `renderPlayerOptionalAssets` / `renderPlayerAdvancedSections` / `getLatestPlayerHeroRankings` | profile payloadからHeroes/Ranks/Governor Gear、name history、hero rankings等を構成。ADMIN/OWNERにはsection export linkを表示 | 実装あり。データの欠損/鮮度/日本語ラベル/画像参照のE2E確認は未完了 |
+| Player Section Export | `/api/admin/player-export` | ADMIN guard、section allowlist、latest observation payload、Google Sheets export、Service Usage記録 | ADMIN限定経路あり。画面のsectionリンクとexport対象列の対応を照合する |
+
+### Player領域の未解決/重複候補
+
+- **HistoryのD1/R2経路差:** ` + tick + `/api/player/history` + tick + `は ` + tick + `getPlayerHistory()` + tick + `を使う一方、` + tick + `/player/history` + tick + `は ` + tick + `player_snapshots` + tick + `を直接読む。Retention/R2 archive後にUIとAPIの結果が異なる可能性があり、データ保全観点で優先確認。
+- ` + tick + `/player` + tick + `のProfile UIが直接外部取得/Materializeを行う一方、` + tick + `/api/player` + tick + `と` + tick + `/api/player/refresh` + tick + `も存在する。重複APIが意図した外部利用向けか、現在の画面から未使用なのかを確定する。
+- ` + tick + `/api/player/rank-history` + tick + `はルートがあるが、画面上の対応する履歴リンクは見つからない。使用者/用途を確認する。
+- ` + tick + `/player/compare` + tick + `と` + tick + `/api/player-compare` + tick + `はルートのhandler/page参照が未解決。` + tick + `player-compare.js` + tick + `のロジックだけではページ/APIの入口を満たしていない。
+- Player Searchの ` + tick + `LIKE '%q%'` + tick + `条件は通常のB-tree prefix検索にならない可能性がある。検索範囲/Index/実D1読み取りはQuery Planまたは計測で確認するが、本棚卸し中は計測クエリを本番で実行しない。
+
+### 可視性ルール
+
+- ` + tick + `player_visibility_settings` + tick + `と ` + tick + `filterPlayerForRole()` + tick + ` / ` + tick + `filterPlayerProfileForRole()` + tick + ` / ` + tick + `isChangeVisibleForRole()` + tick + `が、基本プロフィール・同盟・Hero/Rank/Equipment・Change Eventsの表示範囲を制御する。
+- visibility設定取得に失敗した場合、基本フィールドを除外するfail-closed経路がある。ADMIN/OWNER用exportはAPI側でもADMINガードを持つ。
+- UI表示だけでは認可/可視性を保証できないため、API直叩き時のフィールド除外・role別結果は別途HTTPテストする。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
