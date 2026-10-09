@@ -104,7 +104,7 @@
 
 ## 2026-10-09 継続監査追記（OAuth/session）
 
-- 直近の監査記録更新コミット：`bfd92211898f2eab13a631e637d1a77ca0e3a261`
+- 直近の監査記録更新コミット：`fb2370b6202a7d57f07cc5e57162d041c7a2786e`
 - 監査記録：[`EAGLEEYE_FEATURE_INVENTORY_2026-10-09.md`](./EAGLEEYE_FEATURE_INVENTORY_2026-10-09.md)
 - 今回、`src/index.js` のDiscord OAuth開始/callback、Cookie発行、`getAuthenticatedUser()`、Owner管理APIの一部を再確認。
 - 新規追加した要確認事項：
@@ -114,5 +114,6 @@
 - `/player/compare` 未定義レンダラーは既存記録にあるため重複追記していない。
 - セッションCookieの不正形式についても追記確認：`parseCookie()` の `decodeURIComponent()` だけでなく、`verifyPayload()` 内の署名部分 `decodeBase64Url()` も例外捕捉前に実行されるため、不正セッションCookieが共通catch経由で500になる可能性。既存の不正Cookie所見を拡張し、重複項目は作成していない。
 - 監査全体は未完了。全ルート認証・メソッド・ACTIVE状態の照合、Migration/SQL全体照合、Cron/Queue/R2の接続照合を続ける。
+- 追加監査コミット：`fb2370b6202a7d57f07cc5e57162d041c7a2786e`。管理者ランキングAPI/画面/出力の王国ID正規表現に過剰エスケープ候補を確認。通常の数字IDが拒否される可能性がある。加えて、MightPulse timestamp文字列正規化とLast active表記変換にも同種の候補。いずれも静的所見で、実リクエスト/ユニットテストは未実施。
 - アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、収集/負荷テスト起動は行っていない。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
