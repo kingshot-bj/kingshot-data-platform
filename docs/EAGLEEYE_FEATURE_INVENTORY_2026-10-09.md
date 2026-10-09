@@ -1284,3 +1284,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - ただし、timestampが存在することは確認するものの、現在時刻との差（許容時間窓）を検証していない。また、`interaction.id` を永続的に重複排除する処理もこの検証経路では見当たらない。
 - Discordからの署名済みリクエストが何らかの経路で記録・取得された場合、同じ署名済み本文の再送を防ぐ追加防御がない。チケット作成等の操作が重複する可能性は、各操作の状態チェックを含めて要検証。
 - 対応時は署名検証に加えてtimestampの許容時間窓とinteraction IDの冪等性を検討する。通常のDiscord署名検証は実装済みであり、今回、偽造リクエストや再送テストは行っていない。
+
+
+### [最優先・高] Ownerの領主所有権移管はACTIVE領主IDのUNIQUE INDEXと処理順序が衝突し、通常ケースで失敗する可能性が高い
+- `src/user-player-link.js` の `verifyAndTransferPlayerLink()` は、移管先に同じ領主IDのACTIVEリンクがない場合、先に移管先へ `status='ACTIVE'` の行をINSERTし、その後で現在所有者のリンクを `DISABLED` に更新する。
+- Migration `0024_user_player_link_unique.sql` と `0026_user_player_links_multi_account.sql` は、`status='ACTIVE'` の同一 `governor_id` を1件に制限する `uq_user_player_links_active_governor` を作成している。したがって、通常の「別ユーザーから申請者へ移管」では、旧所有者のACTIVE行が残っている状態で新しいACTIVE行をINSERTするため、UNIQUE制約違反になる可能性が非常に高い。
+- 移管先に既存ACTIVEリンクがある分岐は、同じ領主IDの別ACTIVE行を許さないUNIQUE INDEXと整合しないため、通常ケースの代替経路にはならない。
+- 対応時は所有者の検証後、旧リンクの無効化と新リンクの作成、申請のRESOLVED化を一貫した原子的処理にまとめ、失敗時に旧所有者のリンクが失われないことを保証する。D1 batch/トランザクションの実際の原子性を確認し、成功・UNIQUE競合・INSERT失敗・再実行のテストを用意する。
+- 本番の移管操作は実施していないため、実際の本番スキーマ適用状態は未確認。ただし、mainのMigrationとコードの順序から見て、実装上の重大な不整合候補として最優先に扱う。
