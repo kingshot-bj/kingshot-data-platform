@@ -1591,3 +1591,13 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - 現在の進捗は今回の機能信頼性監査の **20%**。静的コードの根拠を確認した段階で、build・isolated D1・ブラウザ・本番検証は未実施。
 - 実施していないこと: コード/Migration修正、deploy、D1 read/write、Queue操作、外部API/OAuth、負荷テスト。
 - 固定条件: D1 Free reads最優先。広範囲な `ranking_snapshots` retrievalを追加・復活させない。Previewは本番資源と分離されるまで使用しない。
+
+
+## 2026-10-10 機能信頼性監査 — 30%到達
+
+- `scripts/reconcile-d1-schema.mjs` を再確認。補修定義に `players.source_observed_at` / `api_observations.source_observed_at` の列追加が見当たらず、`kingdom_ranking_current` の定義にも `ranking_snapshot_id` はない。
+- `kingdom_watchlist_jobs` のMigration 0008初期定義には `source_first_at/source_last_at` がない。0019とschema reconcile scriptは列を含む `CREATE TABLE IF NOT EXISTS` 定義を持つが、既存テーブルに列を追加するALTERが見当たらない。旧スキーマで既に作られたDBでは列不足が残る可能性がある。
+- `src/index.js` 全体の静的検索で `handlePlayerCompareApi` / `renderPlayerComparePage` の定義・importを確認できず。ルート分岐は存在するため、当該URLで未定義参照となる可能性が高い。
+- `handleOwnerKingdomLoadTestExportApi` は `src/admin-kingdom-load-test.js` に実装され、`src/index.js` にimportもあるが、`/api/owner/kingdom-load-test/export` のルート分岐が存在しない。
+- `renderPlayerVisibilityPage()` は `requireAdmin()`、`handlePlayerVisibilityApi()` は `requireOwner()`。ADMIN画面/APIの認可差を確認。
+- 進捗 **30%**。コード修正、Migration適用、build、D1実行、ブラウザテスト、本番操作は未実施。候補は静的証拠として記録し、仕様確認と隔離テスト後に修正する。
