@@ -557,3 +557,10 @@
 - SQL/schemaの不一致候補: Admin ranking queryが`kingdom_ranking_current.ranking_snapshot_id`をSELECTするが、その列はMigration 0019の最終形にない。
 - Index定義を確認したことはquery planでの使用やD1 read削減の証明ではない。全Migration/全SQLの双方向照合は継続。
 
+## 2026-10-10 棚卸し進捗 — Preview/Production isolation risk
+
+- 台帳更新コミット: `7d436c6a83f1a54805d53211dfc2f87387450eee`
+- PreviewはProductionと同じD1 database ID/R2 bucketを指定。PreviewのSERVICE_USAGE/LOAD_TEST producerはtop-level Production consumerと同名Queueを参照する可能性がある。
+- PreviewにはSYSTEM_EVENT_QUEUE bindingがなく、`recordSystemEvent()`はQueueなし時にD1へ直接INSERTするため、Previewイベントが共有Production D1へ書かれる可能性。
+- Cloudflare側のqueue namespace/実挙動は未確認。PreviewからLoad Test/収集API/Service Usage/System Eventを起動する前に環境分離を確認する。今回の操作は一切行っていない。
+
