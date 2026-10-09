@@ -1169,3 +1169,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - Queue名がCloudflare上で本番と共有される設定であれば、previewから送信したService Usageやロードテストメッセージを本番側consumerが処理する可能性がある。さらにpreviewのD1/R2も本番と同じリソースを参照しているため、preview上のOwner操作が本番データ更新・MightPulse API消費につながり得る。
 - Cloudflare側でpreview Queue bindingが実際にどのQueueリソースへ解決されるかは未確認だが、設定ファイル上の環境分離不足は明確なリスク。preview用Queueを別名で作成してbindingするか、previewからQueue producerを外し、書き込み/外部API実行を禁止するガードが必要。
 - 実際にpreviewからQueue送信はしていない。環境分離確認が終わるまで、preview環境でOwnerロードテストやバックフィルを実行しない。
+
+
+### [確認事項] `R2_ONLY` でも `api_observations` には生payload JSONをD1保存する
+- `src/api-observations.js` の `saveApiObservation()` は、APIレスポンスの `payload_json` を含む行を `api_observations` へINSERTする。
+- `HISTORY_STORAGE_MODE=R2_ONLY` でD1への通常履歴保存を避ける対象は、`player_snapshots` / `ranking_snapshots` / `player_rank_snapshots` 等の履歴テーブルであり、`api_observations` は別の観測記録テーブルとしてD1へ保存される。Retentionでは古い観測をR2へアーカイブし、対象ごとの最新行を残す設計。
+- これは直ちに仕様違反とは言えないが、「R2_ONLYなら生API payloadを含めてD1に履歴が一切入らない」と誤解しないこと。API取得頻度に応じてD1書き込み・ストレージが増えるため、保持対象・最新行の必要性・Query Insights/実使用量を確認する。
+- 現在の本番行数、payloadサイズ、Retention実行状況は未確認。広範囲な `ranking_snapshots` 読み取りを復活させる理由にはしない。
