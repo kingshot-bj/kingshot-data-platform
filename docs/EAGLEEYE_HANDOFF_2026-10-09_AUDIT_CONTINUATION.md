@@ -201,3 +201,17 @@
 - `discord_notification_state` keeps successful dedupe keys and is not included in the inspected retention table list, so its rows may accumulate. Actual row count is unknown.
 - Reviewed migrations 0050-0053 in part. Migration 0053's role CHECK lacks VIP but later migration 0055 updates that constraint; do not treat 0053 alone as final schema.
 - Next: audit migrations 0040-0049, reconcile alliance target ID formats, and continue route auth/ACTIVE/method review. No code changes, deploys, production DB updates, queue operations, or collection/load tests. Keep D1 reads low; never restore broad `ranking_snapshots` reads.
+
+
+## 2026-10-09 継続監査追記（Migration 0040〜0049・進捗50%）
+
+- 機能台帳を更新し、GitHubから再取得して反映を検証した。監査台帳コミット：50aeafb4704b717960abb0d2f63ff3876ed9b853
+- **全体進捗目安：50%**。作業管理上の概算であり、全コード網羅率や本番動作確認率ではない。機能台帳の最新進捗表が過去の44%記録を更新する基準。
+- Migration 0040〜0049をSQL定義と関連ソースで部分照合。0040 Seeder state、0041 alliance catalog/state、0042 player roller state、0043 no-op、0044 load-test usage columns、0045 change_events lookup index、0046 collection stats/source、0047 conservative baseline backfill、0048 R2 latest pointer、0049 resumable R2 backfill stateを確認。実Migration適用履歴、本番スキーマ、Query Planは未確認。
+- 同盟通知IDの不一致候補を3ファイルで照合：alliance-catalog.jsはchange_events.target_idをkid:aidで保存、ranking-store.jsはALLIANCE target_idを原則aid/entry.id/abbrから作り、discord-notifications.jsは文字列の完全一致で比較する。aid単体の場合に通知対象漏れの可能性が高いが、実データ・送信試験は未実施。
+- R2 Catalog backfillはR2保存成功後にD1 payloadをNULL化する安全順序。ただし並行実行のロック/Compare-And-Swapが見当たらず、D1 UPDATEの変更行数を確認せずarchivedを加算しているため、同時実行時の二重保存/カウンター過大計上候補を記録した。データ消失を確認したわけではなく、並行実行試験も未実施。
+- kingdom_collection_statsの集計呼び出しは確認したindex.jsの王国ウォッチリストjob完了経路。全体収集Coverageを意図するなら、Seeder/Roller等が加算されない可能性があり仕様確認が必要。
+- runKingdomSeeder / runAllianceRoller / runPlayerRoller はindex.jsからimportされているが、確認したscheduled()とHTTP route範囲では呼び出しを確認できていない。リポジトリ全体の参照調査は未完了で、未接続と断定しない。次の優先調査。
+- 0040 SeederはOFFSET paginationのためCatalogが変化したときのskip/duplicate可能性を要確認。0047はランキングとplayers双方が存在する王国のみ初期統計に含める保守的設計。
+- 次：ローラー/Seederのリポジトリ全体の起動経路、Cron/Queue接続、残りMigrationとSQL/インデックス、HTTP routeの認証・ACTIVE・method照合を継続する。
+- コード変更・Migration変更・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Freeの読み取り量を最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
