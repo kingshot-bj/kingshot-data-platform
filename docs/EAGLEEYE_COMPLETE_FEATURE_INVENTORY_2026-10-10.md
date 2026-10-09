@@ -483,6 +483,37 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 - Mighty再確認APIでは401時に ` + tick + `recordApiPoolFailure(... disable: status===401)` + tick + ` を呼ぶが、その経路で ` + tick + `setApiPoolMightyMetadata(... NOT_MIGHTY)` + tick + ` を呼ぶ処理は見当たらない。全キー401で ` + tick + `checked===0` + tick + ` の場合にUNDETERMINEDを返す分岐もあり、資格とキー状態の整合を実テストで確認する必要がある。
 - これは既存監査で記録された静的候補の再整理。コード修正やロール変更は行わない。
 - ` + tick + `user_mighty_credentials` + tick + ` / ` + tick + `user-mighty.js` + tick + ` は現行のキー提供/資格判定経路とは別系統に見える。` + tick + `/api/me/vip` + tick + `の410応答と併せ、未使用/旧実装の扱いは仕様確認まで保留する。
+## 2026-10-10 第7巡目 — 管理者/Owner・API Pool・データ出力
+
+### API Pool管理
+
+| 機能 | 入口/権限 | 主な動作 | 棚卸し状態 |
+|---|---|---|---|
+| キー一覧/登録/Pool移動/失効 | `/admin/api-pool` と `/api/admin/api-pool/*`; handler側でADMINガード | `api_pool_keys`のキー状態、pool_type、provider、fingerprint、contributorsを表示/更新 | 接続あり。全HTTP method/二重送信/lease中操作の確認が必要 |
+| Mighty判定/ヘルス確認 | ADMIN: `/api/admin/api-pool/mighty-check`、`/health-check` | Mighty専用API検証、health request、API usage/lease/status/metadata更新 | 接続あり。401/403/429/5xx後の状態遷移を確認する |
+| Pool経由のプレイヤー/ランキングテスト | ADMIN: `/api/admin/api-pool/test-player`、`/test-ranking` | 指定Player/王国ランキングをPool経由で取得し、レスポンスと使用量を表示 | 接続あり。テスト起動は本番API使用量を消費するため、この棚卸しでは実行しない |
+| キーの物理削除 | OWNER: `/api/admin/api-pool/delete` | `api_leases`、`api_pool_usage`、`api_pool_keys`を削除するコード | OWNER限定の経路あり。履歴/監査要件と削除の不可逆性は別途確認 |
+| User-contributed key再割当 | OWNER: `/api/owner/api-pool/reassign` | USER_CONTRIBUTEDキーの登録者を変更し、旧/新ユーザーの情報を参照 | OWNER限定の経路あり。関連するロール/資格再評価と監査イベントの完全性を確認する |
+
+### ロール/ユーザー管理・負荷テスト
+
+- `/owner` と `/api/owner/users*` はユーザー一覧、ロール/状態変更、Login History、各ユーザーのWatchlist参照、Owner Audit Logを提供するコードがある。主要なOwner APIはルーターまたはハンドラー内で ` + tick + `requireOwner()` + tick + ` を呼び出す。全入口の認可を個別照合する。
+- `/owner/kingdom-load-test` と `/api/owner/kingdom-load-test*` はOwner限定の負荷テスト画面、開始/キャンセル/状態/履歴/System JSONに接続。` + tick + `LOAD_TEST_QUEUE` + tick + `のconsumerは ` + tick + `runKingdomLoadTestQueue` + tick + ` を呼ぶ。実行は外部API/D1/Cloudflare消費を伴うため未起動。
+- `/api/load-test/notice-status` はOwner pathとは別ルート。handler内の認可、情報公開範囲、呼び出し頻度を個別確認する。
+- `/api/owner/player-link-support` は本人確認/移管/却下のサポート案件をOwner向けに処理する。` + tick + `user_player_link_support_requests` + tick + `の状態遷移とプレイヤー所有権移管の整合を確認する。
+
+### Google Sheets出力
+
+- プレイヤーのセクション出力: `/api/admin/player-export`。` + tick + `requireAdmin()` + tick + `、セクション許可リスト、Player observationの取得、` + tick + `exportToGoogleSheet()` + tick + `、Service Usage記録を確認。
+- 王国ランキング出力: `/api/admin/kingdom-ranking-export`。ADMINガード、board/kid検証、事前に取得済みのranking rows、Google Sheets連携設定確認、Service Usage記録を確認。
+- Google Sheets transportはService AccountまたはApps Script Web Appを使う実装がある。認証/secret、リトライ、出力先の権限は実環境確認が必要。
+- ExportはADMIN/OWNER向け機能として扱い、BASIC/ADVANCED/VIPからの直接呼び出しがhandlerでも拒否されることをHTTPテストで確認する。
+
+### API Pool / 管理画面の未完了項目
+
+- API PoolのUIはキー追加、Mighty判定、キー削除、Pool移動/再割当、Player/Ranking testを含む。画面のボタンとAPIのHTTP method/role guardの対応は全件テスト未完了。
+- キー削除は ` + tick + `api_pool_usage` + tick + ` も消すため、監査/利用量履歴の保存ポリシーを確定してから扱う。
+- API Poolの実利用量/残枠は実環境で確認していない。Load TestやHealth Checkをこの棚卸し中に起動していない。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
