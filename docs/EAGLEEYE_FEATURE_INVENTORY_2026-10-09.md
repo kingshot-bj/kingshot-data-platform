@@ -1727,3 +1727,70 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - その後、HTTP routeごとの認証・ACTIVE・method照合と残りのMigration/SQL/index照合を継続する。
 - コード変更・Migration変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テスト起動は禁止を維持する。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+---
+
+## 2026-10-09 継続監査：Migration 0040〜0049・R2バックフィル・収集統計
+
+### Migration 0040〜0049の静的照合
+
+- **0040 kingdom_seeder_state**：src/kingdom-seeder.js のカーソル/件数更新SQLと列は対応している。Seederは ORDER BY kid LIMIT ? OFFSET ? でページングし、処理後に COUNT(*) で総Catalog件数を取得する。Catalogが処理中に増減した場合にOFFSETページングが対象を重複/飛ばす可能性があるため、固定スナップショット前提かキーセット方式にするかは要確認。実際のスキップは未確認。
+- **0041 alliance_catalog / alliance_collection_state**：src/alliance-catalog.js がCatalogの複合主キー (kid, aid) と状態行を利用する構造を確認。idx_alliance_catalog_kid_abbr は王国内の略称検索、idx_alliance_catalog_last_seen は最終確認時刻の参照候補。実クエリプランは未確認。
+- **0042 player_collection_state**：src/player-roller.js が state_key、last_kid、last_governor_id を使ってカーソルを進める。候補SQLは kingdom_ranking_current のPLAYER/personal_powerと players をLEFT JOINし、直近1時間以内に更新されたプレイヤーを除外する。実行時の候補件数・インデックス利用は未計測。
+- **0043**：スキーマ変更のないno-op Migration。0041で状態テーブルが作成済みという前提を明記しており、単独では不整合と判定しない。
+- **0044 kingdom_load_test_runs**：Cloudflare使用量のbefore/after/delta JSON列を追加。SQL上は通常の一度限りのMigrationを想定している。適用履歴・本番列の存在は未確認で、同じALTERが再実行される環境では失敗し得る点を記録。
+- **0045 change_events index**：(target_type, target_id, change_type, detected_at DESC, created_at DESC) の複合インデックスを追加。Player Watchlistの変更イベント参照に合う設計候補だが、実クエリプラン・D1消費量は未確認。
+- **0046 kingdom_collection_stats**：王国ごとの集計テーブル、最終収集時刻/sourceインデックス、および kingdom_watchlist_jobs.collection_source を追加。src/kingdom-collection-stats.js のUPSERT列はMigration定義と対応している。
+- **0047 backfill**：kingdom_ranking_current のPLAYERデータがある王国と、players に領主IDを持つ王国の両方が存在する場合だけ初期統計を作成するINNER JOIN。コメントどおり「ランキングとプレイヤーデータ双方がある王国」の保守的な初期値で、片方のみの王国は統計対象にならない。これがCoverage表示の意図と合うか確認対象。履歴データの反復収集回数を推定していない点はSQLコメントと一致。
+- **0048 r2_latest_key**：kingdom_catalog にR2参照キーとインデックスを追加。src/kingdom-catalog-store.js はR2保存成功後にD1の軽量行を更新する。
+- **0049 kingdom_catalog_r2_migration**：再開状態テーブルとカーソル用インデックスを作成。src/kingdom-catalog-r2-backfill.js はR2保存成功後に raw_json / boards_json をNULL化して参照キーを保存するため、通常の単一実行ではD1を先に消さない安全順序。処理はCronではなくOwnerの明示操作経由に接続され、APIハンドラーは requireOwner() を通る。
+- 上記はMigrationファイルと現在のソースSQLの静的照合。Cloudflare上のMigration適用履歴・本番スキーマ・Query Plan・本番の行数は確認していない。
+
+### 追加で確認した問題候補
+
+#### [中〜高・通知漏れ候補] 同盟イベントの target_id 形式不一致をランキング保存側まで照合
+
+- src/alliance-catalog.js は同盟変更イベントの change_events.target_id を kid:aid 形式で保存する。
+- src/ranking-store.js の rankingEntryTarget() はALLIANCEの kingdom_ranking_current.target_id を原則 entry.aid、なければ entry.id / entry.abbr から作る。通常の aid が存在するデータではaid単体になる。
+- src/discord-notifications.js は krc.target_id = ce.target_id と直接比較する。したがって、同盟ランキング側のIDがaid単体で保存されるケースでは、kid:aid 形式の変更イベントがwatchlist通知SQLに一致せず、通知対象から漏れる可能性が高い。
+- **確度：** 3ファイルの静的なID生成/比較の不一致を確認。実データのaid値とDiscord送信を使った再現は未実施。修正時はランキングの全ID形式と既存イベントデータを確認してから対応する。PLAYERイベントへ一般化しない。
+
+#### [中・バックフィル競合候補] 同じR2バックフィルバッチの並行実行
+
+- runKingdomCatalogR2Backfill() は状態をRUNNINGに更新するが、処理開始時に状態を条件付きで取得/確保するロックやCompare-And-Swapが見当たらない。複数のOwnerリクエストが同時に同じ r2_latest_key IS NULL 行を選択する可能性がある。
+- 各実行はR2へ保存後、UPDATE ... WHERE kid = ? AND r2_latest_key IS NULL を実行するが、UPDATEの meta.changes を確認せず archived++ している。競合時に同じ行を二重にR2保存し、片方の保存オブジェクトが参照されないまま残ったり、rows_archived が実際の更新行数より増えたりする可能性がある。
+- D1のpayloadをR2成功前に消す経路ではないため、現時点でデータ消失を確認したわけではない。並行実行試験は未実施。対策の要否はUIの二度押し防止だけでなく、サーバー側の排他/更新行数チェックを含めて検討する。
+
+#### [中・収集Coverageの対象範囲] kingdom_collection_stats の記録呼び出し
+
+- recordKingdomCollectionSuccess() は、確認した src/index.js の王国ウォッチリストjob完了経路で呼ばれ、collection_source に応じてOPERATOR/USERを集計する。
+- Seeder、Alliance Roller、Player Roller、Ranking Rollerの成功がこの統計へ直接加算される呼び出しは、今回確認したエントリーポイント範囲では見つからなかった。Coverageが「ウォッチリスト収集完了率」を意味するなら整合する可能性があるが、「EagleEye全体の王国収集カバレッジ」を意味するなら過少集計になる可能性がある。仕様の確認が必要。
+- runKingdomSeeder、runAllianceRoller、runPlayerRoller は src/index.js からimportされているが、確認した scheduled() とHTTPルーティングの範囲では実行呼び出しを確認できていない。全リポジトリの参照調査は未完了なので未接続と断定せず、起動経路の優先確認項目として残す。
+
+### 今回の作業制約・未確認
+
+- アプリコード・Migration・Workflowの変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行っていない。
+- D1の本番消費量、Query Plan、実Migration適用履歴、実データのID形式、実際のDiscord送信は未確認。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshots の広範囲読み取りを絶対に復活させない。**
+
+
+
+---
+
+## 最新監査進捗（2026-10-09・Migration 0040〜0049監査後）
+
+**全体進捗目安：50%**（作業管理上の概算。コード行数の網羅率・本番動作確認率ではない）
+
+| 監査ワークストリーム | 状態 | 進捗目安 |
+|---|---|---:|
+| 機能台帳・主ルート分類 | 主ルートの入口分類済み。個別ハンドラー照合は継続 | 70% |
+| HTTPルートの認証・ACTIVE・メソッド・入力検証 | OAuth/session、Owner API一部、watchlist、Mighty判定、Ownerバックフィル入口を部分確認。全ルート照合は未完了 | 39% |
+| Migration・SQL・制約・インデックス | 0040〜0049をソースと部分照合し、0054〜0058の一部も確認。全Migration・実DB適用履歴は未確認 | 38% |
+| Cron・Queue・R2・定期処理接続 | Queue/R2の一部とOwner明示バックフィルを確認。Seeder/Roller等の自動起動経路は未解決 | 52% |
+| テスト基盤・実行時検証 | 静的監査中心。Migration適用履歴、Query Plan、実行時/本番E2Eは未確認 | 10% |
+
+- 50%は今回のMigration 0040〜0049と関連処理の照合を反映した暫定の作業管理値。単純平均ではなく横断監査の重みを含む概算であり、残り半分の監査が完了した意味ではない。
+- 次はローラー/Seederの実際の起動経路をリポジトリ全体で確認し、全ルートの認証・ACTIVE・method照合と残りMigration/SQLを継続する。
+- コード変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テストは禁止を維持する。
+- **D1 Freeの読み取り量を最優先し、ranking_snapshots の広範囲読み取りを絶対に復活させない。**
