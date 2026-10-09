@@ -329,6 +329,58 @@
 7. Watchlist scheduler / retention / emergency buffer / load-test export などに未接続候補がある。
 8. `ranking_snapshots` の広範囲取得クエリは復活させない。既存のランキング履歴・R2移行経路は低コスト優先で照合する。
 
+
+## 2026-10-10 第1巡目 — ルート定義・Worker起動経路の照合結果
+
+### 1. ルート参照先の静的照合
+
+`src/index.js` の110件の完全一致パス入口を、同ファイル内の関数定義・変数定義・46件の相対import（131個のimport名）と照合した。
+
+- [x] 定義/importの存在を照合
+- [ ] ビルド/HTTPアクセスによる実行確認（未実施）
+
+**未解決の参照候補が2件残る。**
+
+| パス | 参照名 | 静的確認結果 | 影響候補 |
+|---|---|---|---|
+| `/api/player-compare` | `handlePlayerCompareApi` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当ハンドラーなし | API呼び出し時にReferenceErrorとなる可能性 |
+| `/player/compare` | `renderPlayerComparePage` | `index.js` 内に定義なし、importなし。`player-compare.js` にも該当画面関数なし | 画面アクセス時にReferenceErrorとなる可能性 |
+
+`player-compare.js` には `normalizeCompareGovernorIds`、`buildPlayerCompareSeries`、`extractOptionalPlayerAssets` の比較用ロジックはあるが、ルートが呼ぶAPIハンドラーとページレンダラーは確認できない。これは静的な接続欠落候補であり、ビルドや実リクエストによる再現はしていない。修正はまだ行わない。
+
+### 2. Workerイベント入口と定期処理の照合
+
+`src/index.js` の `scheduled()` と `queue()` を確認した。
+
+| 処理 | 定義/接続 | 判定 |
+|---|---|---|
+| API Pool自動復旧 `runApiPoolAutoRecovery` | `scheduled()` から呼び出し | 接続あり |
+| 王国Catalog日次更新 `runKingdomCatalogDailyRefresh` | `scheduled()` から呼び出し | 接続あり |
+| Discord変更通知 `runKingdomDiscordNotifications` | `scheduled()` から呼び出し | 接続あり |
+| System Event Queue | `queue()` から `handleSystemEventQueue` を呼び出し | 接続あり |
+| Load Test Queue | `queue()` から `runKingdomLoadTestQueue` を呼び出し | 接続あり |
+| Service Usage Queue | `queue()` から `handleServiceUsageQueue` を呼び出し | 接続あり |
+| `runKingdomSeeder` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runKingdomRankingRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runAllianceRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runPlayerRoller` | importのみ。呼び出し箇所なし | 未接続候補 |
+| `runDataRetentionJob` | 関数定義のみ。呼び出し箇所なし | 未接続候補 |
+| `drainHistoryEmergencyBuffer` | importのみ。呼び出し箇所なし | 未接続候補 |
+
+補足:
+
+- `runDataRetentionJob()` 内には `runRetentionCleanup()` と `archiveSystemEventLog()` の呼び出しがあるが、親関数 `runDataRetentionJob()` 自体が起動されていないため、これらも現在のWorkerイベント経由では到達しないように見える。
+- `drainHistoryEmergencyBuffer()` の公開ラッパーは `history-emergency-buffer.js` に存在するが、`index.js` からの呼び出しは確認できない。
+- これらが別の呼び出し元・外部トリガー・意図的な未使用コードなのかは未確定。削除/接続の判断はしない。
+- `scheduled()` は5分ごとに動く設定だが、上表にないローラーを「Cron実装済み」とは扱わない。
+
+### 3. この巡回での暫定優先順位
+
+1. **最優先の接続確認候補:** プレイヤー比較の2つのルート参照。
+2. **データ鮮度/保全に関わる候補:** Seeder/Roller群、Retention job、History Emergency Bufferの起動経路。
+3. 次巡回で、各画面HTMLのフォーム・ボタン・`fetch()` を抽出し、対応API・認証・HTTP method・DB/外部APIまでマッピングする。
+4. その後、MigrationとSQL参照をテーブル/列/Index単位で双方向照合する。
+
 ## G. 棚卸しの完了条件
 
 - [x] `src/` の全ファイル名と責務の初期分類を記録
