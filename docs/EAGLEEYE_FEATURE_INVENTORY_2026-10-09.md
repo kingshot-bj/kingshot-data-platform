@@ -1081,3 +1081,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - そのため、一度CONFIRMEDになったキーがHTTP 401で無効化されても、古いCONFIRMEDメタデータが残り、VIP資格判定に残り続ける可能性がある。再判定時の分岐によっては `evaluateVipEligibility()` による降格も実行されない。
 - 同じユーザーに別の有効なMightyキーがある場合は資格を維持してよいが、失効/認証エラーとなったキーだけを非Mighty/ERROR扱いにし、残りのキーを評価する必要がある。429・5xx・timeout等の一時障害では既存判定を安易に解除しない方針が適切。
 - 本番データでの再現・ユーザーロール変更は未実施。修正時は「CONFIRMEDキーの401」「403/MIGHTY_REQUIRED」「429/5xx一時障害」「別キーが有効」の組合せを回帰テストする。
+
+
+### [低〜中・整理候補] 旧Mighty専用資格情報モジュールが現行Workerから参照されていない
+- `src/user-mighty.js` には、専用のMighty APIキーを暗号化して `user_mighty_credentials` に保存する旧方式の登録・取得・失効処理が残っている。
+- 現行 `src/index.js` からは `src/user-mighty.js` のimportがなく、`registerUserMightyKey` / `getUserMightyCredential` / `revokeUserMightyKey` / `callUserMightyApi` の呼び出しも見当たらない。現行のMighty判定は、ユーザー提供の通常MightPulseキーをAPI Poolへ登録し、`mighty_capable` / `mighty_check_status` で判定する方式。
+- `user_mighty_credentials` テーブルと関連Migrationは存在するため、現状は「旧実装が残存している」状態と考えられる。利用中データがないと確認できるまでは削除対象にしない。
+- 機能台帳では「現行経路」「未接続/旧実装」「Migration上だけ残存」を区別し、後日、参照・データ依存・ロールバック要件を確認してから整理判断する。
