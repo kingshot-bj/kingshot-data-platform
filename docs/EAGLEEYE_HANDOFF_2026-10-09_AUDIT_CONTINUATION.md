@@ -382,3 +382,11 @@
 - `runDataRetentionJob` はcleanup/archiveを内包するがWorker scheduled/queueから呼び出される箇所が見つからない。System Event Queueが接続されていることと、Retentionが動いていることは分けて扱う。
 - 次は主要Migrationの列/制約/IndexとSQLを照合し、残る機能領域の入口・状態遷移・UI動作を埋める。
 
+## 2026-10-10 棚卸し進捗 — Kingdom Portal
+
+- 台帳更新コミット: `ec18c912420cfe4e2ab18f206e893b6760afb5e7`
+- Kingdom Catalog/Detail、ランキング/設定、同盟一覧/詳細、王国比較、順位変化、Watchlist Analytics、Mighty Events/KvKの画面→DB/APIを整理。
+- 現在順位表示は`kingdom_ranking_current`と`change_events`を利用し、広範囲`ranking_snapshots`取得を使わない構成を確認。
+- Mightyページはユーザー資格を確認したうえでevents/KvKを別々に取得するため、1画面表示で外部APIを複数消費する。実API計測はしていない。
+- 次はPlayer Profile/Search/History/Changes/Exportの画面とAPIの対応を埋める。
+
