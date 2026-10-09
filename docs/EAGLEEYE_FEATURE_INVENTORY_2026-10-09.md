@@ -1355,3 +1355,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `handleOwnerPlayerLinkSupportApi()` のREJECT処理は `WHERE request_id = ?` だけで更新し、元のstatusがOPEN/UNDER_REVIEWかを条件にしていない。移管処理側も、取得した申請のstatusが未解決であることを明示的に検証していない。
 - 連続送信や複数Ownerの同時操作で重複申請・状態の巻き戻しが起きる可能性がある。移管処理のUNIQUE制約衝突問題を直す際は、申請状態の原子的なclaim（OPEN/UNDER_REVIEWから処理中へ）と終端状態への条件付き更新も併せて設計する。
 - 本番の重複申請数は未確認。申請作成・却下・移管は今回実行していない。
+
+
+### [中] OwnerロードテストのSystem JSON生成はmetadata_jsonのLIKE検索でイベント履歴を走査する
+- `src/admin-kingdom-load-test.js` のSystem JSON生成経路は、`system_event_log` を時間範囲で絞ったうえで `metadata_json LIKE '%"runId":"…"%'` により対象Runを探し、最大5,000行を取得する。
+- `metadata_json` 内のrunId検索に対応するインデックスはなく、同じ時間範囲に一般のシステムイベントが大量にあると、Runに無関係な行も読み込んでから除外する可能性がある。上限5,000は返却行数の上限であり、必ずしも走査行数の上限ではない。
+- 既存のOwner専用・時間範囲制限は維持しつつ、ロードテストのイベントに専用run_id列を持たせる、専用イベントテーブルを用意する、またはrunIdで絞れる別の索引可能な記録方式を検討する。実際のQuery Plan/Insightsは未確認。
+- 今回、System JSON生成・本番DB読み取りは実行していない。
