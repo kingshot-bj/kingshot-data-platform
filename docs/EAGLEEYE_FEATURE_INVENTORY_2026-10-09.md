@@ -1141,7 +1141,7 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 ### [中] R2カタログバックフィルに同時実行ガードが見当たらない
 - `runKingdomCatalogR2Backfill()` は既存の `state` を読み、`RUNNING` へ更新してから、`r2_latest_key IS NULL` の候補を選んでR2へ保存する。
 - 関数冒頭で既に `RUNNING` の処理を拒否する条件や、原子的なロック取得は見当たらない。Ownerが複数タブから実行した場合、2つのWorkerが同じ未処理行を選択して同じR2アーカイブ処理を並行実行する可能性がある。
-- D1更新は `WHERE r2_latest_key IS NULL` で保護されるが、更新件数を確認せず各処理で `archived++` しているため、競合時にMigrationの `rows_archived` カウンターが実際の処理済み行数を上回る可能性がある。R2キーが同一になる場合でも、不要なR2操作は発生し得る。
+- D1更新は `WHERE r2_latest_key IS NULL` で保護されるが、更新件数を確認せず各処理で `archived++` しているため、競合時にMigrationの `rows_archived` カウンターが実際の処理済み行数を上回る可能性がある。`archiveKingdomCatalogSnapshot()` はキーに `crypto.randomUUID()` を含めるため、同じ王国/観測時刻を並行処理すると別々のR2オブジェクトが作られ、重複アーカイブが実際に発生し得る。
 - 実際の同時実行は未テスト。対応時はDBロック/条件付きclaim、D1更新の `meta.changes` に基づくカウント、並行実行テストを検討する。今回、バックフィルは起動していない。
 
 
