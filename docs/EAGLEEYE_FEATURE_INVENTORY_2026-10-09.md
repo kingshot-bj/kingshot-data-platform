@@ -1256,3 +1256,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 手動R2バックフィルの対象抽出も `r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)` なので、Discoveryで新規作成された `raw_json/boards_json` がNULLの王国は対象にならない。
 - その結果、新規発見された王国は軽量検索インデックスには載るが、詳細R2アーカイブが自動生成されず、王国詳細データの網羅性が欠ける可能性がある。Catalogを「存在を把握するための一覧」として使うだけなら問題ないが、全王国の詳細payloadをR2に保管する要件なら未接続機能。
 - 対応時はDiscoveryと詳細収集を分離したまま、低頻度・小バッチのSeederを安全に接続するか、別の明示的な収集計画を作る。API Pool/Safety GateとD1コストを考慮し、Discovery全件を一度に詳細取得しない。今回はSeeder起動・R2書き込みは行っていない。
+
+
+#### 追加確認：初回ジョブの継続もブラウザ側ポーリングに依存
+- `handleKingdomWatchlistApi()` の作成処理は `processKingdomWatchlistJob()` を1回呼んで結果を返す。画面側の `continueWatch()` が続けてAPIを呼び、ランキング/プレイヤー取得ジョブを段階的に進める実装。
+- Worker入口にQueue consumerとしての `KINGDOM_WATCHLIST_RUN` メッセージ処理はなく、Queue consumerは `KINGDOM_LOAD_TEST_RUN` / `SYSTEM_EVENT` / Service Usageを処理する。サーバー側の `runKingdomWatchlistJobs()` も未接続。
+- そのため、作成後に画面を閉じる・ブラウザ通信が止まると、途中のジョブが残っても自動継続しない可能性がある。画面を開き続けることが処理完了条件になっていないか、実際のUI操作で確認する必要がある。
+- 対応時はWorker側のQueue/Cron継続処理を明示的に接続するか、ブラウザ継続が仕様ならUI上で明確に説明する。D1コストを抑えるため、未期限の監視一覧全件走査をそのまま5分Cronへ接続しない。
