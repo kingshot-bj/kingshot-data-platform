@@ -431,3 +431,10 @@
 - 未登録の呼び出し先は現在確認できた範囲で `/api/owner/kingdom-load-test/export?run_id=` のみ。handler/UIリンクがあるがimport/route未接続。
 - 動的に構築するURLや外部利用者はこの静的抽出では網羅しない。次は列/制約/Index照合とAPI権限・methodの全件表を続ける。
 
+## 2026-10-10 棚卸し進捗 — Player Visibility API role mismatch候補
+
+- 台帳更新コミット: `fb42c105fef0c3f8dfe0c4e765ac809ccb9861f6`
+- `/admin/player-visibility` のページは`requireAdmin()`だが、`/api/admin/player-visibility`は`requireOwner()`で、`requireOwner()`はOWNER以外を403にする。
+- API内部にはADMINのOWNER-only設定を拒否する分岐もあるため、ADMIN向け画面とAPI認可の不一致候補として記録。ADMINは画面表示できてもAPI読取/保存が403となる可能性がある。
+- 修正は行わず、仕様上のADMIN/OWNER権限境界とテストケースを先に確定する。
+
