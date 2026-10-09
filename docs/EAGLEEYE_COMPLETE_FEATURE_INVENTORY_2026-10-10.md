@@ -394,6 +394,30 @@ MigrationのDDLと現行ソース内のSQL文字列を照合し、テーブル�
 1. MigrationごとにCREATE/ALTER TABLEの列定義、CHECK制約、UNIQUE条件、Indexを抽出し、利用SQLが列名・条件に一致するか確認する。
 2. `src/index.js`内の主要テーブル参照を機能ごとに割り当て、読み取り/書き込み/削除の全経路を照合する。
 3. R2移行対象（kingdom_catalog / alliance_catalog / players / ranking・player history）のD1 payload削除順序、R2 pointer、読み取りfallbackを別表にする。
+## 2026-10-10 第4巡目 — D1/R2保存・読出し経路の初期マッピング
+
+| データ領域 | 保存/移行経路 | 読出し経路 | 棚卸し判定/注意点 |
+|---|---|---|---|
+| 王国Catalog | `kingdom-catalog-store.js`がR2 snapshotを保存してから`kingdom_catalog`へR2 keyを保存。`kingdom-catalog-r2-backfill.js`もR2保存成功後にD1の`raw_json/boards_json`をNULL化 | Portal/Catalog系がD1メタデータとR2 keyを利用 | 保存→D1 payload NULL化の順序を確認。R2保存失敗時にD1を消さない条件を引き続き照合 |
+| 同盟Catalog/履歴 | `alliance-catalog.js`が`archiveAllianceHistoryBatch`を使い、同盟行のraw JSONをNULL化する経路あり | `r2-archive.js`に同盟履歴のアーカイブ処理あり | Rollerは未接続候補かつ`env.R2_ARCHIVE`を参照。設定ファイルは`ARCHIVE` bindingのため、仮に起動するとR2 bindingが未定義となる候補 |
+| プレイヤー履歴 | `player-store.js`がplayer historyをR2 archiveし、履歴APIはD1/R2の読み取り経路を持つ | `getPlayerHistory`等にR2 bucket引数を渡す | 履歴保存失敗時の緊急バッファ/復旧起動経路と合わせて照合が必要 |
+| 王国ランキング履歴 | `ranking-store.js`と`r2-archive.js`にランキング履歴のD1/R2経路あり | `getRankingHistory`がR2履歴を利用可能 | `kingdom-ranking-roller.js`は`env.R2_ARCHIVE`を参照するが、設定は`ARCHIVE`。ローラー自体もWorker起動経路未接続候補 |
+| プレイヤー収集ローラー | `player-roller.js`に履歴/収集処理あり | ローラーの呼び出し元は現行Workerイベントで未確認 | `env.R2_ARCHIVE`参照と未接続候補を併記。`ranking_snapshots`の広範囲取得を追加する変更はしない |
+| System Event Log | `archiveSystemEventLog`は`env.ARCHIVE`へ保存後にD1側の期限切れ行を処理する設計 | `system-log.js` / `system-log-export.js`でD1ログを参照 | 親ジョブ`runDataRetentionJob`の起動経路が見つからないため、定期アーカイブが実行されるか未確定 |
+| History Emergency Buffer | `history-emergency-buffer.js`にbuffer保存・R2アーカイブ・drain処理あり | 状態取得/排出関数あり | `drainHistoryEmergencyBuffer`の起動経路未確認。滞留・再試行の運用保証は未確定 |
+
+### R2 binding名の整合性候補
+
+- `wrangler.jsonc` はR2 bindingを ` + tick + `ARCHIVE` + tick + ` として定義している。
+- ` + tick + `alliance-catalog.js` + tick + `、` + tick + `kingdom-ranking-roller.js` + tick + `、` + tick + `player-roller.js` + tick + ` は ` + tick + `env.R2_ARCHIVE` + tick + ` を参照している。
+- そのため、これらのローラーを現在のWorker環境から直接起動した場合、R2 bucketが取得できない可能性がある。ローラーの起動経路自体が未接続候補であるため、これは「静的なbinding名不一致候補」として記録し、現時点では修正しない。
+- ` + tick + `index.js` + tick + ` の既存API/Portal/履歴経路の多くは ` + tick + `env.ARCHIVE` + tick + ` を使用しており、binding名の一括置換を無条件に行わない。
+
+### D1コストの固定条件
+
+- D1 Free読み取り量を最優先する。
+- ` + tick + `ranking_snapshots` + tick + ` の広範囲取得クエリを復活させない。
+- R2への移行を調査する際は、D1読み取り削減のためにR2オブジェクト全件列挙や無制限の読み込みを安易に追加しない。R2のlist/get回数とページングも確認対象にする。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
