@@ -1362,3 +1362,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `metadata_json` 内のrunId検索に対応するインデックスはなく、同じ時間範囲に一般のシステムイベントが大量にあると、Runに無関係な行も読み込んでから除外する可能性がある。上限5,000は返却行数の上限であり、必ずしも走査行数の上限ではない。
 - 既存のOwner専用・時間範囲制限は維持しつつ、ロードテストのイベントに専用run_id列を持たせる、専用イベントテーブルを用意する、またはrunIdで絞れる別の索引可能な記録方式を検討する。実際のQuery Plan/Insightsは未確認。
 - 今回、System JSON生成・本番DB読み取りは実行していない。
+
+
+### [中] StatusのActive Lease件数が期限切れリースも含めて数えている
+- `src/status-ops.js` の集計SQLは `WHERE leased_until IS NOT NULL` の全行を `active_count` とし、その中で `leased_until <= now` を `expired_active_count` として別途数える。
+- そのため `activeLeases` は実際には「リース情報が残っている行数」であり、期限切れリースを除いた有効リース数ではない。画面でActiveとExpiredを別々に表示する場合、期限切れ分を二重に数える/誤解させる可能性がある。
+- `releaseExpiredLeases()` が定期処理から未呼び出しである点と合わせ、Status表示が実稼働リース数を正確に示すよう集計定義を修正する必要がある。今回、API Poolのリース状態は変更していない。
