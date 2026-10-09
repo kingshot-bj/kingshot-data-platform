@@ -1364,3 +1364,25 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - したがって「保存APIのUI呼出し/読出しが未接続」という前の候補は取り下げる。APIルート→UI保存処理→DB保存→ランキングページのDB読出しという静的な接続は確認済み。認証状態、DBデータ、実際のブラウザ操作での成功は未確認。
 - この訂正によりMigration 0058の機能接続候補は解消扱いとし、残る確認はMigration適用/実DB schemaの整合性のみ。
 
+
+
+### 2026-10-10 継続監査：user_player_links 最終スキーマ照合と70%到達点
+
+- Migration 0022（初期形状）→0023（公式確認列・サポート申請テーブル）→0024（ACTIVE governor partial UNIQUE）→0026（複数アカウント対応の再構築）の順序で比較した。
+- Migration 0026の最終テーブル列と `src/user-player-link.js:ensureSchema()` は、link_id/user_id/governor_id/kingdom_id/account_type/status/verification_method/created_at/updated_at/verified_at/official_verified_at/official_verified_by_user_id の点で一致。account_type/status/verification_methodのCHECK制約も一致。
+- 主要3通常Index（user/status、governor/status、user/kingdom/status）と3 partial UNIQUE Index（ACTIVE governor、ACTIVE user/governor、ACTIVE MAIN per user/kingdom）は、名前・列・WHERE条件がMigration 0026と実行時DDLで一致。0022のUNIQUE(user_id)は0026で意図的に外れるため、最終形状の不一致ではない。
+- `user_player_link_support_requests` はMigration 0023で作られるが、`ensureSchema()`では作られない。サポート申請機能はMigration/reconcile経路に依存する。実D1状態と実行時動作は未確認。
+- `ensureSchema()`はモジュール内Promiseで同一isolate内の初回実行を共有し、失敗時にリセットする。cold isolateごとにDDL確認が発生する可能性はあるが、実際のD1消費量は未測定。
+- **進捗基準を10項目へ整理し、現在7/10 = 70%。** 旧記録に「6/9」と「未完了4項目」が併記され分母不整合があったため、作業単位を明示して再構成した。これは監査チェックリストの完了割合であり、実装率・本番正常率ではない。
+  1. [x] srcファイル一覧・責務の初期分類
+  2. [x] index.jsルート一覧・特殊prefix/callback/fallback
+  3. [x] Migrationファイル一覧・重複番号把握
+  4. [x] wrangler.jsonc主要binding/Cron/Queue/Preview差分
+  5. [x] Workflow・スクリプト・公開アセット一覧
+  6. [x] ルート呼出名/import/exportの静的照合（実行時未検証）
+  7. [x] user_player_linksの最終スキーマと実行時DDL/Index照合
+  8. [ ] 全Migrationとsrc全SQLの双方向照合（他テーブル/列/制約/Index）
+  9. [ ] 全画面のUI操作→API→認可→DB/R2→成功/失敗表示の棚卸し
+  10. [ ] 機能状態分類と機能別テスト/E2E確認行列
+- 既知候補：`kingdom_ranking_current.ranking_snapshot_id`の列参照差、`kingdom_watchlist_jobs.source_first_at/source_last_at`のMigration差。静的根拠は強いが、本番D1の実schema・実行時エラーは未確認。
+- GitHub mainの静的確認のみ。アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しはなし。D1 Free reads優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させていない。
