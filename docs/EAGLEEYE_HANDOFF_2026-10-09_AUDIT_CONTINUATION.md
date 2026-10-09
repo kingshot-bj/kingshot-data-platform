@@ -176,3 +176,12 @@
 - **全体進捗目安を42%から43%へ更新**、Migration/SQL/index領域を25%とした。部分照合を反映した暫定値で、全体の網羅率ではない。
 - 次は残りのMigrationと、API Pool/ユーザーMighty APIの競合・失敗時エラー経路を読み進める。
 - **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Mighty判定APIの401経路）
+
+- 監査台帳を更新し、`handleMyMightyCheckApi()` の401経路を追加。401ではキー失敗記録・無効化を行う一方、`transient=true` となり `checked` が増えないため、全キー401のときに `UNDETERMINED` を返す可能性を静的所見として記録した。実APIでの再現は未実施。
+- 現行のユーザー提供キー登録/判定は `api_pool_keys` と `user-eligibility.js` を通る。今回確認した主要10ファイルには `src/user-mighty.js` / `user_mighty_credentials` の参照がなかったため、Migration 0054の別実装が主要経路に接続していない可能性を記録。ただし未確認ファイルが残るため、リポジトリ全体で未使用とは断定していない。
+- 進捗目安を全体43%→44%、HTTP route監査35%→37%、Migration/SQL/index照合20%→27%に更新。作業管理上の概算であり、コード網羅率・本番動作確認率ではない。
+- 次は401/403/429/5xx/通信障害の分岐と資格再評価の整合性、`user-mighty.js` / `user_mighty_credentials` のリポジトリ全体参照、残りMigration/SQLを継続確認する。
+- コード変更・Migration変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テスト起動は禁止。**D1 Free読み取りを最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
