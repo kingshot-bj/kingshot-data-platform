@@ -129,3 +129,10 @@
 
 - 追加監査コミット：`1bf6d58114167e56ad55cc75e71cdee3401f3a54`。`recordSystemEvent()` のQueue利用はモジュール変数 `systemEventQueue` に依存するが、`setSystemEventQueue()` の呼び出しは `queue()` 内の1箇所のみ。HTTP `fetch()` 経路でbindingを設定する箇所が見当たらず、HTTP起点のイベントがD1直接INSERTへフォールバックする可能性を静的懸念として記録。実環境の割合・Isolate挙動は未計測。
 - 次はHTTP routeごとの認証・ACTIVE・HTTP method照合と、Migration/SQL/indexの対応確認を継続する。変更・デプロイ・本番DB更新・収集/負荷テスト起動は禁止。
+
+## 2026-10-09 継続監査追記（Service Usage R2アーカイブ）
+
+- 監査MDに `src/service-usage-archive.js` の保存方式を追加。12時間窓の同じR2オブジェクトをバッチごとに全件GET・gzip解凍・JSON parse・マージ・再gzip・PUTするため、バッチ増加に伴いR2 I/Oと処理量が増幅する構造を確認。
+- 同一キーへの読み取り→マージ→上書きに排他制御/条件付き書き込みが見当たらず、Queueバッチが並行処理された場合に片方のイベントを後続PUTが消す可能性も記録。いずれも静的所見で、実際のR2欠落・並行配送・コスト影響は未検証。
+- 次はHTTP routeの認証・ACTIVE・method一覧の穴埋め、またはMigration/SQL/index対応の確認を継続する。アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、Queue操作、収集/負荷テストは禁止。
+- **D1 Freeの読み取り量を最優先し、`ranking_snapshots` の広範囲読み取りを絶対に復活させない。**
