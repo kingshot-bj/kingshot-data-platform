@@ -1420,3 +1420,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `runKingdomWatchlistJobs()` は `kingdom_watchlists WHERE enabled = 1` を取得し、`users.status` とJOINしていない。
 - Schedulerが接続された場合、OwnerがアカウントをDISABLEDにしてもウォッチリスト自体の `enabled` が1のままなら、定期更新対象として残る可能性がある。無効化ユーザーの監視を停止する要件なら、対象抽出時に利用者のACTIVE状態を確認する必要がある。
 - 現状Scheduler自体が未接続のため、現在この経路で処理されているとは判定しない。接続時にACTIVE確認と既存無効化ユーザーの扱いを明確にする。
+
+
+#### 追加確認：System Log ExportもGETでR2への書き込みを開始する
+- `/api/admin/system-log/export` はADMIN認証付きGETとして実装されているが、ハンドラーはログを走査してR2へエクスポートファイルを作成する副作用を持つ。
+- そのため、前項のAPI Poolテスト/refreshと同様に、管理者のブラウザがログイン状態で外部リンクを開いた場合に、意図しないD1読み取り・R2書き込みを起こす可能性がある。認証があることだけではGETのCSRF/リソース消費対策にならない。
+- エクスポート開始をPOSTにし、期間/件数上限とCSRF/Origin検証を適用するか検討する。今回はエクスポートを実行していない。
