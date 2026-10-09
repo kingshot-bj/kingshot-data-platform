@@ -249,3 +249,15 @@
 - 0018のwatchlist_limits role CHECKにVIPがない点は後続0056で修復されるため、0018単体で最終スキーマ不整合とは扱わない。0011のranking_snapshots indexは既存の限定履歴クエリ向けであり、広範囲SELECT復活の根拠にしない。
 - 次：Migration 0001〜0009、Emergency BufferとAPI Pool leaseの呼び出し経路、HTTP route認証/ACTIVE/method表の最終突合せ。
 - コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+
+## 2026-10-09 継続監査追記（Migration 0001〜0009・進捗90%）
+
+- 機能台帳を更新し、raw GitHubから反映を検証した。台帳コミット：478846cf67b4f99833f5e71f0d9d4e06279184e7
+- **全体進捗目安：90%**。ユーザー希望により、100%到達までは詳細な途中報告を控える。
+- 初期Migration 0001〜0009を後続Migrationと現行ソースに部分照合。users roleの再構築、API observations、players/snapshots、change_events、API Pool legacy leases→api_pool_keys lease columns、ranking/watchlists、Retention、player visibilityの構成を確認。
+- Migration番号0008が重複する点は既知の適用順確認事項。ファイル名だけで失敗断定しない。実適用履歴・本番スキーマは未確認。
+- History Emergency BufferはR2保存成功後にD1行を削除し、失敗時はFAILED/attempts/last_errorを更新する構造を確認。scheduled()から直接排出する経路は確認できず、運用経路と再試行頻度の確認が残る。
+- api-pool.jsのreleaseExpiredLeases()と旧api_leases参照、api_pool_keys側のlease recoveryの役割を分けて最終照合する。
+- 次は全ルートとハンドラー/認証/ACTIVE/method、import済み未接続候補、Retention/Buffer/Queueの呼び出し、Migration重複番号の適用手順、台帳内の指摘の重複/訂正を最終クロスチェックする。
+- コード変更・Migration/Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は禁止を維持。**D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
