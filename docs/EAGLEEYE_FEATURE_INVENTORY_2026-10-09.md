@@ -1380,3 +1380,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/index.js` の `parseCookie()` はCookieヘッダー内の全値に `decodeURIComponent()` を適用するが、個々の値のデコード例外を捕捉していない。
 - `%` の後に不正な16進文字が続くCookie等を受け取ると、認証Cookieの検証前に例外となり、共通catch経由でHTTP 500を返す可能性がある。
 - 認証回避に直結する問題ではないが、Cookie値ごとにデコード例外を捕捉し、不正なCookieは無視して未認証扱いにするのが安全。今回、不正Cookieを使ったリクエスト試験は行っていない。
+
+
+### [最優先・高] Safety GateでCloudflare使用量が取得できない場合にNORMAL判定へ落ちる
+- `src/safety-gate.js` の `maxUsagePercent()` はCloudflareメトリクスがすべて欠落している場合に `null` を返す。
+- しかし `getSafetyState(usagePercent)` は先に `Number(usagePercent)` へ変換するため、`Number(null) === 0` となり、データ欠落時も `NORMAL` を返す。コメント上は数値でない値を `CAUTION` とする意図だが、nullではその分岐に入らない。
+- そのため、Cloudflare Analytics/APIが未設定・障害・レスポンス形式変更等で使用量を取得できないときに、Safety Gateが「使用量0%」として扱い、リソース監視が効いている前提で処理を許可する可能性がある。
+- 対応時はnull/undefined/空文字を数値変換前に明示判定し、テレメトリ欠落時はCAUTIONまたはより安全な制限状態にする。null・undefined・0・正常値・閾値超過を含む単体テストが必要。今回はSafety Gateを使う負荷処理は起動していない。
