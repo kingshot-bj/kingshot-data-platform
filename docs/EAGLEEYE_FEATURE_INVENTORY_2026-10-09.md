@@ -1143,3 +1143,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 関数冒頭で既に `RUNNING` の処理を拒否する条件や、原子的なロック取得は見当たらない。Ownerが複数タブから実行した場合、2つのWorkerが同じ未処理行を選択して同じR2アーカイブ処理を並行実行する可能性がある。
 - D1更新は `WHERE r2_latest_key IS NULL` で保護されるが、更新件数を確認せず各処理で `archived++` しているため、競合時にMigrationの `rows_archived` カウンターが実際の処理済み行数を上回る可能性がある。R2キーが同一になる場合でも、不要なR2操作は発生し得る。
 - 実際の同時実行は未テスト。対応時はDBロック/条件付きclaim、D1更新の `meta.changes` に基づくカウント、並行実行テストを検討する。今回、バックフィルは起動していない。
+
+
+### [高] Discord変更通知が1回20件を超えると通知漏れが発生する可能性
+- `scheduled()` は `runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 })` を5分Cronで実行する。
+- `src/discord-notifications.js` は過去10分の対象 `change_events` を `detected_at ASC LIMIT 20` で取得するが、SQLで既に `discord_notification_state` に登録済みのイベントを除外していない。
+- 20件以上のイベントが発生すると、次回Cronでも古い先頭20件が再取得され、重複防止claimでスキップされる一方、後続イベントがLIMITの外に押し出される。イベントが10分のlookback範囲から外れると未通知のまま消える可能性がある。
+- 対応時は「未通知イベントだけを取得するNOT EXISTS/LEFT JOIN条件」または永続カーソル＋ページングを設け、一定時間内に20件を超えるイベントを投入するテストを用意する。D1読み取り負荷も考慮してインデックスとQuery Insightsを確認する。
+- 実際に通知を大量発生させたテストは未実施。今回、通知・Discord API呼び出しは行っていない。
