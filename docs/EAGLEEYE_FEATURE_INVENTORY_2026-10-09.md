@@ -1129,3 +1129,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/index.js`、`src/ranking-store.js`、`src/retention.js`、`src/r2-archive.js`、`src/admin-kingdom-load-test.js`、`src/kingdom-portal.js`、`src/status-ops.js` を対象に、`FROM/JOIN ranking_snapshots` のSQLを再照合した。
 - `ranking-store.js` で確認できたD1履歴参照は `kid + board + target_id` で対象を絞り、`ORDER BY observed_at DESC LIMIT ?` を付ける形。履歴保存側には `INSERT INTO ranking_snapshots` があるが、広範囲な全件履歴取得は確認できなかった。
 - この確認は上記ファイルの静的コード監査であり、将来の変更や別ファイルの新規クエリまで保証するものではない。D1読み取りコストを抑えるため、広範囲取得を復活させず、追加実装時も対象キー・期間・件数を制限する。
+
+
+### [高・環境分離] Wranglerのpreview設定が本番と同じD1/R2リソースを参照
+- `wrangler.jsonc` の通常設定と `previews` 設定で、D1の `database_id` が同一（`eagleeye-db`）、R2の `bucket_name` も同一（`eagleeye-archive`）になっている。preview側は `EAGLEEYE_ENV="preview"` だが、リソース自体は分離されていない。
+- そのため、preview環境から実際に書き込みを伴うテストや管理操作を行うと、本番D1/R2へ影響する可能性がある。環境変数のラベルだけではデータ分離にならない。
+- Cloudflareのpreview設定が本番データの共有を意図した運用かは未確認。意図しない共有であれば、専用のpreview D1/R2へ分離するか、previewでは書き込み系操作を明示的に無効化する必要がある。
+- 今回、previewデプロイ・API呼び出し・DB/R2書き込みは実施していない。今後の実機テスト前に、どのWorker URL/環境がどのD1/R2 bindingへ接続されるかを先に確認する。
