@@ -570,3 +570,48 @@ src/index.js のルート棚卸しは途中まで進行。Workerイベント入�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | 王国ランキング・正規表現 | 数値判定・日時正規化・最終活動翻訳に過剰エスケープ候補を複数確認。王国ランキング管理APIと出力の通常ID入力が拒否される可能性が高い。 | 回帰テストを用意し、後続の機能別修正フェーズで最優先に検証・修正する。 |
+
+
+## フェーズA-2 — R2履歴保全・Retention実行経路の監査（2026-10-09）
+
+対象: `src/ranking-store.js`、`src/player-store.js`、`src/history-emergency-buffer.js`、`src/retention.js`、`src/index.js` の関数参照とWorkerイベント入口。
+
+### R2_ONLYの履歴保存・読み出しで確認したこと
+
+- 王国ランキングの現在値は `kingdom_ranking_current` と `kingdom_ranking_board_state` に保存される。R2_ONLYではランキング履歴1行ずつを `ranking_snapshots` に書かず、R2アーカイブを試みる。
+- R2保存に失敗した場合、王国ランキング・プレイヤー履歴・プレイヤー順位履歴は `history_emergency_buffer` へ退避する設計。容量は `history-emergency-buffer.js` 内で件数50件および総payload byte上限を使って制限され、容量超過時はエラーになる。
+- 履歴読み出しはR2を優先する。R2_ONLYでR2読み出しに失敗し、まだD1行が読み込まれていない場合は、互換用のD1履歴を限定条件で読み出すfallbackがある。これは対象ID等で絞った履歴クエリであり、広範囲な `ranking_snapshots` 読み取りを復活させるものではない。
+- R2_ONLYで緊急バッファへ退避する経路はあるが、バッファが容量上限に達した場合の挙動はエラーで停止する設計。継続運用にはR2復旧後のバッファ排出経路が必要。
+
+### 要修正候補 — R2緊急バッファの排出処理がWorkerから呼ばれていない（優先度: 高）
+
+- `src/index.js` は `drainHistoryEmergencyBuffer` をimportしているが、現行ファイル内で関数を呼び出している箇所は見当たらない。
+- `src/history-emergency-buffer.js` には `drainHistoryEmergencyBuffer()` の実装があり、PENDING/FAILED行を取得してR2へアーカイブし、成功後にD1バッファ行を削除する処理がある。
+- `scheduled()` はAPI Pool自動復旧、王国Catalog日次更新、王国Discord通知の3処理を呼び出すが、緊急バッファ排出は呼び出していない。確認した `queue()` にも排出処理はない。
+
+**影響候補:** R2障害中に緊急バッファへ退避した履歴が、R2復旧後も自動でR2へ戻らず、未処理バッファが残り続ける可能性が高い。継続的にR2保存が失敗すると50件/byte上限に達し、その後の履歴保存がエラーになる可能性がある。コード上の呼び出し経路欠落として優先度高で記録する。実際の本番バッファ件数とR2障害復旧後の動作は未確認。
+
+### 要修正候補 — Retentionジョブが定義されているが定期実行経路が見当たらない（優先度: 高）
+
+- `src/index.js` には `runDataRetentionJob(env)` が定義されており、`runRetentionCleanup()` と `archiveSystemEventLog()` を呼び出す。前者は設定済み保持期間に従って各テーブルをバッチ処理し、R2アーカイブ成功後に削除する。後者は24時間を超えたSystem Event LogをR2へ保存した後にD1から削除する設計。
+- 現行 `src/index.js` 全体で `runDataRetentionJob` の呼び出し箇所は定義以外に見当たらない。確認した `scheduled()` からも呼ばれていない。
+- したがって、少なくともWorkerの定期実行経路からは、設定可能なデータRetentionと24時間System Logアーカイブが自動実行されない可能性が高い。別の外部起動経路があるかは未確認だが、現在のルーター/Workerコードだけでは確認できない。
+- `runDiagnosticHealthChecks()` も定義されているが、現行 `src/index.js` 内で呼び出されている箇所は見当たらない。診断プローブが定期実行される前提なら、これも起動経路を確認する必要がある。
+
+### 次に確認すること
+
+1. `runDataRetentionJob`、`drainHistoryEmergencyBuffer`、`runDiagnosticHealthChecks` の想定実行頻度・実行元を仕様/設定/ログで確認する。
+2. 呼び出し経路が本当に存在しない場合は、Cronの実行時間・バッチ件数・D1 read/write予算を考慮して、別々に小バッチ化する実装計画を立てる。監査中はまだ追加しない。
+3. 緊急バッファの現在件数・bytes・FAILED件数を本番DBから確認し、未処理データが存在するかを確かめる。
+4. Retentionが実行されていない場合のD1増加量と24時間ログ要件への影響を、Query Insights/テーブル件数で評価する。
+
+### 判定
+
+- 保存/読み出しコード: 一部確認。
+- Worker内の定期起動経路: コード上、呼び出し欠落候補を確認。
+- 本番バッファ件数・Retention実行履歴: 未確認。
+- コード修正・デプロイ: なし。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | R2_ONLY履歴 / 緊急バッファ / Retention | R2_ONLYは通常履歴をD1へ書かず、失敗時は上限付き緊急バッファへ退避する設計を確認。一方、緊急バッファ排出、Retention、24時間System Logアーカイブ、診断プローブのWorker内起動経路が見当たらない。 | 本番のバッファ状態と実行ログを確認し、起動経路欠落の有無を確定する。必要な修正は監査完了後に計画する。 |
