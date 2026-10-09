@@ -272,3 +272,20 @@
 - Migration 0001〜0058の静的レビューを一巡。重複番号0008、後続Migrationでのrole CHECK拡張、request-time schema helper、Retention/Buffer/Queueの未確認経路は既知課題として維持。
 - 次工程は、監査台帳から重大度順の修正候補を整理し、安全なテスト環境で検証計画を作ること。コード修正・Migration/Workflow変更・デプロイ・本番DB更新・APIキー再登録・Queue操作・収集/負荷テストは、ユーザーから許可されるまで実施しない。
 - **D1 Free読み取りを最優先し、ranking_snapshotsの広範囲読み取りを絶対に復活させない。**
+
+## 2026-10-10 次工程引き継ぎ — 全機能棚卸し開始
+
+- 新規台帳: [EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md](./EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md)
+- 作成コミット: `488394c4cd587978528c0c4da40f0edb14a80e10`
+- 対象ブランチ: `main`
+- 初回マッピング: `src/` 51ファイル、`migrations/` 59ファイル、`src/index.js` の完全一致パス110件、Workflow 5件、BJにゃん画像17件、`wrangler.jsonc` のCron/Queue/D1/R2/Preview設定。
+- **この段階は全機能棚卸しの開始・初回マッピングであり、棚卸し完了ではない。** 各画面のボタン/フォーム/API、ルートから実装関数への接続、Migrationの列/制約/indexと現行SQLの双方向照合、各ジョブの起動経路が残っている。
+- 次の順序:
+  1. 110のパス入口＋callback/prefix/fallbackを定義/importへ照合し、未定義・未接続候補を確定する。
+  2. 全画面HTMLからフォーム・ボタン・fetch先を抽出し、画面→API→関数→DB/外部APIを対応付ける。
+  3. Migration 0001–0058のテーブル/列/制約/indexとソースSQLを双方向照合する。番号0008の重複はファイル名単位で扱う。
+  4. Cron / Queue / UIポーリング / Owner手動実行の全ジョブを追跡する。
+  5. 各機能を「実装あり・接続済み」「実装あり・未接続候補」「未実装候補」「重複」「仕様未確定」「テスト未確認」に分類する。
+- 既知の要照合点: `handlePlayerCompareApi` / `renderPlayerComparePage`、Seeder/Roller/Retention/Emergency Buffer/Watchlist Schedulerの起動経路、`R2_ARCHIVE` と実binding `ARCHIVE`、Google Drive OAuth Redirect URI、Preview/Productionのリソース共有。
+- 作業制約: アプリコード・Migration・Workflow変更、デプロイ、本番DB更新、APIキー再登録、Queue操作、収集/負荷テスト起動は行わない。D1 Free読み取り量を最優先し、`ranking_snapshots` の広範囲取得クエリは絶対に復活させない。
+
