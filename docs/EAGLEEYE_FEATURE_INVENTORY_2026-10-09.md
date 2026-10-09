@@ -1342,3 +1342,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `src/index.js` は両方をimportしているが、import行以外の参照が見当たらない。現行画面のテーマ/共通ボタンガード/ロールバーは `index.js` 内の `EAGLEEYE_THEME_SCRIPT` 等で別実装されている。
 - そのため、`eagleeye-ui.js` のTokenやBJにゃんマッピングを変更しても、現行UIには反映されない可能性が高い。将来の全面UI変更時は、このモジュールを実際のレンダラーへ接続するか、不要なら役割を整理する。
 - 今回はUIを変更していない。機能台帳では「定義済み」と「画面で使用中」を分けて扱う。
+
+
+#### 追加確認：`/player/compare` 画面の `renderPlayerComparePage` も未定義
+- `src/index.js` の `/player/compare` ルートは `renderPlayerComparePage(request, env)` を呼ぶが、main内に関数定義もimportもなく、出現箇所はルート呼び出し1箇所のみ。
+- よってAPIだけでなく、比較画面のページレンダラーも未定義関数参照となり、アクセス時に共通catchでHTTP 500となる可能性が高い。
+- `src/player-compare.js` の比較用ヘルパーはimportされているが、現行indexから利用されていない。比較機能は「画面/APIルートだけが残り、実装が未接続または削除された状態」の可能性が高く、UI全面変更前に機能要件と実装有無を確認する。
