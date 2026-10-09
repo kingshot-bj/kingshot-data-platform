@@ -328,3 +328,51 @@ EagleEye 本体の現行コードを基準に、搭載機能・実装箇所・�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | `wrangler.jsonc` / Workerイベント | Cron・本番Queue構成・DLQ・D1 migration workflowを確認。PreviewのSystem Event producer欠落候補とGoogle Drive callback設定を要確認として記録。実際のCloudflare側稼働は未確認。 | Preview設定の意図を確認対象に残し、残りのAPI認可監査と全体マッピングを続ける。 |
+
+
+### フェーズA-1 続き — OAuth / Support / Gateway / API Pool確認（2026-10-09）
+
+#### OAuth callback の設定不整合候補（優先度: 高）
+
+コードと `wrangler.jsonc` を突き合わせ、次の経路を確認した。
+
+- Discord OAuth開始・callback: `/api/auth/discord` → `/api/auth/callback` → `handleDiscordCallback()`
+- Google Drive OAuth開始: `/api/admin/google-drive/authorize` → `getGoogleDriveOAuthAuthorizationUrl()`
+- Google Drive callback handler: `/api/admin/google-drive/callback` → `handleGoogleDriveOAuthCallback()`
+- ただし `wrangler.jsonc` の `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` は `/api/auth/callback` を指している。Google Drive OAuth URL生成とtoken交換の両方がこの設定値を使用する。
+
+**判定:** 設定上、Google OAuthの応答がDiscord callbackのルートへ到達する不整合候補を確認。Google callback handlerのルートとRedirect URIが一致していないため、Google Drive再認証フローが失敗する可能性が高い。実際のOAuth往復は未実行なので、本番障害の再現確認は未完了。設定修正・Google Cloud側の許可Redirect URI更新・本番での再認証は別作業として扱い、この監査中は変更しない。
+
+#### Discord Support
+
+- `/api/discord/interactions` はPOSTのみを受け付け、`DISCORD_PUBLIC_KEY` が未設定なら503、Ed25519署名検証に失敗すれば401で拒否する。
+- Interactionは署名検証後にJSON解析し、Ping応答を処理する。close/reopenコマンド以外は拒否応答となる。
+- close/reopenは設定済みSupport Guild内であること、Supportロールを持つこと、チャンネルID形式を満たすことを確認した上で処理する。チケットのGuild、カテゴリ、topic内チケットID、status、対象ユーザーの権限設定も内部関数で検証する。
+- `/api/support` と `/api/support/context` は、ルーターで認証ユーザーを取得し、Supportモジュール側でもACTIVE状態を要求する。問い合わせ入力はカテゴリ経路、件名（120文字まで）、本文（4000文字まで）、各詳細値（1000文字まで）を検証する。
+- 実際のDiscord署名付きリクエストやチケット作成・close/reopenのE2Eは未実行。
+
+#### Gateway
+
+- `/api/gateway/v1/status` と `/api/gateway/v1/diagnostics` はGateway専用Bearer tokenを要求し、token未設定は503、不一致は401となる。
+- diagnosticsはGETのみで、取得件数を1〜100に制限。ログ・診断メッセージ内のtoken、secret、API key等をマスクする処理がある。
+- Gatewayのfull log exportはストリーミングでページングし、最大500行単位で取得する実装を確認。Gateway配下の未知パスは404。
+- 認証済みの実通信テスト、ストリーミング出力のJSON完全性、秘匿情報マスキングのテストは未実施。
+
+#### API Pool 管理API
+
+- `handleApiPoolAdd` はADMIN/OWNERを要求し、APIキー本体は下位関数で暗号化保存される。下位関数 `addApiPoolKey` は空キーと許可外pool typeを拒否する。
+- `handleApiPoolMove` はADMIN/OWNERを要求し、pool typeを `SYSTEM_GENERAL` / `SYSTEM_WATCHLIST` / `USER_CONTRIBUTED` に制限し、存在しないキーとREVOKEDキーを拒否する。
+- ただし `handleApiPoolMove` は更新前に現在の `leased_until` / lease情報を参照せず、Pool種別を更新している。リース中に移動されたキーが進行中の要求・成功/失敗記録・Pool統計に与える影響を調べる必要がある。即時の不具合とは断定しない。
+- Add/Moveのハンドラーには明示的なHTTPメソッド制限が見当たらず、JSON/form bodyを解析した後に処理する経路がある。意図した仕様か、POST以外のリクエストを受け付けない設計に統一するか要確認。
+- API Poolキー一覧では暗号化キー本体を除外し、fingerprintは短縮、prefixのみ表示する。ただしlast_error_message等は返却されるため、APIエラー文面に秘密情報が含まれないことを継続監査する。
+
+### フェーズA-1 の追加リスク・次のアクション
+
+1. **高優先度:** Google Drive OAuth Redirect URIと実際のcallback routeの不一致候補を修正前に再確認する。設定ファイルだけでなくGoogle Cloud OAuthクライアントの許可URIも確認する。
+2. Preview設定では `SYSTEM_EVENT_QUEUE` producerが定義されていない一方、Workerコードはこのbindingを使用する。Previewでのイベント記録要件を確定する。
+3. 全APIの認可監査はまだ網羅完了していない。プレイヤー・ランキング・ウォッチリスト・エクスポート・負荷テストの各handlerを引き続き確認する。
+4. コード監査だけでは本番動作の確定はできない。OAuth、Discord interaction、Queue配送、Gateway exportはテスト環境で再現可能なテストケースを用意する。
+
+| 日付 | 対象 | 結果 | 次のアクション |
+|---|---|---|---|
+| 2026-10-09 | OAuth / Support / Gateway / API Pool | Discord OAuth state、Support署名とロール制限、Gateway Bearer token、API Pool pool type検証を確認。Google Drive callback URI不一致候補、PreviewのSystem Event producer欠落候補、API Pool Moveのリース整合性とHTTPメソッド制限を要確認として追加。 | 高優先度のGoogle OAuth経路を設定修正前に確認し、残るプレイヤー・ランキング・ウォッチリストAPIの認可監査を継続する。 |
