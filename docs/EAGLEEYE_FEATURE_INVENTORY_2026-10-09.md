@@ -1248,3 +1248,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `runKingdomWatchlistJobs()` は `WHERE enabled = 1 ORDER BY created_at ASC` で全有効ウォッチリストを毎回取得し、SQL側で期限到来分だけに絞っていない。期限判定は取得後のJavaScriptループで行う。
 - そのため、5分Cronへそのまま接続すると、2,102件の有効ウォッチリストがあるケースでは一覧だけで最大約605,376行/日（2,102 × 288回）の結果読み取りが発生し得る。これは概算であり、現在の実際の読み取り量ではない。現行では関数自体が未接続のため、この計算を現在の消費量として扱わない。
 - Cron接続前に、期限到来分を効率的に抽出できるクエリ/インデックス、1回あたりの対象上限、ページング、実行頻度を設計する。D1 Free読み取りを最優先し、全件SELECTを5分ごとに追加する形では接続しない。
+
+
+### [高・データ完全性] 新規発見王国はCatalogの軽量メタデータだけ登録され、詳細R2アーカイブへ進まない可能性
+- 現行Cronの `runKingdomCatalogDailyRefresh()` は `runKingdomCatalogDiscovery()` を呼び、`/kingdoms` の一覧から `kid/name/status/region/language` 等をD1の `kingdom_catalog` に登録・更新する。この経路では `raw_json` と `boards_json` はNULLで保存され、R2スナップショットは作られない。
+- 詳細payloadを `saveKingdomCatalogObservation()` 経由でR2保存する `runKingdomSeeder()` はWorker入口から呼ばれていないように見える。
+- 手動R2バックフィルの対象抽出も `r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)` なので、Discoveryで新規作成された `raw_json/boards_json` がNULLの王国は対象にならない。
+- その結果、新規発見された王国は軽量検索インデックスには載るが、詳細R2アーカイブが自動生成されず、王国詳細データの網羅性が欠ける可能性がある。Catalogを「存在を把握するための一覧」として使うだけなら問題ないが、全王国の詳細payloadをR2に保管する要件なら未接続機能。
+- 対応時はDiscoveryと詳細収集を分離したまま、低頻度・小バッチのSeederを安全に接続するか、別の明示的な収集計画を作る。API Pool/Safety GateとD1コストを考慮し、Discovery全件を一度に詳細取得しない。今回はSeeder起動・R2書き込みは行っていない。
