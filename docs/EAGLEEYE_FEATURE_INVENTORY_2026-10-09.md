@@ -1222,3 +1222,9 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `archiveBucket` が未設定の場合、R2アーカイブ分岐を通らず、通常のDELETE分岐で保持期間を超えた `api_observations`、スナップショット、`change_events`、`owner_audit_log` 等を削除する。R2_ONLY運用の期待（アーカイブ成功後に削除）と不一致。
 - 現在 `runRetentionCleanup()` は `runDataRetentionJob()` 内でのみ呼ばれているように見え、その親ジョブ自体もWorker入口から呼び出されていないため、現時点で定期実行中のデータ損失が起きているとは断定しない。ただし将来Cron/手動実行経路を接続した際の重大なブロッカー。
 - 修正時はR2 bindingがない/未設定なら即時エラーで停止し、アーカイブ対象テーブルをアーカイブせず削除する分岐を許可しない。R2保存成功→D1削除の順序をテストする。今回はRetentionを実行していない。
+
+
+### [中・潜在重複アーカイブ] 緊急履歴バッファ排出処理に原子的なclaimがない
+- `drainHistoryEmergencyBufferInternal()` は `PENDING/FAILED` 行をSELECTした後、各行を `WHERE buffer_id = ?` だけで `DRAINING` に更新してアーカイブを開始する。更新条件に元のstatusを含めず、UPDATEの変更件数も確認していない。
+- 複数の排出処理が同時起動した場合、同じ行を双方が選択してR2へ重複保存する可能性がある。R2アーカイブキーにUUIDが含まれる履歴形式では、重複オブジェクトが増えるおそれもある。
+- 排出関数自体が現在のWorker入口から呼ばれていないように見えるため、現時点で同時実行中とは判定しない。Cron等へ接続する前に、`UPDATE ... WHERE status IN ('PENDING','FAILED')` と変更件数によるclaim、または一意な処理ロックを検討する。
