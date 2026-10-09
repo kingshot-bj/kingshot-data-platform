@@ -228,3 +228,27 @@
 - 次に再開する場合は、台帳の「パッケージ20 優先順（テスト計画）」に従い、P0/B1から隔離環境の確認計画を作る。まずは既知のSQL列不一致候補とroute/importを確認するが、コード変更は仕様確認と明示許可後に行う。
 - 最新の機能台帳: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md
 - 本引き継ぎ: https://github.com/kingshot-bj/kingshot-data-platform/blob/main/docs/EAGLEEYE_HANDOFF_2026-10-10_AUDIT_CONTINUATION.md
+
+
+## 2026-10-10 再開監査の進捗 — 20%
+
+今回の優先方針はUI刷新ではなく、機能の接続・DB整合性・権限・データ保全の確認。
+
+### 20%時点で確認した静的候補
+- `api_observations.source_observed_at`: Migration 0002初期定義に列なし、INSERTで使用。
+- `players.source_observed_at`: Migration 0004初期定義に列なし、INSERT/UPSERTで使用。
+- `kingdom_ranking_current.ranking_snapshot_id`: Migration 0019定義に列なし、`src/index.js`でSELECT。
+- Player Compare: route branchが存在する一方、handler/render関数がimport/定義されていないように見える（helpersのみimport）。実行時の未定義参照候補。
+- Owner Load Test export: handler importとUI参照はあるが、対応するrouter branchが見当たらない。
+- `kingdom_watchlist_jobs.source_first_at/source_last_at`: 0008初期定義にはなく、0019のCREATE TABLE IF NOT EXISTSだけでは既存テーブルに列追加されない。
+
+### 隔離環境に関する重要な確認
+`wrangler.jsonc` のPreview設定がProductionと同じD1 database IDおよびR2 bucketを参照する。Previewからテストを実行せず、別のD1/R2/Queueを使う隔離環境を確立するまで実行テストは保留。
+
+### 次の作業
+1. 既知のSQL列候補を全Migration・schema reconciliation・現行SQLで再照合し、追加ALTERや起動時ensureSchemaによる補完がないか確定する。
+2. Player CompareとLoad Test exportの実際のhandler定義・route接続を確定する。
+3. Player Visibilityの画面/API権限差、Retention後のR2読戻し、change events、Safety Gate null metricsを静的追跡する。
+4. 変更は仕様・影響範囲を固めてから。現時点ではアプリコード、Migration、Workflow変更なし。
+
+進捗はこの監査フェーズ内の20%であり、システム完成率ではない。build/route smoke/isolated D1/Browser E2E/Preview/Production testsはいずれも未実施。D1 Free readsを最優先し、広範囲な `ranking_snapshots` retrievalを復活させない。
