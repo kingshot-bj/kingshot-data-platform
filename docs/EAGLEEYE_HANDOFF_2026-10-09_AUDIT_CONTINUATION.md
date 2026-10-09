@@ -356,3 +356,12 @@
 - 次はMy Player/ユーザー連携/ADVANCED・VIP/Mighty資格の登録・状態遷移をAPI→DB→API Poolで照合する。
 - 全体棚卸しは未完了。動作テスト/本番計測はしていない。
 
+## 2026-10-10 棚卸し進捗 — My Player / ADVANCED / VIP / Mighty
+
+- 台帳更新コミット: `f6ef15d48c76f182a746dabfa7f7a0fc3f88d5f7`
+- `/my-player`、`/api/me/player` GET/POST/DELETE、`/api/me/advanced` GET/POST、`/api/me/vip` GET、`/api/me/vip/mighty-check` POSTをAPI→DB/Poolの経路として整理。
+- 領主ID登録は、players未登録ならAPI Pool経由でMightPulse取得・保存/Materialize後にuser_player_linksへ登録する。キー提供時は通常APIの検証後にMighty専用APIで自動判定する。
+- 追加の状態整合候補: `getVipEligibility()`はキーの`REVOKED`を除外するが`DISABLED`は除外条件にしていない。401によるキー無効化時にMighty metadataがCONFIRMEDのまま残る可能性がある。静的候補であり修正/実行テストは未実施。
+- `user_mighty_credentials` / `user-mighty.js`は現行API Poolベースの資格判定とは別系統に見える。削除判断は保留。
+- 次は管理者/Owner、API Pool、Diagnostics/System Log、Google連携/Discord Supportの機能接続を整理し、残るMigration列/Index照合へ戻る。
+
