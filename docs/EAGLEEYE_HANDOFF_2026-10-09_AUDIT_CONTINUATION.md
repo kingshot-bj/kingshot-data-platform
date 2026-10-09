@@ -313,3 +313,16 @@
 - 次はDB層の棚卸し: Migration 0001–0058をテーブル作成/変更単位で整理し、ソース内のSQL参照、実行経路、R2移行後のデータ保存先と双方向照合する。
 - 現時点で機能棚卸しは未完了。画面ごとのイベント→API→ハンドラー→SQL対応と、各Migrationの列/制約/Index確認が残る。
 
+## 2026-10-10 棚卸し進捗 — Migration/SQLテーブル層
+
+- 台帳更新コミット: `ea3a682e290198bb1dde1d526869d8f1d388d8f7`
+- 主要DDLと現行SQLを照合し、次の接続候補を記録:
+  - `api_leases`: Migration 0017で旧方式から`api_pool_keys` lease列へ移行。現行ソースではAPIキー削除時のDELETE以外に通常lease利用を確認できず、旧テーブル残存候補。
+  - `collection_semaphore`: Migration 0034のカウンター方式。現行`collection-semaphore.js`は0036の`collection_semaphore_slots`を使用。旧方式の残存候補。
+  - `user_mighty_credentials`: Migration 0054/0056と`user-mighty.js`に実装があるが、`index.js`からimportされず、現行資格判定は`api_pool_keys`ベース。別系統/未接続候補。
+  - Seeder/Roller 4種、Retention親ジョブ、History Emergency Buffer drainは実装があるが、Worker起動経路未接続候補。
+  - Migration 0043はコメント上、0041で定義済みのため意図的なno-op。未適用漏れと断定しない。
+- ここまででMigrationの列/制約/Indexの完全照合はまだ未完了。本番の実適用履歴・実スキーマ・Query Planは未確認。
+- 次はMigrationの列定義/制約/Indexと実SQLをテーブル単位で双方向照合し、R2移行対象の保存/読出し経路を整理する。
+- 変更禁止事項とD1制約は継続。コード修正や本番操作は行わない。
+
