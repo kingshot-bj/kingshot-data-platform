@@ -365,3 +365,11 @@
 - `user_mighty_credentials` / `user-mighty.js`は現行API Poolベースの資格判定とは別系統に見える。削除判断は保留。
 - 次は管理者/Owner、API Pool、Diagnostics/System Log、Google連携/Discord Supportの機能接続を整理し、残るMigration列/Index照合へ戻る。
 
+## 2026-10-10 棚卸し進捗 — 管理者/Owner/API Pool/Export
+
+- 台帳更新コミット: `82520567538e3864664e8e53361b6447f9ec28c1`
+- API Poolの一覧/登録/Pool移動/失効/Mighty判定/ヘルス確認/Player・Ranking test/Owner物理削除/Owner再割当を、入口・権限・DB動作で整理。
+- Owner管理、Owner負荷テスト、Player Link Support、Google SheetsのPlayer/Kingdom exportも機能台帳に追加。
+- これらはコード上の接続確認であり、HTTP/E2E・role bypass・本番API消費テストは未実施。負荷テストやヘルス確認を棚卸しのために起動しない。
+- 次はSystem Status/Diagnostics/System Log/Retention、Google Drive OAuth、Discord Supportを接続整理し、Migrationの列/Index双方向照合に戻る。
+
