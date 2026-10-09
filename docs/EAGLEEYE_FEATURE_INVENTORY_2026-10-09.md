@@ -1458,3 +1458,10 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - 現行mainのルートには `package.json`、明示的なテストディレクトリ、一般的な単体/E2Eテスト実行workflowが見当たらない。確認できたGitHub ActionsはD1 Migration適用・スキーマ整合、ヒーロー素材収集、Status Comparator Pages公開が中心。
 - そのため、領主所有権移管、API Pool lease競合、R2_ONLY保存/緊急バッファ、Safety Gate、ランキング差分、ロール権限などの回帰を、コード変更のたびに自動で検出する仕組みが弱い可能性がある。これは「テストがどこにも存在しない」と断定するものではなく、今回確認したリポジトリ構成で標準的な自動テスト入口を見つけられなかったという所見。
 - 修正フェーズに入る前に、Workers/D1のmockまたはローカルDBを使った小さなテストランナーを用意し、重大度の高い不変条件から回帰テスト化する。特にD1のUNIQUE制約とR2失敗時の分岐は、本番データを変更せず再現できるテストを優先する。
+
+
+### [中・診断の誤判定] Gatewayの診断APIは全サービスの最新状態を「全体で直近100件」の中から判定する
+- `src/gateway-api.js` の `getReadOnlyDiagnostics(db, { recentLimit = 30 })` は、`diagnostic_events` をサービス別に絞らず `ORDER BY created_at DESC LIMIT ?` で最大100件取得し、その結果から `latestByService` を作る。
+- そのため、一部サービスのイベントが他サービスの高頻度イベントに押し出されると、そのサービスに新しいイベントが存在していても `UNKNOWN` と判定される。特に `/api/gateway/v1/status` は常に `recentLimit: 100` なので、全サービスの最新状態を網羅できる保証がない。
+- 全サービスの最新状態を正確に出すなら、サービス別最新イベントを取得するクエリ（例：`ROW_NUMBER() OVER (PARTITION BY service ORDER BY created_at DESC)` を用いたサービス単位の最新1件）と、直近イベント一覧用クエリを分離する。D1読み取り量と実行計画を確認し、必要なインデックスを検討する。
+- 本番のイベント分布は未確認で、今回Gateway APIを実行していない。静的コード上の判定ロジックに基づく指摘。
