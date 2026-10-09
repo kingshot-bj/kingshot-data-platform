@@ -964,3 +964,31 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 4. 未解決候補を「静的に未接続」「定義未発見」「実行時未確認」に分け、根拠のないバグ断定をしない。
 
 この進捗率は**コードの静的棚卸し**の進み具合であり、本番機能の正常率ではない。コード変更、Migration適用、デプロイ、Queue操作、外部API/負荷テストは引き続き行っていない。
+## 2026-10-10 進捗記録 — 第3回・画面操作と認可の初回突合
+
+### 今回確認したUI→APIの接続
+
+- 王国Watchlist画面: 一覧/再読込、今すぐ更新/中断、ランキング表示、有効/停止、削除の操作を生成。主要APIとして `/api/kingdom-watchlist` と関連actionを呼ぶ。更新中は4秒間隔で状態を再取得する経路があるため、polling頻度と終了条件を別途照合する。
+- Player Watchlist画面: 追加/解除と比較対象選択を生成し、`/api/player-watchlist` と `?governor_id=` を呼ぶ。比較選択は最大4人という画面表示を確認。比較先のページ/APIルートは別途未解決候補が残る。
+- `/my-player`: 領主ID追加/解除、MightPulse APIキー登録、Mighty判定のUIと、`/api/me/player`、`/api/me/mightpulse-key`、`/api/me/vip/mighty-check` の呼出しを確認。成功/失敗表示とボタンdisable処理はあるが、実ブラウザでの競合/二重送信は未確認。
+- `/admin/player-visibility`: role別公開設定とWatchlist上限の更新が `/api/admin/player-visibility` POSTへ接続。handler/routeの認可を別途確認対象に維持。
+- `/admin/api-pool`: キー追加、Mighty判定、削除、Owner専用提供者再割当のUIを確認。API Poolのlist/add/move/delete/reassign handlerにはそれぞれADMIN/OWNERガードが存在する静的コードを確認。HTTPで拒否結果を実証したわけではない。
+- `/status` の一部に監視Profile切替・R2オブジェクト確認のUIがあるが、API側 `handleMonitoringProfileApi` と `handleR2ArchiveObjectsApi` はACTIVEかつADMIN/OWNERをhandler内で要求する。UIが表示されることとAPIが操作を許可することを区別できている。
+
+### ルート接続/認可の追加所見
+
+- `handleOwnerKingdomLoadTestExportApi` はimportされ、`src/admin-kingdom-load-test.js` 内で定義される。画面側のCSV export URLも見つかる一方、Worker routerに該当pathの分岐がない。**CSV exportは未接続候補**。handlerにOWNERガードがあるかも未確認のため、ルート追加や実行はせず、先にhandler全体の認可/HTTP method/出力を照合する。
+- `/api/admin/monitoring-profile` と `/api/admin/r2-archive-objects` はrouter行だけを見ると共通guardが見えないが、各handler冒頭にACTIVE + ADMIN/OWNERチェックがあるため、現時点では認可漏れと断定しない。
+- `/api/admin/api-pool/keys`、`/api/admin/api-pool/add` は `requireAdmin()`、`/api/admin/api-pool/delete` と `/api/owner/api-pool/reassign` は `requireOwner()` をhandler内で呼ぶ。権限境界の静的確認を記録。未ログイン/一般ロールの実HTTP試験は未実施。
+
+### この巡回の限界
+
+- HTML文字列を組み立てるコードが多く、単純な `<button>` / `fetch()` 検索だけでは動的生成・イベント委譲・フォーム遷移を完全には数えられない。今回の項目は代表的な画面の初回突合であり、全ボタンの監査完了ではない。
+- 現時点の全体進捗は前回記録の**23%**を維持。今回の作業は発見/分類の拡張で、画面全操作のAPI/権限/DBまでの対応表は未完成のため、完了率を上げる段階には達していない。
+
+### 次の対象
+
+1. Owner Load Test画面の各操作を、route/handler/OWNER guard/Queue/System JSON/履歴/CSV exportまで突合する。
+2. Player Profile/History/Changes/Watchlistを画面→API→D1/R2→Retentionで追跡し、画面とAPIの重複・アーカイブ後の読み出し差を確定する。
+3. API Pool全操作についてHTTP method、handler guard、DB副作用、外部API消費、二重押し防止を一覧化する。
+4. その後、Migrationと全SQLの列/Index単位照合へ進む。
