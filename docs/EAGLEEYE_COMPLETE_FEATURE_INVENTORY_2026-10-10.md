@@ -868,6 +868,27 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Migration 0019の `kingdom_ranking_current`には `ranking_snapshot_id`列がなく、リポジトリ内のMigrationにも同テーブルへの追加定義は見つからない。`ranking_snapshot_id`は `ranking_snapshots`側の主キー名。
 - このため、`/api/admin/kingdom-rankings`のrefresh=1/通常読出しがこの関数を通ると、SQLのno-such-columnエラーになる可能性が高い。静的なSQL/schema不一致候補として優先度高で記録する。実D1へのクエリ実行や修正は未実施。
 - 次のSQL列照合では、このような「列が別テーブルに属している」ケースを中心に、各SELECT/INSERT/UPDATEとMigrationの最終スキーマを確認する。
+## 2026-10-10 第20巡目 — GitHub Actions / Schema Reconciliation / Asset Workflows
+
+| Workflow/Script | Trigger/Guard | 処理 | 運用上の判定 |
+|---|---|---|---|
+| `eagleeye-d1-apply-pending-migrations.yml` | 手動`workflow_dispatch`。Cloudflare API Tokenをsecretから利用 | Remote D1の列/表と`d1_migrations`を先に検査し、drift条件に合わない場合にpending migrationをapply。適用後にmigration history/slot countを検証 | Production D1を書き換えるワークフロー。今回実行していない |
+| `eagleeye-d1-schema-reconciliation.yml` | 手動`workflow_dispatch`。入力値に`RECONCILE_PRODUCTION`を要求 | Time Travel情報を記録し、`scripts/reconcile-d1-schema.mjs --apply`を実行。主要テーブル/Index/collection semaphore slots等を補修後に検証 | Production schemaを変更し得る。今回は実行していない |
+| `eagleeye-d1-load-test-schema-recovery.yml` | 手動だがdeprecated | Production schemaとmigration historyが乖離し得るため、workflow自身がエラー終了してreconciliationを案内 | 無効化済みの旧経路として維持 |
+| `hero-gear-assets.yml` | 手動workflow_dispatch。source/inspect-only入力あり | `scripts/collect-hero-gear-assets.mjs`を実行してヒーロー装備アセットを収集/検査 | 実行するとGitHub内のasset更新を伴う可能性。未実行 |
+| `status-comparator-pages.yml` | 対象ファイルへのpushと手動dispatch | Status JSON comparatorをGitHub Pagesへ公開 | pushで自動deployされ得る。今回workflowを起動していない |
+
+### Schema reconciliation scriptの範囲
+
+- ` + tick + `scripts/reconcile-d1-schema.mjs` + tick + `はverify-onlyと ` + tick + `--apply` + tick + `を分け、` + tick + `write()` + tick + `はapply時のみSQLを実行する設計。API Pool lease列/Index、watchlist limits、diagnostic/system log、watchlist jobs/locks、current ranking tables、user_player_links/support、load-test schema、Semaphore slots、Catalog/Roller state、Alliance/Player stateなどを対象にする。
+- このスクリプトはMigrationを再実行するだけでなく、既存データの変換/不足schemaの補修を含む。Productionへ適用する場合は入力確認、Time Travel bookmark、schema/migration history差分、実行後検証を一体で扱う。
+- ` + tick + `scripts/reconcile-0053-production-drift.mjs` + tick + `もRemote D1を対象にするため、実行前にread-only/modifyの両方の挙動を確認する。今回どのスクリプトも実行していない。
+- Workflow一覧を確認したことは、ProductionのMigration適用済み状態を確認したことを意味しない。実際の ` + tick + `d1_migrations` + tick + ` とスキーマは未取得。
+
+### Secrets/権限の確認項目
+
+- GitHub Actionsの ` + tick + `CLOUDFLARE_API_TOKEN` + tick + `、` + tick + `CLOUDFLARE_ACCOUNT_ID` + tick + `はGitHub Secrets参照。secret値自体は取得/表示していない。
+- Production D1変更Workflowのdispatch権限、Environment protection、required reviewers、Time Travel復旧手順を確認する。YAML上の文字列入力確認だけで承認フロー全体の安全性を断定しない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
 以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
