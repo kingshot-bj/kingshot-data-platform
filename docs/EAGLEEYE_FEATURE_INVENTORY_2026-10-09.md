@@ -723,3 +723,66 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 | 日付 | 対象 | 結果 | 次のアクション |
 |---|---|---|---|
 | 2026-10-09 | GETで起動されるLoad Test/refresh | Load Test開始、ランキング更新、プレイヤー更新がGET経路で実行されうることを確認。 | UIと連動してメソッド・CSRF対策を設計し、別工程で修正する。 |
+
+
+## 監査追記：運用ジョブ・ロードテスト・外部連携・Migration（2026-10-09 続き）
+
+### 監査対象
+- `src/index.js`（全9,024行を取得し、import・ルーティング・scheduled/queue実行経路を照合）
+- `src/admin-kingdom-load-test.js`
+- `src/kingdom-catalog-r2-backfill.js` / `src/kingdom-catalog-r2-backfill-page.js` / `src/kingdom-catalog-r2-backfill-verify.js`
+- `src/api-pool.js` / `src/safety-gate.js` / `src/collection-semaphore.js` / `src/data-collection-engine.js`
+- `src/status-ops.js` / `src/diagnostics.js` / `src/history-emergency-buffer.js`
+- `src/google-drive.js` / `src/google-sheets.js` / `src/discord-notifications.js` / `src/service-usage-archive.js` / `src/system-event-queue.js`
+- D1 migrations 0001〜0058、D1 migration関連GitHub Actions workflow、`wrangler.jsonc`
+
+### 追加所見
+
+#### [高] 緊急履歴バッファの排出関数はimportのみで、実行呼び出しがない
+- `src/index.js` は `drainHistoryEmergencyBuffer` をimportしているが、関数呼び出しは確認できない。
+- `scheduled()` はAPI Pool自動復旧、王国カタログ定期更新、Discord通知を実行するが、緊急履歴バッファ排出を実行していない。
+- `queue()` もSystem Event、ロードテスト、Service Usageを処理するが、緊急履歴バッファ排出を実行していない。
+- R2保存失敗時にバッファへ退避した履歴が、自動復旧後も排出されず残り続ける可能性がある。実DBのPENDING/DRAINING/FAILED件数は未確認。
+- 既記録の「FAILED行が容量判定から除外される」問題と合わせ、履歴保全の運用上の優先確認項目とする。
+
+#### [高] データRetentionと診断プローブの自動実行経路が見当たらない
+- `src/index.js` に `runDataRetentionJob(env)` と `runDiagnosticHealthChecks(env)` が定義されているが、実行呼び出しを確認できない。
+- `scheduled()` にも両関数の呼び出しはない。現状のCron設定は5分ごとだが、設定されていることと各処理が実行されることは別。
+- 管理APIからRetention設定の取得・変更はできるが、設定変更とRetentionクリーンアップの実行は別処理。自動実行されない場合、設定された保持期間を超える履歴がD1に残る可能性がある。
+- System Event Logのアーカイブ処理もRetentionジョブ内の経路に依存しているかを追加確認する。関数が存在することだけで定期実行済みとは判定しない。
+- 本番での最終実行時刻、削除件数、R2アーカイブ件数は未確認。
+
+#### [中] D1 Migrationファイルの番号「0008」が重複
+- `migrations/0008_data_retention.sql` と `migrations/0008_kingdom_watchlist_jobs.sql` が共存している。
+- ファイル名の重複番号だけで適用障害とは断定しない。WranglerがMigration名を個別管理することを前提に、実環境の `d1_migrations` とファイル一覧の照合が必要。
+- 0017以降には、本番スキーマとMigration履歴の乖離を検査・修復する専用workflowが存在する。Migration適用前に本番の適用済み一覧と実スキーマを確認し、未確認のまま再適用しない。
+- `eagleeye-d1-load-test-schema-recovery.yml` は明示的にdeprecatedとして停止する設計。旧Recovery経路を再利用せず、Schema Reconciliation workflowを正規経路として扱う。
+
+#### [中] 王国カタログR2バックフィルはOwner専用・手動起動・最大100件のバッチ
+- `/api/admin/kingdom-catalog-r2-backfill` は `requireOwner()` によりACTIVEなOWNERを要求し、POST以外の変更要求は拒否する。
+- バックフィル関数は1回あたり最大100件で、Cronから呼ばない設計。R2保存成功後にD1側の処理済みポインタを更新する順序を確認。
+- UIの「全件実行」表示は一度の無制限実行ではなく、単回のバッチサイズを100にする実装。継続実行は操作の反復が必要。
+- 画面表示時に未アーカイブ候補の `COUNT(*)` を実行するため、カタログが大きくなった後のD1読み取り負荷はインデックス・Query Insightsで確認する。現時点では実測未実施。
+
+#### [中] Ownerロードテストの保護策は実装されているが、本番負荷テストは未実施
+- `src/admin-kingdom-load-test.js` にはOWNER確認、HTTPメソッド制限、実行ロック、キャンセルマーカー、進捗・メトリクス保存、最大対象件数制限、Safety Gate、通常API利用向けキー予約の実装がある。
+- 対象王国数の上限は1,000。API呼び出しは共通の収集ガード/API Poolを経由する設計。
+- ただし、キャンセル直後の停止時間、Queue再試行、Worker中断後の状態復旧、Cloudflare消費量の計測精度、長時間実行の挙動はコード確認だけでは保証できない。実機/本番負荷テストの結果と照合が必要。
+- 本監査では負荷テストを起動していない。
+
+#### [中] Google Drive / Google Sheets連携は別々の認証方式で、設定・権限・失敗経路の実測が未完了
+- Google DriveはOAuth/Refresh Token方式、Google SheetsはService Account JWT方式。必要な環境変数が不足する場合のエラー処理は実装されている。
+- Google Driveの接続・再認証・検証操作はOwner限定であることをルートから確認。OAuth callbackはstateトークンを検証する。
+- 実際のCloudflare Secret/Variablesの設定値、Google側権限、トークン更新、R2からDriveへのアップロード成功は本監査からは確認できない。Secretの値は調査記録へ出力しない。
+
+#### [確認継続] D1コスト・権限・実運用
+- `handleOwnerUsersApi` は王国/プレイヤーウォッチリスト数の付与のため、各ウォッチリストテーブルを全件GROUP BYするクエリを実行する。利用者数・ウォッチリスト件数が増えた場合の読み取り量を要確認。
+- ウォッチリストの最新ジョブを個別に取得するN+1候補、`change_events` を参照するプレイヤーウォッチリストAPIも継続調査対象。
+- `ranking_snapshots` の広範囲読み取りは復活させない。現行/集計テーブルを使い、必要な場合も対象・期間・件数を限定する。
+- Migration 58本のファイル存在と主な適用workflowを確認したが、本番D1の適用済みMigration一覧・全テーブル/列/インデックスとの完全一致はまだ未確認。
+- 本追記はコードとworkflowの静的監査であり、本番API・本番DB・E2Eの実行結果ではない。
+
+### この時点の監査状態
+- ルーティング/主要モジュール/定期処理/Queue/Migration workflowの一次照合を継続中。
+- コード修正・Migration適用・本番操作・デプロイは実施していない。
+- 次に残る作業：全ルートと認可/HTTPメソッドの照合、SQLとMigration/インデックスの照合、残りのsrc/public/scripts/toolsの棚卸し、テスト構成・CIの確認、機能台帳の未確認項目を明示したうえで一巡完了判定。
