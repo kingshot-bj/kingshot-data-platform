@@ -494,3 +494,11 @@
 - したがって「王国Catalogがある」=「ランキング/同盟/Playerが全王国で定期収集されている」ではない。Watchlist、Player Profile、Admin manual refresh、Load Testがそれぞれ別の収集経路。
 - kingdom_collection_statsもWatchlist collection successに結びついているように見えるため、Coverage表示の意味を確認する。
 
+## 2026-10-10 棚卸し進捗 — 第3回進捗率
+
+- 最新台帳コミット: `b8278c7687b01c74eb08ff6b86bee08432845253`
+- 静的棚卸し進捗を23%から**39%**へ更新。画面/機能領域、ルート、Worker起動経路、Retention/R2、Safety Gate、MightPulse、管理画面を追加したための概算更新。
+- まだ未完了: 全Migration列/制約/IndexとSQLの双方向照合、全画面ボタン/フォームのmethod・role guard・成功/失敗状態の対応表、R2 readback/Retention仕様、機能ごとのテスト行列。
+- 主要な静的候補は台帳末尾のP0/P1候補へ集約済み。現時点でコード修正・デプロイ・本番DB変更・Queue操作・負荷/外部APIテストは行っていない。
+- 次の作業は主要Migration/SQLの列・制約・Index照合。D1 Free reads最優先、広範囲`ranking_snapshots`取得禁止。
+
