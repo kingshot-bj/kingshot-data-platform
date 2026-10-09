@@ -697,6 +697,22 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 
 - 各endpointの現行呼び出し元、キーPool選択（通常/Mighty/USER_CONTRIBUTED）、成功時保存先、失敗時metadata更新、retry回数、外部APIの実際の契約/レスポンスはまだ全件照合していない。
 - ` + tick + `/kingdom/mighty` + tick + `はevents/KvKを別々に取得する。Top alliance rosters helperはN+1 APIコールのため、現行ローラーを接続する前に消費モデルを定義する。
+## 2026-10-10 第15巡目 — 共通UI基盤 / ロールバー / 二重操作防止
+
+| 共通機能 | 実装位置 | 静的確認結果 | 未確認点 |
+|---|---|---|---|
+| テーマ切替 | `EAGLEEYE_THEME_CSS` / `EAGLEEYE_THEME_SCRIPT` / `applyEagleEyeTheme` | localStorageの`eagleeye-theme`とOS設定からlight/darkを選択。ページHTMLのhead/bodyへ共通CSS/JSを挿入 | 全ルートのHTMLが`eagleEyeHtmlResponse`または同等のwrapperを通るかは全件未確認 |
+| Previewバナー | 共通Theme Script | production hostname以外ではPREVIEW bannerを表示 | Preview hostの判定条件が今後の独自ドメイン/環境追加に合うか要確認 |
+| 常時ロールバー | 共通Theme Script/CSS | BASIC/ADVANCED/VIP/ADMIN/OWNERを固定上部に表示し、`/api/me/advanced` GETのroleで現在ロールを強調 | 匿名/Disabled/API失敗時の表示、全ページ適用を実機確認していない |
+| Mutating fetch二重送信防止 | `installMutatingRequestGuard` | POST/PUT/PATCH/DELETEをmethod+URL+bodyでキー化し、同一requestの実行中重複を拒否 | fetch wrapperを使わないフォーム/別window/直接submit、タイムアウト後再試行の動作を確認する |
+| ボタン/フォーム二重操作防止 | `installGlobalActionGuard` | click captureでbuttonをlockし、form submit重複も抑止。処理中表示/解除ロジックあり | 既存画面の独自disabled処理との競合、リンク遷移、エラー時の解除をE2Eで確認する |
+| モバイル対応 | 各画面CSS + 共通UI | Player Profile、API Pool、Watchlist、Portal等に狭幅向けmedia queryあり | iPhone Safariで全画面の横はみ出し/フォーム/ボタン/固定ロールバーを実機確認していない |
+
+### 共通UIの適用範囲
+
+- ` + tick + `eagleEyeHtmlResponse(html)` + tick + `は ` + tick + `applyEagleEyeTheme(html)` + tick + `を通し、HTMLに` + tick + `<html` + tick + `が含まれる場合にテーマCSS/JSを挿入する。
+- ルート/ページの一部は直接 ` + tick + `Response` + tick + `を返し、他は` + tick + `eagleEyeHtmlResponse` + tick + `を使う。すべての画面に共通UIが適用されると断定せず、全ルートのreturn経路を確認する。
+- 二重送信防止のコードが存在することと、全画面の全操作が確実に保護されていることは別。HTML formの通常POST、fetch、外部リンク、独自イベント処理を個別照合する。
 ## F. 既知の接続・完成度確認ポイント（棚卸し開始時点）
 
 これらはコード上の所見であり、実行時に再現した不具合と同義ではない。新規の不具合判定を行う前に関連コード・定義・呼び出し元を再照合する。
