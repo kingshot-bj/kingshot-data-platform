@@ -1052,3 +1052,49 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 ### 進捗率
 
 全体進捗は**23%**を維持。Owner Load Testの主要経路を一覧化したが、機能単位の画面/API/認可/DB/R2までの照合は全画面で終わっておらず、Migration/SQL双方向照合も未着手のため。
+## 2026-10-10 進捗記録 — 第5回・Migration 0050–0058と現行SQLの部分照合
+
+### 対象範囲
+
+Migration 0050–0058の9ファイルを読み、主要な追加/再構築対象を現行コード内のSQL参照と照合した。これはMigration全59ファイルと全SQLの双方向照合ではなく、後半9ファイルの部分確認。
+
+| Migration | スキーマ変更 | 現行コードとの照合 | 状態/残り |
+|---|---|---|---|
+| 0050 `alliance_catalog.r2_latest_key` | 列追加 + `idx_alliance_catalog_r2_latest` | この巡回では列を使う全SQL/Index利用を未確認 | 部分確認 |
+| 0051 `players.r2_latest_key` | 列追加 + `idx_players_r2_latest` | この巡回では列を使う全SQL/Index利用を未確認 | 部分確認 |
+| 0052 `discord_notification_state` | テーブルと`updated_at` index | `discord-notifications.js`との列単位照合は未実施 | 部分確認 |
+| 0053 `player_visibility_settings.min_role` | CHECKはBASIC/ADVANCED/ADMIN/OWNER。既存行の値をUPDATE | 後続0055がVIPを許容するCHECKにテーブル再構築する順序を確認 | 後続Migration込みで判定が必要 |
+| 0054 `user_mighty_credentials` | 個人Mighty資格情報と3つのIndex | `src/user-mighty.js`でSELECT/INSERT/UPDATE/REVOKE参照あり。主な列名は対応 | 接続あり（全列/制約は未完了） |
+| 0055 `player_visibility_settings` | テーブル再構築。`min_role` CHECKにVIPを追加 | 現行visibility handlerとの列/ロール値の全照合は未完了 | 接続候補あり |
+| 0056 `users` / `watchlist_limits` | ロールCHECKにVIPを追加。Watchlist limitsへVIP行を追加 | 現行ロール更新/limit読出しとの全照合は未完了 | 接続候補あり |
+| 0057 `api_pool_keys` Mighty列4つ | `mighty_capable`、`mighty_checked_at`、`mighty_check_status`、`mighty_last_error_code`追加 | `src/api-pool.js`、`src/user-eligibility.js`、`src/index.js`で参照/更新を確認 | 接続あり（全SQL/Indexは未完了） |
+| 0058 `user_kingdom_ranking_preferences` | ユーザーごとのkid/boards/primary board設定とkid index | `src/index.js`でINSERT/UPSERT、`src/kingdom-portal.js`でSELECTを確認 | 接続あり（全バリデーション/列照合は未完了） |
+
+### 今回の注意点
+
+- Migration 0053単体ではVIPが`min_role`のCHECKに含まれないが、0055で同テーブルを再構築してVIPを許容する。0053だけを見て現行スキーマ不整合と断定しない。
+- `user_mighty_credentials`はMigration上の孤立テーブルではなく、`src/user-mighty.js`に現行SQL参照がある。`api_pool_keys`のMighty判定列とは別の資格情報モデルなので、同じものとして扱わない。
+- Migration 0057のMighty判定列は、API Pool一覧・資格判定・更新処理で参照されている。列の存在と本番DBへのMigration適用済み状態は別なので、本番適用はこの静的確認では断定しない。
+- Migration 0058はKingdom Ranking preferencesの保存/読出しと接続する。ルート側POSTの入力検証、ユーザー認証、kid/boardの許可リスト、DBエラー時の応答は機能追跡の続きで確認する。
+- 今回はCREATE/ALTER/DROPと主要参照を部分照合しただけで、全テーブル・全列・全Index・全SQLの網羅性は保証しない。
+
+### 進捗率更新：24%
+
+作業領域の重み付き概算を更新する。Migration/SQL照合は0%から5%へ変更（後半9ファイルの一部列と現行参照を確認）。全体は23.75%を四捨五入して**24%**。これは静的棚卸しの進捗であり、機能の正常率や本番適用率ではない。
+
+| 作業領域 | 重み | 達成度 | 加重点 |
+|---|---:|---:|---:|
+| 初期台帳 | 10% | 100% | 10.0% |
+| Route/handler/page照合 | 20% | 35% | 7.0% |
+| UI→API→処理の対応付け | 25% | 10% | 2.5% |
+| Migration/SQL双方向照合 | 25% | 5% | 1.25% |
+| Worker/Cron/Queue/権限/外部連携 | 15% | 20% | 3.0% |
+| テスト観点/本番確認条件 | 5% | 0% | 0% |
+| **合計** | **100%** |  | **23.75% ≒ 24%** |
+
+### 次の作業
+
+1. Migration 0001–0049を同じ方式で確認し、テーブル/列/Index/制約の履歴を通しで作る。
+2. `src/`全体のSQLからテーブル/列を抽出し、Migrationに存在しない参照・Migration後に未使用の列を候補化する。
+3. 0050/0051のR2 key、0052通知状態、0053–0056ロール/可視性/上限をコード参照と追加照合する。
+4. D1読み取りコストの評価は、広範囲の本番SELECTを実行せず、静的SQLと既存のIndex定義から始める。`ranking_snapshots`の広範囲取得クエリは復活させない。
