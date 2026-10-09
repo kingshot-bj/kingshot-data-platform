@@ -1027,3 +1027,28 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 4. 未接続候補を「現仕様で必要」「意図的な旧実装」「将来用」「未実装」に分類。
 5. 本番変更なしで実施可能なテストと、Owner承認が必要な本番テストを分離。
 
+
+## 2026-10-10 進捗記録 — 第4回・Owner Load Test画面の接続追跡
+
+### 画面→API→Queue/DBの静的対応
+
+| UI/操作 | 呼出先 | 静的確認結果 |
+|---|---|---|
+| Load Test開始 | `/api/owner/kingdom-load-test?kids=...&top_n=...` | UIはOwner開始APIへGET。routerで`requireOwner()`を適用し、handlerはジョブ開始/Queue経路へ接続するコードあり。未実行 |
+| 中止 | `/api/owner/kingdom-load-test/cancel` POST | routerで`requireOwner()`、handlerはcancel処理へ接続。未実行 |
+| 状態/進捗 | `/api/owner/kingdom-load-test/status` | routerで`requireOwner()`。handlerはstale run recovery後に状態を返すコードあり。UIは状態pollingを行う |
+| 履歴 | `/api/owner/kingdom-load-test/history?limit=20` | routerで`requireOwner()`。UIは最大20件を読み込む。未実行 |
+| System JSON | `/api/owner/kingdom-load-test/system-json?run_id=...` | routerで`requireOwner()`。handlerはGET限定、run_id必須、R2 `ARCHIVE`優先・DB生成fallbackを持つ |
+| CSV Export | `/api/owner/kingdom-load-test/export?run_id=...` | UIリンクとexport handler定義は存在するがrouter分岐が見つからない。handler自身はGET/run_id確認のみでOWNER認可なし。**ルート接続欠落候補に加えて、認可欠落候補**。未接続状態を修正/試験していない |
+| 公開負荷テスト通知 | `/api/load-test/notice-status` | router/handlerにOwner guardはないが、返す値はactive/updated_at/expires_at等の稼働通知。公開前提の範囲と情報最小化を別途確認 |
+
+### この領域の優先候補
+
+1. **CSV Export:** 現状のrouterに接続されていない。接続する場合はOWNER認可を必須にし、`run_id`の所有/参照権限、CSVに含める列、未認証時の拒否をテストする必要がある。現時点ではルート接続・コード変更を行わない。
+2. **System JSON / CSVのR2/DB fallback:** System JSONは`env.ARCHIVE`の既知keyを直接getし、なければDBから生成する。R2 binding名、D1読み取り量、出力内容の一致を静的照合し、実オブジェクトや本番DBを触らず確認できる範囲を先に洗う。
+3. **Pollingとキャンセル:** UIは開始後に状態を複数回取得し、cancel時に保存中run IDを使う。再読込後の復帰・polling停止・cancel raceは未実行。静的コード上の存在だけで正常とは判定しない。
+4. **Load Testの本番実行は棚卸し中に行わない。** この領域の確認はコード/接続の追跡のみ。
+
+### 進捗率
+
+全体進捗は**23%**を維持。Owner Load Testの主要経路を一覧化したが、機能単位の画面/API/認可/DB/R2までの照合は全画面で終わっておらず、Migration/SQL双方向照合も未着手のため。
