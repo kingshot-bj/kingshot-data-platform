@@ -892,7 +892,7 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 ### Schema Reconciliationの適用範囲に関する注意
 
 - `scripts/reconcile-d1-schema.mjs`は名前上はSchema Reconciliationだが、実装は特定の既知drift（API Pool lease列/Index、Watchlist/Diagnostics/System Log、User Player Link、Load Test、Semaphore、Catalog/Roller state等）を検査/補修するリスト型の処理。
-- 現行スクリプト内に `mighty_capable` / `mighty_checked_at` / `mighty_check_status` / `mighty_last_error_code` の追加/検証、Migration 0058の `user_kingdom_ranking_preferences`、Migration 0054/0056の `user_mighty_credentials`の検証は見当たらない。
+- 現行スクリプト内に `mighty_capable` / `mighty_checked_at` / `mighty_check_status` / `mighty_last_error_code` の追加/検証、Migration 0058の `user_kingdom_ranking_preferences`、Migration 0054/0056の `user_mighty_credentials`、Migration 0048/0050/0051の `kingdom_catalog` / `alliance_catalog` / `players` の `r2_latest_key` と専用Index、Migration 0052の `discord_notification_state` の検証は見当たらない。
 - よってこのWorkflowを実行したことだけで、全Migration 0001–0058のスキーマが現行コードと一致したと判定しない。実行前後にmigration historyと全重要テーブルの列/Indexを独立に検証する必要がある。
 - この指摘はスクリプトの現行範囲についての静的確認。意図的に対象を絞っている可能性があり、直ちに不具合/変更要求とはしない。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
