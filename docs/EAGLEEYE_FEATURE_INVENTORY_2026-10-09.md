@@ -1073,3 +1073,11 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - このため、`EAGLEEYE_SESSION_SECRET` を変更すると、既存の `api_pool_keys.encrypted_key` は旧鍵で暗号化されたままになり、新しいSecretでは復号できなくなる可能性が高い。Discordセッションの無効化目的のSecretローテーションがMightPulse API Pool全体の停止につながり得る。
 - Secret値そのものはGitに存在せず、現時点でローテーション予定・過去の実施履歴も未確認。
 - 対応時はAPI Pool専用の安定した暗号化Secretを分離するか、鍵バージョンを持たせた再暗号化手順を設計する。移行前に既存キーを安全に復号できる状態を維持し、暗号化/復号・ローテーションの検証を必須とする。今回は変更していない。
+
+
+### [高] ユーザーのMighty再判定でHTTP 401時にMighty確認済みメタデータを解除しない
+- `handleMyMightyCheckApi()` は `/kvk/matchups` がHTTP 403のときは `setApiPoolMightyMetadata(... mightyCapable:false, status:"NOT_MIGHTY")` を呼ぶが、HTTP 401のときは `recordApiPoolFailure(... disable:true)` のみで、`mighty_capable` / `mighty_check_status` を更新していない。
+- `getVipEligibility()` はユーザー提供キーを `status != 'REVOKED'` で取得し、`mighty_capable = 1` かつ `mighty_check_status = 'CONFIRMED'` であればMightyキーありと判定する。APIキーの運用状態がDISABLED/ERRORになっても、この条件では除外されない。
+- そのため、一度CONFIRMEDになったキーがHTTP 401で無効化されても、古いCONFIRMEDメタデータが残り、VIP資格判定に残り続ける可能性がある。再判定時の分岐によっては `evaluateVipEligibility()` による降格も実行されない。
+- 同じユーザーに別の有効なMightyキーがある場合は資格を維持してよいが、失効/認証エラーとなったキーだけを非Mighty/ERROR扱いにし、残りのキーを評価する必要がある。429・5xx・timeout等の一時障害では既存判定を安易に解除しない方針が適切。
+- 本番データでの再現・ユーザーロール変更は未実施。修正時は「CONFIRMEDキーの401」「403/MIGHTY_REQUIRED」「429/5xx一時障害」「別キーが有効」の組合せを回帰テストする。
