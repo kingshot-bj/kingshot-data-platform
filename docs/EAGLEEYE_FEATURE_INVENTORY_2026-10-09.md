@@ -1426,3 +1426,22 @@ GETはブラウザーのリンク遷移・プリフェッチ等から意図せ�
 - `/api/admin/system-log/export` はADMIN認証付きGETとして実装されているが、ハンドラーはログを走査してR2へエクスポートファイルを作成する副作用を持つ。
 - そのため、前項のAPI Poolテスト/refreshと同様に、管理者のブラウザがログイン状態で外部リンクを開いた場合に、意図しないD1読み取り・R2書き込みを起こす可能性がある。認証があることだけではGETのCSRF/リソース消費対策にならない。
 - エクスポート開始をPOSTにし、期間/件数上限とCSRF/Origin検証を適用するか検討する。今回はエクスポートを実行していない。
+
+
+### [高・運用判断の信頼性] Cloudflare AnalyticsのGraphQL集計に固定件数上限があり、超過時の欠落検知がない
+- `src/cloudflare-analytics.js` の `D1_QUERY_INSIGHTS_QUERY` は `d1QueriesAdaptiveGroups(limit: 1000)`、`WORKERS_USAGE_QUERY` は `workersInvocationsAdaptive(limit: 1000)` を指定している。R2/D1 usage系にも固定 `limit: 10000` がある。
+- これらのクエリにはページネーション/cursorや、結果が上限に達した場合の「データが切れている」判定が見当たらない。特にD1 Query InsightsはSQL文字列等のディメンションでグループ化されるため、集計期間中のグループ数が1,000を超えると、返却されたグループだけでTop Query・機能別使用量を算出し、全体使用量と誤認する可能性がある。
+- 実際に上限超過しているかはCloudflare Analyticsの現在データを照会していないため未確認。対応時はAPIの上限/ページネーション仕様を確認し、結果数がlimitに達した場合は「部分集計/信頼性低下」と明示するか、ページング/集計期間短縮を行う。安全判定に使う使用量は、欠落があり得るQuery Insights値だけでなく、別の公式利用量メトリクスと突合する。
+- 今回、Cloudflare APIや本番DBへの照会は実施していない。
+
+
+### [中・並行処理の安全性要確認] Global Collection Semaphoreのリースは処理中に更新されない
+- `src/collection-semaphore.js` にはリース期限を延長する `refreshCollectionPermit()` が実装されているが、`src/data-collection-engine.js` を含む呼び出し元で参照されていない。共通収集処理はpermit取得後に外部APIリクエストとPool使用記録を行い、最後に解放する構造。
+- Semaphore slotの既定リースは180秒であり、期限切れslotは次の取得処理で再利用できる。現在の収集処理がリース期限を超えた場合、元処理がまだ実行中でも同じslotが別処理に再利用され、設定された同時実行上限を一時的に超える可能性がある。
+- 外部APIタイムアウト/再試行を含めて1回のpermit保持時間が180秒を超えるかは、実行設定・本番ログを照合していないため未確認。実測または最大実行時間の確認後、処理時間に合うリース延長/heartbeat、あるいは安全な期限設計を検討する。今回は収集処理を起動していない。
+
+
+### [低〜中・管理者専用診断] API Raw Inspectorの返却payloadにサイズ上限がない
+- `src/api-raw-inspector.js` の `handleApiRawDataApi()` は、指定された領主の最新または指定観測レコードから `payload_json` 全体をJSON parseし、秘密らしいキー名をマスクした後、payload全体をレスポンスに返す。`image_refs` 配列には200件上限があるが、payload本体のバイト数・ネスト深度・配列件数には上限がない。
+- ADMIN/OWNER限定ではあるものの、巨大な観測payloadや多数のdata URI画像が保存されていた場合、D1からの読み取り、JSON parse、マスキング、Workerメモリ、レスポンス転送が一度に大きくなる可能性がある。画像参照の件数制限だけではpayload全体のサイズを制限しない。
+- 対応時は保存時と表示時の最大payloadサイズ、返却フィールドの選択、画像data URIの省略/別取得を検討する。現在の最大payloadサイズ・実測メモリは未確認であり、今回Raw Inspector APIは実行していない。
