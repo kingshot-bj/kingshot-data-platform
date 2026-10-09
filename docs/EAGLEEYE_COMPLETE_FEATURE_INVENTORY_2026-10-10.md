@@ -1575,3 +1575,19 @@ src/index.js のroute/call names -> local definitions/imports -> imported module
 - これは全機能が正常・実装済み・本番稼働中という意味ではない。候補を解消せずに残すことも監査結果の一部。
 - 実D1 schema/Query Plan、build、ブラウザE2E、Preview統合、本番稼働/外部連携は未実施。各テストレーンで別途確認が必要。
 - D1 Free reads優先。広範囲な `ranking_snapshots` 取得クエリは追加・復活させない。デプロイ、本番D1変更、Queue操作、収集/負荷テスト、外部API呼び出しなし。
+
+
+## 2026-10-10 機能信頼性監査再開 — 20%到達
+
+- UI入口監査は再開せず、機能の正常性・安全性を優先する監査を開始。
+- `wrangler.jsonc` のPreview設定はProductionと同じD1 database ID (`0024b5df-4dcf-45f7-b9a7-6fa621cbb80a`) とR2 bucket (`eagleeye-archive`) を参照している。Previewでテストしない。隔離環境を先に用意する。
+- 現行MigrationとSQLを再照合し、以下を静的根拠付き候補として再確認:
+  1. `api_observations.source_observed_at`: Migration 0002のCREATE TABLEに列がない一方、`src/api-observations.js` のINSERTで使用。
+  2. `players.source_observed_at`: Migration 0004のCREATE TABLEに列がない一方、`src/player-store.js` のINSERT/UPSERTで使用。
+  3. `kingdom_ranking_current.ranking_snapshot_id`: Migration 0019のテーブル定義に列がない一方、`src/index.js` の `getLatestAdminKingdomRankingSnapshot()` がSELECT。
+  4. Player Compare: `src/index.js` に `/api/player-compare` と `/player/compare` のroute branchがあるが、importされているのは `normalizeCompareGovernorIds`、`buildPlayerCompareSeries`、`extractOptionalPlayerAssets` のみ。handler名 `handlePlayerCompareApi` / `renderPlayerComparePage` の定義・importを確認できず、実行時の未定義参照候補。
+  5. Owner Load Test export: `handleOwnerKingdomLoadTestExportApi` はimportされ、画面側のexport参照もあるが、`/api/owner/kingdom-load-test/export` のrouter branchを確認できず。
+- `kingdom_watchlist_jobs.source_first_at/source_last_at` についても、Migration 0008の初期定義にはなく、0019は `CREATE TABLE IF NOT EXISTS` で追加列を保証しない。実際に既存DBへ適用済みかは未確認のまま継続。
+- 現在の進捗は今回の機能信頼性監査の **20%**。静的コードの根拠を確認した段階で、build・isolated D1・ブラウザ・本番検証は未実施。
+- 実施していないこと: コード/Migration修正、deploy、D1 read/write、Queue操作、外部API/OAuth、負荷テスト。
+- 固定条件: D1 Free reads最優先。広範囲な `ranking_snapshots` retrievalを追加・復活させない。Previewは本番資源と分離されるまで使用しない。
