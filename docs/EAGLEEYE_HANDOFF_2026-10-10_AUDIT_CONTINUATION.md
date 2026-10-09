@@ -200,3 +200,14 @@
 - 最新の機能台帳: `docs/EAGLEEYE_COMPLETE_FEATURE_INVENTORY_2026-10-10.md`、更新コミット`54eb2edd3672b20ac3213dc5d275264c3ea4b5a6`。
 - 今回はGitHub mainの静的確認のみ。アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。D1 Free reads優先。広範囲な`ranking_snapshots`取得クエリを追加・復活させていない。
 - 次回はまず機能台帳を読み、パッケージ17の残りスキーマ照合を続ける。全監査完了とは扱わない。
+
+
+## 2026-10-10 追加監査 — api_observations / players 列定義差候補
+
+- Migration 0001–0058のファイル名単位の静的確認を続け、以下の新規候補を台帳へ追加した。
+  1. `api_observations.source_observed_at`: Migration 0002のCREATE TABLEに存在せず、同列を追加するALTERも見当たらない。一方、`src/api-observations.js` のINSERT、`src/api-raw-inspector.js` と `src/player-store.js` のSELECTで使用。
+  2. `players.source_observed_at`: Migration 0004のCREATE TABLEに存在せず、同列を追加するALTERも見当たらない。一方、`src/player-store.js` のINSERT/UPSERTで使用。Migration 0051の `r2_latest_key` 追加とは別の列。
+- `scripts/reconcile-d1-schema.mjs` に両列のaddColumn補修は見当たらない。静的な列定義差は高確度候補だが、本番D1 schema・実行時エラーは未確認。
+- 台帳へ根拠・影響・確度・未確認事項を追記。アプリコード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しは行っていない。
+- 進捗は**80%（16/20）を維持**。この発見はパッケージ17「全Migrationとsrc全SQLの完全な双方向照合」の途中証拠であり、全テーブル/全列の照合を完了したとは扱わない。
+- 次はパッケージ17を継続し、残りのテーブルの最終DDLと現行SQLの列・制約・Indexを照合する。全画面UI→API→認可→DB/R2→結果表示の棚卸しはパッケージ18として別途完了条件を満たす。
