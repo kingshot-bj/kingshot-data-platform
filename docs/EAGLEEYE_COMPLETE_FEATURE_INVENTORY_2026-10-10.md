@@ -862,6 +862,12 @@ Retentionの実装は、対象テーブルから期限切れ行をバッチ取�
 - Watchlistが実質的な通常収集経路なのか、ローラーは将来用/Owner手動用なのか、機能仕様を確定する必要がある。ローラーを接続する場合はAPI Pool reserve、Semaphore、R2 binding、D1 reads/writes、停止復帰を先に検証する。
 - ` + tick + `kingdom_collection_stats` + tick + `はWatchlist collection successに結びついているように見えるため、Coverage UIの数値を「全王国収集済み」と解釈しない。指標の定義を確認する。
 
+### SQL列名の不一致候補 — Admin Kingdom Ranking
+
+- `src/index.js` の `getLatestAdminKingdomRankingSnapshot()` は、`SELECT ranking_snapshot_id, ... FROM kingdom_ranking_current`を実行する。
+- Migration 0019の `kingdom_ranking_current`には `ranking_snapshot_id`列がなく、リポジトリ内のMigrationにも同テーブルへの追加定義は見つからない。`ranking_snapshot_id`は `ranking_snapshots`側の主キー名。
+- このため、`/api/admin/kingdom-rankings`のrefresh=1/通常読出しがこの関数を通ると、SQLのno-such-columnエラーになる可能性が高い。静的なSQL/schema不一致候補として優先度高で記録する。実D1へのクエリ実行や修正は未実施。
+- 次のSQL列照合では、このような「列が別テーブルに属している」ケースを中心に、各SELECT/INSERT/UPDATEとMigrationの最終スキーマを確認する。
 ## F. 既知の接続・完成度確認ポイント（全機能棚卸しの現時点）
 
 以下は静的コード上の所見。実行時に再現した不具合とは限らない。修正・削除の判断前に、仕様・呼び出し元・本番設定・再現テストを確認する。
