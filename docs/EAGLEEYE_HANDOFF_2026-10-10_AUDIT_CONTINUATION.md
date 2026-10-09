@@ -137,3 +137,14 @@
 - `user_player_links` は0022初期形状、0023の公式確認列/サポート申請、0024のpartial UNIQUE、0026の複数アカウント対応再構築を順序込みで確認。0022の `UNIQUE(user_id)` は0026最終形状では外れるため、0022単体との比較で不一致と誤判定しない。
 - 台帳をコミット `8a69d7d2ba5681411aa1a6445261532049fc5982` で更新した。
 - 進捗は引き続き **67%（6/9）**。Migration/SQLの全件双方向照合は未完了であり、77%報告条件には未到達。
+
+### 2026-10-10 追加監査：Migration横断照合・Reconcile追随範囲
+
+- migrationsディレクトリのSQLファイル59件をファイル名で確認。`0008_*.sql`が2ファイルあるため、Migration番号だけで扱わない。
+- `kingdom_watchlist_jobs.source_first_at/source_last_at` はMigration 0008に存在せず0019に定義あり。0020–0058でこの2列を既存テーブルへADD COLUMNするALTERは見当たらない。0046が同テーブルへ追加する列は`collection_source`。現行src/index.jsが両列をINSERT/UPDATE/SELECTするため、列不一致候補の静的根拠は強い。実D1の列有無は未確認。
+- `kingdom_ranking_current.ranking_snapshot_id` は0019の定義に存在せず、0001–0058で同列を同テーブルへ追加するDDLも見当たらない。src/index.jsのAdmin ranking helperがSELECTする。`src/ranking-store.js`の同名列使用は`ranking_snapshots`へのINSERTなので別件であり、不一致候補には含めない。
+- `scripts/reconcile-d1-schema.mjs`のMIGRATIONS配列は0017–0043で終わり、0044–0058を含まない。Migration 0058の`user_kingdom_ranking_preferences`はsrc/index.jsからUPSERTされるが、reconcile scriptにテーブル名がない。0053–0057のスキーマ機能にも対応定義が見当たらない。scriptの役割が旧範囲に限定されている可能性があるため、直ちにバグと断定せず呼出元/運用目的を確認する。
+- 機能台帳更新コミット: `393db6a3331de2ff4172de079867ad9a95ec8be9`、続くreconcile範囲追記: `b594328ae95ebf89719345e8f6490a412874bbd1`。
+- 進捗は引き続き67%（6/9）。Migrationファイルの静的横断は進めたが、src全体の列/Index双方向照合とUI/API/DB接続の棚卸しは未完了。77%へはまだ更新しない。
+- 次はreconcile scriptの呼出元/運用説明を静的検索し、`kingdom_ranking_current`を参照する全SQL、DDLとIndexの対応、Migration 0058の読出し/保存経路を追跡する。
+- 安全制約を継続。コード/Migration/Workflow変更、デプロイ、本番D1更新、Queue操作、収集/負荷テスト、外部API呼び出しなし。広範囲`ranking_snapshots`取得なし。
