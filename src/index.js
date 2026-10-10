@@ -4544,6 +4544,47 @@ const EAGLEEYE_THEME_SCRIPT = `
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
   if (!html.includes('id="eagleeye-theme"')) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
+  // Install the shared navigation in the HTML response itself. This avoids
+  // relying on client-side script execution to create a critical navigation.
+  // The home page already owns its richer navigation; leave it untouched.
+  if (!html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
+    const sharedNav = `
+<nav class="ee-global-nav" aria-label="メインナビゲーション">
+  <a href="/" data-nav-path="/" aria-label="ホーム"><span class="ee-global-nav-icon">⌂</span><span>ホーム</span></a>
+  <a href="/kingdom/rankings" data-nav-path="/kingdom/rankings" aria-label="ランキング"><span class="ee-global-nav-icon">♛</span><span>ランキング</span></a>
+  <a href="/players" data-nav-path="/players" aria-label="検索"><span class="ee-global-nav-icon">⌕</span><span>検索</span></a>
+  <a href="/watchlist" data-nav-path="/watchlist" aria-label="ウォッチ"><span class="ee-global-nav-icon">◌</span><span>ウォッチ</span></a>
+  <button type="button" class="ee-global-nav-more" aria-haspopup="dialog" aria-expanded="false"><span class="ee-global-nav-icon">☰</span><span>その他</span></button>
+</nav>
+<div class="ee-global-nav-drawer" aria-hidden="true">
+  <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
+    <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
+    <div class="ee-global-nav-links">
+      <a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom">王国検索</a><a href="/my-player">マイKingshot</a><a href="/status">システム状況</a><a href="/admin/diagnostics">診断</a><a href="/account">アカウント</a>
+    </div>
+  </section>
+</div>
+<script id="eagleeye-global-nav-init">
+(function(){
+  var path=location.pathname||"/";
+  document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(a){
+    var target=a.getAttribute("data-nav-path");
+    var active=(target==="/"&&(path==="/"||path==="/home"))||
+      (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
+      (target==="/players"&&(path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
+      (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
+    if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
+  });
+  var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
+  if(!nav||!drawer||!more)return;
+  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");more.setAttribute("aria-expanded","false");}
+  more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");more.setAttribute("aria-expanded","true");});
+  drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
+})();
+</script>`;
+    html=html.replace("</body>",sharedNav+"</body>");
+  }
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   return html;
 }
