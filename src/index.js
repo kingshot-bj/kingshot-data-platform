@@ -8817,11 +8817,13 @@ async function renderHome(request, env) {
     : "<span>BJ</span>";
   const loginBlock = session
     ? `<a class="ee-profile" href="/status"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
-    : `<a class="ee-profile" href="/api/auth/discord"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b>ログイン</b><small>未ログイン</small></span></a>`;
+    : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
   const adminItem = auth && (auth.role === "ADMIN" || auth.role === "OWNER")
     ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span>管理</span></a>` : "";
   const ownerItem = auth && auth.role === "OWNER"
     ? `<a class="owner" href="/owner"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>Owner Control</span></a>` : "";
+  const logoutItem = auth
+    ? `<a class="logout" href="/api/auth/logout"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>ログアウト</span></a>` : "";
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
 :root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
@@ -8836,6 +8838,8 @@ async function renderHome(request, env) {
 @keyframes heroIn{from{opacity:0;transform:translate(35px,15px) scale(.8)}to{opacity:1;transform:translate(0,0) scale(1)}}@keyframes drawerIn{from{opacity:0;transform:translateY(35px)}to{opacity:1;transform:none}}
 @media(min-width:760px){.ee-main{padding:18px 24px 24px}.ee-welcome{min-height:150px;padding:22px 24px}.ee-welcome h1{font-size:28px}.ee-welcome-bj{width:205px;height:205px;right:7%;bottom:-28px}.ee-mainmenu{gap:9px}.ee-tile{min-height:128px}.ee-tile img{width:62px;height:62px}.ee-tile strong{font-size:13px}.ee-summary{grid-template-columns:repeat(4,1fr)}}@media(max-width:520px){.ee-welcome{min-height:108px}.ee-welcome-copy{max-width:62%}.ee-welcome h1{font-size:20px}.ee-welcome-bj{width:150px;height:150px;right:-4%;bottom:-13px}.ee-mainmenu{gap:6px}.ee-tile{min-height:91px;border-radius:14px}.ee-tile img{width:43px;height:43px}.ee-tile strong{font-size:10px}.ee-summary{gap:6px}.ee-stat{min-height:55px;padding:8px 9px}.ee-stat-value{font-size:14px}.ee-drawer-grid{grid-template-columns:repeat(3,1fr)}}@media(max-height:700px){.ee-main{padding-top:8px}.ee-welcome{min-height:96px}.ee-welcome-bj{width:112px;height:112px}.ee-tile{min-height:80px}.ee-tile img{width:38px;height:38px}.ee-summary{margin-top:9px}.ee-stat{min-height:48px;padding:7px 8px}.ee-more{margin-top:7px;padding:8px 11px}}
 /* Home UI refresh v1 */
+.ee-welcome-link{display:block;color:inherit;text-decoration:none;border-radius:22px;outline-offset:4px}.ee-welcome-link:active .ee-welcome{filter:brightness(1.14);transform:scale(.995)}.ee-welcome{transition:filter .16s,transform .16s;cursor:pointer}.ee-welcome-link:focus-visible{outline:2px solid var(--cyan)}
+.ee-login-trigger{position:relative;min-width:105px;justify-content:center}.ee-login-trigger[aria-busy="true"]{opacity:.92;pointer-events:none;border-color:rgba(32,215,242,.7)}.ee-login-trigger[aria-busy="true"] .ee-login-label{color:var(--cyan)}.ee-login-spinner{display:none;width:13px;height:13px;border:2px solid rgba(32,215,242,.25);border-top-color:var(--cyan);border-radius:50%;animation:eeLoginSpin .75s linear infinite}.ee-login-trigger[aria-busy="true"] .ee-login-spinner{display:block}.ee-login-trigger[aria-busy="true"] .ee-profile-copy small{color:#9dddeb}.ee-drawer-grid a.logout{border-color:rgba(248,113,113,.42)}.ee-drawer-grid a.logout span{color:#fca5a5}@keyframes eeLoginSpin{to{transform:rotate(360deg)}}
 .ee-app{grid-template-rows:60px minmax(0,1fr) 72px}.ee-top{padding-left:max(18px,calc((100vw - 1040px)/2));padding-right:max(18px,calc((100vw - 1040px)/2));background:rgba(3,9,17,.94)}
 .ee-brand{font-size:15px;letter-spacing:.13em}.ee-brand b{font-size:9px;letter-spacing:.12em;color:#718aa2}.ee-profile{padding:5px 9px 5px 5px;border:1px solid rgba(49,81,111,.62);border-radius:999px;background:rgba(11,28,46,.72)}.ee-profile-copy b{font-size:11px}.ee-profile-copy small{font-size:8px;color:var(--cyan);letter-spacing:.04em}
 .ee-main{padding:14px 14px 22px;overscroll-behavior:contain}.ee-screen{width:min(860px,100%)}
@@ -8854,12 +8858,12 @@ async function renderHome(request, env) {
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
-<section class="ee-welcome">
+<a class="ee-welcome-link" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
   <div class="ee-welcome-copy">
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
-</section>
+</section></a>
 <div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
@@ -8894,11 +8898,24 @@ async function renderHome(request, env) {
       <a href="/support"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>サポート</span></a>
       ${adminItem}
       ${ownerItem}
+      ${logoutItem}
     </div>
   </div>
 </div>
 <script>
 (function(){
+  var loginTrigger=document.querySelector(".ee-login-trigger");
+  if(loginTrigger){
+    loginTrigger.addEventListener("click",function(){
+      if(loginTrigger.getAttribute("aria-busy")==="true")return;
+      loginTrigger.setAttribute("aria-busy","true");
+      loginTrigger.setAttribute("aria-label","Discordへ接続中");
+      var label=loginTrigger.querySelector(".ee-login-label");
+      var state=loginTrigger.querySelector(".ee-login-state");
+      if(label)label.textContent="接続中…";
+      if(state)state.textContent="Discordへ移動";
+    });
+  }
   var drawer=document.getElementById("moreDrawer");
   function openDrawer(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false")}
   function closeDrawer(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true")}
