@@ -9467,9 +9467,9 @@ async function renderHome(request, env) {
 .ee-more strong{font-size:11px}
 .ee-more small{font-size:8px;line-height:1.3}
 .ee-more img{width:30px;height:30px}
-.ee-nav a,.ee-nav button{font-size:9px;gap:3px}
-.ee-nav-icon{font-size:18px}
-.ee-nav-badge{font-size:8px;min-width:15px;height:15px}
+.ee-nav a,.ee-nav button{font-size:10px;gap:4px}
+.ee-nav-icon{font-size:20px}
+.ee-nav-badge{font-size:9px;min-width:17px;height:17px}
 .ee-drawer-head b{font-size:13px}
 .ee-drawer-grid a{min-height:62px}
 .ee-drawer-grid img{width:29px;height:29px}
