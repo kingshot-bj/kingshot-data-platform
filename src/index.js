@@ -2797,7 +2797,9 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
       const r=await fetch("/api/player-watchlist",{cache:"no-store"});
       const d=await r.json();
       if(!r.ok||!d.ok)throw new Error(d.error||"読み込みに失敗しました");
-      if(!d.watchlist.length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
+      window.__eagleEyePlayerWatchlistCount=(d.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+      if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(window.__eagleEyePlayerWatchlistCount);
+      if(!(d.watchlist||[]).length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
       root.innerHTML=d.watchlist.map(x=>{
         const s=x.summary||{};
         const powerChange=powerChangeText(s);
@@ -2870,7 +2872,11 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           await load();
         }catch(e){alert(e.message);b.disabled=false}
       });
-    }catch(e){root.innerHTML='<div class="error">'+esc(e.message)+'</div>';}
+    }catch(e){
+      window.__eagleEyePlayerWatchlistCount=null;
+      if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(null);
+      root.innerHTML='<div class="error">'+esc(e.message)+'</div>';
+    }
   }
   load();
 })();
@@ -7205,11 +7211,20 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   async function sync(){
     try{
       const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
-      if(!r.ok||!d.ok)return;
+      if(!r.ok||!d.ok){
+        window.__eagleEyePlayerWatchlistCount=null;
+        if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(null);
+        return;
+      }
+      window.__eagleEyePlayerWatchlistCount=(d.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+      if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(window.__eagleEyePlayerWatchlistCount);
       const item=(d.watchlist||[]).find(x=>String(x.governor_id)===String(gid));
       btn.dataset.watching=item?"1":"0";
       btn.textContent=item?(item.enabled?"★ ウォッチ中":"☆ ウォッチ再開"):"☆ ウォッチリスト";
-    }catch{}
+    }catch{
+      window.__eagleEyePlayerWatchlistCount=null;
+      if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(null);
+    }
   }
   btn.addEventListener("click",async()=>{
     btn.disabled=true;
