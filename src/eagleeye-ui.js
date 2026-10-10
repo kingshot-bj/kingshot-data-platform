@@ -104,7 +104,164 @@ export const EAGLEEYE_NAV_CSS = `
   height:17px!important;
   font-size:9px!important;
 }
+.ee-global-nav-badge[hidden],.ee-nav-badge[hidden]{display:none!important}
 @media(max-width:600px){
   .ee-nav-icon,.ee-global-nav .ee-global-nav-icon{font-size:24px!important}
 }
+`;
+
+
+/**
+ * Canonical destinations for the global "その他" menu.
+ * Both the home shell and page shell consume this same list.
+ * Privileged actions are supplied by the caller only after its existing auth check.
+ */
+export const EAGLEEYE_OTHER_MENU = Object.freeze([
+  Object.freeze({ key: "kingdomWatch", href: "/kingdom-watchlist", label: "王国ウォッチ", image: EAGLEEYE_BJNYAN.watchlist }),
+  Object.freeze({ key: "kingdomCatalog", href: "/kingdom-catalog", label: "王国カタログ", image: EAGLEEYE_BJNYAN.kingdom }),
+  Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingshot", image: EAGLEEYE_BJNYAN.dashboard }),
+  Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
+  Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
+  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.system, minRole: "ADMIN" })
+]);
+
+export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, compact = false } = {}) {
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[ch]));
+  const roleRank = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
+  const currentRank = auth ? (roleRank[auth.role] ?? 0) : 0;
+  const links = EAGLEEYE_OTHER_MENU.filter(item => !item.minRole || currentRank >= (roleRank[item.minRole] ?? 99)).map(item => compact
+    ? `<a href="${item.href}" data-other-key="${item.key}">${esc(item.label)}</a>`
+    : `<a href="${item.href}" data-other-key="${item.key}"><img src="${item.image}" alt=""><span>${esc(item.label)}</span></a>`
+  ).join("");
+  const privileged = [];
+  if (auth && (auth.role === "ADMIN" || auth.role === "OWNER")) {
+    privileged.push(compact
+      ? '<a href="/admin" data-other-key="admin">管理</a>'
+      : '<a href="/admin" data-other-key="admin"><img src="' + EAGLEEYE_BJNYAN.system + '" alt=""><span>管理</span></a>');
+  }
+  if (auth && auth.role === "OWNER") {
+    privileged.push(compact
+      ? '<a href="/owner" data-other-key="owner">Owner Control</a>'
+      : '<a href="/owner" data-other-key="owner"><img src="' + EAGLEEYE_BJNYAN.dashboard + '" alt=""><span>Owner Control</span></a>');
+  }
+  if (includeAccount && auth) {
+    privileged.push(compact
+      ? '<a href="/account" data-other-key="account">アカウント</a><a href="/api/auth/logout" data-other-key="logout">ログアウト</a>'
+      : '<a href="/account" data-other-key="account"><span>アカウント</span></a><a href="/api/auth/logout" data-other-key="logout"><span>ログアウト</span></a>');
+  }
+  return links + privileged.join("") + (compact
+    ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>近日公開予定</small></button>'
+    : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>近日公開予定</small></span></button>');
+}
+
+
+/** Canonical five-item navigation markup shared by home and all page shells. */
+export function renderEagleEyeNavigation({ active = "", badgeId = "globalNavBadge", home = false } = {}) {
+  const cls = home ? "ee-global-nav ee-nav" : "ee-global-nav";
+  const iconClass = home ? "ee-nav-icon" : "ee-global-nav-icon";
+  const badgeClass = home ? "ee-nav-badge" : "ee-global-nav-badge";
+  const items = [
+    { key: "home", href: "/", label: "ホーム", icon: "⌂" },
+    { key: "ranking", href: "/kingdom/rankings", label: "ランキング", icon: "♛" },
+    { key: "search", href: "/players", label: "検索", icon: "⌕" },
+    { key: "watch", href: "/watchlist", label: "ウォッチ", icon: "◌" }
+  ];
+  return '<nav class="' + cls + '" aria-label="メインナビゲーション">' +
+    items.map(item => '<a href="' + item.href + '" data-nav-path="' + item.href + '"' +
+      (active === item.key ? ' class="active" aria-current="page"' : '') +
+      ' aria-label="' + item.label + '"><span class="' + iconClass + '">' + item.icon + '</span><span>' + item.label + '</span>' +
+      (item.key === "watch" ? '<span class="' + badgeClass + '" id="' + badgeId + '" aria-label="監視中のプレイヤー数">0</span>' : '') +
+      '</a>').join("") +
+    '<button id="' + (home ? "navMore" : "globalNavMore") + '" type="button" class="' + (home ? "" : "ee-global-nav-more") + '" aria-haspopup="dialog" aria-expanded="false"><span class="' + iconClass + '">☰</span><span>その他</span></button></nav>';
+}
+
+
+/**
+ * Shared browser-side drawer behavior. Works with either the home drawer IDs
+ * or the global page-shell classes; count loading and dashboard stats remain page-owned.
+ */
+export const EAGLEEYE_DRAWER_INIT = `
+(function(){
+  var drawer=document.getElementById("moreDrawer")||document.querySelector(".ee-global-nav-drawer");
+  var triggers=Array.prototype.slice.call(document.querySelectorAll("#navMore,#globalNavMore,.ee-global-nav-more,#moreButton"));
+  var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
+  if(!drawer||!triggers.length)return;
+  // Navigation and drawer controls are UI toggles, not form actions; keep them
+  // outside the global double-submit guard so they remain immediately usable.
+  triggers.forEach(function(trigger){trigger.dataset.eagleNoGuard="1";});
+  if(closeButton)closeButton.dataset.eagleNoGuard="1";
+  // Keep active-tab behavior in the shared shell rather than duplicating route checks per page.
+  var path=location.pathname||"/";
+  document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(link){
+    var target=link.getAttribute("data-nav-path");
+    var active=(target==="/"&&(path==="/"||path==="/home"))||
+      (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
+      (target==="/players"&&(path==="/players"||path==="/player"||path==="/player-compare"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
+      (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
+    if(active){link.classList.add("active");link.setAttribute("aria-current","page");}
+  });
+  // Home already loads these counts together with its dashboard stats; avoid a duplicate API read there.
+  if(!document.getElementById("playerCount")){
+    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
+      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
+      .then(function(data){
+        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+        ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){
+          var badge=document.getElementById(id);if(!badge)return;
+          badge.textContent=count>99?"99+":String(count);badge.hidden=false;
+        });
+      }).catch(function(){
+        ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
+      });
+  }
+  var links=drawer.querySelector(".ee-global-nav-links");
+  // The home drawer already renders account links server-side, so only generic
+  // page drawers need the extra auth-state request.
+  if(links){
+    // Reuse the role-bar's existing /api/me/advanced request rather than adding
+    // a second auth-only D1 lookup for the shared drawer.
+    var roleStatePromise=window.__eagleEyeRoleStatePromise;
+    if(!roleStatePromise){
+      roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+        .then(function(response){return response.ok?response.json():null;})
+        .catch(function(){return null;});
+      window.__eagleEyeRoleStatePromise=roleStatePromise;
+    }
+    roleStatePromise.then(function(state){
+      if(!state||!state.ok)return;
+      function addLink(href,label,key){
+        if(links.querySelector('[data-other-key="'+key+'"]'))return;
+        var a=document.createElement("a");a.href=href;a.textContent=label;a.setAttribute("data-other-key",key);links.appendChild(a);
+      }
+      addLink("/account","アカウント","account");
+      if(state.role==="ADMIN"||state.role==="OWNER"){
+        addLink("/admin/diagnostics","診断","diagnostics");
+        addLink("/admin","管理","admin");
+      }
+      if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
+      addLink("/api/auth/logout","ログアウト","logout");
+    }).catch(function(){});
+  }
+  var activeTrigger=null;
+  function open(trigger){
+    activeTrigger=trigger||activeTrigger||triggers[0];
+    drawer.classList.add("open");
+    drawer.setAttribute("aria-hidden","false");
+    triggers.forEach(function(item){item.setAttribute("aria-expanded","true");});
+    if(closeButton&&typeof closeButton.focus==="function")closeButton.focus();
+  }
+  function close(){
+    drawer.classList.remove("open");
+    drawer.setAttribute("aria-hidden","true");
+    triggers.forEach(function(item){item.setAttribute("aria-expanded","false");});
+    if(activeTrigger&&typeof activeTrigger.focus==="function")activeTrigger.focus();
+    activeTrigger=null;
+  }
+  triggers.forEach(function(trigger){trigger.addEventListener("click",function(){if(drawer.classList.contains("open"))close();else open(trigger);});});
+  if(closeButton)closeButton.addEventListener("click",close);
+  drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
+  document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
+})();
 `;

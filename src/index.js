@@ -1,4 +1,4 @@
-import { EAGLEEYE_NAV_CSS } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation } from "./eagleeye-ui.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -4143,6 +4143,11 @@ export default {
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
       if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
+      if (url.pathname === "/api/auth/ui-state") {
+        const auth = await getAuthenticatedUser(request, env);
+        const active = Boolean(auth && auth.status === "ACTIVE");
+        return json({ authenticated: active, role: active ? auth.role : null });
+      }
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
@@ -4579,10 +4584,16 @@ const EAGLEEYE_THEME_SCRIPT = `
 
   function loadRole(){
     try {
-      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
-        .then(function(r){return r.ok?r.json():null;})
-        .then(function(d){if(d&&d.ok)paintRole(d.role);})
-        .catch(function(){});
+      // Share the request started by the generic drawer, when present, so the
+      // shell does not issue duplicate role/eligibility API reads on page load.
+      var roleStatePromise=window.__eagleEyeRoleStatePromise;
+      if(!roleStatePromise){
+        roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+          .then(function(r){return r.ok?r.json():null;})
+          .catch(function(){return null;});
+        window.__eagleEyeRoleStatePromise=roleStatePromise;
+      }
+      roleStatePromise.then(function(d){if(d&&d.ok)paintRole(d.role);});
     } catch(e) {}
   }
 
@@ -4619,27 +4630,6 @@ const EAGLEEYE_THEME_SCRIPT = `
     } catch(e) {}
   }
 
-  function installGlobalBottomNav(){
-    try {
-      if(!document.body || document.querySelector(".ee-nav,.ee-global-nav")) return;
-      var path=window.location.pathname||"/";
-      var items=[
-        {href:"/",icon:"⌂",label:"ホーム",active:path==="/"||path==="/home"},
-        {href:"/kingdom/rankings",icon:"♛",label:"ランキング",active:path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0},
-        {href:"/players",icon:"⌕",label:"検索",active:path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0},
-        {href:"/watchlist",icon:"◌",label:"ウォッチ",active:path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0}
-      ];
-      var nav=document.createElement("nav");nav.className="ee-global-nav";nav.setAttribute("aria-label","メインナビゲーション");
-      items.forEach(function(item){var a=document.createElement("a");a.href=item.href;if(item.active){a.className="active";a.setAttribute("aria-current","page");}var icon=document.createElement("span");icon.className="ee-global-nav-icon";icon.textContent=item.icon;var label=document.createElement("span");label.textContent=item.label;a.appendChild(icon);a.appendChild(label);nav.appendChild(a);});
-      var more=document.createElement("button");more.type="button";more.innerHTML='<span class="ee-global-nav-icon">☰</span><span>その他</span>';more.setAttribute("aria-haspopup","dialog");nav.appendChild(more);document.body.appendChild(nav);
-      var drawer=document.createElement("div");drawer.className="ee-global-nav-drawer";drawer.setAttribute("aria-hidden","true");drawer.innerHTML='<section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能"><div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div><div class="ee-global-nav-links"><a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/status">システム状況</a><a href="/admin/diagnostics">診断</a><a href="/account">アカウント</a></div></section>';document.body.appendChild(drawer);
-      function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");}
-      more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");});
-      drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
-      document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
-    } catch(e) {}
-  }
-
   function setup(){
     // Each component is isolated so one Safari/WebKit restriction cannot
     // suppress the remaining global UI.
@@ -4649,7 +4639,6 @@ const EAGLEEYE_THEME_SCRIPT = `
     installGlobalActionGuard();
     installRoleBar();
     installThemeToggle();
-    installGlobalBottomNav();
     loadRole();
   }
 
@@ -4676,55 +4665,21 @@ function applyEagleEyeTheme(html) {
   // Protected/login-required pages must not show the global navigation.
   // Keep the explicit login prompt as a clean standalone screen.
   const isLoginRequiredPage = html.includes("ログインが必要です") || html.includes("Discordでログイン");
-  if (!isLoginRequiredPage && !html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
+  if (!isLoginRequiredPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
     const sharedNav = `
-<nav class="ee-global-nav" aria-label="メインナビゲーション">
-  <a href="/" data-nav-path="/" aria-label="ホーム"><span class="ee-global-nav-icon">⌂</span><span>ホーム</span></a>
-  <a href="/kingdom/rankings" data-nav-path="/kingdom/rankings" aria-label="ランキング"><span class="ee-global-nav-icon">♛</span><span>ランキング</span></a>
-  <a href="/players" data-nav-path="/players" aria-label="検索"><span class="ee-global-nav-icon">⌕</span><span>検索</span></a>
-  <a href="/watchlist" data-nav-path="/watchlist" aria-label="ウォッチ"><span class="ee-global-nav-icon">◌</span><span>ウォッチ</span><span class="ee-global-nav-badge" id="globalNavBadge" aria-label="監視中のプレイヤー数">0</span></a>
-  <button type="button" class="ee-global-nav-more" aria-haspopup="dialog" aria-expanded="false"><span class="ee-global-nav-icon">☰</span><span>その他</span></button>
-</nav>
+${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 <div class="ee-global-nav-drawer" aria-hidden="true">
   <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
     <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
     <div class="ee-global-nav-links">
-      <a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/support">サポート</a>
+      ${renderEagleEyeOtherMenu({ auth: null, includeAccount: false, compact: true })}
     </div>
   </section>
 </div>
-<script id="eagleeye-global-nav-init">
-(function(){
-  var path=location.pathname||"/";
-  document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(a){
-    var target=a.getAttribute("data-nav-path");
-    var active=(target==="/"&&(path==="/"||path==="/home"))||
-      (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
-      (target==="/players"&&(path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
-      (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
-    if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
-  });
-  var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
-  var badge=document.getElementById("globalNavBadge");
-  // Keep the player-watch count visible on every page that uses the shared shell.
-  if(badge){
-    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
-      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
-      .then(function(data){
-        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
-        badge.textContent=count>99?"99+":String(count);
-        badge.hidden=false;
-      }).catch(function(){badge.hidden=true;});
-  }
-  if(!nav||!drawer||!more)return;
-  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");more.setAttribute("aria-expanded","false");}
-  more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");more.setAttribute("aria-expanded","true");});
-  drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
-  document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
-})();
-</script>`;
+`;
     html=html.replace("</body>",sharedNav+"</body>");
   }
+  if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   return html;
 }
@@ -9245,13 +9200,6 @@ async function renderHome(request, env) {
   const loginBlock = session
     ? `<a class="ee-profile" href="/my-player" aria-label="マイKingshotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
-  const adminItem = auth && (auth.role === "ADMIN" || auth.role === "OWNER")
-    ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span>管理</span></a>` : "";
-  const ownerItem = auth && auth.role === "OWNER"
-    ? `<a class="owner" href="/owner"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>Owner Control</span></a>` : "";
-  const logoutItem = auth
-    ? `<a class="logout" href="/api/auth/logout"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>ログアウト</span></a>` : "";
-
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
 :root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,#06101d,#030811 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
@@ -9538,25 +9486,12 @@ async function renderHome(request, env) {
 </button>
 
 </div></main>
-<nav class="ee-global-nav ee-nav">
-<a class="active" href="/"><span class="ee-nav-icon">⌂</span><span>ホーム</span></a>
-<a href="/kingdom/rankings"><span class="ee-nav-icon">♛</span><span>ランキング</span></a>
-<a href="/players"><span class="ee-nav-icon">⌕</span><span>検索</span></a>
-<a href="/watchlist"><span class="ee-nav-icon">◌</span><span>ウォッチ</span><span class="ee-nav-badge" id="navBadge">0</span></a>
-<button id="navMore" type="button"><span class="ee-nav-icon">☰</span><span>その他</span></button>
-</nav>
+${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
 <div class="ee-drawer" id="moreDrawer" aria-hidden="true">
   <div class="ee-drawer-panel">
     <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
     <div class="ee-drawer-grid">
-      <a href="/kingdom-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><span>王国ウォッチ</span></a>
-      <a href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><span>王国カタログ</span></a>
-      <a href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>マイKingshot</span></a>
-      <button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span class="ee-drawer-milestone-icon" aria-hidden="true">✦</span><span>マイルストーン<small>近日公開予定</small></span></button>
-      <a href="/support"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>サポート</span></a>
-      ${adminItem}
-      ${ownerItem}
-      ${logoutItem}
+      ${renderEagleEyeOtherMenu({ auth, includeAccount: true, compact: false })}
     </div>
   </div>
 </div>
@@ -9574,14 +9509,7 @@ async function renderHome(request, env) {
       if(state)state.textContent="Discordへ移動";
     });
   }
-  var drawer=document.getElementById("moreDrawer");
-  function openDrawer(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false")}
-  function closeDrawer(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true")}
-  var homeMore=document.getElementById("moreButton");
-  if(homeMore)homeMore.onclick=openDrawer;
-  document.getElementById("navMore").onclick=openDrawer;
-  document.getElementById("closeMore").onclick=closeDrawer;
-  drawer.addEventListener("click",function(e){if(e.target===drawer)closeDrawer()});
+  // Drawer open/close behavior is shared across all pages.
   var pCount=document.getElementById("playerCount"),kCount=document.getElementById("kingdomCount"),pBadge=document.getElementById("playerBadge"),nBadge=document.getElementById("navBadge");
   function countUp(el,target,duration){
     target=Math.max(0,Number(target)||0);var start=performance.now();
@@ -9592,7 +9520,9 @@ async function renderHome(request, env) {
     try{
       var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
-      pBadge.textContent=pc;nBadge.textContent=pc;countUp(pCount,pc,700);
+      if(pBadge)pBadge.textContent=pc;
+      if(nBadge)nBadge.textContent=pc;
+      if(pCount)countUp(pCount,pc,700);
     }catch(e){}
     try{
       var k=await fetch("/api/kingdom-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
