@@ -4689,7 +4689,7 @@ function applyEagleEyeTheme(html) {
   <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
     <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
     <div class="ee-global-nav-links">
-      <a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/support">サポート</a><a href="/status">システム状況</a><a href="/admin/diagnostics">診断</a><a href="/account">アカウント</a>
+      <a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/support">サポート</a><a href="/admin">管理</a><a href="/owner">Owner Control</a><a href="/api/auth/logout">ログアウト</a>
     </div>
   </section>
 </div>
@@ -9527,7 +9527,7 @@ async function renderHome(request, env) {
 </button>
 
 </div></main>
-<nav class="ee-nav">
+<nav class="ee-global-nav ee-nav">
 <a class="active" href="/"><span class="ee-nav-icon">⌂</span><span>ホーム</span></a>
 <a href="/kingdom/rankings"><span class="ee-nav-icon">♛</span><span>ランキング</span></a>
 <a href="/players"><span class="ee-nav-icon">⌕</span><span>検索</span></a>
