@@ -186,6 +186,19 @@ export const EAGLEEYE_DRAWER_INIT = `
   var trigger=document.getElementById("navMore")||document.getElementById("globalNavMore")||document.querySelector(".ee-global-nav-more");
   var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
   if(!drawer||!trigger)return;
+  fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
+    .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
+    .then(function(data){
+      var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+      ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){
+        var badge=document.getElementById(id);if(!badge)return;
+        badge.textContent=count>99?"99+":String(count);badge.hidden=false;
+      });
+      var playerCount=document.getElementById("playerCount");
+      if(playerCount)playerCount.textContent=String(count);
+    }).catch(function(){
+      ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
+    });
   fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
     .then(function(response){if(!response.ok)throw new Error("auth_state_unavailable");return response.json();})
     .then(function(state){
