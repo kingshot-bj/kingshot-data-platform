@@ -250,7 +250,7 @@ export const EAGLEEYE_DRAWER_INIT = `
     if(activeTrigger&&typeof activeTrigger.focus==="function")activeTrigger.focus();
     activeTrigger=null;
   }
-  triggers.forEach(function(trigger){trigger.addEventListener("click",function(){open(trigger);});});
+  triggers.forEach(function(trigger){trigger.addEventListener("click",function(){if(drawer.classList.contains("open"))close();else open(trigger);});});
   if(closeButton)closeButton.addEventListener("click",close);
   drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
   document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
