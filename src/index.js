@@ -8859,6 +8859,11 @@ async function renderHome(request, env) {
 .ee-menu-title{margin:20px 3px 10px;align-items:center}.ee-menu-title b{font-size:13px;letter-spacing:.04em}.ee-menu-title span{font-size:9px}.ee-mainmenu{gap:9px}
 .ee-tile{min-height:112px;padding:10px 5px;border-radius:17px;background:linear-gradient(155deg,rgba(13,34,54,.98),rgba(6,18,31,.98));border-color:rgba(43,77,107,.68);transition:transform .16s,border-color .16s,background .16s}.ee-tile.primary{border-color:rgba(32,215,242,.5);background:linear-gradient(155deg,rgba(10,45,65,.98),rgba(6,20,34,.98))}.ee-tile:active{transform:scale(.965);background:#102b43}.ee-tile img{width:48px;height:48px}.ee-tile strong{font-size:11px}.ee-tile small{font-size:8px;color:#89a1b8}.ee-tile .badge{right:8px;top:8px;min-width:18px;height:18px;box-shadow:0 0 15px rgba(32,215,242,.18)}
 .ee-summary{gap:8px;margin-top:17px}.ee-stat{padding:11px 12px;border-radius:15px;background:linear-gradient(150deg,rgba(10,25,41,.95),rgba(6,16,28,.95));border-color:rgba(35,65,95,.62)}.ee-stat-label{font-size:8px;letter-spacing:.08em}.ee-stat-value{font-size:17px}.ee-stat-sub{font-size:8px;color:#7892aa}.ee-more{display:none}
+.ee-milestone-card{width:100%;display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 15px;text-align:left;border:1px solid rgba(246,200,75,.25);border-radius:16px;background:linear-gradient(110deg,rgba(48,39,18,.52),rgba(8,22,37,.92));color:#e7edf5;opacity:.78;cursor:not-allowed}
+.ee-milestone-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(246,200,75,.35);border-radius:12px;color:#f6c84b;font-size:24px}
+.ee-milestone-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.ee-milestone-copy strong{font-size:12px;font-weight:950}.ee-milestone-copy small{font-size:9px;color:#8da2b8}.ee-milestone-status{flex:0 0 auto;padding:6px 8px;border:1px solid rgba(246,200,75,.24);border-radius:999px;color:#f6d98b;font-size:9px;font-weight:900;white-space:nowrap}
+.ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
+.ee-drawer-milestone-icon{color:#f6c84b;font-size:23px}.ee-drawer-grid .ee-drawer-milestone span{font-size:9px;font-weight:900}.ee-drawer-grid .ee-drawer-milestone small{display:block;margin-top:3px;color:#d0b66e;font-size:8px}
 .ee-nav{padding-top:7px;gap:5px;background:rgba(3,9,17,.97);padding-bottom:max(7px,env(safe-area-inset-bottom))}.ee-nav a,.ee-nav button{min-height:49px;font-size:8px;border-radius:13px;gap:4px}.ee-nav-icon{font-size:20px}.ee-nav a.active{background:linear-gradient(180deg,rgba(32,215,242,.11),rgba(32,215,242,.025))}
 .ee-drawer{z-index:40}.ee-drawer-panel{max-height:82dvh;overflow:auto;padding:16px 16px calc(22px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:linear-gradient(180deg,#0d2339,#050e19)}.ee-drawer-head{margin-bottom:14px}.ee-drawer-head b{font-size:14px;letter-spacing:.03em}.ee-close{width:36px;height:36px;border:1px solid rgba(80,115,145,.4);border-radius:50%;background:rgba(255,255,255,.04)}.ee-drawer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ee-drawer-grid a{min-height:82px;border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.96),rgba(6,17,29,.96));border-color:rgba(43,78,110,.7)}.ee-drawer-grid img{width:37px;height:37px}.ee-drawer-grid span{font-size:9px}
 @media(min-width:760px){.ee-welcome{min-height:172px;padding:26px}.ee-welcome-bj{width:205px;height:205px;right:7%;bottom:-24px}.ee-tile{min-height:132px}.ee-tile img{width:58px;height:58px}.ee-summary{grid-template-columns:repeat(4,1fr)}}
@@ -8889,6 +8894,11 @@ async function renderHome(request, env) {
   <div class="ee-stat"><div class="ee-stat-label">MY KINGSHOT</div><div class="ee-stat-value">DATA</div><div class="ee-stat-sub">登録データへ</div></div>
   <div class="ee-stat"><div class="ee-stat-label">EAGLEEYE</div><div class="ee-stat-value"><em>LIVE</em></div><div class="ee-stat-sub">観測システム稼働中</div></div>
 </section>
+<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
+  <span class="ee-milestone-icon" aria-hidden="true">✦</span>
+  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>デイリー・累計目標と報酬</small></span>
+  <span class="ee-milestone-status">近日公開予定</span>
+</button>
 
 </div></main>
 <nav class="ee-nav">
@@ -8905,6 +8915,7 @@ async function renderHome(request, env) {
       <a href="/kingdom-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><span>王国ウォッチ</span></a>
       <a href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><span>王国カタログ</span></a>
       <a href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>マイKingshot</span></a>
+      <button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span class="ee-drawer-milestone-icon" aria-hidden="true">✦</span><span>マイルストーン<small>近日公開予定</small></span></button>
       <a href="/support"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>サポート</span></a>
       ${adminItem}
       ${ownerItem}
