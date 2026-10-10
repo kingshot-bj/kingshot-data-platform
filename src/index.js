@@ -1,4 +1,4 @@
-import { EAGLEEYE_NAV_CSS } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, renderEagleEyeOtherMenu } from "./eagleeye-ui.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -4689,7 +4689,7 @@ function applyEagleEyeTheme(html) {
   <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
     <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
     <div class="ee-global-nav-links">
-      <a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/support">サポート</a>
+      ${renderEagleEyeOtherMenu({ auth: null, includeAccount: false, compact: true })}
     </div>
   </section>
 </div>
@@ -9549,14 +9549,7 @@ async function renderHome(request, env) {
   <div class="ee-drawer-panel">
     <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
     <div class="ee-drawer-grid">
-      <a href="/kingdom-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><span>王国ウォッチ</span></a>
-      <a href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><span>王国カタログ</span></a>
-      <a href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>マイKingshot</span></a>
-      <button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span class="ee-drawer-milestone-icon" aria-hidden="true">✦</span><span>マイルストーン<small>近日公開予定</small></span></button>
-      <a href="/support"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>サポート</span></a>
-      ${adminItem}
-      ${ownerItem}
-      ${logoutItem}
+      ${renderEagleEyeOtherMenu({ auth, includeAccount: true, compact: false })}
     </div>
   </div>
 </div>
