@@ -9504,13 +9504,13 @@ async function renderHome(request, env) {
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
-<div class="ee-drawer" id="moreDrawer" aria-hidden="true">
-  <div class="ee-drawer-panel">
-    <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
-    <div class="ee-drawer-grid">
+<div class="ee-global-nav-drawer" aria-hidden="true">
+  <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
+    <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
+    <div class="ee-global-nav-links">
       ${renderEagleEyeOtherMenu({ auth: menuAuth, includeAccount: true, compact: false })}
     </div>
-  </div>
+  </section>
 </div>
 <script>
 (function(){
