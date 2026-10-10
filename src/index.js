@@ -9547,6 +9547,13 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   }
   async function loadCounts(){
     try{
+      var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
+      var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
+      if(pBadge)pBadge.textContent=pc;
+      if(nBadge)nBadge.textContent=pc;
+      if(pCount)countUp(pCount,pc,700);
+    }catch(e){}
+    try{
       var k=await fetch("/api/kingdom-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var kc=(k.watchlists||[]).filter(function(x){return Number(x.enabled)!==0}).length;
       countUp(kCount,kc,700);
