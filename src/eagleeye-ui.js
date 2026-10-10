@@ -183,9 +183,9 @@ export function renderEagleEyeNavigation({ active = "", badgeId = "globalNavBadg
 export const EAGLEEYE_DRAWER_INIT = `
 (function(){
   var drawer=document.getElementById("moreDrawer")||document.querySelector(".ee-global-nav-drawer");
-  var trigger=document.getElementById("navMore")||document.getElementById("globalNavMore")||document.querySelector(".ee-global-nav-more");
+  var triggers=Array.prototype.slice.call(document.querySelectorAll("#navMore,#globalNavMore,.ee-global-nav-more,#moreButton"));
   var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
-  if(!drawer||!trigger)return;
+  if(!drawer||!triggers.length)return;
   fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
     .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
     .then(function(data){
@@ -214,9 +214,9 @@ export const EAGLEEYE_DRAWER_INIT = `
       if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
-  function open(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");trigger.setAttribute("aria-expanded","true");}
-  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");trigger.setAttribute("aria-expanded","false");}
-  trigger.addEventListener("click",open);
+  function open(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","true");});}
+  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","false");});}
+  triggers.forEach(function(trigger){trigger.addEventListener("click",open);});
   if(closeButton)closeButton.addEventListener("click",close);
   drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
   document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
