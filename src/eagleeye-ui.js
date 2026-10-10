@@ -219,10 +219,18 @@ export const EAGLEEYE_DRAWER_INIT = `
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic
   // page drawers need the extra auth-state request.
-  if(links)fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
-    .then(function(response){if(!response.ok)throw new Error("auth_state_unavailable");return response.json();})
-    .then(function(state){
-      if(!state.authenticated)return;
+  if(links){
+    // Reuse the role-bar's existing /api/me/advanced request rather than adding
+    // a second auth-only D1 lookup for the shared drawer.
+    var roleStatePromise=window.__eagleEyeRoleStatePromise;
+    if(!roleStatePromise){
+      roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+        .then(function(response){return response.ok?response.json():null;})
+        .catch(function(){return null;});
+      window.__eagleEyeRoleStatePromise=roleStatePromise;
+    }
+    roleStatePromise.then(function(state){
+      if(!state||!state.ok)return;
       function addLink(href,label,key){
         if(links.querySelector('[data-other-key="'+key+'"]'))return;
         var a=document.createElement("a");a.href=href;a.textContent=label;a.setAttribute("data-other-key",key);links.appendChild(a);
