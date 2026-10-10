@@ -104,6 +104,7 @@ export const EAGLEEYE_NAV_CSS = `
   height:17px!important;
   font-size:9px!important;
 }
+.ee-global-nav-badge[hidden],.ee-nav-badge[hidden]{display:none!important}
 @media(max-width:600px){
   .ee-nav-icon,.ee-global-nav .ee-global-nav-icon{font-size:24px!important}
 }
