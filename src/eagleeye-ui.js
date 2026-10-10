@@ -185,6 +185,21 @@ export const EAGLEEYE_DRAWER_INIT = `
   var trigger=document.getElementById("navMore")||document.getElementById("globalNavMore")||document.querySelector(".ee-global-nav-more");
   var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
   if(!drawer||!trigger)return;
+  fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
+    .then(function(response){if(!response.ok)throw new Error("auth_state_unavailable");return response.json();})
+    .then(function(state){
+      if(!state.authenticated)return;
+      var links=drawer.querySelector(".ee-global-nav-links");
+      if(!links)return;
+      function addLink(href,label,key){
+        if(links.querySelector('[data-other-key="'+key+'"]'))return;
+        var a=document.createElement("a");a.href=href;a.textContent=label;a.setAttribute("data-other-key",key);links.appendChild(a);
+      }
+      addLink("/account","アカウント","account");
+      if(state.role==="ADMIN"||state.role==="OWNER")addLink("/admin","管理","admin");
+      if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
+      addLink("/api/auth/logout","ログアウト","logout");
+    }).catch(function(){});
   function open(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");trigger.setAttribute("aria-expanded","true");}
   function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");trigger.setAttribute("aria-expanded","false");}
   trigger.addEventListener("click",open);
