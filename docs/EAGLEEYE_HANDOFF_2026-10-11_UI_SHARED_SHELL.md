@@ -132,3 +132,9 @@ EagleEye本体の各画面でナビゲーション／「その他」メニュー
 - ホームの既存件数処理、プレイヤーウォッチリスト／詳細画面の既存データ再利用、王国ウォッチリスト件数処理は維持。
 - 追加静的検査9項目が全件成功し、共通ドロワー埋め込みスクリプトの括弧バランス検査も成功。Cloudflare Workers Buildはコミット `94bb41e1a99d815d2a72c926e1fa90e3077fedb3` で **success**。これはプレビュービルドの成功で、実機確認・本番デプロイの完了を意味しない。
 - 最新ソースSHA：`src/eagleeye-ui.js` = `5cc026cfcef2851e9b3ca862c5072dec976c34b3`、`src/index.js` = `7e27c8c2bf2efa22079eec234f7d62c86aec9218`。
+
+
+## 2026-10-11 継続作業メモ（最新プレビューURL）
+- Cloudflare WorkersのプレビューURLが更新され、コミット `619fc2c` で Build／Deployment ともに success を確認：`https://ui-shared-shell-unification-kingshot-data-platform.black-jack-kingshot.workers.dev`
+- このプレビューは作業ブランチ用で、本番URLではない。ソース変更を含む直近コードコミット `94bb41e` のBuildも success。ブラウザツールからプレビューURLへアクセスできなかったため、クリック操作・実機表示は未検証。
+- 最終10%はこのプレビューをPCブラウザ／iPhone Safariで開き、画面別のナビ／ドロワー／権限メニュー／バッジ更新を実機確認してから判断する。
