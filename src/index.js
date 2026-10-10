@@ -7012,6 +7012,30 @@ async function renderPlayerPage(request, env) {
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
     const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
+    // Supplement missing leaderboard ranks from the already-collected kingdom current table.
+    // Keep this to one bounded query; never read ranking_snapshots here.
+    if (visibleProfile?.ranks && Array.isArray(visibleProfile.ranks.leaderboards)) {
+      const rankBoards = ["coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"];
+      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
+      const normalizedGovernorId = normalizeGovernorId(governorId);
+      if (kid !== undefined && kid !== null && normalizedGovernorId) {
+        const placeholders = rankBoards.map(() => "?").join(",");
+        const storedRanks = await env.DB.prepare(
+          "SELECT board, rank FROM kingdom_ranking_current " +
+          "WHERE kid = ? AND target_type = 'PLAYER' AND (governor_id = ? OR target_id = ?) " +
+          "AND board IN (" + placeholders + ")"
+        ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all();
+        const rankByBoard = new Map((storedRanks.results || []).map(row => [String(row.board), row.rank]));
+        visibleProfile.ranks.leaderboards = visibleProfile.ranks.leaderboards.map(board => {
+          const boardKey = String(board?.key ?? board?.board ?? board?.id ?? "");
+          const storedRank = rankByBoard.get(boardKey);
+          const existingRank = board?.rank ?? board?.ranking ?? board?.rank_no;
+          if (existingRank !== undefined && existingRank !== null && existingRank !== "") return board;
+          if (storedRank === undefined || storedRank === null) return board;
+          return { ...board, rank: storedRank };
+        });
+      }
+    }
     visibleProfile.optional_assets = extractOptionalPlayerAssets(observation.payload);
     if (visibilityEnabled(visibilitySettings, "base_identity", auth.role)) {
       visibleProfile.name_history = await getPlayerNameHistory(env.DB, governorId);
