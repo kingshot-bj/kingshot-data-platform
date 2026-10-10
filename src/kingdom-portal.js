@@ -1,4 +1,5 @@
-import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly } from "./data-collection-engine.js";
+import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly, collectAllianceDetail } from "./data-collection-engine.js";
+import { archiveAllianceHistoryBatch } from "./r2-archive.js";
 import { evaluateVipEligibility } from "./user-eligibility.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
@@ -158,11 +159,44 @@ export async function renderAlliancePage(request, env) {
   }
   if (!row) return page("同盟詳細","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><div class='empty'>指定された同盟が見つかりません。</div></main>");
   let archived=null; try{archived=await readR2Json(env.ARCHIVE,row?.r2_latest_key)}catch{}
-  const payload=archived?.payload||{};
-  const alliance=payload?.alliance||payload?.data?.alliance||payload;
-  const members=Array.isArray(payload?.roster)?payload.roster:Array.isArray(payload?.members)?payload.members:Array.isArray(payload?.data?.roster)?payload.data.roster:[];
+  let payload=archived?.payload||{};
+  let alliance=payload?.alliance||payload?.data?.alliance||payload;
+  let members=Array.isArray(payload?.roster)?payload.roster:Array.isArray(payload?.members)?payload.members:Array.isArray(payload?.data?.roster)?payload.data.roster:Array.isArray(payload?.data?.data?.members)?payload.data.data.members:[];
+  // R2にRosterがなければ、既存のMightPulse収集経路から取得してR2へ保存する。
+  // alliance_catalog.updated_atで再試行間隔を設け、ページ再読み込みによるAPI連打を防ぐ。
+  const nowSeconds=Math.floor(Date.now()/1000);
+  const lastAttempt=Number(row?.updated_at||row?.last_seen_at||0);
+  const shouldFetchRoster=members.length===0 && env.ARCHIVE && nowSeconds-lastAttempt>=600;
+  let rosterFetchMessage="";
+  if(shouldFetchRoster){
+    try{
+      const collected=await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
+      const fetched=collected?.result?.data??collected?.result??collected?.data??collected;
+      const fetchedPayload=fetched?.data&&typeof fetched.data==="object"?fetched.data:fetched;
+      const fetchedMembers=Array.isArray(fetchedPayload?.members)?fetchedPayload.members:Array.isArray(fetchedPayload?.roster)?fetchedPayload.roster:Array.isArray(fetchedPayload?.data?.members)?fetchedPayload.data.members:Array.isArray(fetchedPayload?.data?.roster)?fetchedPayload.data.roster:[];
+      if(fetchedMembers.length){
+        const observedAt=Math.floor(Date.now()/1000);
+        const aid=String(fetchedPayload?.alliance?.aid??fetchedPayload?.aid??row.aid??tag);
+        const archive=await archiveAllianceHistoryBatch(env.ARCHIVE,{kid,aid,observedAt,sourceObservedAt:Number(fetchedPayload?.source_observed_at??fetchedPayload?.observed_at??0)||null,payload:fetched});
+        if(!archive?.key) throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
+        await env.DB.prepare("UPDATE alliance_catalog SET r2_latest_key=?, member_count=COALESCE(?,member_count), last_seen_at=?, updated_at=? WHERE kid=? AND aid=?").bind(archive.key,fetchedMembers.length,observedAt,observedAt,kid,aid).run();
+        archived={payload:fetched};
+        payload=fetchedPayload;
+        alliance=payload?.alliance||payload?.data?.alliance||payload;
+        members=fetchedMembers;
+      }else{
+        // 空レスポンスでも10分は再取得を抑止する。
+        await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(nowSeconds,row.kid,row.aid).run().catch(()=>{});
+        rosterFetchMessage="Roster APIは応答しましたが、メンバー情報が返りませんでした。";
+      }
+    }catch(error){
+      await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(nowSeconds,row.kid,row.aid).run().catch(()=>{});
+      console.error("alliance_roster_on_demand_failed",{kid,tag,message:error?.message||String(error)});
+      rosterFetchMessage="自動取得に失敗しました。時間をおいて再読み込みしてください。";
+    }
+  }
   const roster=members.slice(0,100).map(m=>"<a class='row' href='/player?governor_id="+encodeURIComponent(m.governor_id||m.uid||"")+"'><span>"+esc(m.nick_name||m.governor_id||m.uid)+"</span><em>"+num(m.power)+"</em><small>役場 "+esc(m.town_center_level??"—")+"</small></a>").join("");
-  return page("同盟 "+(row?.abbr||tag),"<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(alliance.name||row?.name||tag)+"</h1><p>"+esc(alliance.abbr||row?.abbr||tag)+" · Power "+esc(num(alliance.power||row?.power))+" · "+esc(num(alliance.count||row?.member_count||"—"))+"人</p><div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a></div><section><h2>Roster</h2><div class='list'>"+(roster||"<div class='empty'>Roster詳細はまだR2に保存されていません。ランキングcurrentから基本情報のみ表示しています。</div>")+"</div></section></main>");
+  return page("同盟 "+(row?.abbr||tag),"<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(alliance.name||row?.name||tag)+"</h1><p>"+esc(alliance.abbr||row?.abbr||tag)+" · Power "+esc(num(alliance.power||row?.power))+" · "+esc(num(alliance.count||row?.member_count||"—"))+"人</p><div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a></div><section><h2>Roster</h2><div class='list'>"+(roster||"<div class='empty'>"+esc(rosterFetchMessage||(shouldFetchRoster?"Roster詳細を取得できませんでした。":"Roster詳細はまだR2に保存されていません。自動取得は10分間隔で再試行します。"))+"</div>")+"</div></section></main>");
 }
 
 export async function renderKingdomComparePage(request, env) {
