@@ -4692,7 +4692,7 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
     </div>
   </section>
 </div>
-<script id="eagleeye-global-nav-init">/* Active state and drawer behavior are centralized in EAGLEEYE_DRAWER_INIT. */</script>`;
+`;
     html=html.replace("</body>",sharedNav+"</body>");
   }
   if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
