@@ -2179,7 +2179,44 @@ async function renderMyPlayerPage(request, env) {
   }
 
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:28px 18px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0 8px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:16px;background:#162238}.label{display:block;margin-bottom:8px;color:#cbd5e1;font-size:13px;font-weight:800}.input,.select{width:100%;padding:14px;border-radius:12px;border:1px solid #475569;background:#0b1220;color:#fff;font-size:18px;box-sizing:border-box}.btn{margin-top:12px;width:100%;padding:14px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900;font-size:15px}.danger{background:#3f1d24;color:#fecaca}.muted{color:#94a3b8;font-size:12px;line-height:1.7}.ok{color:#86efac}.warn{color:#fbbf24}.error{margin-top:12px;color:#fca5a5}.row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid #334155}.row:last-child{border-bottom:0}.value{font-weight:800;text-align:right;overflow-wrap:anywhere}.account{margin-top:14px;padding:14px;border:1px solid #334155;border-radius:14px;background:#101b2d}.account-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.badge{padding:4px 8px;border-radius:999px;background:#334155;font-size:11px;font-weight:900}.badge.main{background:#78350f;color:#fde68a}.badge.sub{background:#1e3a8a;color:#bfdbfe}.check{display:flex;align-items:center;gap:9px;margin:9px 0}.check-icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#334155;font-size:12px;font-weight:900}.check-icon.ok{background:#14532d;color:#86efac}</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">MY KINGSHOT</div><h1 class="title">マイKingShot</h1><p class="sub">Discordアカウントに、自分のKingShot領主IDを複数紐づけできます。無料枠は1王国につきメイン1＋サブ1、最大2王国です。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
+:root{color-scheme:dark;--ee-bg:#050b14;--ee-panel:#0a1728;--ee-panel2:#0d2035;--ee-line:#23415f;--ee-text:#eff8ff;--ee-sub:#8098b0;--ee-cyan:#20d7f2;--ee-blue:#4ea9ff;--ee-gold:#f6c84b;--ee-green:#49e69a}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--ee-bg)}
+body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,rgba(32,215,242,.11),transparent 65%),linear-gradient(180deg,#071321 0%,var(--ee-bg) 420px);color:var(--ee-text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{width:min(100%,760px);margin:0 auto;padding:18px 16px calc(44px + env(safe-area-inset-bottom))}
+.back{display:inline-flex;align-items:center;gap:7px;color:#8fa9c1;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.04em;padding:8px 0}
+.back:hover{color:var(--ee-cyan)}
+.eyebrow{margin-top:23px;color:var(--ee-cyan);font-size:10px;font-weight:950;letter-spacing:.22em}
+.title{font-size:clamp(28px,6vw,36px);line-height:1.12;letter-spacing:-.04em;margin:7px 0 10px;font-weight:900}
+.sub{color:#9cb1c7;line-height:1.75;font-size:13px;margin:0;max-width:620px}
+#app{margin-top:22px}
+.card{margin-top:15px;padding:18px;border:1px solid rgba(54,91,123,.7);border-radius:19px;background:linear-gradient(145deg,rgba(13,32,53,.98),rgba(7,19,33,.98));box-shadow:0 12px 30px rgba(0,0,0,.16);overflow:hidden}
+.card h2{font-size:17px;line-height:1.35;font-weight:900;letter-spacing:-.02em;color:#f0f8ff}
+.label{display:block;margin:16px 0 8px;color:#c6d8e8;font-size:12px;font-weight:850}
+.input,.select{width:100%;min-height:48px;padding:13px 14px;border-radius:12px;border:1px solid #2d4a66;background:#06111e;color:#f3f9ff;font-size:16px;box-sizing:border-box;outline:none}
+.input:focus,.select:focus{border-color:var(--ee-cyan);box-shadow:0 0 0 3px rgba(32,215,242,.12)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;width:100%;min-height:47px;padding:12px 14px;border:1px solid rgba(32,215,242,.4);border-radius:12px;background:linear-gradient(135deg,#16b9d4,#168dbd);color:#03121c;font-weight:900;font-size:14px;cursor:pointer;transition:filter .15s,transform .15s}
+.btn:hover{filter:brightness(1.08)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.55;cursor:wait}
+.btn.danger,.danger{background:#351b28;border:1px solid #71364b;color:#ffd8e2}
+.muted{color:#8fa8bf;font-size:12px;line-height:1.75}
+.ok{color:#6ff0ad}.warn{color:var(--ee-gold)}.error{margin-top:12px;color:#ff9cae;line-height:1.6}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:11px 0;border-bottom:1px solid rgba(54,82,109,.5);font-size:13px;color:#a9bfd3}
+.row:last-child{border-bottom:0}.value{font-weight:850;text-align:right;overflow-wrap:anywhere;color:#eaf5ff}
+.account{margin-top:13px;padding:14px;border:1px solid #24425e;border-radius:15px;background:rgba(4,15,27,.72)}
+.account-head{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#eff8ff}
+.badge{padding:5px 9px;border-radius:999px;background:#1b344b;color:#c5d9e9;font-size:10px;font-weight:900;white-space:nowrap}
+.badge.main{background:rgba(246,200,75,.15);color:#f9d66d;border:1px solid rgba(246,200,75,.3)}
+.badge.sub{background:rgba(78,169,255,.14);color:#8cc7ff;border:1px solid rgba(78,169,255,.28)}
+.check{display:flex;align-items:center;gap:10px;margin:11px 0;color:#d7e7f5;font-size:13px}
+.check-icon{flex:0 0 23px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#1a3045;color:#7893aa;font-size:12px;font-weight:900;border:1px solid #2d4b65}
+.check-icon.ok{background:rgba(73,230,154,.13);border-color:rgba(73,230,154,.35);color:var(--ee-green)}
+.vip-card{border-color:rgba(246,200,75,.35);background:linear-gradient(145deg,rgba(37,34,27,.65),rgba(9,20,32,.98))}
+.vip-card h2{color:var(--ee-gold)!important}
+#msg,#key-msg,#mighty-msg{font-size:12px;line-height:1.7}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px}
+@media(min-width:600px){.wrap{padding-top:26px}.card{padding:22px}.account{padding:16px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
+</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER & ACCOUNT</div><h1 class="title">マイKingshot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
