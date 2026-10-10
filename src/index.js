@@ -2214,7 +2214,24 @@ body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,r
 .vip-card h2{color:var(--ee-gold)!important}
 #msg,#key-msg,#mighty-msg{font-size:12px;line-height:1.7}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px}
-@media(min-width:600px){.wrap{padding-top:26px}.card{padding:22px}.account{padding:16px}}
+/* Compact mobile-first sizing aligned with the home dashboard */
+.wrap{width:min(100%,720px);padding:14px 12px calc(34px + env(safe-area-inset-bottom))}
+.back{font-size:11px;padding:5px 0}
+.eyebrow{margin-top:18px;font-size:9px;letter-spacing:.18em}
+.title{font-size:clamp(24px,7vw,30px);margin:5px 0 7px}
+.sub{font-size:12px;line-height:1.65}
+#app{margin-top:16px}
+.card{margin-top:12px;padding:14px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.13)}
+.card h2{font-size:15px}
+.account{margin-top:10px;padding:11px;border-radius:13px}
+.account-head{font-size:13px}
+.row{gap:10px;padding:9px 0;font-size:12px}
+.value{max-width:65%;font-size:12px}
+.input,.select{min-height:44px;padding:11px 12px;font-size:15px}
+.btn{min-height:43px;padding:10px 12px;font-size:13px}
+.muted{font-size:11px;line-height:1.65}
+.check{font-size:12px;margin:9px 0}
+@media(min-width:600px){.wrap{padding:22px 18px 44px}.card{padding:18px}.account{padding:14px}.title{font-size:32px}.sub{font-size:13px}.row{font-size:13px}.value{font-size:13px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER & ACCOUNT</div><h1 class="title">マイKingshot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
