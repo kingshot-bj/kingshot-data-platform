@@ -138,3 +138,11 @@ EagleEye本体の各画面でナビゲーション／「その他」メニュー
 - Cloudflare WorkersのプレビューURLが更新され、コミット `619fc2c` で Build／Deployment ともに success を確認：`https://ui-shared-shell-unification-kingshot-data-platform.black-jack-kingshot.workers.dev`
 - このプレビューは作業ブランチ用で、本番URLではない。ソース変更を含む直近コードコミット `94bb41e` のBuildも success。ブラウザツールからプレビューURLへアクセスできなかったため、クリック操作・実機表示は未検証。
 - 最終10%はこのプレビューをPCブラウザ／iPhone Safariで開き、画面別のナビ／ドロワー／権限メニュー／バッジ更新を実機確認してから判断する。
+
+
+## 2026-10-11 追加修正（iPhone Safariの「その他」メニュー）
+- 実機スクリーンショットで2点を確認：Ownerメニューの下部が画面下で切れること、汎用ページの「その他」メニューだけBJにゃん画像が表示されないこと。
+- 汎用ページ側の `compact: true` を `compact: false` に変更し、ホームと同じBJにゃん画像付きカードを使用する。
+- ホーム／汎用ページのドロワーパネルに画面高の上限、内部縦スクロール、iOS向け `-webkit-overflow-scrolling: touch`、safe-area考慮を追加。ヘッダーはスクロール時も見つけやすいよう固定。
+- 変更対象はUI表示のみ。API、権限判定、D1クエリ、ranking_snapshotsアクセスは変更しない。
+- 追加後にプレビュービルドとiPhone Safariで、Owner・一般ユーザー・各ページからの表示を再確認すること。実機確認完了までは回帰テスト未完了として扱う。
