@@ -2285,7 +2285,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
   function render(d){
     const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
     const limits=d.player.limits||{};
-    let html='<div class="card"><h2 style="margin:0 0 6px">登録済みの領主</h2><p class="muted" style="margin:0">無料枠：最大2王国、各王国メイン1＋サブ1</p>';
+    let html='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">PLAYER ACCOUNTS</span><h2>登録済みの領主</h2></div><span class="section-count">'+esc(rows.length)+'件</span></div><p class="muted section-note">無料枠：最大2王国・各王国メイン1＋サブ1</p><div class="card account-list">';
     if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
     for(const l of rows){
       const p=l.player||{};
@@ -2297,8 +2297,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
         '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
         '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div>';
     }
-    html+='<div class="muted" style="margin-top:12px">現在 '+esc(limits.registeredKingdoms||0)+' / 2 王国、'+esc(limits.activeAccounts||0)+' アカウントを登録中</div></div>';
-    html+='<div class="card"><h2 style="margin:0 0 6px">KingShotアカウントを追加</h2><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype" style="margin-top:14px">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted" style="margin-top:12px">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div>';
+    html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
+    html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
     const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
     const keyCount=Number(a.mightPulseKeyCount||0);
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
@@ -2306,22 +2306,22 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
     if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="row" style="align-items:flex-start;gap:12px"><span>APIキー '+(i+1)+'</span><span style="text-align:right"><span class="value '+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty対応':'✓ 提供済み')+'</span>'+(prefix?'<div class="muted" style="margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'+esc(prefix)+'</div>':'')+'</span></div>';}).join('')+'</div>';
-    html+='<div class="card"><h2 style="margin:0 0 6px">Advanced昇格条件</h2><p class="muted" style="margin:0 0 12px">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
+    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">ACCESS LEVEL</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
       '<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div>'+
-      '<div id="key-msg"></div></div>';
+      '<div id="key-msg"></div></div></section>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
     const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
     const isElevatedMightyRole=["ADMIN","OWNER"].includes(String(v.role||role).toUpperCase());
-    html+='<div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ '+(isElevatedMightyRole?"Mighty機能の利用確認":"VIPロールへの昇格")+'</h2><p class="muted" style="margin:0 0 12px">'+(isElevatedMightyRole?"Mighty対応を確認すると、VIP向けMighty機能を利用できます。現在の管理者ロールは変更されません。":"Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。")+'</p>'+
+    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">MIGHTY ACCESS</span><h2>VIP・Mighty機能</h2></div><span class="role-pill '+(mightyConnected?'role-active':'')+'">'+(mightyConnected?'確認済み':'未確認')+'</span></div><div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ '+(isElevatedMightyRole?"Mighty機能の利用確認":"VIPロールへの昇格")+'</h2><p class="muted" style="margin:0 0 12px">'+(isElevatedMightyRole?"Mighty対応を確認すると、VIP向けMighty機能を利用できます。現在の管理者ロールは変更されません。":"Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。")+'</p>'+
       '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
       '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
       '<div id="mighty-check-area" style="margin-top:12px"><button class="btn" id="mighty-check">⚡ '+(mightyStatus==="CONFIRMED"?(isElevatedMightyRole?"Mighty機能を再確認":"VIPロールを再確認"):(isElevatedMightyRole?"Mighty機能の利用を確認":"VIPロールへの昇格を確認"))+'</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
       (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ Mighty対応確認済み。'+(isElevatedMightyRole?"Mighty機能を利用できます。":"VIPロール判定済みです。")+'</div>':"")+
-      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいて判定を行います。</div></div>';
+      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいて判定を行います。</div></div></section>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
