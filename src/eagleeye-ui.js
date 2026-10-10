@@ -243,6 +243,7 @@ export const EAGLEEYE_DRAWER_INIT = `
       if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
+  }
   var activeTrigger=null;
   function open(trigger){
     activeTrigger=trigger||activeTrigger||triggers[0];
