@@ -152,3 +152,24 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
     ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>近日公開予定</small></button>'
     : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>近日公開予定</small></span></button>');
 }
+
+
+/** Canonical five-item navigation markup shared by home and all page shells. */
+export function renderEagleEyeNavigation({ active = "", badgeId = "globalNavBadge", home = false } = {}) {
+  const cls = home ? "ee-global-nav ee-nav" : "ee-global-nav";
+  const iconClass = home ? "ee-nav-icon" : "ee-global-nav-icon";
+  const badgeClass = home ? "ee-nav-badge" : "ee-global-nav-badge";
+  const items = [
+    { key: "home", href: "/", label: "ホーム", icon: "⌂" },
+    { key: "ranking", href: "/kingdom/rankings", label: "ランキング", icon: "♛" },
+    { key: "search", href: "/players", label: "検索", icon: "⌕" },
+    { key: "watch", href: "/watchlist", label: "ウォッチ", icon: "◌" }
+  ];
+  return '<nav class="' + cls + '" aria-label="メインナビゲーション">' +
+    items.map(item => '<a href="' + item.href + '" data-nav-path="' + item.href + '"' +
+      (active === item.key ? ' class="active" aria-current="page"' : '') +
+      ' aria-label="' + item.label + '"><span class="' + iconClass + '">' + item.icon + '</span><span>' + item.label + '</span>' +
+      (item.key === "watch" ? '<span class="' + badgeClass + '" id="' + badgeId + '" aria-label="監視中のプレイヤー数">0</span>' : '') +
+      '</a>').join("") +
+    '<button id="' + (home ? "navMore" : "globalNavMore") + '" type="button" class="' + (home ? "" : "ee-global-nav-more") + '" aria-haspopup="dialog" aria-expanded="false"><span class="' + iconClass + '">☰</span><span>その他</span></button></nav>';
+}
