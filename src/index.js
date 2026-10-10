@@ -2599,8 +2599,8 @@ html,body{width:100%;height:100%;min-height:0;overflow:hidden;overscroll-behavio
 <div class="watch-head"><div><a class="watch-back" href="/">← EAGLEEYE / HOME</a><h1>ウォッチリスト</h1></div></div>
 <p class="watch-intro">追跡したい対象を選択してください。</p>
 <section class="watch-options">
-<a class="watch-option" href="/player-watchlist"><div class="watch-option-top"><img class="watch-option-art" src="/assets/eagleeye/bjnyan/player_watchlist.png.PNG" alt="" loading="eager" decoding="async"><div class="watch-option-copy"><h2>プレイヤーウォッチリスト</h2><p>登録したプレイヤーの順位やデータの変化を追跡します。</p></div></div><span class="watch-go">プレイヤーを確認する →</span></a>
-<a class="watch-option" href="/kingdom-watchlist"><div class="watch-option-top"><img class="watch-option-art" src="/assets/eagleeye/bjnyan/kingdom_watchlist.png.PNG" alt="" loading="eager" decoding="async"><div class="watch-option-copy"><h2>王国ウォッチリスト</h2><p>監視対象の王国を管理し、王国の動きを追跡します。</p></div></div><span class="watch-go">王国を確認する →</span></a>
+<a class="watch-option" href="/player-watchlist"><div class="watch-option-top"><img class="watch-option-art" src="/assets/eagleeye/bjnyan/player_watchlist.png" alt="" loading="eager" decoding="async"><div class="watch-option-copy"><h2>プレイヤーウォッチリスト</h2><p>登録したプレイヤーの順位やデータの変化を追跡します。</p></div></div><span class="watch-go">プレイヤーを確認する →</span></a>
+<a class="watch-option" href="/kingdom-watchlist"><div class="watch-option-top"><img class="watch-option-art" src="/assets/eagleeye/bjnyan/kingdom_watchlist.png" alt="" loading="eager" decoding="async"><div class="watch-option-copy"><h2>王国ウォッチリスト</h2><p>監視対象の王国を管理し、王国の動きを追跡します。</p></div></div><span class="watch-go">王国を確認する →</span></a>
 </section><p class="watch-foot">プレイヤーと王国のウォッチリストは、それぞれ独立して管理されます。</p>
 </main></body></html>`);
 }
