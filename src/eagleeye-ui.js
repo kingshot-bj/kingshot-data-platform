@@ -220,7 +220,7 @@ export const EAGLEEYE_DRAWER_INIT = `
   window.__eagleEyeSetPlayerWatchlistCount=setPlayerWatchlistBadgeCount;
   if(typeof window.__eagleEyePlayerWatchlistCount==="number")setPlayerWatchlistBadgeCount(window.__eagleEyePlayerWatchlistCount);
   else if(window.__eagleEyePlayerWatchlistCount===null)setPlayerWatchlistBadgeCount(null);
-  var pageLoadsPlayerWatchlist=path==="/player-watchlist"||(path==="/player"&&Boolean(document.querySelector(".player-watchlist-toggle")));
+  var pageLoadsPlayerWatchlist=path==="/player-watchlist"||(path==="/player"&&Boolean(document.getElementById("player-watchlist-toggle")));
   if(!document.getElementById("playerCount")&&!pageLoadsPlayerWatchlist&&typeof window.__eagleEyePlayerWatchlistCount!=="number"){
     fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
       .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
