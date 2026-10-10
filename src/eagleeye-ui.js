@@ -34,23 +34,33 @@ export const EAGLEEYE_UI_TOKENS = Object.freeze({
  * Page-specific markup and navigation actions remain owned by each page.
  * Keep icon and label sizing centralized so future page shells can consume the same values.
  */
+/**
+ * Shared navigation sizing contract.
+ * Keep icon and label sizes stable across pages and viewport heights.
+ * Navigation layout/route logic remains owned by each page.
+ */
 export const EAGLEEYE_NAV_TOKENS = Object.freeze({
   desktopIconSize: 23,
   mobileIconSize: 24,
-  desktopLabelSize: 10,
-  mobileLabelSize: 10,
+  labelSize: 10,
   badgeSize: 17,
   mobileBreakpoint: 600
 });
 
 /**
- * Shared navigation CSS. This is intentionally limited to presentation;
- * route destinations, active-state logic, and badge data remain page-owned.
+ * Applied after page CSS on every HTML response, including the home page.
+ * Fixed type sizes prevent short viewport media queries from shrinking nav text/icons.
  */
 export const EAGLEEYE_NAV_CSS = `
-.ee-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
-.ee-nav a,.ee-nav button{position:relative;display:grid;place-items:center;align-content:center;gap:4px;border:0;background:transparent;border-radius:12px;font-size:var(--ee-nav-label-size,10px);font-weight:900;letter-spacing:.03em}
-.ee-nav-icon{display:block;font-size:var(--ee-nav-icon-size,23px);line-height:1.05;transform:scale(1.08);transform-origin:center}
-.ee-nav-badge{position:absolute;top:5px;margin-left:24px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;font-size:9px;display:grid;place-items:center}
-@media(max-width:600px){.ee-nav{--ee-nav-icon-size:24px;--ee-nav-label-size:10px}}
+.ee-nav a,.ee-nav button,.ee-global-nav a,.ee-global-nav button{
+  font-size:10px!important;
+}
+.ee-nav-icon,.ee-global-nav .ee-global-nav-icon{
+  font-size:23px!important;
+  line-height:1.05!important;
+}
+.ee-nav-badge{font-size:9px!important;min-width:17px!important;height:17px!important}
+@media(max-width:600px){
+  .ee-nav-icon,.ee-global-nav .ee-global-nav-icon{font-size:24px!important}
+}
 `;
