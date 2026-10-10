@@ -4682,7 +4682,7 @@ function applyEagleEyeTheme(html) {
   <a href="/" data-nav-path="/" aria-label="ホーム"><span class="ee-global-nav-icon">⌂</span><span>ホーム</span></a>
   <a href="/kingdom/rankings" data-nav-path="/kingdom/rankings" aria-label="ランキング"><span class="ee-global-nav-icon">♛</span><span>ランキング</span></a>
   <a href="/players" data-nav-path="/players" aria-label="検索"><span class="ee-global-nav-icon">⌕</span><span>検索</span></a>
-  <a href="/watchlist" data-nav-path="/watchlist" aria-label="ウォッチ"><span class="ee-global-nav-icon">◌</span><span>ウォッチ</span></a>
+  <a href="/watchlist" data-nav-path="/watchlist" aria-label="ウォッチ"><span class="ee-global-nav-icon">◌</span><span>ウォッチ</span><span class="ee-global-nav-badge" id="globalNavBadge" aria-label="監視中のプレイヤー数">0</span></a>
   <button type="button" class="ee-global-nav-more" aria-haspopup="dialog" aria-expanded="false"><span class="ee-global-nav-icon">☰</span><span>その他</span></button>
 </nav>
 <div class="ee-global-nav-drawer" aria-hidden="true">
@@ -4705,6 +4705,17 @@ function applyEagleEyeTheme(html) {
     if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
   });
   var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
+  var badge=document.getElementById("globalNavBadge");
+  // Keep the player-watch count visible on every page that uses the shared shell.
+  if(badge){
+    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
+      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
+      .then(function(data){
+        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+        badge.textContent=count>99?"99+":String(count);
+        badge.hidden=false;
+      }).catch(function(){badge.hidden=true;});
+  }
   if(!nav||!drawer||!more)return;
   function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");more.setAttribute("aria-expanded","false");}
   more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");more.setAttribute("aria-expanded","true");});
