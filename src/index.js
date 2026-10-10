@@ -4680,7 +4680,7 @@ function applyEagleEyeTheme(html) {
   // Protected/login-required pages must not show the global navigation.
   // Keep the explicit login prompt as a clean standalone screen.
   const isLoginRequiredPage = html.includes("ログインが必要です") || html.includes("Discordでログイン");
-  if (!isLoginRequiredPage && !html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
+  if (!isLoginRequiredPage && !/class="[^"]*\\bee-nav\\b/.test(html) && !/class="[^"]*\\bee-global-nav\\b/.test(html)) {
     const sharedNav = `
 ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 <div class="ee-global-nav-drawer" aria-hidden="true">
