@@ -9436,6 +9436,55 @@ async function renderHome(request, env) {
 .ee-tile small{font-size:8px}
 .ee-stat-label,.ee-stat-sub{font-size:9px}
 .ee-nav a,.ee-nav button{font-size:10px}
+}
+/* Home mobile typography fine-tune v4 */
+@media(max-width:600px){
+.ee-brand{font-size:14px}
+.ee-brand b{font-size:10px}
+.ee-profile-copy b{font-size:12px}
+.ee-profile-copy small{font-size:9px}
+.ee-avatar{width:34px;height:34px}
+.ee-top{min-height:56px}
+.ee-welcome{min-height:100px;padding:12px 14px}
+.ee-kicker{font-size:9px}
+.ee-welcome p{font-size:10px;line-height:1.45}
+.ee-welcome-state{font-size:9px;margin-top:6px}
+.ee-menu-title{margin-top:11px;margin-bottom:6px}
+.ee-menu-title b{font-size:14px}
+.ee-menu-title span{font-size:9px}
+.ee-mainmenu{gap:6px}
+.ee-tile{min-height:84px;gap:2px}
+.ee-tile img{width:37px;height:37px}
+.ee-tile strong{font-size:11px;line-height:1.2}
+.ee-tile small{font-size:8px;line-height:1.25;padding:0 3px}
+.ee-tile .badge{min-width:18px;height:18px;font-size:9px;right:6px;top:6px}
+.ee-summary{gap:6px;margin-top:8px}
+.ee-stat{min-height:51px;padding:7px 9px}
+.ee-stat-label{font-size:8px;letter-spacing:.06em}
+.ee-stat-value{font-size:15px}
+.ee-stat-sub{font-size:8px;line-height:1.25}
+.ee-more{padding:8px 10px;margin-top:7px}
+.ee-more strong{font-size:11px}
+.ee-more small{font-size:8px;line-height:1.3}
+.ee-more img{width:30px;height:30px}
+.ee-nav a,.ee-nav button{font-size:9px;gap:3px}
+.ee-nav-icon{font-size:18px}
+.ee-nav-badge{font-size:8px;min-width:15px;height:15px}
+.ee-drawer-head b{font-size:13px}
+.ee-drawer-grid a{min-height:62px}
+.ee-drawer-grid img{width:29px;height:29px}
+.ee-drawer-grid span{font-size:9px}
+}
+@media(max-width:380px){
+.ee-welcome{min-height:96px;padding:11px}
+.ee-welcome-copy{max-width:65%}
+.ee-welcome-bj{width:108px;height:108px}
+.ee-tile{min-height:80px}
+.ee-tile img{width:34px;height:34px}
+.ee-tile strong{font-size:10px}
+.ee-tile small{font-size:7px}
+.ee-stat-label,.ee-stat-sub{font-size:8px}
+.ee-nav a,.ee-nav button{font-size:9px}
 }</style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
