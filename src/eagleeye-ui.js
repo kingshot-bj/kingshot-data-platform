@@ -188,6 +188,10 @@ export const EAGLEEYE_DRAWER_INIT = `
   var triggers=Array.prototype.slice.call(document.querySelectorAll("#navMore,#globalNavMore,.ee-global-nav-more,#moreButton"));
   var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
   if(!drawer||!triggers.length)return;
+  // Navigation and drawer controls are UI toggles, not form actions; keep them
+  // outside the global double-submit guard so they remain immediately usable.
+  triggers.forEach(function(trigger){trigger.dataset.eagleNoGuard="1";});
+  if(closeButton)closeButton.dataset.eagleNoGuard="1";
   // Keep active-tab behavior in the shared shell rather than duplicating route checks per page.
   var path=location.pathname||"/";
   document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(link){
