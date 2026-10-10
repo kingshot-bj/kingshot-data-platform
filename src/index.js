@@ -4143,6 +4143,10 @@ export default {
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
       if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
+      if (url.pathname === "/api/auth/ui-state") {
+        const auth = await getAuthenticatedUser(request, env);
+        return json({ authenticated: Boolean(auth), role: auth?.role || null });
+      }
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
