@@ -6428,7 +6428,7 @@ async function renderPlayerSearchPage(request, env) {
   if (q && env.DB) {
     const like = `%${q}%`;
     const searchResult = await env.DB.prepare(
-      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, observed_at
+      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, observed_at
        FROM players
        WHERE governor_id LIKE ?
           OR nick_name LIKE ?
@@ -6442,6 +6442,8 @@ async function renderPlayerSearchPage(request, env) {
 
   const results = rows.map(row => `
     <a class="player-result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
+      ${row.avatar_url ? '<img class="player-result-avatar" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
+      <div class="player-result-avatar player-result-avatar-fallback" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
       <div class="player-result-main">
         <div class="player-result-name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
         <div class="player-result-meta">領主ID ${escapeHtml(row.governor_id)} <span>·</span> 王国 ${escapeHtml(row.kid ?? "-")}</div>
@@ -6487,6 +6489,7 @@ async function renderPlayerSearchPage(request, env) {
   .search-tip{display:flex;gap:7px;align-items:flex-start;margin:10px 3px 0;color:#7f95ac;font-size:11px;line-height:1.5}.search-tip span{color:var(--cyan);font-weight:900}
   .results{margin-top:17px}.results-heading{display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px;color:#9bb0c4;font-size:12px;font-weight:750}.results-heading strong{color:var(--cyan);font-variant-numeric:tabular-nums}
   .player-result{display:flex;align-items:center;gap:12px;margin-top:9px;padding:14px;border:1px solid var(--line);border-radius:15px;background:linear-gradient(135deg,#0b1d2e,#071321);color:var(--text);text-decoration:none;min-width:0}.player-result:active{border-color:var(--cyan);background:#0c2638}
+  .player-result-avatar{width:54px;height:54px;flex:0 0 54px;border-radius:13px;object-fit:cover;background:#10243a;border:1px solid #31516f}.player-result-avatar-fallback{display:grid;place-items:center;color:var(--muted);font-size:25px}.player-result-avatar-fallback[hidden]{display:none}
   .player-result-main{flex:1;min-width:0}.player-result-name{font-size:15px;font-weight:850;overflow-wrap:anywhere}.player-result-meta,.player-result-alliance{margin-top:5px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}.player-result-meta span{color:#3c5b75;padding:0 3px}
   .player-result-power{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap}.player-result-power span{font-size:8px;letter-spacing:1.3px;color:#6f879e;font-weight:900}.player-result-power strong{font-size:13px;color:var(--cyan);font-variant-numeric:tabular-nums}.player-result-arrow{font-size:24px;line-height:1;color:#6b849c}
   .player-lookup{display:flex;align-items:center;gap:12px;margin-top:16px;padding:17px;border:1px solid rgba(32,200,232,.48);border-radius:15px;background:linear-gradient(135deg,rgba(11,39,57,.98),rgba(6,20,33,.98));color:var(--text);text-decoration:none}.lookup-icon{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border:1px solid rgba(32,200,232,.35);border-radius:12px;color:var(--cyan);font-size:21px}.player-lookup>span:nth-child(2){flex:1;min-width:0}.player-lookup strong{display:block;font-size:14px}.player-lookup small{display:block;margin-top:5px;color:var(--muted);font-size:11px;line-height:1.5}.lookup-arrow{color:var(--cyan);font-size:21px;font-weight:900}
