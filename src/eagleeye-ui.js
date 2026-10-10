@@ -108,3 +108,47 @@ export const EAGLEEYE_NAV_CSS = `
   .ee-nav-icon,.ee-global-nav .ee-global-nav-icon{font-size:24px!important}
 }
 `;
+
+
+/**
+ * Canonical destinations for the global "その他" menu.
+ * Both the home shell and page shell consume this same list.
+ * Privileged actions are supplied by the caller only after its existing auth check.
+ */
+export const EAGLEEYE_OTHER_MENU = Object.freeze([
+  Object.freeze({ key: "kingdomWatch", href: "/kingdom-watchlist", label: "王国ウォッチ", image: EAGLEEYE_BJNYAN.watchlist }),
+  Object.freeze({ key: "kingdomCatalog", href: "/kingdom-catalog", label: "王国カタログ", image: EAGLEEYE_BJNYAN.kingdom }),
+  Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingshot", image: EAGLEEYE_BJNYAN.dashboard }),
+  Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
+  Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
+  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.analysis })
+]);
+
+export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, compact = false } = {}) {
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[ch]));
+  const links = EAGLEEYE_OTHER_MENU.map(item => compact
+    ? `<a href="${item.href}" data-other-key="${item.key}">${esc(item.label)}</a>`
+    : `<a href="${item.href}" data-other-key="${item.key}"><img src="${item.image}" alt=""><span>${esc(item.label)}</span></a>`
+  ).join("");
+  const privileged = [];
+  if (auth && (auth.role === "ADMIN" || auth.role === "OWNER")) {
+    privileged.push(compact
+      ? '<a href="/admin" data-other-key="admin">管理</a>'
+      : '<a href="/admin" data-other-key="admin"><img src="' + EAGLEEYE_BJNYAN.system + '" alt=""><span>管理</span></a>');
+  }
+  if (auth && auth.role === "OWNER") {
+    privileged.push(compact
+      ? '<a href="/owner" data-other-key="owner">Owner Control</a>'
+      : '<a href="/owner" data-other-key="owner"><img src="' + EAGLEEYE_BJNYAN.dashboard + '" alt=""><span>Owner Control</span></a>');
+  }
+  if (includeAccount && auth) {
+    privileged.push(compact
+      ? '<a href="/account" data-other-key="account">アカウント</a><a href="/api/auth/logout" data-other-key="logout">ログアウト</a>'
+      : '<a href="/account" data-other-key="account"><span>アカウント</span></a><a href="/api/auth/logout" data-other-key="logout"><span>ログアウト</span></a>');
+  }
+  return links + privileged.join("") + (compact
+    ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>近日公開予定</small></button>'
+    : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>近日公開予定</small></span></button>');
+}
