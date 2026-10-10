@@ -7250,7 +7250,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   while(favorites.length<Math.min(4,boards.length)){const next=boards.find(b=>!favorites.includes(b.key));if(!next)break;favorites.push(next.key)}
   let draft=favorites.slice();
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const renderCard=b=>'<div class="favorite-ranking-card"><div class="favorite-ranking-label">'+esc(b.label)+'</div><div class="favorite-ranking-score">'+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+'</div><div class="favorite-ranking-rank">'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+'</div></div>';
+  const renderCard=b=>'<div class="favorite-ranking-card"><div class="favorite-ranking-label">'+esc(b.label)+'</div><div class="favorite-ranking-score">'+esc(b.displayScore??(b.score!==undefined&&b.score!==null?b.score:"-"))+'</div><div class="favorite-ranking-rank">'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+'</div></div>';
   const renderRow=b=>'<div class="detail-row"><span>'+esc(b.label)+'</span><b>'+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?" / "+esc(b.rank)+"位":"")+'</b></div>';
   function render(){grid.innerHTML=favorites.map(k=>boards.find(b=>b.key===k)).filter(Boolean).map(renderCard).join("");const others=boards.filter(b=>!favorites.includes(b.key));rest.innerHTML=others.map(renderRow).join("")||'<div class="detail-row"><span>ほかのランキングはありません</span></div>';restCount.textContent=others.length?"("+others.length+"項目)":"";restToggle.hidden=others.length===0;}
   function renderSettings(){settingsList.innerHTML=boards.map(b=>'<label class="ranking-setting-option"><input type="checkbox" value="'+esc(b.key)+'" '+(draft.includes(b.key)?"checked":"")+' '+(!draft.includes(b.key)&&draft.length>=4?"disabled":"")+'><span>'+esc(b.label)+'</span></label>').join("");count.textContent=draft.length+" / 4";settingsList.querySelectorAll("input").forEach(input=>input.addEventListener("change",()=>{if(input.checked){if(draft.length<4)draft.push(input.value)}else draft=draft.filter(k=>k!==input.value);renderSettings()}));}
@@ -7566,11 +7566,11 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
     const coreBoards = [
-      { key: "personal_power", label: "個人総力", score: r.power, rank: r.power_rank },
-      { key: "kills", label: "個人撃破", score: r.kills, rank: r.kills_rank },
-      { key: "town_center", label: "役場Lv.", score: r.town_center_level, rank: r.town_center_rank },
-      { key: "migrant_score", label: "移民スコア", score: r.migrant_score, rank: r.migrant_rank },
-      { key: "mystic_trial", label: "秘境の試練", score: r.mystic_trial, rank: r.mystic_rank }
+      { key: "personal_power", label: "個人総力", score: r.power, displayScore: formatCompactNumber(r.power), rank: r.power_rank },
+      { key: "kills", label: "個人撃破", score: r.kills, displayScore: formatCompactNumber(r.kills), rank: r.kills_rank },
+      { key: "town_center", label: "役場Lv.", score: r.town_center_level, displayScore: formatCompactNumber(r.town_center_level), rank: r.town_center_rank },
+      { key: "migrant_score", label: "移民スコア", score: r.migrant_score, displayScore: formatCompactNumber(r.migrant_score), rank: r.migrant_rank },
+      { key: "mystic_trial", label: "秘境の試練", score: r.mystic_trial, displayScore: formatCompactNumber(r.mystic_trial), rank: r.mystic_rank }
     ].filter(item => item.score !== undefined || item.rank !== undefined);
     const aliases = {
       "Personal Power":"personal_power", "個人総力":"personal_power", "戦力":"personal_power",
@@ -7582,7 +7582,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
     const boards = [...coreBoards, ...(Array.isArray(r.leaderboards) ? r.leaderboards.map((board, index) => {
       const candidates = [board?.key, board?.board, board?.id, board?.name, board?.label].filter(Boolean).map(String);
       const key = candidates.map(value => aliases[value] || value).find(value => Object.values(aliases).includes(value) || /^[a-z][a-z0-9_]*$/.test(value)) || "other_" + index;
-      return { key, label: localizeLeaderboardLabel(board), score: board?.score ?? board?.value ?? board?.rank_value, rank: board?.rank ?? board?.ranking ?? board?.rank_no };
+      return { key, label: localizeLeaderboardLabel(board), score: board?.score ?? board?.value ?? board?.rank_value, displayScore: formatCompactNumber(board?.score ?? board?.value ?? board?.rank_value), rank: board?.rank ?? board?.ranking ?? board?.rank_no };
     }).filter(item => !coreBoards.some(core => core.key === item.key)) : [])];
     const boardJson = JSON.stringify(boards).replace(/</g, "\\u003c");
     html += '<section class="profile-section ranking-dashboard" data-ranking-dashboard data-player-key="' + esc(governorId) + '"><div class="section-heading"><h2>ランキング</h2>' + exportButton("rankings") + '</div>';
