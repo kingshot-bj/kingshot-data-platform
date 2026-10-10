@@ -7150,7 +7150,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("同盟", p.alliance_name || "-")}
     </div>
     ${noticeHtml}
-    ${profile?.name_history?.length ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
+    ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">基本情報を更新</a><a class="action" href="/player?governor_id=${encodeURIComponent(governorId)}&rich=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
@@ -7161,6 +7161,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.profile-language{margin-top:3px;color:#cbd5e1;font-size:11px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.section-heading h2{margin:0}.section-export{display:inline-flex;align-items:center;justify-content:center;padding:6px 9px;border:1px solid #475569;border-radius:8px;background:#162238;color:#f59e0b;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}.hero-export{margin-top:7px}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}
+.alliance-profile-details{display:flex;flex-wrap:wrap;gap:4px 8px;margin:3px 0 0;color:#94a3b8;font-size:9px;line-height:1.35}.alliance-profile-details span{overflow-wrap:anywhere}.profile-alliance-export{margin-top:4px}.gov-gear-private{display:flex;align-items:center;gap:7px;margin-top:8px;padding:6px 9px;border:1px solid #334155;border-radius:8px;background:#111c31;color:#94a3b8;font-size:10px}.gov-gear-private b{color:#e2e8f0}.gov-gear-private .section-export{margin-left:auto;padding:3px 5px;font-size:9px}
 /* Compact player stats grid: keep all seven fields, reduce vertical scrolling. */
 .hero + .grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:6px;margin-top:7px}
 .hero + .grid .card{min-width:0;padding:8px 7px;border-radius:9px}
@@ -7273,8 +7274,8 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   while(favorites.length<Math.min(4,boards.length)){const next=boards.find(b=>!favorites.includes(b.key));if(!next)break;favorites.push(next.key)}
   let draft=favorites.slice();
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const renderCard=b=>'<div class="favorite-ranking-card"><div class="favorite-ranking-label">'+esc(b.label)+'</div><div class="favorite-ranking-score">'+esc(b.displayScore??(b.score!==undefined&&b.score!==null?b.score:"-"))+'</div><div class="favorite-ranking-rank">'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+'</div></div>';
-  const renderRow=b=>'<div class="detail-row"><span>'+esc(b.label)+'</span><b>'+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?" / "+esc(b.rank)+"位":"")+'</b></div>';
+  const renderCard=b=>'<div class="favorite-ranking-card"><div class="favorite-ranking-label">'+esc(b.label)+'</div><div class="favorite-ranking-score">'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+'</div><div class="favorite-ranking-rank">スコア '+esc(b.displayScore??(b.score!==undefined&&b.score!==null?b.score:"-"))+'</div></div>';
+  const renderRow=b=>'<div class="detail-row"><span>'+esc(b.label)+'</span><b>'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+' <small>（スコア '+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+'）</small></b></div>';
   function render(){grid.innerHTML=favorites.map(k=>boards.find(b=>b.key===k)).filter(Boolean).map(renderCard).join("");const others=boards.filter(b=>!favorites.includes(b.key));rest.innerHTML=others.map(renderRow).join("")||'<div class="detail-row"><span>ほかのランキングはありません</span></div>';restCount.textContent=others.length?"("+others.length+"項目)":"";restToggle.hidden=others.length===0;}
   function renderSettings(){settingsList.innerHTML=boards.map(b=>'<label class="ranking-setting-option"><input type="checkbox" value="'+esc(b.key)+'" '+(draft.includes(b.key)?"checked":"")+' '+(!draft.includes(b.key)&&draft.length>=4?"disabled":"")+'><span>'+esc(b.label)+'</span></label>').join("");count.textContent=draft.length+" / 4";settingsList.querySelectorAll("input").forEach(input=>input.addEventListener("change",()=>{if(input.checked){if(draft.length<4)draft.push(input.value)}else draft=draft.filter(k=>k!==input.value);renderSettings()}));}
   root.querySelector("[data-ranking-settings-toggle]").addEventListener("click",()=>{settingsPanel.hidden=!settingsPanel.hidden;draft=favorites.slice();renderSettings()});
@@ -7514,20 +7515,19 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   let html = "";
   const heroes = Array.isArray(p.heroes) ? p.heroes : [];
 
+  // 同盟の概要はプロフィール上部にあるため、独立した折りたたみカードは表示しない。
+  // 追加の同盟データは補助情報としてプロフィールに集約し、データ自体は保持する。
   if (p.alliance && typeof p.alliance === "object") {
     const a = p.alliance;
-    html += '<section class="profile-section alliance-collapsible"><details><summary><span><b>同盟情報</b><small>タップして詳細を表示</small></span><span class="collapse-mark">＋</span></summary><div class="collapse-body"><div class="section-heading"><h2>同盟情報</h2>' + exportButton("alliance") + '</div><div class="mini-grid">';
-    if (a.aid) html += '<div class="mini-card"><span>同盟ID</span><b>' + esc(formatProfileValue(a.aid)) + '</b></div>';
-    if (a.abbr || a.name) html += '<div class="mini-card"><span>同盟</span><b>' + esc([a.abbr, a.name].filter(Boolean).join(" ")) + '</b></div>';
-    if (a.rank !== undefined || a.rank_label) html += '<div class="mini-card"><span>同盟内順位</span><b>' + esc([a.rank_label, a.rank != null ? a.rank + "位" : ""].filter(Boolean).join(" ")) + '</b></div>';
-    if (a.power !== undefined) html += '<div class="mini-card"><span>同盟戦力</span><b>' + esc(formatCompactNumber(a.power)) + '</b></div>';
-    if (a.count !== undefined) html += '<div class="mini-card"><span>同盟人数</span><b>' + esc(formatProfileValue(a.count)) + '</b></div>';
-    if (a.leader_name) html += '<div class="mini-card"><span>盟主</span><b>' + esc(formatProfileValue(a.leader_name)) + '</b></div>';
-    if (a.flag_url) {
-      const flagUrl = normalizeProfileAssetUrl(a.flag_url);
-      html += '<div class="mini-card"><span>同盟旗</span><b class="flag-value"><img class="alliance-flag" src="' + esc(flagUrl) + '" alt="" loading="lazy"><span>表示</span></b></div>';
-    }
-    html += '</div></div></details></section>';
+    const details = [
+      a.aid ? "同盟ID " + formatProfileValue(a.aid) : "",
+      a.rank !== undefined || a.rank_label ? "同盟内順位 " + [a.rank_label, a.rank != null ? a.rank + "位" : ""].filter(Boolean).join(" ") : "",
+      a.power !== undefined ? "同盟戦力 " + formatCompactNumber(a.power) : "",
+      a.count !== undefined ? "同盟人数 " + formatProfileValue(a.count) : "",
+      a.leader_name ? "盟主 " + formatProfileValue(a.leader_name) : ""
+    ].filter(Boolean);
+    if (details.length) html += '<div class="alliance-profile-details">' + details.map(value => '<span>' + esc(value) + '</span>').join('') + '</div>';
+    if (canExport && governorId) html += '<div class="profile-alliance-export">' + exportButton("alliance") + '</div>';
   }
 
   if (heroes.length) {
@@ -7638,7 +7638,11 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
   if (p.gov_gear && typeof p.gov_gear === "object") {
     const g = p.gov_gear;
     const items = Array.isArray(g.items) ? g.items : [];
-    html += '<section class="profile-section"><div class="section-heading"><h2>領主装備</h2>' + exportButton("gov_gear") + '</div><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(g.hidden ? "非公開" : items.length + "件") + '</b></div></div>';
+    if (g.hidden) {
+      // 非公開時は大きな独立カードを作らず、短い状態表示にする。
+      html += '<div class="gov-gear-private"><span>領主装備</span><b>非公開</b>' + exportButton("gov_gear") + '</div>';
+    } else {
+      html += '<section class="profile-section"><div class="section-heading"><h2>領主装備</h2>' + exportButton("gov_gear") + '</div><div class="mini-grid"><div class="mini-card"><span>状態</span><b>' + esc(items.length + "件") + '</b></div></div>';
     if (!g.hidden && items.length) {
       html += '<div class="gear-list">' + items.map(item => {
         const gems = Array.isArray(item.gems) ? item.gems : [];
@@ -7665,6 +7669,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
       }).join("") + '</div>';
     }
     html += '</section>';
+    }
   }
 
   return html;
