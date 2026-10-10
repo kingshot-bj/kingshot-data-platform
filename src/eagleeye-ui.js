@@ -202,6 +202,15 @@ export const EAGLEEYE_DRAWER_INIT = `
       (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
     if(active){link.classList.add("active");link.setAttribute("aria-current","page");}
   });
+  // Share the role/eligibility request with the role bar and use it to avoid
+  // fetching a user-specific watchlist for visitors who are not authenticated.
+  var roleStatePromise=window.__eagleEyeRoleStatePromise;
+  if(!roleStatePromise){
+    roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+      .then(function(response){return response.ok?response.json():null;})
+      .catch(function(){return null;});
+    window.__eagleEyeRoleStatePromise=roleStatePromise;
+  }
   // Reuse page-owned watchlist data when a page already fetches this endpoint.
   // Do not add a second D1-backed request on the player-watchlist or player detail pages.
   function setPlayerWatchlistBadgeCount(count){
@@ -222,26 +231,21 @@ export const EAGLEEYE_DRAWER_INIT = `
   else if(window.__eagleEyePlayerWatchlistCount===null)setPlayerWatchlistBadgeCount(null);
   var pageLoadsPlayerWatchlist=path==="/player-watchlist"||(path==="/player"&&Boolean(document.getElementById("player-watchlist-toggle")));
   if(!document.getElementById("playerCount")&&!pageLoadsPlayerWatchlist&&typeof window.__eagleEyePlayerWatchlistCount!=="number"){
-    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
-      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
-      .then(function(data){
-        if(!data||data.ok===false)throw new Error("watchlist_count_unavailable");
-        setPlayerWatchlistBadgeCount((data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length);
-      }).catch(function(){setPlayerWatchlistBadgeCount(null);});
+    roleStatePromise.then(function(state){
+      if(!state||!state.ok){setPlayerWatchlistBadgeCount(null);return;}
+      return fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
+        .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
+        .then(function(data){
+          if(!data||data.ok===false)throw new Error("watchlist_count_unavailable");
+          setPlayerWatchlistBadgeCount((data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length);
+        });
+    }).catch(function(){setPlayerWatchlistBadgeCount(null);});
   }
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic
   // page drawers need the extra auth-state request.
   if(links){
-    // Reuse the role-bar's existing /api/me/advanced request rather than adding
-    // a second auth-only D1 lookup for the shared drawer.
-    var roleStatePromise=window.__eagleEyeRoleStatePromise;
-    if(!roleStatePromise){
-      roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
-        .then(function(response){return response.ok?response.json():null;})
-        .catch(function(){return null;});
-      window.__eagleEyeRoleStatePromise=roleStatePromise;
-    }
+    // Use the same server-verified role state for menu links and the role bar.
     roleStatePromise.then(function(state){
       if(!state||!state.ok)return;
       function addLink(href,label,key){
