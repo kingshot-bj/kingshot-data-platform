@@ -1,3 +1,4 @@
+import { EAGLEEYE_NAV_CSS } from "./eagleeye-ui.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -9485,7 +9486,8 @@ async function renderHome(request, env) {
 .ee-tile small{font-size:7px}
 .ee-stat-label,.ee-stat-sub{font-size:8px}
 .ee-nav a,.ee-nav button{font-size:9px}
-}</style></head><body>
+}${EAGLEEYE_NAV_CSS}
+</style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
