@@ -9336,7 +9336,57 @@ async function renderHome(request, env) {
   .ee-milestone-copy small{font-size:8px}
   .ee-milestone-status{padding:5px 7px;font-size:8px}
 }
-</style></head><body>
+
+/* Home mobile readability override v2 */
+@media(max-width:600px){
+.ee-brand{font-size:19px}
+.ee-brand b{font-size:13px}
+.ee-profile-copy b{font-size:16px}
+.ee-profile-copy small{font-size:12px}
+.ee-avatar{width:42px;height:42px}
+.ee-top{min-height:68px}
+.ee-welcome{min-height:128px;padding:18px}
+.ee-kicker{font-size:12px}
+.ee-welcome p{font-size:14px;line-height:1.55}
+.ee-welcome-state{font-size:12px}
+.ee-welcome-state i{width:8px;height:8px}
+.ee-menu-title{margin-top:16px;margin-bottom:9px}
+.ee-menu-title b{font-size:18px}
+.ee-menu-title span{font-size:12px}
+.ee-mainmenu{gap:8px}
+.ee-tile{min-height:106px;gap:5px}
+.ee-tile img{width:46px;height:46px}
+.ee-tile strong{font-size:14px;line-height:1.25}
+.ee-tile small{font-size:11px;line-height:1.3;text-align:center;padding:0 4px}
+.ee-tile .badge{min-width:23px;height:23px;font-size:12px}
+.ee-summary{gap:8px;margin-top:12px}
+.ee-stat{min-height:66px;padding:10px 11px}
+.ee-stat-label{font-size:11px;letter-spacing:.07em}
+.ee-stat-value{font-size:20px}
+.ee-stat-sub{font-size:11px;line-height:1.3}
+.ee-more{padding:12px 14px}
+.ee-more strong{font-size:14px}
+.ee-more small{font-size:11px;line-height:1.35}
+.ee-more img{width:38px;height:38px}
+.ee-nav a,.ee-nav button{font-size:12px;gap:5px}
+.ee-nav-icon{font-size:21px}
+.ee-nav-badge{font-size:11px;min-width:19px;height:19px}
+.ee-drawer-head b{font-size:16px}
+.ee-drawer-grid a{min-height:76px}
+.ee-drawer-grid img{width:35px;height:35px}
+.ee-drawer-grid span{font-size:12px}
+}
+@media(max-width:380px){
+.ee-welcome{min-height:122px;padding:14px}
+.ee-welcome-copy{max-width:65%}
+.ee-welcome-bj{width:130px;height:130px}
+.ee-tile{min-height:100px}
+.ee-tile img{width:42px;height:42px}
+.ee-tile strong{font-size:13px}
+.ee-tile small{font-size:10px}
+.ee-stat-label,.ee-stat-sub{font-size:10px}
+.ee-nav a,.ee-nav button{font-size:11px}
+}</style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
