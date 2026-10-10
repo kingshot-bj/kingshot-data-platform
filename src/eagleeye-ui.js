@@ -188,6 +188,16 @@ export const EAGLEEYE_DRAWER_INIT = `
   var triggers=Array.prototype.slice.call(document.querySelectorAll("#navMore,#globalNavMore,.ee-global-nav-more,#moreButton"));
   var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
   if(!drawer||!triggers.length)return;
+  // Keep active-tab behavior in the shared shell rather than duplicating route checks per page.
+  var path=location.pathname||"/";
+  document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(link){
+    var target=link.getAttribute("data-nav-path");
+    var active=(target==="/"&&(path==="/"||path==="/home"))||
+      (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
+      (target==="/players"&&(path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
+      (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
+    if(active){link.classList.add("active");link.setAttribute("aria-current","page");}
+  });
   // Home already loads these counts together with its dashboard stats; avoid a duplicate API read there.
   if(!document.getElementById("playerCount")){
     fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
