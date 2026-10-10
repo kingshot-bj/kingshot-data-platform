@@ -2280,6 +2280,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
 .account-details[open] .account-summary{border-bottom:1px solid rgba(54,82,109,.5)}
 .account-detail-body{padding:2px 12px 12px}
 .account-detail-body .row:first-child{margin-top:2px}
+.account-link{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;max-width:70%;color:#8ceaf6;text-decoration:none;font-weight:850;text-align:right;overflow-wrap:anywhere}
+.account-link:hover{color:#d5fbff;text-decoration:underline;text-underline-offset:3px}
+.account-link:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px;border-radius:4px}
+.account-link-icon{display:inline-grid;place-items:center;flex:0 0 19px;width:19px;height:19px;border:1px solid rgba(32,215,242,.25);border-radius:6px;background:rgba(32,215,242,.08);font-size:11px;line-height:1}
+.account-summary-main .account-summary-player{display:inline;color:#8ceaf6;text-decoration:none}
+.account-summary-main .account-summary-player:hover{text-decoration:underline;text-underline-offset:3px}
 .key-register-details{margin-top:14px;border:1px solid rgba(43,77,107,.6);border-radius:13px;background:rgba(4,15,27,.45);overflow:hidden}
 .key-register-details>summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px;color:#d8edf8;font-size:12px;font-weight:850}
 .key-register-details>summary::-webkit-details-marker{display:none}
@@ -2313,11 +2319,16 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
     for(const l of rows){
       const p=l.player||{};
-      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small>'+esc(p.nick_name||"プレイヤー名未取得")+'　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+esc(p.alliance_abbr||p.alliance_name||"同盟未取得")+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
+      const playerName=String(p.nick_name||"プレイヤー名未取得");
+      const allianceName=String(p.alliance_name||p.alliance_abbr||"");
+      const allianceLabel=String(p.alliance_abbr||p.alliance_name||"同盟未取得");
+      const playerUrl="/player?governor_id="+encodeURIComponent(l.governor_id);
+      const allianceUrl="/alliance?kid="+encodeURIComponent(p.kid??l.kingdom_id??"")+"&tag="+encodeURIComponent(p.alliance_abbr||p.alliance_name||"");
+      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small><span class="account-summary-player">♙ '+esc(playerName)+'</span>　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>⚑ '+esc(allianceLabel)+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
         '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
-        '<div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div>'+
+        '<div class="row"><span>プレイヤー名</span><a class="account-link" href="'+playerUrl+'"><span class="account-link-icon" aria-hidden="true">♙</span>'+esc(playerName)+'</a></div>'+
         '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
-        '<div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div>'+
+        '<div class="row"><span>同盟名</span>'+(allianceName?'<a class="account-link" href="'+allianceUrl+'"><span class="account-link-icon" aria-hidden="true">⚑</span>'+esc(allianceLabel)+'</a>':'<span class="value">未取得</span>')+'</div>'+
         '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
         '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div></details>';
     }
