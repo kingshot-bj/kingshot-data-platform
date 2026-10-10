@@ -213,7 +213,10 @@ export const EAGLEEYE_DRAWER_INIT = `
         var a=document.createElement("a");a.href=href;a.textContent=label;a.setAttribute("data-other-key",key);links.appendChild(a);
       }
       addLink("/account","アカウント","account");
-      if(state.role==="ADMIN"||state.role==="OWNER")addLink("/admin","管理","admin");
+      if(state.role==="ADMIN"||state.role==="OWNER"){
+        addLink("/admin/diagnostics","診断","diagnostics");
+        addLink("/admin","管理","admin");
+      }
       if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
