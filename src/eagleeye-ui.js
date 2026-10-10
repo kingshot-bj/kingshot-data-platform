@@ -173,3 +173,23 @@ export function renderEagleEyeNavigation({ active = "", badgeId = "globalNavBadg
       '</a>').join("") +
     '<button id="' + (home ? "navMore" : "globalNavMore") + '" type="button" class="' + (home ? "" : "ee-global-nav-more") + '" aria-haspopup="dialog" aria-expanded="false"><span class="' + iconClass + '">☰</span><span>その他</span></button></nav>';
 }
+
+
+/**
+ * Shared browser-side drawer behavior. Works with either the home drawer IDs
+ * or the global page-shell classes; count loading and dashboard stats remain page-owned.
+ */
+export const EAGLEEYE_DRAWER_INIT = `
+(function(){
+  var drawer=document.getElementById("moreDrawer")||document.querySelector(".ee-global-nav-drawer");
+  var trigger=document.getElementById("navMore")||document.getElementById("globalNavMore")||document.querySelector(".ee-global-nav-more");
+  var closeButton=document.getElementById("closeMore")||(drawer&&drawer.querySelector("[data-close]"));
+  if(!drawer||!trigger)return;
+  function open(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");trigger.setAttribute("aria-expanded","true");}
+  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");trigger.setAttribute("aria-expanded","false");}
+  trigger.addEventListener("click",open);
+  if(closeButton)closeButton.addEventListener("click",close);
+  drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
+  document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
+})();
+`;
