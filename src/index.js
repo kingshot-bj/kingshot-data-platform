@@ -4673,7 +4673,10 @@ function applyEagleEyeTheme(html) {
   // Install the shared navigation in the HTML response itself. This avoids
   // relying on client-side script execution to create a critical navigation.
   // The home page already owns its richer navigation; leave it untouched.
-  if (!html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
+  // Protected/login-required pages must not show the global navigation.
+  // Keep the explicit login prompt as a clean standalone screen.
+  const isLoginRequiredPage = html.includes("ログインが必要です") || html.includes("Discordでログイン");
+  if (!isLoginRequiredPage && !html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
     const sharedNav = `
 <nav class="ee-global-nav" aria-label="メインナビゲーション">
   <a href="/" data-nav-path="/" aria-label="ホーム"><span class="ee-global-nav-icon">⌂</span><span>ホーム</span></a>
