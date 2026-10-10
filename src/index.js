@@ -7026,9 +7026,24 @@ async function renderPlayerPage(request, env) {
           "AND board IN (" + placeholders + ")"
         ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all();
         const rankByBoard = new Map((storedRanks.results || []).map(row => [String(row.board), row.rank]));
+        const boardAliases = {
+          "Coliseum": "coliseum",
+          "Forest of Life": "forest_of_life",
+          "Crystal Cave": "crystal_cave",
+          "Knowledge Nexus": "knowledge_nexus",
+          "Molten Fort": "molten_fort",
+          "Radiant Spire": "radiant_spire",
+          "闘技場": "coliseum",
+          "生命の森": "forest_of_life",
+          "水晶鉱山": "crystal_cave",
+          "知識の枢軸": "knowledge_nexus",
+          "溶岩要塞": "molten_fort",
+          "輝光の塔": "radiant_spire"
+        };
         visibleProfile.ranks.leaderboards = visibleProfile.ranks.leaderboards.map(board => {
-          const boardKey = String(board?.key ?? board?.board ?? board?.id ?? "");
-          const storedRank = rankByBoard.get(boardKey);
+          const boardCandidates = [board?.key, board?.board, board?.id, board?.name, board?.label].filter(Boolean).map(String);
+          const boardKey = boardCandidates.map(candidate => boardAliases[candidate] || candidate).find(candidate => rankBoards.includes(candidate));
+          const storedRank = boardKey ? rankByBoard.get(boardKey) : undefined;
           const existingRank = board?.rank ?? board?.ranking ?? board?.rank_no;
           if (existingRank !== undefined && existingRank !== null && existingRank !== "") return board;
           if (storedRank === undefined || storedRank === null) return board;
