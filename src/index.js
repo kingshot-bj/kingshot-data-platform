@@ -1,4 +1,4 @@
-import { EAGLEEYE_NAV_CSS, renderEagleEyeOtherMenu, renderEagleEyeNavigation } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation } from "./eagleeye-ui.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -4710,15 +4710,12 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
         badge.hidden=false;
       }).catch(function(){badge.hidden=true;});
   }
-  if(!nav||!drawer||!more)return;
-  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");more.setAttribute("aria-expanded","false");}
-  more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");more.setAttribute("aria-expanded","true");});
-  drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
-  document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
+  // Shared drawer behavior is installed once by EAGLEEYE_DRAWER_INIT.
 })();
 </script>`;
     html=html.replace("</body>",sharedNav+"</body>");
   }
+  if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   return html;
 }
@@ -9555,14 +9552,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
       if(state)state.textContent="Discordへ移動";
     });
   }
-  var drawer=document.getElementById("moreDrawer");
-  function openDrawer(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false")}
-  function closeDrawer(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true")}
-  var homeMore=document.getElementById("moreButton");
-  if(homeMore)homeMore.onclick=openDrawer;
-  document.getElementById("navMore").onclick=openDrawer;
-  document.getElementById("closeMore").onclick=closeDrawer;
-  drawer.addEventListener("click",function(e){if(e.target===drawer)closeDrawer()});
+  // Drawer open/close behavior is shared across all pages.
   var pCount=document.getElementById("playerCount"),kCount=document.getElementById("kingdomCount"),pBadge=document.getElementById("playerBadge"),nBadge=document.getElementById("navBadge");
   function countUp(el,target,duration){
     target=Math.max(0,Number(target)||0);var start=performance.now();
