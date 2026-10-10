@@ -6418,7 +6418,7 @@ async function handlePlayerRefresh(request, env) {
 async function renderPlayerSearchPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`;
+    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#050b14;color:#f1f8ff;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#20c8e8">Discordでログイン</a></body></html>`;
   }
 
   const url = new URL(request.url);
@@ -6441,39 +6441,59 @@ async function renderPlayerSearchPage(request, env) {
   }
 
   const results = rows.map(row => `
-    <a class="result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
-      <div class="result-main">
-        <div class="name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
-        <div class="sub">領主ID ${escapeHtml(row.governor_id)} · 王国 ${escapeHtml(row.kid ?? "-")}</div>
-        <div class="sub">${escapeHtml(row.alliance_name || "同盟なし")}</div>
+    <a class="player-result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
+      <div class="player-result-main">
+        <div class="player-result-name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
+        <div class="player-result-meta">領主ID ${escapeHtml(row.governor_id)} <span>·</span> 王国 ${escapeHtml(row.kid ?? "-")}</div>
+        <div class="player-result-alliance">${escapeHtml(row.alliance_name || "同盟なし")}</div>
       </div>
-      <div class="power">${escapeHtml(formatNumber(row.power))}</div>
+      <div class="player-result-power"><span>POWER</span><strong>${escapeHtml(formatNumber(row.power))}</strong></div>
+      <span class="player-result-arrow" aria-hidden="true">›</span>
     </a>`).join("");
 
   if (q) {
     await trackServiceUsage(env, auth, "PLAYER_SEARCH", {
       metadata: {
-        search_type: /^\d{7,12}$/.test(q) ? "GOVERNOR_ID" : "TEXT",
+        search_type: /^[0-9]{7,12}$/.test(q) ? "GOVERNOR_ID" : "TEXT",
         result_count: rows.length,
         result_has_match: rows.length > 0,
         selected_result: rows.length === 1 ? rows[0]?.governor_id ?? null : null,
-        direct_lookup: /^\d{7,12}$/.test(q)
+        direct_lookup: /^[0-9]{7,12}$/.test(q)
       }
     });
   }
 
-  const numericGovernorId = /^\d{7,12}$/.test(q);
+  const numericGovernorId = /^[0-9]{7,12}$/.test(q);
   const body = q
-    ? (rows.length > 0 ? results : (numericGovernorId
-      ? `<a class="lookup" href="/player?governor_id=${encodeURIComponent(q)}">領主ID ${escapeHtml(q)} をデータ取得して表示する →</a>`
-      : `<div class="empty">該当するプレイヤーが見つかりません。<br><span>領主名・領主ID・王国・同盟名は、EagleEyeに保存済みのデータから検索します。</span></div>`))
-    : `<div class="hint">領主名・領主ID・王国・同盟名から検索できます。<br><span>領主IDで検索した領主が未登録でも、EagleEyeが取得して詳細を表示します。</span></div>`;
+    ? (rows.length > 0
+      ? `<div class="results-heading"><span>検索結果</span><strong>${rows.length}${rows.length === 30 ? "+" : ""} 件</strong></div>${results}`
+      : (numericGovernorId
+        ? `<a class="player-lookup" href="/player?governor_id=${encodeURIComponent(q)}"><span class="lookup-icon">↗</span><span><strong>領主ID ${escapeHtml(q)} を開く</strong><small>未登録の場合はAPIから自動取得して詳細を表示します</small></span><span class="lookup-arrow">→</span></a>`
+        : `<div class="search-state"><span class="state-icon">⌕</span><strong>該当するプレイヤーが見つかりません</strong><p>領主名・領主ID・王国・同盟名で、保存済みデータを検索します。</p></div>`))
+    : `<section class="search-intro"><div class="search-intro-icon">⌕</div><div><strong>プレイヤーを探す</strong><p>領主名・領主ID・王国・同盟名から検索できます。</p><p class="search-intro-note">領主IDが未登録でも、検索後に確認を挟まずデータを取得します。</p></div></section>`;
 
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Search</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.desc{color:#94a3b8;margin:0 0 18px}.search{display:flex;gap:8px}.search input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #334155;background:#0b1220;color:white;font-size:16px}.search button{padding:14px 17px;border:0;border-radius:12px;background:#f59e0b;color:#111827;font-weight:900}.results{margin-top:18px;display:grid;gap:10px}.result{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238;color:white;text-decoration:none}.result:active{transform:translateY(1px)}.name{font-size:17px;font-weight:800;overflow-wrap:anywhere}.sub{margin-top:4px;color:#94a3b8;font-size:12px;overflow-wrap:anywhere}.power{font-weight:900;color:#f59e0b;white-space:nowrap}.hint,.empty,.lookup{margin-top:18px;padding:18px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}.empty{color:#fca5a5}.lookup{display:block;color:#f59e0b;text-decoration:none;font-weight:800}.hint span,.empty span{font-size:12px}
-  </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">領主名・領主ID・王国・同盟名から検索</p><form class="search" method="get" action="/players" onsubmit="const v=this.q.value.trim();if(/^[0-9]{7,12}$/.test(v)){this.action='/player';this.q.name='governor_id';}return true;"><input name="q" value="${escapeHtml(q)}" placeholder="領主名 / 領主ID / 王国 / 同盟"><button>検索</button></form><div class="results">${body}</div></main></body></html>`;
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050b14"><title>EagleEye / Search</title><style>
+  :root{color-scheme:dark;--bg:#050b14;--panel:#091827;--panel2:#0c2032;--line:#203b53;--cyan:#20c8e8;--muted:#8ba1b8;--text:#eff8ff}
+  *{box-sizing:border-box}html{min-height:100%;background:var(--bg)}body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071321 0%,var(--bg) 320px);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  .search-wrap{width:min(100%,860px);margin:0 auto;padding:22px 20px calc(108px + env(safe-area-inset-bottom))}
+  .search-topline{display:flex;align-items:center;justify-content:space-between;padding:0 0 18px;border-bottom:1px solid rgba(45,76,103,.65)}
+  .brand{font-size:17px;letter-spacing:3px;font-weight:950;color:var(--cyan)}.brand span{font-size:11px;letter-spacing:2px;color:#8298b0;margin-left:8px}
+  .search-back{color:#8ba1b8;text-decoration:none;font-size:13px;font-weight:750;white-space:nowrap}
+  .search-back:active{color:var(--cyan)}
+  .search-heading{padding:24px 0 20px}.eyebrow{color:#6edff3;font-size:10px;font-weight:900;letter-spacing:2.2px}.title{margin:7px 0 7px;font-size:clamp(27px,6vw,34px);line-height:1.2;letter-spacing:.01em}.desc{margin:0;color:var(--muted);font-size:14px;line-height:1.6}
+  .search-panel{padding:12px;border:1px solid var(--line);border-radius:19px;background:linear-gradient(145deg,rgba(12,32,50,.98),rgba(6,17,29,.98));box-shadow:0 12px 32px rgba(0,0,0,.12)}
+  .search-form{display:flex;gap:9px}.search-form input{display:block;width:100%;min-width:0;height:52px;padding:0 14px;border-radius:12px;border:1px solid #2b4963;outline:none;background:#050e19;color:var(--text);font:600 16px/1.2 system-ui,-apple-system,sans-serif}.search-form input::placeholder{color:#6e849b;font-weight:450}.search-form input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(32,200,232,.12)}
+  .search-form button{flex:0 0 84px;border:1px solid #20c8e8;border-radius:12px;background:linear-gradient(180deg,#28d4ed,#12b6d7);color:#04121c;font-size:14px;font-weight:950;cursor:pointer}.search-form button:active{transform:scale(.98)}
+  .search-tip{display:flex;gap:7px;align-items:flex-start;margin:10px 3px 0;color:#7f95ac;font-size:11px;line-height:1.5}.search-tip span{color:var(--cyan);font-weight:900}
+  .results{margin-top:17px}.results-heading{display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px;color:#9bb0c4;font-size:12px;font-weight:750}.results-heading strong{color:var(--cyan);font-variant-numeric:tabular-nums}
+  .player-result{display:flex;align-items:center;gap:12px;margin-top:9px;padding:14px;border:1px solid var(--line);border-radius:15px;background:linear-gradient(135deg,#0b1d2e,#071321);color:var(--text);text-decoration:none;min-width:0}.player-result:active{border-color:var(--cyan);background:#0c2638}
+  .player-result-main{flex:1;min-width:0}.player-result-name{font-size:15px;font-weight:850;overflow-wrap:anywhere}.player-result-meta,.player-result-alliance{margin-top:5px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}.player-result-meta span{color:#3c5b75;padding:0 3px}
+  .player-result-power{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap}.player-result-power span{font-size:8px;letter-spacing:1.3px;color:#6f879e;font-weight:900}.player-result-power strong{font-size:13px;color:var(--cyan);font-variant-numeric:tabular-nums}.player-result-arrow{font-size:24px;line-height:1;color:#6b849c}
+  .player-lookup{display:flex;align-items:center;gap:12px;margin-top:16px;padding:17px;border:1px solid rgba(32,200,232,.48);border-radius:15px;background:linear-gradient(135deg,rgba(11,39,57,.98),rgba(6,20,33,.98));color:var(--text);text-decoration:none}.lookup-icon{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border:1px solid rgba(32,200,232,.35);border-radius:12px;color:var(--cyan);font-size:21px}.player-lookup>span:nth-child(2){flex:1;min-width:0}.player-lookup strong{display:block;font-size:14px}.player-lookup small{display:block;margin-top:5px;color:var(--muted);font-size:11px;line-height:1.5}.lookup-arrow{color:var(--cyan);font-size:21px;font-weight:900}
+  .search-intro,.search-state{display:flex;align-items:flex-start;gap:13px;margin-top:16px;padding:17px;border:1px solid var(--line);border-radius:16px;background:rgba(8,24,39,.78)}.search-intro-icon,.state-icon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:12px;background:rgba(32,200,232,.1);color:var(--cyan);font-size:24px}.search-intro strong,.search-state strong{font-size:14px}.search-intro p,.search-state p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.6}.search-intro-note{color:#6edff3!important}
+  @media(max-width:520px){.search-wrap{padding:17px 18px calc(100px + env(safe-area-inset-bottom))}.search-topline{padding-bottom:14px}.brand{font-size:15px;letter-spacing:2.5px}.brand span{font-size:10px;margin-left:5px}.search-heading{padding:20px 0 16px}.title{font-size:28px}.desc{font-size:13px}.search-panel{padding:10px;border-radius:16px}.search-form{gap:8px}.search-form input{height:50px;padding:0 12px;font-size:16px}.search-form button{flex-basis:76px}.player-result{padding:12px;gap:9px}.player-result-name{font-size:14px}.player-result-power strong{font-size:12px}.search-intro,.search-state{padding:14px}}
+  </style></head><body><main class="search-wrap"><header class="search-topline"><div class="brand">EAGLEEYE<span>/ SEARCH</span></div><a class="search-back" href="/">← HOME</a></header><section class="search-heading"><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">領主名・領主ID・王国・同盟名から検索</p></section><section class="search-panel"><form class="search-form" method="get" action="/players" onsubmit="const v=this.q.value.trim();if(/^[0-9]{7,12}$/.test(v)){this.action='/player';this.q.name='governor_id';}return true;"><input name="q" value="${escapeHtml(q)}" placeholder="領主名 / 領主ID / 王国 / 同盟名" aria-label="プレイヤー検索" autocomplete="off"><button type="submit">検索</button></form><div class="search-tip"><span>i</span><div>領主IDが未登録でも、確認画面を挟まず自動でデータ取得します。</div></div></section><section class="results" aria-live="polite">${body}</section></main></body></html>`;
 }
-
 
 async function handlePlayerHistoryApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
