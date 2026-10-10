@@ -202,19 +202,32 @@ export const EAGLEEYE_DRAWER_INIT = `
       (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
     if(active){link.classList.add("active");link.setAttribute("aria-current","page");}
   });
-  // Home already loads these counts together with its dashboard stats; avoid a duplicate API read there.
-  if(!document.getElementById("playerCount")){
+  // Reuse page-owned watchlist data when a page already fetches this endpoint.
+  // Do not add a second D1-backed request on the player-watchlist or player detail pages.
+  function setPlayerWatchlistBadgeCount(count){
+    if(count===null||count===undefined||!Number.isFinite(Number(count))){
+      window.__eagleEyePlayerWatchlistCount=null;
+      ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
+      return;
+    }
+    count=Math.max(0,Number(count));
+    window.__eagleEyePlayerWatchlistCount=count;
+    ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){
+      var badge=document.getElementById(id);if(!badge)return;
+      badge.textContent=count>99?"99+":String(count);badge.hidden=false;
+    });
+  }
+  window.__eagleEyeSetPlayerWatchlistCount=setPlayerWatchlistBadgeCount;
+  if(typeof window.__eagleEyePlayerWatchlistCount==="number")setPlayerWatchlistBadgeCount(window.__eagleEyePlayerWatchlistCount);
+  else if(window.__eagleEyePlayerWatchlistCount===null)setPlayerWatchlistBadgeCount(null);
+  var pageLoadsPlayerWatchlist=path==="/player-watchlist"||path==="/player";
+  if(!document.getElementById("playerCount")&&!pageLoadsPlayerWatchlist&&typeof window.__eagleEyePlayerWatchlistCount!=="number"){
     fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
       .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
       .then(function(data){
-        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
-        ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){
-          var badge=document.getElementById(id);if(!badge)return;
-          badge.textContent=count>99?"99+":String(count);badge.hidden=false;
-        });
-      }).catch(function(){
-        ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
-      });
+        if(!data||data.ok===false)throw new Error("watchlist_count_unavailable");
+        setPlayerWatchlistBadgeCount((data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length);
+      }).catch(function(){setPlayerWatchlistBadgeCount(null);});
   }
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic
