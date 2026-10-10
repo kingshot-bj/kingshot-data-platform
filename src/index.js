@@ -4624,27 +4624,6 @@ const EAGLEEYE_THEME_SCRIPT = `
     } catch(e) {}
   }
 
-  function installGlobalBottomNav(){
-    try {
-      if(!document.body || document.querySelector(".ee-nav,.ee-global-nav")) return;
-      var path=window.location.pathname||"/";
-      var items=[
-        {href:"/",icon:"⌂",label:"ホーム",active:path==="/"||path==="/home"},
-        {href:"/kingdom/rankings",icon:"♛",label:"ランキング",active:path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0},
-        {href:"/players",icon:"⌕",label:"検索",active:path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0},
-        {href:"/watchlist",icon:"◌",label:"ウォッチ",active:path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0}
-      ];
-      var nav=document.createElement("nav");nav.className="ee-global-nav";nav.setAttribute("aria-label","メインナビゲーション");
-      items.forEach(function(item){var a=document.createElement("a");a.href=item.href;if(item.active){a.className="active";a.setAttribute("aria-current","page");}var icon=document.createElement("span");icon.className="ee-global-nav-icon";icon.textContent=item.icon;var label=document.createElement("span");label.textContent=item.label;a.appendChild(icon);a.appendChild(label);nav.appendChild(a);});
-      var more=document.createElement("button");more.type="button";more.innerHTML='<span class="ee-global-nav-icon">☰</span><span>その他</span>';more.setAttribute("aria-haspopup","dialog");nav.appendChild(more);document.body.appendChild(nav);
-      var drawer=document.createElement("div");drawer.className="ee-global-nav-drawer";drawer.setAttribute("aria-hidden","true");drawer.innerHTML='<section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能"><div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div><div class="ee-global-nav-links"><a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/status">システム状況</a><a href="/admin/diagnostics">診断</a><a href="/account">アカウント</a></div></section>';document.body.appendChild(drawer);
-      function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");}
-      more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");});
-      drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
-      document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
-    } catch(e) {}
-  }
-
   function setup(){
     // Each component is isolated so one Safari/WebKit restriction cannot
     // suppress the remaining global UI.
@@ -4654,7 +4633,6 @@ const EAGLEEYE_THEME_SCRIPT = `
     installGlobalActionGuard();
     installRoleBar();
     installThemeToggle();
-    installGlobalBottomNav();
     loadRole();
   }
 
