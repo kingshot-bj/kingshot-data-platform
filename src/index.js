@@ -6470,7 +6470,7 @@ async function renderPlayerSearchPage(request, env) {
       : (numericGovernorId
         ? `<a class="player-lookup" href="/player?governor_id=${encodeURIComponent(q)}"><span class="lookup-icon">↗</span><span><strong>領主ID ${escapeHtml(q)} を開く</strong><small>未登録の場合はAPIから自動取得して詳細を表示します</small></span><span class="lookup-arrow">→</span></a>`
         : `<div class="search-state"><span class="state-icon">⌕</span><strong>該当するプレイヤーが見つかりません</strong><p>領主名・領主ID・王国・同盟名で、保存済みデータを検索します。</p></div>`))
-    : `<section class="search-intro"><div class="search-intro-art"><img src="/assets/eagleeye/bjnyan/bjnyan-player-search.png.PNG" alt="プレイヤー情報を検索するBJにゃん" loading="eager"></div><div><strong>プレイヤーを探す</strong><p>領主名・領主ID・王国・同盟名から検索できます。</p><p class="search-intro-note">領主IDが未登録でも、検索後に確認を挟まずデータを取得します。</p></div></section>`;
+    : `<section class="search-intro"><div class="search-intro-art"><img src="/assets/eagleeye/bjnyan/bjnyan-player-search.png" alt="プレイヤー情報を検索するBJにゃん" loading="eager"></div><div><strong>プレイヤーを探す</strong><p>領主名・領主ID・王国・同盟名から検索できます。</p><p class="search-intro-note">領主IDが未登録でも、検索後に確認を挟まずデータを取得します。</p></div></section>`;
 
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050b14"><title>EagleEye / Search</title><style>
   :root{color-scheme:dark;--bg:#050b14;--panel:#091827;--panel2:#0c2032;--line:#203b53;--cyan:#20c8e8;--muted:#8ba1b8;--text:#eff8ff}
