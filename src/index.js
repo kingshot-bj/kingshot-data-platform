@@ -2584,6 +2584,27 @@ async function handlePlayerWatchlistApi(request, env) {
   return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
 }
 
+async function renderWatchlistHubPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") {
+    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ウォッチリスト｜EagleEye</title></head><body><main style="max-width:720px;margin:40px auto;padding:20px"><h1>ログインが必要です</h1><p>ウォッチリストを利用するにはログインしてください。</p><a href="/api/auth/discord">Discordでログイン</a></main></body></html>`);
+  }
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ウォッチリスト｜EagleEye</title>
+<style>
+body{margin:0;padding:18px 14px 32px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.watch-hub{max-width:760px;margin:0 auto}.watch-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}.watch-back{color:#20d7f2;text-decoration:none;font-weight:800}.watch-head h1{margin:8px 0 0;font-size:25px}.watch-intro{color:#8da2b8;margin:0 0 18px;font-size:13px}
+.watch-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.watch-option{display:flex;min-height:170px;flex-direction:column;justify-content:space-between;gap:14px;padding:18px;border:1px solid rgba(44,93,137,.7);border-radius:20px;background:linear-gradient(145deg,rgba(12,41,65,.95),rgba(6,17,29,.98));color:#eff8ff;text-decoration:none;transition:transform .14s,border-color .14s}.watch-option:active{transform:scale(.98);border-color:#20d7f2}.watch-icon{font-size:28px}.watch-option h2{font-size:17px;margin:8px 0 5px}.watch-option p{font-size:12px;line-height:1.55;color:#91a8bf;margin:0}.watch-go{font-size:12px;font-weight:900;color:#20d7f2}.watch-foot{margin-top:16px;color:#7189a2;font-size:11px}
+@media(max-width:520px){.watch-options{grid-template-columns:1fr}.watch-option{min-height:125px;padding:15px}.watch-head h1{font-size:22px}}
+</style></head><body><main class="watch-hub">
+<div class="watch-head"><div><a class="watch-back" href="/">← EagleEye ホーム</a><h1>ウォッチリスト</h1></div></div>
+<p class="watch-intro">追跡したい対象を選択してください。</p>
+<section class="watch-options">
+<a class="watch-option" href="/player-watchlist"><div><div class="watch-icon" aria-hidden="true">◉</div><h2>プレイヤーウォッチリスト</h2><p>登録したプレイヤーの順位やデータの変化を追跡します。</p></div><span class="watch-go">プレイヤーを確認する →</span></a>
+<a class="watch-option" href="/kingdom-watchlist"><div><div class="watch-icon" aria-hidden="true">⌖</div><h2>王国ウォッチリスト</h2><p>監視対象の王国を管理し、王国の動きを追跡します。</p></div><span class="watch-go">王国を確認する →</span></a>
+</section><p class="watch-foot">プレイヤーと王国のウォッチリストは、それぞれ独立して管理されます。</p>
+</main></body></html>`);
+}
+
 async function renderPlayerWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
@@ -3995,6 +4016,7 @@ export default {
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
+      if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
@@ -8952,7 +8974,7 @@ async function renderHome(request, env) {
 <div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
-  <a class="ee-tile primary" href="/player-watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>変化を追跡</small><b class="badge" id="playerBadge">0</b></a>
+  <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge">0</b></a>
   <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
   <a class="ee-tile" href="/kingdom"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
   <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
@@ -8975,7 +8997,7 @@ async function renderHome(request, env) {
 <a class="active" href="/"><span class="ee-nav-icon">⌂</span><span>ホーム</span></a>
 <a href="/kingdom/rankings"><span class="ee-nav-icon">♛</span><span>ランキング</span></a>
 <a href="/players"><span class="ee-nav-icon">⌕</span><span>検索</span></a>
-<a href="/player-watchlist"><span class="ee-nav-icon">◌</span><span>ウォッチ</span><span class="ee-nav-badge" id="navBadge">0</span></a>
+<a href="/watchlist"><span class="ee-nav-icon">◌</span><span>ウォッチ</span><span class="ee-nav-badge" id="navBadge">0</span></a>
 <button id="navMore" type="button"><span class="ee-nav-icon">☰</span><span>その他</span></button>
 </nav>
 <div class="ee-drawer" id="moreDrawer" aria-hidden="true">
