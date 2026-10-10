@@ -8826,7 +8826,7 @@ async function renderHome(request, env) {
     ? `<img src="https://cdn.discordapp.com/avatars/${encodeURIComponent(session.sub)}/${encodeURIComponent(session.avatar)}.png?size=96" alt="">`
     : "<span>BJ</span>";
   const loginBlock = session
-    ? `<a class="ee-profile" href="/status"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
+    ? `<a class="ee-profile" href="/my-player" aria-label="マイKingshotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
   const adminItem = auth && (auth.role === "ADMIN" || auth.role === "OWNER")
     ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span>管理</span></a>` : "";
