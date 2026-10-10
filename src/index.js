@@ -8902,7 +8902,8 @@ async function renderHome(request, env) {
   var drawer=document.getElementById("moreDrawer");
   function openDrawer(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false")}
   function closeDrawer(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true")}
-  document.getElementById("moreButton").onclick=openDrawer;
+  var homeMore=document.getElementById("moreButton");
+  if(homeMore)homeMore.onclick=openDrawer;
   document.getElementById("navMore").onclick=openDrawer;
   document.getElementById("closeMore").onclick=closeDrawer;
   drawer.addEventListener("click",function(e){if(e.target===drawer)closeDrawer()});
