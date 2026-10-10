@@ -4703,17 +4703,6 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
     if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
   });
   var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
-  var badge=document.getElementById("globalNavBadge");
-  // Keep the player-watch count visible on every page that uses the shared shell.
-  if(badge){
-    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
-      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
-      .then(function(data){
-        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
-        badge.textContent=count>99?"99+":String(count);
-        badge.hidden=false;
-      }).catch(function(){badge.hidden=true;});
-  }
   // Shared drawer behavior is installed once by EAGLEEYE_DRAWER_INIT.
 })();
 </script>`;
@@ -9557,11 +9546,6 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     requestAnimationFrame(tick)
   }
   async function loadCounts(){
-    try{
-      var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
-      var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
-      pBadge.textContent=pc;nBadge.textContent=pc;countUp(pCount,pc,700);
-    }catch(e){}
     try{
       var k=await fetch("/api/kingdom-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var kc=(k.watchlists||[]).filter(function(x){return Number(x.enabled)!==0}).length;
