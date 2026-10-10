@@ -7151,7 +7151,6 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     </div>
     ${noticeHtml}
     ${profile?.name_history?.length ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
-    ${renderPlayerOptionalAssets(profile?.optional_assets, canExport)}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">基本情報を更新</a><a class="action" href="/player?governor_id=${encodeURIComponent(governorId)}&rich=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
