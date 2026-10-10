@@ -216,12 +216,13 @@ export const EAGLEEYE_DRAWER_INIT = `
         ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
       });
   }
-  fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
+  var links=drawer.querySelector(".ee-global-nav-links");
+  // The home drawer already renders account links server-side, so only generic
+  // page drawers need the extra auth-state request.
+  if(links)fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
     .then(function(response){if(!response.ok)throw new Error("auth_state_unavailable");return response.json();})
     .then(function(state){
       if(!state.authenticated)return;
-      var links=drawer.querySelector(".ee-global-nav-links");
-      if(!links)return;
       function addLink(href,label,key){
         if(links.querySelector('[data-other-key="'+key+'"]'))return;
         var a=document.createElement("a");a.href=href;a.textContent=label;a.setAttribute("data-other-key",key);links.appendChild(a);
