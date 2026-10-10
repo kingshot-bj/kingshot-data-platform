@@ -4584,10 +4584,16 @@ const EAGLEEYE_THEME_SCRIPT = `
 
   function loadRole(){
     try {
-      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
-        .then(function(r){return r.ok?r.json():null;})
-        .then(function(d){if(d&&d.ok)paintRole(d.role);})
-        .catch(function(){});
+      // Share the request started by the generic drawer, when present, so the
+      // shell does not issue duplicate role/eligibility API reads on page load.
+      var roleStatePromise=window.__eagleEyeRoleStatePromise;
+      if(!roleStatePromise){
+        roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
+          .then(function(r){return r.ok?r.json():null;})
+          .catch(function(){return null;});
+        window.__eagleEyeRoleStatePromise=roleStatePromise;
+      }
+      roleStatePromise.then(function(d){if(d&&d.ok)paintRole(d.role);});
     } catch(e) {}
   }
 
