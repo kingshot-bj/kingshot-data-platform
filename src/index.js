@@ -4257,6 +4257,14 @@ html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033
 .eagle-action-busy:after{content:"";display:inline-block;width:12px;height:12px;margin-left:8px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:eagleActionSpin .7s linear infinite}
 @keyframes eagleActionSpin{to{transform:rotate(360deg)}}
 
+/* Shared bottom navigation across EagleEye pages */
+.ee-global-nav{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:7px 8px calc(7px + env(safe-area-inset-bottom));background:rgba(3,9,17,.97);border-top:1px solid #1e3349;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.ee-global-nav a,.ee-global-nav button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:52px;padding:5px 2px;border:0;border-radius:13px;background:transparent;color:#71869e;text-decoration:none;font:800 10px/1.2 system-ui,-apple-system,sans-serif;cursor:pointer}
+.ee-global-nav .ee-global-nav-icon{font-size:20px;line-height:1.1}.ee-global-nav a.active{color:#20d7f2;background:linear-gradient(180deg,rgba(32,215,242,.12),rgba(32,215,242,.025))}.ee-global-nav a.active:before{content:"";position:absolute;top:0;left:25%;right:25%;height:3px;border-radius:4px;background:#20d7f2;box-shadow:0 0 12px rgba(32,215,242,.65)}
+.ee-global-nav-badge{position:absolute;top:1px;left:calc(50% + 10px);min-width:15px;height:15px;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-size:9px;display:grid;place-items:center}
+.ee-global-nav-drawer{position:fixed;inset:0;z-index:9001;display:none;align-items:flex-end;background:rgba(0,0,0,.58);backdrop-filter:blur(5px)}.ee-global-nav-drawer.open{display:flex}.ee-global-nav-panel{width:100%;max-height:75dvh;overflow:auto;padding:16px 16px calc(20px + env(safe-area-inset-bottom));border:1px solid #24435d;border-bottom:0;border-radius:22px 22px 0 0;background:linear-gradient(180deg,#0c2035,#06111e);color:#eff8ff}.ee-global-nav-panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.ee-global-nav-panel-head button{border:1px solid #35516b;border-radius:10px;background:#10243a;color:#e5f5ff;padding:7px 12px}.ee-global-nav-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.ee-global-nav-links a{padding:13px 8px;border:1px solid #24435d;border-radius:13px;background:#0b1b2c;color:#dceaf7;text-align:center;text-decoration:none;font-size:12px;font-weight:750}
+body{padding-bottom:calc(82px + env(safe-area-inset-bottom))!important}
+@media(min-width:900px){.ee-global-nav{left:50%;right:auto;transform:translateX(-50%);width:min(680px,calc(100% - 32px));border:1px solid #1e3349;border-bottom:0;border-radius:18px 18px 0 0}}
 </style>`;
 
 const EAGLEEYE_THEME_SCRIPT = `
@@ -4490,6 +4498,27 @@ const EAGLEEYE_THEME_SCRIPT = `
     } catch(e) {}
   }
 
+  function installGlobalBottomNav(){
+    try {
+      if(!document.body || document.querySelector(".ee-nav,.ee-global-nav")) return;
+      var path=window.location.pathname||"/";
+      var items=[
+        {href:"/",icon:"⌂",label:"ホーム",active:path==="/"||path==="/home"},
+        {href:"/kingdom/rankings",icon:"♛",label:"ランキング",active:path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0},
+        {href:"/players",icon:"⌕",label:"検索",active:path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0},
+        {href:"/watchlist",icon:"◌",label:"ウォッチ",active:path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0}
+      ];
+      var nav=document.createElement("nav");nav.className="ee-global-nav";nav.setAttribute("aria-label","メインナビゲーション");
+      items.forEach(function(item){var a=document.createElement("a");a.href=item.href;if(item.active){a.className="active";a.setAttribute("aria-current","page");}var icon=document.createElement("span");icon.className="ee-global-nav-icon";icon.textContent=item.icon;var label=document.createElement("span");label.textContent=item.label;a.appendChild(icon);a.appendChild(label);nav.appendChild(a);});
+      var more=document.createElement("button");more.type="button";more.innerHTML='<span class="ee-global-nav-icon">☰</span><span>その他</span>';more.setAttribute("aria-haspopup","dialog");nav.appendChild(more);document.body.appendChild(nav);
+      var drawer=document.createElement("div");drawer.className="ee-global-nav-drawer";drawer.setAttribute("aria-hidden","true");drawer.innerHTML='<section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能"><div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div><div class="ee-global-nav-links"><a href="/kingdom-watchlist">王国ウォッチ</a><a href="/kingdom-catalog">王国カタログ</a><a href="/my-player">マイKingshot</a><a href="/status">システム状況</a><a href="/admin/diagnostics">診断</a><a href="/account">アカウント</a></div></section>';document.body.appendChild(drawer);
+      function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");}
+      more.addEventListener("click",function(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");});
+      drawer.addEventListener("click",function(e){if(e.target===drawer||e.target.closest("[data-close]"))close();});
+      document.addEventListener("keydown",function(e){if(e.key==="Escape")close();});
+    } catch(e) {}
+  }
+
   function setup(){
     // Each component is isolated so one Safari/WebKit restriction cannot
     // suppress the remaining global UI.
@@ -4499,6 +4528,7 @@ const EAGLEEYE_THEME_SCRIPT = `
     installGlobalActionGuard();
     installRoleBar();
     installThemeToggle();
+    installGlobalBottomNav();
     loadRole();
   }
 
