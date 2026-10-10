@@ -2233,6 +2233,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
 .check{font-size:12px;margin:9px 0}
 @media(min-width:600px){.wrap{padding:22px 18px 44px}.card{padding:18px}.account{padding:14px}.title{font-size:32px}.sub{font-size:13px}.row{font-size:13px}.value{font-size:13px}}
 
+/* Compact expandable API key list */
+.key-list-details{margin-top:10px;border:1px solid rgba(43,77,107,.55);border-radius:12px;background:rgba(4,15,27,.42);overflow:hidden}.key-list-details summary{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;list-style:none;color:#d6e7f5;font-size:11px;font-weight:850}.key-list-details summary::-webkit-details-marker{display:none}.key-list-details summary .muted{font-size:10px}.key-list-rows{padding:0 12px 4px}.key-list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(54,82,109,.35);font-size:11px;color:#a9bfd3}.key-list-row small{display:block;margin-top:3px;color:#728da5;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}.key-list-row strong{font-size:11px;white-space:nowrap}
 /* My Kingshot information hierarchy */
 .section-block{margin-top:22px}
 .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}
@@ -2305,7 +2307,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     const vipKeyCount=Number(d.vip?.keyCount||keyCount);
     const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
-    if(keyRows.length) keyHtml+='<div style="margin-top:8px">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="row" style="align-items:flex-start;gap:12px"><span>APIキー '+(i+1)+'</span><span style="text-align:right"><span class="value '+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty対応':'✓ 提供済み')+'</span>'+(prefix?'<div class="muted" style="margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">'+esc(prefix)+'</div>':'')+'</span></div>';}).join('')+'</div>';
+    if(keyRows.length) keyHtml+='<details class="key-list-details"><summary><span>登録済みキーの内訳</span><span class="muted">'+esc(keyRows.length)+'本を表示　⌄</span></summary><div class="key-list-rows">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="key-list-row"><span>キー '+(i+1)+(prefix?'<small>'+esc(prefix)+'</small>':'')+'</span><strong class="'+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty':'✓ 提供済み')+'</strong></div>';}).join('')+'</div></details>';
     html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">ACCESS LEVEL</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
