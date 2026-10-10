@@ -122,7 +122,7 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingshot", image: EAGLEEYE_BJNYAN.dashboard }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
   Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
-  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.analysis, minRole: "ADMIN" })
+  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.system, minRole: "ADMIN" })
 ]);
 
 export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, compact = false } = {}) {
