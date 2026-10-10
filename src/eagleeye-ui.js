@@ -122,14 +122,16 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingshot", image: EAGLEEYE_BJNYAN.dashboard }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
   Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
-  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.analysis })
+  Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.analysis, minRole: "ADMIN" })
 ]);
 
 export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, compact = false } = {}) {
   const esc = value => String(value ?? "").replace(/[&<>"']/g, ch => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[ch]));
-  const links = EAGLEEYE_OTHER_MENU.map(item => compact
+  const roleRank = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
+  const currentRank = auth ? (roleRank[auth.role] ?? 0) : 0;
+  const links = EAGLEEYE_OTHER_MENU.filter(item => !item.minRole || currentRank >= (roleRank[item.minRole] ?? 99)).map(item => compact
     ? `<a href="${item.href}" data-other-key="${item.key}">${esc(item.label)}</a>`
     : `<a href="${item.href}" data-other-key="${item.key}"><img src="${item.image}" alt=""><span>${esc(item.label)}</span></a>`
   ).join("");
