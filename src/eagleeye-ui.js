@@ -198,7 +198,7 @@ export const EAGLEEYE_DRAWER_INIT = `
     var target=link.getAttribute("data-nav-path");
     var active=(target==="/"&&(path==="/"||path==="/home"))||
       (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
-      (target==="/players"&&(path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
+      (target==="/players"&&(path==="/players"||path==="/player"||path==="/player-compare"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
       (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
     if(active){link.classList.add("active");link.setAttribute("aria-current","page");}
   });
