@@ -1,4 +1,4 @@
-import { EAGLEEYE_NAV_CSS, renderEagleEyeOtherMenu } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, renderEagleEyeOtherMenu, renderEagleEyeNavigation } from "./eagleeye-ui.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -4678,13 +4678,7 @@ function applyEagleEyeTheme(html) {
   const isLoginRequiredPage = html.includes("ログインが必要です") || html.includes("Discordでログイン");
   if (!isLoginRequiredPage && !html.includes('class="ee-nav"') && !html.includes('class="ee-global-nav"')) {
     const sharedNav = `
-<nav class="ee-global-nav" aria-label="メインナビゲーション">
-  <a href="/" data-nav-path="/" aria-label="ホーム"><span class="ee-global-nav-icon">⌂</span><span>ホーム</span></a>
-  <a href="/kingdom/rankings" data-nav-path="/kingdom/rankings" aria-label="ランキング"><span class="ee-global-nav-icon">♛</span><span>ランキング</span></a>
-  <a href="/players" data-nav-path="/players" aria-label="検索"><span class="ee-global-nav-icon">⌕</span><span>検索</span></a>
-  <a href="/watchlist" data-nav-path="/watchlist" aria-label="ウォッチ"><span class="ee-global-nav-icon">◌</span><span>ウォッチ</span><span class="ee-global-nav-badge" id="globalNavBadge" aria-label="監視中のプレイヤー数">0</span></a>
-  <button type="button" class="ee-global-nav-more" aria-haspopup="dialog" aria-expanded="false"><span class="ee-global-nav-icon">☰</span><span>その他</span></button>
-</nav>
+${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 <div class="ee-global-nav-drawer" aria-hidden="true">
   <section class="ee-global-nav-panel" role="dialog" aria-modal="true" aria-label="その他の機能">
     <div class="ee-global-nav-panel-head"><strong>その他の機能</strong><button type="button" data-close>閉じる ×</button></div>
@@ -9538,13 +9532,7 @@ async function renderHome(request, env) {
 </button>
 
 </div></main>
-<nav class="ee-global-nav ee-nav">
-<a class="active" href="/"><span class="ee-nav-icon">⌂</span><span>ホーム</span></a>
-<a href="/kingdom/rankings"><span class="ee-nav-icon">♛</span><span>ランキング</span></a>
-<a href="/players"><span class="ee-nav-icon">⌕</span><span>検索</span></a>
-<a href="/watchlist"><span class="ee-nav-icon">◌</span><span>ウォッチ</span><span class="ee-nav-badge" id="navBadge">0</span></a>
-<button id="navMore" type="button"><span class="ee-nav-icon">☰</span><span>その他</span></button>
-</nav>
+${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
 <div class="ee-drawer" id="moreDrawer" aria-hidden="true">
   <div class="ee-drawer-panel">
     <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
