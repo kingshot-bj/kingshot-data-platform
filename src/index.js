@@ -7178,6 +7178,25 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   .other-ranking-list .detail-row{border-left:3px solid var(--ee-cyan,#20d7f2)}
   .hero-stars-row,.mini-card,.gear-stat,.gear-gems{background:var(--ee-panel2,#0d2035);border-color:var(--ee-line,#23415f)}
   @media(max-width:520px){.wrap{padding:16px 12px}.profile-section{padding:13px}.hero{padding:16px}}
+
+  .ranking-dashboard .section-heading{margin-bottom:10px}
+  .favorite-rankings-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .favorite-ranking-card{min-width:0;background:var(--ee-panel2,#0d2035);border:1px solid var(--ee-line,#23415f);border-radius:10px;padding:9px 6px;display:flex;flex-direction:column;gap:7px}
+  .favorite-ranking-label{font-size:clamp(9px,2.4vw,12px);line-height:1.25;color:var(--ee-sub,#8098b0);overflow-wrap:anywhere;min-height:2.5em}
+  .favorite-ranking-score{font-size:clamp(11px,3vw,16px);font-weight:800;color:var(--ee-text,#eff8ff);line-height:1.2;overflow-wrap:anywhere}
+  .favorite-ranking-rank{font-size:clamp(10px,2.5vw,12px);font-weight:700;color:var(--ee-cyan,#20d7f2)}
+  .ranking-dashboard-actions{display:flex;gap:8px;margin-top:10px}
+  .ranking-dashboard-actions button,.ranking-settings-footer button{font:inherit;font-size:12px;border:1px solid var(--ee-line,#23415f);border-radius:9px;padding:8px 10px;background:var(--ee-panel2,#0d2035);color:var(--ee-cyan,#20d7f2);cursor:pointer}
+  .ranking-rest-toggle{flex:1;text-align:left}
+  .ranking-settings-panel,.ranking-rest-panel{margin-top:10px;padding:10px;border:1px solid var(--ee-line,#23415f);border-radius:12px;background:var(--ee-panel,#0a1728)}
+  .ranking-settings-heading{display:flex;justify-content:space-between;gap:8px;color:var(--ee-text,#eff8ff);font-size:13px;margin-bottom:8px}
+  .ranking-settings-heading span{color:var(--ee-cyan,#20d7f2)}
+  .ranking-settings-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .ranking-setting-option{display:flex;align-items:center;gap:7px;min-width:0;padding:8px;border:1px solid var(--ee-line,#23415f);border-radius:8px;color:var(--ee-text,#eff8ff);font-size:12px}
+  .ranking-setting-option input{accent-color:var(--ee-cyan,#20d7f2);flex-shrink:0}
+  .ranking-settings-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+  .ranking-rest-panel .detail-row{border-left:3px solid var(--ee-cyan,#20d7f2)}
+  @media(max-width:360px){.favorite-rankings-grid{gap:4px}.favorite-ranking-card{padding:7px 4px}.ranking-dashboard-actions button{font-size:11px;padding:7px 6px}}
 </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
 (function(){
   const btn=document.getElementById("player-watchlist-toggle");
@@ -7210,7 +7229,38 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   });
   sync();
 })();
-</script></main></body></html>`;
+<script>
+(function(){
+  const root=document.querySelector("[data-ranking-dashboard]");
+  if(!root)return;
+  const dataNode=root.querySelector("[data-ranking-data]");
+  let boards=[];try{boards=JSON.parse(dataNode?.textContent||"[]")}catch(_){}
+  const key="eagleeye-ranking-favorites:"+String(root.dataset.playerKey||"");
+  const defaults=["personal_power","kills","coliseum","crystal_cave"];
+  const grid=root.querySelector("[data-favorite-grid]");
+  const rest=root.querySelector("[data-ranking-rest-list]");
+  const restPanel=root.querySelector("[data-ranking-rest-panel]");
+  const settingsPanel=root.querySelector("[data-ranking-settings-panel]");
+  const settingsList=root.querySelector("[data-ranking-settings-list]");
+  const count=root.querySelector("[data-ranking-selection-count]");
+  const restCount=root.querySelector("[data-rest-count]");
+  const restToggle=root.querySelector("[data-ranking-rest-toggle]");
+  let favorites=defaults.filter(k=>boards.some(b=>b.key===k)).slice(0,4);
+  try{const saved=JSON.parse(localStorage.getItem(key)||"null");if(Array.isArray(saved))favorites=saved.filter(k=>boards.some(b=>b.key===k)).slice(0,4)}catch(_){}
+  while(favorites.length<Math.min(4,boards.length)){const next=boards.find(b=>!favorites.includes(b.key));if(!next)break;favorites.push(next.key)}
+  let draft=favorites.slice();
+  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const renderCard=b=>'<div class="favorite-ranking-card"><div class="favorite-ranking-label">'+esc(b.label)+'</div><div class="favorite-ranking-score">'+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+'</div><div class="favorite-ranking-rank">'+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?esc(b.rank)+"位":"順位なし")+'</div></div>';
+  const renderRow=b=>'<div class="detail-row"><span>'+esc(b.label)+'</span><b>'+esc(b.score!==undefined&&b.score!==null?String(b.score).length>8?Number(b.score).toLocaleString("en-US",{notation:"compact",maximumFractionDigits:2}):b.score:"-")+(b.rank!==undefined&&b.rank!==null&&b.rank!==""?" / "+esc(b.rank)+"位":"")+'</b></div>';
+  function render(){grid.innerHTML=favorites.map(k=>boards.find(b=>b.key===k)).filter(Boolean).map(renderCard).join("");const others=boards.filter(b=>!favorites.includes(b.key));rest.innerHTML=others.map(renderRow).join("")||'<div class="detail-row"><span>ほかのランキングはありません</span></div>';restCount.textContent=others.length?"("+others.length+"項目)":"";restToggle.hidden=others.length===0;}
+  function renderSettings(){settingsList.innerHTML=boards.map(b=>'<label class="ranking-setting-option"><input type="checkbox" value="'+esc(b.key)+'" '+(draft.includes(b.key)?"checked":"")+' '+(!draft.includes(b.key)&&draft.length>=4?"disabled":"")+'><span>'+esc(b.label)+'</span></label>').join("");count.textContent=draft.length+" / 4";settingsList.querySelectorAll("input").forEach(input=>input.addEventListener("change",()=>{if(input.checked){if(draft.length<4)draft.push(input.value)}else draft=draft.filter(k=>k!==input.value);renderSettings()}));}
+  root.querySelector("[data-ranking-settings-toggle]").addEventListener("click",()=>{settingsPanel.hidden=!settingsPanel.hidden;draft=favorites.slice();renderSettings()});
+  root.querySelector("[data-ranking-settings-cancel]").addEventListener("click",()=>{settingsPanel.hidden=true;draft=favorites.slice()});
+  root.querySelector("[data-ranking-settings-save]").addEventListener("click",()=>{if(draft.length!==4){count.textContent="4項目選択してください";return}favorites=draft.slice();try{localStorage.setItem(key,JSON.stringify(favorites))}catch(_){}settingsPanel.hidden=true;render()});
+  restToggle.addEventListener("click",()=>{const open=restPanel.hidden;restPanel.hidden=!open;restToggle.setAttribute("aria-expanded",String(open));restToggle.querySelector("[data-rest-chevron]").textContent=open?"－":"＋";restToggle.childNodes[0].textContent=open?"残りのランキングを閉じる ":"残りのランキングを表示 "});
+  render();
+})();
+</script></script></main></body></html>`;
 }
 
 const HERO_NAME_JA = {
@@ -7515,41 +7565,30 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
 
   if (p.ranks && typeof p.ranks === "object") {
     const r = p.ranks;
-    html += '<section class="profile-section"><div class="section-heading"><h2>個人ランキング</h2>' + exportButton("rankings") + '</div><div class="mini-grid">';
-    [["戦力",r.power,r.power_rank],["撃破数",r.kills,r.kills_rank],["役場",r.town_center_level,r.town_center_rank],["移民スコア",r.migrant_score,r.migrant_rank],["秘境の試練",r.mystic_trial,r.mystic_rank]].forEach(item => {
-      if (item[1] !== undefined || item[2] !== undefined) html += '<div class="mini-card"><span>' + esc(item[0]) + '</span><b>' + esc(formatCompactNumber(item[1])) + ' / ' + esc(item[2] ?? "-") + '位</b></div>';
-    });
-    if (Array.isArray(r.leaderboards) && r.leaderboards.length) {
-      const coreBoardKeys = new Set(["personal_power", "power", "kills", "town_center", "town_center_level", "migrant_score", "mystic_trial"]);
-      const coreBoardLabels = new Set(["個人総力", "個人撃破", "役場Lv.", "移民スコア", "秘境の試練", "戦力", "撃破数", "役場"]);
-      const boardAliases = {
-        "Personal Power": "personal_power", "Kill Count": "kills", "Town Center Level": "town_center",
-        "Migrant Score": "migrant_score", "Mystic Trial": "mystic_trial",
-        "個人総力": "personal_power", "個人撃破": "kills", "役場Lv.": "town_center",
-        "移民スコア": "migrant_score", "秘境の試練": "mystic_trial"
-      };
-      const otherBoards = r.leaderboards.filter(board => {
-        const candidates = [board?.key, board?.board, board?.id, board?.name, board?.label].filter(Boolean).map(String);
-        const keys = candidates.map(candidate => boardAliases[candidate] || candidate);
-        const label = localizeLeaderboardLabel(board);
-        return !keys.some(key => coreBoardKeys.has(key)) && !coreBoardLabels.has(label);
-      });
-      if (otherBoards.length) {
-        html += '</div><h3 class="ranking-group-title">その他ランキング</h3><div class="detail-list other-ranking-list">';
-        for (const board of otherBoards) {
-          const label = localizeLeaderboardLabel(board);
-          const score = board?.score ?? board?.value ?? board?.rank_value;
-          const rank = board?.rank ?? board?.ranking ?? board?.rank_no;
-          html += '<div class="detail-row"><span>' + esc(formatProfileValue(label)) + '</span><b>' + esc(score !== undefined ? formatCompactNumber(score) : "-") + (rank !== undefined && rank !== null && rank !== "" ? ' / ' + esc(rank) + '位' : '') + '</b></div>';
-        }
-        html += '</div>';
-      } else {
-        html += '</div>';
-      }
-    } else {
-      html += '</div>';
-    }
-    html += '</section>';
+    const coreBoards = [
+      { key: "personal_power", label: "個人総力", score: r.power, rank: r.power_rank },
+      { key: "kills", label: "個人撃破", score: r.kills, rank: r.kills_rank },
+      { key: "town_center", label: "役場Lv.", score: r.town_center_level, rank: r.town_center_rank },
+      { key: "migrant_score", label: "移民スコア", score: r.migrant_score, rank: r.migrant_rank },
+      { key: "mystic_trial", label: "秘境の試練", score: r.mystic_trial, rank: r.mystic_rank }
+    ].filter(item => item.score !== undefined || item.rank !== undefined);
+    const aliases = {
+      "Personal Power":"personal_power", "個人総力":"personal_power", "戦力":"personal_power",
+      "Kill Count":"kills", "個人撃破":"kills", "撃破数":"kills",
+      "Town Center Level":"town_center", "役場Lv.":"town_center", "役場":"town_center",
+      "Migrant Score":"migrant_score", "移民スコア":"migrant_score",
+      "Mystic Trial":"mystic_trial", "秘境の試練":"mystic_trial"
+    };
+    const boards = [...coreBoards, ...(Array.isArray(r.leaderboards) ? r.leaderboards.map((board, index) => {
+      const candidates = [board?.key, board?.board, board?.id, board?.name, board?.label].filter(Boolean).map(String);
+      const key = candidates.map(value => aliases[value] || value).find(value => Object.values(aliases).includes(value) || /^[a-z][a-z0-9_]*$/.test(value)) || "other_" + index;
+      return { key, label: localizeLeaderboardLabel(board), score: board?.score ?? board?.value ?? board?.rank_value, rank: board?.rank ?? board?.ranking ?? board?.rank_no };
+    }).filter(item => !coreBoards.some(core => core.key === item.key)) : [])];
+    const boardJson = JSON.stringify(boards).replace(/</g, "\\u003c");
+    html += '<section class="profile-section ranking-dashboard" data-ranking-dashboard data-player-key="' + esc(governorId) + '"><div class="section-heading"><h2>ランキング</h2>' + exportButton("rankings") + '</div>';
+    html += '<div class="favorite-rankings-grid" data-favorite-grid></div><div class="ranking-dashboard-actions"><button type="button" class="ranking-settings-toggle" data-ranking-settings-toggle>表示項目を設定</button><button type="button" class="ranking-rest-toggle" data-ranking-rest-toggle aria-expanded="false">残りのランキングを表示 <span data-rest-count></span> <span data-rest-chevron>＋</span></button></div>';
+    html += '<div class="ranking-settings-panel" data-ranking-settings-panel hidden><div class="ranking-settings-heading"><b>表示する4項目を選択</b><span data-ranking-selection-count>0 / 4</span></div><div class="ranking-settings-list" data-ranking-settings-list></div><div class="ranking-settings-footer"><button type="button" data-ranking-settings-cancel>キャンセル</button><button type="button" data-ranking-settings-save>保存</button></div></div>';
+    html += '<div class="ranking-rest-panel" data-ranking-rest-panel hidden><div class="detail-list other-ranking-list" data-ranking-rest-list></div></div><script type="application/json" data-ranking-data>' + boardJson + '</script></section>';
   }
 
   if (p.gov_gear && typeof p.gov_gear === "object") {
