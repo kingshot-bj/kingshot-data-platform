@@ -8869,6 +8869,31 @@ async function renderHome(request, env) {
 @media(min-width:760px){.ee-welcome{min-height:172px;padding:26px}.ee-welcome-bj{width:205px;height:205px;right:7%;bottom:-24px}.ee-tile{min-height:132px}.ee-tile img{width:58px;height:58px}.ee-summary{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:520px){.ee-main{padding:12px 12px 18px}.ee-welcome{min-height:132px;padding:16px}.ee-welcome-copy{max-width:68%}.ee-welcome-copy:before{font-size:8px;letter-spacing:.13em}.ee-welcome-copy:after{font-size:10px;max-width:205px}.ee-welcome-bj{width:137px;height:137px;right:-2%;bottom:-8px}.ee-menu-title{margin-top:17px}.ee-mainmenu{gap:7px}.ee-tile{min-height:101px;padding:8px 3px}.ee-tile img{width:42px;height:42px}.ee-tile strong{font-size:10px}.ee-tile small{font-size:7px}.ee-summary{margin-top:13px}.ee-stat{padding:9px 10px}.ee-stat-value{font-size:15px}.ee-nav{padding-left:8px;padding-right:8px}.ee-nav-icon{font-size:19px}}
 @media(max-height:700px){.ee-welcome{min-height:112px}.ee-welcome-bj{width:118px;height:118px}.ee-welcome-copy:after{margin-top:4px}.ee-tile{min-height:86px}.ee-tile img{width:36px;height:36px}.ee-summary{margin-top:10px}}
+/* Compact home layout for common iPhone viewport heights: keep the milestone card above the fixed bottom navigation */
+@media(max-width:520px) and (min-height:701px) and (max-height:900px){
+  .ee-main{padding:8px 12px 10px}
+  .ee-welcome{min-height:112px;padding:12px}
+  .ee-welcome-bj{width:120px;height:120px;right:-1%;bottom:-7px}
+  .ee-welcome-copy:before{margin-bottom:5px;font-size:7px}
+  .ee-welcome-copy:after{margin-top:4px;font-size:9px}
+  .ee-welcome-state{padding:4px 7px;font-size:8px}
+  .ee-menu-title{margin:11px 3px 7px}
+  .ee-mainmenu{gap:6px}
+  .ee-tile{min-height:83px;padding:6px 3px;border-radius:14px}
+  .ee-tile img{width:34px;height:34px}
+  .ee-tile strong{font-size:9px}
+  .ee-tile small{font-size:7px}
+  .ee-summary{gap:6px;margin-top:9px}
+  .ee-stat{min-height:54px;padding:7px 9px;border-radius:13px}
+  .ee-stat-label{font-size:7px}
+  .ee-stat-value{margin-top:2px;font-size:14px}
+  .ee-stat-sub{font-size:7px}
+  .ee-milestone-card{gap:9px;margin-top:8px;padding:8px 10px;border-radius:14px}
+  .ee-milestone-icon{flex-basis:32px;width:32px;height:32px;font-size:20px}
+  .ee-milestone-copy strong{font-size:10px}
+  .ee-milestone-copy small{font-size:8px}
+  .ee-milestone-status{padding:5px 7px;font-size:8px}
+}
 </style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
