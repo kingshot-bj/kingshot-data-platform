@@ -4691,21 +4691,7 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
     </div>
   </section>
 </div>
-<script id="eagleeye-global-nav-init">
-(function(){
-  var path=location.pathname||"/";
-  document.querySelectorAll(".ee-global-nav [data-nav-path]").forEach(function(a){
-    var target=a.getAttribute("data-nav-path");
-    var active=(target==="/"&&(path==="/"||path==="/home"))||
-      (target==="/kingdom/rankings"&&(path.indexOf("/kingdom/rankings")===0||path.indexOf("/rankings")===0))||
-      (target==="/players"&&(path==="/players"||path.indexOf("/player/")===0||path.indexOf("/players/")===0))||
-      (target==="/watchlist"&&(path==="/watchlist"||path.indexOf("/player-watchlist")===0||path.indexOf("/kingdom-watchlist")===0));
-    if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
-  });
-  var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
-  // Shared drawer behavior is installed once by EAGLEEYE_DRAWER_INIT.
-})();
-</script>`;
+<script id="eagleeye-global-nav-init">/* Active state and drawer behavior are centralized in EAGLEEYE_DRAWER_INIT. */</script>`;
     html=html.replace("</body>",sharedNav+"</body>");
   }
   if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
