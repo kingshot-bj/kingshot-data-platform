@@ -9240,13 +9240,6 @@ async function renderHome(request, env) {
   const loginBlock = session
     ? `<a class="ee-profile" href="/my-player" aria-label="マイKingshotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
-  const adminItem = auth && (auth.role === "ADMIN" || auth.role === "OWNER")
-    ? `<a href="/admin"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><span>管理</span></a>` : "";
-  const ownerItem = auth && auth.role === "OWNER"
-    ? `<a class="owner" href="/owner"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><span>Owner Control</span></a>` : "";
-  const logoutItem = auth
-    ? `<a class="logout" href="/api/auth/logout"><img src="/assets/eagleeye/bjnyan/08_player_not_found.png" alt=""><span>ログアウト</span></a>` : "";
-
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
 :root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,#06101d,#030811 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
