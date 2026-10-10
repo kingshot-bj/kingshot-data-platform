@@ -9207,7 +9207,7 @@ async function renderHome(request, env) {
   const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
   const auth = session ? await getAuthenticatedUser(request, env) : null;
   // Only an ACTIVE database-backed user may receive role-gated drawer links.
-  const menuAuth = auth?.status === "ACTIVE" ? auth : null;
+  const menuAuth = auth?.status === "ACTIVE" ? auth : (session ? { role: "BASIC" } : null);
   const role = menuAuth?.role || "BASIC";
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
