@@ -230,8 +230,19 @@ export const EAGLEEYE_DRAWER_INIT = `
       if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
-  function open(){drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","true");});}
-  function close(){drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","false");});}
+  function open(){
+    drawer.classList.add("open");
+    drawer.setAttribute("aria-hidden","false");
+    triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","true");});
+    if(closeButton&&typeof closeButton.focus==="function")closeButton.focus();
+  }
+  function close(){
+    drawer.classList.remove("open");
+    drawer.setAttribute("aria-hidden","true");
+    triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","false");});
+    var trigger=triggers.find(function(item){return item.getAttribute("aria-expanded")==="false";});
+    if(trigger&&typeof trigger.focus==="function")trigger.focus();
+  }
   triggers.forEach(function(trigger){trigger.addEventListener("click",open);});
   if(closeButton)closeButton.addEventListener("click",close);
   drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
