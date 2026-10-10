@@ -4703,6 +4703,28 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
     if(active){a.classList.add("active");a.setAttribute("aria-current","page");}
   });
   var nav=document.querySelector(".ee-global-nav"),drawer=document.querySelector(".ee-global-nav-drawer"),more=document.querySelector(".ee-global-nav-more");
+  var badge=document.getElementById("globalNavBadge");
+  fetch("/api/auth/ui-state",{credentials:"same-origin",cache:"no-store"})
+    .then(function(response){if(!response.ok)throw new Error("auth_state_unavailable");return response.json();})
+    .then(function(state){
+      var links=document.querySelector(".ee-global-nav-links");
+      if(!links||!state.authenticated)return;
+      var entries=[];
+      if(state.role==="ADMIN"||state.role==="OWNER")entries.push('<a href="/admin" data-other-key="admin">管理</a>');
+      if(state.role==="OWNER")entries.push('<a href="/owner" data-other-key="owner">Owner Control</a>');
+      entries.push('<a href="/account" data-other-key="account">アカウント</a>');
+      entries.push('<a href="/api/auth/logout" data-other-key="logout">ログアウト</a>');
+      links.insertAdjacentHTML("beforeend",entries.join(""));
+    }).catch(function(){});
+  if(badge){
+    fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
+      .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
+      .then(function(data){
+        var count=(data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
+        badge.textContent=count>99?"99+":String(count);
+        badge.hidden=false;
+      }).catch(function(){badge.hidden=true;});
+  }
   // Shared drawer behavior is installed once by EAGLEEYE_DRAWER_INIT.
 })();
 </script>`;
