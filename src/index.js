@@ -9206,7 +9206,9 @@ async function renderHome(request, env) {
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
   const auth = session ? await getAuthenticatedUser(request, env) : null;
-  const role = auth?.role || "BASIC";
+  // Only an ACTIVE database-backed user may receive role-gated drawer links.
+  const menuAuth = auth?.status === "ACTIVE" ? auth : null;
+  const role = menuAuth?.role || "BASIC";
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar
@@ -9506,7 +9508,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   <div class="ee-drawer-panel">
     <div class="ee-drawer-head"><b>その他の機能</b><button class="ee-close" id="closeMore" type="button">×</button></div>
     <div class="ee-drawer-grid">
-      ${renderEagleEyeOtherMenu({ auth, includeAccount: true, compact: false })}
+      ${renderEagleEyeOtherMenu({ auth: menuAuth, includeAccount: true, compact: false })}
     </div>
   </div>
 </div>
