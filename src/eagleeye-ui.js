@@ -230,20 +230,22 @@ export const EAGLEEYE_DRAWER_INIT = `
       if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
-  function open(){
+  var activeTrigger=null;
+  function open(trigger){
+    activeTrigger=trigger||activeTrigger||triggers[0];
     drawer.classList.add("open");
     drawer.setAttribute("aria-hidden","false");
-    triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","true");});
+    triggers.forEach(function(item){item.setAttribute("aria-expanded","true");});
     if(closeButton&&typeof closeButton.focus==="function")closeButton.focus();
   }
   function close(){
     drawer.classList.remove("open");
     drawer.setAttribute("aria-hidden","true");
-    triggers.forEach(function(trigger){trigger.setAttribute("aria-expanded","false");});
-    var trigger=triggers.find(function(item){return item.getAttribute("aria-expanded")==="false";});
-    if(trigger&&typeof trigger.focus==="function")trigger.focus();
+    triggers.forEach(function(item){item.setAttribute("aria-expanded","false");});
+    if(activeTrigger&&typeof activeTrigger.focus==="function")activeTrigger.focus();
+    activeTrigger=null;
   }
-  triggers.forEach(function(trigger){trigger.addEventListener("click",open);});
+  triggers.forEach(function(trigger){trigger.addEventListener("click",function(){open(trigger);});});
   if(closeButton)closeButton.addEventListener("click",close);
   drawer.addEventListener("click",function(event){if(event.target===drawer)close();});
   document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
