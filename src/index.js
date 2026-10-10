@@ -4665,6 +4665,11 @@ const EAGLEEYE_THEME_SCRIPT = `
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
   if (!html.includes('id="eagleeye-theme"')) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
+  // Apply the shared navigation size contract after page-specific styles so
+  // responsive page CSS cannot unexpectedly shrink navigation labels/icons.
+  if (!html.includes('id="eagleeye-nav-size-contract"')) {
+    html=html.replace("</head>", '<style id="eagleeye-nav-size-contract">'+EAGLEEYE_NAV_CSS+'</style></head>');
+  }
   // Install the shared navigation in the HTML response itself. This avoids
   // relying on client-side script execution to create a critical navigation.
   // The home page already owns its richer navigation; leave it untouched.
