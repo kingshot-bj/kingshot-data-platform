@@ -2266,6 +2266,28 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
 .section-block>.card{margin-top:0}
 .section-block .vip-card{margin-top:0}
 
+
+/* Collapsed account cards: keep the important identity visible, move details/actions behind a tap. */
+.account-details{padding:0;overflow:hidden}
+.account-summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px}
+.account-summary::-webkit-details-marker{display:none}
+.account-summary-main{min-width:0;flex:1}
+.account-summary-main strong,.account-summary-main small{display:block;overflow-wrap:anywhere}
+.account-summary-main strong{font-size:12px;color:#eff8ff}
+.account-summary-main small{margin-top:4px;color:#91a9bf;font-size:10px;line-height:1.5}
+.account-summary .badge{font-size:9px}
+.account-summary .summary-chevron{flex:0 0 auto;margin-left:0}
+.account-details[open] .account-summary{border-bottom:1px solid rgba(54,82,109,.5)}
+.account-detail-body{padding:2px 12px 12px}
+.account-detail-body .row:first-child{margin-top:2px}
+.key-register-details{margin-top:14px;border:1px solid rgba(43,77,107,.6);border-radius:13px;background:rgba(4,15,27,.45);overflow:hidden}
+.key-register-details>summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px;color:#d8edf8;font-size:12px;font-weight:850}
+.key-register-details>summary::-webkit-details-marker{display:none}
+.key-register-details>summary:after{content:"＋";margin-left:auto;color:var(--ee-cyan);font-size:17px}
+.key-register-details[open]>summary:after{content:"−"}
+.key-register-body{padding:0 12px 12px;border-top:1px solid rgba(43,77,107,.45)}
+.key-register-body .label:first-child{margin-top:12px}
+
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER & ACCOUNT</div><h1 class="title">マイKingshot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
@@ -2291,13 +2313,13 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
     for(const l of rows){
       const p=l.player||{};
-      html+='<div class="account"><div class="account-head"><strong>王国 '+esc(l.kingdom_id)+'</strong><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span></div>'+
+      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small>'+esc(p.nick_name||"プレイヤー名未取得")+'　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+esc(p.alliance_abbr||p.alliance_name||"同盟未取得")+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
         '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
         '<div class="row"><span>プレイヤー名</span><span class="value">'+esc(p.nick_name||"未取得")+'</span></div>'+
         '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
         '<div class="row"><span>同盟</span><span class="value">'+esc(p.alliance_abbr||p.alliance_name||"未取得")+'</span></div>'+
         '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
-        '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div>';
+        '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div></details>';
     }
     html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
     html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
@@ -2312,8 +2334,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      '<label class="label" for="mpkey" style="margin-top:16px">MightPulse APIキーを追加</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div>'+
-      '<div id="key-msg"></div></div></section>';
+      '<details class="key-register-details"><summary>＋ MightPulse APIキーをPoolへ提供</summary><div class="key-register-body"><label class="label" for="mpkey">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div><div id="key-msg"></div></div></details></div></section>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
     const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
