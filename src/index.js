@@ -4145,7 +4145,8 @@ export default {
       if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
       if (url.pathname === "/api/auth/ui-state") {
         const auth = await getAuthenticatedUser(request, env);
-        return json({ authenticated: Boolean(auth), role: auth?.role || null });
+        const active = Boolean(auth && auth.status === "ACTIVE");
+        return json({ authenticated: active, role: active ? auth.role : null });
       }
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
