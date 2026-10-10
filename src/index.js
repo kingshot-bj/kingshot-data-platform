@@ -7569,7 +7569,6 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
       }
 
       const starIcons = starSegments.map(segments => renderSegmentedHeroStar(starLabel, segments)).join("");
-      html += '<div class="hero-stars-row"><div class="hero-stars" aria-label="' + esc(starLabel) + '">' + starIcons + '</div><span class="hero-stars-label">' + esc(starLabel) + '</span></div>';
       const heroIconUrl = normalizeProfileAssetUrl(hero.icon);
       html += '<article class="hero-card"><div class="hero-head"><div class="hero-title">' +
         (heroIconUrl ? '<img class="hero-icon" src="' + esc(heroIconUrl) + '" alt="" loading="lazy">' : '<span class="hero-icon hero-icon-empty">?</span>') +
