@@ -2232,6 +2232,38 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
 .muted{font-size:11px;line-height:1.65}
 .check{font-size:12px;margin:9px 0}
 @media(min-width:600px){.wrap{padding:22px 18px 44px}.card{padding:18px}.account{padding:14px}.title{font-size:32px}.sub{font-size:13px}.row{font-size:13px}.value{font-size:13px}}
+
+/* My Kingshot information hierarchy */
+.section-block{margin-top:22px}
+.section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}
+.section-heading h2{margin:3px 0 0;font-size:17px;font-weight:900;letter-spacing:-.025em}
+.section-kicker{display:block;color:var(--ee-cyan);font-size:8px;font-weight:950;letter-spacing:.17em}
+.section-count,.role-pill{flex:0 0 auto;padding:5px 9px;border:1px solid rgba(32,215,242,.24);border-radius:999px;background:rgba(32,215,242,.07);color:#8ceaf6;font-size:10px;font-weight:900}
+.role-pill{border-color:rgba(143,168,191,.22);background:rgba(143,168,191,.07);color:#a9bfd3}
+.role-pill.role-active{border-color:rgba(73,230,154,.25);background:rgba(73,230,154,.08);color:#6ff0ad}
+.section-note{margin:0 2px 10px}
+.account-list{margin-top:0;padding:10px 12px}
+.account{margin-top:8px;padding:12px}
+.account .btn{margin-top:10px}
+.usage-line{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding:10px 2px 0;border-top:1px solid rgba(54,82,109,.45);color:#829bb2;font-size:10px}
+.usage-line strong{color:#c9dbea;font-size:10px;text-align:right}
+.usage-line i{font-style:normal;color:#57718a}
+.action-details{margin-top:10px;border:1px solid rgba(43,77,107,.7);border-radius:15px;background:rgba(8,22,37,.7);overflow:hidden}
+.action-details summary{display:flex;align-items:center;gap:11px;list-style:none;cursor:pointer;padding:12px}
+.action-details summary::-webkit-details-marker{display:none}
+.summary-icon{display:grid;place-items:center;flex:0 0 31px;width:31px;height:31px;border:1px solid rgba(32,215,242,.3);border-radius:10px;background:rgba(32,215,242,.08);color:var(--ee-cyan);font-size:20px}
+.action-details summary strong,.action-details summary small{display:block}
+.action-details summary strong{font-size:12px;color:#eaf5ff}
+.action-details summary small{margin-top:3px;color:#819ab1;font-size:10px}
+.summary-chevron{margin-left:auto;color:#7f9bb3;font-size:17px;transition:transform .15s}
+.action-details[open] .summary-chevron{transform:rotate(180deg)}
+.action-card{margin:0;border:0;border-top:1px solid rgba(43,77,107,.5);border-radius:0;box-shadow:none;background:rgba(4,15,27,.48)}
+.action-card .label:first-child{margin-top:2px}
+.form-help{margin-top:10px}
+.subsection-title{margin:0 0 5px;font-size:14px;font-weight:900}
+.section-block>.card{margin-top:0}
+.section-block .vip-card{margin-top:0}
+
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER & ACCOUNT</div><h1 class="title">マイKingshot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
 (function(){
