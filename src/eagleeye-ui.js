@@ -369,4 +369,25 @@ html:not([data-eagle-theme="light"]) body{background-color:var(--ee-bg);color:va
   outline-offset:1px;
   border-color:var(--ee-cyan)!important;
 }
+
+/* Canonical star treatment: all UI stars use the shared EagleEye gold. */
+:where(.star,.rank-watch-star,.hero-star,.rank-star,.star-icon,.watch-star){
+  color:var(--ee-gold,#f0c75e)!important;
+  fill:var(--ee-gold,#f0c75e);
+  accent-color:var(--ee-gold,#f0c75e);
+}
+:where(button.star,button.rank-watch-star,button.watch-star){
+  -webkit-tap-highlight-color:transparent;
+  transition:color .12s ease,background-color .12s ease,border-color .12s ease,transform .12s ease;
+}
+:where(button.star,button.rank-watch-star,button.watch-star):hover,
+:where(button.star,button.rank-watch-star,button.watch-star)[aria-pressed="true"],
+:where(button.star,button.rank-watch-star,button.watch-star)[data-watched="1"]{
+  color:var(--ee-gold,#f0c75e)!important;
+}
+:where(button.star,button.rank-watch-star,button.watch-star):focus-visible{
+  outline:2px solid var(--ee-gold,#f0c75e)!important;
+  outline-offset:2px;
+}
+
 `;
