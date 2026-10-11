@@ -1323,7 +1323,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 :root:not([data-eagle-theme="light"]) .add-card{background:var(--ee-panel,#0f2035)!important}
 :root:not([data-eagle-theme="light"]) button:not(.theme-toggle){border:1px solid var(--ee-border,#2a4664);border-radius:var(--ee-radius-sm,9px);background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff)}
 :root:not([data-eagle-theme="light"]) button.primary-action{background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
-:root:not([data-eagle-theme="light"]) .progress,.rank,.player-card{border-color:var(--ee-border-soft,#1d344d)}
+:root:not([data-eagle-theme="light"]) .progress,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{border-color:var(--ee-border-soft,#1d344d)}
 :root:not([data-eagle-theme="light"]) .progress span,:root:not([data-eagle-theme="light"]) .rank-score,:root:not([data-eagle-theme="light"]) .back:hover{color:var(--ee-cyan,#22d3ee)}
 :root:not([data-eagle-theme="light"]) .topbar p a{color:var(--ee-cyan,#22d3ee)!important}
 </style></head><body>
