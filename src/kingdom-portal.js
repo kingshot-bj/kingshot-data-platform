@@ -263,7 +263,7 @@ export async function renderAlliancePage(request, env) {
   const memberRow = (m,i) => {
     const avatar=m.image?"<img class='member-avatar' src='"+esc(m.image)+"' alt='' loading='lazy' referrerpolicy='no-referrer'>":"<span class='member-avatar fallback'>"+esc(m.name.slice(0,1)||"？")+"</span>";
     const href=m.id?"/player?governor_id="+encodeURIComponent(m.id):"#";
-    return "<a class='member' href='"+href+"' data-name='"+esc(m.name.toLowerCase())+"' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+esc(m.tc??"—")+(m.raw?.alliance_role||m.raw?.role?" · "+esc(m.raw.alliance_role||m.raw.role):"")+"</small></span><b>"+displayNum(m.power)+"</b></a>";
+    return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+esc(m.tc??"—")+(m.raw?.alliance_role||m.raw?.role?" · "+esc(m.raw.alliance_role||m.raw.role):"")+"</small></span><b>"+displayNum(m.power)+"</b></a>";
   };
   const rosterHtml=sorted.slice(0,100).map(memberRow).join("");
   const topMembers=sorted.slice(0,5).map(memberRow).join("");
