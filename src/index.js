@@ -2723,6 +2723,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
 (function(){
   const root=document.getElementById("watchlist");
   const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const normalizeAllianceRole=(value,label="")=>{const text=String(label??"").trim();const named=text.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);if(named)return Number(named[1]);const lower=text.toLowerCase();if(/(leader|president|chief|盟主|会長)/i.test(lower))return 5;if(/(officer|vice|副盟主|副会長)/i.test(lower))return 4;const raw=String(value??"").trim().match(/^R([1-5])$/i);return raw?Number(raw[1]):null;};
   const compact=v=>{
     const n=Number(v);
     if(!Number.isFinite(n))return "-";
