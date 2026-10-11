@@ -240,7 +240,7 @@ export async function renderAlliancePage(request, env) {
     if (!unit) return n.toLocaleString("ja-JP");
     const scaled = n / unit[0];
     const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-    return scaled.toFixed(decimals).replace(/\\.?0+$|\\.$/, "") + unit[1];
+    return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + unit[1];
   };
   const townCenterDisplay = value => {
     if (value === null || value === undefined || value === "") return "—";
