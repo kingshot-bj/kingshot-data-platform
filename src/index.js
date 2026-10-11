@@ -2405,7 +2405,7 @@ async function handlePlayerWatchlistApi(request, env) {
              w.created_at, w.updated_at,
              p.nick_name, p.kid, p.power, p.town_center_level,
              p.vip, p.kills, p.alliance_abbr, p.alliance_name, p.avatar_url,
-             p.observed_at
+             p.alliance_rank, p.alliance_rank_label, p.observed_at
       FROM player_watchlists w
       LEFT JOIN players p ON p.governor_id = w.governor_id
       WHERE w.discord_id = ?
@@ -2620,7 +2620,7 @@ async function handlePlayerWatchlistApi(request, env) {
              w.created_at, w.updated_at,
              p.nick_name, p.kid, p.power, p.town_center_level,
              p.vip, p.alliance_abbr, p.alliance_name, p.avatar_url,
-             p.observed_at
+             p.alliance_rank, p.alliance_rank_label, p.observed_at
       FROM player_watchlists w
       LEFT JOIN players p ON p.governor_id = w.governor_id
       WHERE w.discord_id = ? AND w.governor_id = ?
@@ -6503,7 +6503,7 @@ async function renderPlayerSearchPage(request, env) {
   if (q && env.DB) {
     const like = `%${q}%`;
     const searchResult = await env.DB.prepare(
-      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, observed_at
+      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, alliance_rank, alliance_rank_label, observed_at
        FROM players
        WHERE governor_id LIKE ?
           OR nick_name LIKE ?
