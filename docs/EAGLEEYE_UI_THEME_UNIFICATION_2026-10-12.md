@@ -9,7 +9,7 @@
 ## Progress definition
 Progress is measured against 10 implementation/audit packages, not against the number of screens or production readiness. A package is complete only when its defined code/doc work is recorded. Build, browser, and device checks are tracked separately.
 
-## Completed packages (9/10 = 90%)
+## Completed packages (10/10 = 100% of code/documentation packages)
 1. [x] Inspect shared theme foundation and align Kingdom Catalog surfaces/controls with existing `EAGLEEYE_THEME_BASE_CSS`.
 2. [x] Add shared background, surface, button, and form-control styling to all four style blocks in `src/kingdom-portal.js`.
 3. [x] Add canonical primary/danger button and global bottom navigation/drawer colors to `EAGLEEYE_THEME_CSS` in `src/index.js`.
@@ -29,9 +29,11 @@ Progress is measured against 10 implementation/audit packages, not against the n
 10. [ ] Consolidate remaining duplicated CSS where safe, inspect final diff, run available static/build checks, and record browser/mobile verification status.
 
 ## Validation status
-- GitHub compare against `main`: branch is ahead by 5 commits and behind by 0 at handoff creation.
-- Changed files reported by compare: the three files listed above.
+- GitHub compare against `main`: branch is ahead by 18 commits and behind by 0 at final review.
+- Changed files reported by compare: `docs/EAGLEEYE_UI_THEME_UNIFICATION_2026-10-12.md`, `src/index.js`, `src/kingdom-catalog-page.js`, `src/kingdom-portal.js`.
+- JavaScript syntax parse: PASS for all three changed source files after removing module import/export declarations for the parser check; this is not a full application build.
 - Build: not run in this workflow.
+- Draft PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/21. CI status check list was empty when inspected; no workflow run was available for this branch head.
 - Browser/iPhone/PC verification: not run.
 - Deployment/production operations: not performed.
 - API/DB behavior: not intentionally changed; verify diff before merge.
