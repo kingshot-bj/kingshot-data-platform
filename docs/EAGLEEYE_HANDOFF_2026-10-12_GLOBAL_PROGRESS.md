@@ -52,3 +52,25 @@
 - 目的はEagleEye全ページで一貫した進捗表示を実現すること。
 - 見た目だけでなく、通信・遷移・フォーム送信・失敗時の表示解除まで監査する。
 - ユーザーへの進捗報告は具体的に。未実施のブラウザ検証やデプロイを完了と表現しない。
+
+
+## 2026-10-12 継続監査の追記
+
+### 共通適用範囲の初回確認
+- `applyEagleEyeTheme(html)` はHTML文字列に対して、テーマCSS、共有ナビ、共有ドロワー初期化、テーマスクリプト、グローバル進捗UIを注入する。
+- `eagleEyeHtmlResponse(html)` は `applyEagleEyeTheme(html)` を通したうえで `text/html; charset=UTF-8` と `cache-control: no-store` を付けて返す。
+- `src/index.js` のルーターを確認した範囲では、`/watchlist`、`/player-watchlist`、`/kingdom-watchlist`、`/kingdom-catalog`、`/kingdom`、`/kingdom/rankings`、`/kingdom/alliances`、`/alliance`、`/kingdom/compare`、`/kingdom/mighty`、`/kingdom/changes`、`/my-player`、`/players`、`/player/history`、`/player/changes`、`/player`、ホーム等のHTMLルートは `eagleEyeHtmlResponse` を経由している。
+- `/status-json-comparator` と `/status-json-comparator.html` は静的HTMLアセットを取得後、`eagleEyeHtmlResponse` で包み直している。
+- ただしこれはルーターの主要経路を目視確認した段階であり、全パスを網羅した自動テストや実ブラウザでの全ページ確認ではない。ルート監査を完了扱いにしないこと。
+- CSVダウンロードやJSON/APIレスポンスはHTMLではないため、進捗UIの注入対象ではない。API通信はブラウザ側のfetch/XHRラッパーで追跡する設計。
+
+### fetch追跡の実コード上の問題を確認
+- 共通スクリプトの `window.fetch` ラッパーは、fetchのPromiseがResponseを返した時点で `finish(id)` を呼び出している。
+- そのため `.json()` / `.text()` 等によるレスポンス本文の読み取りが続いていても、他の通信がなければインジケーターが先に消える可能性がある。
+- 次の修正候補だが、Responseメソッドをラップする前に、本文未読・`clone()`・ストリーム・複数の本文読み取り・キャンセル・失敗時の挙動をテスト設計すること。安易なパッチはしない。
+- XHRは `loadend` で追跡終了するため、ネットワーク通信終了までは追跡するが、その後のアプリ側レンダリング完了を直接検出するものではない。
+
+### 現時点の確度
+- コード上の共通注入と主要ルートは確認済み。
+- fetch本文読み取り中の早期非表示リスクは実装から確認済み。
+- 実ブラウザ/iPhone Safari、通信失敗時の視認性、遷移フォームの実動作、Cloudflare本番デプロイは未確認。
