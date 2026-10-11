@@ -1,5 +1,5 @@
 import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly, collectAllianceDetail } from "./data-collection-engine.js";
-import { archiveAllianceHistoryBatch } from "./r2-archive.js";
+import { archiveAllianceHistoryBatch, listAllianceHistoryFromR2 } from "./r2-archive.js";
 import { evaluateVipEligibility } from "./user-eligibility.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
@@ -150,56 +150,143 @@ export async function renderAllianceListPage(request, env) {
 }
 
 export async function renderAlliancePage(request, env) {
-  const url=new URL(request.url); const kid=Number(url.searchParams.get("kid")); const tag=String(url.searchParams.get("tag")||"").trim();
-  if(!Number.isInteger(kid)||!tag) return page("同盟詳細","<div class='empty'>王国と同盟タグを指定してください。</div>");
-  let row=await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid = ? AND (abbr = ? OR aid = ?) LIMIT 1").bind(kid,tag,tag).first();
-  if (!row) {
-    row = await env.DB.prepare(
-      "SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1"
-    ).bind(kid,tag,tag,tag).first();
-  }
-  if (!row) return page("同盟詳細","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><div class='empty'>指定された同盟が見つかりません。</div></main>");
-  let archived=null; try{archived=await readR2Json(env.ARCHIVE,row?.r2_latest_key)}catch{}
-  let payload=archived?.payload||{};
-  let alliance=payload?.alliance||payload?.data?.alliance||payload;
-  let members=Array.isArray(payload?.roster)?payload.roster:Array.isArray(payload?.members)?payload.members:Array.isArray(payload?.data?.roster)?payload.data.roster:Array.isArray(payload?.data?.data?.members)?payload.data.data.members:[];
-  // R2にRosterがなければ、既存のMightPulse収集経路から取得してR2へ保存する。
-  // alliance_catalog.updated_atで再試行間隔を設け、ページ再読み込みによるAPI連打を防ぐ。
-  const nowSeconds=Math.floor(Date.now()/1000);
-  const lastAttempt=Number(row?.updated_at||row?.last_seen_at||0);
-  const shouldFetchRoster=members.length===0 && env.ARCHIVE && nowSeconds-lastAttempt>=600;
-  let rosterFetchMessage="";
-  if(shouldFetchRoster){
-    try{
-      const collected=await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
-      const fetched=collected?.result?.data??collected?.result??collected?.data??collected;
-      const fetchedPayload=fetched?.data&&typeof fetched.data==="object"?fetched.data:fetched;
-      const fetchedMembers=Array.isArray(fetchedPayload?.members)?fetchedPayload.members:Array.isArray(fetchedPayload?.roster)?fetchedPayload.roster:Array.isArray(fetchedPayload?.data?.members)?fetchedPayload.data.members:Array.isArray(fetchedPayload?.data?.roster)?fetchedPayload.data.roster:[];
-      if(fetchedMembers.length){
-        const observedAt=Math.floor(Date.now()/1000);
-        const aid=String(fetchedPayload?.alliance?.aid??fetchedPayload?.aid??row.aid??tag);
-        const archive=await archiveAllianceHistoryBatch(env.ARCHIVE,{kid,aid,observedAt,sourceObservedAt:Number(fetchedPayload?.source_observed_at??fetchedPayload?.observed_at??0)||null,payload:fetched});
-        if(!archive?.key) throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
-        await env.DB.prepare("UPDATE alliance_catalog SET r2_latest_key=?, member_count=COALESCE(?,member_count), last_seen_at=?, updated_at=? WHERE kid=? AND aid=?").bind(archive.key,fetchedMembers.length,observedAt,observedAt,kid,aid).run();
-        archived={payload:fetched};
-        payload=fetchedPayload;
-        alliance=payload?.alliance||payload?.data?.alliance||payload;
-        members=fetchedMembers;
-      }else{
-        // 空レスポンスでも10分は再取得を抑止する。
-        await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(nowSeconds,row.kid,row.aid).run().catch(()=>{});
-        rosterFetchMessage="Roster APIは応答しましたが、メンバー情報が返りませんでした。";
-      }
-    }catch(error){
-      await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(nowSeconds,row.kid,row.aid).run().catch(()=>{});
-      console.error("alliance_roster_on_demand_failed",{kid,tag,message:error?.message||String(error)});
-      rosterFetchMessage="自動取得に失敗しました。時間をおいて再読み込みしてください。";
-    }
-  }
-  const roster=members.slice(0,100).map(m=>"<a class='row' href='/player?governor_id="+encodeURIComponent(m.governor_id||m.uid||"")+"'><span>"+esc(m.nick_name||m.governor_id||m.uid)+"</span><em>"+num(m.power)+"</em><small>役場 "+esc(m.town_center_level??"—")+"</small></a>").join("");
-  return page("同盟 "+(row?.abbr||tag),"<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>"+esc(alliance.name||row?.name||tag)+"</h1><p>"+esc(alliance.abbr||row?.abbr||tag)+" · Power "+esc(num(alliance.power||row?.power))+" · "+esc(num(alliance.count||row?.member_count||"—"))+"人</p><div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a></div><section><h2>Roster</h2><div class='list'>"+(roster||"<div class='empty'>"+esc(rosterFetchMessage||(shouldFetchRoster?"Roster詳細を取得できませんでした。":"Roster詳細はまだR2に保存されていません。自動取得は10分間隔で再試行します。"))+"</div>")+"</div></section></main>");
-}
+  const url = new URL(request.url);
+  const kid = Number(url.searchParams.get("kid"));
+  const tag = String(url.searchParams.get("tag") || "").trim();
+  const requestedRefresh = url.searchParams.get("refresh") === "1";
+  if (!Number.isInteger(kid) || !tag) return page("同盟詳細", "<div class='empty'>王国と同盟タグを指定してください。</div>");
 
+  let row = await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid,tag,tag).first();
+  if (!row) row = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first();
+  if (!row) return page("同盟詳細","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><div class='empty'>指定された同盟が見つかりません。</div></main>");
+
+  let archived = null;
+  try { archived = await readR2Json(env.ARCHIVE,row.r2_latest_key); } catch {}
+  let payload = archived?.payload || {};
+  const getAlliance = p => p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
+  const getMembers = p => {
+    const a = getAlliance(p);
+    const candidates = [p?.roster,p?.members,p?.data?.roster,p?.data?.members,p?.data?.data?.roster,p?.data?.data?.members,a?.roster,a?.members,a?.member_list];
+    return candidates.find(Array.isArray) || [];
+  };
+  let alliance = getAlliance(payload);
+  let members = getMembers(payload);
+  const now = Math.floor(Date.now()/1000);
+  const lastAttempt = Number(row.updated_at || row.last_seen_at || 0);
+  const canFetch = Boolean(env.ARCHIVE) && now-lastAttempt>=600;
+  const shouldFetch = canFetch && (members.length===0 || requestedRefresh);
+  let statusMessage = requestedRefresh && !canFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
+  if (shouldFetch) {
+    try {
+      const collected = await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
+      const fetched = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
+      const fetchedPayload = fetched?.data && typeof fetched.data==="object" ? fetched.data : fetched;
+      const fetchedMembers = getMembers(fetchedPayload);
+      if (fetchedMembers.length) {
+        const observedAt = Math.floor(Date.now()/1000);
+        const aid = String(fetchedPayload?.alliance?.aid ?? fetchedPayload?.data?.alliance?.aid ?? fetchedPayload?.aid ?? row.aid ?? tag);
+        const archive = await archiveAllianceHistoryBatch(env.ARCHIVE,{kid,aid,observedAt,sourceObservedAt:Number(fetchedPayload?.source_observed_at ?? fetchedPayload?.observed_at ?? 0)||null,payload:fetched});
+        if (!archive?.key) throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
+        await env.DB.prepare("UPDATE alliance_catalog SET r2_latest_key=?,member_count=COALESCE(?,member_count),last_seen_at=?,updated_at=? WHERE kid=? AND aid=?").bind(archive.key,fetchedMembers.length,observedAt,observedAt,kid,aid).run();
+        archived = {payload:fetched};
+        payload = fetchedPayload;
+        alliance = getAlliance(payload);
+        members = fetchedMembers;
+        statusMessage = "最新情報を取得しました。";
+      } else {
+        await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(now,row.kid,row.aid).run().catch(()=>{});
+        statusMessage = "APIからメンバー情報が返りませんでした。";
+      }
+    } catch (error) {
+      await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(now,row.kid,row.aid).run().catch(()=>{});
+      console.error("alliance_roster_on_demand_failed",{kid,tag,message:error?.message||String(error)});
+      statusMessage = "取得に失敗しました。時間をおいて再試行してください。";
+    }
+  } else if (!members.length && !statusMessage) {
+    statusMessage = "Rosterがありません。取得は10分間隔で再試行します。";
+  }
+
+  const allianceName = String(alliance.name || row.name || tag);
+  const allianceAbbr = String(alliance.abbr || row.abbr || tag);
+  const allianceAid = String(alliance.aid || row.aid || tag);
+  const alliancePower = alliance.power ?? alliance.score ?? row.power ?? row.score;
+  const memberCount = Number(alliance.count ?? alliance.member_count ?? row.member_count ?? members.length ?? 0);
+  const rankingResult = await env.DB.prepare("SELECT board,rank,score,previous_rank FROM kingdom_ranking_current WHERE kid=? AND target_type='ALLIANCE' AND (aid=? OR abbr=? OR target_id=?) AND board IN ('alliance_power','alliance_kills') ORDER BY board LIMIT 2").bind(kid,allianceAid,allianceAbbr,allianceAid).all().catch(()=>({results:[]}));
+  const ranking = new Map((rankingResult.results||[]).map(r=>[String(r.board),r]));
+  const powerRank = ranking.get("alliance_power")?.rank ?? alliance.power_rank ?? row.power_rank ?? row.rank;
+  const killsRank = ranking.get("alliance_kills")?.rank ?? alliance.kills_rank;
+  const normalized = members.map((m,i)=>{
+    const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
+    const id=String(m?.governor_id||m?.uid||m?.id||"");
+    const rawPower=m?.power??m?.personal_power??m?.score;
+    const power=Number(rawPower);
+    const tc=m?.town_center_level??m?.town_center??m?.tc_level;
+    const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
+    return {raw:m,name,id,power:Number.isFinite(power)?power:null,tc,image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
+  });
+  const sorted = normalized.slice().sort((a,b)=>(b.power??-1)-(a.power??-1));
+  const known = normalized.filter(m=>m.power!==null);
+  const totalPower = known.reduce((n,m)=>n+m.power,0);
+  const average = known.length ? Math.round(totalPower/known.length) : null;
+  const topTenShare = totalPower>0 ? Math.round(sorted.slice(0,10).reduce((n,m)=>n+(m.power??0),0)/totalPower*100) : null;
+  const maxPower = Math.max(0,...known.map(m=>m.power));
+  const buckets = Array.from({length:5},(_,i)=>({label:maxPower>0?num(Math.round(maxPower*i/5))+"–"+num(Math.round(maxPower*(i+1)/5)):"—",count:0}));
+  known.forEach(m=>buckets[Math.min(4,Math.floor(m.power/maxPower*5))].count++);
+  const maxBucket = Math.max(1,...buckets.map(b=>b.count));
+  const distribution = known.length ? "<div class='distribution'>"+buckets.map(b=>"<div class='dist-row'><span>"+esc(b.label)+"</span><div><i style='width:"+Math.round(b.count/maxBucket*100)+"%'></i></div><b>"+num(b.count)+"</b></div>").join("")+"</div>" : "<div class='empty'>戦力分布を計算できるデータがありません。</div>";
+
+  let history = [];
+  try { history = await listAllianceHistoryFromR2(env.ARCHIVE,{kid,aid:allianceAid,limit:12}); } catch (error) { console.error("alliance_history_read_failed",{kid,aid:allianceAid,message:error?.message||String(error)}); }
+  const snapshots = history.map(h=>({at:Number(h.observed_at||0),payload:h.payload||{}})).filter(h=>h.at>0);
+  if (payload && Object.keys(payload).length) snapshots.push({at:Number(row.last_seen_at||row.updated_at||now),payload});
+  const deduped = Array.from(new Map(snapshots.map(s=>[String(s.at),s])).values()).sort((a,b)=>a.at-b.at).slice(-12);
+  const getPower = p => {const a=getAlliance(p);const v=a.power??a.score??a.alliance_power;return v===null||v===undefined||v===""||!Number.isFinite(Number(v))?null:Number(v);};
+  const powerHistory = deduped.map(s=>({at:s.at,power:getPower(s.payload)})).filter(s=>s.power!==null);
+  const maxHistoryPower = Math.max(1,...powerHistory.map(s=>s.power));
+  const historyHtml = powerHistory.length>1 ? "<div class='history'>"+powerHistory.map(s=>"<div><i style='height:"+Math.max(4,Math.round(s.power/maxHistoryPower*100))+"%'></i><b>"+num(s.power)+"</b><small>"+esc(ts(s.at))+"</small></div>").join("")+"</div>" : "<div class='empty'>複数回の履歴が保存されると戦力推移を表示します。</div>";
+
+  const rosterIds = s => getMembers(s.payload).map(m=>String(m?.governor_id||m?.uid||m?.id||"")).filter(Boolean);
+  let changeHtml = "<div class='empty'>比較可能なRoster履歴が蓄積すると加入・脱退を表示します。</div>";
+  const rosterHistory = deduped.map(s=>({at:s.at,ids:rosterIds(s)})).filter(s=>s.ids.length);
+  if (rosterHistory.length>1) {
+    const before=new Set(rosterHistory[rosterHistory.length-2].ids), after=new Set(rosterHistory[rosterHistory.length-1].ids);
+    const joined=[...after].filter(id=>!before.has(id)), left=[...before].filter(id=>!after.has(id));
+    changeHtml="<div class='change-counts'><div>加入 <b>+"+joined.length+"</b></div><div>脱退 <b>−"+left.length+"</b></div></div><div class='change-cols'><div><h3>加入メンバー</h3>"+(joined.length?joined.slice(0,20).map(id=>"<p>"+esc(normalized.find(m=>m.id===id)?.name||id)+"</p>").join(""):"<small>変化なし</small>")+"</div><div><h3>脱退メンバー</h3>"+(left.length?left.slice(0,20).map(id=>"<p>"+esc(id)+"</p>").join(""):"<small>変化なし</small>")+"</div></div><small class='muted'>"+esc(ts(rosterHistory[rosterHistory.length-2].at))+" → "+esc(ts(rosterHistory[rosterHistory.length-1].at))+"</small>";
+  }
+
+  const memberRow = (m,i) => {
+    const avatar=m.image?"<img class='member-avatar' src='"+esc(m.image)+"' alt='' loading='lazy' referrerpolicy='no-referrer'>":"<span class='member-avatar fallback'>"+esc(m.name.slice(0,1)||"？")+"</span>";
+    const href=m.id?"/player?governor_id="+encodeURIComponent(m.id):"#";
+    return "<a class='member' href='"+href+"' data-name='"+esc(m.name.toLowerCase())+"' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+esc(m.tc??"—")+(m.raw?.alliance_role||m.raw?.role?" · "+esc(m.raw.alliance_role||m.raw.role):"")+"</small></span><b>"+num(m.power)+"</b></a>";
+  };
+  const rosterHtml=sorted.slice(0,100).map(memberRow).join("");
+  const topMembers=sorted.slice(0,5).map(memberRow).join("");
+  const rankCards=[
+    ["同盟戦力",powerRank,ranking.get("alliance_power")?.score??alliancePower,ranking.get("alliance_power")?rankDelta(ranking.get("alliance_power").previous_rank,ranking.get("alliance_power").rank):""],
+    ["撃破数",killsRank,ranking.get("alliance_kills")?.score??alliance.kills,ranking.get("alliance_kills")?rankDelta(ranking.get("alliance_kills").previous_rank,ranking.get("alliance_kills").rank):""]
+  ].map(([label,rank,score,delta])=>"<div class='metric'><small>"+esc(label)+"</small><strong>"+(rank==null?"—":"#"+esc(rank))+"</strong><span>"+(score==null?"—":num(score))+(delta?" · "+esc(delta):"")+"</span></div>").join("");
+  const mark = alliance.avatar_url||alliance.icon_url||alliance.image_url||"";
+  const emblem = /^https?:\/\//i.test(String(mark)) ? "<img class='emblem' src='"+esc(mark)+"' alt='' loading='lazy' referrerpolicy='no-referrer'>" : "<span class='emblem fallback'>"+esc(allianceAbbr.slice(0,3))+"</span>";
+  const refreshUrl="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(tag)+"&refresh=1";
+  const html="<main class='wrap alliance-page'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a>"+
+    "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>ALLIANCE PROFILE</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div><a class='refresh' href='"+refreshUrl+"'>↻ 最新情報を取得</a></header>"+
+    (statusMessage?"<div class='notice'>"+esc(statusMessage)+"</div>":"")+
+    "<section><div class='section-title'><h2>同盟概要</h2><small>取得 "+esc(ts(row.last_seen_at||row.updated_at))+"</small></div><div class='metrics'>"+
+      "<div class='metric'><small>同盟戦力</small><strong>"+num(alliancePower)+"</strong><span>"+(powerRank==null?"順位未取得":"#"+esc(powerRank)+" 位")+"</span></div>"+
+      "<div class='metric'><small>メンバー数</small><strong>"+num(memberCount||members.length)+"</strong><span>Roster取得 "+num(members.length)+"人</span></div>"+
+      "<div class='metric'><small>平均メンバー戦力</small><strong>"+num(average)+"</strong><span>戦力取得 "+num(known.length)+"人</span></div>"+
+      "<div class='metric'><small>上位10人の戦力比</small><strong>"+(topTenShare===null?"—":topTenShare+"%")+"</strong><span>取得済みメンバー内</span></div>"+rankCards+"</div></section>"+
+    "<section><h2>メンバー戦力分布</h2>"+distribution+"</section>"+
+    "<section><div class='section-title'><h2>上位メンバー</h2><small>戦力順</small></div><div class='list'>"+(topMembers||"<div class='empty'>メンバー情報がありません。</div>")+"</div></section>"+
+    "<section><div class='section-title'><h2>メンバー一覧</h2><small>最大100人表示</small></div><div class='tools'><input id='member-search' type='search' placeholder='メンバー名で検索'><select id='member-sort'><option value='power'>戦力が高い順</option><option value='power-asc'>戦力が低い順</option><option value='name'>名前順</option><option value='tc'>役場レベル順</option></select></div><div class='list' id='member-list'>"+(rosterHtml||"<div class='empty'>"+esc(statusMessage||"Roster詳細はまだありません。")+"</div>")+"</div><div class='empty' id='no-members' hidden>一致するメンバーがいません。</div></section>"+
+    "<section><h2>同盟戦力の推移</h2>"+historyHtml+"</section><section><h2>メンバーの加入・脱退</h2>"+changeHtml+"</section>"+
+    "<section><h2>データ状況</h2><div class='data-status'><div><small>最終保存</small><b>"+esc(ts(row.last_seen_at||row.updated_at))+"</b></div><div><small>履歴スナップショット</small><b>"+num(history.length)+"件</b></div><div><small>R2</small><b>"+(row.r2_latest_key?"保存あり":"未保存")+"</b></div></div><p class='muted'>履歴分析は保存済みデータがある場合のみ表示します。メンバー一覧は取得済みRosterの先頭100人です。</p></section>"+
+    "<div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>← 同盟一覧</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_power'>同盟戦力ランキング</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_kills'>撃破数ランキング</a></div>"+
+    "<style>.alliance-page{padding-bottom:60px}.alliance-hero{display:flex;align-items:center;gap:12px;margin:14px 0;padding:15px;border:1px solid #294763;border-radius:18px;background:linear-gradient(135deg,#12263b,#0b1727)}.emblem{width:58px;height:58px;flex:0 0 58px;border-radius:14px;object-fit:cover;border:1px solid #3b5c78}.emblem.fallback{display:grid;place-items:center;background:#18334c;color:#8de9ff;font-weight:950}.alliance-heading{min-width:0;flex:1}.alliance-heading .eyebrow{margin:0;font-size:10px}.alliance-heading h1{overflow-wrap:anywhere;font-size:clamp(21px,5vw,29px);margin:4px 0}.alliance-heading p{margin:0;color:#a8c4db}.alliance-heading small{display:block;color:#6f8ca5;margin-top:4px;font-size:10px}.refresh{padding:9px;border:1px solid #28627d;border-radius:10px;background:#0d2c40;color:#9deaff;text-decoration:none;font-size:11px;font-weight:850;white-space:nowrap}.notice{margin:10px 0;padding:10px;border:1px solid #36516a;border-radius:10px;background:#10263a;color:#b9d7eb;font-size:12px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.section-title small,.muted{color:#7892a9;font-size:10px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{min-width:0;padding:11px;border:1px solid #29445e;border-radius:12px;background:linear-gradient(140deg,#122238,#0b1727)}.metric small{display:block;color:#8ea8c0;font-size:10px}.metric strong{display:block;margin:5px 0 2px;font-size:clamp(17px,4vw,22px);overflow-wrap:anywhere}.metric span{display:block;color:#8be9f8;font-size:10px}.distribution{display:grid;gap:9px;padding:12px;border:1px solid #29445e;border-radius:12px;background:#0c1a2b}.dist-row{display:grid;grid-template-columns:minmax(65px,1fr) 2fr 24px;gap:7px;align-items:center;font-size:10px;color:#a8c4db}.dist-row>div{height:8px;border-radius:99px;background:#172e43;overflow:hidden}.dist-row i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#1684a8,#60d5ed)}.dist-row b{text-align:right}.list{display:grid;gap:7px}.member{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #213c55;border-radius:11px;background:#0d1d2f;color:#edf7ff;text-decoration:none;min-width:0}.member-avatar{width:34px;height:34px;border-radius:9px;object-fit:cover;background:#19324a}.member-avatar.fallback{display:grid;place-items:center;color:#a5e9f7;font-weight:900}.member>span:nth-child(2){min-width:0}.member strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.member small{display:block;margin-top:3px;color:#829bb1;font-size:10px}.member>b{text-align:right;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}.tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.tools input,.tools select{width:100%;min-width:0;padding:11px;border:1px solid #2b4b66;border-radius:10px;background:#091727;color:#eaf6ff;font:inherit;font-size:12px}.history{display:grid;grid-auto-columns:minmax(65px,1fr);grid-auto-flow:column;gap:8px;overflow-x:auto;padding:12px;border:1px solid #29445e;border-radius:12px;background:#0c1a2b}.history>div{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}.history>div>i{align-self:center;margin-top:auto;width:22px;min-height:4px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#66e5f6,#11779a)}.history>div>b{font-size:10px;text-align:center;overflow-wrap:anywhere}.history>div>small{color:#7d96ad;font-size:9px;text-align:center}.change-counts,.change-cols{display:grid;grid-template-columns:1fr 1fr;gap:8px}.change-counts>div,.change-cols>div{padding:11px;border:1px solid #29445e;border-radius:11px;background:#0d1d2f}.change-counts b{font-size:20px;margin-left:8px}.change-cols h3{font-size:12px;margin:0 0 8px}.change-cols p{font-size:11px;overflow-wrap:anywhere;border-bottom:1px solid #20384e;padding-bottom:5px}.data-status{display:grid;gap:7px}.data-status>div{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid #29445e;border-radius:10px;background:#0d1d2f}.data-status small{color:#8ea8c0}.data-status b{text-align:right;font-size:11px}.actions{display:flex;flex-wrap:wrap;gap:7px}.actions a{padding:10px;border:1px solid #25415f;border-radius:11px;background:#0c1c2d;color:#9eeeff;text-decoration:none;font-size:11px;font-weight:750}@media(max-width:520px){.alliance-hero{flex-wrap:wrap;align-items:flex-start}.alliance-heading{width:calc(100% - 74px)}.refresh{margin-left:auto}.tools{grid-template-columns:1fr}.change-cols{grid-template-columns:1fr}}@media(min-width:720px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.data-status{grid-template-columns:repeat(3,minmax(0,1fr))}}</style>"+
+    "<script>(function(){const list=document.getElementById('member-list'),search=document.getElementById('member-search'),sort=document.getElementById('member-sort'),empty=document.getElementById('no-members');if(!list)return;const rows=Array.from(list.querySelectorAll('.member'));function apply(){const q=(search?.value||'').trim().toLowerCase(),mode=sort?.value||'power';const visible=rows.filter(r=>(r.dataset.name||r.textContent.toLowerCase()).includes(q));visible.sort((a,b)=>mode==='name'?a.textContent.localeCompare(b.textContent,'ja'):mode==='tc'?Number(b.dataset.tc||-1)-Number(a.dataset.tc||-1):mode==='power-asc'?Number(a.dataset.power||-1)-Number(b.dataset.power||-1):Number(b.dataset.power||-1)-Number(a.dataset.power||-1));visible.forEach(r=>{r.hidden=false;list.appendChild(r)});rows.filter(r=>!visible.includes(r)).forEach(r=>r.hidden=true);if(empty)empty.hidden=visible.length>0;}rows.forEach(r=>{r.dataset.name=(r.querySelector('strong')?.textContent||'').toLowerCase();r.dataset.power=r.querySelector('b')?.textContent.replace(/[^0-9]/g,'')||-1;r.dataset.tc=Number(r.textContent.match(/役場\\s*(\\d+)/)?.[1]||-1)});search?.addEventListener('input',apply);sort?.addEventListener('change',apply);apply()})();</script>"+
+    "</main>";
+  return page("同盟 "+allianceAbbr,html);
+}
 export async function renderKingdomComparePage(request, env) {
   const url = new URL(request.url);
   const kids = [...new Set(
