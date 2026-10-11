@@ -289,7 +289,7 @@ export const EAGLEEYE_DRAWER_INIT = `
  */
 export function normalizeAllianceRole(value, label = "") {
   const text = String(label ?? "").trim();
-  const named = text.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
+  const named = text.match(/(?:^|\D)R([1-5])(?:$|\D)/i);
   if (named) return Number(named[1]);
   const lower = text.toLowerCase();
   if (/(leader|president|chief|盟主|会長)/i.test(lower)) return 5;
