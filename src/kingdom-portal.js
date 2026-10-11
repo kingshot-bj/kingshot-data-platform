@@ -342,7 +342,7 @@ export async function renderAlliancePage(request, env) {
     return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"' data-role='"+esc(m.role??0)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+townCenterDisplay(m.tc)+esc(roleText)+"</small></span><b>"+compact(m.power)+"</b></a>";
   };
   const rosterHtml=sorted.slice(0,100).map(memberRow).join("");
-  const topMembers=sorted.slice(0,5).map(memberRow).join("");
+  const topMembers=powerSorted.slice(0,5).map(memberRow).join("");
   const rankCards=[
     ["戦力順位",powerRank,ranking.get("alliance_power")?.score??alliancePower,ranking.get("alliance_power")?rankDelta(ranking.get("alliance_power").previous_rank,ranking.get("alliance_power").rank):""],
     ["撃破数順位",killsRank,ranking.get("alliance_kills")?.score??alliance.kills,ranking.get("alliance_kills")?rankDelta(ranking.get("alliance_kills").previous_rank,ranking.get("alliance_kills").rank):""]
