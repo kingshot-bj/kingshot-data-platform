@@ -217,16 +217,34 @@ export async function renderAlliancePage(request, env) {
   const ranking = new Map((rankingResult.results||[]).map(r=>[String(r.board),r]));
   const powerRank = ranking.get("alliance_power")?.rank ?? alliance.power_rank ?? row.power_rank ?? row.rank;
   const killsRank = ranking.get("alliance_kills")?.rank ?? alliance.kills_rank;
+  const parsePower = value => {
+    if (value === null || value === undefined || value === "") return null;
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    const text = String(value).trim().replace(/,/g, "").replace(/\s+/g, "");
+    const match = text.match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
+    if (!match) {
+      const parsed = Number(text);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    const magnitude = match[2] ? ({K:1e3,M:1e6,B:1e9}[match[2].toUpperCase()] || 1) : 1;
+    const result = Number(match[1]) * magnitude;
+    return Number.isFinite(result) ? result : null;
+  };
   const normalized = members.map((m,i)=>{
     const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
     const id=String(m?.governor_id||m?.uid||m?.id||"");
     const rawPower=m?.power??m?.personal_power??m?.score;
-    const power=Number(rawPower);
+    const power=parsePower(rawPower);
     const tc=m?.town_center_level??m?.town_center??m?.tc_level;
     const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
-    return {raw:m,name,id,power:Number.isFinite(power)?power:null,tc,image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
+    return {raw:m,name,id,power,tc,image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
   });
-  const sorted = normalized.slice().sort((a,b)=>(b.power??-1)-(a.power??-1));
+  const sorted = normalized.slice().sort((a,b)=>{
+    if (a.power === null && b.power === null) return a.name.localeCompare(b.name,"ja");
+    if (a.power === null) return 1;
+    if (b.power === null) return -1;
+    return b.power-a.power;
+  });
   const known = normalized.filter(m=>m.power!==null);
   const totalPower = known.reduce((n,m)=>n+m.power,0);
   const average = known.length ? Math.round(totalPower/known.length) : null;
