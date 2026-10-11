@@ -53,3 +53,9 @@ Progress is measured against 10 implementation/audit packages, not against the n
 - Fix: remove the duplicate append after `</style>`, retaining the CSS inside the style block.
 - Post-fix JavaScript syntax parsing: PASS for `src/index.js`, `src/kingdom-portal.js`, and `src/kingdom-catalog-page.js`.
 - Still required: reload the affected route and visually verify on iPhone; check other routes using the shared page shell. No production deploy was performed.
+
+
+## Gold star unification — 2026-10-12
+- Added canonical shared-theme rules for star controls/icons (`.star`, `.rank-watch-star`, `.hero-star`, `.rank-star`, `.star-icon`, `.watch-star`) using `--ee-gold: #f0c75e`.
+- Normalized active/watched/hover/focus star states to gold without changing watchlist click handlers, state values, or ranking data.
+- Validation pending: source syntax checks, PR review, and browser/iPhone verification.
