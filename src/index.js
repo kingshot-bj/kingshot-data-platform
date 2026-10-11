@@ -4446,6 +4446,13 @@ html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:linear
 html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
 html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
 html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+
+/* Shared component surfaces win over legacy page-local color declarations. */
+html:not([data-eagle-theme="light"]) :where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){background-color:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
+html:not([data-eagle-theme="light"]) :where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
+html:not([data-eagle-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
+html:not([data-eagle-theme="light"]) :where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
+html:not([data-eagle-theme="light"]) :where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
 html[data-eagle-theme="light"]{color-scheme:light}
 html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
 html[data-eagle-theme="light"] a{color:#475569}
