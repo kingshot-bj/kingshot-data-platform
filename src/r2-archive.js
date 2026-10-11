@@ -457,8 +457,15 @@ export async function listAllianceHistoryFromR2(bucket, { kid, aid, limit = 12 }
   if (!bucket || !Number.isFinite(Number(kid)) || !aid) return [];
   const safeLimit = Math.min(Math.max(Number(limit) || 12, 1), 30);
   const prefix = ["history", ALLIANCE_HISTORY_ARCHIVE_VERSION, "alliance_catalog", String(kid), encodeURIComponent(String(aid))].join("/") + "/";
-  const listed = await bucket.list({ prefix, limit: 1000 });
-  const objects = (listed.objects || []).sort((a, b) => String(b.key).localeCompare(String(a.key))).slice(0, safeLimit);
+  const candidates = [];
+  let cursor;
+  for (let page = 0; page < 5; page++) {
+    const listed = await bucket.list({ prefix, limit: 1000, cursor });
+    candidates.push(...(listed.objects || []));
+    if (!listed.truncated || !listed.cursor) break;
+    cursor = listed.cursor;
+  }
+  const objects = candidates.sort((a, b) => String(b.key).localeCompare(String(a.key))).slice(0, safeLimit);
   const rows = await Promise.all(objects.map(async object => {
     const response = await bucket.get(object.key);
     if (!response?.body) return [];
