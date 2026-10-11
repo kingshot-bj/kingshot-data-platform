@@ -294,7 +294,7 @@ export function normalizeAllianceRole(value, label = "") {
   const lower = text.toLowerCase();
   if (/(leader|president|chief|盟主|会長)/i.test(lower)) return 5;
   if (/(officer|vice|副盟主|副会長)/i.test(lower)) return 4;
-  const raw = String(value ?? "").trim().match(/^R?([1-5])$/i);
+  const raw = String(value ?? "").trim().match(/^R([1-5])$/i);
   return raw ? Number(raw[1]) : null;
 }
 
