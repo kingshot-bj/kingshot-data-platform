@@ -282,3 +282,27 @@ export const EAGLEEYE_DRAWER_INIT = `
   document.addEventListener("keydown",function(event){if(event.key==="Escape")close();});
 })();
 `;
+
+/**
+ * Shared player-avatar role frame.
+ * Role colors are applied only when an explicit alliance role/tier is known.
+ */
+export function normalizeAllianceRole(value, label = "") {
+  const text = String(label ?? "").trim();
+  const named = text.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
+  if (named) return Number(named[1]);
+  const lower = text.toLowerCase();
+  if (/(leader|president|chief|盟主|会長)/i.test(lower)) return 5;
+  if (/(officer|vice|副盟主|副会長)/i.test(lower)) return 4;
+  const raw = String(value ?? "").trim().match(/^R?([1-5])$/i);
+  return raw ? Number(raw[1]) : null;
+}
+
+export const EAGLEEYE_ROLE_AVATAR_CSS = `
+.ee-role-avatar{box-sizing:border-box;border:2px solid var(--ee-role-frame,#b7c8d8);box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(255,255,255,.32),0 2px 5px rgba(0,0,0,.38)}
+.ee-role-avatar[data-role="5"]{--ee-role-frame:#f0c75e;box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(255,244,198,.55),0 0 9px rgba(240,199,94,.68),0 2px 5px rgba(0,0,0,.42)}
+.ee-role-avatar[data-role="4"]{--ee-role-frame:#bca0ff;box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(239,226,255,.48),0 0 9px rgba(188,160,255,.58),0 2px 5px rgba(0,0,0,.42)}
+.ee-role-avatar[data-role="3"]{--ee-role-frame:#70dfff;box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(220,248,255,.48),0 0 9px rgba(112,223,255,.56),0 2px 5px rgba(0,0,0,.42)}
+.ee-role-avatar[data-role="2"]{--ee-role-frame:#79e5a5;box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(222,255,234,.44),0 0 9px rgba(121,229,165,.5),0 2px 5px rgba(0,0,0,.42)}
+.ee-role-avatar[data-role="1"]{--ee-role-frame:#a9bacb;box-shadow:0 0 0 2px rgba(4,13,25,.88),inset 0 1px 2px rgba(255,255,255,.38),0 0 8px rgba(169,186,203,.38),0 2px 5px rgba(0,0,0,.42)}
+`;
