@@ -237,21 +237,36 @@ export async function renderAlliancePage(request, env) {
     const power=parsePower(rawPower);
     const tc=m?.town_center_level??m?.town_center??m?.tc_level;
     const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
-    const roleRaw=m?.alliance_role??m?.role??m?.member_role??m?.position??"";
-    const roleMatch=String(roleRaw).match(/(?:^|\\D)([1-5])(?:$|\\D)/);
-    const role=roleMatch?Number(roleMatch[1]):null;
-    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
+    // MightPulse Alliance Roster fields: alliance_rank / alliance_rank_label.
+    // Prefer the documented fields; retain legacy aliases as fallbacks.
+    const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
+    const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
+    const roleText=String(roleLabelRaw||roleRaw).trim();
+    const roleMatch=String(roleRaw).match(/(?:^|\\D)R?([1-5])(?:$|\\D)/i)||roleText.match(/(?:^|\\D)R?([1-5])(?:$|\\D)/i);
+    const roleName=roleText.toLowerCase();
+    const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
+    const role=roleMatch?Number(roleMatch[1]):roleByName;
+    const displayRole=roleLabelRaw||roleRaw;
+    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
   });
-  const sorted = normalized.slice().sort((a,b)=>{
+  const powerSorted = normalized.slice().sort((a,b)=>{
     if (a.power === null && b.power === null) return a.name.localeCompare(b.name,"ja");
     if (a.power === null) return 1;
     if (b.power === null) return -1;
     return b.power-a.power;
   });
+  const sorted = normalized.slice().sort((a,b)=>{
+    const ar=a.role??0, br=b.role??0;
+    if (ar!==br) return br-ar;
+    if (a.power===null&&b.power===null) return a.name.localeCompare(b.name,"ja");
+    if (a.power===null) return 1;
+    if (b.power===null) return -1;
+    return b.power-a.power;
+  });
   const known = normalized.filter(m=>m.power!==null);
   const totalPower = known.reduce((n,m)=>n+m.power,0);
   const average = known.length ? Math.round(totalPower/known.length) : null;
-  const topTenShare = totalPower>0 ? Math.round(sorted.slice(0,10).reduce((n,m)=>n+(m.power??0),0)/totalPower*100) : null;
+  const topTenShare = totalPower>0 ? Math.round(powerSorted.slice(0,10).reduce((n,m)=>n+(m.power??0),0)/totalPower*100) : null;
   const compact = value => {
     if (value === null || value === undefined || value === "") return "—";
     const n = Number(value);
@@ -323,7 +338,8 @@ export async function renderAlliancePage(request, env) {
   const memberRow = (m,i) => {
     const avatar=m.image?"<img class='member-avatar' src='"+esc(m.image)+"' alt='' loading='lazy' referrerpolicy='no-referrer'>":"<span class='member-avatar fallback'>"+esc(m.name.slice(0,1)||"？")+"</span>";
     const href=m.id?"/player?governor_id="+encodeURIComponent(m.id):"#";
-    return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"' data-role='"+esc(m.role??0)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+townCenterDisplay(m.tc)+(m.raw?.alliance_role||m.raw?.role?" · "+esc(m.raw.alliance_role||m.raw.role):"")+"</small></span><b>"+compact(m.power)+"</b></a>";
+    const roleText=m.roleLabel?" · "+String(m.roleLabel):m.role?" · R"+m.role:"";
+    return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"' data-role='"+esc(m.role??0)+"'>"+avatar+"<span><strong>"+esc(m.name)+"</strong><small>役場 "+townCenterDisplay(m.tc)+esc(roleText)+"</small></span><b>"+compact(m.power)+"</b></a>";
   };
   const rosterHtml=sorted.slice(0,100).map(memberRow).join("");
   const topMembers=sorted.slice(0,5).map(memberRow).join("");
@@ -344,7 +360,7 @@ export async function renderAlliancePage(request, env) {
       "<div class='metric'><small>上位10人の戦力比</small><strong>"+(topTenShare===null?"—":topTenShare+"%")+"</strong><span>取得済みメンバー内</span></div>"+rankCards+"</div></section>"+
     "<section><h2>メンバー戦力分布</h2>"+distribution+"</section>"+
     "<section><div class='section-title'><h2>上位メンバー</h2><small>戦力順</small></div><div class='list'>"+(topMembers||"<div class='empty'>メンバー情報がありません。</div>")+"</div></section>"+
-    "<section><div class='section-title'><h2>メンバー一覧</h2><small>最大100人表示</small></div><div class='tools'><input id='member-search' type='search' placeholder='メンバー名で検索'><select id='member-sort'><option value='power'>戦力が高い順</option><option value='power-asc'>戦力が低い順</option><option value='name'>名前順</option><option value='tc'>役場レベル順</option></select></div><div class='list' id='member-list'>"+(rosterHtml||"<div class='empty'>"+esc(statusMessage||"Roster詳細はまだありません。")+"</div>")+"</div><div class='empty' id='no-members' hidden>一致するメンバーがいません。</div></section>"+
+    "<section><div class='section-title'><h2>メンバー一覧</h2><small>最大100人表示</small></div><div class='tools'><input id='member-search' type='search' placeholder='メンバー名で検索'><select id='member-sort'><option value='role'>役職順（R5→R1）</option><option value='power'>戦力が高い順</option><option value='power-asc'>戦力が低い順</option><option value='name'>名前順</option><option value='tc'>役場レベル順</option></select></div><div class='list' id='member-list'>"+(rosterHtml||"<div class='empty'>"+esc(statusMessage||"Roster詳細はまだありません。")+"</div>")+"</div><div class='empty' id='no-members' hidden>一致するメンバーがいません。</div></section>"+
     "<section><h2>同盟戦力の推移</h2>"+historyHtml+"</section><section><h2>メンバー戦力の増減</h2>"+memberPowerChangesHtml+"</section><section><h2>メンバーの加入・脱退</h2>"+changeHtml+"</section>"+
     "<section><h2>データ状況</h2><div class='data-status'><div><small>最終保存</small><b>"+esc(ts(row.last_seen_at||row.updated_at))+"</b></div><div><small>履歴スナップショット</small><b>"+num(history.length)+"件</b></div><div><small>R2</small><b>"+(row.r2_latest_key?"保存あり":"未保存")+"</b></div></div><p class='muted'>履歴分析は保存済みデータがある場合のみ表示します。メンバー一覧は取得済みRosterの先頭100人です。</p></section>"+
     "<div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>← 同盟一覧</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_power'>同盟戦力ランキング</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_kills'>撃破数ランキング</a></div>"+
