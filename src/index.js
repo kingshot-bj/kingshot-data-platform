@@ -1315,6 +1315,17 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
   .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr) auto;}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
 }
+
+/* Kingdom Watchlist dark-mode alignment with the canonical EagleEye palette. */
+:root:not([data-eagle-theme="light"]){--accent:var(--ee-cyan,#22d3ee);--accent-strong:var(--ee-cyan-strong,#20d7f2);--accent-text:#062033}
+:root:not([data-eagle-theme="light"]) input:focus,:root:not([data-eagle-theme="light"]) select:focus{border-color:var(--ee-cyan,#22d3ee);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+:root:not([data-eagle-theme="light"]) .card,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;box-shadow:none}
+:root:not([data-eagle-theme="light"]) .add-card{background:var(--ee-panel,#0f2035)!important}
+:root:not([data-eagle-theme="light"]) button:not(.theme-toggle){border:1px solid var(--ee-border,#2a4664);border-radius:var(--ee-radius-sm,9px);background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff)}
+:root:not([data-eagle-theme="light"]) button.primary-action{background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+:root:not([data-eagle-theme="light"]) .progress,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{border-color:var(--ee-border-soft,#1d344d)}
+:root:not([data-eagle-theme="light"]) .progress span,:root:not([data-eagle-theme="light"]) .rank-score,:root:not([data-eagle-theme="light"]) .back:hover{color:var(--ee-cyan,#22d3ee)}
+:root:not([data-eagle-theme="light"]) .topbar p a{color:var(--ee-cyan,#22d3ee)!important}
 </style></head><body>
 <div class="topbar">
   <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1><p><a href="/kingdom-watchlist/analytics" style="color:#f59e0b;text-decoration:none">Analytics →</a></p></div>
@@ -4437,6 +4448,22 @@ const EAGLEEYE_THEME_CSS = `
 <style id="eagleeye-theme">
 :root{color-scheme:dark}
 ${EAGLEEYE_THEME_BASE_CSS}
+
+/* Canonical dark-theme controls and navigation surfaces. Keep page layouts local. */
+html:not([data-eagle-theme="light"]) .ee-global-nav{background:rgba(10,20,36,.97)!important;border-color:var(--ee-border-soft,#1d344d)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-drawer{background:rgba(3,12,23,.66)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,#10243a,#0a1728)!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:linear-gradient(180deg,#10243a,#10243a)!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+
+/* Shared component surfaces win over legacy page-local color declarations. */
+html:not([data-eagle-theme="light"]) :where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.search-panel,.player-result,.player-lookup,.search-intro,.search-state,.account,.account-summary,.action-card,.vip-card,.watch-option,.watch-hub,.hero,.notice,.detail-row,.favorite-ranking-card,.ranking-setting-option,.name-history-row,.user-card,.user-stats,.audit,.service,.event,.details-grid,.link,.links a,.choice,.result,.discord-config-row,.collector-row,.facts,.user-list){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
+html:not([data-eagle-theme="light"]) :where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
+html:not([data-eagle-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
+html:not([data-eagle-theme="light"]) :where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
+html:not([data-eagle-theme="light"]) :where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
 html[data-eagle-theme="light"]{color-scheme:light}
 html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
 html[data-eagle-theme="light"] a{color:#475569}
