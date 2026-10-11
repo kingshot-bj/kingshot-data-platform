@@ -36,6 +36,10 @@ Evidence checked:
 ## Confirmed from user-provided in-game screenshot
 
 The ranking screen screenshot provided on 2026-10-11 confirms these exact labels:
+- `personal_power`: `個人総力`
+- `town_center`: `役場Lv.`
+- `kills`: `個人撃破`
+- `rebel_conquest`: `反乱軍討伐ステージ`
 - `hero_total`: `英雄全体総力`
 - `single_hero`: `英雄総力`
 - `pet_power`: `ペット総合実力`
@@ -43,7 +47,7 @@ The ranking screen screenshot provided on 2026-10-11 confirms these exact labels
 - `mystic_trial`: `秘境の試練`
 - `master_power`: `マスター全体総力`
 
-Updated `src/ranking-catalog.js` to replace its inconsistent labels for these five ranking keys with the exact screenshot text and set them to `VERIFIED`.
+Updated `src/ranking-catalog.js` to replace inconsistent labels for screenshot-confirmed ranking keys with exact text and set them to `VERIFIED`.
 
 ## Items still requiring verification — do not silently rename
 
@@ -51,7 +55,8 @@ These are not being changed based only on guesswork. Confirm the exact Japanese 
 - `pet_power`: current label `ペット総合実力` versus other UI label variants such as `ペット総力`.
 - `island_prosperity`: current label `島の繁栄度` versus `島の繁栄`.
 - `hero_no_equip` / `hero_equip`: current labels `英雄総力（装備除外）` / `英雄総力（装備込み）`; verify exact game UI terminology.
-- `rebel_conquest`: the exact in-game Japanese wording still needs source confirmation.
+- `hero_no_equip` / `hero_equip`: exact game UI labels for the equipment-excluded/included variants are not visible in the supplied screenshots yet.
+- `troop_power`, `building_power`, `research_power`: exact game UI labels are not visible in the supplied screenshots yet.
 
 ## Follow-up audit
 
