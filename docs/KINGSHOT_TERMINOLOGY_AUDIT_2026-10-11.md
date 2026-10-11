@@ -21,6 +21,7 @@ The following incorrect labels in the Kingdom Portal were replaced with the esta
 `forest_of_life` is displayed as `生命の森`.
 
 Evidence checked:
+- Japanese KingShot terminology cross-check for governor gear/charm: https://kingshotwiki.com/ja/governor-gear/ (uses `領主宝石`, not `領主チャーム`).
 - KingShot official Japanese Help Center: https://centurygames.helpshift.com/hc/ja/ (Japanese event name `秘境の試練`; official Japanese terms checked for related game content).
 - Altema KingShot Japanese guides: https://altema.jp/kingshot/ (cross-check for `闘技場`, `生命の森`, `水晶鉱山`, `知識の枢軸`, `溶岩要塞`, and `輝光の塔`).
 
@@ -35,7 +36,6 @@ Evidence checked:
 ## Items still requiring verification — do not silently rename
 
 These are not being changed based only on guesswork. Confirm the exact Japanese game UI wording from a screenshot or authoritative Japanese source before changing:
-- `gov_charm`: current label `領主宝石` (other code/UI locations may call this `領主チャーム`).
 - `pet_power`: current label `ペット総合実力` versus other UI label variants such as `ペット総力`.
 - `island_prosperity`: current label `島の繁栄度` versus `島の繁栄`.
 - `hero_no_equip` / `hero_equip`: current labels `英雄総力（装備除外）` / `英雄総力（装備込み）`; verify exact game UI terminology.
