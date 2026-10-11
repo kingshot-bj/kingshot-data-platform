@@ -1315,6 +1315,17 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
   .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr) auto;}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
 }
+
+/* Kingdom Watchlist dark-mode alignment with the canonical EagleEye palette. */
+:root:not([data-eagle-theme="light"]){--accent:var(--ee-cyan,#22d3ee);--accent-strong:var(--ee-cyan-strong,#20d7f2);--accent-text:#062033}
+:root:not([data-eagle-theme="light"]) input:focus,:root:not([data-eagle-theme="light"]) select:focus{border-color:var(--ee-cyan,#22d3ee);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+:root:not([data-eagle-theme="light"]) .card,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;box-shadow:none}
+:root:not([data-eagle-theme="light"]) .add-card{background:var(--ee-panel,#0f2035)!important}
+:root:not([data-eagle-theme="light"]) button:not(.theme-toggle){border:1px solid var(--ee-border,#2a4664);border-radius:var(--ee-radius-sm,9px);background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff)}
+:root:not([data-eagle-theme="light"]) button.primary-action{background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+:root:not([data-eagle-theme="light"]) .progress,.rank,.player-card{border-color:var(--ee-border-soft,#1d344d)}
+:root:not([data-eagle-theme="light"]) .progress span,:root:not([data-eagle-theme="light"]) .rank-score,:root:not([data-eagle-theme="light"]) .back:hover{color:var(--ee-cyan,#22d3ee)}
+:root:not([data-eagle-theme="light"]) .topbar p a{color:var(--ee-cyan,#22d3ee)!important}
 </style></head><body>
 <div class="topbar">
   <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1><p><a href="/kingdom-watchlist/analytics" style="color:#f59e0b;text-decoration:none">Analytics →</a></p></div>
