@@ -4437,6 +4437,15 @@ const EAGLEEYE_THEME_CSS = `
 <style id="eagleeye-theme">
 :root{color-scheme:dark}
 ${EAGLEEYE_THEME_BASE_CSS}
+
+/* Canonical dark-theme controls and navigation surfaces. Keep page layouts local. */
+html:not([data-eagle-theme="light"]) .ee-global-nav{background:rgba(10,20,36,.97)!important;border-color:var(--ee-border-soft,#1d344d)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-drawer{background:rgba(3,12,23,.66)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,#10243a,#0a1728)!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:linear-gradient(180deg,#10243a,#10243a)!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
+html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 html[data-eagle-theme="light"]{color-scheme:light}
 html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
 html[data-eagle-theme="light"] a{color:#475569}
