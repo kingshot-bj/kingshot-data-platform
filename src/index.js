@@ -6765,6 +6765,55 @@ async function handlePlayerHistoryApi(request, env) {
 }
 
 
+
+async function handlePlayerCompareApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
+  if (!env.DB) return json({ok:false,error:"DB_NOT_CONFIGURED"},503);
+  const url = new URL(request.url);
+  const ids = normalizeCompareGovernorIds(url.searchParams.getAll("governor_id"));
+  if (ids.length < 2) return json({ok:false,error:"COMPARE_REQUIRES_TWO_PLAYERS",message:"比較するプレイヤーを2人以上選択してください。"},400);
+  try {
+    const visibility = await getPlayerVisibilitySettings(env.DB);
+    const players = [];
+    for (const id of ids) {
+      const results = await Promise.all([
+        getPlayer(env.DB,id),
+        getPlayerHistory(env.DB,id,30,env.ARCHIVE,env.HISTORY_STORAGE_MODE),
+        getPlayerRankHistory(env.DB,{governorId:id,limit:30,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE})
+      ]);
+      const raw = results[0];
+      if (!raw) { players.push({governor_id:id,missing:true}); continue; }
+      const player = filterPlayerForRole(raw,auth.role,{},visibility);
+      const snapshots = (results[1]||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
+      const from = Math.floor(Date.now()/1000)-30*86400;
+      const series = buildPlayerCompareSeries({playerHistory:snapshots,rankHistory:results[2]||[],fromUnix:from});
+      const history = series.power;
+      const first = history[0], last = history[history.length-1];
+      players.push({governor_id:id,player,history,rankHistory:series.ranking,period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}});
+      await trackServiceUsage(env,auth,"PLAYER_COMPARE_VIEW",{targetType:"PLAYER",targetId:id,metadata:{comparison_count:ids.length,history_days:30}});
+    }
+    return json({ok:true,players,period_days:30});
+  } catch (error) {
+    console.error("Player compare API error:",error);
+    return json({ok:false,error:"PLAYER_COMPARE_READ_FAILED",message:"比較データを読み込めませんでした。時間をおいて再試行してください。"},500);
+  }
+}
+
+async function renderPlayerComparePage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
+  const ids = normalizeCompareGovernorIds(new URL(request.url).searchParams.getAll("governor_id"));
+  const initial = JSON.stringify(ids);
+  const html = '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>プレイヤー比較 | EagleEye</title><style>'+
+  ':root{color-scheme:dark;--bg:var(--ee-bg,#0a1424);--panel:var(--ee-panel,#0f2035);--raised:var(--ee-panel-raised,#172a40);--border:var(--ee-border-soft,#1d344d);--text:var(--ee-text,#e8f3ff);--sub:var(--ee-subtext,#91a7bf);--cyan:var(--ee-cyan,#22d3ee)}*{box-sizing:border-box}body{margin:0;padding:16px 12px 40px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:1100px;margin:auto}.back{display:inline-block;color:var(--cyan);text-decoration:none;font-weight:800;margin-bottom:14px}.head h1{font-size:24px;margin:0 0 6px}.sub,.count,.metric,.footnote{font-size:12px;color:var(--sub);line-height:1.6}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:18px 0}button{border:1px solid var(--border);border-radius:10px;background:var(--raised);color:var(--text);padding:11px 14px;font:inherit;font-size:13px;font-weight:800}.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:14px;margin:12px 0}.status{padding:22px;text-align:center;color:var(--sub)}.error{color:#ff8d96}.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:14px}.compare-table{width:100%;min-width:620px;border-collapse:collapse;font-size:13px}.compare-table th,.compare-table td{padding:12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}.compare-table th{background:var(--raised);min-width:120px}.player-head{display:flex;align-items:center;gap:8px}.avatar{width:38px;height:38px;border-radius:9px;object-fit:cover;background:var(--raised)}.pname{font-weight:900}.pid{font-size:10px;color:var(--sub);margin-top:3px}.value{font-size:14px;font-weight:850;overflow-wrap:anywhere}.section-title{font-size:15px}.chart{display:flex;align-items:end;gap:4px;height:115px;padding:10px 2px 20px;border-bottom:1px solid var(--border)}.bar-group{flex:1;min-width:5px;height:100%;display:flex;align-items:end;position:relative}.bar{width:100%;min-height:2px;border-radius:3px 3px 0 0;background:var(--cyan)}.bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--sub);white-space:nowrap}@media(min-width:760px){body{padding:26px}.panel{padding:20px}}'+
+  '</style></head><body><main class="wrap"><a class="back" href="/watchlist">← プレイヤーウォッチリストへ戻る</a><header class="head"><h1>プレイヤー比較</h1><div class="sub">2〜4人を横並びで比較します。推移は保存済みの過去30日データのみを使用します。</div></header><div class="toolbar"><span class="count" id="count"></span><button id="retry">再読み込み</button></div><div id="content" class="panel"><div class="status">比較データを読み込み中…</div></div></main><script>(function(){const ids='+initial+';const box=document.getElementById("content"),count=document.getElementById("count"),retry=document.getElementById("retry");'+
+  'const esc=v=>String(v==null?"—":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;", "\"":"&quot;"}[c])).split(String.fromCharCode(39)).join("&#39;");const num=v=>v==null||v===""||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("ja-JP");const compact=v=>{if(v==null||!Number.isFinite(Number(v)))return "—";const n=Number(v),a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(1)+"B":a>=1e6?(n/1e6).toFixed(1)+"M":a>=1e3?(n/1e3).toFixed(1)+"K":num(n)};const date=v=>v?new Date(Number(v)*1000).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"";'+
+  'function render(d){const ps=d.players||[];count.textContent=ps.length+"人を比較中 · 過去30日";const fields=[["戦力","power",compact],["役場レベル","town_center_level",num],["VIP","vip",num],["撃破数","kills",compact],["王国","kid",num],["同盟略称","alliance_abbr",v=>v||"—"],["同盟名","alliance_name",v=>v||"—"],["同盟役職","alliance_rank_label",v=>v||"—"],["座標 X","x",num],["座標 Y","y",num]];let h="<div class=\\"table-wrap\\"><table class=\\"compare-table\\"><thead><tr><th>比較項目</th>"+ps.map(p=>"<th><div class=\\"player-head\\">"+(p.player&&p.player.avatar_url?"<img class=\\"avatar\\" src=\\""+esc(p.player.avatar_url)+"\\">":"<div class=\\"avatar\\"></div>")+"<div><div class=\\"pname\\">"+esc(p.player&&p.player.nick_name||"データなし")+"</div><div class=\\"pid\\">ID "+esc(p.governor_id)+"</div></div></div></th>").join("")+"</tr></thead><tbody>";fields.forEach(f=>{h+="<tr><th>"+f[0]+"</th>"+ps.map(p=>"<td><span class=\\"value\\">"+esc(p.missing?"データなし":f[2](p.player&&p.player[f[1]]))+"</span></td>").join("")+"</tr>"});h+="<tr><th>30日間の戦力変化</th>"+ps.map(p=>"<td><span class=\\"value\\">"+(p.period&&p.period.powerDelta!=null?((p.period.powerDelta>0?"+":"")+esc(compact(p.period.powerDelta))):"—")+"</span><div class=\\"metric\\">"+esc(p.period&&p.period.observations||0)+"件の履歴</div></td>").join("")+"</tr></tbody></table></div><section class=\\"panel\\"><h2 class=\\"section-title\\">戦力推移（30日）</h2>";const active=ps.filter(p=>!p.missing&&(p.history||[]).length>1);if(!active.length)h+="<div class=\\"status\\">比較できる履歴がまだありません。履歴が蓄積するとここに推移を表示します。</div>";else{const vals=active.flatMap(p=>p.history.map(x=>Number(x.power))).filter(Number.isFinite),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),range=hi-lo||1;active.forEach(p=>{h+="<div class=\\"metric\\">"+esc(p.player.nick_name||p.governor_id)+" · "+p.history.length+"件</div><div class=\\"chart\\">"+p.history.slice(-30).map((x,i,a)=>"<div class=\\"bar-group\\"><div class=\\"bar\\" title=\\""+esc(date(x.observed_at)+" · "+compact(x.power))+"\\" style=\\"height:"+Math.max(3,(Number(x.power)-lo)/range*100)+"%\\"></div>"+(i===0||i===a.length-1?"<span class=\\"bar-label\\">"+esc(date(x.observed_at))+"</span>":"")+"</div>").join("")+"</div>"})}h+="<div class=\\"footnote\\">保存済みデータを使用し、比較のための外部API追加取得は行いません。未取得の項目は「—」で表示します。</div></section>";box.innerHTML=h}'+
+  'async function load(){if(ids.length<2){count.textContent="2〜4人必要です";box.innerHTML="<div class=\\"status error\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>";return}retry.disabled=true;box.innerHTML="<div class=\\"status\\">比較データを読み込み中…</div>";try{const q=new URLSearchParams();ids.forEach(id=>q.append("governor_id",id));const r=await fetch("/api/player-compare?"+q.toString(),{cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"比較データの取得に失敗しました。");render(d)}catch(e){box.innerHTML="<div class=\\"status error\\">"+esc(e.message||"比較データの取得に失敗しました。")+"</div>"}finally{retry.disabled=false}}retry.addEventListener("click",load);load()})();</script></body></html>';
+  return eagleEyeHtmlResponse(html);
+}
+
 async function handlePlayerChangesApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);

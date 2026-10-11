@@ -53,3 +53,11 @@ Progress is measured against 10 implementation/audit packages, not against the n
 - Fix: remove the duplicate append after `</style>`, retaining the CSS inside the style block.
 - Post-fix JavaScript syntax parsing: PASS for `src/index.js`, `src/kingdom-portal.js`, and `src/kingdom-catalog-page.js`.
 - Still required: reload the affected route and visually verify on iPhone; check other routes using the shared page shell. No production deploy was performed.
+
+
+## Player comparison rebuild — 2026-10-12
+- Rebuilt the missing `renderPlayerComparePage` and `handlePlayerCompareApi` definitions in `src/index.js`, matching the existing routes.
+- Comparison supports 2–4 validated player IDs, side-by-side saved profile metrics, 30-day power change, and history bars where at least two stored observations exist.
+- Uses saved D1/R2-backed history and does not trigger new MightPulse fetches; caps player history reads at 30 observations per selected player.
+- Missing players and insufficient selections return explicit Japanese messages rather than a blank page.
+- JavaScript syntax parsing passed after editing. Full build, endpoint integration test, and iPhone/desktop visual verification remain pending.
