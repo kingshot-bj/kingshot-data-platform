@@ -241,12 +241,15 @@ export async function renderAlliancePage(request, env) {
     // Prefer the documented fields; retain legacy aliases as fallbacks.
     const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
     const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
-    const roleText=String(roleLabelRaw||roleRaw).trim();
-    const roleMatch=String(roleRaw).match(/(?:^|\\D)R?([1-5])(?:$|\\D)/i)||roleText.match(/(?:^|\\D)R?([1-5])(?:$|\\D)/i);
+    // alliance_rank may be a member's ordinal rank (e.g. 1), not the R1-R5 tier.
+    // Prefer the human-readable label when resolving the role tier.
+    const roleText=String(roleLabelRaw||"").trim();
     const roleName=roleText.toLowerCase();
+    const labelMatch=roleText.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
+    const rawMatch=String(roleRaw).trim().match(/^R?([1-5])$/i);
     const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
-    const role=roleMatch?Number(roleMatch[1]):roleByName;
-    const displayRole=roleLabelRaw||roleRaw;
+    const role=labelMatch?Number(labelMatch[1]):roleByName??(rawMatch?Number(rawMatch[1]):null);
+    const displayRole=role!==null?"R"+role+(role===5?"（盟主）":""):roleText;
     return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
   });
   const powerSorted = normalized.slice().sort((a,b)=>{
