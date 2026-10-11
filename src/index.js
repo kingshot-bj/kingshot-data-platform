@@ -2827,6 +2827,26 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
  .actions .compare-check{grid-column:1/-1}
  .actions .action{width:100%;box-sizing:border-box}
 }
+
+/* Large, easy-to-hit compare selector */
+.compact-main{position:relative}
+.compare-toggle{flex:0 0 42px;width:42px;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:1px solid #2a4967;border-radius:11px;background:#0b1a2c;color:#8fa6bd;cursor:pointer;box-sizing:border-box;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.compare-toggle input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.compare-mark{display:flex;align-items:center;justify-content:center;width:23px;height:23px;border:2px solid #66839f;border-radius:7px;color:#9fb5ca;font-size:17px;font-weight:900;line-height:1}
+.compare-label{font-size:9px;font-weight:800;line-height:1}
+.compare-toggle.is-checked{border-color:#29d5ef;background:rgba(41,213,239,.13);color:#64e7fa;box-shadow:0 0 0 1px rgba(41,213,239,.22) inset}
+.compare-toggle.is-checked .compare-mark{background:#29cde8;border-color:#29cde8;color:#062033}
+.compare-toggle.is-disabled{opacity:.3;cursor:not-allowed}
+.item.is-selected{border-color:#29cde8;background:linear-gradient(140deg,rgba(16,52,72,.98),rgba(9,23,40,.98));box-shadow:0 0 0 1px rgba(41,205,232,.24),0 0 14px rgba(41,205,232,.08)}
+.item.is-selected:before{background:#29d5ef;opacity:1}
+@media(max-width:520px){
+ .compact-main{gap:7px}
+ .compare-toggle{flex-basis:36px;width:36px;min-height:46px;border-radius:9px}
+ .compare-mark{width:21px;height:21px}
+ .compare-label{font-size:8px}
+ .power-block{min-width:58px}
+ .power-block strong{font-size:15px}
+}
 </style></head><body><main>
 <div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
 <div class="compare-toolbar"><div><strong>プレイヤー比較</strong><span id="compare-count">0 / 4人選択</span></div><button id="compare-open" class="action primary" type="button" disabled>選択したプレイヤーを比較</button></div>
@@ -2903,6 +2923,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
             '<div class="id">ID '+esc(x.governor_id)+'</div>'+
             '<div class="identity-tags"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill alliance-pill">'+(x.alliance_abbr?"【"+esc(x.alliance_abbr)+"】 ":"")+esc(x.alliance_name||"-")+'</span>'+(role?'<span class="role-pill role-'+role+'">R'+role+'</span>':'')+'</div></div>'+
             '<div class="power-block"><span>戦力</span><strong>'+esc(compact(x.power))+'</strong><span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span></div>'+
+            '<label class="compare-toggle" aria-label="このプレイヤーを比較対象にする"><input type="checkbox" class="compare-player" data-governor-id="'+esc(x.governor_id)+'"><span class="compare-mark">＋</span><span class="compare-label">比較</span></label>'+
           '</div>'+
           '<div class="quick-stats"><div><span>役場</span><b>'+esc(x.town_center_level==null?"-":x.town_center_level)+'</b></div><div><span>VIP</span><b>'+esc(x.vip??"-")+'</b></div><div><span>撃破数</span><b>'+esc(compact(x.kills))+'</b></div></div>'+
           '<details class="detail-drawer"><summary>変化・ランキング・操作 <span>詳細を開く</span></summary>'+
@@ -2914,7 +2935,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
               '<div class="change-title" style="margin-top:12px">ランキング順位変動</div>'+
               '<div class="ranking-changes">'+rankingRows+'</div>'+
             '</div>'+
-            '<div class="actions"><label class="compare-check"><input type="checkbox" class="compare-player" data-governor-id="'+esc(x.governor_id)+'"> 比較対象</label><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
+            '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
           '</details></article>';
       }).join("");
       const compareChecks=[...root.querySelectorAll(".compare-player")];
@@ -2925,7 +2946,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
       function syncCompare(){
         compareCount.textContent=selected.size+" / 4人選択";
         compareOpen.disabled=selected.size<2;
-        compareChecks.forEach(function(input){input.checked=selected.has(String(input.dataset.governorId));});
+        compareChecks.forEach(function(input){const isSelected=selected.has(String(input.dataset.governorId));input.checked=isSelected;input.closest(".item")?.classList.toggle("is-selected",isSelected);input.disabled=!isSelected&&selected.size>=4;const label=input.closest(".compare-toggle");if(label){label.classList.toggle("is-checked",isSelected);label.classList.toggle("is-disabled",input.disabled);label.querySelector(".compare-mark").textContent=isSelected?"✓":"＋";}});
       }
       compareChecks.forEach(function(input){
         input.addEventListener("change",function(){
