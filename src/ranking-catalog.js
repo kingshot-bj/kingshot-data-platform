@@ -18,7 +18,7 @@ export const RANKING_CATALOG = Object.freeze([
   { key: "island_prosperity", ja: "オアシス島繁栄度", target: "PLAYER", status: "PROVISIONAL" },
   { key: "migrant_score", ja: "移民スコア", target: "PLAYER", status: "VERIFIED" },
   { key: "mystic_trial", ja: "秘境の試練", target: "PLAYER", status: "VERIFIED" },
-  { key: "coliseum", ja: "コロシアム", target: "PLAYER", status: "VERIFIED" },
+  { key: "coliseum", ja: "闘技場", target: "PLAYER", status: "VERIFIED" },
   { key: "forest_of_life", ja: "生命の森", target: "PLAYER", status: "VERIFIED" },
   { key: "crystal_cave", ja: "水晶鉱山", target: "PLAYER", status: "VERIFIED" },
   { key: "knowledge_nexus", ja: "知識の枢軸", target: "PLAYER", status: "VERIFIED" },
