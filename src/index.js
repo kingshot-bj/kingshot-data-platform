@@ -1,4 +1,3 @@
-import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation } from "./eagleeye-ui.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
