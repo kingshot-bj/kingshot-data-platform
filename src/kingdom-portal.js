@@ -518,7 +518,6 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
     start: "開始",
     end: "終了",
     start_ts: "開始日時",
-    end_ts: "終了日時",
     status: "状態"
   };
 
