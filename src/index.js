@@ -6775,24 +6775,22 @@ async function handlePlayerCompareApi(request, env) {
   if (ids.length < 2) return json({ok:false,error:"COMPARE_REQUIRES_TWO_PLAYERS",message:"比較するプレイヤーを2人以上選択してください。"},400);
   try {
     const visibility = await getPlayerVisibilitySettings(env.DB);
-    const players = [];
-    for (const id of ids) {
-      const results = await Promise.all([
+    const from = Math.floor(Date.now()/1000)-30*86400;
+    const players = await Promise.all(ids.map(async id => {
+      const [raw, storedHistory, rankHistory] = await Promise.all([
         getPlayer(env.DB,id),
         getPlayerHistory(env.DB,id,30,env.ARCHIVE,env.HISTORY_STORAGE_MODE),
         getPlayerRankHistory(env.DB,{governorId:id,limit:30,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE})
       ]);
-      const raw = results[0];
-      if (!raw) { players.push({governor_id:id,missing:true}); continue; }
+      if (!raw) return {governor_id:id,missing:true};
       const player = filterPlayerForRole(raw,auth.role,{},visibility);
-      const snapshots = (results[1]||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
-      const from = Math.floor(Date.now()/1000)-30*86400;
-      const series = buildPlayerCompareSeries({playerHistory:snapshots,rankHistory:results[2]||[],fromUnix:from});
+      const snapshots = (storedHistory||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
+      const series = buildPlayerCompareSeries({playerHistory:snapshots,rankHistory:rankHistory||[],fromUnix:from});
       const history = series.power;
       const first = history[0], last = history[history.length-1];
-      players.push({governor_id:id,player,history,rankHistory:series.ranking,period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}});
       await trackServiceUsage(env,auth,"PLAYER_COMPARE_VIEW",{targetType:"PLAYER",targetId:id,metadata:{comparison_count:ids.length,history_days:30}});
-    }
+      return {governor_id:id,player,history,rankHistory:series.ranking,period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
+    }));
     return json({ok:true,players,period_days:30});
   } catch (error) {
     console.error("Player compare API error:",error);
@@ -6810,7 +6808,7 @@ async function renderPlayerComparePage(request, env) {
   '</style></head><body><main class="wrap"><a class="back" href="/watchlist">← プレイヤーウォッチリストへ戻る</a><header class="head"><h1>プレイヤー比較</h1><div class="sub">2〜4人を横並びで比較します。推移は保存済みの過去30日データのみを使用します。</div></header><div class="toolbar"><span class="count" id="count"></span><button id="retry">再読み込み</button></div><div id="content" class="panel"><div class="status">比較データを読み込み中…</div></div></main><script>(function(){const ids='+initial+';const box=document.getElementById("content"),count=document.getElementById("count"),retry=document.getElementById("retry");'+
   'const esc=v=>String(v==null?"—":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;", "\"":"&quot;"}[c])).split(String.fromCharCode(39)).join("&#39;");const num=v=>v==null||v===""||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("ja-JP");const compact=v=>{if(v==null||!Number.isFinite(Number(v)))return "—";const n=Number(v),a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(1)+"B":a>=1e6?(n/1e6).toFixed(1)+"M":a>=1e3?(n/1e3).toFixed(1)+"K":num(n)};const date=v=>v?new Date(Number(v)*1000).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"";'+
   'function render(d){const ps=d.players||[];count.textContent=ps.length+"人を比較中 · 過去30日";const fields=[["戦力","power",compact],["役場レベル","town_center_level",num],["VIP","vip",num],["撃破数","kills",compact],["王国","kid",num],["同盟略称","alliance_abbr",v=>v||"—"],["同盟名","alliance_name",v=>v||"—"],["同盟役職","alliance_rank_label",v=>v||"—"],["座標 X","x",num],["座標 Y","y",num]];let h="<div class=\\"table-wrap\\"><table class=\\"compare-table\\"><thead><tr><th>比較項目</th>"+ps.map(p=>"<th><div class=\\"player-head\\">"+(p.player&&p.player.avatar_url?"<img class=\\"avatar\\" src=\\""+esc(p.player.avatar_url)+"\\">":"<div class=\\"avatar\\"></div>")+"<div><div class=\\"pname\\">"+esc(p.player&&p.player.nick_name||"データなし")+"</div><div class=\\"pid\\">ID "+esc(p.governor_id)+"</div></div></div></th>").join("")+"</tr></thead><tbody>";fields.forEach(f=>{h+="<tr><th>"+f[0]+"</th>"+ps.map(p=>"<td><span class=\\"value\\">"+esc(p.missing?"データなし":f[2](p.player&&p.player[f[1]]))+"</span></td>").join("")+"</tr>"});h+="<tr><th>30日間の戦力変化</th>"+ps.map(p=>"<td><span class=\\"value\\">"+(p.period&&p.period.powerDelta!=null?((p.period.powerDelta>0?"+":"")+esc(compact(p.period.powerDelta))):"—")+"</span><div class=\\"metric\\">"+esc(p.period&&p.period.observations||0)+"件の履歴</div></td>").join("")+"</tr></tbody></table></div><section class=\\"panel\\"><h2 class=\\"section-title\\">戦力推移（30日）</h2>";const active=ps.filter(p=>!p.missing&&(p.history||[]).length>1);if(!active.length)h+="<div class=\\"status\\">比較できる履歴がまだありません。履歴が蓄積するとここに推移を表示します。</div>";else{const vals=active.flatMap(p=>p.history.map(x=>Number(x.power))).filter(Number.isFinite),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),range=hi-lo||1;active.forEach(p=>{h+="<div class=\\"metric\\">"+esc(p.player.nick_name||p.governor_id)+" · "+p.history.length+"件</div><div class=\\"chart\\">"+p.history.slice(-30).map((x,i,a)=>"<div class=\\"bar-group\\"><div class=\\"bar\\" title=\\""+esc(date(x.observed_at)+" · "+compact(x.power))+"\\" style=\\"height:"+Math.max(3,(Number(x.power)-lo)/range*100)+"%\\"></div>"+(i===0||i===a.length-1?"<span class=\\"bar-label\\">"+esc(date(x.observed_at))+"</span>":"")+"</div>").join("")+"</div>"})}h+="<div class=\\"footnote\\">保存済みデータを使用し、比較のための外部API追加取得は行いません。未取得の項目は「—」で表示します。</div></section>";box.innerHTML=h}'+
-  'async function load(){if(ids.length<2){count.textContent="2〜4人必要です";box.innerHTML="<div class=\\"status error\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>";return}retry.disabled=true;box.innerHTML="<div class=\\"status\\">比較データを読み込み中…</div>";try{const q=new URLSearchParams();ids.forEach(id=>q.append("governor_id",id));const r=await fetch("/api/player-compare?"+q.toString(),{cache:"no-store"});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"比較データの取得に失敗しました。");render(d)}catch(e){box.innerHTML="<div class=\\"status error\\">"+esc(e.message||"比較データの取得に失敗しました。")+"</div>"}finally{retry.disabled=false}}retry.addEventListener("click",load);load()})();</script></body></html>';
+  'async function load(){if(ids.length<2){count.textContent="2〜4人必要です";box.innerHTML="<div class=\\"status error\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>";return}retry.disabled=true;box.innerHTML="<div class=\\"status\\">比較データを読み込み中…</div>";try{const q=new URLSearchParams();ids.forEach(id=>q.append("governor_id",id));const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);let r;try{r=await fetch("/api/player-compare?"+q.toString(),{cache:"no-store",signal:controller.signal})}finally{clearTimeout(timeout)}const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||"比較データの取得に失敗しました。");render(d)}catch(e){const message=e&&e.name==="AbortError"?"取得が12秒以内に完了しませんでした。サーバー側の処理が遅延しています。再読み込みするか、時間をおいて再試行してください。":(e.message||"比較データの取得に失敗しました。");box.innerHTML="<div class=\\"status error\\">"+esc(message)+"</div>"}finally{retry.disabled=false}}retry.addEventListener("click",load);load()})();</script></body></html>';
   return eagleEyeHtmlResponse(html);
 }
 
