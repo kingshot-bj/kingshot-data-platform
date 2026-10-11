@@ -5,11 +5,11 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const BOARDS = [
   ["personal_power","個人総力"],["kills","個人撃破"],["town_center","役場Lv."],["hero_total","英雄全体総力"],
-  ["troop_power","部隊総力"],["building_power","建物総力"],["research_power","研究総力"],["hero_no_equip","英雄総力（装備なし）"],
-  ["hero_equip","英雄総力（装備あり）"],["gov_gear","領主装備"],["gov_charm","領主チャーム"],["pet_power","ペット総力"],
-  ["island_prosperity","島の繁栄"],["migrant_score","移民スコア"],["mystic_trial","神秘試練"],["coliseum","コロシアム"],
-  ["forest_of_life","生命の森"],["crystal_cave","クリスタル洞窟"],["knowledge_nexus","知識の核"],["molten_fort","溶融要塞"],
-  ["radiant_spire","輝きの尖塔"],["master_power","マスター総力"],["rebel_conquest","反乱軍討伐"],["single_hero","単英雄総力"],
+  ["troop_power","部隊総力"],["building_power","建物総力"],["research_power","研究総力"],["hero_no_equip","英雄総力（装備除外）"],
+  ["hero_equip","英雄総力（装備込み）"],["gov_gear","領主装備"],["gov_charm","領主宝石"],["pet_power","ペット総合実力"],
+  ["island_prosperity","島の繁栄度"],["migrant_score","移民スコア"],["mystic_trial","秘境の試練"],["coliseum","闘技場"],
+  ["forest_of_life","生命の森"],["crystal_cave","水晶鉱山"],["knowledge_nexus","知識の枢軸"],["molten_fort","溶岩要塞"],
+  ["radiant_spire","輝光の塔"],["master_power","マスター全体総力"],["rebel_conquest","反乱軍討伐ステージ"],["single_hero","英雄総力"],
   ["alliance_power","同盟総力"],["alliance_kills","同盟撃破"]
 ];
 
