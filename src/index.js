@@ -2714,6 +2714,72 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
 .change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.ranking-changes{display:grid;gap:6px;margin-top:8px}.ranking-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#0f172a;border:1px solid #273449;font-size:11px}.ranking-row .label{color:#cbd5e1;min-width:0;overflow-wrap:anywhere}.ranking-row .value{font-weight:900;text-align:right;white-space:nowrap}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
 .compare-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid #334155;border-radius:14px;background:#111c31}.compare-toolbar span{display:block;margin-top:3px;color:#94a3b8;font-size:11px}.compare-check{display:inline-flex;align-items:center;gap:6px;color:#cbd5e1;font-size:12px;font-weight:800}.compare-check input{accent-color:#f59e0b}.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
 @media(max-width:520px){.head{display:block}.head .action{margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Player Watchlist — unified EagleEye theme */
+body{max-width:980px;padding:18px 14px 100px;background:#050b16;color:#e7f0fb}
+.head{align-items:center;margin-bottom:20px}
+.back{display:inline-flex;align-items:center;gap:6px;color:#4dd8f2;font-size:14px;font-weight:750}
+.title{margin:12px 0 5px;font-size:clamp(25px,5vw,32px);line-height:1.15;letter-spacing:-.5px;color:#f3f8ff}
+.sub{font-size:13px;line-height:1.5;color:#8ea4bc}
+.list{gap:14px}
+.item{position:relative;overflow:hidden;padding:15px;border:1px solid #24415d;border-radius:20px;background:linear-gradient(145deg,#101e31 0%,#0a1526 72%,#0a1322 100%);box-shadow:0 7px 18px rgba(0,0,0,.16)}
+.item:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#28cde9,#2475a8);opacity:.9}
+.top{gap:11px;align-items:center}
+.avatar{flex:0 0 48px;width:48px;height:48px;border-radius:13px;border:2px solid #92a8bc;background:#071321;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(255,255,255,.2),0 3px 9px rgba(0,0,0,.4)}
+.name{font-size:16px;line-height:1.25;color:#f3f8ff}
+.id{font-size:11px;color:#8ea4bc}
+.state{flex-shrink:0;padding:5px 8px;border:1px solid rgba(74,222,128,.25);background:rgba(22,101,52,.24);color:#8ff0b0}
+.state.off{border-color:rgba(248,113,113,.25);background:rgba(127,29,29,.22);color:#fca5a5}
+.pill-row{gap:7px;margin-top:12px}
+.pill{padding:5px 9px;border:1px solid #263f5a;border-radius:8px;background:#0a1728;color:#b5c7d9;font-size:11px;line-height:1.3}
+.stats{gap:7px;margin-top:12px}
+.stat{min-width:0;padding:9px 10px;border:1px solid #263f5a;border-radius:11px;background:rgba(6,17,32,.72)}
+.stat span{font-size:10px;color:#8299b2;letter-spacing:.2px}
+.stat b{font-size:14px;line-height:1.25;color:#eaf5ff;overflow-wrap:anywhere}
+.stat:first-child b{color:#42d7f2;font-size:16px}
+.change-box{margin-top:11px;padding:11px;border:1px solid #223b55;border-radius:13px;background:rgba(5,15,29,.72)}
+.change-title{color:#49cde7;font-size:10px;letter-spacing:1px}
+.change-row{gap:12px;margin-top:8px;font-size:12px}
+.change-row .label{color:#9cb0c6}
+.change-row .value{color:#e4edf7}
+.ranking-changes{gap:6px;margin-top:9px}
+.ranking-row{padding:8px 9px;border:1px solid #1e344b;border-radius:9px;background:#0b1829;font-size:11px}
+.ranking-row .label{color:#a9bdd1}
+.up{color:#65e6a3}.down{color:#ff929c}.flat,.muted{color:#8499b0}
+.compare-toolbar{position:relative;gap:10px;margin:0 0 14px;padding:13px;border:1px solid #284764;border-radius:16px;background:linear-gradient(120deg,#10243a,#0b1729)}
+.compare-toolbar strong{font-size:16px;color:#eef7ff}
+.compare-toolbar span{font-size:11px;color:#8ea4bc}
+.compare-check{color:#b7c8da}
+.compare-check input{width:16px;height:16px;accent-color:#25cde8}
+.actions{gap:7px;margin-top:13px;padding-top:11px;border-top:1px solid rgba(47,75,103,.55)}
+.action{min-height:38px;padding:9px 12px;border:1px solid #2a4967;border-radius:10px;background:#102137;color:#dceaf8;font-size:12px;font-weight:800;transition:filter .15s ease}
+.action:active{filter:brightness(1.18)}
+.action.primary{border-color:#f5a623;background:#f5a623;color:#101827}
+.action.danger{border-color:#6f3542;background:rgba(100,27,42,.24);color:#ffb4bc}
+button.action:disabled{opacity:.45;cursor:not-allowed}
+.empty,.error,.loading{border-radius:14px;background:#0d1a2b}
+.empty{border:1px dashed #2a4967;color:#9db1c6}
+.error{border:1px solid #71343d;color:#ffb4bc}
+.loading{border:1px solid #223b55;color:#9db1c6}
+@media(max-width:520px){
+ body{padding:15px 12px 100px}
+ .head{display:block;margin-bottom:17px}
+ .head .action{margin-top:12px}
+ .title{font-size:26px}
+ .item{padding:13px 12px;border-radius:17px}
+ .top{gap:9px}
+ .avatar{flex-basis:44px;width:44px;height:44px;border-radius:12px}
+ .name{font-size:15px}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ .stat{padding:9px}
+ .compare-toolbar{align-items:flex-start;flex-direction:column}
+ .compare-toolbar #compare-open{width:100%}
+ .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .actions .compare-check{grid-column:1/-1;padding:3px 0}
+ .actions .action{width:100%;box-sizing:border-box}
+ .change-row{align-items:flex-start}
+ .change-row .value{max-width:68%}
+}
 </style></head><body><main>
 <div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
 <div class="compare-toolbar"><div><strong>プレイヤー比較</strong><span id="compare-count">0 / 4人選択</span></div><button id="compare-open" class="action primary" type="button" disabled>選択したプレイヤーを比較</button></div>
