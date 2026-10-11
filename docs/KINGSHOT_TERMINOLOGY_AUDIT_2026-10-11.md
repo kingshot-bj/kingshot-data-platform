@@ -16,6 +16,7 @@ The following incorrect labels in the Kingdom Portal were replaced with the esta
 | `knowledge_nexus` | 知識の核 | 知識の枢軸 |
 | `molten_fort` | 溶融要塞 | 溶岩要塞 |
 | `radiant_spire` | 輝きの尖塔 | 輝光の塔 |
+| `coliseum` in `src/ranking-catalog.js` | コロシアム | 闘技場 |
 
 `forest_of_life` is displayed as `生命の森`.
 
@@ -28,7 +29,8 @@ Evidence checked:
 - Added `src/kingdom-terminology.js` as the canonical server-side map for ranking-board labels.
 - `src/index.js` imports that map instead of declaring a second server-side map.
 - `src/kingdom-portal.js` imports the same map and derives its labels from the canonical source.
-- A source scan after the changes found zero occurrences of the six removed labels in `src/index.js` and `src/kingdom-portal.js`.
+- `src/ranking-catalog.js` had a separate incorrect `コロシアム` label; changed it to `闘技場`.
+- A source scan after the changes found zero occurrences of the six removed labels in `src/index.js` and `src/kingdom-portal.js`. A further targeted scan of 20 additional source files found no instances of those removed labels; `src/ranking-catalog.js` was separately corrected for `コロシアム`.
 
 ## Items still requiring verification — do not silently rename
 
