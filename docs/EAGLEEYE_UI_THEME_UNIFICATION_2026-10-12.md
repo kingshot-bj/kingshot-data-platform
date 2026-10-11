@@ -9,7 +9,7 @@
 ## Progress definition
 Progress is measured against 10 implementation/audit packages, not against the number of screens or production readiness. A package is complete only when its defined code/doc work is recorded. Build, browser, and device checks are tracked separately.
 
-## Completed packages (7/10 = 70%)
+## Completed packages (8/10 = 80%)
 1. [x] Inspect shared theme foundation and align Kingdom Catalog surfaces/controls with existing `EAGLEEYE_THEME_BASE_CSS`.
 2. [x] Add shared background, surface, button, and form-control styling to all four style blocks in `src/kingdom-portal.js`.
 3. [x] Add canonical primary/danger button and global bottom navigation/drawer colors to `EAGLEEYE_THEME_CSS` in `src/index.js`.
@@ -17,6 +17,7 @@ Progress is measured against 10 implementation/audit packages, not against the n
 5. [x] Review role-avatar frame coverage across Player Search and Player Watchlist; existing role frame CSS/data-role usage is present where inspected.
 6. [x] Extend shared surface coverage to My Kingshot account/action/VIP/watchlist option cards and player detail/profile/history cards.
 7. [x] Review kingdom/alliance/ranking page CSS and normalize hero/surface backgrounds in the four portal style blocks, including ranking and alliance/might hero surfaces.
+8. [x] Align Kingdom Watchlist dark-mode accents, add button, focus states, and card surfaces with the shared cyan/navy theme while retaining its explicit light-mode variables.
 
 ## Current changed files
 - `src/kingdom-catalog-page.js`: page-local overrides align search fields, card surfaces, links, and pagination controls with shared tokens.
@@ -24,7 +25,6 @@ Progress is measured against 10 implementation/audit packages, not against the n
 - `src/index.js`: central theme layer normalizes primary buttons, danger buttons, nav/drawer surfaces, common cards, and Player Search surfaces.
 
 ## Remaining packages
-8. [ ] Review Kingdom Watchlist and remaining catalog/watchlist pages.
 9. [ ] Review Admin, Owner, diagnostics, system status, and support pages; avoid changing role gates or API behavior.
 10. [ ] Consolidate remaining duplicated CSS where safe, inspect final diff, run available static/build checks, and record browser/mobile verification status.
 
