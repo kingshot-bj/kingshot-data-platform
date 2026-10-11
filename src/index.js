@@ -2780,6 +2780,53 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
  .change-row{align-items:flex-start}
  .change-row .value{max-width:68%}
 }
+
+/* Compact app-style watchlist cards */
+.item{padding:13px 14px 11px;border-radius:17px;background:#0b1728;border:1px solid #223d59;box-shadow:none}
+.item:before{width:2px;opacity:.7}
+.compact-main{display:flex;align-items:center;gap:11px;min-width:0}
+.compact-main .avatar{flex:0 0 48px;width:48px;height:48px}
+.compact-main .main{min-width:0;flex:1}
+.compact-main .name{font-size:15px;line-height:1.25}
+.compact-main .id{font-size:10px;margin-top:3px}
+.identity-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:7px}
+.identity-tags .pill{margin:0;padding:3px 6px;font-size:10px;max-width:100%;overflow-wrap:anywhere}
+.role-pill{display:inline-flex;align-items:center;justify-content:center;padding:3px 6px;border:1px solid;border-radius:6px;font-size:10px;font-weight:900;line-height:1.2}
+.role-5{color:#f0c75e;background:#f0c75e18;border-color:#8c6c2c}
+.role-4{color:#c5a7ff;background:#bca0ff18;border-color:#7555a7}
+.role-3{color:#70dfff;background:#70dfff18;border-color:#31718a}
+.role-2{color:#79e5a5;background:#79e5a518;border-color:#367c57}
+.role-1{color:#a9bacb;background:#a9bacb18;border-color:#596a7a}
+.power-block{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:74px}
+.power-block>span:first-child{font-size:9px;letter-spacing:1px;color:#8299b2;font-weight:800}
+.power-block strong{font-size:19px;line-height:1.1;color:#42d7f2;white-space:nowrap}
+.power-block .state{font-size:9px;padding:3px 6px}
+.quick-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid #1c3148}
+.quick-stats>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.quick-stats span{font-size:10px;color:#8299b2}
+.quick-stats b{font-size:13px;color:#e5f0fc;overflow-wrap:anywhere}
+.detail-drawer{margin-top:10px;border-top:1px solid #1c3148}
+.detail-drawer summary{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 2px 2px;list-style:none;cursor:pointer;color:#a9bdd1;font-size:11px;font-weight:800}
+.detail-drawer summary::-webkit-details-marker{display:none}
+.detail-drawer summary:after{content:"＋";color:#42d7f2;font-size:16px}
+.detail-drawer[open] summary:after{content:"−"}
+.detail-drawer summary span{margin-left:auto;color:#6f879f;font-size:10px;font-weight:500}
+.detail-drawer .stats{margin-top:9px}
+.detail-drawer .actions{margin-top:12px}
+@media(max-width:520px){
+ .item{padding:12px 11px 9px;border-radius:15px}
+ .compact-main{gap:9px}
+ .compact-main .avatar{flex-basis:44px;width:44px;height:44px}
+ .compact-main .name{font-size:14px}
+ .power-block{min-width:66px}
+ .power-block strong{font-size:17px}
+ .quick-stats{margin-top:10px;padding-top:9px}
+ .quick-stats b{font-size:12px}
+ .detail-drawer summary{font-size:10px}
+ .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+ .actions .compare-check{grid-column:1/-1}
+ .actions .action{width:100%;box-sizing:border-box}
+}
 </style></head><body><main>
 <div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
 <div class="compare-toolbar"><div><strong>プレイヤー比較</strong><span id="compare-count">0 / 4人選択</span></div><button id="compare-open" class="action primary" type="button" disabled>選択したプレイヤーを比較</button></div>
@@ -2848,30 +2895,27 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
           .filter(r=>r.current!=null||r.previous!=null)
           .map(r=>'<div class="ranking-row"><span class="label">'+esc(r.label)+'</span><span class="value">'+rankText(r)+'</span></div>')
           .join("") || '<div class="muted">ランキングデータなし</div>';
+        const role=normalizeAllianceRole(x.alliance_rank,x.alliance_rank_label);
         return '<article class="item">'+
-          '<div class="top">'+
-            (x.avatar_url?'<img class="avatar ee-role-avatar" data-role="'+esc(normalizeAllianceRole(x.alliance_rank,x.alliance_rank_label)||"") +'" src="'+esc(x.avatar_url)+'" alt="">' :'<div class="avatar ee-role-avatar" data-role="'+esc(normalizeAllianceRole(x.alliance_rank,x.alliance_rank_label)||"") +'"></div>')+
+          '<div class="compact-main">'+
+            (x.avatar_url?'<img class="avatar ee-role-avatar" data-role="'+esc(role||"")+'" src="'+esc(x.avatar_url)+'" alt="">' :'<div class="avatar ee-role-avatar" data-role="'+esc(role||"")+'"></div>')+
             '<div class="main"><div class="name">'+esc(x.nick_name||x.label||"Unknown Player")+'</div>'+
-            '<div class="id">領主ID '+esc(x.governor_id)+'</div></div>'+
-            '<span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span>'+
+            '<div class="id">ID '+esc(x.governor_id)+'</div>'+
+            '<div class="identity-tags"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill alliance-pill">'+(x.alliance_abbr?"【"+esc(x.alliance_abbr)+"】 ":"")+esc(x.alliance_name||"-")+'</span>'+(role?'<span class="role-pill role-'+role+'">R'+role+'</span>':'')+'</div></div>'+
+            '<div class="power-block"><span>戦力</span><strong>'+esc(compact(x.power))+'</strong><span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span></div>'+
           '</div>'+
-          '<div class="pill-row"><span class="pill">王国 '+esc(x.kid??"-")+'</span><span class="pill">'+(x.alliance_abbr?"【"+esc(x.alliance_abbr)+"】 ":"")+' '+esc(x.alliance_name||"-")+'</span></div>'+
-          '<div class="stats">'+
-            '<div class="stat"><span>戦力</span><b>'+esc(compact(x.power))+'</b></div>'+
-            '<div class="stat"><span>役場</span><b>'+esc(x.town_center_level==null?"-":x.town_center_level)+'</b></div>'+
-            '<div class="stat"><span>VIP</span><b>'+esc(x.vip??"-")+'</b></div>'+
-            '<div class="stat"><span>撃破数</span><b>'+esc(compact(x.kills))+'</b></div>'+
-            '<div class="stat"><span>最終観測</span><b>'+esc(fmtTime(x.observed_at))+'</b></div>'+
-          '</div>'+
-          '<div class="change-box"><div class="change-title">前回からの変化</div>'+
-            '<div class="change-row"><span class="label">戦力</span><span class="value">'+powerChange+'</span></div>'+
-            '<div class="change-row"><span class="label">役場</span><span class="value">'+simpleChangeText(s.town_center_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
-            '<div class="change-row"><span class="label">同盟</span><span class="value">'+simpleChangeText(s.alliance_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
-            '<div class="change-title" style="margin-top:12px">ランキング順位変動</div>'+
-            '<div class="ranking-changes">'+rankingRows+'</div>'+
-          '</div>'+
-          '<div class="actions"><label class="compare-check"><input type="checkbox" class="compare-player" data-governor-id="'+esc(x.governor_id)+'"> 比較対象</label><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
-        '</article>';
+          '<div class="quick-stats"><div><span>役場</span><b>'+esc(x.town_center_level==null?"-":x.town_center_level)+'</b></div><div><span>VIP</span><b>'+esc(x.vip??"-")+'</b></div><div><span>撃破数</span><b>'+esc(compact(x.kills))+'</b></div></div>'+
+          '<details class="detail-drawer"><summary>変化・ランキング・操作 <span>詳細を開く</span></summary>'+
+            '<div class="stats"><div class="stat"><span>最終観測</span><b>'+esc(fmtTime(x.observed_at))+'</b></div></div>'+
+            '<div class="change-box"><div class="change-title">前回からの変化</div>'+
+              '<div class="change-row"><span class="label">戦力</span><span class="value">'+powerChange+'</span></div>'+
+              '<div class="change-row"><span class="label">役場</span><span class="value">'+simpleChangeText(s.town_center_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
+              '<div class="change-row"><span class="label">同盟</span><span class="value">'+simpleChangeText(s.alliance_change,c=>c==null?"-":String(c)+"")+'</span></div>'+
+              '<div class="change-title" style="margin-top:12px">ランキング順位変動</div>'+
+              '<div class="ranking-changes">'+rankingRows+'</div>'+
+            '</div>'+
+            '<div class="actions"><label class="compare-check"><input type="checkbox" class="compare-player" data-governor-id="'+esc(x.governor_id)+'"> 比較対象</label><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
+          '</details></article>';
       }).join("");
       const compareChecks=[...root.querySelectorAll(".compare-player")];
       const compareCount=document.getElementById("compare-count");
