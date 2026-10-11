@@ -29,7 +29,7 @@ Progress is measured against 10 implementation/audit packages, not against the n
 10. [ ] Consolidate remaining duplicated CSS where safe, inspect final diff, run available static/build checks, and record browser/mobile verification status.
 
 ## Validation status
-- GitHub compare against `main`: branch is ahead by 18 commits and behind by 0 at final review.
+- GitHub compare against `main`: branch is ahead by 19 commits and behind by 0 at final review.
 - Changed files reported by compare: `docs/EAGLEEYE_UI_THEME_UNIFICATION_2026-10-12.md`, `src/index.js`, `src/kingdom-catalog-page.js`, `src/kingdom-portal.js`.
 - JavaScript syntax parse: PASS for all three changed source files after removing module import/export declarations for the parser check; this is not a full application build.
 - Build: not run in this workflow.
