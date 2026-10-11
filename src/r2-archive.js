@@ -451,6 +451,7 @@ export async function archiveAllianceHistoryBatch(bucket, {
   sourceObservedAt = null,
   payload
 }) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!Number.isFinite(Number(kid)) || !aid || !payload || typeof payload !== "object") return null;
 
   const row = {
