@@ -105,3 +105,23 @@ Branch: `main`
 - 追加コミット: `b861e1314b6cc861fc8474698058ee26ae0dda7d`（戦力差分）、`2e7a4f40ccdef807b8b9172bf99cc7ac412d23e2`（検索属性の安全化）。
 - ソース上のルート接続、履歴ヘルパー参照、主要セクションの存在、同盟ページ内に広範囲の `ranking_snapshots` 読み出しがないことを確認。
 - JavaScriptの括弧・文字列構造チェックは同盟ページ関数単体で通過。GitHubのコミットステータスはチェック項目なし。**完全なビルド／本番Workerへのデプロイ／iPhone実機テストは未確認**。
+
+
+## 2026-10-11 追記 — Wranglerデプロイ失敗の修正
+
+### 原因
+ユーザー提供の Wrangler 4.149.0 ログで `src/r2-archive.js:456` の `Expected ")" but found "export"` を確認。履歴読み出し関数の追加時に、`archiveAllianceHistoryBatch()` の引数閉じ・関数本体の途中へヘルパーが挿入され、既存関数が分断されていた。
+
+### 修正
+- `src/r2-archive.js` の `archiveAllianceHistoryBatch()` のシグネチャと本体を復元。
+- `listAllianceHistoryFromR2()` を既存関数の閉じ括弧の後へ移動。
+- `R2_ARCHIVE_NOT_CONFIGURED` のガードを復元。
+- `src/kingdom-portal.js` のイベントラベル辞書に重複していた `end_ts` を1件削除（ビルド停止原因ではない警告も解消）。
+
+### 修正コミット
+- `e24ec464139c2e5988f6ba104a42572a8990f309` — 同盟アーカイブ関数と履歴ヘルパーの配置修正
+- `8499676b6042010eb8ef92c7e350a8bfe8c1c6e7` — R2 binding guard復元
+- `fef22143fc541292e519db9a6d23292c86c1a415` — `end_ts` 重複キー解消
+
+### 状態
+GitHub上の最新ソースで関数シグネチャ、ヘルパー配置、R2ガード、同盟詳細機能の参照を再確認済み。ただし、修正後の Wrangler build/deploy 成功はまだ確認できていないため、再デプロイログで確定する。
