@@ -332,6 +332,15 @@ export const EAGLEEYE_THEME_BASE_CSS = `
   --ee-radius-lg:17px;
 }
 html:not([data-eagle-theme="light"]) body{background-color:var(--ee-bg);color:var(--ee-text)}
+/* Shared surface hierarchy: avoid pure-black canvases and inconsistent page cards. */
+:where(.ee-page,.wrap,.page-shell){color:var(--ee-text)}
+:where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){
+  border-color:var(--ee-border-soft);
+  background-color:var(--ee-panel);
+  color:var(--ee-text);
+}
+:where(.ee-muted,.muted,.sub,.hint,.label,.meta-label){color:var(--ee-subtext)}
+:where(.ee-link,.back,.text-link){color:var(--ee-cyan)}
 :where(.ee-button,.action,.btn,.pager-btn){
   border:1px solid var(--ee-border)!important;
   border-radius:var(--ee-radius-sm)!important;
