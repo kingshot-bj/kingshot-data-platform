@@ -33,13 +33,25 @@ Evidence checked:
 - `src/ranking-catalog.js` had a separate incorrect `コロシアム` label; changed it to `闘技場`.
 - A source scan after the changes found zero occurrences of the six removed labels in `src/index.js` and `src/kingdom-portal.js`. A further targeted scan of 20 additional source files found no instances of those removed labels; `src/ranking-catalog.js` was separately corrected for `コロシアム`.
 
+## Confirmed from user-provided in-game screenshot
+
+The ranking screen screenshot provided on 2026-10-11 confirms these exact labels:
+- `hero_total`: `英雄全体総力`
+- `single_hero`: `英雄総力`
+- `pet_power`: `ペット総合実力`
+- `island_prosperity`: `島の繁栄度`
+- `mystic_trial`: `秘境の試練`
+- `master_power`: `マスター全体総力`
+
+Updated `src/ranking-catalog.js` to replace its inconsistent labels for these five ranking keys with the exact screenshot text and set them to `VERIFIED`.
+
 ## Items still requiring verification — do not silently rename
 
 These are not being changed based only on guesswork. Confirm the exact Japanese game UI wording from a screenshot or authoritative Japanese source before changing:
 - `pet_power`: current label `ペット総合実力` versus other UI label variants such as `ペット総力`.
 - `island_prosperity`: current label `島の繁栄度` versus `島の繁栄`.
 - `hero_no_equip` / `hero_equip`: current labels `英雄総力（装備除外）` / `英雄総力（装備込み）`; verify exact game UI terminology.
-- `master_power`, `rebel_conquest`, and `single_hero`: labels describe the data, but exact in-game Japanese wording still needs source confirmation.
+- `rebel_conquest`: the exact in-game Japanese wording still needs source confirmation.
 
 ## Follow-up audit
 
