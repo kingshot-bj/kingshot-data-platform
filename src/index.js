@@ -62,7 +62,7 @@ import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
-import { EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation, EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
