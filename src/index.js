@@ -63,7 +63,7 @@ import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
-import { EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS } from "./eagleeye-ui.js";
+import { EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
@@ -4371,6 +4371,7 @@ html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033
 .ee-global-nav-drawer{position:fixed;inset:0;z-index:9001;display:none;align-items:flex-end;background:rgba(0,0,0,.58);backdrop-filter:blur(5px);padding-top:env(safe-area-inset-top)}.ee-global-nav-drawer.open{display:flex}.ee-global-nav-panel{box-sizing:border-box;width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:16px 16px calc(20px + env(safe-area-inset-bottom));border:1px solid #24435d;border-bottom:0;border-radius:22px 22px 0 0;background:linear-gradient(180deg,#0c2035,#06111e);color:#eff8ff}.ee-global-nav-panel-head{position:sticky;top:-16px;z-index:2;display:flex;justify-content:space-between;align-items:center;margin:-16px -16px 12px;padding:16px;background:linear-gradient(180deg,#0c2035,#0c2035);border-radius:22px 22px 0 0}.ee-global-nav-panel-head button{flex-shrink:0;border:1px solid #35516b;border-radius:10px;background:#10243a;color:#e5f5ff;padding:7px 12px}.ee-global-nav-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.ee-global-nav-links a,.ee-global-nav-links button{box-sizing:border-box;min-width:0;min-height:78px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border:1px solid #24435d;border-radius:13px;background:#0b1b2c;color:#dceaf7;text-align:center;text-decoration:none;font-size:12px;font-weight:750}.ee-global-nav-links img{display:block;width:42px;height:42px;object-fit:contain;flex:0 0 auto}.ee-global-nav-links span{display:block;max-width:100%;overflow-wrap:anywhere}.ee-global-nav-links small{display:block;font-size:10px;opacity:.7}
 body{padding-bottom:calc(82px + env(safe-area-inset-bottom))!important}
 @media(min-width:900px){.ee-global-nav{left:50%;right:auto;transform:translateX(-50%);width:min(680px,calc(100% - 32px));border:1px solid #1e3349;border-bottom:0;border-radius:18px 18px 0 0}}
+${EAGLEEYE_ROLE_AVATAR_CSS}
 </style>`;
 
 const EAGLEEYE_THEME_SCRIPT = `
@@ -6517,7 +6518,7 @@ async function renderPlayerSearchPage(request, env) {
 
   const results = rows.map(row => `
     <a class="player-result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
-      ${row.avatar_url ? '<img class="player-result-avatar" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
+      ${row.avatar_url ? '<img class="player-result-avatar ee-role-avatar" data-role="' + escapeHtml(normalizeAllianceRole(row.alliance_role ?? row.alliance_rank, row.alliance_rank_label ?? row.alliance_role_label) || "") + '" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
       <div class="player-result-avatar player-result-avatar-fallback" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
       <div class="player-result-main">
         <div class="player-result-name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
@@ -7092,9 +7093,11 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   const p = player || {};
   const freshness = payload || {};
   const esc = escapeHtml;
+  const avatarRole = normalizeAllianceRole(p.alliance_role ?? p.alliance_rank, p.alliance_rank_label ?? p.alliance_role_label);
+  const avatarRoleAttr = avatarRole ? ` data-role="${avatarRole}"` : "";
   const noticeHtml = notice ? '<div class="notice">' + esc(notice) + '</div>' : "";
   const content = player ? `
-    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main" src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty">?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
+    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
       ${card("役場", formatTownCenterLevel(p.town_center_level))}
