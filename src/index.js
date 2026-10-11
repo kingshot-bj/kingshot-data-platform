@@ -4389,7 +4389,7 @@ export default {
       if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
-      if (url.pathname === "/player/compare") return eagleEyeHtmlResponse(await renderPlayerComparePage(request, env));
+      if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
       if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
       return eagleEyeHtmlResponse(await renderHome(request, env));
     } catch (error) {
