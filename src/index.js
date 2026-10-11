@@ -2716,7 +2716,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
 @media(max-width:520px){.head{display:block}.head .action{margin-top:10px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* Player Watchlist — unified EagleEye theme */
-body{max-width:980px;padding:18px 14px 100px;background:#050b16;color:#e7f0fb}
+body{max-width:980px;padding:18px 14px 100px;background:var(--ee-bg);color:var(--ee-text)}
 .head{align-items:center;margin-bottom:20px}
 .back{display:inline-flex;align-items:center;gap:6px;color:#4dd8f2;font-size:14px;font-weight:750}
 .title{margin:12px 0 5px;font-size:clamp(25px,5vw,32px);line-height:1.15;letter-spacing:-.5px;color:#f3f8ff}
@@ -2746,7 +2746,7 @@ body{max-width:980px;padding:18px 14px 100px;background:#050b16;color:#e7f0fb}
 .ranking-row{padding:8px 9px;border:1px solid #1e344b;border-radius:9px;background:#0b1829;font-size:11px}
 .ranking-row .label{color:#a9bdd1}
 .up{color:#65e6a3}.down{color:#ff929c}.flat,.muted{color:#8499b0}
-.compare-toolbar{position:relative;gap:10px;margin:0 0 14px;padding:13px;border:1px solid #284764;border-radius:16px;background:linear-gradient(120deg,#10243a,#0b1729)}
+.compare-toolbar{position:relative;gap:10px;margin:0 0 14px;padding:13px;border:1px solid var(--ee-border);border-radius:var(--ee-radius-lg);background:linear-gradient(120deg,var(--ee-panel),var(--ee-panel-deep))}
 .compare-toolbar strong{font-size:16px;color:#eef7ff}
 .compare-toolbar span{font-size:11px;color:#8ea4bc}
 .compare-check{color:#b7c8da}
@@ -2782,7 +2782,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
 }
 
 /* Compact app-style watchlist cards */
-.item{padding:13px 14px 11px;border-radius:17px;background:#0b1728;border:1px solid #223d59;box-shadow:none}
+.item{padding:13px 14px 11px;border-radius:var(--ee-radius-lg);background:var(--ee-panel-deep);border:1px solid var(--ee-border-soft);box-shadow:none}
 .item:before{width:2px;opacity:.7}
 .compact-main{display:flex;align-items:center;gap:11px;min-width:0}
 .compact-main .avatar{flex:0 0 48px;width:48px;height:48px}
@@ -4473,7 +4473,7 @@ html[data-eagle-theme="light"] .gear-card strong,
 html[data-eagle-theme="light"] .detail-row b{color:#172033 !important}
 html[data-eagle-theme="light"] .action{background:#fff !important;color:#334155 !important;border-color:#cbd5e1 !important}
 html[data-eagle-theme="light"] .action.primary,
-html[data-eagle-theme="light"] button{background:#f59e0b !important;color:#172033 !important}
+html[data-eagle-theme="light"] button{background:#22d3ee !important;border-color:#22d3ee !important;color:#062033 !important}
 html[data-eagle-theme="light"] .search input{background:#fff !important;color:#172033 !important}
 html[data-eagle-theme="light"] .table-wrap{border-color:#d6deea !important}
 html[data-eagle-theme="light"] th,html[data-eagle-theme="light"] td{border-color:#e2e8f0 !important;color:#172033 !important}
