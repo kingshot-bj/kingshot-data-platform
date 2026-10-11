@@ -6518,7 +6518,7 @@ async function renderPlayerSearchPage(request, env) {
   const results = rows.map(row => `
     <a class="player-result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
       ${row.avatar_url ? '<img class="player-result-avatar ee-role-avatar" data-role="' + escapeHtml(normalizeAllianceRole(row.alliance_role ?? row.alliance_rank, row.alliance_rank_label ?? row.alliance_role_label) || "") + '" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
-      <div class="player-result-avatar player-result-avatar-fallback" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
+      <div class="player-result-avatar player-result-avatar-fallback ee-role-avatar" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
       <div class="player-result-main">
         <div class="player-result-name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
         <div class="player-result-meta">領主ID ${escapeHtml(row.governor_id)} <span>·</span> 王国 ${escapeHtml(row.kid ?? "-")}</div>
