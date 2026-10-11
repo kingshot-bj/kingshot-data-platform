@@ -2783,7 +2783,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           .join("") || '<div class="muted">ランキングデータなし</div>';
         return '<article class="item">'+
           '<div class="top">'+
-            (x.avatar_url?'<img class="avatar ee-role-avatar" src="'+esc(x.avatar_url)+'" alt="">' :'<div class="avatar ee-role-avatar"></div>')+
+            (x.avatar_url?'<img class="avatar ee-role-avatar" data-role="'+esc(normalizeAllianceRole(x.alliance_rank,x.alliance_rank_label)||"") +'" src="'+esc(x.avatar_url)+'" alt="">' :'<div class="avatar ee-role-avatar" data-role="'+esc(normalizeAllianceRole(x.alliance_rank,x.alliance_rank_label)||"") +'"></div>')+
             '<div class="main"><div class="name">'+esc(x.nick_name||x.label||"Unknown Player")+'</div>'+
             '<div class="id">領主ID '+esc(x.governor_id)+'</div></div>'+
             '<span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span>'+
@@ -6517,8 +6517,8 @@ async function renderPlayerSearchPage(request, env) {
 
   const results = rows.map(row => `
     <a class="player-result" href="/player?governor_id=${encodeURIComponent(row.governor_id)}">
-      ${row.avatar_url ? '<img class="player-result-avatar ee-role-avatar" data-role="' + escapeHtml(normalizeAllianceRole(row.alliance_role ?? row.alliance_rank, row.alliance_rank_label ?? row.alliance_role_label) || "") + '" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
-      <div class="player-result-avatar player-result-avatar-fallback ee-role-avatar" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
+      ${row.avatar_url ? '<img class="player-result-avatar ee-role-avatar" data-role="' + escapeHtml(normalizeAllianceRole(row.alliance_rank, row.alliance_rank_label) || "") + '" src="' + escapeHtml(normalizeProfileAssetUrl(row.avatar_url)) + '" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false">' : ''}
+      <div class="player-result-avatar player-result-avatar-fallback ee-role-avatar" data-role="${escapeHtml(normalizeAllianceRole(row.alliance_rank, row.alliance_rank_label) || "")}" ${row.avatar_url ? 'hidden' : ''} aria-hidden="true">♟</div>
       <div class="player-result-main">
         <div class="player-result-name">${escapeHtml(row.nick_name || "Unknown Player")}</div>
         <div class="player-result-meta">領主ID ${escapeHtml(row.governor_id)} <span>·</span> 王国 ${escapeHtml(row.kid ?? "-")}</div>
