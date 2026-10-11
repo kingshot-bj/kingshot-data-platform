@@ -1,10 +1,10 @@
 // Display names are based on official Japanese Kingshot terminology where verified.
 // API keys remain in English for machine compatibility. Unverified names are marked provisional.
 export const RANKING_CATALOG = Object.freeze([
-  { key: "personal_power", ja: "戦力", target: "PLAYER", status: "VERIFIED" },
-  { key: "kills", ja: "撃破数", target: "PLAYER", status: "VERIFIED" },
-  { key: "town_center", ja: "役場レベル", target: "PLAYER", status: "VERIFIED" },
-  { key: "rebel_conquest", ja: "反乱軍討伐", target: "PLAYER", status: "PROVISIONAL" },
+  { key: "personal_power", ja: "個人総力", target: "PLAYER", status: "VERIFIED" },
+  { key: "kills", ja: "個人撃破", target: "PLAYER", status: "VERIFIED" },
+  { key: "town_center", ja: "役場Lv.", target: "PLAYER", status: "VERIFIED" },
+  { key: "rebel_conquest", ja: "反乱軍討伐ステージ", target: "PLAYER", status: "VERIFIED" },
   { key: "single_hero", ja: "英雄総力", target: "PLAYER", status: "VERIFIED" },
   { key: "hero_total", ja: "英雄全体総力", target: "PLAYER", status: "VERIFIED" },
   { key: "troop_power", ja: "兵士戦力", target: "PLAYER", status: "PROVISIONAL" },
