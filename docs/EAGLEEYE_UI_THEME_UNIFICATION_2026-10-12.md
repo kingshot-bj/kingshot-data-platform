@@ -45,3 +45,11 @@ Progress is measured against 10 implementation/audit packages, not against the n
 - Keep role/avatar frames based on known role data only.
 - Do not change API, DB, migration, or production behavior as part of this UI-only pass.
 - Continue reporting each 10 percentage points, including completed package count, remaining work, and test status.
+
+
+## Incident follow-up — raw CSS visible in ranking page (2026-10-12)
+- User reported a mobile screenshot showing the canonical theme CSS as page text.
+- Root cause found in `src/kingdom-portal.js`: the shared `page()` HTML shell included `EAGLEEYE_THEME_BASE_CSS` inside its existing `<style>` and, after the style closing tag, appended the same CSS a second time as raw HTML text.
+- Fix: remove the duplicate append after `</style>`, retaining the CSS inside the style block.
+- Post-fix JavaScript syntax parsing: PASS for `src/index.js`, `src/kingdom-portal.js`, and `src/kingdom-catalog-page.js`.
+- Still required: reload the affected route and visually verify on iPhone; check other routes using the shared page shell. No production deploy was performed.
