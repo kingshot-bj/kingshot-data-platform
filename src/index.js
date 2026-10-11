@@ -2783,7 +2783,7 @@ body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-a
           .join("") || '<div class="muted">ランキングデータなし</div>';
         return '<article class="item">'+
           '<div class="top">'+
-            (x.avatar_url?'<img class="avatar" src="'+esc(x.avatar_url)+'" alt="">':'<div class="avatar"></div>')+
+            (x.avatar_url?'<img class="avatar ee-role-avatar" src="'+esc(x.avatar_url)+'" alt="">' :'<div class="avatar ee-role-avatar"></div>')+
             '<div class="main"><div class="name">'+esc(x.nick_name||x.label||"Unknown Player")+'</div>'+
             '<div class="id">領主ID '+esc(x.governor_id)+'</div></div>'+
             '<span class="'+(x.enabled?"state":"state off")+'">'+(x.enabled?"監視中":"停止中")+'</span>'+
