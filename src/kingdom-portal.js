@@ -137,7 +137,7 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
 /* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */
 :root{color-scheme:dark}
 body{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}
-:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){background-color:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important}
+:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
 :where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}
 :where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}
 :where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -385,7 +385,7 @@ export async function renderAlliancePage(request, env) {
 /* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */
 :root{color-scheme:dark}
 body{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}
-:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){background-color:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important}
+:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
 :where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}
 :where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}
 :where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -735,7 +735,7 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
 /* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */
 :root{color-scheme:dark}
 body{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}
-:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){background-color:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important}
+:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
 :where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}
 :where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}
 :where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -792,7 +792,7 @@ function page(title, body){
 /* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */
 :root{color-scheme:dark}
 body{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}
-:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){background-color:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important}
+:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
 :where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}
 :where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}
 :where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
