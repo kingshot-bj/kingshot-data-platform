@@ -6902,7 +6902,7 @@ async function handlePlayerCompareApi(request, env) {
   }
 }
 
-async function renderPlayerComparePage(request, env) {
+async async function renderPlayerComparePage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
   const ids = normalizeCompareGovernorIds(new URL(request.url).searchParams.getAll("governor_id"));
