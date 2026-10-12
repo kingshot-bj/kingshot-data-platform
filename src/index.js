@@ -6703,7 +6703,7 @@ async function handlePlayerRefresh(request, env) {
     const rankPlayer = payload.player && typeof payload.player === "object" ? payload.player : payload;
     const ranks = rankPlayer.ranks || payload.ranks;
     let rankSnapshotSaved = false;
-    if (include === "base,ranks" && ranks && typeof ranks === "object") {
+    if (include === "base,ranks" && ranks && typeof ranks === "object" && !Array.isArray(ranks) && Object.keys(ranks).length > 0) {
       await savePlayerRankSnapshot(env.DB, {
         governorId,
         uid: rankPlayer.uid ?? payload.uid ?? null,
