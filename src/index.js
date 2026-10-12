@@ -3946,6 +3946,24 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     const playerActivity = getMightPulseProbePlayerActivity(payload);
     const headers = mightPulseProbeHeaders(result.headers);
 
+    // Comparison investigation mode: expose game-profile fields needed to validate
+    // the MightPulse schema. Never include request headers, API keys, or tokens.
+    const diagnosticPayload = (() => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const allowed = ["player", "heroes", "gov_gear", "ranks", "base", "data"];
+      const out = {};
+      for (const key of allowed) {
+        if (payload[key] !== undefined) out[key] = payload[key];
+      }
+      const player = out.player && typeof out.player === "object" ? out.player : null;
+      if (player) {
+        for (const key of ["heroes", "gov_gear", "ranks", "base"]) {
+          if (player[key] !== undefined && out[key] === undefined) out[key] = player[key];
+        }
+      }
+      return out;
+    })();
+
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
       leaseId: lease.lease_id,
@@ -3983,6 +4001,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
         player_activity: playerActivity,
         headers,
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
+        diagnostic_payload: diagnosticPayload,
         timestamp_like_fields: timestampFields,
         response_sha256: responseHash,
         section_sha256: sectionHashes
@@ -4178,6 +4197,7 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>age_seconds</b><span>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</span>'+
   '<b>Player activity</b><span>'+renderPlayerActivity(p.player_activity)+'</span>'+
   '<b>Payload keys</b><span class=\"mono\">'+esc((p.payload_keys||[]).join(', '))+'</span>'+
+  '<b>検証用データ（英雄・装備・スキル）</b><span class=\"mono\" style=\"white-space:pre-wrap;display:block;max-height:420px;overflow:auto\">'+esc(JSON.stringify(p.diagnostic_payload||null,null,2))+'</span>'+
   '<b>HTTP headers</b><span class=\"mono\">'+esc(JSON.stringify(h,null,2))+'</span>'+
   '<b>Timestamp-like fields</b><span>'+th+'</span>'+
   '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
