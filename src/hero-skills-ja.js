@@ -247,58 +247,58 @@ export const HERO_SKILLS_JA = {
     ]
   },
   "ゾーイ": {
-    source: "https://altema.jp/kingshot/dai2sedai",
+    source: "https://altema.jp/kingshot/chara/16", sourceName: "アルテマ「キングショット」ゾーイの評価とスキル",
     sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ソードシールドアサルト", initial: "未掲載", max: "84%", description: "0.5秒毎に攻撃力×84%のダメージを与え、ターゲットの被ダメージを30%上昇させる。2秒持続。" },
-        { name: "ペインエキサイトメント", initial: "未掲載", max: "40%", description: "HPが50%を下回った際、自分のHP上限の40%を回復。1戦闘1回。" },
-        { name: "ゴッドパワー", initial: "未掲載", max: "7%", description: "味方全英雄の攻撃速度が7%上昇する。" },
+        { name: "ソードシールドアサルト", initial: "60% / 被ダメージ+10%", max: "84% / 被ダメージ+30%", description: "0.5秒毎に攻撃力×倍率のダメージを与え、ターゲットの被ダメージを上昇させる。2秒持続。" },
+        { name: "ペインエキサイトメント", initial: "20%", max: "40%", description: "HPが50%を下回った際、自分のHP上限の倍率分を回復。1戦闘1回。" },
+        { name: "ゴッドパワー", initial: "3%", max: "7%", description: "味方全英雄の攻撃速度が上昇する。" },
         { name: "デスファイト（専用装備）", initial: "未掲載", max: "24%", description: "ペインエキサイトメント発動後、攻撃力が24%上昇。戦闘終了まで持続。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "リッジワウンド", initial: "未掲載", max: "20% / 40%", description: "味方全部隊の攻撃時、20%の確率で裂傷を付与。敵は毎ターン40%のダメージを受ける。3ターン持続。" },
-        { name: "感情支配", initial: "未掲載", max: "25%", description: "全部隊の総攻撃力が25%上昇する。" },
-        { name: "無限テクニック", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、50%の確率で敵軍の被ダメージを50%上昇させる。" },
+        { name: "リッジワウンド", initial: "発動率20% / 毎ターン8%ダメージ", max: "発動率20% / 毎ターン40%ダメージ", description: "味方全部隊の攻撃時、20%の確率で裂傷を付与。敵は毎ターン追加ダメージを受ける。3ターン持続。" },
+        { name: "感情支配", initial: "5%", max: "25%", description: "全部隊の総攻撃力が上昇する。" },
+        { name: "無限テクニック", initial: "発動率50% / 被ダメージ+10%", max: "発動率50% / 被ダメージ+50%", description: "味方全部隊の攻撃時、50%の確率で敵軍の被ダメージを上昇させる。" },
         { name: "不義のプリンセス（専用装備）", initial: "未掲載", max: "15%", description: "攻撃を受けた際、防衛部隊の攻撃力が15%上昇する。" }
       ]}
     ]
   },
   "ヒルデ": {
-    source: "https://altema.jp/kingshot/dai2sedai",
+    source: "https://altema.jp/kingshot/chara/14", sourceName: "アルテマ「キングショット」ヒルデの評価とスキル",
     sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "治療祈祷", initial: "未掲載", max: "280%", description: "自軍の全英雄のHPがヒルデの攻撃力の280%分回復する。" },
-        { name: "贖罪", initial: "未掲載", max: "140%", description: "自軍でHP割合が最も低い英雄を攻撃力×140%分回復する。" },
-        { name: "教化", initial: "未掲載", max: "196%", description: "敵ターゲットに攻撃力×196%のダメージを与え、1秒間行動不能にする。" },
+        { name: "治療祈祷", initial: "200%", max: "280%", description: "自軍の全英雄のHPがヒルデの攻撃力×倍率分回復する。" },
+        { name: "贖罪", initial: "100%", max: "140%", description: "自軍でHP割合が最も低い英雄を攻撃力×倍率分回復する。" },
+        { name: "教化", initial: "140%", max: "196%", description: "敵ターゲットに攻撃力×倍率のダメージを与え、1秒間行動不能にする。" },
         { name: "聖なる祈祷（専用装備）", initial: "未掲載", max: "70%", description: "ヒルデの回復スキルの効果が70%上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "苦行", initial: "未掲載", max: "15% / 10%", description: "味方全部隊の総攻撃力が15%、総防御力が10%上昇する。" },
-        { name: "ポーション注入", initial: "未掲載", max: "200%", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
-        { name: "意志の試練", initial: "未掲載", max: "50%", description: "40%の確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "苦行", initial: "総攻撃力+3% / 総防御力+2%", max: "総攻撃力+15% / 総防御力+10%", description: "味方全部隊の総攻撃力と総防御力が上昇する。" },
+        { name: "ポーション注入", initial: "120%", max: "200%", description: "味方全部隊の攻撃時、25%の確率で追加ダメージを与える。" },
+        { name: "意志の試練", initial: "発動率8% / 被ダメージ50%軽減", max: "発動率40% / 被ダメージ50%軽減", description: "一定確率で味方全部隊の被ダメージを50%軽減する。" },
         { name: "タフネス（専用装備）", initial: "未掲載", max: "15%", description: "攻撃を受けた際、防衛部隊のHPが15%上昇する。" }
       ]}
     ]
   },
   "マリン": {
-    source: "https://altema.jp/kingshot/dai2sedai",
+    source: "https://altema.jp/kingshot/chara/15", sourceName: "アルテマ「キングショット」マリンの評価とスキル",
     sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "バックウォッシュ", initial: "未掲載", max: "280%", description: "攻撃力×280%の範囲ダメージを与え、1.5秒間行動不能にする。" },
-        { name: "ドランカーミスト", initial: "未掲載", max: "70%", description: "攻撃力×70%の範囲ダメージを与える。" },
-        { name: "ラッキーショット", initial: "未掲載", max: "0.5秒", description: "5回の通常攻撃毎に、次の攻撃でターゲットを0.5秒間眩暈状態にする。" },
+        { name: "バックウォッシュ", initial: "200%", max: "280%", description: "攻撃力×倍率の範囲ダメージを与え、1.5秒間行動不能にする。" },
+        { name: "ドランカーミスト", initial: "50%", max: "70%", description: "攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "ラッキーショット", initial: "8回ごと / 0.2秒眩暈", max: "5回ごと / 0.5秒眩暈", description: "一定回数の通常攻撃後、次の攻撃でターゲットを眩暈状態にする。" },
         { name: "酒飲み（専用装備）", initial: "未掲載", max: "15%", description: "通常攻撃毎に、HPが最も低い味方英雄のHPを攻撃力×15%回復する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "予測不能", initial: "未掲載", max: "50%", description: "40%の確率で味方全部隊の与ダメージが50%上昇する。" },
-        { name: "ラム酒", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を50%減少。2ターン持続。" },
-        { name: "強化ガンパウダー", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、50%の確率で与ダメージが50%上昇する。" },
+        { name: "予測不能", initial: "発動率8% / 与ダメージ+50%", max: "発動率40% / 与ダメージ+50%", description: "一定確率で味方全部隊の与ダメージが50%上昇する。" },
+        { name: "ラム酒", initial: "発動率20% / 総殺傷力-10%", max: "発動率20% / 総殺傷力-50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を減少させる。2ターン持続。" },
+        { name: "強化ガンパウダー", initial: "発動率50% / 与ダメージ+10%", max: "発動率50% / 与ダメージ+50%", description: "味方全部隊の攻撃時、50%の確率で与ダメージが上昇する。" },
         { name: "無敵艦隊（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
