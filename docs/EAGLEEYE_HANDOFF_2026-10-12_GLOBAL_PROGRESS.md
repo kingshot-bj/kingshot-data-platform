@@ -697,3 +697,12 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - mainから再取得した最新ソースに対する構文解析：`src/index.js`、`src/kingdom-catalog-r2-backfill-page.js`、`src/admin-kingdom-load-test.js`、共通進捗スクリプト、負荷テスト復旧関数の全て成功。
 - 静的assertion：バックフィル自動継続中のCOUNTスキップ、最終COUNT、10秒poll、負荷テスト5秒pollと世代ID guard、王国ウォッチリスト8秒poll/5秒retry、最新ジョブ用index、広範囲 `SELECT * FROM ranking_snapshots` がないことを確認。
 - これらはコード構文/静的assertion/簡易mock検証。実Worker統合、Cloudflare本番D1のEXPLAIN/row reads、iPhone Safari、Cloudflare本番デプロイは未確認。
+
+
+### 2026-10-12 継続：自動バックフィル中の完了表示を誤認させない
+
+- 自動継続中に、引き継いだ初期対象件数に対して `rows_archived` が100%へ到達した場合でも、同時に新規対象が増える可能性があるため、最終COUNT確認前に完了表示しないよう修正。
+- `autoContinue=true` の間は進捗を最大99.9%に抑え、状態ラベルを「実行中」とする。全件完了扱いは自動継続が終わり、実際のCOUNT再確認が行われた描画でのみ許可。
+- mainコミット: `aeb75e9acdf7bc33dab4215a5d4fd2a6f3e123d4`.
+- fake D1によるテスト：autoContinue中はCOUNT 0回・99.9%・実行中ラベル、最終描画はCOUNT 1回・100%・完了ラベル。全て期待どおり。
+- バックフィル画面関数の構文解析成功。
