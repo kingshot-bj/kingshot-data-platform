@@ -681,3 +681,19 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - GitHub Actions直近10件の取得結果は、最後の成功が2026-10-08のD1 migration apply（SHA `57d4491dc6738b513f42a56792ef8069a86137f7`）。今回のmainコミットを対象にした実行は見つからない。
 - この監査ではワークフローを起動しておらず、Cloudflare本番DBへ変更を適用していない。migration `0059_kingdom_watchlist_latest_job_index.sql` の本番適用は未確認/未実施として扱う。
 - Cloudflare本番Workerへのデプロイ成功も未確認。GitHub mainへの反映とは分けて報告する。
+
+
+### 2026-10-12 継続：王国ウォッチリストの待機中ポーリングを抑制
+
+- `src/index.js` の `continueWatch()` は、更新POSTが長時間処理中の間に `load()` を4秒間隔で呼び、ウォッチリスト一覧と各最新ジョブを再取得していた。エラー時は2秒間隔で再試行していた。
+- 待機中の一覧ポーリングを4秒→8秒、失敗後の再試行を2秒→5秒へ変更。更新POST完了時には引き続き即時に `load()` して結果を表示するため、進捗表示を完全に止めず、待機中の重複読み取りを減らす。
+- mainコミット: `d944688c5db99a1052c2dc2cf7b091a243880f7d`.
+- mainから再取得してinterval値を静的assertionで確認。index.js、R2バックフィル画面、負荷テストスクリプト、共通進捗スクリプト、負荷テスト復旧関数の構文解析に成功。
+- 実際のD1 row reads削減量とiPhone Safariでの更新表示は未計測。
+
+### 2026-10-12 継続：現在の横断検証状態
+
+- 最新確認main HEAD: `d944688c5db99a1052c2dc2cf7b091a243880f7d`.
+- mainから再取得した最新ソースに対する構文解析：`src/index.js`、`src/kingdom-catalog-r2-backfill-page.js`、`src/admin-kingdom-load-test.js`、共通進捗スクリプト、負荷テスト復旧関数の全て成功。
+- 静的assertion：バックフィル自動継続中のCOUNTスキップ、最終COUNT、10秒poll、負荷テスト5秒pollと世代ID guard、王国ウォッチリスト8秒poll/5秒retry、最新ジョブ用index、広範囲 `SELECT * FROM ranking_snapshots` がないことを確認。
+- これらはコード構文/静的assertion/簡易mock検証。実Worker統合、Cloudflare本番D1のEXPLAIN/row reads、iPhone Safari、Cloudflare本番デプロイは未確認。
