@@ -1208,18 +1208,23 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
   }catch(e){}
   run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.disabled=true;
 }};async function recoverRunningLoadTest(){
+  window.__eagleEyeLoadTestRecoveryRequest=Number(window.__eagleEyeLoadTestRecoveryRequest||0)+1;
+  var recoveryRequestId=window.__eagleEyeLoadTestRecoveryRequest;
+  if(window.__eagleEyeLoadTestStatusTimer){
+    clearInterval(window.__eagleEyeLoadTestStatusTimer);
+    window.__eagleEyeLoadTestStatusTimer=null;
+  }
   var recoveryToken=window.__eagleEyeLoadTestUiToken;
   try{
     var storedRunId="";
     try{storedRunId=String(localStorage.getItem("eagleEye.loadTest.runId")||"").trim();}catch(e){}
     var endpoint="/api/owner/kingdom-load-test/status"+(storedRunId?"?run_id="+encodeURIComponent(storedRunId):"");
     var response=await fetch(endpoint,{cache:"no-store",credentials:"same-origin"});
-    if(recoveryToken!==window.__eagleEyeLoadTestUiToken)return;
+    if(recoveryToken!==window.__eagleEyeLoadTestUiToken||recoveryRequestId!==window.__eagleEyeLoadTestRecoveryRequest)return;
     if(!response.ok)return;
     var data=await response.json();
+    if(recoveryToken!==window.__eagleEyeLoadTestUiToken||recoveryRequestId!==window.__eagleEyeLoadTestRecoveryRequest)return;
     if(!data.run_id)return;
-
-    if(recoveryToken!==window.__eagleEyeLoadTestUiToken)return;
     var run=document.getElementById("run"),cancel=document.getElementById("cancel"),result=document.getElementById("result"),progress=document.getElementById("progress"),active={};
     (data.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
 
@@ -1261,7 +1266,7 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
             run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.disabled=true;
           }
         }catch(e){}
-      },2000);
+      },5000);
     }else{
       result.textContent=(data.run_status==="CANCELLED"?"負荷テスト中止":"処理完了")+"\\n取得済み王国 "+data.completed+" / "+data.target_count+"\\n成功Job "+(data.success_jobs??data.success??0)+" / 失敗Job "+(data.failed_jobs??data.failed??0)+" / 中止 "+data.cancelled+"\\nD1保存済みの最終状態を表示中";
       document.getElementById("progressTitle").textContent=data.run_status==="CANCELLED"?"中止":"✓ 更新完了";
