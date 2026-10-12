@@ -793,16 +793,21 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
           { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys }
         ));
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = board_index + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
         error.rankingBoard = board;
         error.rankingTraceId = traceId;
         error.rankingStartedAtMs = startedAtMs;
+        const message = "RANKING_FETCH_FAILED:" + board + ":" + String(error?.message || error).slice(0, 500);
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?").bind(message, Math.floor(Date.now() / 1000), job.job_id).run().catch(() => {});
         return { board, traceId, startedAtMs, error };
       }
     });
 
-    // Persist completed boards in deterministic order and expose progress after each board.
+    // board_index advances as each parallel fetch succeeds, so the UI can show
+    // live progress before the slowest request finishes. Persistence below
+    // updates ranking_rows independently; failed jobs are never resumed in-place.
     for (let itemIndex = 0; itemIndex < fetchedBoards.length; itemIndex++) {
       const item = fetchedBoards[itemIndex];
       if (item.error) throw item.error;
@@ -848,9 +853,6 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
               poolType: fetched.pool_type
             }
           });
-          await env.DB.prepare(
-            "UPDATE kingdom_watchlist_jobs SET board_index = ?, updated_at = ? WHERE job_id = ?"
-          ).bind(startIndex + itemIndex + 1, Math.floor(Date.now() / 1000), job.job_id).run();
           continue;
         }
         throw new Error("RANKING_ENTRIES_EMPTY:" + board);
@@ -903,8 +905,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       }
 
       await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(startIndex + itemIndex + 1, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        "UPDATE kingdom_watchlist_jobs SET ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
     }
 
     const batchSourceTimes = fetchedBoards
