@@ -324,3 +324,14 @@
 - Cloudflare本番デプロイ成功、実ブラウザ/iPhone Safari実機確認は未確認。
 - 実環境での表示タイミング、複数APIの応答順、登録・解除・Mighty判定の表示確認は未実施。
 - 次は、mainから最新コードとこの台帳を再取得してから、登録・更新・VIP/Mighty判定の各エラー/成功経路と残留表示を継続監査する。通常修正はmainへ直接反映し、Previewをユーザー確認手段として案内しない。
+
+
+## 2026-10-12 追加監査：VIPロールの並列読み込み競合
+
+- `GET /api/me/vip` は `evaluateVipEligibility()` を通じてロール昇格/降格を行う。一方、初期ロードの `GET /api/me/advanced` と同時に呼ばれるため、更新前後のロール値が競合する可能性を確認。
+- マイKingshotの主ロール表示は `vip.role` を優先し、`advanced.role` はフォールバックに変更。VIP側の評価結果が新しいロールを返す場合に、古いロール表示が残るのを防ぐ。
+- mainコミット: `5bf5f41a683fba550e06731c89fe76e939cb903c`
+- 最新確認済み `src/index.js` blob SHA: `5761b8dc4cc9fafdd9647c1e0271e885f942d7f1`
+- 構文チェック成功。モックで `advanced.role=BASIC` と `vip.role=VIP` の競合を作り、画面がVIPを採用することを確認。
+- VIP条件は本人の登録済みMightPulseキーにMighty確認済みキーが1本以上あること。キー本数の下限はVIP判定条件ではない。ADMIN/OWNERはロールを維持したままMighty機能を利用可能。
+- 実ブラウザ/iPhone SafariとCloudflare本番デプロイは未確認。
