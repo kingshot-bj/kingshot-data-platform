@@ -1,6 +1,6 @@
 # EagleEye 日本語英雄スキル網羅監査
 
-更新日: 2026-10-13  
+更新日: 2026-10-13（更新）  
 対象: kingshot-bj/kingshot-data-platform / main
 
 ## 運用ルール（必須）
@@ -22,9 +22,9 @@ R一覧: https://altema.jp/kingshot/reiyuu
 | 英雄 | レアリティ/世代 | 辞典登録 | 出典/メモ |
 |---|---|---|---|
 | アマデウス | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/1 |
-| ヘルガ | SSR/第1世代 | 未 | https://altema.jp/kingshot/chara/2 |
-| サロ | SSR/第1世代 | 未 | https://altema.jp/kingshot/chara/3 |
-| ジェベル | SSR/第1世代 | 未 | https://altema.jp/kingshot/chara/4 |
+| ヘルガ | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/2 |
+| サロ | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/3 |
+| ジェベル | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/4 |
 | ゾーイ | SSR/第2世代 | 未 | 個別ページURL要確認 |
 | ヒルデ | SSR/第2世代 | 未 | 個別ページURL要確認 |
 | マリン | SSR/第2世代 | 未 | https://altema.jp/kingshot/chara/15 |
