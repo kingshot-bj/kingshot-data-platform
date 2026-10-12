@@ -6894,7 +6894,8 @@ async function handlePlayerCompareApi(request, env) {
       const first = history[0], last = history[history.length-1];
       const latestRank = Array.isArray(rankHistory) ? rankHistory[0] : null;
       let leaderboardItems = [];
-      try { leaderboardItems = JSON.parse(latestRank?.leaderboards_json || "[]"); } catch {}
+      if (Array.isArray(latestRank?.leaderboards)) leaderboardItems = latestRank.leaderboards;
+      else { try { leaderboardItems = JSON.parse(latestRank?.leaderboards_json || "[]"); } catch {} }
       const showCoreRanks = visibilityEnabled(visibility, "ranks_core", auth.role);
       const showLeaderboardRanks = visibilityEnabled(visibility, "ranks_leaderboards", auth.role);
       const rankings = latestRank ? {
