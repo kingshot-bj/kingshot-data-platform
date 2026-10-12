@@ -867,3 +867,22 @@ Altemaの個別ページで初期値・最大値の各成分と説明が明示�
 - 辞典の行別出典追加：完了
 - 比較画面の出典列：完了
 - 本番Workerデプロイ：未実施
+
+
+## 2026-10-13 信頼性監査：第5バッチ・5英雄の再照合
+
+スルード、ビビアン、トリトン、ソフィア、ヤンのAltema英雄ページとKS-Toolkit専用装備ページを再確認。通常スキルのうち、トリトン「必殺の一撃」を除く29行を今回の外部資料で再照合済みに更新した。トリトンの当該スキルは、同じページの初期20%・最大28%の数値表と、両レベルで攻撃力×20%とする効果説明が食い違うため、保留を維持。
+
+公開資料を踏まえて、スルード4行、ビビアン3行、トリトン4行、ソフィア4行、ヤン2行の説明文計17行を、初期値/最大値が読み取れる形に改善した。
+
+出典:
+- https://altema.jp/kingshot/chara/27
+- https://altema.jp/kingshot/chara/28
+- https://altema.jp/kingshot/chara/29
+- https://altema.jp/kingshot/chara/30
+- https://altema.jp/kingshot/chara/31
+- https://ks-toolkit.com/data/heroes/vivian/
+- https://ks-toolkit.com/data/heroes/sophia/
+- https://ks-toolkit.com/data/heroes/thrud/
+
+マトリクス集計更新：今回の外部資料で再照合済み156行、前回監査の外部資料照合記録あり34行、要注意1行、今回未再照合65行。ゲーム内実機確認済みは0行。
