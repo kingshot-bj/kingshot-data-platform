@@ -145,3 +145,26 @@
 - 疑似DOMとタイマーキューを用いて `Symbol.asyncIterator` 経路を実行。
 - iterator の2回の `next()` が呼ばれ、途中で進捗UIの表示イベント、`done: true` の後に非表示イベントが発生し、終了後に visible 状態が残らないことを確認。
 - このテストはスクリプト内の制御フローを確認するものであり、実際のブラウザが提供する `ReadableStream` やiPhone Safariのネイティブ実装互換性を保証するものではない。
+
+
+## 2026-10-12 追加監査：ReadableStream reader.releaseLock() での進捗解除
+
+### 発見・修正
+- `src/index.js` の共通進捗スクリプトを追加監査し、`reader.read()` でストリーム追跡を開始したあと、`reader.releaseLock()` だけで読み取りを終了すると追跡IDが残る経路を確認。
+- `releaseLock()` のネイティブ処理が正常終了した場合に限り、該当ストリームの進捗IDを解除するよう修正。ネイティブ処理が例外を投げた場合は、ロック解除が成功していないため追跡を維持する。
+- mainへ直接コミット: `3e21138857c0578e499150916d5025a52c478e03`
+- 変更前のmain blob: `a50705a57730d2b009118b5de88120452066bed6`
+- 変更後のmain blob: `6cf3c435df88da7014fa26bcb1b6216407f28489`
+
+### 検証結果
+- mainから取得した実際の埋め込み進捗スクリプトをV8構文解析し、成功。
+- 疑似DOM・モックストリームで次の4経路を確認し、すべて終了後に表示状態が残らないことを確認:
+  1. `reader.releaseLock()`
+  2. `reader.cancel()`
+  3. 非同期iteratorの `done: true`
+  4. 非同期iteratorのreject
+- これは制御フローの簡易テストであり、ブラウザネイティブの `ReadableStream` / iPhone Safariでの実機検証ではない。
+
+### 未確認
+- 実ブラウザ/iPhone Safariでの表示タイミング・ストリーム互換性。
+- Cloudflare本番デプロイ成功の確認。main反映と本番デプロイは別状態として扱う。
