@@ -1306,10 +1306,10 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .rank-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .rank-title b{font-size:15px}
 .rank-key{font-size:10px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.rank-row{display:grid;grid-template-columns:28px 20px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
+.rank-row{display:grid;grid-template-columns:28px 30px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}.rank-row.no-avatar{grid-template-columns:28px minmax(0,1fr) auto auto}
 .rank-row:first-of-type{border-top:0}
 .rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
-.rank-entity-avatar{width:30px;height:30px;display:block;object-fit:cover;border-radius:8px;background:var(--bg-soft);border:1px solid var(--border)}.rank-entity-avatar-empty{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--muted)}.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-entity-avatar{width:30px;height:30px;display:block;object-fit:cover;border-radius:8px;background:var(--bg-soft);border:1px solid var(--border)}.rank-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank-score{font-weight:900;text-align:right;white-space:nowrap;color:var(--accent-strong)}
 .section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 2px 10px}
 .section-title h2{margin:0;font-size:19px}
@@ -1320,7 +1320,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 @media(max-width:520px){
   body{padding:14px 10px 36px}.card{padding:15px;border-radius:16px}
   .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
-  .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr) auto;}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
+  .primary-action{width:100%}.rank-row{grid-template-columns:28px 30px minmax(0,1fr) auto;}.rank-row.no-avatar{grid-template-columns:28px minmax(0,1fr) auto}.rank-score{grid-column:3;text-align:left;margin-top:-4px}.rank-row.no-avatar .rank-score{grid-column:2}
 }
 
 /* Kingdom Watchlist dark-mode alignment with the canonical EagleEye palette. */
@@ -1620,9 +1620,10 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
           var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
           var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
-          var avatarId=String(r.governor_id||r.target_id||r.uid||""); var avatarUrl=(r.target_type==="PLAYER"&&avatarId)?playerAvatarById[avatarId]:""; var entityIcon=avatarUrl?'<img class="rank-entity-avatar" src="'+esc(avatarUrl)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="rank-entity-avatar rank-entity-avatar-empty" aria-hidden="true">'+(r.target_type==="ALLIANCE"?"同":"人")+'</span>';
-          var rankMark=Number(r.rank)===1?"🥇":Number(r.rank)===2?"🥈":Number(r.rank)===3?"🥉":esc(r.rank);
-          h+='<div class="rank-row"><span class="rank-no">'+rankMark+'</span>'+entityIcon+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          var avatarId=String(r.governor_id||r.target_id||r.uid||""); var avatarUrl=(r.target_type==="PLAYER"&&avatarId)?playerAvatarById[avatarId]:""; var entityIcon=(r.target_type==="PLAYER"&&avatarUrl)?'<img class="rank-entity-avatar" src="'+esc(normalizeProfileAssetUrl(avatarUrl))+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true">':"";
+          var rankMark=esc(r.rank);
+          var rowClass=r.target_type==="ALLIANCE"?"rank-row no-avatar":"rank-row";
+          h+='<div class="'+rowClass+'"><span class="rank-no">'+rankMark+'</span>'+entityIcon+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
