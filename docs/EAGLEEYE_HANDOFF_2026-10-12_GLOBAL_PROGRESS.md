@@ -619,3 +619,13 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - 更新後mainを再取得し、完全一致分岐、通常文字検索の保持、numericGovernorId宣言の重複なし、比較タイムアウト修正、負荷テスト専用ラベルの静的assertionを実施。
 - 共通進捗スクリプトの構文解析は成功。実D1での読み取り削減量は未計測。数値IDのUI経路では元々 /player へ直接送るため、通常の画面遷移の意味は変えない。
 - 未確認：Workers本番でのSQL実行計画/row reads、実ブラウザの検索挙動、Cloudflare本番デプロイ。
+
+
+### 2026-10-12 継続：横断構文検証・main/本番状態の確認
+
+- 最新main HEADをGitHub APIで再確認：2cc685f91b0e217cfc8aa37a34fdd55529a46fd8（Record exact numeric player search optimization）。
+- mainの最新ソースを取得し、以下10ファイルのimport/export宣言を検証用に除いたうえでV8構文解析を実施し、すべて成功：src/index.js、src/mightpulse.js、src/player-store.js、src/ranking-store.js、src/r2-archive.js、src/admin-kingdom-load-test.js、src/kingdom-catalog-r2-backfill.js、src/kingdom-catalog-r2-backfill-page.js、src/system-log-export.js、src/retention.js。これは構文検証であり、Worker runtime統合テストや実DBテストではない。
+- 変更箇所の静的assertionも再確認：比較タイムアウトがJSON本文解析まで維持、数値領主IDの完全一致分岐、通常文字検索の保持、負荷テスト4専用ラベル、プレイヤー主要APIルート、広範囲ranking_snapshots検索を新設していないこと。
+- GitHub Actionsの直近10件を確認したが、表示された実行はD1 Apply Pending Migrationsのみで、最新main HEAD 2cc685f91b0e217cfc8aa37a34fdd55529a46fd8を対象とするデプロイ実行は見つからない。最新コミットのGitHub commit statusはpendingかつstatus件数0。これらはデプロイ失敗を示すものではないが、本番デプロイ成功の証拠もない。
+- Cloudflare本番Workerの実稼働版は、この接続から直接検証できていない。main反映済みとCloudflare本番反映済みは区別し、本番デプロイ成功は未確認として扱う。
+- 本番デプロイ操作は実施していない。ユーザーが明示したmainへの反映は完了、Cloudflare本番デプロイは別途確認が必要。
