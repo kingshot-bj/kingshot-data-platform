@@ -2298,13 +2298,30 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
 (function(){
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+  let loadResponsesCompleted=0;
+  function showLoadProgress(completed){
+    const total=3;
+    const percent=Math.round(completed/total*100);
+    app.innerHTML='<section class="card" role="status" aria-live="polite"><h2 style="margin:0 0 8px">マイKingshotを読み込み中</h2><p class="muted" style="margin:0 0 14px">登録プレイヤー・権限・VIP情報の応答を確認しています。</p><div style="height:6px;border-radius:99px;overflow:hidden;background:#20384f"><div style="height:100%;width:'+percent+'%;border-radius:99px;background:linear-gradient(90deg,#20d7f2,#49e69a);transition:width .18s ease"></div></div><div style="display:flex;justify-content:space-between;gap:12px;margin-top:9px;font-size:12px"><span class="muted">API応答の処理</span><strong style="color:var(--ee-cyan)">'+completed+' / '+total+'</strong></div></section>';
+  }
+  async function fetchLoadPart(url){
+    const response=await fetch(url,{credentials:"same-origin",cache:"no-store"});
+    const data=await response.json().catch(()=>({}));
+    loadResponsesCompleted++;
+    showLoadProgress(loadResponsesCompleted);
+    return {response,data};
+  }
   async function getData(){
-    const [playerRes, advancedRes, vipRes]=await Promise.all([
-      fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"}),
-      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"}),
-      fetch("/api/me/vip",{credentials:"same-origin",cache:"no-store"})
+    loadResponsesCompleted=0;
+    showLoadProgress(0);
+    const [playerPart,advancedPart,vipPart]=await Promise.all([
+      fetchLoadPart("/api/me/player"),
+      fetchLoadPart("/api/me/advanced"),
+      fetchLoadPart("/api/me/vip")
     ]);
-    const player=await playerRes.json().catch(()=>({})); const advanced=await advancedRes.json().catch(()=>({})); const vip=await vipRes.json().catch(()=>({}));
+    const playerRes=playerPart.response, player=playerPart.data;
+    const advancedRes=advancedPart.response, advanced=advancedPart.data;
+    const vipRes=vipPart.response, vip=vipPart.data;
     if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
     if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
     if(!vipRes.ok||!vip.ok) throw new Error(vip.message||vip.error||("HTTP "+vipRes.status));
