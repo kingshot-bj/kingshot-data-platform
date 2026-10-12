@@ -1,6 +1,6 @@
 # EagleEye 日本語英雄スキル網羅監査
 
-更新日: 2026-10-13（更新）  
+更新日: 2026-10-13（全世代一括調査更新）  
 対象: kingshot-bj/kingshot-data-platform / main
 
 ## 運用ルール（必須）
@@ -25,21 +25,21 @@ R一覧: https://altema.jp/kingshot/reiyuu
 | ヘルガ | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/2 |
 | サロ | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/3 |
 | ジェベル | SSR/第1世代 | 済 | https://altema.jp/kingshot/chara/4 |
-| ゾーイ | SSR/第2世代 | 未 | 個別ページURL要確認 |
-| ヒルデ | SSR/第2世代 | 未 | 個別ページURL要確認 |
-| マリン | SSR/第2世代 | 未 | https://altema.jp/kingshot/chara/15 |
+| ゾーイ | SSR/第2世代 | 一部登録 | https://altema.jp/kingshot/dai2sedai |
+| ヒルデ | SSR/第2世代 | 一部登録 | https://altema.jp/kingshot/dai2sedai |
+| マリン | SSR/第2世代 | 一部登録 | https://altema.jp/kingshot/dai2sedai |
 | エリック | SSR/第3世代 | 済 | https://altema.jp/kingshot/chara/17 |
 | ペーラ | SSR/第3世代 | 済 | https://altema.jp/kingshot/chara/18 |
-| イェーガー | SSR/第3世代 | 未 | 個別ページURL要確認 |
+| イェーガー | SSR/第3世代 | 一部登録 | https://altema.jp/kingshot/dai3sedai |
 | アルカ | SSR/第4世代 | 済 | https://altema.jp/kingshot/chara/25 |
-| マーゴ | SSR/第4世代 | 未 | 個別ページURL要確認 |
-| ローザ | SSR/第4世代 | 未 | 個別ページURL要確認 |
-| 龍飛 | SSR/第5世代 | 未 | 個別ページURL要確認 |
-| スルード | SSR/第5世代 | 未 | 個別ページURL要確認 |
-| ビビアン | SSR/第5世代 | 未 | 個別ページURL要確認 |
-| トリトン | SSR/第6世代 | 未 | 個別ページURL要確認 |
-| ソフィア | SSR/第6世代 | 未 | 個別ページURL要確認 |
-| ヤン | SSR/第6世代 | 未 | 個別ページURL要確認 |
+| マーゴ | SSR/第4世代 | 一部登録 | https://altema.jp/kingshot/dai4sedai |
+| ローザ | SSR/第4世代 | 一部登録 | https://altema.jp/kingshot/dai4sedai |
+| 龍飛 | SSR/第5世代 | 一部登録 | https://altema.jp/kingshot/dai5sedai |
+| スルード | SSR/第5世代 | 一部登録 | https://altema.jp/kingshot/dai5sedai |
+| ビビアン | SSR/第5世代 | 一部登録 | https://altema.jp/kingshot/dai5sedai |
+| トリトン | SSR/第6世代 | 一部登録 | https://altema.jp/kingshot/dai6sedai |
+| ソフィア | SSR/第6世代 | 一部登録 | https://altema.jp/kingshot/dai6sedai |
+| ヤン | SSR/第6世代 | 一部登録 | https://altema.jp/kingshot/dai6sedai |
 | チャールズ | SSR/第7世代 | 済 | https://altema.jp/kingshot/chara/32 |
 | アイヴァ | SSR/第7世代 | 済 | 個別ページで登録内容の再照合が必要 |
 | レン&ロン | SSR/第7世代 | 済 | 個別ページで登録内容の再照合が必要 |
@@ -85,3 +85,13 @@ R一覧: https://altema.jp/kingshot/reiyuu
 - R一覧: https://altema.jp/kingshot/reiyuu
 
 注意: 39英雄は2026-10-13時点で参照したアルテマ一覧の暫定母集団。これをゲーム内全英雄の絶対数とは断定しない。
+
+
+## 2026-10-13 一括調査の追加結果
+
+- `src/hero-skills-ja.js` は25英雄分の辞典データを持つ。
+- 第2世代（ゾーイ、ヒルデ、マリン）、第3世代（イェーガー）、第4世代（マーゴ、ローザ）、第5世代（龍飛、スルード、ビビアン）、第6世代（トリトン、ソフィア、ヤン）を追加した。
+- 追加項目は世代別の日本語攻略ページに明記された名前・説明・数値のみ。初期値の記載がないものは「未掲載」とし、最大値も確認できない場合は「未確認」等を使用。
+- 第7・第8世代の既存登録分は、個別ページの完全性をまだ再監査していない。
+- SR・R英雄12名は未登録のまま。個別ページから情報を確認して収録する必要がある。
+- 現時点で「全英雄・全スキル網羅」とは判定しない。攻略サイトに未掲載の値やゲーム内表記はユーザーのゲーム画面で確認する対象として残す。
