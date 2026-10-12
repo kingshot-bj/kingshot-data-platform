@@ -579,6 +579,49 @@ export const HERO_SKILLS_JA = {
         { name: "伐採名人", initial: "5%", max: "25%", description: "出征時、木材の採集速度が上昇する。" }
       ]}
     ]
+  },,
+
+  "ファハド": {
+    source: "https://altema.jp/kingshot/chara/20", sourceName: "アルテマ「キングショット」ファハドの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "サンドストーム", initial: "1%", max: "5%", description: "範囲内の敵の攻撃力を低下させる。2秒持続。" },
+        { name: "ハヤブサの導き", initial: "15%", max: "35%", description: "発動後、自身と周囲の味方の攻撃力が上昇する。2秒持続。" },
+        { name: "砂の将軍", initial: "10%", max: "30%", description: "ファハドの攻撃速度が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "サンドシェード", initial: "4%", max: "20%", description: "敵全体の与ダメージを低下させる。" },
+        { name: "先行者", initial: "20%", max: "100%", description: "モンスター討伐部隊の出征速度が上昇する。" }
+      ]}
+    ]
+  },
+  "あまね": {
+    source: "https://altema.jp/kingshot/chara/22", sourceName: "アルテマ「あまねの評価とスキル」", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "桜花爛漫", initial: "1.5%, 2.5%", max: "3.5%, 4.5%", description: "味方全体の英雄と護衛の攻撃力・攻撃速度が上昇する。4秒持続。" },
+        { name: "破魔矢", initial: "150%", max: "210%", description: "相手に攻撃力に応じたダメージを与える。" },
+        { name: "神楽", initial: "1%", max: "5%", description: "通常攻撃を3回行う度に自身の攻撃速度が上昇する。戦闘終了まで持続。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "三布の陣", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が上昇する。" },
+        { name: "破魔の祈り", initial: "10%", max: "50%", description: "野戦病院の治療速度が上昇する。" }
+      ]}
+    ]
+  },
+  "インウー": {
+    source: "https://altema.jp/kingshot/chara/21", sourceName: "アルテマ「インウーの評価とスキル」", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "散華", initial: "125%, 150%", max: "175%, 210%", description: "剣舞で攻撃し、3回目の斬撃は範囲ダメージとなる。" },
+        { name: "飛燕", initial: "100%, 30%", max: "140%, 50%", description: "ターゲットにダメージを与え、攻撃速度を低下させる。2秒持続。" },
+        { name: "双剣", initial: "8%", max: "24%", description: "自身の攻撃力が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "戦の構え", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
+        { name: "多聞", initial: "3%", max: "15%", description: "科学研究の速度が上昇する。" }
+      ]}
+    ]
   },
 };
 
