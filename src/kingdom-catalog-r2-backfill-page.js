@@ -25,7 +25,9 @@ export async function renderKingdomCatalogR2BackfillPage(env, result = null) {
     } catch (_) { remainingCount = 0; }
     totalTargetCount = archivedCount + remainingCount;
   }
-  const progressPct = totalTargetCount > 0 ? Math.min(100, Math.round((archivedCount / totalTargetCount) * 1000) / 10) : 0;
+  const calculatedProgressPct = totalTargetCount > 0 ? Math.min(100, Math.round((archivedCount / totalTargetCount) * 1000) / 10) : 0;
+  // Do not report 100% until the final COUNT(*) confirms there is no remaining work.
+  const progressPct = result?.autoContinue ? Math.min(99.9, calculatedProgressPct) : calculatedProgressPct;
   const initialJson = JSON.stringify({
     state: initial.state || "IDLE",
     lastKid: Number(initial.last_kid || 0),
@@ -55,8 +57,8 @@ export async function renderKingdomCatalogR2BackfillPage(env, result = null) {
   const statusKey = initial.state === "FAILED" ? "FAILED" : initial.state === "RUNNING" ? "RUNNING" : hasSuccess ? "SUCCESS" : initial.state === "COMPLETE" ? "SUCCESS" : "IDLE";
   const statusLabel = statusKey === "FAILED" ? "🔴 不合格" : statusKey === "RUNNING" ? "🟡 実行中" : statusKey === "SUCCESS" ? "🟢 完了・成功" : "⚪ 未実行";
   const statusClass = statusKey === "FAILED" ? "statusFail" : statusKey === "RUNNING" ? "statusRun" : statusKey === "SUCCESS" ? "statusPass" : "statusIdle";
-  const allDone = totalTargetCount > 0 && remainingCount === 0;
-  const statusKey2 = initial.state === "FAILED" ? "FAILED" : initial.state === "RUNNING" ? "RUNNING" : allDone ? "SUCCESS" : hasSuccess ? "SUCCESS" : initial.state === "COMPLETE" ? "SUCCESS" : "IDLE";
+  const allDone = !result?.autoContinue && totalTargetCount > 0 && remainingCount === 0;
+  const statusKey2 = initial.state === "FAILED" ? "FAILED" : (Boolean(result?.autoContinue) || initial.state === "RUNNING") ? "RUNNING" : allDone ? "SUCCESS" : hasSuccess ? "SUCCESS" : initial.state === "COMPLETE" ? "SUCCESS" : "IDLE";
   const statusLabel2 = statusKey2 === "FAILED" ? "🔴 不合格" : statusKey2 === "RUNNING" ? "🟡 実行中" : statusKey2 === "SUCCESS" ? "🟢 完了・成功" : "⚪ 未実行";
   const statusClass2 = statusKey2 === "FAILED" ? "statusFail" : statusKey2 === "RUNNING" ? "statusRun" : statusKey2 === "SUCCESS" ? "statusPass" : "statusIdle";
   const statusSub2 = statusKey2 === "FAILED" ? "前回のバックフィルまたは検証でエラーがあります" : statusKey2 === "RUNNING" ? "バックフィルを実行中です" : allDone ? "バックフィル対象が0件です。全件退避済みです" : statusKey2 === "SUCCESS" ? "前回のバックフィルは正常に完了しています" : "まだバックフィルを実行していません";
