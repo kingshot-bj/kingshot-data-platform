@@ -232,3 +232,13 @@
 - V8構文検証成功。これは処理ラベルの明確化であり、API内部のリアルタイム工程進捗/ETAはまだ未実装。
 - 次段階は、プレイヤー画面を維持したまま `/api/player` を呼び出す方式の影響範囲を精査し、既存のpayload・権限・履歴・エラー処理を保てる実装を検証する。
 - iPhone Safari実機と本番デプロイの反映状態は未確認。
+
+
+## 2026-10-12 追加調査：プレイヤーAPIの画面同等性
+
+- `handlePlayerApi()` の返却JSONは `player/profile/source/freshness`。一方、`renderPlayerPage()` は画面表示用に `optional_assets`、権限に応じた `hero_rankings`、`kingdom_ranking_current` を使った順位補完も行う。
+- そのため、API JSONだけを受けて画面を置き換える実装は現状では同等ではない。refresh/richをAJAXへ置き換えてからページ再読み込みするだけの方式も、再度サーバー処理が走り、外部API呼出しやMaterializeが重複する恐れがある。
+- この理由で、現時点では画面遷移を壊す変更を行わず、URL別の進捗ラベルを維持する判断とした。
+- 次はマイKingshotの初期読込と登録/更新/VIP/Mighty判定操作を、画面→API→サーバー関数→計測可能な進捗源の形で追跡する。その後、全体共通UIに接続できる範囲を決める。
+- main直接コミット（台帳更新）: 4e71dee8d524cf4dbc74503cd68433d334beed33
+- この記録はコード監査結果であり、プレイヤー内部のリアルタイム進捗/ETAが実装完了したことを意味しない。
