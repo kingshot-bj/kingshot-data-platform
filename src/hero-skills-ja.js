@@ -70,7 +70,7 @@ export const HERO_SKILLS_JA = {
         { name: "ガーディアンカード", initial: "10%", max: "50%", description: "40%の確率で味方全部隊の被ダメージが減少する。" }
       ]}
     ]
-  },,
+  },
   "ディエゴ": {
     source: "https://altema.jp/kingshot/dai8sedai",
     sourceName: "アルテマ「キングショット」第8世代の英雄一覧",
