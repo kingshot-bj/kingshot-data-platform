@@ -127,7 +127,7 @@ export const HERO_SKILLS_JA = {
         { name: "月輝の力", type: "専用装備", max: "集結部隊の攻撃力+15%", description: "集結部隊の攻撃力を上昇させる。" }
       ]}
     ]
-  },,
+  },
   "チャールズ": {
     source: "https://altema.jp/kingshot/dai7sedai",
     sourceName: "アルテマ「キングショット」第7世代の英雄一覧",
