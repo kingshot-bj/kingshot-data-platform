@@ -253,14 +253,14 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "ソードシールドアサルト", initial: "未掲載", max: "84%", description: "0.5秒毎に攻撃力×84%のダメージを与え、ターゲットの被ダメージを30%上昇させる。2秒持続。" },
-        { name: "ペインエキサイトメント", initial: "未掲載", max: "未掲載", description: "HPが50%を下回った際、自分のHP上限の40%を回復。1戦闘1回。" },
+        { name: "ペインエキサイトメント", initial: "未掲載", max: "40%", description: "HPが50%を下回った際、自分のHP上限の40%を回復。1戦闘1回。" },
         { name: "ゴッドパワー", initial: "未掲載", max: "7%", description: "味方全英雄の攻撃速度が7%上昇する。" },
         { name: "デスファイト（専用装備）", initial: "未掲載", max: "24%", description: "ペインエキサイトメント発動後、攻撃力が24%上昇。戦闘終了まで持続。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "リッジワウンド", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、20%の確率で裂傷を付与。敵は毎ターン40%のダメージを受ける。3ターン持続。" },
+        { name: "リッジワウンド", initial: "未掲載", max: "20% / 40%", description: "味方全部隊の攻撃時、20%の確率で裂傷を付与。敵は毎ターン40%のダメージを受ける。3ターン持続。" },
         { name: "感情支配", initial: "未掲載", max: "25%", description: "全部隊の総攻撃力が25%上昇する。" },
-        { name: "無限テクニック", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、50%の確率で敵軍の被ダメージを50%上昇させる。" },
+        { name: "無限テクニック", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、50%の確率で敵軍の被ダメージを50%上昇させる。" },
         { name: "不義のプリンセス（専用装備）", initial: "未掲載", max: "15%", description: "攻撃を受けた際、防衛部隊の攻撃力が15%上昇する。" }
       ]}
     ]
@@ -271,15 +271,15 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "治療祈祷", initial: "未掲載", max: "未掲載", description: "自軍の全英雄のHPがヒルデの攻撃力の280%分回復する。" },
-        { name: "贖罪", initial: "未掲載", max: "未掲載", description: "自軍でHP割合が最も低い英雄を攻撃力×140%分回復する。" },
+        { name: "治療祈祷", initial: "未掲載", max: "280%", description: "自軍の全英雄のHPがヒルデの攻撃力の280%分回復する。" },
+        { name: "贖罪", initial: "未掲載", max: "140%", description: "自軍でHP割合が最も低い英雄を攻撃力×140%分回復する。" },
         { name: "教化", initial: "未掲載", max: "196%", description: "敵ターゲットに攻撃力×196%のダメージを与え、1秒間行動不能にする。" },
         { name: "聖なる祈祷（専用装備）", initial: "未掲載", max: "70%", description: "ヒルデの回復スキルの効果が70%上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "苦行", initial: "未掲載", max: "15% / 10%", description: "味方全部隊の総攻撃力が15%、総防御力が10%上昇する。" },
-        { name: "ポーション注入", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
-        { name: "意志の試練", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "ポーション注入", initial: "未掲載", max: "200%", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
+        { name: "意志の試練", initial: "未掲載", max: "50%", description: "40%の確率で味方全部隊の被ダメージを50%軽減する。" },
         { name: "タフネス（専用装備）", initial: "未掲載", max: "15%", description: "攻撃を受けた際、防衛部隊のHPが15%上昇する。" }
       ]}
     ]
@@ -292,13 +292,13 @@ export const HERO_SKILLS_JA = {
       { type: "討伐スキル", skills: [
         { name: "バックウォッシュ", initial: "未掲載", max: "280%", description: "攻撃力×280%の範囲ダメージを与え、1.5秒間行動不能にする。" },
         { name: "ドランカーミスト", initial: "未掲載", max: "70%", description: "攻撃力×70%の範囲ダメージを与える。" },
-        { name: "ラッキーショット", initial: "未掲載", max: "未掲載", description: "5回の通常攻撃毎に、次の攻撃でターゲットを0.5秒間眩暈状態にする。" },
+        { name: "ラッキーショット", initial: "未掲載", max: "0.5秒", description: "5回の通常攻撃毎に、次の攻撃でターゲットを0.5秒間眩暈状態にする。" },
         { name: "酒飲み（専用装備）", initial: "未掲載", max: "15%", description: "通常攻撃毎に、HPが最も低い味方英雄のHPを攻撃力×15%回復する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "予測不能", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全部隊の与ダメージが50%上昇する。" },
-        { name: "ラム酒", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を50%減少。2ターン持続。" },
-        { name: "強化ガンパウダー", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、50%の確率で与ダメージが50%上昇する。" },
+        { name: "予測不能", initial: "未掲載", max: "50%", description: "40%の確率で味方全部隊の与ダメージが50%上昇する。" },
+        { name: "ラム酒", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を50%減少。2ターン持続。" },
+        { name: "強化ガンパウダー", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、50%の確率で与ダメージが50%上昇する。" },
         { name: "無敵艦隊（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
@@ -347,7 +347,7 @@ export const HERO_SKILLS_JA = {
         { name: "オールナイト・フェスタ（専用装備）", initial: "未掲載", max: "15%", description: "センター・アテンション発動後、自身の攻撃力が15%上昇。戦闘終了まで持続。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "ノイズ・タイム", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全体の与ダメージが50%上昇する。" },
+        { name: "ノイズ・タイム", initial: "未掲載", max: "50%", description: "40%の確率で味方全体の与ダメージが50%上昇する。" },
         { name: "チャーム・ダンス", initial: "未掲載", max: "20%", description: "敵全体のダメージを20%低下させる。" },
         { name: "ゴールデン・リズム", initial: "未掲載", max: "30%", description: "弓兵の総攻撃力が30%上昇する。" },
         { name: "インスパイア・ダンス（専用装備）", initial: "未掲載", max: "未掲載", description: "出典ページで効果の詳細値を確認できず。ゲーム内確認待ち。" }
@@ -358,15 +358,15 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/dai5sedai", sourceName: "アルテマ 第5世代の英雄一覧", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "聖なる玉湯", initial: "未掲載", max: "未掲載", description: "攻撃速度が4秒間120%上昇し、制御効果を無効化する。" },
+        { name: "聖なる玉湯", initial: "未掲載", max: "120%", description: "攻撃速度が4秒間120%上昇し、制御効果を無効化する。" },
         { name: "雲散霧消", initial: "未掲載", max: "60%", description: "HPが50%未満になると、被ダメージが60%低下する。" },
         { name: "圧倒する力", initial: "未掲載", max: "42%", description: "「グローリー・モーメント」発動後、毎秒攻撃力×42%のHPを回復。5秒持続。" },
         { name: "呑下三百杯（専用装備）", initial: "未掲載", max: "15%", description: "聖なる玉湯の持続時間が1.5秒延長。延長中、与ダメージの15%分HPを回復。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "天昇豪胆", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全部隊の被ダメージが10%減少する。" },
+        { name: "天昇豪胆", initial: "未掲載", max: "10%", description: "40%の確率で味方全部隊の被ダメージが10%減少する。" },
         { name: "剛筋頑健", initial: "未掲載", max: "25%", description: "全軍の総防御力が25%上昇する。" },
-        { name: "杯投烈脚", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
+        { name: "杯投烈脚", initial: "未掲載", max: "200%", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
         { name: "虚実一対（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の攻撃力が15%上昇する。" }
       ]}
     ]
@@ -382,7 +382,7 @@ export const HERO_SKILLS_JA = {
       ]},
       { type: "遠征スキル", skills: [
         { name: "ファナティック", initial: "未掲載", max: "15%", description: "歩兵と弓兵の被ダメージが15%低下し、与ダメージが15%上昇する。" },
-        { name: "レックレス", initial: "未掲載", max: "未掲載", description: "騎兵の攻撃時、20%の確率で敵全体に100%の追加ダメージを与える。" },
+        { name: "レックレス", initial: "未掲載", max: "100%", description: "騎兵の攻撃時、20%の確率で敵全体に100%の追加ダメージを与える。" },
         { name: "アンセスター", initial: "未掲載", max: "25%", description: "騎兵が4回攻撃する度、味方全部隊の与ダメージが25%上昇、被ダメージが25%低下。2ターン持続。" },
         { name: "ウルフキッス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
@@ -432,7 +432,7 @@ export const HERO_SKILLS_JA = {
         { name: "オーバーマインド・アイ（専用装備）", initial: "未掲載", max: "8%", description: "攻撃時8%の確率でターゲットを1秒間混乱状態にする。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "コントラクト・バインド", initial: "未掲載", max: "未掲載", description: "毎ターン40%の確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "コントラクト・バインド", initial: "未掲載", max: "50%", description: "毎ターン40%の確率で味方全部隊の被ダメージを50%軽減する。" },
         { name: "パニック・ダメージ", initial: "未掲載", max: "200%", description: "2ターン毎に敵を恐怖状態にし、次ターンに追加で200%の騎兵攻撃ダメージ。恐怖は1ターン継続。" },
         { name: "パニック・ジエンド", initial: "未掲載", max: "75%", description: "味方全部隊の恐怖状態の敵への与ダメージが75%上昇する。" },
         { name: "ダークナイトクイーン（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の殺傷力が15%上昇する。" }
@@ -444,14 +444,14 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "メガスロー", initial: "未掲載", max: "140%", description: "直線上の敵に攻撃力×140%の範囲ダメージ。雪の精霊が戻り、再び同ダメージを与える。" },
-        { name: "チェーンショット", initial: "未掲載", max: "未掲載", description: "ターゲットに追加ダメージを1回与える。倍率は出典ページの一覧に記載なし。" },
+        { name: "チェーンショット", initial: "未掲載", max: "未確認", description: "ターゲットに追加ダメージを1回与える。倍率は出典ページの一覧に記載なし。" },
         { name: "ヘッドショット", initial: "未掲載", max: "15%", description: "ダメージ時に15%の確率で会心が発生する。" },
         { name: "ラピッドファイア（専用装備）", initial: "未掲載", max: "56%", description: "連続5回射撃し、ランダムな敵に攻撃力×56%のダメージ。護衛対象なら100%の確率で即座に撃破。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "アバランチ", initial: "未掲載", max: "100%", description: "味方全部隊が4ターン毎に1度追加攻撃を行い、100%のダメージを与える。" },
-        { name: "アイスゾーン", initial: "未掲載", max: "未掲載", description: "弓兵が攻撃する度、40%の確率で対象に100%の追加ダメージを与える。" },
-        { name: "アンブッシュ", initial: "未掲載", max: "未掲載", description: "毎ターン40%の確率で全軍の与ダメージが上昇する。倍率は出典ページの一覧に記載なし。" },
+        { name: "アイスゾーン", initial: "未掲載", max: "100%", description: "弓兵が攻撃する度、40%の確率で対象に100%の追加ダメージを与える。" },
+        { name: "アンブッシュ", initial: "未掲載", max: "未確認", description: "毎ターン40%の確率で全軍の与ダメージが上昇する。倍率は出典ページの一覧に記載なし。" },
         { name: "アタックディフェンス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
