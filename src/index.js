@@ -1620,9 +1620,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
           var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
           var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
-          var avatarId=String(r.governor_id||r.target_id||r.uid||""); var avatarUrl=(r.target_type==="PLAYER"&&avatarId)?playerAvatarById[avatarId]:""; var entityIcon=(r.target_type==="PLAYER"&&avatarUrl)?'<img class="rank-entity-avatar" src="'+esc(normalizeProfileAssetUrl(avatarUrl))+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true">':"";
+          var avatarId=String(r.governor_id||r.target_id||r.uid||""); var avatarUrl=(r.target_type==="PLAYER"&&avatarId)?playerAvatarById[avatarId]:""; var entityIcon=(r.target_type==="PLAYER"&&avatarUrl)?'<img class="rank-entity-avatar" src="'+esc(normalizeProfileAssetUrl(avatarUrl))+'" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true;this.parentElement.classList.add(\'no-avatar\')">':"";
           var rankMark=esc(r.rank);
-          var rowClass=r.target_type==="ALLIANCE"?"rank-row no-avatar":"rank-row";
+          var rowClass=entityIcon?"rank-row":"rank-row no-avatar";
           h+='<div class="'+rowClass+'"><span class="rank-no">'+rankMark+'</span>'+entityIcon+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
