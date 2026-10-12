@@ -796,10 +796,12 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = board_index + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
-        error.rankingBoard = board;
-        error.rankingTraceId = traceId;
-        error.rankingStartedAtMs = startedAtMs;
         const message = "RANKING_FETCH_FAILED:" + board + ":" + String(error?.message || error).slice(0, 500);
+        const failure = new Error(message);
+        failure.cause = error;
+        failure.rankingBoard = board;
+        failure.rankingTraceId = traceId;
+        failure.rankingStartedAtMs = startedAtMs;
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?").bind(message, Math.floor(Date.now() / 1000), job.job_id).run().catch(() => {});
         await recordDiagnostic(env.DB, {
           traceId, service: "ranking", feature: "kingdom_watchlist",
@@ -808,8 +810,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
           startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
           elapsedMs: Date.now() - startedAtMs, metadata: { board, jobId: job.job_id, phase: "FETCH" }
         }).catch(() => {});
-        error.message = message;
-        return { board, traceId, startedAtMs, error };
+        return { board, traceId, startedAtMs, error: failure };
       }
     });
 
