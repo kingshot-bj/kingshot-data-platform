@@ -37,7 +37,7 @@ export const HERO_SKILLS_JA = {
         { name: "不義の一撃", initial: "8%", max: "40%", description: "一定確率で味方全部隊の与ダメージが50%上昇する。" }
       ]}
     ]
-  }
+  },
   "エリック": {
     source: "https://altema.jp/kingshot/chara/17",
     sourceName: "アルテマ「キングショット」エリックの評価とスキル",
