@@ -232,7 +232,8 @@ export async function mightPulseFetch(env, path, {
 export async function getMightPulsePlayer(env, governorId, {
   idType,
   include = "base",
-  apiKey = null
+  apiKey = null,
+  metadata = null
 } = {}) {
   const id = String(governorId || "").trim();
   if (!id) {
@@ -247,11 +248,12 @@ export async function getMightPulsePlayer(env, governorId, {
 
   return mightPulseFetch(env, `/players/${encodeURIComponent(id)}`, {
     query: params,
-    apiKey
+    apiKey,
+    metadata
   });
 }
 
-export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null } = {}) {
+export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null, metadata = null } = {}) {
   const id = String(governorId || "").trim();
   if (!id) {
     throw new MightPulseError("Governor ID is required.", {
@@ -262,7 +264,8 @@ export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null 
 
   return getMightPulsePlayer(env, id, {
     include: "ranks",
-    apiKey
+    apiKey,
+    metadata
   });
 }
 
@@ -271,7 +274,8 @@ export async function getMightPulseKingdomRanks(env, kid, {
   limit = 100,
   apiKey = null,
   traceId = null,
-  parentTraceId = null
+  parentTraceId = null,
+  metadata = null
 } = {}) {
   const kingdomId = String(kid || "").trim();
   if (!kingdomId) {
@@ -299,7 +303,8 @@ export async function getMightPulseKingdomRanks(env, kid, {
     parentTraceId,
     operation: "GET_KINGDOM_RANKING",
     targetType: "KINGDOM",
-    targetId: kingdomId
+    targetId: kingdomId,
+    metadata
   });
 }
 
