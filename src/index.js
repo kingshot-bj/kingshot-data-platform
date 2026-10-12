@@ -1376,6 +1376,19 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     watchlistIdForProgress=w.watchlist_id;
     var j=w.job;
     if(!j)return "";
+    function phaseEta(pct){
+      if(!Number.isFinite(pct)||pct<10||pct>=100)return "";
+      try{
+        var startedAt=Number(sessionStorage.getItem("eagleeye_watchlist_started_at_"+String(w.watchlist_id||"")));
+        if(!Number.isFinite(startedAt)||startedAt<=0)return "";
+        var elapsedMs=Date.now()-startedAt;
+        if(elapsedMs<5000)return "";
+        var remainingMs=Math.max(0,elapsedMs*(100-pct)/pct);
+        var seconds=Math.max(1,Math.round(remainingMs/1000));
+        var estimate=seconds<60?(seconds+"秒"):(Math.ceil(seconds/60)+"分");
+        return "<small>この工程の残り目安：約"+estimate+"（推定）</small>";
+      }catch(e){return "";}
+    }
     if(j.status==="COMPLETED"){
       var sourceText="";
       if(j.source_first_at&&j.source_last_at){
@@ -1393,12 +1406,12 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }
     if(j.status==="RANKINGS"){
       var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>ランキング取得 "+esc(j.ranking_rows)+"件</small></div>";
+      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>ランキング取得 "+esc(j.ranking_rows)+"件</small>"+phaseEta(pct)+"</div>";
     }
     if(j.status==="PLAYERS"){
       var count=j.player_count==null?"?":j.player_count;
       var playerPct=count && count!=="?" ? Math.min(100,Math.round((Number(j.player_cursor)||0)/Number(count)*100)) : 0;
-      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+playerPct+"%'></div></div><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
+      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+playerPct+"%'></div></div><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small>"+phaseEta(playerPct)+"</div>";
     }
     if(j.status==="FAILED"){
       var failedPhase=(Number(j.board_index||0)<Number(j.total_boards||0))?"ランキング":"プレイヤー";
