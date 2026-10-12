@@ -369,7 +369,7 @@ export const HERO_SKILLS_JA = {
         { name: "ノイズ・タイム", initial: "未掲載", max: "50%", description: "40%の確率で味方全体の与ダメージが50%上昇する。" },
         { name: "チャーム・ダンス", initial: "未掲載", max: "20%", description: "敵全体のダメージを20%低下させる。" },
         { name: "ゴールデン・リズム", initial: "未掲載", max: "30%", description: "弓兵の総攻撃力が30%上昇する。" },
-        { name: "インスパイア・ダンス（専用装備）", initial: "未掲載", max: "未掲載", description: "出典ページで効果の詳細値を確認できず。ゲーム内確認待ち。" }
+        { name: "インスパイア・ダンス（専用装備）", initial: "未掲載", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
   },
