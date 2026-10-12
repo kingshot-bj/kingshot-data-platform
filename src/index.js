@@ -798,13 +798,14 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         error.rankingBoard = board;
         error.rankingTraceId = traceId;
         error.rankingStartedAtMs = startedAtMs;
-        throw error;
+        return { board, traceId, startedAtMs, error };
       }
     });
 
-    // Persist each completed board in deterministic board order so ranking
-    // snapshots/change events remain consistent while API requests run in parallel.
-    for (const item of fetchedBoards) {
+    // Persist completed boards in deterministic order and expose progress after each board.
+    for (let itemIndex = 0; itemIndex < fetchedBoards.length; itemIndex++) {
+      const item = fetchedBoards[itemIndex];
+      if (item.error) throw item.error;
       const { board, traceId, startedAtMs, fetched } = item;
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
@@ -847,6 +848,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
               poolType: fetched.pool_type
             }
           });
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET board_index = ?, updated_at = ? WHERE job_id = ?"
+          ).bind(startIndex + itemIndex + 1, Math.floor(Date.now() / 1000), job.job_id).run();
           continue;
         }
         throw new Error("RANKING_ENTRIES_EMPTY:" + board);
@@ -898,7 +902,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         }
       }
 
-      // Progress is persisted once after the whole concurrent batch, not once per board.
+      await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      ).bind(startIndex + itemIndex + 1, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
     }
 
     const batchSourceTimes = fetchedBoards
