@@ -600,3 +600,11 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - 更新後 src/index.js blob SHA: e1bd2c3b6ab64ecc4b9228bd3d3b45f286aa0323
 - 更新後mainのsrc/index.jsを再取得し、共通進捗インラインスクリプトのV8構文解析と4ラベルの存在を確認。
 - 未確認：実ブラウザの表示、ポーリング時の体感、Cloudflare本番デプロイ。
+
+
+### 2026-10-12 継続：MightPulse長時間取得の待機条件
+
+- src/mightpulse.js の mightPulseFetch は1試行あたり既定100,000msのAbortController timeout、maxRetries=3（最大4試行）、RETRY_DELAYS_MS=[2,000,5,000,15,000]を設定。応答本文response.text()も同じ試行のtimeout内で読む。
+- 連続タイムアウト時は、固定バックオフを前提に最大で約7分規模の待機になり得る（Retry-Afterヘッダーによる遅延は別）。したがって固定ETAや短い共通タイムアウトを追加するのは不適切。現状の共通進捗表示で経過時間を示し、エラー時はAPI側のエラーコードへ到達する構造を維持する。
+- timeout timerは各試行のfinallyでclearTimeoutされることを確認。再試行のたびにタイマーが残留する問題は見つからなかった。
+- 実際の遅延・再試行回数は本番ログを参照していないため未計測。推定待機時間をユーザー向けに表示する実装は行わない。
