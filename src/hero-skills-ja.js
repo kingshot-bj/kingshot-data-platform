@@ -89,115 +89,115 @@ export const HERO_SKILLS_JA = {
     ]
   },
   "ディエゴ": {
-    source: "https://altema.jp/kingshot/dai8sedai",
-    sourceName: "アルテマ「キングショット」第8世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/35",
+    sourceName: "アルテマ「キングショット」ディエゴの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "完全無欠", max: "攻撃力×380%のシールド", description: "周囲に剣気の盾を形成。ダメージを受けるとシールド値から優先して減少。5秒持続。" },
-        { name: "健在の剣心", max: "敵攻撃力-5%、自身攻撃力は威圧した敵英雄数×5%上昇", description: "敵の攻撃力を低下させ、自身の攻撃力が上昇する。3秒持続。" },
-        { name: "影渡し", max: "通常攻撃回避15%、会心20%", description: "敵の通常攻撃を一定確率で回避し、攻撃時に一定確率で会心の一撃となる。" },
+        { name: "完全無欠", initial: "220%", max: "380%", description: "攻撃力×倍率のシールドを形成。ダメージを受けるとシールド値から優先的に減少。5秒持続。" },
+        { name: "健在の剣心", initial: "敵攻撃力-1% / 自身+敵英雄数×1%", max: "敵攻撃力-5% / 自身+敵英雄数×5%", description: "敵の攻撃力を低下させ、自身の攻撃力が威圧した敵英雄数に応じて上昇する。3秒持続。" },
+        { name: "影渡し", initial: "回避3% / 会心4%", max: "回避15% / 会心20%", description: "敵の通常攻撃を一定確率で回避し、攻撃時に一定確率で会心の一撃となる。" },
         { name: "重剣無鋒", type: "専用装備", max: "追加シールド攻撃力×95%、被ダメージの30%反射", description: "「完全無欠」のシールド値を追加。シールド持続中に受けたダメージの一部を敵へ反射する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "防守の指導", max: "全軍総防御力+15%、総HP+10%", description: "味方全軍の総防御力と総HPを上昇させる。" },
-        { name: "無形の剣気", max: "50%の確率で追加ダメージ50%", description: "味方全部隊が攻撃時、一定確率で追加ダメージを与える。" },
-        { name: "凛然なる剣気", max: "総殺傷力+25%", description: "味方全部隊の総殺傷力を上昇させる。" },
+        { name: "防守の指導", initial: "総防御力+3% / 総HP+2%", max: "総防御力+15% / 総HP+10%", description: "味方全軍の総防御力と総HPが上昇する。" },
+        { name: "無形の剣気", initial: "発動率50% / 追加ダメージ10%", max: "発動率50% / 追加ダメージ50%", description: "味方全部隊は攻撃時に50%の確率で追加ダメージを与える。" },
+        { name: "凛然なる剣気", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
         { name: "大巧不工", type: "専用装備", max: "防衛部隊の防御力+15%", description: "防衛部隊の防御力を上昇させる。" }
       ]}
     ]
   },
   "リズ": {
-    source: "https://altema.jp/kingshot/dai8sedai",
-    sourceName: "アルテマ「キングショット」第8世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/36",
+    sourceName: "アルテマ「キングショット」リズの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ビッグバブル", max: "攻撃力×300%の範囲ダメージ", description: "対象を1.5秒間行動不能にし、対象と周囲の敵に範囲ダメージを与える。" },
-        { name: "スロウポーション", max: "攻撃力×140%、攻撃速度-50%", description: "敵単体にダメージを与え、周囲の敵の攻撃速度を50%低下させる。3秒持続。" },
-        { name: "ライトポーション", max: "攻撃速度+30%", description: "自身の攻撃速度が上昇する。" },
+        { name: "ビッグバブル", initial: "220%", max: "300%", description: "対象を1.5秒間行動不能にし、対象と周囲の敵に攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "スロウポーション", initial: "100%", max: "140%", description: "敵単体に攻撃力×倍率のダメージを与え、周囲の敵の攻撃速度を50%低下させる。3秒持続。" },
+        { name: "ライトポーション", initial: "10%", max: "30%", description: "自身の攻撃速度が上昇する。" },
         { name: "スプラッシュバブル", type: "専用装備", max: "自身攻撃力+24%、追加範囲ダメージ攻撃力×70%", description: "自身の攻撃力が上昇。「ビッグバブル」の行動不能終了時に周囲へ追加ダメージを与える。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "パワーブースター", max: "50%の確率で総殺傷力+50%", description: "ラウンド毎に一定確率で発動し、味方全部隊の総殺傷力を上昇させる。" },
-        { name: "エナジーブースター", max: "総HP+25%", description: "味方全部隊の総HPを上昇させる。" },
-        { name: "ライドマスター", max: "騎兵は50%の確率で追加ダメージ150%", description: "味方の騎兵部隊が攻撃時、一定確率で追加ダメージを与える。" },
+        { name: "パワーブースター", initial: "10%", max: "50%", description: "ラウンド毎に10%から最大50%の確率で発動し、味方全部隊の総殺傷力を50%上昇させる。" },
+        { name: "エナジーブースター", initial: "5%", max: "25%", description: "味方全部隊の総HPが上昇する。" },
+        { name: "ライドマスター", initial: "30%", max: "150%", description: "味方騎兵部隊は攻撃時に50%の確率で追加ダメージを与える。" },
         { name: "ハイパーブースター", type: "専用装備", max: "防衛部隊の殺傷力+15%", description: "防衛部隊の殺傷力を上昇させる。" }
       ]}
     ]
   },
   "ルナ": {
-    source: "https://altema.jp/kingshot/dai8sedai",
-    sourceName: "アルテマ「キングショット」第8世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/37",
+    sourceName: "アルテマ「キングショット」ルナの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "スターフォール", max: "攻撃力×300%、眩暈1.5秒", description: "一定範囲内の対象にダメージを与え、眩暈状態にする。" },
-        { name: "バラージアロー", max: "攻撃力×140%", description: "一定範囲内の敵にダメージを与える。" },
+        { name: "スターフォール", initial: "220%", max: "300%", description: "一定範囲内の対象に攻撃力×倍率のダメージを与え、1.5秒間眩暈状態にする。" },
+        { name: "ハンティングリズム", initial: "0.5%", max: "2.5%", description: "敵ユニットを1体撃破する毎に攻撃力が上昇する。最大15層まで重複可能。" },
         { name: "バラージアロー", max: "撃破ごとに攻撃力+2.5%、最大15層", description: "敵ユニットを1体撃破する毎に攻撃力が上昇する。最大15層まで重複可能。" },
         { name: "星霊の残光", type: "専用装備", max: "星霊HPは初期HPの30%、5秒存在", description: "星霊を召喚し、周囲の敵の攻撃を引き寄せる。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "月光の灯火", max: "総攻撃力+25%", description: "味方全部隊の総攻撃力を上昇させる。" },
-        { name: "密林の復讐", max: "敵全体の総攻撃力-50%", description: "2ターン毎に敵全体の総攻撃力を低下させる。1ターン持続。" },
-        { name: "閃光の矢", max: "弓兵は攻撃毎に追加ダメージ50%", description: "味方の弓兵部隊が攻撃する度、対象に追加ダメージを与える。" },
+        { name: "月光の灯火", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が上昇する。" },
+        { name: "密林の復讐", initial: "10%", max: "50%", description: "2ターン毎に敵全体の総攻撃力を低下させる。1ターン持続。" },
+        { name: "閃光の矢", initial: "10%", max: "50%", description: "味方の弓兵部隊が攻撃する度、対象に追加ダメージを与える。" },
         { name: "月輝の力", type: "専用装備", max: "集結部隊の攻撃力+15%", description: "集結部隊の攻撃力を上昇させる。" }
       ]}
     ]
   },
   "チャールズ": {
-    source: "https://altema.jp/kingshot/dai7sedai",
-    sourceName: "アルテマ「キングショット」第7世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/32",
+    sourceName: "アルテマ「キングショット」チャールズの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "リベンジャー", max: "攻撃力×140%、眩暈1秒、攻撃力+100%（2秒）", description: "ダメージを与えて眩暈状態にし、さらに自身の攻撃力を上昇させる。" },
-        { name: "フェアウェル", max: "攻撃力×280%", description: "周囲の敵に範囲ダメージを与える。" },
-        { name: "ケアフリー", max: "50%の確率で被ダメージ50%軽減", description: "一定確率で受けるダメージを軽減する。" },
+        { name: "リベンジャー", initial: "100% / 20%", max: "140% / 100%", description: "前方扇形範囲の敵に攻撃力×倍率のダメージを与え、1秒間眩暈状態にする。さらに2秒間、自身の攻撃力が上昇する。" },
+        { name: "フェアウェル", initial: "200%", max: "280%", description: "周囲の敵に攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "ケアフリー", initial: "10%", max: "50%", description: "一定確率で被ダメージを50%軽減する。" },
         { name: "修理の達人", type: "専用装備", max: "HP50%未満で最大HP35%回復、防御力+30%", description: "各戦闘で1回、HPが50%未満になると回復し、防御力が戦闘終了まで上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "パンツァーオーラ", max: "敵全体の総殺傷力-20%", description: "敵全体の総殺傷力を低下させる。" },
-        { name: "鋼鉄の身体", max: "味方全部隊の被ダメージ-20%", description: "味方全部隊の被ダメージを低下させる。" },
-        { name: "愛と正義", max: "味方全部隊の総HP+25%", description: "味方全部隊の総HPを上昇させる。" },
+        { name: "パンツァーオーラ", initial: "4%", max: "20%", description: "敵全体の総殺傷力を低下させる。" },
+        { name: "鋼鉄の身体", initial: "4%", max: "20%", description: "味方全部隊の被ダメージを低下させる。" },
+        { name: "愛と正義", initial: "5%", max: "25%", description: "味方全部隊の総HPを回復する。" },
         { name: "華麗なる登場", type: "専用装備", max: "味方全体のHP+15%", description: "味方全体のHPを上昇させる。" }
       ]}
     ]
   },
   "アイヴァ": {
-    source: "https://altema.jp/kingshot/dai7sedai",
-    sourceName: "アルテマ「キングショット」第7世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/33",
+    sourceName: "アルテマ「キングショット」アイヴァの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ボマーペイント", max: "攻撃力×70%を0.5秒毎、3秒間", description: "小範囲に爆発性の塗料を広げ、範囲内の敵に継続ダメージを与える。" },
-        { name: "スポイルペイント", max: "攻撃力×35%を0.5秒毎、被ダメージ+25%（2秒）", description: "腐食性の塗料で継続ダメージを与え、対象の被ダメージを増加させる。" },
-        { name: "フェイクペイント", max: "防御力+75%", description: "自身の防御力を上昇させる。" },
+        { name: "ボマーペイント", initial: "50%", max: "70%", description: "小範囲に爆発性の塗料を広げ、0.5秒毎に攻撃力×倍率のダメージを与える。3秒持続。" },
+        { name: "スポイルペイント", initial: "25% / 5%", max: "35% / 25%", description: "0.5秒毎に攻撃力×倍率のダメージを与え、対象の被ダメージを増加させる。2秒持続。" },
+        { name: "フェイクペイント", initial: "25%", max: "75%", description: "自身の防御力が上昇する。" },
         { name: "カラーセンス", type: "専用装備", max: "与ダメージ+25%、対象攻撃力-15%", description: "自身の与ダメージを上げ、塗料の影響を受けた対象の攻撃力を低下させる。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "アナライズ", max: "敵全部隊の総防御力-25%", description: "敵全部隊の総防御力を低下させる。" },
-        { name: "ライト&シャドウ", max: "4ターン毎に敵全体の被ダメージ+50%（2ターン）", description: "一定周期で敵全体の被ダメージを増加させる。" },
-        { name: "クール&ホット", max: "味方全体の総殺傷力+5%", description: "味方全体の総殺傷力を上昇させる。" },
+        { name: "アナライズ", initial: "5%", max: "25%", description: "敵全部隊の総防御力を低下させる。" },
+        { name: "ライト&シャドウ", initial: "10%", max: "50%", description: "4ターン毎に敵全体の被ダメージを増加させる。2ターン持続。" },
+        { name: "クール&ホット", initial: "5%", max: "25%", description: "味方全体の総殺傷力が上昇する。" },
         { name: "クロマストーム", type: "専用装備", max: "味方全部隊の殺傷力+15%", description: "味方全部隊の殺傷力を上昇させる。" }
       ]}
     ]
   },
   "レン&ロン": {
-    source: "https://altema.jp/kingshot/dai7sedai",
-    sourceName: "アルテマ「キングショット」第7世代の英雄一覧",
+    source: "https://altema.jp/kingshot/chara/34",
+    sourceName: "アルテマ「キングショット」レン&ロンの評価とスキル",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "スカイハイショット", max: "攻撃力×420%", description: "範囲ダメージを与える。" },
-        { name: "特製ナパーム弾", max: "燃焼エリア2秒、0.5秒毎に攻撃力×25%", description: "燃焼エリアを生成し、範囲内の敵に継続ダメージを与える。" },
-        { name: "キャノンボウラー", max: "攻撃力+26%", description: "自身の攻撃力を上昇させる。" },
+        { name: "スカイハイショット", initial: "300%", max: "420%", description: "攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "特製ナパーム弾", initial: "60% / 17%", max: "84% / 25%", description: "攻撃力×倍率の範囲ダメージを与え、燃焼エリアを生成する。2秒持続し、0.5秒毎に攻撃力×倍率のダメージを与える。" },
+        { name: "キャノンボウラー", initial: "10%", max: "26%", description: "自身の攻撃力が上昇する。" },
         { name: "クールな砲撃手", type: "専用装備", max: "英雄・護衛の攻撃速度+14%（5秒）", description: "「スカイハイショット」発動後、味方英雄と護衛の攻撃速度を上昇させる。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "砲兵隊", max: "総攻撃力+15%、総殺傷力+10%", description: "味方全部隊の総攻撃力と総殺傷力を上昇させる。" },
-        { name: "連続砲撃", max: "弓兵への与ダメージ+30%、歩兵への与ダメージ+25%", description: "味方全部隊の特定兵種への与ダメージを上昇させる。" },
-        { name: "ヘビィキャノン出撃", max: "50%の確率で追加ダメージ50%", description: "味方全部隊の攻撃時、一定確率で追加ダメージを与える。" },
+        { name: "砲兵隊", initial: "3% / 2%", max: "15% / 10%", description: "味方全部隊の総攻撃力と総殺傷力が上昇する。" },
+        { name: "連続砲撃", initial: "6% / 5%", max: "30% / 25%", description: "味方全部隊の弓兵・歩兵への与ダメージが上昇する。" },
+        { name: "ヘビィキャノン出撃", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、10%から最大50%の確率で50%の追加ダメージを与える。" },
         { name: "秘密の火薬樽", type: "専用装備", max: "防衛部隊の攻撃力+15%", description: "防衛部隊の攻撃力を上昇させる。" }
       ]}
     ]
