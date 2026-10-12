@@ -5,13 +5,26 @@ export async function renderKingdomCatalogR2BackfillPage(env, result = null) {
   } catch (error) {
     initial = { state: "ERROR", last_error: String(error?.message || error).slice(0, 500) };
   }
-  let remainingCount = 0;
-  try {
-    const remainingRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog WHERE r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)").first();
-    remainingCount = Number(remainingRow?.count || 0);
-  } catch (_) { remainingCount = 0; }
   const archivedCount = Number(initial.rows_archived || 0);
-  const totalTargetCount = archivedCount + remainingCount;
+  const hintedTotalTargetCount = Number(result?.totalTargetCount);
+  const canUseKnownTotal = Boolean(result?.autoContinue) &&
+    Number.isFinite(hintedTotalTargetCount) &&
+    hintedTotalTargetCount > 0 &&
+    hintedTotalTargetCount >= archivedCount;
+  let remainingCount = 0;
+  let totalTargetCount = 0;
+  if (canUseKnownTotal) {
+    // During automatic batches, reuse the original count carried in the form.
+    // Avoid a full catalog COUNT(*) for every 100-row batch.
+    totalTargetCount = hintedTotalTargetCount;
+    remainingCount = Math.max(0, totalTargetCount - archivedCount);
+  } else {
+    try {
+      const remainingRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM kingdom_catalog WHERE r2_latest_key IS NULL AND (raw_json IS NOT NULL OR boards_json IS NOT NULL)").first();
+      remainingCount = Number(remainingRow?.count || 0);
+    } catch (_) { remainingCount = 0; }
+    totalTargetCount = archivedCount + remainingCount;
+  }
   const progressPct = totalTargetCount > 0 ? Math.min(100, Math.round((archivedCount / totalTargetCount) * 1000) / 10) : 0;
   const initialJson = JSON.stringify({
     state: initial.state || "IDLE",
@@ -56,7 +69,7 @@ export async function renderKingdomCatalogR2BackfillPage(env, result = null) {
 <div class="stat"><span>Last KID</span><b>${Number(initial.last_kid||0)}</b></div><div class="stat"><span>Batches</span><b>${Number(initial.batches_run||0)}</b></div><div class="stat"><span>Archived rows</span><b>${Number(initial.rows_archived||0)}</b></div><div class="stat"><span>前回処理</span><b>${Number(initial.last_batch_count||0)}件 完了</b></div>
 <div class="stat"><span>Last batch at</span><b>${initial.last_batch_at ? new Date(Number(initial.last_batch_at)*1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—"}</b></div><div class="stat"><span>Last success</span><b>${initial.last_success_at ? new Date(Number(initial.last_success_at)*1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—"}</b></div>
 <div class="stat"><span>前回の検証</span><b>${initial.state === "FAILED" ? "不合格" : initial.last_success_at ? "成功" : "—"}</b></div><div class="stat"><span>Last error</span><b>${escHtml(initial.last_error||"—")}</b></div><div class="stat"><span>Updated</span><b>${initial.updated_at ? new Date(Number(initial.updated_at)*1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—"}</b></div>
-</div><div class="actions"><form method="post" action="/owner/kingdom-catalog-r2-backfill" style="margin:0;width:100%"><input type="hidden" name="action" value="run_all"><label style="display:block;width:100%;color:#cbd5e1;font-size:13px;margin-bottom:6px">全件を自動バックフィル（内部100件単位）</label><button type="submit" style="width:100%">全件バックフィル開始</button></form></div>${result ? renderResult(result) : ""}</section>
+</div><div class="actions"><form method="post" action="/owner/kingdom-catalog-r2-backfill" style="margin:0;width:100%"><input type="hidden" name="action" value="run_all"><input type="hidden" name="totalTargetCount" value="${totalTargetCount}"><label style="display:block;width:100%;color:#cbd5e1;font-size:13px;margin-bottom:6px">全件を自動バックフィル（内部100件単位）</label><button type="submit" style="width:100%">全件バックフィル開始</button></form></div>${result ? renderResult(result) : ""}</section>
 <section class="card"><h2>安全条件</h2><div class="notice">R2保存が成功した行だけD1の <b>raw_json / boards_json</b> をNULL化します。失敗した場合はD1の詳細JSONを残します。自動連続実行では内部100件単位で処理し、各バッチの完了を確認してから次へ進みます。</div></section>
 </main><script>
 (function(){
@@ -66,7 +79,7 @@ export async function renderKingdomCatalogR2BackfillPage(env, result = null) {
   if (autoContinue) {
     const form=document.forms[0];
     if (form) setTimeout(function(){form.submit();},400);
-  } else if (state === "RUNNING") setTimeout(function(){location.reload();},3000);
+  } else if (state === "RUNNING") setTimeout(function(){location.reload();},10000);
   else if (hasResult) setTimeout(function(){location.reload();},1800);
 })();
 </script></body></html>`;
