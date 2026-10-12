@@ -4823,12 +4823,12 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   // Global request progress UI: shared by every HTML page without changing API payloads.
   if (!html.includes('id="eagleeye-global-progress-css"')) html=html.replace("</head>", '<style id="eagleeye-global-progress-css">#ee-global-progress{position:fixed;z-index:2147483000;top:calc(env(safe-area-inset-top,0px) + 7px);left:50%;transform:translate(-50%,-150%);width:min(92vw,520px);box-sizing:border-box;padding:10px 13px 9px;border:1px solid var(--ee-border,#2a4664);border-radius:13px;background:rgba(15,32,53,.97);color:var(--ee-text,#e8f3ff);box-shadow:0 8px 28px #0006;backdrop-filter:blur(12px);font:600 12px/1.4 system-ui,-apple-system,sans-serif;opacity:0;transition:transform .2s ease,opacity .2s ease;pointer-events:none}#ee-global-progress.visible{transform:translate(-50%,0);opacity:1}#ee-global-progress .ee-gp-row{display:flex;align-items:center;gap:9px}#ee-global-progress .ee-gp-spinner{width:14px;height:14px;flex:0 0 14px;border:2px solid #35516d;border-top-color:var(--ee-cyan,#22d3ee);border-radius:50%;animation:ee-gp-spin .8s linear infinite}#ee-global-progress .ee-gp-copy{min-width:0;flex:1}#ee-global-progress .ee-gp-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#ee-global-progress .ee-gp-time{font-variant-numeric:tabular-nums;color:var(--ee-subtext,#91a7bf);font-weight:500}#ee-global-progress .ee-gp-track{height:3px;margin-top:8px;overflow:hidden;border-radius:99px;background:#263b52}#ee-global-progress .ee-gp-bar{height:100%;width:35%;border-radius:99px;background:var(--ee-cyan,#22d3ee);animation:ee-gp-move 1.15s ease-in-out infinite alternate}@keyframes ee-gp-spin{to{transform:rotate(360deg)}}@keyframes ee-gp-move{from{transform:translateX(-15%)}to{transform:translateX(205%)}}@media(prefers-reduced-motion:reduce){#ee-global-progress *,#ee-global-progress:before{animation:none!important;transition:none!important}}</style></head>');
-  if (!html.includes('id="eagleeye-global-progress-init"')) html=html.replace("</body>", '<div id="ee-global-progress" role="status" aria-live="polite" aria-atomic="true"><div class="ee-gp-row"><span class="ee-gp-spinner" aria-hidden="true"></span><span class="ee-gp-copy"><span class="ee-gp-label">通信中…</span></span><span class="ee-gp-time">0秒</span></div><div class="ee-gp-track" aria-hidden="true"><div class="ee-gp-bar"></div></div></div><script id="eagleeye-global-progress-init">(function(){if(window.__eeGlobalProgressInstalled)return;window.__eeGlobalProgressInstalled=true;var el=document.getElementById("ee-global-progress");if(!el)return;var label=el.querySelector(".ee-gp-label"),time=el.querySelector(".ee-gp-time"),active=new Map(),seq=0,shownAt=0,showTimer=0,tickTimer=0;function describe(input){try{var u=new URL(typeof input==="string"?input:input&&input.url||String(input),location.href),p=u.pathname;if(p.indexOf("/api/")===0){var n=p.split("/").filter(Boolean).pop()||"データ";var names={"player-compare":"比較データ","player-watchlist":"プレイヤーウォッチリスト","kingdom-watchlist":"王国ウォッチリスト","player-search":"プレイヤー検索","player":"プレイヤーデータ","players":"プレイヤーデータ","kingdom":"王国データ","rankings":"ランキング","me":"ユーザー情報","advanced":"権限情報","status":"システム状況"};return (names[n]||"データ")+"を取得中…"}return "ページのデータを取得中…"}catch(e){return "データを取得中…"}}function paint(){var count=active.size;label.textContent=count>1?"データを取得中… ("+count+"件)":(active.size?active.values().next().value.label:"通信中…");time.textContent=Math.max(0,Math.floor((Date.now()-shownAt)/1000))+"秒";}function begin(id,info){active.set(id,info);if(active.size===1){shownAt=Date.now();clearTimeout(showTimer);showTimer=setTimeout(function(){if(active.size){el.classList.add("visible");paint();tickTimer=setInterval(paint,500)}},350)}else if(el.classList.contains("visible"))paint()}function finish(id){active.delete(id);if(!active.size){clearTimeout(showTimer);clearInterval(tickTimer);el.classList.remove("visible")}else paint()}var navId=0,navTimeout=0;function showNavigation(text){if(navId)finish(navId);clearTimeout(navTimeout);navId=++seq;shownAt=Date.now();active.set(navId,{label:text});clearTimeout(showTimer);clearInterval(tickTimer);el.classList.add("visible");paint();tickTimer=setInterval(paint,500);navTimeout=setTimeout(function(){clearNavigation()},15000)}function clearNavigation(){clearTimeout(navTimeout);navTimeout=0;if(navId){var id=navId;navId=0;finish(id)}}document.addEventListener("click",function(event){if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;var link=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!link||link.hasAttribute("download")||link.target&&link.target!=="_self")return;var href=link.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^javascript:/i.test(href)||/^mailto:/i.test(href)||/^tel:/i.test(href))return;try{var target=new URL(href,location.href);if(target.origin!==location.origin)return;if(target.href===location.href)return;showNavigation("ページを読み込んでいます…")}catch(e){}},false);document.addEventListener("submit",function(event){var form=event.target;if(!form||form.tagName!=="FORM"||form.target&&form.target!=="_self")return;var method=String(form.method||"get").toLowerCase();showNavigation(method==="get"?"ページを更新しています…":"処理を送信しています…");setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)},false);window.addEventListener("pageshow",clearNavigation);if(typeof window.fetch==="function"){var original=window.fetch.bind(window);window.fetch=function(input,init){var id=++seq,info={label:describe(input)};begin(id,info);var result;try{result=original(input,init)}catch(e){finish(id);throw e}return Promise.resolve(result).then(function(response){finish(id);return response},function(error){finish(id);throw error})}}if(typeof XMLHttpRequest!=="undefined"){var open=XMLHttpRequest.prototype.open,send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__eeProgressUrl=url;return open.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){var xhr=this,id=++seq;begin(id,{label:describe(xhr.__eeProgressUrl)});var done=false;function finishOnce(){if(done)return;done=true;finish(id)}xhr.addEventListener("loadend",finishOnce,{once:true});try{return send.apply(this,arguments)}catch(e){finishOnce();throw e}}}})();</script></body>');
+  if (!html.includes('id="eagleeye-global-progress-init"')) html=html.replace("</body>", '<div id="ee-global-progress" role="status" aria-live="polite" aria-atomic="true"><div class="ee-gp-row"><span class="ee-gp-spinner" aria-hidden="true"></span><span class="ee-gp-copy"><span class="ee-gp-label">通信中…</span></span><span class="ee-gp-time">0秒</span></div><div class="ee-gp-track" aria-hidden="true"><div class="ee-gp-bar"></div></div></div><script id="eagleeye-global-progress-init">(function(){if(window.__eeGlobalProgressInstalled)return;window.__eeGlobalProgressInstalled=true;var el=document.getElementById("ee-global-progress");if(!el)return;var label=el.querySelector(".ee-gp-label"),time=el.querySelector(".ee-gp-time"),active=new Map(),seq=0,shownAt=0,showTimer=0,tickTimer=0;function describe(input){try{var u=new URL(typeof input==="string"?input:input&&input.url||String(input),location.href),p=u.pathname;if(p.indexOf("/api/")===0){var n=p.split("/").filter(Boolean).pop()||"データ";var names={"player-compare":"比較データ","player-watchlist":"プレイヤーウォッチリスト","kingdom-watchlist":"王国ウォッチリスト","player-search":"プレイヤー検索","player":"プレイヤーデータ","players":"プレイヤーデータ","kingdom":"王国データ","rankings":"ランキング","me":"ユーザー情報","advanced":"権限情報","status":"システム状況"};return (names[n]||"データ")+"を取得中…"}return "ページのデータを取得中…"}catch(e){return "データを取得中…"}}function paint(){var count=active.size;label.textContent=count>1?"データを取得中… ("+count+"件)":(active.size?active.values().next().value.label:"通信中…");time.textContent=Math.max(0,Math.floor((Date.now()-shownAt)/1000))+"秒";}function begin(id,info){active.set(id,info);if(active.size===1){shownAt=Date.now();clearTimeout(showTimer);showTimer=setTimeout(function(){if(active.size){el.classList.add("visible");paint();tickTimer=setInterval(paint,500)}},350)}else if(el.classList.contains("visible"))paint()}function finish(id){active.delete(id);if(!active.size){clearTimeout(showTimer);clearInterval(tickTimer);el.classList.remove("visible")}else paint()}var navId=0,navTimeout=0;function showNavigation(text){if(navId)finish(navId);clearTimeout(navTimeout);navId=++seq;shownAt=Date.now();active.set(navId,{label:text});clearTimeout(showTimer);clearInterval(tickTimer);el.classList.add("visible");paint();tickTimer=setInterval(paint,500);navTimeout=setTimeout(function(){clearNavigation()},15000)}function clearNavigation(){clearTimeout(navTimeout);navTimeout=0;if(navId){var id=navId;navId=0;finish(id)}}document.addEventListener("click",function(event){if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;var link=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!link||link.hasAttribute("download")||link.target&&link.target!=="_self")return;var href=link.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^javascript:/i.test(href)||/^mailto:/i.test(href)||/^tel:/i.test(href))return;try{var target=new URL(href,location.href);if(target.origin!==location.origin)return;if(target.href===location.href)return;showNavigation("ページを読み込んでいます…")}catch(e){}},false);document.addEventListener("submit",function(event){var form=event.target;if(!form||form.tagName!=="FORM"||form.target&&form.target!=="_self")return;var method=String(form.method||"get").toLowerCase();showNavigation(method==="get"?"ページを更新しています…":"処理を送信しています…");setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)},false);window.addEventListener("pageshow",clearNavigation);if(typeof window.fetch==="function"){var original=window.fetch.bind(window);window.fetch=function(input,init){var id=++seq,info={label:describe(input)};begin(id,info);var result;try{result=original(input,init)}catch(e){finish(id);throw e}return Promise.resolve(result).then(function(response){setTimeout(function(){finish(id)},0);trackResponseBody(response);return response},function(error){finish(id);throw error})}function trackResponseBody(response){if(!response||response.__eeProgressBodyTracking)return response;try{response.__eeProgressBodyTracking=true;["arrayBuffer","blob","formData","json","text"].forEach(function(method){var originalMethod=response[method];if(typeof originalMethod!=="function")return;try{response[method]=function(){var bodyId=++seq;begin(bodyId,{label:"応答データを処理中…"});var bodyResult;try{bodyResult=originalMethod.apply(this,arguments)}catch(error){finish(bodyId);throw error}return Promise.resolve(bodyResult).then(function(value){finish(bodyId);return value},function(error){finish(bodyId);throw error})}}catch(e){}});var body=response.body;if(body&&typeof body.getReader==="function"&&!body.__eeProgressStreamTracking){var originalGetReader=body.getReader;try{body.getReader=function(){var reader=originalGetReader.apply(this,arguments);if(!reader||reader.__eeProgressReaderTracking)return reader;try{reader.__eeProgressReaderTracking=true;var originalRead=reader.read,originalCancel=reader.cancel,streamId=0;reader.read=function(){if(!streamId){streamId=++seq;begin(streamId,{label:"ストリームデータを処理中…"})}var result;try{result=originalRead.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};reader.cancel=function(){var result;try{result=originalCancel.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})}}catch(e){}return reader};body.__eeProgressStreamTracking=true}catch(e){}}var originalClone=response.clone;if(typeof originalClone==="function"){response.clone=function(){var cloned=originalClone.apply(this,arguments);trackResponseBody(cloned);return cloned}}}catch(e){}return response}}if(typeof XMLHttpRequest!=="undefined"){var open=XMLHttpRequest.prototype.open,send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__eeProgressUrl=url;return open.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){var xhr=this,id=++seq;begin(id,{label:describe(xhr.__eeProgressUrl)});var done=false;function finishOnce(){if(done)return;done=true;finish(id)}xhr.addEventListener("loadend",finishOnce,{once:true});try{return send.apply(this,arguments)}catch(e){finishOnce();throw e}}}})();</script></body>');
   return html;
 }
 
-function eagleEyeHtmlResponse(html) {
-  return new Response(applyEagleEyeTheme(html), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+function eagleEyeHtmlResponse(html, status = 200) {
+  return new Response(applyEagleEyeTheme(html), { status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
 }
 
 function getConfig(env) {
@@ -5260,7 +5260,7 @@ async function handleDataRetentionApi(request, env) {
     if (contentType.includes("application/json")) {
       return json({ ok: true, settings });
     }
-    return new Response(`<!DOCTYPE html>
+    return eagleEyeHtmlResponse(`<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>保存しました - EagleEye</title>
 <style>
@@ -5269,9 +5269,7 @@ async function handleDataRetentionApi(request, env) {
 .ok{font-size:42px;margin-bottom:8px}.title{font-size:24px;font-weight:900}.sub{margin-top:8px;color:#94a3b8}
 </style>
 <meta http-equiv="refresh" content="1;url=/admin/data-retention">
-</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`, {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`);
   } catch (error) {
     console.error("Data retention settings error:", error);
     return json({ ok: false, error: error?.message || "RETENTION_UPDATE_FAILED" }, 400);
@@ -5793,9 +5791,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5829,9 +5825,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload, responseStatus);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload));
   }
 }
 
@@ -5899,9 +5893,7 @@ async function handleApiPoolTestRanking(request, env) {
       upstream_elapsed_ms: elapsedMs
     };
     if (url.searchParams.get("format") === "json") return json(response);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5935,10 +5927,7 @@ async function handleApiPoolTestRanking(request, env) {
       message: error?.message || null
     };
     if (url.searchParams.get("format") === "json") return json(response, responseStatus);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" },
-      status: responseStatus
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), responseStatus);
   }
 }
 
@@ -8011,11 +8000,10 @@ async function handleDebugPlayerGear(request, env) {
         '</article>';
     }).join("");
 
-    return new Response(
+    return eagleEyeHtmlResponse(
       '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title>' +
       '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1000px;margin:auto}.note{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 8px}.card p{font-size:13px;color:#94a3b8;word-break:break-all}.preview{min-height:190px;border:1px dashed #475569;border-radius:10px;background:#020617;display:flex;align-items:center;justify-content:center;position:relative}.preview img{max-width:180px;max-height:180px}.preview .error{display:none;color:#fca5a5;font-size:12px}.preview img:not([src=""]){}</style>' +
-      '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>',
-      { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+      '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>'
     );
   }
 
@@ -8090,11 +8078,10 @@ async function handleDebugPlayerIcons(request, env) {
         '<div class="row"><span>同盟旗</span>' + image(result.alliance_flag_url, "alliance flag") + '<code>' + escapeHtml(result.alliance_flag_url || "-") + '</code></div>' +
         '</section>';
 
-      return new Response(
+      return eagleEyeHtmlResponse(
         '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player Icon Debug</title>' +
         '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1100px;margin:auto}.note,.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 12px}.hero-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:900}.hero-title img{width:64px;height:64px;object-fit:contain;border-radius:10px;background:#020617}.sub{margin-top:12px;padding-top:10px;border-top:1px solid #334155}.row{display:grid;grid-template-columns:110px 56px minmax(0,1fr);gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #334155}.row img{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#020617}.row code,.sub>code{display:block;margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.row code{grid-column:2 / 4}.missing{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:#0b1220;color:#64748b;font-size:10px}.sub pre{white-space:pre-wrap;overflow:auto;padding:10px;border-radius:8px;background:#0b1220;color:#cbd5e1;font-size:11px}</style>' +
-        '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>',
-        { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+        '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>'
       );
     }
 
