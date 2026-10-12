@@ -807,7 +807,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         failure.rankingBoard = board;
         failure.rankingTraceId = traceId;
         failure.rankingStartedAtMs = startedAtMs;
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET last_error = ?, updated_at = ? WHERE job_id = ?").bind(message, Math.floor(Date.now() / 1000), job.job_id).run().catch(() => {});
+        // Do not set job.last_error until the whole parallel batch settles:
+        // the status API treats last_error as a terminal/stale signal.
         await recordDiagnostic(env.DB, {
           traceId, service: "ranking", feature: "kingdom_watchlist",
           operation: "FETCH", status: "FAILED", errorCode: "RANKING_FETCH_FAILED",
