@@ -1965,7 +1965,7 @@ async function handleMyMightyCheckApi(request, env) {
       let lease = null;
       try {
         lease = await leaseApiKeyForHealthCheck(env.DB, { keyId: row.key_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
-        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1 });
+        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
         checked++;
         confirmed++;
         await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
@@ -3877,7 +3877,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     poolType = lease.pool_type;
 
     const requestStartedAt = Date.now();
-    const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key });
+    const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
     const responseReceivedAt = Date.now();
     const payload = result?.data ?? null;
 
@@ -5585,7 +5585,8 @@ async function handleApiPoolMightyCheck(request, env) {
         apiKey: lease.api_key,
         operation: "API_POOL_MIGHTY_CHECK",
         targetType: "API_KEY",
-        targetId: keyId
+        targetId: keyId,
+        metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
       });
       mightyCapable = Number(result.status) >= 200 && Number(result.status) < 300;
       checkStatus = mightyCapable ? "CONFIRMED" : "UNKNOWN";
@@ -5693,7 +5694,7 @@ async function handleApiPoolHealthCheck(request, env) {
     let lease = null;
     try {
       lease = await leaseApiKeyForHealthCheck(env.DB, { keyId, purpose: "API_POOL_HEALTH_CHECK", targetType: "API_KEY", targetId: probeGovernorId });
-      const result = await getMightPulsePlayer(env, probeGovernorId, { include: "base", apiKey: lease.api_key });
+      const result = await getMightPulsePlayer(env, probeGovernorId, { include: "base", apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
       await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
@@ -5850,7 +5851,7 @@ async function handleApiPoolTestPlayer(request, env) {
       targetId: governorId
     });
     const upstreamStartedAt = Date.now();
-    const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key });
+    const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
     const upstreamElapsedMs = Date.now() - upstreamStartedAt;
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
@@ -5955,7 +5956,8 @@ async function handleApiPoolTestRanking(request, env) {
     const result = await getMightPulseKingdomRanks(env, kid, {
       board,
       limit: 100,
-      apiKey: lease.api_key
+      apiKey: lease.api_key,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
     });
     const elapsedMs = Date.now() - startedAt;
     const payload = result?.data || {};
@@ -6533,7 +6535,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
 
     const result = await getMightPulsePlayer(env, id, {
       include: ["base","base,heroes,ranks,gov_gear"].includes(String(include)) ? String(include) : "base",
-      apiKey: lease.api_key
+      apiKey: lease.api_key,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
     });
 
     const observationEnvelopeData = observationEnvelope({
