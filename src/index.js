@@ -2299,7 +2299,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
   const app=document.getElementById("app");
   function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
   let loadResponsesCompleted=0;
+  let loadProgressActive=false;
   function showLoadProgress(completed){
+    if(!loadProgressActive) return;
     const total=3;
     const percent=Math.round(completed/total*100);
     app.innerHTML='<section class="card" role="status" aria-live="polite"><h2 style="margin:0 0 8px">マイKingshotを読み込み中</h2><p class="muted" style="margin:0 0 14px">登録プレイヤー・権限・VIP情報の応答を確認しています。</p><div style="height:6px;border-radius:99px;overflow:hidden;background:#20384f"><div style="height:100%;width:'+percent+'%;border-radius:99px;background:linear-gradient(90deg,#20d7f2,#49e69a);transition:width .18s ease"></div></div><div style="display:flex;justify-content:space-between;gap:12px;margin-top:9px;font-size:12px"><span class="muted">API応答の処理</span><strong style="color:var(--ee-cyan)">'+completed+' / '+total+'</strong></div></section>';
@@ -2313,12 +2315,21 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
   }
   async function getData(){
     loadResponsesCompleted=0;
+    loadProgressActive=true;
     showLoadProgress(0);
-    const [playerPart,advancedPart,vipPart]=await Promise.all([
-      fetchLoadPart("/api/me/player"),
-      fetchLoadPart("/api/me/advanced"),
-      fetchLoadPart("/api/me/vip")
-    ]);
+    let parts;
+    try{
+      parts=await Promise.all([
+        fetchLoadPart("/api/me/player"),
+        fetchLoadPart("/api/me/advanced"),
+        fetchLoadPart("/api/me/vip")
+      ]);
+    }catch(error){
+      loadProgressActive=false;
+      throw error;
+    }
+    loadProgressActive=false;
+    const [playerPart,advancedPart,vipPart]=parts;
     const playerRes=playerPart.response, player=playerPart.data;
     const advancedRes=advancedPart.response, advanced=advancedPart.data;
     const vipRes=vipPart.response, vip=vipPart.data;
