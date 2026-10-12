@@ -579,3 +579,14 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - 更新後 src/index.js blob SHA: 8218e4dbb52c5ed02985d58cd8034e34259cd86a
 - 更新後mainからsrc/index.jsを再取得し、共通進捗インラインスクリプトのV8構文解析に成功。比較ロード関数に本文解析を含むtimeout cleanupがあることを静的検証。
 - 未確認：実ブラウザでのAbortSignal動作、12秒付近の遅延レスポンス、Cloudflare本番デプロイ。今回のテストは静的検証であり、実機回帰テストではない。
+
+
+### 2026-10-12 継続：長時間処理と進捗ポーリングのD1コスト棚卸し
+
+- 王国負荷テストの /api/owner/kingdom-load-test/status は、応答ごとに recoverStaleLoadTestRuns を呼び、RUNNING状態の古いrunを最大50件まで検索。その後、ロック、Run、王国ジョブ一覧を取得する。画面の回復ポーリングは2秒間隔。ポーリング自体がD1 read/writeの追加要因になり得るため、SQL条件/インデックス/回復ロジックを確認してから頻度を変える。実際のrow read量は未計測。
+- R2 backfill画面は初期表示時に migration state と対象残数COUNT(*)を取得し、RUNNING中は3秒後にページ再読み込みする。再読み込みのたびに対象残数COUNTが実行される。全件実行は最大100件単位のPOST連続処理で、各バッチ前後に状態読み取りが起き得る。D1 Freeコストを考慮し、現段階では安易にポーリング頻度を変えず、進捗状態を安価に返せる構造と既存運用の必要性を検討する。
+- System Log exportは期間/traceでCOUNTを取り、R2へ出力する際は500件単位のkeyset pagination（created_at,event_id）でストリーミングする。全件をメモリに積む構造ではない。一方、COUNTと各batch queryのD1コストは実データ量とインデックス次第で、未計測。
+- retention cleanupはbatchSize既定1000で各テーブルの対象行を選択、R2 archive成功後にrowidを使って削除する。順序上、アーカイブ前の削除はしない。これを変える場合はデータ保全テストが必須。
+- api-poolのbudget snapshotはキー集計に加えてapi_pool_usageの過去1時間ピークと24時間合計を別クエリで集計する。診断画面の更新頻度と呼び出し元を確認し、安易な高頻度再取得を避ける。
+- 王国ウォッチリスト一覧APIはユーザーの各watchlistごとに最新jobをSELECTするN+1形状。今後、一括SQLにするなら既存のstale job自動FAILED化とレスポンス内容を保持し、クエリ結果の同値性とD1 row readsを比較する。
+- この段階では負荷に関する実測がないため、ポーリング頻度やSQLはまだ変更していない。未計測事項を性能改善済みと扱わない。
