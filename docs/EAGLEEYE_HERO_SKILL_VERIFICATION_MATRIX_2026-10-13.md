@@ -2,7 +2,7 @@
 
 作成日：2026-10-13
 対象：`src/hero-skills-ja.js` の main
-辞典コミット：`3126a1b396698cc0e669eca99521316b3f2ac0a4`
+辞典コミット：`233ec2036ca38713938ce802ec3e7f9568894b67`
 
 ## 状態の定義
 
@@ -223,7 +223,7 @@
 | ヤン | 遠征スキル | アバランチ | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
 | ヤン | 遠征スキル | アイスゾーン | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
 | ヤン | 遠征スキル | アンブッシュ | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 専用装備スキル | ラピッドファイア | ダメージ40%、護衛対象撃破率40% | ダメージ56%、護衛対象撃破率100% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
+| ヤン | 専用装備スキル | ラピッドファイア | ダメージ40%、護衛対象は即時撃破 | ダメージ56%、護衛対象は即時撃破 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
 | ヤン | 専用装備スキル | アタックディフェンス | 集結部隊の殺傷力+5% | 集結部隊の殺傷力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
 | クイン | 討伐スキル | ヘッドショット | 400% | 560% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
 | クイン | 討伐スキル | クイックショット | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
