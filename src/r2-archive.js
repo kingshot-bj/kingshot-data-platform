@@ -304,20 +304,21 @@ export async function listPlayerHistoryFromR2(bucket, {
     String(governorId)
   ].join("/") + "/";
 
+  // Keep only the newest safeLimit object keys while paging through R2.
+  // This preserves newest-first selection while bounding memory use for
+  // players with very long histories. Listing itself remains paginated.
   const objects = [];
   let cursor;
   do {
     const listed = await bucket.list({ prefix, cursor, limit: 1000 });
     objects.push(...(listed.objects || []));
+    objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+    if (objects.length > safeLimit) objects.length = safeLimit;
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
 
-  objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
-
-  // The object keys are already sorted newest-first above. Read only the
-  // bounded sample in parallel; the previous sequential GET loop made compare
-  // pages wait on one R2 object at a time.
-  const selectedObjects = objects.slice(0, safeLimit);
+  // Objects are already sorted newest-first and memory is bounded by safeLimit.
+  const selectedObjects = objects;
   const rowsByObject = await Promise.all(selectedObjects.map(async object => {
     const response = await bucket.get(object.key);
     if (!response?.body) return [];
@@ -411,20 +412,21 @@ export async function listPlayerRankHistoryFromR2(bucket, {
     String(governorId)
   ].join("/") + "/";
 
+  // Keep only the newest safeLimit object keys while paging through R2.
+  // This preserves newest-first selection while bounding memory use for
+  // players with very long histories. Listing itself remains paginated.
   const objects = [];
   let cursor;
   do {
     const listed = await bucket.list({ prefix, cursor, limit: 1000 });
     objects.push(...(listed.objects || []));
+    objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
+    if (objects.length > safeLimit) objects.length = safeLimit;
     cursor = listed.truncated ? listed.cursor : undefined;
   } while (cursor);
 
-  objects.sort((a, b) => String(b.key).localeCompare(String(a.key)));
-
-  // The object keys are already sorted newest-first above. Read only the
-  // bounded sample in parallel; the previous sequential GET loop made compare
-  // pages wait on one R2 object at a time.
-  const selectedObjects = objects.slice(0, safeLimit);
+  // Objects are already sorted newest-first and memory is bounded by safeLimit.
+  const selectedObjects = objects;
   const rowsByObject = await Promise.all(selectedObjects.map(async object => {
     const response = await bucket.get(object.key);
     if (!response?.body) return [];
@@ -498,21 +500,3 @@ export async function listAllianceHistoryFromR2(bucket, { kid, aid, limit = 12 }
   const safeLimit = Math.min(Math.max(Number(limit) || 12, 1), 30);
   const prefix = ["history", ALLIANCE_HISTORY_ARCHIVE_VERSION, "alliance_catalog", String(kid), encodeURIComponent(String(aid))].join("/") + "/";
   const candidates = [];
-  let cursor;
-  for (let page = 0; page < 5; page++) {
-    const listed = await bucket.list({ prefix, limit: 1000, cursor });
-    candidates.push(...(listed.objects || []));
-    if (!listed.truncated || !listed.cursor) break;
-    cursor = listed.cursor;
-  }
-  const objects = candidates.sort((a, b) => String(b.key).localeCompare(String(a.key))).slice(0, safeLimit);
-  const rows = await Promise.all(objects.map(async object => {
-    const response = await bucket.get(object.key);
-    if (!response?.body) return [];
-    const stream = await ungzipBody(response.body);
-    const body = await new Response(stream).text();
-    return body.split("\n").filter(line => line.trim()).map(line => JSON.parse(line));
-  }));
-  return rows.flat().sort((a, b) => Number(b.observed_at) - Number(a.observed_at)).slice(0, safeLimit);
-}
-
