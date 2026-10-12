@@ -1446,7 +1446,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     if(j.status==="FAILED"){
       var failedPhase=(Number(j.board_index||0)<Number(j.total_boards||0))?"ランキング":"プレイヤー";
       var failedPct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress'><b>更新停止："+failedPhase+"</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>取得済みランキング "+esc(j.ranking_rows)+"件 / ジョブ停止</small></div>";
+      return "<div class='progress error'><b>更新停止："+failedPhase+"</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>取得済みランキング "+esc(j.ranking_rows)+"件 / ジョブ停止</small>"+(j.last_error?"<small>停止理由: "+esc(j.last_error)+"</small>":"<small>停止理由: 詳細未記録</small>")+(j.updated_at?"<small>最終進捗: "+esc(new Date(j.updated_at*1000).toLocaleString('ja-JP'))+"</small>":"")+"</div>";
     }
     return "";
   }
