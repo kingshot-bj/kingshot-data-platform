@@ -2338,7 +2338,16 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     if(!vipRes.ok||!vip.ok) throw new Error(vip.message||vip.error||("HTTP "+vipRes.status));
     return {player,advanced,vip};
   }
-  async function load(){render(await getData());}
+  async function load(){
+    try{
+      render(await getData());
+      return true;
+    }catch(error){
+      loadProgressActive=false;
+      app.innerHTML='<div class="card error">'+esc(error.message||String(error))+'</div>';
+      return false;
+    }
+  }
   function render(d){
     const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
     const limits=d.player.limits||{};
@@ -2385,7 +2394,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいて判定を行います。</div></div></section>';
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
-    document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
+    document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor,b));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
     const mightyButton=document.getElementById("mighty-check");
     if(mightyButton) mightyButton.onclick=checkMighty;
@@ -2405,12 +2414,19 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
     finally{button.disabled=false;}
   }
-  async function remove(governorId){
+  async function remove(governorId,button){
     if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
-    const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
-    await load();
+    if(button){button.disabled=true;button.textContent="解除しています…";}
+    try{
+      const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      await load();
+    }catch(error){
+      alert(error.message||"解除に失敗しました");
+    }finally{
+      if(button){button.disabled=false;button.textContent="この登録を解除";}
+    }
   }
   async function checkMighty(){
     const button=document.getElementById("mighty-check"), msg=document.getElementById("mighty-msg");
