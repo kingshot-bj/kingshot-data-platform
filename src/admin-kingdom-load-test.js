@@ -1250,10 +1250,12 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
       result.textContent="実行中…\\n取得済み王国 "+data.completed+" / "+data.target_count+"\\n成功Job "+(data.success_jobs??data.success??0)+" / 失敗Job "+(data.failed_jobs??data.failed??0)+" / 中止 "+data.cancelled+"\\nD1保存済みの進捗を表示中";
       window.__eagleEyeLoadTestStatusTimer=setInterval(async function(){
         try{
-          var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});if(!r.ok)return;
+          var r=await fetch("/api/owner/kingdom-load-test/status",{cache:"no-store",credentials:"same-origin"});
+          if(recoveryToken!==window.__eagleEyeLoadTestUiToken||recoveryRequestId!==window.__eagleEyeLoadTestRecoveryRequest)return;
+          if(!r.ok)return;
           var d=await r.json();
-          if(recoveryToken!==window.__eagleEyeLoadTestUiToken){clearInterval(window.__eagleEyeLoadTestStatusTimer);return;}
-          if(!d.run_id){clearInterval(window.__eagleEyeLoadTestStatusTimer);return;}
+          if(recoveryToken!==window.__eagleEyeLoadTestUiToken||recoveryRequestId!==window.__eagleEyeLoadTestRecoveryRequest)return;
+          if(!d.run_id){clearInterval(window.__eagleEyeLoadTestStatusTimer);window.__eagleEyeLoadTestStatusTimer=null;return;}
           active={};(d.jobs||[]).forEach(function(job){active[String(job.kid)]=job;});
           renderProgress(Object.assign({},d,{concurrency:d.concurrency||0}),active);
           if(d.active){
@@ -1263,6 +1265,7 @@ result.textContent="処理中…\\nAPI処理タスク "+data.quest_completed+" /
             document.getElementById("progressTitle").textContent=d.run_status==="CANCELLED"?"中止":"✓ 更新完了";
             document.getElementById("progressMeta").textContent="取得済み王国 "+d.completed+" / "+d.target_count+"　成功Job "+(d.success_jobs??d.success??0)+" / 失敗Job "+(d.failed_jobs??d.failed??0)+" / 中止 "+d.cancelled+"　API同時処理 "+Number(d.api_concurrency||0);
             clearInterval(window.__eagleEyeLoadTestStatusTimer);
+            window.__eagleEyeLoadTestStatusTimer=null;
             run.disabled=false;run.textContent="王国Watchlist実処理を実行";cancel.disabled=true;
           }
         }catch(e){}
