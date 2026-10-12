@@ -73,8 +73,9 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ジャッジカード", initial: "270%", max: "未確認", description: "ターゲットに攻撃×270%のダメージを与え、ランダムで攻撃力20%低下（2秒）または眩暈（1.5秒）を付与する。" },
-        { name: "味方にサプライズ！", initial: "未確認", max: "未確認", description: "残りHP割合が最も低い味方英雄を回復。回復量はペーラの攻撃×140%を基礎値として、基礎値の5%～400%の間でランダムに決定。" }
+        { name: "ジャッジカード", initial: "270%", max: "378%", description: "ターゲットに攻撃力×倍率のダメージを与え、攻撃力20%低下（2秒）または眩暈（1.5秒）をランダムに付与する。" },
+        { name: "サプライズカード", initial: "100%", max: "140%", description: "残りHP割合が最も低い味方英雄を回復。攻撃力×倍率を基礎値として、基礎値の5%～400%の間で回復量がランダムに決定する。" },
+        { name: "無情な運命", initial: "50%", max: "70%", description: "攻撃力×倍率を基礎値としてスリップダメージを与える。最終ダメージは基礎値の5%～600%の間でランダムに決定する。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "ドゥーム", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で敵の被ダメージを上昇させる。" },
@@ -459,18 +460,18 @@ export const HERO_SKILLS_JA = {
     ]
   },
   "ヤン": {
-    source: "https://altema.jp/kingshot/dai6sedai", sourceName: "アルテマ 第6世代の英雄一覧", checkedAt: "2026-10-13",
+    source: "https://altema.jp/kingshot/chara/31", sourceName: "アルテマ「キングショット」ヤンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
         { name: "メガスロー", initial: "未掲載", max: "140%", description: "直線上の敵に攻撃力×140%の範囲ダメージ。雪の精霊が戻り、再び同ダメージを与える。" },
-        { name: "チェーンショット", initial: "未掲載", max: "未確認", description: "ターゲットに追加ダメージを1回与える。倍率は出典ページの一覧に記載なし。" },
+        { name: "チェーンショット", initial: "15%", max: "30%", description: "15%（最大30%）の確率で特製の銃による連撃を行い、ターゲットに追加ダメージを1回与える。" },
         { name: "ヘッドショット", initial: "未掲載", max: "15%", description: "ダメージ時に15%の確率で会心が発生する。" },
         { name: "ラピッドファイア（専用装備）", initial: "未掲載", max: "56%", description: "連続5回射撃し、ランダムな敵に攻撃力×56%のダメージ。護衛対象なら100%の確率で即座に撃破。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "アバランチ", initial: "未掲載", max: "100%", description: "味方全部隊が4ターン毎に1度追加攻撃を行い、100%のダメージを与える。" },
         { name: "アイスゾーン", initial: "未掲載", max: "100%", description: "弓兵が攻撃する度、40%の確率で対象に100%の追加ダメージを与える。" },
-        { name: "アンブッシュ", initial: "未掲載", max: "未確認", description: "毎ターン40%の確率で全軍の与ダメージが上昇する。倍率は出典ページの一覧に記載なし。" },
+        { name: "アンブッシュ", initial: "8%", max: "40%", description: "毎ターン一定確率で全軍の与ダメージが上昇する。発動率は初期8%、最大40%。" },
         { name: "アタックディフェンス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
