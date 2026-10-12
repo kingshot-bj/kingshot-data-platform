@@ -303,6 +303,159 @@ export const HERO_SKILLS_JA = {
       ]}
     ]
   },
+  "イェーガー": {
+    source: "https://altema.jp/kingshot/dai3sedai", sourceName: "アルテマ 第3世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "デスアトラクト", initial: "未掲載", max: "224%", description: "範囲内の敵に攻撃力×224%のダメージを与え、2秒間眩暈状態にする。" },
+        { name: "不器用な演技", initial: "未掲載", max: "300% / 50%", description: "成功時はターゲットに攻撃力×300%のダメージ、失敗時は攻撃力×50%分のHPを回復する。" },
+        { name: "シークレット・ストーリー", initial: "未掲載", max: "30%", description: "敵への与ダメージがさらに30%上昇する。3秒間持続。" },
+        { name: "サイレント・シレンス（専用装備）", initial: "未掲載", max: "300%", description: "5秒間スキル使用不可にし、ターゲットに攻撃力×300のダメージを与える。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "ストームソング", initial: "未掲載", max: "40%", description: "20%の確率で味方全部隊のダメージが40%上昇する。3ターン持続。" },
+        { name: "コンフリクトソング", initial: "未掲載", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を50%低下させる。2ターン持続。" },
+        { name: "フェスティバルソング", initial: "未掲載", max: "25%", description: "味方全部隊のHPが25%上昇する。" },
+        { name: "賛美歌（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊のHPが15%上昇する。" }
+      ]}
+    ]
+  },
+  "マーゴ": {
+    source: "https://altema.jp/kingshot/dai4sedai", sourceName: "アルテマ 第4世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "トリックアタック", initial: "未掲載", max: "420%", description: "敵に攻撃力×420%の範囲ダメージを与える。" },
+        { name: "トリックスルー", initial: "未掲載", max: "25%", description: "通常攻撃を受けた際、25%の確率で攻撃を受け流し、ダメージを無効化する。" },
+        { name: "クラッシュストライク", initial: "未掲載", max: "140%", description: "攻撃力×140%のダメージを与え、1.5秒間行動不能にする。" },
+        { name: "アンブッシュ（専用装備）", initial: "未掲載", max: "45%", description: "通常攻撃時、40%の確率で追加攻撃し、攻撃力×45%のダメージを与える。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "デストロイ", initial: "未掲載", max: "25%", description: "味方全部隊の攻撃力が25%上昇する。" },
+        { name: "タクティクス", initial: "未掲載", max: "20%", description: "味方全部隊が通常攻撃を受けた際、20%の確率でダメージを回避する。" },
+        { name: "トリックテクニック", initial: "未掲載", max: "200%", description: "騎兵が25%の確率で追加攻撃し、200%のダメージを与える。" },
+        { name: "デスマッチ（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の殺傷力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "ローザ": {
+    source: "https://altema.jp/kingshot/dai4sedai", sourceName: "アルテマ 第4世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "センター・アテンション", initial: "未掲載", max: "7%", description: "味方全体の状態異常を解除し、攻撃力を7%上昇させる。5秒持続し、その間は状態異常の影響を受けない。" },
+        { name: "ファン・ダンス", initial: "未掲載", max: "300%", description: "軌道上の敵に攻撃力×300%のダメージを与える。" },
+        { name: "マインド・シャッター", initial: "未掲載", max: "3% / 60%", description: "敵全体の攻撃速度を3%、治療効果を60%低下させる。" },
+        { name: "オールナイト・フェスタ（専用装備）", initial: "未掲載", max: "15%", description: "センター・アテンション発動後、自身の攻撃力が15%上昇。戦闘終了まで持続。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "ノイズ・タイム", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全体の与ダメージが50%上昇する。" },
+        { name: "チャーム・ダンス", initial: "未掲載", max: "20%", description: "敵全体のダメージを20%低下させる。" },
+        { name: "ゴールデン・リズム", initial: "未掲載", max: "30%", description: "弓兵の総攻撃力が30%上昇する。" },
+        { name: "インスパイア・ダンス（専用装備）", initial: "未掲載", max: "未掲載", description: "出典ページで効果の詳細値を確認できず。ゲーム内確認待ち。" }
+      ]}
+    ]
+  },
+  "龍飛": {
+    source: "https://altema.jp/kingshot/dai5sedai", sourceName: "アルテマ 第5世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "聖なる玉湯", initial: "未掲載", max: "未掲載", description: "攻撃速度が4秒間120%上昇し、制御効果を無効化する。" },
+        { name: "雲散霧消", initial: "未掲載", max: "60%", description: "HPが50%未満になると、被ダメージが60%低下する。" },
+        { name: "圧倒する力", initial: "未掲載", max: "42%", description: "「グローリー・モーメント」発動後、毎秒攻撃力×42%のHPを回復。5秒持続。" },
+        { name: "呑下三百杯（専用装備）", initial: "未掲載", max: "15%", description: "聖なる玉湯の持続時間が1.5秒延長。延長中、与ダメージの15%分HPを回復。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "天昇豪胆", initial: "未掲載", max: "未掲載", description: "40%の確率で味方全部隊の被ダメージが10%減少する。" },
+        { name: "剛筋頑健", initial: "未掲載", max: "25%", description: "全軍の総防御力が25%上昇する。" },
+        { name: "杯投烈脚", initial: "未掲載", max: "未掲載", description: "味方全部隊の攻撃時、25%の確率で200%のダメージを与える。" },
+        { name: "虚実一対（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の攻撃力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "スルード": {
+    source: "https://altema.jp/kingshot/dai5sedai", sourceName: "アルテマ 第5世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "ストームアックス", initial: "未掲載", max: "84%", description: "ランダムなターゲット（英雄優先）に攻撃力×84%の範囲ダメージを与える。" },
+        { name: "バーサカースロー", initial: "未掲載", max: "70%", description: "範囲内のターゲットに攻撃力×70%のダメージを与え、1.5秒間眩暈状態にする。" },
+        { name: "ウルフバンケット", initial: "未掲載", max: "5%", description: "味方全体の攻撃力が5%上昇する。" },
+        { name: "レイジアックス（専用装備）", initial: "未掲載", max: "35%", description: "ストームアックス使用後、35%の確率でターゲットを1秒間眩暈状態にする。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "ファナティック", initial: "未掲載", max: "15%", description: "歩兵と弓兵の被ダメージが15%低下し、与ダメージが15%上昇する。" },
+        { name: "レックレス", initial: "未掲載", max: "未掲載", description: "騎兵の攻撃時、20%の確率で敵全体に100%の追加ダメージを与える。" },
+        { name: "アンセスター", initial: "未掲載", max: "25%", description: "騎兵が4回攻撃する度、味方全部隊の与ダメージが25%上昇、被ダメージが25%低下。2ターン持続。" },
+        { name: "ウルフキッス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "ビビアン": {
+    source: "https://altema.jp/kingshot/dai5sedai", sourceName: "アルテマ 第5世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "センター・アテンション", initial: "未掲載", max: "7%", description: "味方全体の状態異常を解除し、攻撃力を7%上昇。5秒持続し、その間は状態異常の影響を受けない。" },
+        { name: "ファン・ダンス", initial: "未掲載", max: "300%", description: "軌道上の敵に攻撃力×300%のダメージを与える。" },
+        { name: "マインド・シャッター", initial: "未掲載", max: "3% / 60%", description: "敵全体の攻撃速度を3%、治療効果を60%低下させる。" },
+        { name: "ロイヤルシューター（専用装備）", initial: "未掲載", max: "70%", description: "スキル使用のたびに、ランダムなターゲット（英雄優先）へ攻撃力×70%のダメージ。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "アウェイティング", initial: "未掲載", max: "25%", description: "味方全部隊の攻撃時、ターゲットの被ダメージが25%上昇する。" },
+        { name: "バラージショット", initial: "未掲載", max: "100% / 15%", description: "味方全部隊が4回攻撃する毎に、次の攻撃が100%追加ダメージ。対象は次の攻撃時15%追加ダメージを受ける。" },
+        { name: "グリードトラップ", initial: "未掲載", max: "60%", description: "4回攻撃する毎に罠を発動し、敵全体に60%の追加ダメージ。" },
+        { name: "フルバウンティ（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の防御力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "トリトン": {
+    source: "https://altema.jp/kingshot/dai6sedai", sourceName: "アルテマ 第6世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "潮汐の意思", initial: "未掲載", max: "140%", description: "2秒間無敵状態になり、前方へ突進して攻撃力×140%の範囲ダメージを与える。" },
+        { name: "諸王の怒り", initial: "未掲載", max: "24% / 48%", description: "自身の攻撃力が24%、防御力が48%上昇。4秒持続。" },
+        { name: "必殺の一撃", initial: "未掲載", max: "20%", description: "通常攻撃毎にランダムな敵へ攻撃力×20%のダメージを与える。" },
+        { name: "クリスタル改造（専用装備）", initial: "未掲載", max: "30%", description: "トリトンの与ダメージが30%上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "律令の力", initial: "未掲載", max: "25%", description: "味方全部隊の総防御力が25%上昇する。" },
+        { name: "戦争の力", initial: "未掲載", max: "30%", description: "味方全部隊の与ダメージが30%上昇する。" },
+        { name: "誓約の力", initial: "未掲載", max: "20% / 30%", description: "味方歩兵の総HPが20%、騎兵と弓兵の総HPが30%上昇する。" },
+        { name: "虚実一対（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の防御力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "ソフィア": {
+    source: "https://altema.jp/kingshot/dai6sedai", sourceName: "アルテマ 第6世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "マリオネット", initial: "未掲載", max: "140%", description: "範囲内の敵に攻撃力×140%のダメージを与え、1秒間混乱状態にする。" },
+        { name: "ペイン・マーク", initial: "未掲載", max: "70% / 6%", description: "範囲内のターゲットに攻撃力×70%のダメージを与え、被ダメージを6%上昇させる。4秒持続。" },
+        { name: "マーク・ウィップ", initial: "未掲載", max: "24% / 12%", description: "ペイン・マーク付与時に自身の攻撃力が24%上昇し、マーク対象への与ダメージが12%上昇。" },
+        { name: "オーバーマインド・アイ（専用装備）", initial: "未掲載", max: "8%", description: "攻撃時8%の確率でターゲットを1秒間混乱状態にする。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "コントラクト・バインド", initial: "未掲載", max: "未掲載", description: "毎ターン40%の確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "パニック・ダメージ", initial: "未掲載", max: "200%", description: "2ターン毎に敵を恐怖状態にし、次ターンに追加で200%の騎兵攻撃ダメージ。恐怖は1ターン継続。" },
+        { name: "パニック・ジエンド", initial: "未掲載", max: "75%", description: "味方全部隊の恐怖状態の敵への与ダメージが75%上昇する。" },
+        { name: "ダークナイトクイーン（専用装備）", initial: "未掲載", max: "15%", description: "防衛部隊の殺傷力が15%上昇する。" }
+      ]}
+    ]
+  },
+  "ヤン": {
+    source: "https://altema.jp/kingshot/dai6sedai", sourceName: "アルテマ 第6世代の英雄一覧", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "メガスロー", initial: "未掲載", max: "140%", description: "直線上の敵に攻撃力×140%の範囲ダメージ。雪の精霊が戻り、再び同ダメージを与える。" },
+        { name: "チェーンショット", initial: "未掲載", max: "未掲載", description: "ターゲットに追加ダメージを1回与える。倍率は出典ページの一覧に記載なし。" },
+        { name: "ヘッドショット", initial: "未掲載", max: "15%", description: "ダメージ時に15%の確率で会心が発生する。" },
+        { name: "ラピッドファイア（専用装備）", initial: "未掲載", max: "56%", description: "連続5回射撃し、ランダムな敵に攻撃力×56%のダメージ。護衛対象なら100%の確率で即座に撃破。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "アバランチ", initial: "未掲載", max: "100%", description: "味方全部隊が4ターン毎に1度追加攻撃を行い、100%のダメージを与える。" },
+        { name: "アイスゾーン", initial: "未掲載", max: "未掲載", description: "弓兵が攻撃する度、40%の確率で対象に100%の追加ダメージを与える。" },
+        { name: "アンブッシュ", initial: "未掲載", max: "未掲載", description: "毎ターン40%の確率で全軍の与ダメージが上昇する。倍率は出典ページの一覧に記載なし。" },
+        { name: "アタックディフェンス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
+      ]}
+    ]
+  },
 };
 
 export default HERO_SKILLS_JA;
