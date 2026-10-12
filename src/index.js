@@ -1501,7 +1501,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 
         // Auto-display first watchlist; reload details only when job progress/status changes.
         if(ws.length && String(w.watchlist_id)===String(ws[0].watchlist_id)){
-          var displayState=String(w.job&&w.job.status||"NONE")+":"+String(w.job&&w.job.board_index||0)+":"+String(w.job&&w.job.ranking_rows||0)+":"+String(w.last_success_at||"");
+          var displayState=String(w.job&&w.job.status||"NONE")+":"+String(w.job&&w.job.board_index||0)+":"+String(w.job&&w.job.ranking_fetch_progress||0)+":"+String(w.job&&w.job.ranking_rows||0)+":"+String(w.last_success_at||"");
           if(autoDisplayState[w.watchlist_id]!==displayState){autoDisplayState[w.watchlist_id]=displayState;showData(w.watchlist_id);}
         }
 
