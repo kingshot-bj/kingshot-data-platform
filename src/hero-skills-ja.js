@@ -248,7 +248,6 @@ export const HERO_SKILLS_JA = {
   },
   "ゾーイ": {
     source: "https://altema.jp/kingshot/chara/16", sourceName: "アルテマ「キングショット」ゾーイの評価とスキル",
-    sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
@@ -267,7 +266,6 @@ export const HERO_SKILLS_JA = {
   },
   "ヒルデ": {
     source: "https://altema.jp/kingshot/chara/14", sourceName: "アルテマ「キングショット」ヒルデの評価とスキル",
-    sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
@@ -286,7 +284,6 @@ export const HERO_SKILLS_JA = {
   },
   "マリン": {
     source: "https://altema.jp/kingshot/chara/15", sourceName: "アルテマ「キングショット」マリンの評価とスキル",
-    sourceName: "アルテマ「キングショット」第2世代の英雄一覧",
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
