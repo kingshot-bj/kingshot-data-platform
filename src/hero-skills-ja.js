@@ -455,7 +455,7 @@ export const HERO_SKILLS_JA = {
         { name: "アタックディフェンス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
-  },,
+  },
 
   "クイン": {
     source: "https://altema.jp/kingshot/chara/5", sourceName: "アルテマ「キングショット」クインの評価とスキル", checkedAt: "2026-10-13",
@@ -565,7 +565,7 @@ export const HERO_SKILLS_JA = {
         { name: "鍛冶職人", initial: "5%", max: "25%", description: "出征時、鉄鉱の採集速度が上昇する。" }
       ]}
     ]
-  },,
+  },
 
   "フォルスト": {
     source: "https://altema.jp/kingshot/chara/13", sourceName: "アルテマ「キングショット」フォルストの評価とスキル", checkedAt: "2026-10-13",
@@ -579,7 +579,7 @@ export const HERO_SKILLS_JA = {
         { name: "伐採名人", initial: "5%", max: "25%", description: "出征時、木材の採集速度が上昇する。" }
       ]}
     ]
-  },,
+  },
 
   "ファハド": {
     source: "https://altema.jp/kingshot/chara/20", sourceName: "アルテマ「キングショット」ファハドの評価とスキル", checkedAt: "2026-10-13",
