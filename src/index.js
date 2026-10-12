@@ -4503,6 +4503,11 @@ export default {
       console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
     }
     try {
+      await runKingdomWatchlistJobs(env);
+    } catch (error) {
+      console.error("kingdom_watchlist_scheduler_failed", error?.message || error);
+    }
+    try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
     } catch (error) {
       console.error("kingdom_discord_notifications_failed", error?.message || error);
