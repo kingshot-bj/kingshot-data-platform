@@ -629,3 +629,37 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - GitHub Actionsの直近10件を確認したが、表示された実行はD1 Apply Pending Migrationsのみで、最新main HEAD 2cc685f91b0e217cfc8aa37a34fdd55529a46fd8を対象とするデプロイ実行は見つからない。最新コミットのGitHub commit statusはpendingかつstatus件数0。これらはデプロイ失敗を示すものではないが、本番デプロイ成功の証拠もない。
 - Cloudflare本番Workerの実稼働版は、この接続から直接検証できていない。main反映済みとCloudflare本番反映済みは区別し、本番デプロイ成功は未確認として扱う。
 - 本番デプロイ操作は実施していない。ユーザーが明示したmainへの反映は完了、Cloudflare本番デプロイは別途確認が必要。
+
+
+## 2026-10-12 継続作業：R2バックフィルのD1読み取り削減と最新Watchlist Job index
+
+### 実装
+- `src/kingdom-catalog-r2-backfill-page.js`
+  - 全件自動バックフィルの各バッチで、カタログ全体の `COUNT(*)` を繰り返さないようにした。
+  - 初期表示で取得した `totalTargetCount` をフォームのhidden fieldでバッチ間に引き継ぎ、自動継続中は `rows_archived` から残件数を算出する。
+  - 最終バッチ後（自動継続終了時）は従来どおり実際の `COUNT(*)` を実行して再確認する。
+  - RUNNING状態の画面再読み込みを3秒から10秒へ変更し、バックフィルが別経路で実行中の際の繰り返しCOUNT頻度も下げた。
+- `src/index.js`
+  - OWNERバックフィルPOSTで `totalTargetCount` を受け取り、描画関数に渡す。
+  - コミット: `6b53ad6721995b893b4a3d5257bd11f516e9dbc1`
+- `migrations/0059_kingdom_watchlist_latest_job_index.sql`
+  - `kingdom_watchlist_jobs` の最新ジョブ取得は `watchlist_id = ? ORDER BY created_at DESC LIMIT 1`。
+  - 既存の `(watchlist_id, status, created_at DESC)` インデックスはstatusを絞らない最新ジョブ検索に対してcreated_at順を直接提供できないため、`(watchlist_id, created_at DESC)` の専用インデックスを追加。
+  - このインデックスはジョブのINSERT/DELETEで更新されるが、通常のstatus/progress更新ではindexed columnsが変化しないため、その更新ごとにインデックスのキー更新を追加しない設計。
+  - コミット: `d09323776f939b3fedd97595cc9d9dd2b2b0c1b0`
+
+### 検証
+- R2バックフィル画面関数をfake D1で実行する簡易テスト：
+  - `autoContinue=true` かつ有効な既知件数がある場合、COUNTクエリ0回。
+  - 自動継続しない最終描画ではCOUNTクエリ1回。
+- `src/kingdom-catalog-r2-backfill-page.js` 全体の構文解析成功。
+- バックフィルOWNERルート部分の構文解析成功。
+- 共通進捗スクリプトの構文解析成功。
+- main HEADでindexの最新job検索、hidden件数引き継ぎ、10秒poll、最終COUNTの静的assertionを確認。
+
+### 未確認・注意
+- D1の実行計画と実際のrow reads削減量は未計測。新インデックスの有効性はSQL形状と既存インデックス定義に基づく判断であり、本番D1のEXPLAIN/実測を行ったとは表現しない。
+- migration `0059` がCloudflare本番D1に適用されたかは未確認。
+- Cloudflare本番Workerへのデプロイ成功、実ブラウザ/iPhone Safariでの動作は未確認。
+- 既存のR2保存成功後のみD1詳細JSONをNULL化する安全条件は変更していない。
+- `ranking_snapshots` の広範囲検索は再導入していない。
