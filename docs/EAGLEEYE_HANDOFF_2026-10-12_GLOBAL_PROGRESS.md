@@ -569,3 +569,13 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - 更新後mainを再取得し、インライン進捗スクリプトのV8構文解析、検索ラベル/詳細取得ラベル/主要プレイヤーAPIルート/比較経過秒/検索LIMITの静的assertionを実施。
 - 追加の棚卸しメモ：王国ウォッチリスト一覧APIはwatchlist一覧取得後、各watchlistごとに最新jobを1件ずつSELECTするループがある（N+1クエリ形状）。これが実際のボトルネックかはwatchlist数・D1計測が必要。調査段階で安易に一括化せず、D1 row readsへの影響とSQL結果の同値性を確認してから変更する。
 - 未確認：実ブラウザ/iPhone Safari、本番Workerでのフォームイベント順序・描画、Cloudflare本番デプロイ成功。Previewはユーザー確認手順にしない。
+
+
+### 2026-10-12 継続：比較APIの12秒タイムアウトを本文JSON解析まで適用
+
+- プレイヤー比較のフロントコードを監査し、AbortControllerの12秒タイマーがfetch()の応答ヘッダー受信直後に解除され、その後のresponse.json()本文読み取りには適用されていないことを確認。
+- 修正：fetch()とresponse.json()の両方を同じtry/finally内に移し、JSON本文の読み取りが遅い場合もタイムアウト対象に含める。外部API取得や追加D1クエリは発生させないフロント側の変更。
+- main直接コミット: 8e9b431302fdcd1681afce95280d4bdcd4c10890
+- 更新後 src/index.js blob SHA: 8218e4dbb52c5ed02985d58cd8034e34259cd86a
+- 更新後mainからsrc/index.jsを再取得し、共通進捗インラインスクリプトのV8構文解析に成功。比較ロード関数に本文解析を含むtimeout cleanupがあることを静的検証。
+- 未確認：実ブラウザでのAbortSignal動作、12秒付近の遅延レスポンス、Cloudflare本番デプロイ。今回のテストは静的検証であり、実機回帰テストではない。
