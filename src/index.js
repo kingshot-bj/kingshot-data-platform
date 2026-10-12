@@ -1400,7 +1400,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         var remainingMs=Math.max(0,elapsedMs*(100-pct)/progressedPct);
         var seconds=Math.max(1,Math.round(remainingMs/1000));
         var estimate=seconds<60?(seconds+"秒"):(Math.ceil(seconds/60)+"分");
-        return "<small>この工程の残り目安：約"+estimate+"（推定）</small>";
+        return "<small class='phase-eta' data-remaining-seconds='"+seconds+"'>この工程の残り目安：約"+estimate+"（推定）</small>";
       }catch(e){return "";}
     }
     if(j.status==="COMPLETED"){
@@ -1650,6 +1650,14 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       el("create").textContent=originalCreateText;
     });
   });
+  setInterval(function(){
+    Array.prototype.forEach.call(document.querySelectorAll(".phase-eta[data-remaining-seconds]"),function(node){
+      var remaining=Math.max(0,Number(node.getAttribute("data-remaining-seconds")||"0")-1);
+      node.setAttribute("data-remaining-seconds",String(remaining));
+      var estimate=remaining<60?(remaining+"秒"):(Math.ceil(remaining/60)+"分");
+      node.textContent=remaining>0?"この工程の残り目安：約"+estimate+"（推定）":"この工程の残り目安：再計算待ち…";
+    });
+  },1000);
   load();
 }());
 </script></body></html>`;
