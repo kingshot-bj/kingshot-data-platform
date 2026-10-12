@@ -107,3 +107,22 @@
   - `src/index.js` のmain上のblob SHA: `619339fdfa4fb82e8d21dfa286a810f6a5c78ecc`
   - mainソースで本文追跡関数 `trackResponseBody(response)` とfetch終了の遅延処理が存在することを再取得して確認済み。
   - このコミットのGitHub combined status/check runsは空。現時点でCloudflare本番デプロイ成功を裏付ける結果は未確認であり、デプロイ済みと断定しない。
+
+
+## 2026-10-12 追加監査：共通進捗スクリプトの構文不具合修正
+
+### 発見と修正
+- main の `src/index.js` 内に埋め込まれた `eagleeye-global-progress-init` スクリプトを単体でV8構文解析したところ、`window.fetch = function (...) { ... }` の関数式と、その直後の `function trackResponseBody(...)` の間にセミコロンがなく、`Unexpected token 'function'` で構文解析に失敗した。
+- この不具合があると進捗スクリプト全体の初期化が実行されず、進捗表示が機能しない可能性があるため、関数式の後にセミコロンを追加した。
+- mainへの直接コミット: `a91a36fb4cd170db570dfd03789a3ec4bec71e1c`
+- 修正後、mainから再取得した実際のインライン進捗スクリプトを `new Function(...)` で構文解析し、成功を確認。
+
+### 共通HTML適用範囲の追加静的確認
+- mainの `src/index.js` 全体（9,837行、約673 KB）を取得して、`eagleEyeHtmlResponse` / `applyEagleEyeTheme` の呼び出しと `new Response` の箇所を静的に調査した。
+- HTML応答用の直接生成箇所は共通ヘルパー `eagleEyeHtmlResponse` に集約されており、その他の生の `new Response` はJSON、CSVダウンロード、リダイレクト等であることを確認。今回の静的検索では、共通ヘルパーを通らないHTML応答は検出されなかった。
+- これはソースコードの静的監査であり、全URLを実ブラウザで開いた実動作確認ではない。
+
+### 未完了・注意事項
+- `response.body.getReader()` による読み取りは追跡対象だが、`for await (... of response.body)` による非同期イテレーションは明示的には追跡していない。追加実装はストリームAPIの互換性と二重追跡を確認してから行う。
+- iPhone Safariを含む実ブラウザ検証、成功/失敗/キャンセル/遅延通信の実動作検証、Cloudflare本番デプロイ成功は未確認。
+- 進捗表示監査は構文不具合修正まで完了。全体監査はまだ完了扱いにしない。
