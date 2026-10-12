@@ -810,7 +810,12 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     // updates ranking_rows independently; failed jobs are never resumed in-place.
     for (let itemIndex = 0; itemIndex < fetchedBoards.length; itemIndex++) {
       const item = fetchedBoards[itemIndex];
-      if (item.error) throw item.error;
+      if (item.error) {
+        // Preserve the number of rows saved before the failed board without
+        // adding one D1 write for every successful save in the batch.
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET ranking_rows = ?, updated_at = ? WHERE job_id = ?").bind(rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        throw item.error;
+      }
       const { board, traceId, startedAtMs, fetched } = item;
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
@@ -904,9 +909,6 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         }
       }
 
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET ranking_rows = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
     }
 
     const batchSourceTimes = fetchedBoards
