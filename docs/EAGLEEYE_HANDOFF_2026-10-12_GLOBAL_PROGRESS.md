@@ -706,3 +706,46 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - mainコミット: `aeb75e9acdf7bc33dab4215a5d4fd2a6f3e123d4`.
 - fake D1によるテスト：autoContinue中はCOUNT 0回・99.9%・実行中ラベル、最終描画はCOUNT 1回・100%・完了ラベル。全て期待どおり。
 - バックフィル画面関数の構文解析成功。
+
+---
+
+## 次スレ引き継ぎ：横断的な残作業監査（2026-10-12）
+
+### 作業全体の進捗
+- ユーザー指示：残っている作業全体を100%として、10%ごとに進捗報告しながら進める。質問待ちで止めず、可能な調査・修正・テスト・main反映を進める。
+- 今回の作業全体の現在進捗：**30%**。これは今回設定した横断監査の作業進捗であり、アプリ全体の完成度ではない。次の報告は40%到達時。
+- 既存の変更を重複カウントしない。構文検証/mock検証、本番D1実測、実ブラウザ/iPhone Safari、Cloudflare本番デプロイを別々に扱い、未確認を完了扱いしない。
+
+### このスレッドで追加した変更
+- 最新 main を確認した時点のHEADは `3fcde6f6b459f328ea0f57c3c0b5aede8bb03c63`（handoff文書更新前）。
+- `src/kingdom-catalog-r2-backfill-page.js`：
+  - 自動連続バックフィル中、初回の `totalTargetCount` をhidden fieldで次バッチへ渡し、各100件バッチごとの `COUNT(*)` を省略。
+  - 自動継続中の残件数は既知の総数と累計 `rows_archived` から算出。
+  - 自動継続が終わった描画では従来どおり実際の `COUNT(*)` を行い、最終状態を確認。
+  - 実行中のページ再読み込みを3秒から10秒間隔へ変更。
+  - 自動継続中は表示進捗を最大99.9%に制限し、最終COUNTで残件なしを確認する前に100%/完了表示を出さない。
+- `src/index.js`：OWNERバックフィルPOSTから `totalTargetCount` を読み、バックフィル描画関数へ渡す。
+- mainへの実装コミット：`6b53ad6721995b893b4a3d5257bd11f516e9dbc1`。その後、完了表示ガード `aeb75e9acdf7bc33dab4215a5d4fd2a6f3e123d4` と文書更新 `3fcde6f6b459f328ea0f57c3c0b5aede8bb03c63` がmainに反映済み。
+- fake D1検証：autoContinue中はCOUNT 0回、進捗最大99.9%、状態RUNNING。最終描画ではCOUNT 1回、100%/完了表示。構文解析成功。
+- 既存の安全順序（R2への保存・検証成功後にD1のraw_json/boards_jsonをNULL化）は変更していない。
+
+### 直近の関連変更（最新mainで確認）
+- `d944688c5db99a1052c2dc2cf7b091a243880f7d`：王国ウォッチリストの更新待ちポーリングを4秒→8秒、失敗後の再試行を2秒→5秒へ変更。POST完了時の即時ロードは維持。
+- `d09323776f939b3fedd97595cc9d9dd2b2b0c1b0`：`migrations/0059_kingdom_watchlist_latest_job_index.sql` を追加。最新ジョブ取得 `WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1` 用に `(watchlist_id, created_at DESC)` indexを定義。
+- `a30328ab88431ce47c9453b813259b1f21772561` と `5bcc9a45512ff9508d0e6cd9ac54f2f85352b100`：王国負荷テストの重複status pollingを抑制し、世代IDで古いレスポンスを無効化。D1状態ポーリングを2秒→5秒へ変更。
+- 既存のプレイヤー比較タイムアウト、数値領主ID完全一致検索、共通進捗表示、負荷テスト専用進捗ラベルもmainに反映済み（詳細はこの文書の上記セクションを参照）。
+
+### 現時点での検証と未確認事項
+- 成功：バックフィルページ関数構文解析、OWNERルートの抽出構文解析、共通進捗スクリプト構文解析、fake D1によるCOUNT回数・完了表示の簡易テスト、主要条件の静的assertion。
+- 未実施/未確認：実Worker統合テスト、実D1のEXPLAIN/row reads削減量、実ブラウザ・iPhone Safari確認、Cloudflare本番Workerのデプロイ成功。
+- `migrations/0059_kingdom_watchlist_latest_job_index.sql` はmain上に存在するが、Cloudflare本番D1へ適用済みとは扱わない。migration apply workflowは手動起動型であり、この監査では起動していない。
+- Cloudflare本番デプロイも実施していない。main反映済みと本番反映済みは必ず分ける。
+- 広範囲な `ranking_snapshots` 読み取りクエリは復活させない。
+- R2保存失敗時のD1 fallbackはデータ保全上の既存仕様として慎重に扱う。R2保存成功・検証前のD1詳細削除は禁止。
+
+### 次スレで最初に行うこと
+1. GitHub `main` の最新HEADと本ファイルを読み直し、この引き継ぎ以降に変更がないか確認。
+2. 全体進捗を**30%**から再開し、次は**40%**に到達した時点で報告。
+3. 次の監査対象として、長時間処理/進捗表示の残りを横断確認する。候補はPlayer history/compare、API Pool/MightPulse長時間処理、System Log export/retention、Catalog画面の一覧読み取り。D1負荷とデータ保全を優先して、SQL変更は実際のクエリ条件・既存index・結果同値性を確認してから行う。
+4. 実測できないD1削減量やETAは作らない。必要なら構文・mockテストを追加し、テストの限界を明記する。
+5. ユーザーにPreview操作を依頼しない。実ブラウザ確認ができない場合は未確認として記録。
