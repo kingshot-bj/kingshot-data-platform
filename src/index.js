@@ -1380,12 +1380,24 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       if(!Number.isFinite(pct)||pct>=100)return "";
       try{
         var phaseKey="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.job_id||j.created_at||"legacy")+"_"+String(j.status||"");
+        var phaseStartPctKey=phaseKey+"_pct";
         var startedAt=Number(sessionStorage.getItem(phaseKey));
-        if(!Number.isFinite(startedAt)||startedAt<=0){startedAt=Date.now();sessionStorage.setItem(phaseKey,String(startedAt));}
-        if(pct<10)return "";
+        var startPct=Number(sessionStorage.getItem(phaseStartPctKey));
+        if(!Number.isFinite(startedAt)||startedAt<=0){
+          startedAt=Date.now();
+          startPct=pct;
+          sessionStorage.setItem(phaseKey,String(startedAt));
+          sessionStorage.setItem(phaseStartPctKey,String(startPct));
+        }else if(!Number.isFinite(startPct)||startPct<0||startPct>=100){
+          startPct=pct;
+          sessionStorage.setItem(phaseStartPctKey,String(startPct));
+        }
+        if(pct<10||pct<=startPct)return "";
         var elapsedMs=Date.now()-startedAt;
         if(elapsedMs<5000)return "";
-        var remainingMs=Math.max(0,elapsedMs*(100-pct)/pct);
+        var progressedPct=pct-startPct;
+        if(progressedPct<=0)return "";
+        var remainingMs=Math.max(0,elapsedMs*(100-pct)/progressedPct);
         var seconds=Math.max(1,Math.round(remainingMs/1000));
         var estimate=seconds<60?(seconds+"秒"):(Math.ceil(seconds/60)+"分");
         return "<small>この工程の残り目安：約"+estimate+"（推定）</small>";
@@ -1395,7 +1407,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       try{
         var phasePrefix="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.job_id||j.created_at||"legacy")+"_";
         sessionStorage.removeItem(phasePrefix+"RANKINGS");
+        sessionStorage.removeItem(phasePrefix+"RANKINGS_pct");
         sessionStorage.removeItem(phasePrefix+"PLAYERS");
+        sessionStorage.removeItem(phasePrefix+"PLAYERS_pct");
         sessionStorage.removeItem("eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_RANKINGS");
         sessionStorage.removeItem("eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_PLAYERS");
       }catch(e){}
