@@ -135,3 +135,22 @@
 - 3つのURLパターンのラベルがソースに存在することを確認。
 - 実ブラウザ/iPhone Safariでの表示、遷移タイミング、15秒タイムアウトの挙動は未検証。
 - これはユーザーに処理内容を明示する最小ステップであり、サーバー内部工程の逐次進捗やETAを実現したものではない。
+
+
+## 2026-10-12 追加監査：プレイヤーAPIとHTML画面のpayload差分
+
+### 比較結果
+- `handlePlayerApi()` は `player` / `profile` / `source` / `freshness` を返す。
+- `renderPlayerPage()` は上記相当の情報に加え、次の画面専用補完を行う:
+  - `visibleProfile.optional_assets` を `extractOptionalPlayerAssets(observation.payload)` で構築
+  - `hero_rankings` 権限がある場合、`getLatestPlayerHeroRankings()` で英雄ランキングを補完
+  - `ranks.leaderboards` の欠損順位を `kingdom_ranking_current` の限定クエリで補完
+  - 名前履歴・可視性フィルターを画面用に適用
+- したがって、現状の `/api/player` を呼んでそのJSONだけで画面を再描画する実装は、現行HTML画面との同等性がない。JSONを使った非同期化を行うなら、追加フィールド・権限・既存のランキング補完を含めてAPI契約を整理する必要がある。
+- `/api/player` とHTML画面の両方が同じ取得/Materialize経路を実行し得るため、取得後にHTMLを再読み込みするだけの方式では重複処理・追加API消費を招く可能性がある。
+
+### 次の実装判断
+- 今回は、既存ページを壊すリスクと外部APIの二重呼出しを避けるため、refresh/richを即座にAJAXへ置き換えない。
+- 直近で安全に反映できたURL別ラベルを維持しつつ、次は共通進捗UIの計測範囲とマイKingshotの初期読込/個別操作をコードで対応付ける。
+- API内部の段階をブラウザへリアルタイム送信するには、レスポンスを待つ現行HTML遷移ではなく、イベントを送れる通信方式またはクライアント主導の操作フローが必要。導入時はエラー・キャンセル・タイムアウト・二重実行を含む設計とテストを先行する。
+- D1への進捗書込み、広範囲の `ranking_snapshots` 読取りは追加しない。
