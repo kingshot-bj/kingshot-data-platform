@@ -1480,9 +1480,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var pollTimer=null;
       function poll(){
         return load().then(function(){
-          if(!finished) pollTimer=setTimeout(poll,4000);
+          if(!finished) pollTimer=setTimeout(poll,8000);
         }).catch(function(){
-          if(!finished) pollTimer=setTimeout(poll,2000);
+          if(!finished) pollTimer=setTimeout(poll,5000);
         });
       }
       poll();
