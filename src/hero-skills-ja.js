@@ -455,6 +455,116 @@ export const HERO_SKILLS_JA = {
         { name: "アタックディフェンス（専用装備）", initial: "未掲載", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
+  },,
+
+  "クイン": {
+    source: "https://altema.jp/kingshot/chara/5", sourceName: "アルテマ「キングショット」クインの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "ヘッドショット", initial: "400%", max: "560%", description: "敵に攻撃力の400%（最大560%）のダメージを与える。" },
+        { name: "クイックショット", initial: "10%", max: "30%", description: "クインの攻撃速度が上昇する。" },
+        { name: "適者生存", initial: "10%", max: "30%", description: "クインの与ダメージが上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "危険予知", initial: "4%", max: "20%", description: "自軍全体が受けるダメージが減少する。" },
+        { name: "弱点射撃", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で追加の与ダメージが上昇する。" }
+      ]}
+    ]
+  },
+  "ハワード": {
+    source: "https://altema.jp/kingshot/chara/6", sourceName: "アルテマ「キングショット」ハワードの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "盾インパクト", initial: "200%", max: "280%", description: "敵に盾を投げつけ、範囲ダメージを与えてノックバックさせる。" },
+        { name: "盾の壁", initial: "5%", max: "15%", description: "味方全英雄の防御力が上昇する。" },
+        { name: "盾ブロック", initial: "10%", max: "30%", description: "自身の被ダメージが低下する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "プロテクト", initial: "4%", max: "20%", description: "味方全部隊の被ダメージが減少する。" },
+        { name: "弱体化打撃", initial: "4%", max: "20%", description: "敵全部隊の総攻撃力を低下させる。" }
+      ]}
+    ]
+  },
+  "ダイアナ": {
+    source: "https://altema.jp/kingshot/chara/7", sourceName: "アルテマ「キングショット」ダイアナの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "爆裂矢", initial: "210%, 70%", max: "290%, 98%", description: "敵1体に攻撃ダメージを与え、周囲の小範囲の敵にもダメージを与える。" },
+        { name: "射手の才", initial: "10%", max: "30%", description: "攻撃速度が上昇する。" },
+        { name: "必殺", initial: "7%", max: "20%", description: "会心率が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "強靭ボディ", initial: "10%", max: "20%", description: "領主の体力の消耗が減少する。" },
+        { name: "迅速行動", initial: "20%", max: "100%", description: "出征速度が上昇する。" }
+      ]}
+    ]
+  },
+  "チェンコ": {
+    source: "https://altema.jp/kingshot/chara/8", sourceName: "アルテマ「キングショット」チェンコの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "機関銃掃射", initial: "55%", max: "75%", description: "扇状範囲内の敵に0.5秒毎に攻撃ダメージを与える。2秒間持続。" },
+        { name: "防具改造", initial: "25%", max: "70%", description: "防御力が上昇する。" },
+        { name: "武器改造", initial: "8%", max: "24%", description: "攻撃力が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "完全武装", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
+        { name: "アーマー", initial: "4%", max: "20%", description: "自軍全体の被ダメージが減少する。" }
+      ]}
+    ]
+  },
+  "ゴードン": {
+    source: "https://altema.jp/kingshot/chara/9", sourceName: "アルテマ「キングショット」ゴードンの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "バーベキュー", initial: "200%, 5%", max: "280%, 7%", description: "自軍全体のHPを回復し、攻撃力を上昇させる。4秒間持続。" },
+        { name: "嵐の厨房", initial: "10%", max: "30%", description: "自身の被ダメージが低下する。" },
+        { name: "非常食", initial: "50%", max: "70%", description: "5秒毎に攻撃力に応じたHPを回復する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "幸せグルメ", initial: "5%", max: "25%", description: "味方全部隊の総HPが上昇する。" },
+        { name: "暴言", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が上昇する。" }
+      ]}
+    ]
+  },
+  "オリーブ": {
+    source: "https://altema.jp/kingshot/chara/10", sourceName: "アルテマ「キングショット」オリーブの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "矢の雨", initial: "180%", max: "252%", description: "攻撃×倍率のダメージを与える。" },
+        { name: "マーク", initial: "10%", max: "30%", description: "ターゲットに狩人の印を付与し、今回の攻撃の与ダメージが上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "栽培専門家", initial: "5%", max: "25%", description: "製粉所の生産量が上昇する。" },
+        { name: "食糧調達", initial: "5%", max: "25%", description: "出征時、パン資源の採集速度が上昇する。" }
+      ]}
+    ]
+  },
+  "エドウィン": {
+    source: "https://altema.jp/kingshot/chara/11", sourceName: "アルテマ「キングショット」エドウィンの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "自家製爆弾", initial: "140%", max: "196%", description: "ターゲットと周囲の敵に攻撃ダメージを与える。" },
+        { name: "高威力爆弾", initial: "10%, 0.5秒", max: "20%, 1.5秒", description: "爆弾で目標を一定確率で気絶させる。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "発破技士", initial: "5%", max: "25%", description: "街の石材工場生産量が上昇する。" },
+        { name: "巨石採掘", initial: "5%", max: "25%", description: "出征時、石材の採集速度が上昇する。" }
+      ]}
+    ]
+  },
+  "スミス": {
+    source: "https://altema.jp/kingshot/chara/12", sourceName: "アルテマ「キングショット」スミスの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "火炎槌", initial: "200%", max: "280%", description: "前方扇形範囲の敵に攻撃ダメージを与える。" },
+        { name: "防具強化", initial: "10%", max: "30%", description: "被ダメージが低下する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "善は急げ", initial: "5%", max: "25%", description: "街の鉄鉱場生産量が上昇する。" },
+        { name: "鍛冶職人", initial: "5%", max: "25%", description: "出征時、鉄鉱の採集速度が上昇する。" }
+      ]}
+    ]
   },
 };
 
