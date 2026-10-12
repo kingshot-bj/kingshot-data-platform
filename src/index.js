@@ -2361,7 +2361,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     }
     html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
     html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
-    const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
+    const a=d.advanced||{}; const role=String(d.vip?.role||a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
     const keyCount=Number(a.mightPulseKeyCount||0);
     const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
     const vipKeyCount=Number(d.vip?.keyCount||keyCount);
