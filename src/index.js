@@ -1309,7 +1309,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .rank-row{display:grid;grid-template-columns:28px 20px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
 .rank-row:first-of-type{border-top:0}
 .rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
-.rank-entity-icon{font-size:15px;line-height:1;text-align:center}.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-entity-avatar{width:30px;height:30px;display:block;object-fit:cover;border-radius:8px;background:var(--bg-soft);border:1px solid var(--border)}.rank-entity-avatar-empty{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--muted)}.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank-score{font-weight:900;text-align:right;white-space:nowrap;color:var(--accent-strong)}
 .section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 2px 10px}
 .section-title h2{margin:0;font-size:19px}
@@ -1609,7 +1609,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
       var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
-      var playerAllianceById={}; (d.players||[]).forEach(function(p){if(p.governor_id)playerAllianceById[String(p.governor_id)]=p.alliance_abbr||null;if(p.uid)playerAllianceById[String(p.uid)]=p.alliance_abbr||null;});
+      var playerAllianceById={}; var playerAvatarById={}; (d.players||[]).forEach(function(p){if(p.governor_id){playerAllianceById[String(p.governor_id)]=p.alliance_abbr||null;if(p.avatar_url)playerAvatarById[String(p.governor_id)]=p.avatar_url;}if(p.uid){playerAllianceById[String(p.uid)]=p.alliance_abbr||null;if(p.avatar_url)playerAvatarById[String(p.uid)]=p.avatar_url;}});
       var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
       Object.keys(boards).forEach(function(b){
         var label=RANKING_BOARD_LABELS[b]||b;
@@ -1620,9 +1620,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
           var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
           var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
-          var entityIcon=(b==="alliance_power"||b==="alliance_kills")?"🛡️":"👤";
+          var avatarId=String(r.governor_id||r.target_id||r.uid||""); var avatarUrl=(r.target_type==="PLAYER"&&avatarId)?playerAvatarById[avatarId]:""; var entityIcon=avatarUrl?'<img class="rank-entity-avatar" src="'+esc(avatarUrl)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="rank-entity-avatar rank-entity-avatar-empty" aria-hidden="true">'+(r.target_type==="ALLIANCE"?"同":"人")+'</span>';
           var rankMark=Number(r.rank)===1?"🥇":Number(r.rank)===2?"🥈":Number(r.rank)===3?"🥉":esc(r.rank);
-          h+='<div class="rank-row"><span class="rank-no">'+rankMark+'</span><span class="rank-entity-icon" aria-hidden="true">'+entityIcon+'</span>'+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          h+='<div class="rank-row"><span class="rank-no">'+rankMark+'</span>'+entityIcon+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
@@ -1796,7 +1796,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (playerGovernorCandidates.length) {
     const placeholders = playerGovernorCandidates.map(() => "?").join(",");
     players = await env.DB.prepare(
-      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
+      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, avatar_url, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
     ).bind(...playerGovernorCandidates).all();
   }
 
