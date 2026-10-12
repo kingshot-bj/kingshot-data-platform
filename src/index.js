@@ -4827,8 +4827,8 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
   return html;
 }
 
-function eagleEyeHtmlResponse(html) {
-  return new Response(applyEagleEyeTheme(html), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+function eagleEyeHtmlResponse(html, status = 200) {
+  return new Response(applyEagleEyeTheme(html), { status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
 }
 
 function getConfig(env) {
@@ -5260,7 +5260,7 @@ async function handleDataRetentionApi(request, env) {
     if (contentType.includes("application/json")) {
       return json({ ok: true, settings });
     }
-    return new Response(`<!DOCTYPE html>
+    return eagleEyeHtmlResponse(`<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>保存しました - EagleEye</title>
 <style>
@@ -5269,9 +5269,7 @@ async function handleDataRetentionApi(request, env) {
 .ok{font-size:42px;margin-bottom:8px}.title{font-size:24px;font-weight:900}.sub{margin-top:8px;color:#94a3b8}
 </style>
 <meta http-equiv="refresh" content="1;url=/admin/data-retention">
-</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`, {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`);
   } catch (error) {
     console.error("Data retention settings error:", error);
     return json({ ok: false, error: error?.message || "RETENTION_UPDATE_FAILED" }, 400);
@@ -5793,9 +5791,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5829,9 +5825,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload, responseStatus);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload));
   }
 }
 
@@ -5899,9 +5893,7 @@ async function handleApiPoolTestRanking(request, env) {
       upstream_elapsed_ms: elapsedMs
     };
     if (url.searchParams.get("format") === "json") return json(response);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5935,10 +5927,7 @@ async function handleApiPoolTestRanking(request, env) {
       message: error?.message || null
     };
     if (url.searchParams.get("format") === "json") return json(response, responseStatus);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" },
-      status: responseStatus
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), responseStatus);
   }
 }
 
@@ -8011,12 +8000,11 @@ async function handleDebugPlayerGear(request, env) {
         '</article>';
     }).join("");
 
-    return new Response(
+    return eagleEyeHtmlResponse(
       '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title>' +
       '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1000px;margin:auto}.note{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 8px}.card p{font-size:13px;color:#94a3b8;word-break:break-all}.preview{min-height:190px;border:1px dashed #475569;border-radius:10px;background:#020617;display:flex;align-items:center;justify-content:center;position:relative}.preview img{max-width:180px;max-height:180px}.preview .error{display:none;color:#fca5a5;font-size:12px}.preview img:not([src=""]){}</style>' +
       '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>',
-      { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
-    );
+      );
   }
 
   return json({ ok: true, governor_id: governorId, items });
@@ -8090,12 +8078,11 @@ async function handleDebugPlayerIcons(request, env) {
         '<div class="row"><span>同盟旗</span>' + image(result.alliance_flag_url, "alliance flag") + '<code>' + escapeHtml(result.alliance_flag_url || "-") + '</code></div>' +
         '</section>';
 
-      return new Response(
+      return eagleEyeHtmlResponse(
         '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player Icon Debug</title>' +
         '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1100px;margin:auto}.note,.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 12px}.hero-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:900}.hero-title img{width:64px;height:64px;object-fit:contain;border-radius:10px;background:#020617}.sub{margin-top:12px;padding-top:10px;border-top:1px solid #334155}.row{display:grid;grid-template-columns:110px 56px minmax(0,1fr);gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #334155}.row img{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#020617}.row code,.sub>code{display:block;margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.row code{grid-column:2 / 4}.missing{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:#0b1220;color:#64748b;font-size:10px}.sub pre{white-space:pre-wrap;overflow:auto;padding:10px;border-radius:8px;background:#0b1220;color:#cbd5e1;font-size:11px}</style>' +
         '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>',
-        { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
-      );
+        );
     }
 
     return json(result);
