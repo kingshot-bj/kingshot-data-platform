@@ -1130,7 +1130,7 @@ function renderProgress(data,active){
       etaNode.textContent="残り目安：約"+etaText+"（推定）";
     }else{
       etaNode.removeAttribute("data-remaining-seconds");
-      etaNode.textContent=runningNow?"残り目安を計測中…":(pct>=100?"処理完了":"");
+      etaNode.textContent=runningNow?(pct>=100?"最終処理中…":"残り目安を計測中…"):(String(data.run_status||"")==="COMPLETED"?"処理完了":"");
     }
   }
   var rows=Object.keys(active).map(function(k){return active[k];}).filter(function(x){return !x.completed;}).sort(function(a,b){return Number(a.kid)-Number(b.kid);});
