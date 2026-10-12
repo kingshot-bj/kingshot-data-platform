@@ -789,3 +789,47 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 3. R2履歴の全ページ走査とAlliance履歴の最大5,000件走査の設計上の制約を記録し、データ欠落を招く簡易な上限変更は行わない。
 4. システムログのexport/retention、カタログ一覧の読み取り条件、関連インデックスを継続確認する。
 5. 構文/mock検証、本番D1実測、iPhone Safari、Cloudflare本番デプロイは別々に扱う。Previewでのユーザー確認は求めない。
+
+
+---
+
+## 2026-10-12 継続監査追記：Retention上限・最終静的検証
+
+### 進捗
+- 横断監査の全体進捗：**90%**。
+- 次の報告目標：100%（コード監査で対応できる範囲の完了。実機・本番計測の完了を意味しない）。
+- この追記直前の最新mainコミット：`6575d6361d1e76d4b5ce420a67fda04bf7fae675`。
+
+### Retentionバッチ上限
+- `src/retention.js` の `runRetentionCleanupInternal` で、caller-supplied `batchSize` を1〜1000へクランプ。
+- これにより、一回のRetention処理が大きな指定値で過大なD1読み取り・R2アーカイブ・D1削除へ膨らむことを防ぐ。
+- generic retentionのSELECT/DELETE両方でクランプ済み値を使用。system_event_log用処理は従来どおり独自に最大1000件へ制限。
+- mainコミット：`6575d6361d1e76d4b5ce420a67fda04bf7fae675`。
+- 静的検査で上限式、両SQLのバインド、既存のsystem log batch上限を確認。構文解析成功。
+
+### API Pool lease metadata の追加確認
+- 全index.jsのlease取得箇所を再走査し、スケジュールされたAPI Pool health checkにもleaseId metadataが不足していたため追加。
+- mainコミット：`da225e86d93ac6c8241049fb5e1812e3f06d5dc7`。
+- 静的走査では、leaseを取得して行う主要なMightPulse呼び出しからleaseIdを渡すことを確認。
+
+### 最終静的検証
+- mainから再取得した以下4ファイルの構文解析が成功：
+  - `src/index.js`
+  - `src/mightpulse.js`
+  - `src/r2-archive.js`
+  - `src/retention.js`
+- 静的assertion：
+  - R2 player history 2関数のオブジェクト保持上限
+  - Retentionバッチの1,000件上限
+  - MightPulse再試行3経路でのリース延長呼び出し
+  - 期限切れleaseを復活させないSQL条件
+  - index.js主要呼び出しでのleaseId metadata伝播
+  以上を確認。
+- モックテスト：R2 2,500オブジェクトから最新30件を選ぶ結果が従来ソートと一致。有効なAPI Pool leaseの延長と期限切れleaseの更新拒否を確認。
+- これらは静的構文解析・静的assertion・モックテスト。実Worker統合、本番D1実測、実MightPulse障害時の競合、iPhone Safari、Cloudflare本番デプロイ成功は未確認。
+
+### 次の作業
+1. mainの最新状態と本追記を再確認する。
+2. 未確認事項を「未確認」と明示したまま、今回のコード監査を100%まで締める。
+3. 本番D1の読み取り量、R2履歴一覧の実処理時間、iPhone Safari、Cloudflare本番デプロイは別の検証項目として残す。
+4. `ranking_snapshots` の広範囲読み取りを復活させず、R2保存成功前のD1詳細削除を行わない。
