@@ -1785,9 +1785,12 @@ async function handleKingdomWatchlistDataApi(request, env) {
   const topPlayerRows = await env.DB.prepare(
     "SELECT governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ? ORDER BY rank ASC, governor_id ASC"
   ).bind(watch.kid, watch.top_n).all();
-  const topGovernorIds = [...new Set((topPlayerRows.results || [])
-    .map(row => String(row.governor_id || "").trim())
-    .filter(Boolean))];
+  const topGovernorIds = [...new Set([
+    ...(topPlayerRows.results || []).map(row => String(row.governor_id || "").trim()),
+    ...(rankings.results || []).filter(row => row.target_type === "PLAYER").flatMap(row =>
+      [row.governor_id, row.target_id, row.uid].map(value => String(value || "").trim())
+    )
+  ].filter(Boolean))];
   const playerGovernorCandidates = [...new Set(
     topGovernorIds.flatMap(id => /^\d+$/.test(id) ? [id, id + ".0"] : [id])
   )];
