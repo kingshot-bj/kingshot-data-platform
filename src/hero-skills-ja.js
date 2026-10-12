@@ -528,13 +528,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/5", sourceName: "アルテマ「キングショット」クインの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ヘッドショット", initial: "400%", max: "560%", description: "敵に攻撃力の400%（最大560%）のダメージを与える。" },
-        { name: "クイックショット", initial: "10%", max: "30%", description: "クインの攻撃速度が上昇する。" },
-        { name: "適者生存", initial: "10%", max: "30%", description: "クインの与ダメージが上昇する。" }
+        { name: "ヘッドショット", initial: "400%", max: "560%", description: "敵に攻撃力の400%（初期値）/560%（最大強化時）のダメージを与える。" },
+        { name: "クイックショット", initial: "10%", max: "30%", description: "クインの攻撃速度が10%（初期値）/30%（最大強化時）上昇する。" },
+        { name: "適者生存", initial: "10%", max: "30%", description: "クインの与ダメージが10%（初期値）/30%（最大強化時）増加する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "危険予知", initial: "4%", max: "20%", description: "自軍全体が受けるダメージが減少する。" },
-        { name: "弱点射撃", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で追加の与ダメージが上昇する。" }
+        { name: "危険予知", initial: "4%", max: "20%", description: "自軍全体が受けるダメージが4%（初期値）/20%（最大強化時）減少する。" },
+        { name: "弱点射撃", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で追加の与ダメージが10%（初期値）/50%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -542,13 +542,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/6", sourceName: "アルテマ「キングショット」ハワードの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "盾インパクト", initial: "200%", max: "280%", description: "敵に盾を投げつけ、範囲ダメージを与えてノックバックさせる。" },
-        { name: "盾の壁", initial: "5%", max: "15%", description: "味方全英雄の防御力が上昇する。" },
-        { name: "盾ブロック", initial: "10%", max: "30%", description: "自身の被ダメージが低下する。" }
+        { name: "盾インパクト", initial: "200%", max: "280%", description: "敵に攻撃力の200%（初期値）/280%（最大強化時）の範囲ダメージを与え、ノックバックさせる。" },
+        { name: "盾の壁", initial: "5%", max: "15%", description: "味方全英雄の防御力が5%（初期値）/15%（最大強化時）上昇する。" },
+        { name: "盾ブロック", initial: "10%", max: "30%", description: "自身の被ダメージが10%（初期値）/30%（最大強化時）低下する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "プロテクト", initial: "4%", max: "20%", description: "味方全部隊の被ダメージが減少する。" },
-        { name: "弱体化打撃", initial: "4%", max: "20%", description: "敵全部隊の総攻撃力を低下させる。" }
+        { name: "プロテクト", initial: "4%", max: "20%", description: "味方全部隊の被ダメージが4%（初期値）/20%（最大強化時）減少する。" },
+        { name: "弱体化打撃", initial: "4%", max: "20%", description: "敵全部隊の総攻撃力が4%（初期値）/20%（最大強化時）低下する。" }
       ]}
     ]
   },
@@ -556,13 +556,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/7", sourceName: "アルテマ「キングショット」ダイアナの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "爆裂矢", initial: "210%, 70%", max: "290%, 98%", description: "敵1体に攻撃ダメージを与え、周囲の小範囲の敵にもダメージを与える。" },
-        { name: "射手の才", initial: "10%", max: "30%", description: "攻撃速度が上昇する。" },
-        { name: "必殺", initial: "7%", max: "20%", description: "会心率が上昇する。" }
+        { name: "爆裂矢", initial: "210%, 70%", max: "290%, 98%", description: "敵1体に攻撃力の210%（初期値）/290%（最大強化時）のダメージを与え、周囲の小範囲の敵にも攻撃力の70%（初期値）/98%（最大強化時）のダメージを与える。" },
+        { name: "射手の才", initial: "10%", max: "30%", description: "攻撃速度が10%（初期値）/30%（最大強化時）上昇する。" },
+        { name: "必殺", initial: "7%", max: "20%", description: "会心率が7%（初期値）/20%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "強靭ボディ", initial: "10%", max: "20%", description: "領主の体力の消耗が減少する。" },
-        { name: "迅速行動", initial: "20%", max: "100%", description: "出征速度が上昇する。" }
+        { name: "強靭ボディ", initial: "10%", max: "20%", description: "領主体力の消耗が10%（初期値）/20%（最大強化時）減少する。" },
+        { name: "迅速行動", initial: "20%", max: "100%", description: "出征速度が20%（初期値）/100%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -570,13 +570,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/8", sourceName: "アルテマ「キングショット」チェンコの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "機関銃掃射", initial: "55%", max: "75%", description: "扇状範囲内の敵に0.5秒毎に攻撃ダメージを与える。2秒間持続。" },
-        { name: "防具改造", initial: "25%", max: "70%", description: "防御力が上昇する。" },
-        { name: "武器改造", initial: "8%", max: "24%", description: "攻撃力が上昇する。" }
+        { name: "機関銃掃射", initial: "55%", max: "75%", description: "扇状範囲内の敵に0.5秒毎に攻撃力の55%（初期値）/75%（最大強化時）のダメージを与える。2秒間持続。" },
+        { name: "防具改造", initial: "25%", max: "70%", description: "防御力が25%（初期値）/70%（最大強化時）上昇する。" },
+        { name: "武器改造", initial: "8%", max: "24%", description: "攻撃力が8%（初期値）/24%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "完全武装", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
-        { name: "アーマー", initial: "4%", max: "20%", description: "自軍全体の被ダメージが減少する。" }
+        { name: "完全武装", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "アーマー", initial: "4%", max: "20%", description: "自軍全体の被ダメージが4%（初期値）/20%（最大強化時）減少する。" }
       ]}
     ]
   },
@@ -584,13 +584,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/9", sourceName: "アルテマ「キングショット」ゴードンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "バーベキュー", initial: "200%, 5%", max: "280%, 7%", description: "自軍全体のHPを回復し、攻撃力を上昇させる。4秒間持続。" },
-        { name: "嵐の厨房", initial: "10%", max: "30%", description: "自身の被ダメージが低下する。" },
-        { name: "非常食", initial: "50%", max: "70%", description: "5秒毎に攻撃力に応じたHPを回復する。" }
+        { name: "バーベキュー", initial: "200%, 5%", max: "280%, 7%", description: "自軍全体がゴードンの攻撃力×200%（初期値）/×280%（最大強化時）に相当するHPを回復し、攻撃力が5%（初期値）/7%（最大強化時）上昇する。4秒間持続。" },
+        { name: "嵐の厨房", initial: "10%", max: "30%", description: "自身の被ダメージが10%（初期値）/30%（最大強化時）低下する。" },
+        { name: "非常食", initial: "50%", max: "70%", description: "5秒毎に攻撃力×50%（初期値）/×70%（最大強化時）分のHPを回復する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "幸せグルメ", initial: "5%", max: "25%", description: "味方全部隊の総HPが上昇する。" },
-        { name: "暴言", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が上昇する。" }
+        { name: "幸せグルメ", initial: "5%", max: "25%", description: "味方全部隊の総HPが5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "暴言", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が5%（初期値）/25%（最大強化時）上昇する。" }
       ]}
     ]
   },
