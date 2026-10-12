@@ -6738,20 +6738,31 @@ async function renderPlayerSearchPage(request, env) {
 
   const url = new URL(request.url);
   const q = String(url.searchParams.get("q") || "").trim();
+  const numericGovernorId = /^[0-9]{7,12}$/.test(q);
   let rows = [];
 
   if (q && env.DB) {
-    const like = `%${q}%`;
-    const searchResult = await env.DB.prepare(
-      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, alliance_rank, alliance_rank_label, observed_at
-       FROM players
-       WHERE governor_id LIKE ?
-          OR nick_name LIKE ?
-          OR CAST(kid AS TEXT) LIKE ?
-          OR alliance_name LIKE ?
-       ORDER BY power DESC
-       LIMIT 30`
-    ).bind(like, like, like, like).all();
+    let searchResult;
+    if (numericGovernorId) {
+      // A numeric governor ID is a direct lookup, not a broad substring search.
+      // Avoid scanning name/kingdom/alliance columns for an exact ID query.
+      searchResult = await env.DB.prepare(
+        `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, alliance_rank, alliance_rank_label, observed_at
+         FROM players WHERE governor_id = ? LIMIT 1`
+      ).bind(q).all();
+    } else {
+      const like = `%${q}%`;
+      searchResult = await env.DB.prepare(
+        `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, alliance_rank, alliance_rank_label, observed_at
+         FROM players
+         WHERE governor_id LIKE ?
+            OR nick_name LIKE ?
+            OR CAST(kid AS TEXT) LIKE ?
+            OR alliance_name LIKE ?
+         ORDER BY power DESC
+         LIMIT 30`
+      ).bind(like, like, like, like).all();
+    }
     rows = searchResult.results || [];
   }
 
@@ -6780,7 +6791,6 @@ async function renderPlayerSearchPage(request, env) {
     });
   }
 
-  const numericGovernorId = /^[0-9]{7,12}$/.test(q);
   const body = q
     ? (rows.length > 0
       ? `<div class="results-heading"><span>検索結果</span><strong>${rows.length}${rows.length === 30 ? "+" : ""} 件</strong></div>${results}`
