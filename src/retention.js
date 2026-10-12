@@ -57,6 +57,9 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
 }
 
 async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket = null } = {}) {
+  // Bound each retention pass so caller-supplied values cannot create an
+  // unexpectedly large D1 read/archive/delete operation.
+  const safeBatchSize = Math.min(1000, Math.max(1, Number(batchSize) || 1000));
   const settings = await getRetentionSettings(db);
   const now = Math.floor(Date.now() / 1000);
   const result = {};
@@ -103,7 +106,7 @@ async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket
     }
 
     if (shouldArchive) {
-      const rows = (await db.prepare(selectSql).bind(cutoff, batchSize).all()).results || [];
+      const rows = (await db.prepare(selectSql).bind(cutoff, safeBatchSize).all()).results || [];
       if (!rows.length) {
         result[item.table] = 0;
         archived[item.table] = 0;
@@ -152,7 +155,7 @@ async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket
           LIMIT ?
         )`;
     }
-    const deleted = await db.prepare(sql).bind(cutoff, batchSize).run();
+    const deleted = await db.prepare(sql).bind(cutoff, safeBatchSize).run();
     result[item.table] = Number(deleted?.meta?.changes || 0);
     archived[item.table] = 0;
   }
