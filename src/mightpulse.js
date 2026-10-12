@@ -15,6 +15,34 @@ export class MightPulseError extends Error {
   }
 }
 
+async function extendLeaseBeforeRetry(env, leaseId, requiredMs) {
+  if (!env?.DB || !leaseId) return;
+  const now = Math.floor(Date.now() / 1000);
+  const leaseUntil = now + Math.max(120, Math.ceil(Number(requiredMs || 0) / 1000));
+  try {
+    const result = await env.DB.prepare(
+      "UPDATE api_pool_keys SET leased_until = ?1, updated_at = ?2 WHERE lease_id = ?3 AND leased_until > ?2"
+    ).bind(leaseUntil, now, String(leaseId)).run();
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      console.warn("mightpulse_lease_renewal_skipped", { leaseId: String(leaseId) });
+    }
+  } catch (error) {
+    // A renewal failure must not mask the upstream error or cancel a retry.
+    console.warn("mightpulse_lease_renewal_failed", {
+      leaseId: String(leaseId),
+      message: error?.message || String(error)
+    });
+  }
+}
+
+async function waitBeforeRetry(env, leaseId, timeoutMs, attempt, retryAfter = null) {
+  const delayMs = retryDelay(attempt, retryAfter);
+  // Keep the lease alive through the next full attempt plus a safety margin.
+  // Renew only on retries, avoiding a write on every successful API request.
+  await extendLeaseBeforeRetry(env, leaseId, Number(timeoutMs || DEFAULT_TIMEOUT_MS) + delayMs + 30_000);
+  await sleep(delayMs);
+}
+
 export async function mightPulseFetch(env, path, {
   method = "GET",
   query = {},
@@ -127,7 +155,7 @@ export async function mightPulseFetch(env, path, {
         throw lastError;
       }
 
-      await sleep(retryDelay(attempt, response.headers.get("Retry-After")));
+      await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt, response.headers.get("Retry-After"));
       continue;
     } catch (error) {
       if (error instanceof MightPulseError) {
@@ -153,7 +181,7 @@ export async function mightPulseFetch(env, path, {
           });
           throw error;
         }
-        await sleep(retryDelay(attempt));
+        await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt);
         continue;
       }
 
@@ -192,7 +220,7 @@ export async function mightPulseFetch(env, path, {
         });
         throw lastError;
       }
-      await sleep(retryDelay(attempt));
+      await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt);
     } finally {
       clearTimeout(timer);
     }
