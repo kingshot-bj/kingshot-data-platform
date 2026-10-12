@@ -16,9 +16,9 @@
 
 - 英雄数：37
 - スキル行：256
-- 今回の外部資料で再照合済み：127行
+- 今回の外部資料で再照合済み：181行
 - 前回監査の外部資料照合記録あり：34行
-- 今回未再照合：94行
+- 今回未再照合：40行
 - 要注意：出典内で数値表と説明文が不一致：1行
 
 ## 行別一覧
@@ -185,102 +185,102 @@
 | 龍飛 | 遠征スキル | 杯投烈脚 | 120% | 200% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/26) |
 | 龍飛 | 専用装備スキル | 呑下三百杯 | 15% | 15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/long-fei/) |
 | 龍飛 | 専用装備スキル | 虚実一対 | 防衛部隊攻撃力+15% | 防衛部隊攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/long-fei/) |
-| スルード | 討伐スキル | ストームアックス | 60% | 84% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
-| スルード | 討伐スキル | バーサカースロー | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
-| スルード | 討伐スキル | ウルフバンケット | 3% | 5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
-| スルード | 遠征スキル | ファナティック | 3% / 3% | 15% / 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
-| スルード | 遠征スキル | レックレス | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
-| スルード | 遠征スキル | アンセスター | 5% / 5% | 25% / 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 討伐スキル | ストームアックス | 60% | 84% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 討伐スキル | バーサカースロー | 50% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 討伐スキル | ウルフバンケット | 3% | 5% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 遠征スキル | ファナティック | 3% / 3% | 15% / 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 遠征スキル | レックレス | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
+| スルード | 遠征スキル | アンセスター | 5% / 5% | 25% / 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/27) |
 | スルード | 専用装備スキル | レイジアックス | 25% | 35% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/thrud/) |
 | スルード | 専用装備スキル | ウルフキッス | 集結部隊殺傷力+5% | 集結部隊殺傷力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/thrud/) |
-| ビビアン | 討伐スキル | ゴールデンショット | 180% | 252% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
-| ビビアン | 討伐スキル | グッドラック | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
-| ビビアン | 討伐スキル | ゴールドラッシュ | 35% | 49% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
-| ビビアン | 遠征スキル | アウェイティング | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
-| ビビアン | 遠征スキル | バラージショット | 20% / 5% | 100% / 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
-| ビビアン | 遠征スキル | グリードトラップ | 12% | 60% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 討伐スキル | ゴールデンショット | 180% | 252% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 討伐スキル | グッドラック | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 討伐スキル | ゴールドラッシュ | 35% | 49% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 遠征スキル | アウェイティング | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 遠征スキル | バラージショット | 20% / 5% | 100% / 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
+| ビビアン | 遠征スキル | グリードトラップ | 12% | 60% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/28) |
 | ビビアン | 専用装備スキル | ロイヤルシューター | 50% | 70% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/vivian/) |
 | ビビアン | 専用装備スキル | フルバウンティ | 防衛部隊防御力+5% | 防衛部隊防御力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/vivian/) |
-| トリトン | 討伐スキル | 潮汐の意思 | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
-| トリトン | 討伐スキル | 諸王の怒り | 8% / 16% | 24% / 48% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
+| トリトン | 討伐スキル | 潮汐の意思 | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/29) |
+| トリトン | 討伐スキル | 諸王の怒り | 8% / 16% | 24% / 48% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/29) |
 | トリトン | 討伐スキル | 必殺の一撃 | 20% | 28% | 要注意：出典内で数値表と説明文が不一致 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
-| トリトン | 遠征スキル | 律令の力 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
-| トリトン | 遠征スキル | 戦争の力 | 6% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
-| トリトン | 遠征スキル | 誓約の力 | 4% / 6% | 20% / 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/29) |
+| トリトン | 遠征スキル | 律令の力 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/29) |
+| トリトン | 遠征スキル | 戦争の力 | 6% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/29) |
+| トリトン | 遠征スキル | 誓約の力 | 4% / 6% | 20% / 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/29) |
 | トリトン | 専用装備スキル | クリスタル改造 | 10% | 30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/triton/) |
 | トリトン | 専用装備スキル | 虚実一対 | 防衛部隊防御力+5% | 防衛部隊防御力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/triton/) |
-| ソフィア | 討伐スキル | マリオネット | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
-| ソフィア | 討伐スキル | ペイン・マーク | 50% / 2% | 70% / 6% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
-| ソフィア | 討伐スキル | マーク・ウィップ | 8% / 4% | 24% / 12% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
-| ソフィア | 遠征スキル | コントラクト・バインド | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
-| ソフィア | 遠征スキル | パニック・ダメージ | 40% | 200% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
-| ソフィア | 遠征スキル | パニック・ジエンド | 15% | 75% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 討伐スキル | マリオネット | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 討伐スキル | ペイン・マーク | 50% / 2% | 70% / 6% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 討伐スキル | マーク・ウィップ | 8% / 4% | 24% / 12% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 遠征スキル | コントラクト・バインド | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 遠征スキル | パニック・ダメージ | 40% | 200% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
+| ソフィア | 遠征スキル | パニック・ジエンド | 15% | 75% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/30) |
 | ソフィア | 専用装備スキル | オーバーマインド・アイ | 2% | 8% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/sophia/) |
 | ソフィア | 専用装備スキル | ダークナイトクイーン | 防衛部隊殺傷力+5% | 防衛部隊殺傷力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/sophia/) |
-| ヤン | 討伐スキル | メガスロー | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 討伐スキル | チェーンショット | 15% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 討伐スキル | ヘッドショット | 3% | 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 遠征スキル | アバランチ | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 遠征スキル | アイスゾーン | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
-| ヤン | 遠征スキル | アンブッシュ | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 討伐スキル | メガスロー | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 討伐スキル | チェーンショット | 15% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 討伐スキル | ヘッドショット | 3% | 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 遠征スキル | アバランチ | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 遠征スキル | アイスゾーン | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
+| ヤン | 遠征スキル | アンブッシュ | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
 | ヤン | 専用装備スキル | ラピッドファイア | ダメージ40%、護衛対象は即時撃破 | ダメージ56%、護衛対象は即時撃破 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
 | ヤン | 専用装備スキル | アタックディフェンス | 集結部隊の殺傷力+5% | 集結部隊の殺傷力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
-| クイン | 討伐スキル | ヘッドショット | 400% | 560% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 討伐スキル | クイックショット | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 討伐スキル | 適者生存 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 遠征スキル | 危険予知 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 遠征スキル | 弱点射撃 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| ハワード | 討伐スキル | 盾インパクト | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 討伐スキル | 盾の壁 | 5% | 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 討伐スキル | 盾ブロック | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 遠征スキル | プロテクト | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 遠征スキル | 弱体化打撃 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ダイアナ | 討伐スキル | 爆裂矢 | 210%, 70% | 290%, 98% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 討伐スキル | 射手の才 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 討伐スキル | 必殺 | 7% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 遠征スキル | 強靭ボディ | 10% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 遠征スキル | 迅速行動 | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| チェンコ | 討伐スキル | 機関銃掃射 | 55% | 75% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 討伐スキル | 防具改造 | 25% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 討伐スキル | 武器改造 | 8% | 24% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 遠征スキル | 完全武装 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 遠征スキル | アーマー | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| ゴードン | 討伐スキル | バーベキュー | 200%, 5% | 280%, 7% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 討伐スキル | 嵐の厨房 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 討伐スキル | 非常食 | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 遠征スキル | 幸せグルメ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 遠征スキル | 暴言 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| オリーブ | 討伐スキル | 矢の雨 | 180% | 252% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 討伐スキル | マーク | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 遠征スキル | 栽培専門家 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 遠征スキル | 食糧調達 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| エドウィン | 討伐スキル | 自家製爆弾 | 140% | 196% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 討伐スキル | 高威力爆弾 | 10%, 0.5秒 | 20%, 1.5秒 | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 遠征スキル | 発破技士 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 遠征スキル | 巨石採掘 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| スミス | 討伐スキル | 火炎槌 | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 討伐スキル | 防具強化 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 遠征スキル | 善は急げ | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 遠征スキル | 鍛冶職人 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| クイン | 討伐スキル | ヘッドショット | 400% | 560% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 討伐スキル | クイックショット | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 討伐スキル | 適者生存 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 遠征スキル | 危険予知 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 遠征スキル | 弱点射撃 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| ハワード | 討伐スキル | 盾インパクト | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 討伐スキル | 盾の壁 | 5% | 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 討伐スキル | 盾ブロック | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 遠征スキル | プロテクト | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 遠征スキル | 弱体化打撃 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ダイアナ | 討伐スキル | 爆裂矢 | 210%, 70% | 290%, 98% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 討伐スキル | 射手の才 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 討伐スキル | 必殺 | 7% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 遠征スキル | 強靭ボディ | 10% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 遠征スキル | 迅速行動 | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| チェンコ | 討伐スキル | 機関銃掃射 | 55% | 75% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 討伐スキル | 防具改造 | 25% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 討伐スキル | 武器改造 | 8% | 24% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 遠征スキル | 完全武装 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 遠征スキル | アーマー | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| ゴードン | 討伐スキル | バーベキュー | 200%, 5% | 280%, 7% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 討伐スキル | 嵐の厨房 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 討伐スキル | 非常食 | 50% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 遠征スキル | 幸せグルメ | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 遠征スキル | 暴言 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| オリーブ | 討伐スキル | 矢の雨 | 180% | 252% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 討伐スキル | マーク | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 遠征スキル | 栽培専門家 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 遠征スキル | 食糧調達 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| エドウィン | 討伐スキル | 自家製爆弾 | 140% | 196% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 討伐スキル | 高威力爆弾 | 10%, 0.5秒 | 20%, 1.5秒 | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 遠征スキル | 発破技士 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 遠征スキル | 巨石採掘 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| スミス | 討伐スキル | 火炎槌 | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 討伐スキル | 防具強化 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 遠征スキル | 善は急げ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 遠征スキル | 鍛冶職人 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
 | フォルスト | 討伐スキル | 斧旋風 | 80% | 110% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 討伐スキル | 鋭刃 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 遠征スキル | 一子相伝 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 遠征スキル | 伐採名人 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
-| ファハド | 討伐スキル | サンドストーム | 1% | 5% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 討伐スキル | ハヤブサの導き | 15% | 35% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 討伐スキル | 砂の将軍 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 遠征スキル | サンドシェード | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 遠征スキル | 先行者 | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | サンドストーム | 1% | 5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | ハヤブサの導き | 15% | 35% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | 砂の将軍 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 遠征スキル | サンドシェード | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 遠征スキル | 先行者 | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
 | あまね | 討伐スキル | 桜花爛漫 | 1.5%, 2.5% | 3.5%, 4.5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 討伐スキル | 破魔矢 | 150% | 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 討伐スキル | 神楽 | 1% | 5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 遠征スキル | 三布の陣 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 遠征スキル | 破魔の祈り | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
-| インウー | 討伐スキル | 散華 | 125%, 150% | 175%, 210% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 討伐スキル | 飛燕 | 100%, 30% | 140%, 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 討伐スキル | 双剣 | 8% | 24% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 遠征スキル | 戦の構え | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 遠征スキル | 多聞 | 3% | 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 散華 | 125%, 150% | 175%, 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 飛燕 | 100%, 30% | 140%, 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 双剣 | 8% | 24% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 遠征スキル | 戦の構え | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 遠征スキル | 多聞 | 3% | 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
 
 ## 要注意項目
 
@@ -308,6 +308,16 @@
 - マーゴ：[アルテマ](https://altema.jp/kingshot/chara/23)
 - ローザ：[アルテマ](https://altema.jp/kingshot/chara/24)
 - 龍飛：[アルテマ](https://altema.jp/kingshot/chara/26)
+- スルード：[アルテマ](https://altema.jp/kingshot/chara/27)
+- ビビアン：[アルテマ](https://altema.jp/kingshot/chara/28)
+- トリトン：[アルテマ](https://altema.jp/kingshot/chara/29)
+- ソフィア：[アルテマ](https://altema.jp/kingshot/chara/30)
+- ヤン：[アルテマ](https://altema.jp/kingshot/chara/31)
+- クイン：[アルテマ](https://altema.jp/kingshot/chara/5)
+- ハワード：[アルテマ](https://altema.jp/kingshot/chara/6)
+- ダイアナ：[アルテマ](https://altema.jp/kingshot/chara/7)
+- チェンコ：[アルテマ](https://altema.jp/kingshot/chara/8)
+- ゴードン：[アルテマ](https://altema.jp/kingshot/chara/9)
 
 ## 前回監査の専用装備資料
 
