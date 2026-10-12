@@ -353,9 +353,9 @@ export const HERO_SKILLS_JA = {
         { name: "シークレット・ストーリー", initial: "10%", max: "30%", description: "敵への与ダメージが上昇する。3秒間持続。" },
       ]},
       { type: "遠征スキル", skills: [
-        { name: "ストームソング", initial: "8%", max: "40%", description: "20%の確率で味方全部隊のダメージが上昇する。3ターン持続。" },
-        { name: "コンフリクトソング", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を低下させる。2ターン持続。" },
-        { name: "フェスティバルソング", initial: "5%", max: "25%", description: "味方全部隊のHPが上昇する。" },
+        { name: "ストームソング", initial: "8%", max: "40%", description: "20%の確率で味方全部隊の与ダメージが8%（初期値）/40%（最大強化時）上昇する。3ターン持続。" },
+        { name: "コンフリクトソング", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を10%（初期値）/50%（最大強化時）低下させる。2ターン持続。" },
+        { name: "フェスティバルソング", initial: "5%", max: "25%", description: "味方全部隊の総HPが5%（初期値）/25%（最大強化時）上昇する。" },
       ]}
       ]},
       { type: "専用装備スキル", skills: [
@@ -373,9 +373,9 @@ export const HERO_SKILLS_JA = {
         { name: "クラッシュストライク", initial: "100%", max: "140%", description: "攻撃力×100%（初期値）/×140%（最大強化時）のダメージを与え、1.5秒間行動不能にする。" },
       ]},
       { type: "遠征スキル", skills: [
-        { name: "デストロイ", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が上昇する。" },
-        { name: "タクティクス", initial: "4%", max: "20%", description: "味方全部隊が通常攻撃を受けた際、一定確率でダメージを回避する。" },
-        { name: "トリックテクニック", initial: "120%", max: "200%", description: "騎兵が25%の確率で追加攻撃し、攻撃力×120%（初期値）/×200%（最大強化時）のダメージを与える。" },
+        { name: "デストロイ", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "タクティクス", initial: "4%", max: "20%", description: "味方全部隊が通常攻撃を受けた際、4%（初期値）/20%（最大強化時）の確率でダメージを回避する。" },
+        { name: "トリックテクニック", initial: "120%", max: "200%", description: "騎兵が25%の確率で1回追加攻撃を行い、120%（初期値）/200%（最大強化時）のダメージを与える。" },
       ]}
       ]},
       { type: "専用装備スキル", skills: [
@@ -393,9 +393,9 @@ export const HERO_SKILLS_JA = {
         { name: "マインド・シャッター", initial: "1% / 40%", max: "3% / 60%", description: "敵全体の攻撃速度と治療効果を低下させる。" },
       ]},
       { type: "遠征スキル", skills: [
-        { name: "ノイズ・タイム", initial: "10%", max: "50%", description: "40%の確率で味方全体の与ダメージが上昇する。" },
-        { name: "チャーム・ダンス", initial: "4%", max: "20%", description: "敵全体のダメージを低下させる。" },
-        { name: "ゴールデン・リズム", initial: "6%", max: "30%", description: "弓兵の総攻撃力が上昇する。" },
+        { name: "ノイズ・タイム", initial: "10%", max: "50%", description: "40%の確率で味方全体の与ダメージが10%（初期値）/50%（最大強化時）上昇する。" },
+        { name: "チャーム・ダンス", initial: "4%", max: "20%", description: "敵全体の与ダメージを4%（初期値）/20%（最大強化時）低下させる。" },
+        { name: "ゴールデン・リズム", initial: "6%", max: "30%", description: "弓兵の総攻撃力が6%（初期値）/30%（最大強化時）上昇する。" },
       ]}
       ]},
       { type: "専用装備スキル", skills: [
@@ -638,12 +638,12 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/13", sourceName: "アルテマ「キングショット」フォルストの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "斧旋風", initial: "80%", max: "110%", description: "素早く斧を振り回し、0.5秒毎に周囲の敵にダメージを与える。3秒間持続。" },
-        { name: "鋭刃", initial: "10%", max: "30%", description: "与ダメージが上昇する。" }
+        { name: "斧旋風", initial: "80%", max: "110%", description: "0.5秒毎に周囲の敵に攻撃力×80%（初期値）/×110%（最大強化時）のダメージを与える。3秒間持続。" },
+        { name: "鋭刃", initial: "10%", max: "30%", description: "与ダメージが10%（初期値）/30%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "一子相伝", initial: "5%", max: "25%", description: "街の伐採場生産量が上昇する。" },
-        { name: "伐採名人", initial: "5%", max: "25%", description: "出征時、木材の採集速度が上昇する。" }
+        { name: "一子相伝", initial: "5%", max: "25%", description: "街の伐採場の生産量が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "伐採名人", initial: "5%", max: "25%", description: "出征時、木材の採集速度が5%（初期値）/25%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -666,13 +666,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/22", sourceName: "アルテマ「あまねの評価とスキル」", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "桜花爛漫", initial: "1.5%, 2.5%", max: "3.5%, 4.5%", description: "味方全体の英雄と護衛の攻撃力・攻撃速度が上昇する。4秒持続。" },
-        { name: "破魔矢", initial: "150%", max: "210%", description: "相手に攻撃力に応じたダメージを与える。" },
-        { name: "神楽", initial: "1%", max: "5%", description: "通常攻撃を3回行う度に自身の攻撃速度が上昇する。戦闘終了まで持続。" }
+        { name: "桜花爛漫", initial: "1.5%, 2.5%", max: "3.5%, 4.5%", description: "味方全体の英雄と護衛の攻撃力が1.5%（初期値）/3.5%（最大強化時）、攻撃速度が2.5%（初期値）/4.5%（最大強化時）上昇する。4秒持続。" },
+        { name: "破魔矢", initial: "150%", max: "210%", description: "相手に攻撃力の150%（初期値）/210%（最大強化時）のダメージを与える。" },
+        { name: "神楽", initial: "1%", max: "5%", description: "通常攻撃を3回行う度に自身の攻撃速度が1%（初期値）/5%（最大強化時）上昇する。戦闘終了まで持続。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "三布の陣", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が上昇する。" },
-        { name: "破魔の祈り", initial: "10%", max: "50%", description: "野戦病院の治療速度が上昇する。" }
+        { name: "三布の陣", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "破魔の祈り", initial: "10%", max: "50%", description: "野戦病院の治療速度が10%（初期値）/50%（最大強化時）上昇する。" }
       ]}
     ]
   },
