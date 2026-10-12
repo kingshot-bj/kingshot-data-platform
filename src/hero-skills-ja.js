@@ -599,11 +599,11 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "矢の雨", initial: "180%", max: "252%", description: "攻撃×180%（初期値）/×252%（最大強化時）のダメージを与える。" },
-        { name: "マーク", initial: "10%", max: "30%", description: "ターゲットに狩人の印を付与し、今回の攻撃の与ダメージが上昇する。" }
+        { name: "マーク", initial: "10%", max: "30%", description: "ターゲットに狩人の印を付与し、今回の攻撃の与ダメージが10%（初期値）/30%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "栽培専門家", initial: "5%", max: "25%", description: "製粉所の生産量が上昇する。" },
-        { name: "食糧調達", initial: "5%", max: "25%", description: "出征時、パン資源の採集速度が上昇する。" }
+        { name: "栽培専門家", initial: "5%", max: "25%", description: "街の製粉場の生産量が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "食糧調達", initial: "5%", max: "25%", description: "出征時、パンの採集速度が5%（初期値）/25%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -611,12 +611,12 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/11", sourceName: "アルテマ「キングショット」エドウィンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "自家製爆弾", initial: "140%", max: "196%", description: "ターゲットと周囲の敵に攻撃ダメージを与える。" },
-        { name: "高威力爆弾", initial: "10%, 0.5秒", max: "20%, 1.5秒", description: "爆弾で目標を一定確率で気絶させる。" }
+        { name: "自家製爆弾", initial: "140%", max: "196%", description: "ターゲットとその周囲の敵に攻撃力×140%（初期値）/×196%（最大強化時）のダメージを与える。" },
+        { name: "高威力爆弾", initial: "10%, 0.5秒", max: "20%, 1.5秒", description: "10%（初期値）/20%（最大強化時）の確率で目標を0.5秒（初期値）/1.5秒（最大強化時）間気絶させる。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "発破技士", initial: "5%", max: "25%", description: "街の石材工場生産量が上昇する。" },
-        { name: "巨石採掘", initial: "5%", max: "25%", description: "出征時、石材の採集速度が上昇する。" }
+        { name: "発破技士", initial: "5%", max: "25%", description: "街の石材工場の生産量が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "巨石採掘", initial: "5%", max: "25%", description: "出征時、石材の採集速度が5%（初期値）/25%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -624,12 +624,12 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/12", sourceName: "アルテマ「キングショット」スミスの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "火炎槌", initial: "200%", max: "280%", description: "前方扇形範囲の敵に攻撃ダメージを与える。" },
-        { name: "防具強化", initial: "10%", max: "30%", description: "被ダメージが低下する。" }
+        { name: "火炎槌", initial: "200%", max: "280%", description: "前方扇形範囲の敵に攻撃力×200%（初期値）/×280%（最大強化時）のダメージを与える。" },
+        { name: "防具強化", initial: "10%", max: "30%", description: "自身の被ダメージが10%（初期値）/30%（最大強化時）低下する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "善は急げ", initial: "5%", max: "25%", description: "街の鉄鉱場生産量が上昇する。" },
-        { name: "鍛冶職人", initial: "5%", max: "25%", description: "出征時、鉄鉱の採集速度が上昇する。" }
+        { name: "善は急げ", initial: "5%", max: "25%", description: "街の鉄鉱場の生産量が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "鍛冶職人", initial: "5%", max: "25%", description: "出征時、鉄鉱の採集速度が5%（初期値）/25%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -652,13 +652,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/20", sourceName: "アルテマ「キングショット」ファハドの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "サンドストーム", initial: "1%", max: "5%", description: "範囲内の敵の攻撃力を低下させる。2秒持続。" },
-        { name: "ハヤブサの導き", initial: "15%", max: "35%", description: "発動後、自身と周囲の味方の攻撃力が上昇する。2秒持続。" },
-        { name: "砂の将軍", initial: "10%", max: "30%", description: "ファハドの攻撃速度が上昇する。" }
+        { name: "サンドストーム", initial: "1%", max: "5%", description: "範囲内の敵の攻撃力を1%（初期値）/5%（最大強化時）低下させる。2秒持続。" },
+        { name: "ハヤブサの導き", initial: "15%", max: "35%", description: "サンドストーム発動後、自身と周囲の味方の攻撃力が15%（初期値）/35%（最大強化時）上昇する。2秒持続。" },
+        { name: "砂の将軍", initial: "10%", max: "30%", description: "ファハドの攻撃速度が10%（初期値）/30%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "サンドシェード", initial: "4%", max: "20%", description: "敵全体の与ダメージを低下させる。" },
-        { name: "先行者", initial: "20%", max: "100%", description: "モンスター討伐部隊の出征速度が上昇する。" }
+        { name: "サンドシェード", initial: "4%", max: "20%", description: "敵全体の与ダメージを4%（初期値）/20%（最大強化時）低下させる。" },
+        { name: "先行者", initial: "20%", max: "100%", description: "モンスター討伐部隊の出征速度が20%（初期値）/100%（最大強化時）上昇する。" }
       ]}
     ]
   },
@@ -680,13 +680,13 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/21", sourceName: "アルテマ「インウーの評価とスキル」", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "散華", initial: "125%, 150%", max: "175%, 210%", description: "剣舞で攻撃し、3回目の斬撃は範囲ダメージとなる。" },
-        { name: "飛燕", initial: "100%, 30%", max: "140%, 50%", description: "ターゲットにダメージを与え、攻撃速度を低下させる。2秒持続。" },
-        { name: "双剣", initial: "8%", max: "24%", description: "自身の攻撃力が上昇する。" }
+        { name: "散華", initial: "125%, 150%", max: "175%, 210%", description: "攻撃力×100%、125%（初期値）/×100%、175%（最大強化時）の順に斬撃を3回行い、3回目は範囲ダメージとなる。※2・3撃目の倍率を表示。" },
+        { name: "飛燕", initial: "100%, 30%", max: "140%, 50%", description: "ターゲットに攻撃力×100%（初期値）/×140%（最大強化時）のダメージを与え、攻撃速度を30%（初期値）/50%（最大強化時）低下させる。2秒持続。" },
+        { name: "双剣", initial: "8%", max: "24%", description: "自身の攻撃力が8%（初期値）/24%（最大強化時）上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
-        { name: "戦の構え", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
-        { name: "多聞", initial: "3%", max: "15%", description: "科学研究の速度が上昇する。" }
+        { name: "戦の構え", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が5%（初期値）/25%（最大強化時）上昇する。" },
+        { name: "多聞", initial: "3%", max: "15%", description: "科学研究の速度が3%（初期値）/15%（最大強化時）上昇する。" }
       ]}
     ]
   },
