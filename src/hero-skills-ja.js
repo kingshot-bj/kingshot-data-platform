@@ -11,8 +11,8 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "グローリー・モーメント", initial: "30%", max: "70%", description: "自身を無敵状態にし、周囲の味方の被ダメージが低下。2秒持続。無敵中は移動・スキル発動不可、制御無効化。", },
-        { name: "スプリット・ランス", initial: "70%", max: "98%", description: "前方の敵軍を貫き、攻撃力×倍率のダメージを与える。2秒間、敵が受けるダメージを20%上昇させる。" },
-        { name: "リバイバル・スピリット", initial: "30%", max: "42%", description: "「グローリー・モーメント」発動後、毎秒攻撃力×倍率のHPを回復。5秒間持続。" }
+        { name: "スプリット・ランス", initial: "70%", max: "98%", description: "前方の敵軍を貫き、攻撃力×70%（初期値）、最大強化時は98%のダメージを与える。2秒間、敵が受けるダメージを20%上昇させる。" },
+        { name: "リバイバル・スピリット", initial: "30%", max: "42%", description: "「グローリー・モーメント」発動後、毎秒攻撃力×30%（初期値）、最大強化時は42%のHPを回復。5秒間持続。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "アシスト・アリー", initial: "14%", max: "70%", description: "5ターン毎に歩兵と弓兵の被ダメージが低下する。2ターン持続。" },
@@ -31,8 +31,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "三段斬り", initial: "160%", max: "224%", description: "一定範囲内の敵を高くカチ上げ、攻撃×倍率のダメージを与える斬撃を3回行う。" },
-        { name: "剣気", initial: "15%", max: "23%", description: "通常攻撃で剣気を放ち、前方直線範囲内の敵に攻撃×倍率のダメージを与える。" },
+        { name: "三段斬り", initial: "160%", max: "224%", description: "一定範囲内の敵を高くカチ上げ、攻撃×160%（初期値）、最大強化時は224%のダメージを与える斬撃を3回行う。" },
+        { name: "剣気", initial: "15%", max: "23%", description: "通常攻撃で剣気を放ち、前方直線範囲内の敵に攻撃×15%（初期値）、最大強化時は23%のダメージを与える。" },
         { name: "快進撃", initial: "16%", max: "48%", description: "HPが50%以上ある際、攻撃力が上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
@@ -52,9 +52,9 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ハンマー・スウィング", initial: "120%", max: "168%", description: "前方ターゲットに攻撃×倍率のダメージを与え、攻撃速度を50%低下させる。4秒持続。" },
+        { name: "ハンマー・スウィング", initial: "120%", max: "168%", description: "前方ターゲットに攻撃×120%（初期値）、最大強化時は168%のダメージを与え、攻撃速度を50%低下させる。4秒持続。" },
         { name: "バトル・ボディ", initial: "8%, 8%", max: "16%, 20%", description: "攻撃を受けた際、一定確率で防御力が上昇する。2秒持続、最大5回まで重複可能。" },
-        { name: "ヘビースマッシュ", initial: "80%", max: "112%", description: "扇形範囲内のターゲットに攻撃×倍率のダメージを与え、30%の確率で眩暈状態にする。1秒持続。" }
+        { name: "ヘビースマッシュ", initial: "80%", max: "112%", description: "扇形範囲内のターゲットに攻撃×80%（初期値）、最大強化時は112%のダメージを与え、30%の確率で眩暈状態にする。1秒持続。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "浄化", initial: "4%", max: "20%", description: "敵全部隊の攻撃力を低下させる。" },
@@ -73,9 +73,9 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ジャッジカード", initial: "270%", max: "378%", description: "ターゲットに攻撃力×倍率のダメージを与え、攻撃力20%低下（2秒）または眩暈（1.5秒）をランダムに付与する。" },
-        { name: "サプライズカード", initial: "100%", max: "140%", description: "残りHP割合が最も低い味方英雄を回復。攻撃力×倍率を基礎値として、基礎値の5%～400%の間で回復量がランダムに決定する。" },
-        { name: "無情な運命", initial: "50%", max: "70%", description: "攻撃力×倍率を基礎値としてスリップダメージを与える。最終ダメージは基礎値の5%～600%の間でランダムに決定する。" }
+        { name: "ジャッジカード", initial: "270%", max: "378%", description: "ターゲットに攻撃力×270%（初期値）、最大強化時は378%のダメージを与え、攻撃力20%低下（2秒）または眩暈（1.5秒）をランダムに付与する。" },
+        { name: "サプライズカード", initial: "100%", max: "140%", description: "残りHP割合が最も低い味方英雄を回復。攻撃力×100%（初期値）、最大強化時は140%を基礎値として、基礎値の5%～400%の間で回復量がランダムに決定する。" },
+        { name: "無情な運命", initial: "50%", max: "70%", description: "攻撃力×50%（初期値）、最大強化時は70%を基礎値としてスリップダメージを与える。最終ダメージは基礎値の5%～600%の間でランダムに決定する。" }
       ]},
       { type: "遠征スキル", skills: [
         { name: "ドゥーム", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で敵の被ダメージを上昇させる。" },
@@ -115,8 +115,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ビッグバブル", initial: "220%", max: "300%", description: "対象を1.5秒間行動不能にし、対象と周囲の敵に攻撃力×倍率の範囲ダメージを与える。" },
-        { name: "スロウポーション", initial: "100%", max: "140%", description: "敵単体に攻撃力×倍率のダメージを与え、周囲の敵の攻撃速度を50%低下させる。3秒持続。" },
+        { name: "ビッグバブル", initial: "220%", max: "300%", description: "対象を1.5秒間行動不能にし、対象と周囲の敵に攻撃力×220%（初期値）、最大強化時は300%の範囲ダメージを与える。" },
+        { name: "スロウポーション", initial: "100%", max: "140%", description: "敵単体に攻撃力×100%（初期値）、最大強化時は140%のダメージを与え、周囲の敵の攻撃速度を50%低下させる。3秒持続。" },
         { name: "ライトポーション", initial: "10%", max: "30%", description: "自身の攻撃速度が上昇する。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -136,8 +136,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "スターフォール", initial: "220%", max: "300%", description: "一定範囲内の対象に攻撃力×倍率のダメージを与え、1.5秒間眩暈状態にする。" },
-        { name: "バラージアロー", initial: "100%", max: "140%", description: "一定範囲内の敵に攻撃力×倍率のダメージを与える。" },
+        { name: "スターフォール", initial: "220%", max: "300%", description: "一定範囲内の対象に攻撃力×220%（初期値）、最大強化時は300%のダメージを与え、1.5秒間眩暈状態にする。" },
+        { name: "バラージアロー", initial: "100%", max: "140%", description: "一定範囲内の敵に攻撃力×100%（初期値）、最大強化時は140%のダメージを与える。" },
         { name: "ハンティングリズム", initial: "0.5%", max: "2.5%", description: "敵ユニットを1体撃破する毎に攻撃力が上昇する。最大15層まで重複可能。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -158,7 +158,7 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "リベンジャー", initial: "100% / 20%", max: "140% / 100%", description: "前方扇形範囲の敵に攻撃力×倍率のダメージを与え、1秒間眩暈状態にする。さらに2秒間、自身の攻撃力が上昇する。" },
-        { name: "フェアウェル", initial: "200%", max: "280%", description: "周囲の敵に攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "フェアウェル", initial: "200%", max: "280%", description: "周囲の敵に攻撃力×200%（初期値）、最大強化時は280%の範囲ダメージを与える。" },
         { name: "ケアフリー", initial: "10%", max: "50%", description: "一定確率で被ダメージを50%軽減する。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -178,7 +178,7 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ボマーペイント", initial: "50%", max: "70%", description: "小範囲に爆発性の塗料を広げ、0.5秒毎に攻撃力×倍率のダメージを与える。3秒持続。" },
+        { name: "ボマーペイント", initial: "50%", max: "70%", description: "小範囲に爆発性の塗料を広げ、0.5秒毎に攻撃力×50%（初期値）、最大強化時は70%のダメージを与える。3秒持続。" },
         { name: "スポイルペイント", initial: "25% / 5%", max: "35% / 25%", description: "0.5秒毎に攻撃力×倍率のダメージを与え、対象の被ダメージを増加させる。2秒持続。" },
         { name: "フェイクペイント", initial: "25%", max: "75%", description: "自身の防御力が上昇する。" },
       ]},
@@ -199,7 +199,7 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "スカイハイショット", initial: "300%", max: "420%", description: "攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "スカイハイショット", initial: "300%", max: "420%", description: "攻撃力×300%（初期値）、最大強化時は420%の範囲ダメージを与える。" },
         { name: "特製ナパーム弾", initial: "60% / 17%", max: "84% / 25%", description: "攻撃力×倍率の範囲ダメージを与え、燃焼エリアを生成する。2秒持続し、0.5秒毎に攻撃力×倍率のダメージを与える。" },
         { name: "キャノンボウラー", initial: "10%", max: "26%", description: "自身の攻撃力が上昇する。" },
       ]},
@@ -221,8 +221,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "鹿角猛進", initial: "160%", max: "224%", description: "攻撃×倍率の範囲ダメージを与え、範囲内の敵を跳ね飛ばし、1秒間気絶させる。" },
-        { name: "追撃攻勢", initial: "150%", max: "210%", description: "目標に攻撃×倍率のダメージを与える。" },
+        { name: "鹿角猛進", initial: "160%", max: "224%", description: "攻撃×160%（初期値）、最大強化時は224%の範囲ダメージを与え、範囲内の敵を跳ね飛ばし、1秒間気絶させる。" },
+        { name: "追撃攻勢", initial: "150%", max: "210%", description: "目標に攻撃×150%（初期値）、最大強化時は210%のダメージを与える。" },
         { name: "怒狂", initial: "4%", max: "12%", description: "ダメージを受けた際、10%の確率で攻撃力が上昇する。3秒持続、最大5回まで重複。" }
       ]},
       { type: "遠征スキル", skills: [
@@ -243,8 +243,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ランススパイク", initial: "180%", max: "252%", description: "範囲内の目標に攻撃×倍率のダメージを与え、1.5秒間その場に拘束する。" },
-        { name: "真っ向勝負", initial: "150%", max: "210%", description: "目標に攻撃×倍率のダメージを与える。" },
+        { name: "ランススパイク", initial: "180%", max: "252%", description: "範囲内の目標に攻撃×180%（初期値）、最大強化時は252%のダメージを与え、1.5秒間その場に拘束する。" },
+        { name: "真っ向勝負", initial: "150%", max: "210%", description: "目標に攻撃×150%（初期値）、最大強化時は210%のダメージを与える。" },
         { name: "執念", initial: "20%", max: "60%", description: "HPが50%以下になると攻撃速度が上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
@@ -265,7 +265,7 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "連続射撃", initial: "55%", max: "75%", description: "連続攻撃を行い、毎回攻撃力×倍率のダメージを与え、目標を2秒間気絶させる。" },
+        { name: "連続射撃", initial: "55%", max: "75%", description: "連続攻撃を行い、毎回攻撃力×55%（初期値）、最大強化時は75%のダメージを与え、目標を2秒間気絶させる。" },
         { name: "金剛不壊", initial: "50%", max: "150%", description: "HPが50%以下になると自身の防御力が上昇する。" },
         { name: "工法改良", initial: "10%", max: "30%", description: "攻撃速度が上昇する。" }
       ]},
@@ -307,9 +307,9 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "治療祈祷", initial: "200%", max: "280%", description: "自軍の全英雄のHPがヒルデの攻撃力×倍率分回復する。" },
-        { name: "贖罪", initial: "100%", max: "140%", description: "自軍でHP割合が最も低い英雄を攻撃力×倍率分回復する。" },
-        { name: "教化", initial: "140%", max: "196%", description: "敵ターゲットに攻撃力×倍率のダメージを与え、1秒間行動不能にする。" },
+        { name: "治療祈祷", initial: "200%", max: "280%", description: "自軍の全英雄のHPがヒルデの攻撃力×200%（初期値）、最大強化時は280%分回復する。" },
+        { name: "贖罪", initial: "100%", max: "140%", description: "自軍でHP割合が最も低い英雄を攻撃力×100%（初期値）、最大強化時は140%分回復する。" },
+        { name: "教化", initial: "140%", max: "196%", description: "敵ターゲットに攻撃力×140%（初期値）、最大強化時は196%のダメージを与え、1秒間行動不能にする。" },
       ]},
       { type: "遠征スキル", skills: [
         { name: "苦行", initial: "総攻撃力+3% / 総防御力+2%", max: "総攻撃力+15% / 総防御力+10%", description: "味方全部隊の総攻撃力と総防御力が上昇する。" },
@@ -328,8 +328,8 @@ export const HERO_SKILLS_JA = {
     checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "バックウォッシュ", initial: "200%", max: "280%", description: "攻撃力×倍率の範囲ダメージを与え、1.5秒間行動不能にする。" },
-        { name: "ドランカーミスト", initial: "50%", max: "70%", description: "攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "バックウォッシュ", initial: "200%", max: "280%", description: "攻撃力×200%（初期値）、最大強化時は280%の範囲ダメージを与え、1.5秒間行動不能にする。" },
+        { name: "ドランカーミスト", initial: "50%", max: "70%", description: "攻撃力×50%（初期値）、最大強化時は70%の範囲ダメージを与える。" },
         { name: "ラッキーショット", initial: "8回ごと / 0.2秒眩暈", max: "5回ごと / 0.5秒眩暈", description: "一定回数の通常攻撃後、次の攻撃でターゲットを眩暈状態にする。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -348,7 +348,7 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/19", sourceName: "アルテマ「キングショット」イェーガーの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "デスアトラクト", initial: "160%", max: "224%", description: "範囲内の敵に攻撃力×倍率のダメージを与え、2秒間眩暈状態にする。" },
+        { name: "デスアトラクト", initial: "160%", max: "224%", description: "範囲内の敵に攻撃力×160%（初期値）、最大強化時は224%のダメージを与え、2秒間眩暈状態にする。" },
         { name: "不器用な演技", initial: "220% / 50%", max: "300% / 50%", description: "成功時はターゲットに攻撃力×倍率のダメージ、失敗時は攻撃力×50%分のHPを回復する。" },
         { name: "シークレット・ストーリー", initial: "10%", max: "30%", description: "敵への与ダメージが上昇する。3秒間持続。" },
       ]},
@@ -368,14 +368,14 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/23", sourceName: "アルテマ「キングショット」マーゴの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "トリックアタック", initial: "300%", max: "420%", description: "敵に攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "トリックアタック", initial: "300%", max: "420%", description: "敵に攻撃力×300%（初期値）、最大強化時は420%の範囲ダメージを与える。" },
         { name: "トリックスルー", initial: "5%", max: "25%", description: "通常攻撃を受けた際、一定確率で攻撃を受け流し、ダメージを無効化する。" },
-        { name: "クラッシュストライク", initial: "100%", max: "140%", description: "攻撃力×倍率のダメージを与え、1.5秒間行動不能にする。" },
+        { name: "クラッシュストライク", initial: "100%", max: "140%", description: "攻撃力×100%（初期値）、最大強化時は140%のダメージを与え、1.5秒間行動不能にする。" },
       ]},
       { type: "遠征スキル", skills: [
         { name: "デストロイ", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が上昇する。" },
         { name: "タクティクス", initial: "4%", max: "20%", description: "味方全部隊が通常攻撃を受けた際、一定確率でダメージを回避する。" },
-        { name: "トリックテクニック", initial: "120%", max: "200%", description: "騎兵が25%の確率で追加攻撃し、倍率分のダメージを与える。" },
+        { name: "トリックテクニック", initial: "120%", max: "200%", description: "騎兵が25%の確率で追加攻撃し、120%（初期値）、最大強化時は200%分のダメージを与える。" },
       ]}
       ]},
       { type: "専用装備スキル", skills: [
@@ -389,7 +389,7 @@ export const HERO_SKILLS_JA = {
     groups: [
       { type: "討伐スキル", skills: [
         { name: "センター・アテンション", initial: "3% / 3秒", max: "7% / 5秒", description: "味方全体の状態異常を解除し、攻撃力を上昇させる。記載時間中は状態異常の影響を受けない。" },
-        { name: "ファン・ダンス", initial: "220%", max: "300%", description: "軌道上の敵に攻撃力×倍率のダメージを与える。" },
+        { name: "ファン・ダンス", initial: "220%", max: "300%", description: "軌道上の敵に攻撃力×220%（初期値）、最大強化時は300%のダメージを与える。" },
         { name: "マインド・シャッター", initial: "1% / 40%", max: "3% / 60%", description: "敵全体の攻撃速度と治療効果を低下させる。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -428,8 +428,8 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/27", sourceName: "アルテマ「キングショット」スルードの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ストームアックス", initial: "60%", max: "84%", description: "ランダムなターゲット（英雄優先）に攻撃力×倍率の範囲ダメージを与える。" },
-        { name: "バーサカースロー", initial: "50%", max: "70%", description: "範囲内のターゲットに攻撃力×倍率のダメージを与え、1.5秒間眩暈状態にする。" },
+        { name: "ストームアックス", initial: "60%", max: "84%", description: "ランダムなターゲット（英雄優先）に攻撃力×60%（初期値）、最大強化時は84%の範囲ダメージを与える。" },
+        { name: "バーサカースロー", initial: "50%", max: "70%", description: "範囲内のターゲットに攻撃力×50%（初期値）、最大強化時は70%のダメージを与え、1.5秒間眩暈状態にする。" },
         { name: "ウルフバンケット", initial: "3%", max: "5%", description: "味方全体の攻撃力が上昇する。" },
       ]},
       { type: "遠征スキル", skills: [
@@ -448,9 +448,9 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/28", sourceName: "アルテマ「キングショット」ビビアンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "ゴールデンショット", initial: "180%", max: "252%", description: "敵後列のターゲット（英雄優先）に攻撃力×倍率の範囲ダメージを与え、攻撃速度を50%低下させる。2秒持続。" },
-        { name: "グッドラック", initial: "100%", max: "140%", description: "敵ターゲット（英雄優先）に攻撃力×倍率のダメージを与える。50%の確率でクリティカルヒットとなり、ダメージが2倍になる。" },
-        { name: "ゴールドラッシュ", initial: "35%", max: "49%", description: "範囲内の敵ターゲットに攻撃力×倍率のダメージを毎秒与える。3秒持続。" },
+        { name: "ゴールデンショット", initial: "180%", max: "252%", description: "敵後列のターゲット（英雄優先）に攻撃力×180%（初期値）、最大強化時は252%の範囲ダメージを与え、攻撃速度を50%低下させる。2秒持続。" },
+        { name: "グッドラック", initial: "100%", max: "140%", description: "敵ターゲット（英雄優先）に攻撃力×100%（初期値）、最大強化時は140%のダメージを与える。50%の確率でクリティカルヒットとなり、ダメージが2倍になる。" },
+        { name: "ゴールドラッシュ", initial: "35%", max: "49%", description: "範囲内の敵ターゲットに攻撃力×35%（初期値）、最大強化時は49%のダメージを毎秒与える。3秒持続。" },
       ]},
       { type: "遠征スキル", skills: [
         { name: "アウェイティング", initial: "5%", max: "25%", description: "味方全部隊の攻撃時、ターゲットの被ダメージが上昇する。" },
@@ -468,7 +468,7 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/29", sourceName: "アルテマ「キングショット」トリトンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "潮汐の意思", initial: "100%", max: "140%", description: "2秒間無敵状態になり、前方へ突進して攻撃力×倍率の範囲ダメージを与える。" },
+        { name: "潮汐の意思", initial: "100%", max: "140%", description: "2秒間無敵状態になり、前方へ突進して攻撃力×100%（初期値）、最大強化時は140%の範囲ダメージを与える。" },
         { name: "諸王の怒り", initial: "8% / 16%", max: "24% / 48%", description: "自身の攻撃力と防御力が上昇する。4秒持続。" },
         { name: "必殺の一撃", initial: "20%", max: "28%", description: "個別ページの数値表は初期20%・最大28%。説明文では通常攻撃毎に攻撃力×20%のダメージと記載されており、最大値の意味は要確認。" },
       ]},
@@ -488,7 +488,7 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/30", sourceName: "アルテマ「キングショット」ソフィアの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "マリオネット", initial: "100%", max: "140%", description: "範囲内の敵に攻撃力×倍率のダメージを与え、1秒間混乱状態にする。" },
+        { name: "マリオネット", initial: "100%", max: "140%", description: "範囲内の敵に攻撃力×100%（初期値）、最大強化時は140%のダメージを与え、1秒間混乱状態にする。" },
         { name: "ペイン・マーク", initial: "50% / 2%", max: "70% / 6%", description: "範囲内のターゲットに攻撃力×倍率のダメージを与え、被ダメージを上昇させる。4秒持続。" },
         { name: "マーク・ウィップ", initial: "8% / 4%", max: "24% / 12%", description: "ペイン・マーク付与時に自身の攻撃力と、マーク対象への与ダメージが上昇する。" },
       ]},
@@ -508,7 +508,7 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/31", sourceName: "アルテマ「キングショット」ヤンの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "メガスロー", initial: "100%", max: "140%", description: "直線上の敵に攻撃力×倍率の範囲ダメージ。雪の精霊が戻り、再び同ダメージを与える。" },
+        { name: "メガスロー", initial: "100%", max: "140%", description: "直線上の敵に攻撃力×100%（初期値）、最大強化時は140%の範囲ダメージ。雪の精霊が戻り、再び同ダメージを与える。" },
         { name: "チェーンショット", initial: "15%", max: "30%", description: "15%（最大30%）の確率で特製の銃による連撃を行い、ターゲットに追加ダメージを1回与える。" },
         { name: "ヘッドショット", initial: "3%", max: "15%", description: "ダメージ時に一定確率で会心が発生する。" },
       ]},
@@ -598,7 +598,7 @@ export const HERO_SKILLS_JA = {
     source: "https://altema.jp/kingshot/chara/10", sourceName: "アルテマ「キングショット」オリーブの評価とスキル", checkedAt: "2026-10-13",
     groups: [
       { type: "討伐スキル", skills: [
-        { name: "矢の雨", initial: "180%", max: "252%", description: "攻撃×倍率のダメージを与える。" },
+        { name: "矢の雨", initial: "180%", max: "252%", description: "攻撃×180%（初期値）、最大強化時は252%のダメージを与える。" },
         { name: "マーク", initial: "10%", max: "30%", description: "ターゲットに狩人の印を付与し、今回の攻撃の与ダメージが上昇する。" }
       ]},
       { type: "遠征スキル", skills: [
