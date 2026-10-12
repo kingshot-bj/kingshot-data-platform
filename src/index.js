@@ -767,6 +767,10 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
+    // Keep board_index as the committed/resume cursor. player_cursor is reused
+    // only during RANKINGS to expose in-flight fetch progress without skipping
+    // boards if a Worker invocation ends before the batch is persisted.
+    await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = 0, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
     const concurrency = apiLimiter
       ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), KINGDOM_RANKING_BOARDS.length - startIndex))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
@@ -793,7 +797,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
           { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys }
         ));
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = board_index + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = player_cursor + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
         const message = "RANKING_FETCH_FAILED:" + board + ":" + String(error?.message || error).slice(0, 500);
@@ -927,7 +931,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const batchSourceFirstAt = batchSourceTimes.length ? Math.min(...batchSourceTimes) : null;
     const batchSourceLastAt = batchSourceTimes.length ? Math.max(...batchSourceTimes) : null;
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET board_index = ?, player_cursor = 0, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
     ).bind(
       endIndex,
       rankingRows,
@@ -1457,8 +1461,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span>"+(sourceText?"<small>MightPulseデータ基準時刻: "+esc(sourceText)+"</small>":"<small>MightPulseデータ基準時刻: 未取得</small>")+elapsedText+"</div>";
     }
     if(j.status==="RANKINGS"){
-      var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress'><b>更新中：ランキング取得</b><span>API取得成功 "+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>D1保存済みランキング行 "+esc(j.ranking_rows)+"件</small>"+phaseEta(pct)+"</div>";
+      var fetchProgress=Number(j.ranking_fetch_progress ?? j.board_index)||0;
+      var pct=j.total_boards ? Math.min(100,Math.round(fetchProgress/Number(j.total_boards)*100)) : 0;
+      return "<div class='progress'><b>更新中：ランキング取得</b><span>API取得成功 "+esc(fetchProgress)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>D1保存済みランキング行 "+esc(j.ranking_rows)+"件</small>"+phaseEta(pct)+"</div>";
     }
     if(j.status==="PLAYERS"){
       var count=j.player_count==null?"?":j.player_count;
@@ -1467,8 +1472,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }
     if(j.status==="FAILED"){
       var failedPhase=(Number(j.board_index||0)<Number(j.total_boards||0))?"ランキング":"プレイヤー";
-      var failedPct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress error'><b>更新停止："+failedPhase+"</b><span>API取得成功 "+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>D1保存済みランキング行 "+esc(j.ranking_rows)+"件 / ジョブ停止</small>"+(j.last_error?"<small>停止理由: "+esc(j.last_error)+"</small>":"<small>停止理由: 詳細未記録</small>")+(j.updated_at?"<small>最終進捗: "+esc(new Date(j.updated_at*1000).toLocaleString('ja-JP'))+"</small>":"")+"</div>";
+      var failedFetchProgress=Number(j.ranking_fetch_progress ?? j.board_index)||0;
+      var failedPct=j.total_boards ? Math.min(100,Math.round(failedFetchProgress/Number(j.total_boards)*100)) : 0;
+      return "<div class='progress error'><b>更新停止："+failedPhase+"</b><span>API取得成功 "+esc(failedFetchProgress)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>D1保存済みランキング行 "+esc(j.ranking_rows)+"件 / ジョブ停止</small>"+(j.last_error?"<small>停止理由: "+esc(j.last_error)+"</small>":"<small>停止理由: 詳細未記録</small>")+(j.updated_at?"<small>最終進捗: "+esc(new Date(j.updated_at*1000).toLocaleString('ja-JP'))+"</small>":"")+"</div>";
     }
     return "";
   }
@@ -3179,6 +3185,7 @@ async function handleKingdomWatchlistApi(request, env) {
           status: job.status,
           board_index: Number(job.board_index || 0),
           total_boards: KINGDOM_RANKING_BOARDS.length,
+          ranking_fetch_progress: Math.min(KINGDOM_RANKING_BOARDS.length, Number(job.board_index || 0) + ((job.status === "RANKINGS" || job.status === "FAILED") && Number(job.board_index || 0) < KINGDOM_RANKING_BOARDS.length ? Number(job.player_cursor || 0) : 0)),
           player_cursor: Number(job.player_cursor || 0),
           player_count: playerCount,
           ranking_rows: Number(job.ranking_rows || 0),
