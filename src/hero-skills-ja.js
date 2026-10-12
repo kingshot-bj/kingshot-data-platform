@@ -219,6 +219,8 @@ export const HERO_SKILLS_JA = {
       ]},
       { type: "専用装備スキル", skills: [
         { name: "狂熱共鳴", description: "与ダメージが30%上昇する。" }
+      ,
+        { name: "狂熱共鳴（遠征）", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
   },
@@ -239,6 +241,8 @@ export const HERO_SKILLS_JA = {
       ]},
       { type: "専用装備スキル", skills: [
         { name: "紅の意志", description: "与ダメージが30%上昇する。" }
+      ,
+        { name: "信頼", description: "防衛部隊の殺傷力が15%上昇する。" }
       ]}
     ]
   },
@@ -259,6 +263,8 @@ export const HERO_SKILLS_JA = {
       ]},
       { type: "専用装備スキル", skills: [
         { name: "義理尽", description: "攻撃力が24%上昇する。" }
+      ,
+        { name: "攻撃は最大の防御", description: "防衛部隊の攻撃力が15%上昇する。" }
       ]}
     ]
   },
