@@ -18,7 +18,7 @@ export const HERO_SKILLS_JA = {
         { name: "アシスト・アリー", initial: "14%", max: "70%", description: "5ターン毎に歩兵と弓兵の被ダメージが低下する。2ターン持続。" },
         { name: "チャンピオン・ウィル", initial: "20%, 2%", max: "100%, 10%", description: "歩兵の与ダメージと、騎兵・弓兵の与ダメージが上昇する。" },
         { name: "チャンス・オブ・フューリー", initial: "12%, 5%", max: "60%, 25%", description: "歩兵が攻撃する度にターゲットへ追加ダメージを与え、敵の被ダメージを上昇させる。1ターン持続。" }
-      ]}
+      ]},
       { type: "専用装備スキル", skills: [
         { name: "不屈の信念", max: "攻撃力+42%（2.5秒）", description: "「グローリー・モーメント」の効果を受けた味方の攻撃力が42%増加。2.5秒持続。" },
         { name: "グローリー・オース", max: "防衛部隊HP+15%", description: "防衛部隊のHPが15%上昇する。" }
@@ -39,7 +39,7 @@ export const HERO_SKILLS_JA = {
         { name: "臨戦態勢", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
         { name: "剣術指導", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が上昇する。" },
         { name: "不義の一撃", initial: "8%", max: "40%", description: "一定確率で味方全部隊の与ダメージが50%上昇する。" }
-      ]}
+      ]},
       { type: "専用装備スキル", skills: [
         { name: "双剣防御", max: "自身の被ダメージ-30%", description: "自身の受けるダメージが30%減少する。" },
         { name: "真実の術", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が15%上昇する。" }
@@ -60,7 +60,7 @@ export const HERO_SKILLS_JA = {
         { name: "浄化", initial: "4%", max: "20%", description: "敵全部隊の攻撃力を低下させる。" },
         { name: "意志", initial: "4%", max: "20%", description: "味方全部隊の被ダメージが低下する。" },
         { name: "鼓舞", initial: "5%", max: "25%", description: "味方全部隊のHPが上昇する。" }
-      ]}
+      ]},
       { type: "専用装備スキル", skills: [
         { name: "ハンマー・ブレス", max: "与ダメージ+30%", description: "自身の与ダメージが30%上昇する。" },
         { name: "ハンマー・ディフェンス", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が15%上昇する。" }
@@ -81,7 +81,7 @@ export const HERO_SKILLS_JA = {
         { name: "ドゥーム", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で敵の被ダメージを上昇させる。" },
         { name: "ラッキーカード", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で今回のダメージが上昇する。" },
         { name: "ガーディアンカード", initial: "10%", max: "50%", description: "40%の確率で味方全部隊の被ダメージが減少する。" }
-      ]}
+      ]},
       { type: "専用装備スキル", skills: [
         { name: "シャッフルマジック", max: "浮動効果の上限・下限+150%", description: "全ての「浮動」効果を持つスキルの上限と下限がそれぞれ150%上昇する。" },
         { name: "運命の計画", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が15%上昇する。" }
