@@ -107,7 +107,8 @@ async function runDiagnosticHealthChecks(env) {
           });
           const result = await getMightPulsePlayer(env, String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"), {
             include: "base",
-            apiKey: lease.api_key
+            apiKey: lease.api_key,
+            metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
           });
           await recordApiPoolSuccess(env.DB, {
             keyId: lease.key_id,
