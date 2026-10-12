@@ -4289,7 +4289,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
       });
       const result = await getMightPulsePlayer(env, probeGovernorId, {
         include: "base",
-        apiKey: lease.api_key
+        apiKey: lease.api_key,
+        metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
       });
       await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
