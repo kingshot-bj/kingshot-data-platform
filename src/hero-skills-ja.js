@@ -20,8 +20,8 @@ export const HERO_SKILLS_JA = {
         { name: "チャンス・オブ・フューリー", initial: "12%, 5%", max: "60%, 25%", description: "歩兵が攻撃する度にターゲットへ追加ダメージを与え、敵の被ダメージを上昇させる。1ターン持続。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "不屈の信念", initial: "攻撃力+30%（2.5秒）", max: "攻撃力+42%（2.5秒）", description: "「グローリー・モーメント」の効果を受けた味方の攻撃力が30%（初期）〜42%（最大強化時）増加。2.5秒持続。" , source: "https://kingshotwiki.com/ja/heroes/alcar-ja/"},
-        { name: "グローリー・オース", initial: "防衛部隊HP+5%", max: "防衛部隊HP+15%", description: "防衛部隊のHPが5%（初期）〜15%（最大強化時）上昇する。" , source: "https://kingshotwiki.com/ja/heroes/alcar-ja/"}
+        { name: "不屈の信念", initial: "攻撃力+30%（2.5秒）", max: "攻撃力+42%（2.5秒）", description: "「グローリー・モーメント」の効果を受けた味方の攻撃力が30%（初期）〜42%（最大強化時）増加。2.5秒持続。", source: "https://kingshotwiki.com/ja/heroes/alcar-ja/"},
+        { name: "グローリー・オース", initial: "防衛部隊HP+5%", max: "防衛部隊HP+15%", description: "防衛部隊のHPが5%（初期）〜15%（最大強化時）上昇する。", source: "https://kingshotwiki.com/ja/heroes/alcar-ja/"}
       ]}
     ]
   },
@@ -41,8 +41,8 @@ export const HERO_SKILLS_JA = {
         { name: "不義の一撃", initial: "8%", max: "40%", description: "一定確率で味方全部隊の与ダメージが50%上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "双剣防御", initial: "自身の被ダメージ-10%", max: "自身の被ダメージ-30%", description: "自身の受けるダメージが10%（初期）〜30%（最大強化時）減少する。" , source: "https://ks-toolkit.com/data/heroes/amadeus/"},
-        { name: "真実の術", initial: "集結部隊攻撃力+5%", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/amadeus/"}
+        { name: "双剣防御", initial: "自身の被ダメージ-10%", max: "自身の被ダメージ-30%", description: "自身の受けるダメージが10%（初期）〜30%（最大強化時）減少する。", source: "https://ks-toolkit.com/data/heroes/amadeus/"},
+        { name: "真実の術", initial: "集結部隊攻撃力+5%", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/amadeus/"}
       ]}
     ]
   },
@@ -62,8 +62,8 @@ export const HERO_SKILLS_JA = {
         { name: "鼓舞", initial: "5%", max: "25%", description: "味方全部隊のHPが上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "ハンマー・ブレス", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "自身の与ダメージが10%（初期）〜30%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/eric/"},
-        { name: "ハンマー・ディフェンス", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/eric/"}
+        { name: "ハンマー・ブレス", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "自身の与ダメージが10%（初期）〜30%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/eric/"},
+        { name: "ハンマー・ディフェンス", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/eric/"}
       ]}
     ]
   },
@@ -83,8 +83,8 @@ export const HERO_SKILLS_JA = {
         { name: "ガーディアンカード", initial: "10%", max: "50%", description: "40%の確率で味方全部隊の被ダメージが減少する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "シャッフルマジック", initial: "浮動効果の上限・下限+30%", max: "浮動効果の上限・下限+150%", description: "全ての「浮動」効果を持つスキルの上限と下限がそれぞれ30%（初期）〜150%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/petra/"},
-        { name: "運命の計画", initial: "集結部隊攻撃力+5%", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/petra/"}
+        { name: "シャッフルマジック", initial: "浮動効果の上限・下限+30%", max: "浮動効果の上限・下限+150%", description: "全ての「浮動」効果を持つスキルの上限と下限がそれぞれ30%（初期）〜150%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/petra/"},
+        { name: "運命の計画", initial: "集結部隊攻撃力+5%", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/petra/"}
       ]}
     ]
   },
@@ -104,8 +104,8 @@ export const HERO_SKILLS_JA = {
         { name: "凛然なる剣気", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "重剣無鋒", initial: "追加シールド攻撃力×55%、被ダメージの10%反射", max: "追加シールド攻撃力×95%、被ダメージの30%反射", description: "「完全無欠」のシールド値を追加。シールド持続中に受けたダメージの一部を敵へ反射する。" , source: "https://www.kingshotcommand.com/hero-widgets/diego"},
-        { name: "大巧不工", initial: "防衛部隊の防御力+5%", max: "防衛部隊の防御力+15%", description: "防衛部隊の防御力を上昇させる。" , source: "https://www.kingshotcommand.com/hero-widgets/diego"}
+        { name: "重剣無鋒", initial: "追加シールド攻撃力×55%、被ダメージの10%反射", max: "追加シールド攻撃力×95%、被ダメージの30%反射", description: "「完全無欠」のシールド値を追加。シールド持続中に受けたダメージの一部を敵へ反射する。", source: "https://www.kingshotcommand.com/hero-widgets/diego"},
+        { name: "大巧不工", initial: "防衛部隊の防御力+5%", max: "防衛部隊の防御力+15%", description: "防衛部隊の防御力を上昇させる。", source: "https://www.kingshotcommand.com/hero-widgets/diego"}
       ]}
     ]
   },
@@ -125,8 +125,8 @@ export const HERO_SKILLS_JA = {
         { name: "ライドマスター", initial: "30%", max: "150%", description: "味方の騎兵部隊は攻撃時に50%の確率で追加ダメージを与える。追加ダメージは初期30%・最大150%。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "スプラッシュバブル", initial: "自身攻撃力+8%、追加範囲ダメージ攻撃力×50%", max: "自身攻撃力+24%、追加範囲ダメージ攻撃力×70%", description: "自身の攻撃力が上昇。「ビッグバブル」の行動不能終了時に周囲へ追加ダメージを与える。" , source: "https://www.kingshotcommand.com/hero-widgets/liz"},
-        { name: "ハイパーブースター", initial: "防衛部隊の殺傷力+5%", max: "防衛部隊の殺傷力+15%", description: "防衛部隊の殺傷力を上昇させる。" , source: "https://www.kingshotcommand.com/hero-widgets/liz"}
+        { name: "スプラッシュバブル", initial: "自身攻撃力+8%、追加範囲ダメージ攻撃力×50%", max: "自身攻撃力+24%、追加範囲ダメージ攻撃力×70%", description: "自身の攻撃力が上昇。「ビッグバブル」の行動不能終了時に周囲へ追加ダメージを与える。", source: "https://www.kingshotcommand.com/hero-widgets/liz"},
+        { name: "ハイパーブースター", initial: "防衛部隊の殺傷力+5%", max: "防衛部隊の殺傷力+15%", description: "防衛部隊の殺傷力を上昇させる。", source: "https://www.kingshotcommand.com/hero-widgets/liz"}
       ]}
     ]
   },
@@ -146,8 +146,8 @@ export const HERO_SKILLS_JA = {
         { name: "閃光の矢", initial: "10%", max: "50%", description: "味方の弓兵部隊が攻撃する度、対象に追加ダメージを与える。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "星霊の残光", initial: "星霊HPは初期HPの10%、5秒存在", max: "星霊HPは初期HPの30%、5秒存在", description: "星霊を召喚し、周囲の敵の攻撃を引き寄せる。" , source: "https://www.kingshotcommand.com/hero-widgets/luna"},
-        { name: "月輝の力", initial: "集結部隊の攻撃力+5%", max: "集結部隊の攻撃力+15%", description: "集結部隊の攻撃力を上昇させる。" , source: "https://www.kingshotcommand.com/hero-widgets/luna"}
+        { name: "星霊の残光", initial: "星霊HPは初期HPの10%、5秒存在", max: "星霊HPは初期HPの30%、5秒存在", description: "星霊を召喚し、周囲の敵の攻撃を引き寄せる。", source: "https://www.kingshotcommand.com/hero-widgets/luna"},
+        { name: "月輝の力", initial: "集結部隊の攻撃力+5%", max: "集結部隊の攻撃力+15%", description: "集結部隊の攻撃力を上昇させる。", source: "https://www.kingshotcommand.com/hero-widgets/luna"}
       ]}
     ]
   },
@@ -167,8 +167,8 @@ export const HERO_SKILLS_JA = {
         { name: "愛と正義", initial: "5%", max: "25%", description: "味方全部隊の総HPを回復する。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "修理の達人", initial: "HP50%未満で最大HP7%回復、防御力+6%", max: "HP50%未満で最大HP35%回復、防御力+30%", description: "各戦闘で1回、HPが初めて50%未満になると最大HPの7%（初期）〜35%（最大強化時）を回復し、防御力が6%（初期）〜30%（最大強化時）上昇。戦闘終了まで持続。" , source: "https://ks-toolkit.com/data/heroes/charles/"},
-        { name: "華麗なる登場", initial: "味方全体のHP+3%", max: "味方全体のHP+15%", description: "味方全体のHPが3%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/charles/"}
+        { name: "修理の達人", initial: "HP50%未満で最大HP7%回復、防御力+6%", max: "HP50%未満で最大HP35%回復、防御力+30%", description: "各戦闘で1回、HPが初めて50%未満になると最大HPの7%（初期）〜35%（最大強化時）を回復し、防御力が6%（初期）〜30%（最大強化時）上昇。戦闘終了まで持続。", source: "https://ks-toolkit.com/data/heroes/charles/"},
+        { name: "華麗なる登場", initial: "味方全体のHP+3%", max: "味方全体のHP+15%", description: "味方全体のHPが3%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/charles/"}
       ]}
     ]
   },
@@ -188,8 +188,8 @@ export const HERO_SKILLS_JA = {
         { name: "クール&ホット", initial: "5%", max: "25%", description: "味方全体の総殺傷力が上昇する。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "カラーセンス", initial: "与ダメージ+25%、対象攻撃力-5%", max: "与ダメージ+25%、対象攻撃力-25%", description: "自身の与ダメージが25%上昇し、塗料の影響を受けた対象の攻撃力を5%（初期）〜25%（最大強化時）低下させる。" , source: "https://ks-toolkit.com/data/heroes/ava/"},
-        { name: "クロマストーム", initial: "味方全部隊の殺傷力+5%", max: "味方全部隊の殺傷力+15%", description: "集結開始時、味方全部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/ava/"}
+        { name: "カラーセンス", initial: "与ダメージ+25%、対象攻撃力-5%", max: "与ダメージ+25%、対象攻撃力-25%", description: "自身の与ダメージが25%上昇し、塗料の影響を受けた対象の攻撃力を5%（初期）〜25%（最大強化時）低下させる。", source: "https://ks-toolkit.com/data/heroes/ava/"},
+        { name: "クロマストーム", initial: "味方全部隊の殺傷力+5%", max: "味方全部隊の殺傷力+15%", description: "集結開始時、味方全部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/ava/"}
       ]}
     ]
   },
@@ -209,8 +209,8 @@ export const HERO_SKILLS_JA = {
         { name: "ヘビィキャノン出撃", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、10%から最大50%の確率で50%の追加ダメージを与える。" },
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "クールな砲撃手", initial: "英雄・護衛の攻撃速度+6%（5秒）", max: "英雄・護衛の攻撃速度+14%（5秒）", description: "「スカイハイショット」発動後、味方英雄と護衛の攻撃速度が6%（初期）〜14%（最大強化時）上昇する。5秒持続。" , source: "https://ks-toolkit.com/data/heroes/wee-and-woo/"},
-        { name: "秘密の火薬樽", initial: "防衛部隊の攻撃力+5%", max: "防衛部隊の攻撃力+15%", description: "防衛部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/wee-and-woo/"}
+        { name: "クールな砲撃手", initial: "英雄・護衛の攻撃速度+6%（5秒）", max: "英雄・護衛の攻撃速度+14%（5秒）", description: "「スカイハイショット」発動後、味方英雄と護衛の攻撃速度が6%（初期）〜14%（最大強化時）上昇する。5秒持続。", source: "https://ks-toolkit.com/data/heroes/wee-and-woo/"},
+        { name: "秘密の火薬樽", initial: "防衛部隊の攻撃力+5%", max: "防衛部隊の攻撃力+15%", description: "防衛部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/wee-and-woo/"}
       ]}
     ]
   },
@@ -231,9 +231,9 @@ export const HERO_SKILLS_JA = {
         { name: "荒野の均衡", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "狂熱共鳴", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "与ダメージが10%（初期）〜30%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/helga/"}
+        { name: "狂熱共鳴", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "与ダメージが10%（初期）〜30%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/helga/"}
       ,
-        { name: "狂熱共鳴（遠征）", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/helga/"}
+        { name: "狂熱共鳴（遠征）", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/helga/"}
       ]}
     ]
   },
@@ -253,9 +253,9 @@ export const HERO_SKILLS_JA = {
         { name: "戦乙女", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "紅の意志", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "与ダメージが10%（初期）〜30%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/jabel/"}
+        { name: "紅の意志", initial: "与ダメージ+10%", max: "与ダメージ+30%", description: "与ダメージが10%（初期）〜30%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/jabel/"}
       ,
-        { name: "信頼", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/jabel/"}
+        { name: "信頼", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/jabel/"}
       ]}
     ]
   },
@@ -275,9 +275,9 @@ export const HERO_SKILLS_JA = {
         { name: "陣地戦の強者", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "義理尽", initial: "攻撃力+6%", max: "攻撃力+24%", description: "攻撃力が24%上昇する。" , source: "https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/"}
+        { name: "義理尽", initial: "攻撃力+6%", max: "攻撃力+24%", description: "攻撃力が24%上昇する。", source: "https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/"}
       ,
-        { name: "攻撃は最大の防御", initial: "防衛部隊攻撃力+5%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が15%上昇する。" , source: "https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/"}
+        { name: "攻撃は最大の防御", initial: "防衛部隊攻撃力+5%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が15%上昇する。", source: "https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/"}
       ]}
     ]
   },
@@ -297,8 +297,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "デスファイト", initial: "8%", max: "24%", description: "ペインエキサイトメント発動後、攻撃力が8%（初期）〜24%（最大強化時）上昇。戦闘終了まで持続。" , source: "https://ks-toolkit.com/data/heroes/zoe/"},
-        { name: "不義のプリンセス", initial: "防衛部隊攻撃力+5%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/zoe/"}
+        { name: "デスファイト", initial: "8%", max: "24%", description: "ペインエキサイトメント発動後、攻撃力が8%（初期）〜24%（最大強化時）上昇。戦闘終了まで持続。", source: "https://ks-toolkit.com/data/heroes/zoe/"},
+        { name: "不義のプリンセス", initial: "防衛部隊攻撃力+5%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/zoe/"}
       ]}
     ]
   },
@@ -318,8 +318,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "聖なる祈祷", initial: "30%", max: "70%", description: "ヒルデの回復スキルの効果が30%（初期）〜70%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/hilde/"},
-        { name: "タフネス", initial: "防衛部隊HP+5%", max: "防衛部隊HP+15%", description: "防衛部隊のHPが5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/hilde/"}
+        { name: "聖なる祈祷", initial: "30%", max: "70%", description: "ヒルデの回復スキルの効果が30%（初期）〜70%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/hilde/"},
+        { name: "タフネス", initial: "防衛部隊HP+5%", max: "防衛部隊HP+15%", description: "防衛部隊のHPが5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/hilde/"}
       ]}
     ]
   },
@@ -339,8 +339,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "酒飲み", initial: "5%", max: "15%", description: "通常攻撃毎に、HPが最も低い味方英雄のHPを攻撃力×15%回復する。" , source: "https://www.kingshotcommand.com/hero-widgets/marlin"},
-        { name: "無敵艦隊", initial: "集結部隊の殺傷力+5%", max: "15%", description: "集結部隊の殺傷力が15%上昇する。" , source: "https://www.kingshotcommand.com/hero-widgets/marlin"}
+        { name: "酒飲み", initial: "5%", max: "15%", description: "通常攻撃毎に、HPが最も低い味方英雄のHPを攻撃力×15%回復する。", source: "https://www.kingshotcommand.com/hero-widgets/marlin"},
+        { name: "無敵艦隊", initial: "集結部隊の殺傷力+5%", max: "15%", description: "集結部隊の殺傷力が15%上昇する。", source: "https://www.kingshotcommand.com/hero-widgets/marlin"}
       ]}
     ]
   },
@@ -359,8 +359,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "サイレント・シレンス", initial: "ダメージ220%、沈黙3秒", max: "ダメージ300%、沈黙5秒", description: "ターゲットを初期3秒/最大5秒間スキル使用不可にし、攻撃力×220%（初期値）/×300%（最大強化時）のダメージを与える。" , source: "https://www.kingshotcommand.com/hero-widgets/jaeger"},
-        { name: "賛美歌", initial: "防衛部隊のHP+5%", max: "防衛部隊のHP+15%", description: "防衛部隊のHPが15%上昇する。" , source: "https://www.kingshotcommand.com/hero-widgets/jaeger"}
+        { name: "サイレント・シレンス", initial: "ダメージ220%、沈黙3秒", max: "ダメージ300%、沈黙5秒", description: "ターゲットを初期3秒/最大5秒間スキル使用不可にし、攻撃力×220%（初期値）/×300%（最大強化時）のダメージを与える。", source: "https://www.kingshotcommand.com/hero-widgets/jaeger"},
+        { name: "賛美歌", initial: "防衛部隊のHP+5%", max: "防衛部隊のHP+15%", description: "防衛部隊のHPが15%上昇する。", source: "https://www.kingshotcommand.com/hero-widgets/jaeger"}
       ]}
     ]
   },
@@ -379,8 +379,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "アンブッシュ", initial: "25%", max: "45%", description: "通常攻撃時、40%の確率で追加攻撃し、攻撃力×25%（初期）〜45%（最大強化時）のダメージを与える。" , source: "https://ks-toolkit.com/data/heroes/margot/"},
-        { name: "デスマッチ", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/margot/"}
+        { name: "アンブッシュ", initial: "25%", max: "45%", description: "通常攻撃時、40%の確率で追加攻撃し、攻撃力×25%（初期）〜45%（最大強化時）のダメージを与える。", source: "https://ks-toolkit.com/data/heroes/margot/"},
+        { name: "デスマッチ", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/margot/"}
       ]}
     ]
   },
@@ -399,8 +399,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "オールナイト・フェスタ", initial: "5%", max: "15%", description: "センター・アテンション発動後、自身の攻撃力が5%（初期）〜15%（最大強化時）上昇。戦闘終了まで持続。" , source: "https://ks-toolkit.com/data/heroes/rosa/"},
-        { name: "インスパイア・ダンス", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/rosa/"}
+        { name: "オールナイト・フェスタ", initial: "5%", max: "15%", description: "センター・アテンション発動後、自身の攻撃力が5%（初期）〜15%（最大強化時）上昇。戦闘終了まで持続。", source: "https://ks-toolkit.com/data/heroes/rosa/"},
+        { name: "インスパイア・ダンス", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/rosa/"}
       ]}
     ]
   },
@@ -419,8 +419,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "呑下三百杯", initial: "15%", max: "15%", description: "聖なる玉湯の持続時間が1.5秒延長。延長中、与ダメージの15%分HPを回復。" , source: "https://ks-toolkit.com/data/heroes/long-fei/"},
-        { name: "虚実一対", initial: "防衛部隊攻撃力+15%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が15%上昇する。" , source: "https://ks-toolkit.com/data/heroes/long-fei/"}
+        { name: "呑下三百杯", initial: "15%", max: "15%", description: "聖なる玉湯の持続時間が1.5秒延長。延長中、与ダメージの15%分HPを回復。", source: "https://ks-toolkit.com/data/heroes/long-fei/"},
+        { name: "虚実一対", initial: "防衛部隊攻撃力+15%", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が15%上昇する。", source: "https://ks-toolkit.com/data/heroes/long-fei/"}
       ]}
     ]
   },
@@ -439,8 +439,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "レイジアックス", initial: "25%", max: "35%", description: "ストームアックス使用後、25%（初期）〜35%（最大強化時）の確率でターゲットを1秒間眩暈状態にする。" , source: "https://ks-toolkit.com/data/heroes/thrud/"},
-        { name: "ウルフキッス", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/thrud/"}
+        { name: "レイジアックス", initial: "25%", max: "35%", description: "ストームアックス使用後、25%（初期）〜35%（最大強化時）の確率でターゲットを1秒間眩暈状態にする。", source: "https://ks-toolkit.com/data/heroes/thrud/"},
+        { name: "ウルフキッス", initial: "集結部隊殺傷力+5%", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/thrud/"}
       ]}
     ]
   },
@@ -459,8 +459,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "ロイヤルシューター", initial: "50%", max: "70%", description: "スキル使用のたびに、ランダムなターゲット（英雄優先）へ攻撃力×50%（初期）〜70%（最大強化時）のダメージ。" , source: "https://ks-toolkit.com/data/heroes/vivian/"},
-        { name: "フルバウンティ", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/vivian/"}
+        { name: "ロイヤルシューター", initial: "50%", max: "70%", description: "スキル使用のたびに、ランダムなターゲット（英雄優先）へ攻撃力×50%（初期）〜70%（最大強化時）のダメージ。", source: "https://ks-toolkit.com/data/heroes/vivian/"},
+        { name: "フルバウンティ", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/vivian/"}
       ]}
     ]
   },
@@ -479,8 +479,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "クリスタル改造", initial: "10%", max: "30%", description: "トリトンの与ダメージが10%（初期）〜30%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/triton/"},
-        { name: "虚実一対", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/triton/"}
+        { name: "クリスタル改造", initial: "10%", max: "30%", description: "トリトンの与ダメージが10%（初期）〜30%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/triton/"},
+        { name: "虚実一対", initial: "防衛部隊防御力+5%", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/triton/"}
       ]}
     ]
   },
@@ -499,8 +499,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "オーバーマインド・アイ", initial: "2%", max: "8%", description: "攻撃時2%（初期）〜8%（最大強化時）の確率でターゲットを1秒間混乱状態にする。混乱状態の敵は周囲のターゲットを無差別に攻撃する。" , source: "https://ks-toolkit.com/data/heroes/sophia/"},
-        { name: "ダークナイトクイーン", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。" , source: "https://ks-toolkit.com/data/heroes/sophia/"}
+        { name: "オーバーマインド・アイ", initial: "2%", max: "8%", description: "攻撃時2%（初期）〜8%（最大強化時）の確率でターゲットを1秒間混乱状態にする。混乱状態の敵は周囲のターゲットを無差別に攻撃する。", source: "https://ks-toolkit.com/data/heroes/sophia/"},
+        { name: "ダークナイトクイーン", initial: "防衛部隊殺傷力+5%", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が5%（初期）〜15%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/sophia/"}
       ]}
     ]
   },
@@ -519,8 +519,8 @@ export const HERO_SKILLS_JA = {
       ]}
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "ラピッドファイア", initial: "ダメージ40%、護衛対象は即時撃破", max: "ダメージ56%、護衛対象は即時撃破", description: "連続5回射撃し、ランダムな敵に攻撃力×40%（初期値）/×56%（最大強化時）のダメージを与える。対象が護衛なら即座に撃破する。" , source: "https://www.kingshotcommand.com/hero-widgets/yang"},
-        { name: "アタックディフェンス", initial: "集結部隊の殺傷力+5%", max: "集結部隊の殺傷力+15%", description: "集結部隊の殺傷力が15%上昇する。" , source: "https://www.kingshotcommand.com/hero-widgets/yang"}
+        { name: "ラピッドファイア", initial: "ダメージ40%、護衛対象は即時撃破", max: "ダメージ56%、護衛対象は即時撃破", description: "連続5回射撃し、ランダムな敵に攻撃力×40%（初期値）/×56%（最大強化時）のダメージを与える。対象が護衛なら即座に撃破する。", source: "https://www.kingshotcommand.com/hero-widgets/yang"},
+        { name: "アタックディフェンス", initial: "集結部隊の殺傷力+5%", max: "集結部隊の殺傷力+15%", description: "集結部隊の殺傷力が15%上昇する。", source: "https://www.kingshotcommand.com/hero-widgets/yang"}
       ]}
     ]
   },
