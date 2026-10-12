@@ -1634,7 +1634,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
       Object.keys(boards).forEach(function(b){
         var label=RANKING_BOARD_LABELS[b]||b;
-        h+='<div class="rank"><div class="rank-title"><b><span class="rank-board-icon" aria-hidden="true">'+esc(RANKING_BOARD_ICONS[b]||"🏆")+'</span> '+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
+        h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
           var allianceAbbr=(r.abbr||playerAllianceById[String(r.governor_id)]||playerAllianceById[String(r.uid)]||playerAllianceById[String(r.target_id)]||"");
           var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
