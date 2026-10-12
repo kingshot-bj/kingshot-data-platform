@@ -202,3 +202,20 @@
 ### 残作業・設計上の境界
 - 3件中の進捗は「API応答の処理数」であり、サーバー内部処理の完了率ではない。応答3件の分母が固定のため、ETAは出さない。
 - 登録やMighty判定は工程名＋経過時間を表示し、実測根拠のないカウントダウンは表示しない。サーバー内部工程を本当に進捗化する場合は、クライアント主導の段階APIまたはイベント配信方式を別途設計する必要がある。
+
+
+## 2026-10-12 追加監査：VIP判定と初期ロードの並列実行
+
+### 発見
+- `GET /api/me/vip` は単純な読み取りだけでなく、`evaluateVipEligibility()` を呼び、Mighty確認済みキーの有無に応じてユーザーロールをVIPへ昇格、またはVIPからADVANCEDへ降格する。
+- 初期ロードでは `GET /api/me/advanced` と `GET /api/me/vip` が同時実行される。`advanced` 側がロール更新前の値を返し、`vip` 側が更新後の値を返す競合があり得る。画面の主ロール表示が `advanced.role` だけを採用すると、同じ画面内で古いロールを表示する可能性がある。
+- VIP資格はユーザー本人の登録済みMightPulseキーのうち、`mighty_capable=1` かつ `mighty_check_status='CONFIRMED'` のキーが1本以上あることを基準にする。キー本数の下限や「何本Mightyか」はVIP判定条件ではない。ADMIN/OWNERはロールを維持し、確認済みならMighty機能利用を許可する。
+
+### main反映
+- マイKingshotの主ロール表示で、`d.vip.role` が返っていればそれを優先し、なければ `d.advanced.role`、さらに無ければ BASIC を使うよう変更。
+- コミット: `5bf5f41a683fba550e06731c89fe76e939cb903c`
+- 確認済み `src/index.js` blob SHA: `5761b8dc4cc9fafdd9647c1e0271e885f942d7f1`
+- 埋め込みJSのV8構文解析成功。モックで `advanced.role=BASIC`、`vip.role=VIP` を返し、画面のロール表示がVIPを採用することを確認。
+
+### 未確認
+- 実ブラウザ/iPhone Safariでの表示、Cloudflare本番デプロイは未確認。
