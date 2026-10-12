@@ -16,9 +16,9 @@
 
 - 英雄数：37
 - スキル行：256
-- 今回の外部資料で再照合済み：76行
+- 今回の外部資料で再照合済み：106行
 - 前回監査の外部資料照合記録あり：34行
-- 今回未再照合：145行
+- 今回未再照合：115行
 - 要注意：出典内で数値表と説明文が不一致：1行
 
 ## 行別一覧
@@ -105,44 +105,44 @@
 | レン&ロン | 遠征スキル | ヘビィキャノン出撃 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
 | レン&ロン | 専用装備スキル | クールな砲撃手 | 英雄・護衛の攻撃速度+6%（5秒） | 英雄・護衛の攻撃速度+14%（5秒） | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/wee-and-woo/) |
 | レン&ロン | 専用装備スキル | 秘密の火薬樽 | 防衛部隊の攻撃力+5% | 防衛部隊の攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/wee-and-woo/) |
-| ヘルガ | 討伐スキル | 鹿角猛進 | 160% | 224% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
-| ヘルガ | 討伐スキル | 追撃攻勢 | 150% | 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
-| ヘルガ | 討伐スキル | 怒狂 | 4% | 12% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
-| ヘルガ | 遠征スキル | 守護者の誓い | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
-| ヘルガ | 遠征スキル | 英霊の叫び | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
-| ヘルガ | 遠征スキル | 荒野の均衡 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 討伐スキル | 鹿角猛進 | 160% | 224% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 討伐スキル | 追撃攻勢 | 150% | 210% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 討伐スキル | 怒狂 | 4% | 12% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 遠征スキル | 守護者の誓い | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 遠征スキル | 英霊の叫び | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
+| ヘルガ | 遠征スキル | 荒野の均衡 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/2) |
 | ヘルガ | 専用装備スキル | 狂熱共鳴 | 与ダメージ+10% | 与ダメージ+30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/helga/) |
 | ヘルガ | 専用装備スキル | 狂熱共鳴（遠征） | 集結部隊殺傷力+5% | 集結部隊殺傷力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/helga/) |
-| ジェベル | 討伐スキル | ランススパイク | 180% | 252% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
-| ジェベル | 討伐スキル | 真っ向勝負 | 150% | 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
-| ジェベル | 討伐スキル | 執念 | 20% | 60% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
-| ジェベル | 遠征スキル | 赤き旗 | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
-| ジェベル | 遠征スキル | 勇姿 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
-| ジェベル | 遠征スキル | 戦乙女 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 討伐スキル | ランススパイク | 180% | 252% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 討伐スキル | 真っ向勝負 | 150% | 210% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 討伐スキル | 執念 | 20% | 60% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 遠征スキル | 赤き旗 | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 遠征スキル | 勇姿 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
+| ジェベル | 遠征スキル | 戦乙女 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/4) |
 | ジェベル | 専用装備スキル | 紅の意志 | 与ダメージ+10% | 与ダメージ+30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/jabel/) |
 | ジェベル | 専用装備スキル | 信頼 | 防衛部隊殺傷力+5% | 防衛部隊殺傷力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/jabel/) |
-| サロ | 討伐スキル | 連続射撃 | 55% | 75% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
-| サロ | 討伐スキル | 金剛不壊 | 50% | 150% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
-| サロ | 討伐スキル | 工法改良 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
-| サロ | 遠征スキル | 特派訓練 | 2%, 3% | 10%, 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
-| サロ | 遠征スキル | リサイクル | 3%, 3% | 15%, 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
-| サロ | 遠征スキル | 陣地戦の強者 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 討伐スキル | 連続射撃 | 55% | 75% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 討伐スキル | 金剛不壊 | 50% | 150% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 討伐スキル | 工法改良 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 遠征スキル | 特派訓練 | 2%, 3% | 10%, 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 遠征スキル | リサイクル | 3%, 3% | 15%, 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
+| サロ | 遠征スキル | 陣地戦の強者 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/3) |
 | サロ | 専用装備スキル | 義理尽 | 攻撃力+6% | 攻撃力+24% | 今回の外部資料で再照合済み | [専用装備資料](https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/) |
 | サロ | 専用装備スキル | 攻撃は最大の防御 | 防衛部隊攻撃力+5% | 防衛部隊攻撃力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/) |
-| ゾーイ | 討伐スキル | ソードシールドアサルト | 60% / 被ダメージ+10% | 84% / 被ダメージ+30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
-| ゾーイ | 討伐スキル | ペインエキサイトメント | 20% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
-| ゾーイ | 討伐スキル | ゴッドパワー | 3% | 7% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
-| ゾーイ | 遠征スキル | リッジワウンド | 発動率20% / 毎ターン8%ダメージ | 発動率20% / 毎ターン40%ダメージ | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
-| ゾーイ | 遠征スキル | 感情支配 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
-| ゾーイ | 遠征スキル | 無限テクニック | 発動率50% / 被ダメージ+10% | 発動率50% / 被ダメージ+50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 討伐スキル | ソードシールドアサルト | 60% / 被ダメージ+10% | 84% / 被ダメージ+30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 討伐スキル | ペインエキサイトメント | 20% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 討伐スキル | ゴッドパワー | 3% | 7% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 遠征スキル | リッジワウンド | 発動率20% / 毎ターン8%ダメージ | 発動率20% / 毎ターン40%ダメージ | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 遠征スキル | 感情支配 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
+| ゾーイ | 遠征スキル | 無限テクニック | 発動率50% / 被ダメージ+10% | 発動率50% / 被ダメージ+50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/16) |
 | ゾーイ | 専用装備スキル | デスファイト | 8% | 24% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/zoe/) |
 | ゾーイ | 専用装備スキル | 不義のプリンセス | 防衛部隊攻撃力+5% | 防衛部隊攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/zoe/) |
-| ヒルデ | 討伐スキル | 治療祈祷 | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
-| ヒルデ | 討伐スキル | 贖罪 | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
-| ヒルデ | 討伐スキル | 教化 | 140% | 196% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
-| ヒルデ | 遠征スキル | 苦行 | 総攻撃力+3% / 総防御力+2% | 総攻撃力+15% / 総防御力+10% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
-| ヒルデ | 遠征スキル | ポーション注入 | 120% | 200% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
-| ヒルデ | 遠征スキル | 意志の試練 | 発動率8% / 被ダメージ50%軽減 | 発動率40% / 被ダメージ50%軽減 | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 討伐スキル | 治療祈祷 | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 討伐スキル | 贖罪 | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 討伐スキル | 教化 | 140% | 196% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 遠征スキル | 苦行 | 総攻撃力+3% / 総防御力+2% | 総攻撃力+15% / 総防御力+10% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 遠征スキル | ポーション注入 | 120% | 200% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
+| ヒルデ | 遠征スキル | 意志の試練 | 発動率8% / 被ダメージ50%軽減 | 発動率40% / 被ダメージ50%軽減 | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/14) |
 | ヒルデ | 専用装備スキル | 聖なる祈祷 | 30% | 70% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/hilde/) |
 | ヒルデ | 専用装備スキル | タフネス | 防衛部隊HP+5% | 防衛部隊HP+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/hilde/) |
 | マリン | 討伐スキル | バックウォッシュ | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/15) |
