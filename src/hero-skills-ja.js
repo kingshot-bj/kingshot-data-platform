@@ -21,8 +21,8 @@ export const HERO_SKILLS_JA = {
       ]}
     ],
       { type: "専用装備スキル", skills: [
-        { name: "不屈の信念", description: "「グローリー・モーメント」の効果を受けた味方の攻撃力が42%増加。2.5秒持続。" },
-        { name: "グローリー・オース", description: "防衛部隊のHPが15%上昇する。" }
+        { name: "不屈の信念", max: "攻撃力+42%（2.5秒）", description: "「グローリー・モーメント」の効果を受けた味方の攻撃力が42%増加。2.5秒持続。" },
+        { name: "グローリー・オース", max: "防衛部隊HP+15%", description: "防衛部隊のHPが15%上昇する。" }
       ]}
   },
   "アマデウス": {
@@ -42,8 +42,8 @@ export const HERO_SKILLS_JA = {
       ]}
     ],
       { type: "専用装備スキル", skills: [
-        { name: "双剣防御", description: "自身の受けるダメージが30%減少する。" },
-        { name: "真実の術", description: "集結部隊の攻撃力が15%上昇する。" }
+        { name: "双剣防御", max: "自身の被ダメージ-30%", description: "自身の受けるダメージが30%減少する。" },
+        { name: "真実の術", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が15%上昇する。" }
       ]}
   },
   "エリック": {
@@ -63,8 +63,8 @@ export const HERO_SKILLS_JA = {
       ]}
     ],
       { type: "専用装備スキル", skills: [
-        { name: "ハンマー・ブレス", description: "自身の与ダメージが30%上昇する。" },
-        { name: "ハンマー・ディフェンス", description: "防衛部隊の防御力が15%上昇する。" }
+        { name: "ハンマー・ブレス", max: "与ダメージ+30%", description: "自身の与ダメージが30%上昇する。" },
+        { name: "ハンマー・ディフェンス", max: "防衛部隊防御力+15%", description: "防衛部隊の防御力が15%上昇する。" }
       ]}
   },
   "ペーラ": {
@@ -83,8 +83,8 @@ export const HERO_SKILLS_JA = {
       ]}
     ],
       { type: "専用装備スキル", skills: [
-        { name: "シャッフルマジック", description: "全ての「浮動」効果を持つスキルの上限と下限がそれぞれ150%上昇する。" },
-        { name: "運命の計画", description: "集結部隊の攻撃力が15%上昇する。" }
+        { name: "シャッフルマジック", max: "浮動効果の上限・下限+150%", description: "全ての「浮動」効果を持つスキルの上限と下限がそれぞれ150%上昇する。" },
+        { name: "運命の計画", max: "集結部隊攻撃力+15%", description: "集結部隊の攻撃力が15%上昇する。" }
       ]}
   },
   "ディエゴ": {
@@ -218,9 +218,9 @@ export const HERO_SKILLS_JA = {
         { name: "荒野の均衡", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "狂熱共鳴", description: "与ダメージが30%上昇する。" }
+        { name: "狂熱共鳴", max: "与ダメージ+30%", description: "与ダメージが30%上昇する。" }
       ,
-        { name: "狂熱共鳴（遠征）", description: "集結部隊の殺傷力が15%上昇する。" }
+        { name: "狂熱共鳴（遠征）", max: "集結部隊殺傷力+15%", description: "集結部隊の殺傷力が15%上昇する。" }
       ]}
     ]
   },
@@ -240,9 +240,9 @@ export const HERO_SKILLS_JA = {
         { name: "戦乙女", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "紅の意志", description: "与ダメージが30%上昇する。" }
+        { name: "紅の意志", max: "与ダメージ+30%", description: "与ダメージが30%上昇する。" }
       ,
-        { name: "信頼", description: "防衛部隊の殺傷力が15%上昇する。" }
+        { name: "信頼", max: "防衛部隊殺傷力+15%", description: "防衛部隊の殺傷力が15%上昇する。" }
       ]}
     ]
   },
@@ -262,9 +262,9 @@ export const HERO_SKILLS_JA = {
         { name: "陣地戦の強者", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
       ]},
       { type: "専用装備スキル", skills: [
-        { name: "義理尽", description: "攻撃力が24%上昇する。" }
+        { name: "義理尽", max: "攻撃力+24%", description: "攻撃力が24%上昇する。" }
       ,
-        { name: "攻撃は最大の防御", description: "防衛部隊の攻撃力が15%上昇する。" }
+        { name: "攻撃は最大の防御", max: "防衛部隊攻撃力+15%", description: "防衛部隊の攻撃力が15%上昇する。" }
       ]}
     ]
   },
