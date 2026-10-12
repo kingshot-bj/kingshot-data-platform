@@ -16,9 +16,9 @@
 
 - 英雄数：37
 - スキル行：256
-- 今回の外部資料で再照合済み：46行
+- 今回の外部資料で再照合済み：76行
 - 前回監査の外部資料照合記録あり：34行
-- 今回未再照合：175行
+- 今回未再照合：145行
 - 要注意：出典内で数値表と説明文が不一致：1行
 
 ## 行別一覧
@@ -65,44 +65,44 @@
 | ディエゴ | 遠征スキル | 凛然なる剣気 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
 | ディエゴ | 専用装備スキル | 重剣無鋒 | 追加シールド攻撃力×55%、被ダメージの10%反射 | 追加シールド攻撃力×95%、被ダメージの30%反射 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/diego) |
 | ディエゴ | 専用装備スキル | 大巧不工 | 防衛部隊の防御力+5% | 防衛部隊の防御力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/diego) |
-| リズ | 討伐スキル | ビッグバブル | 220% | 300% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
-| リズ | 討伐スキル | スロウポーション | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
-| リズ | 討伐スキル | ライトポーション | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
-| リズ | 遠征スキル | パワーブースター | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
-| リズ | 遠征スキル | エナジーブースター | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
-| リズ | 遠征スキル | ライドマスター | 30% | 150% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 討伐スキル | ビッグバブル | 220% | 300% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 討伐スキル | スロウポーション | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 討伐スキル | ライトポーション | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 遠征スキル | パワーブースター | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 遠征スキル | エナジーブースター | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
+| リズ | 遠征スキル | ライドマスター | 30% | 150% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/36) |
 | リズ | 専用装備スキル | スプラッシュバブル | 自身攻撃力+8%、追加範囲ダメージ攻撃力×50% | 自身攻撃力+24%、追加範囲ダメージ攻撃力×70% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/liz) |
 | リズ | 専用装備スキル | ハイパーブースター | 防衛部隊の殺傷力+5% | 防衛部隊の殺傷力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/liz) |
-| ルナ | 討伐スキル | スターフォール | 220% | 300% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
-| ルナ | 討伐スキル | バラージアロー | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
-| ルナ | 討伐スキル | ハンティングリズム | 0.5% | 2.5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
-| ルナ | 遠征スキル | 月光の灯火 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
-| ルナ | 遠征スキル | 密林の復讐 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
-| ルナ | 遠征スキル | 閃光の矢 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 討伐スキル | スターフォール | 220% | 300% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 討伐スキル | バラージアロー | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 討伐スキル | ハンティングリズム | 0.5% | 2.5% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 遠征スキル | 月光の灯火 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 遠征スキル | 密林の復讐 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
+| ルナ | 遠征スキル | 閃光の矢 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/37) |
 | ルナ | 専用装備スキル | 星霊の残光 | 星霊HPは初期HPの10%、5秒存在 | 星霊HPは初期HPの30%、5秒存在 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/luna) |
 | ルナ | 専用装備スキル | 月輝の力 | 集結部隊の攻撃力+5% | 集結部隊の攻撃力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/luna) |
-| チャールズ | 討伐スキル | リベンジャー | 100% / 20% | 140% / 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
-| チャールズ | 討伐スキル | フェアウェル | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
-| チャールズ | 討伐スキル | ケアフリー | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
-| チャールズ | 遠征スキル | パンツァーオーラ | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
-| チャールズ | 遠征スキル | 鋼鉄の身体 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
-| チャールズ | 遠征スキル | 愛と正義 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 討伐スキル | リベンジャー | 100% / 20% | 140% / 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 討伐スキル | フェアウェル | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 討伐スキル | ケアフリー | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 遠征スキル | パンツァーオーラ | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 遠征スキル | 鋼鉄の身体 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
+| チャールズ | 遠征スキル | 愛と正義 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/32) |
 | チャールズ | 専用装備スキル | 修理の達人 | HP50%未満で最大HP7%回復、防御力+6% | HP50%未満で最大HP35%回復、防御力+30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/charles/) |
 | チャールズ | 専用装備スキル | 華麗なる登場 | 味方全体のHP+3% | 味方全体のHP+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/charles/) |
-| アイヴァ | 討伐スキル | ボマーペイント | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
-| アイヴァ | 討伐スキル | スポイルペイント | 25% / 5% | 35% / 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
-| アイヴァ | 討伐スキル | フェイクペイント | 25% | 75% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
-| アイヴァ | 遠征スキル | アナライズ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
-| アイヴァ | 遠征スキル | ライト&シャドウ | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
-| アイヴァ | 遠征スキル | クール&ホット | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 討伐スキル | ボマーペイント | 50% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 討伐スキル | スポイルペイント | 25% / 5% | 35% / 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 討伐スキル | フェイクペイント | 25% | 75% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 遠征スキル | アナライズ | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 遠征スキル | ライト&シャドウ | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
+| アイヴァ | 遠征スキル | クール&ホット | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/33) |
 | アイヴァ | 専用装備スキル | カラーセンス | 与ダメージ+25%、対象攻撃力-5% | 与ダメージ+25%、対象攻撃力-25% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/ava/) |
 | アイヴァ | 専用装備スキル | クロマストーム | 味方全部隊の殺傷力+5% | 味方全部隊の殺傷力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/ava/) |
-| レン&ロン | 討伐スキル | スカイハイショット | 300% | 420% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
-| レン&ロン | 討伐スキル | 特製ナパーム弾 | 60% / 17% | 84% / 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
-| レン&ロン | 討伐スキル | キャノンボウラー | 10% | 26% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
-| レン&ロン | 遠征スキル | 砲兵隊 | 3% / 2% | 15% / 10% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
-| レン&ロン | 遠征スキル | 連続砲撃 | 6% / 5% | 30% / 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
-| レン&ロン | 遠征スキル | ヘビィキャノン出撃 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 討伐スキル | スカイハイショット | 300% | 420% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 討伐スキル | 特製ナパーム弾 | 60% / 17% | 84% / 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 討伐スキル | キャノンボウラー | 10% | 26% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 遠征スキル | 砲兵隊 | 3% / 2% | 15% / 10% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 遠征スキル | 連続砲撃 | 6% / 5% | 30% / 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
+| レン&ロン | 遠征スキル | ヘビィキャノン出撃 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/34) |
 | レン&ロン | 専用装備スキル | クールな砲撃手 | 英雄・護衛の攻撃速度+6%（5秒） | 英雄・護衛の攻撃速度+14%（5秒） | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/wee-and-woo/) |
 | レン&ロン | 専用装備スキル | 秘密の火薬樽 | 防衛部隊の攻撃力+5% | 防衛部隊の攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/wee-and-woo/) |
 | ヘルガ | 討伐スキル | 鹿角猛進 | 160% | 224% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/2) |
@@ -293,11 +293,14 @@
 - エリック：[アルテマ](https://altema.jp/kingshot/chara/17)
 - ペーラ：[アルテマ](https://altema.jp/kingshot/chara/18)
 - ディエゴ：[アルテマ](https://altema.jp/kingshot/chara/35)、専用装備は[Alliance Command](https://www.kingshotcommand.com/hero-widgets/diego)
+- リズ：[アルテマ](https://altema.jp/kingshot/chara/36)、専用装備は[Alliance Command](https://www.kingshotcommand.com/hero-widgets/liz)
+- ルナ：[アルテマ](https://altema.jp/kingshot/chara/37)、専用装備は[Alliance Command](https://www.kingshotcommand.com/hero-widgets/luna)
+- チャールズ：[アルテマ](https://altema.jp/kingshot/chara/32)
+- アイヴァ：[アルテマ](https://altema.jp/kingshot/chara/33)
+- レン&ロン：[アルテマ](https://altema.jp/kingshot/chara/34)
 
 ## 専用装備の追加資料
 
-- リズ：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/liz)
-- ルナ：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/luna)
 - サロ：[Kingshot Wiki](https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/)
 - マリン：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/marlin)
 - イェーガー：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/jaeger)
