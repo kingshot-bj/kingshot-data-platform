@@ -185,6 +185,67 @@ export const HERO_SKILLS_JA = {
       ]}
     ]
   },
+
+  "ヘルガ": {
+    source: "https://altema.jp/kingshot/chara/2",
+    sourceName: "アルテマ「キングショット」ヘルガの評価とスキル",
+    checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "鹿角猛進", initial: "160%", max: "224%", description: "攻撃×倍率の範囲ダメージを与え、範囲内の敵を跳ね飛ばし、1秒間気絶させる。" },
+        { name: "追撃攻勢", initial: "150%", max: "210%", description: "目標に攻撃×倍率のダメージを与える。" },
+        { name: "怒狂", initial: "4%", max: "12%", description: "ダメージを受けた際、10%の確率で攻撃力が上昇する。3秒持続、最大5回まで重複。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "守護者の誓い", initial: "8%", max: "40%", description: "確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "英霊の叫び", initial: "5%", max: "25%", description: "味方全部隊の総攻撃力が上昇する。" },
+        { name: "荒野の均衡", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
+      ]},
+      { type: "専用装備スキル", skills: [
+        { name: "英霊の怒り", description: "与ダメージが30%上昇する。" }
+      ]}
+    ]
+  },
+  "ジェベル": {
+    source: "https://altema.jp/kingshot/chara/4",
+    sourceName: "アルテマ「キングショット」ジェベルの評価とスキル",
+    checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "ランススパイク", initial: "180%", max: "252%", description: "範囲内の目標に攻撃×倍率のダメージを与え、1.5秒間その場に拘束する。" },
+        { name: "真っ向勝負", initial: "150%", max: "210%", description: "目標に攻撃×倍率のダメージを与える。" },
+        { name: "執念", initial: "20%", max: "60%", description: "HPが50%以下になると攻撃速度が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "赤き旗", initial: "8%", max: "40%", description: "確率で味方全部隊の被ダメージを50%軽減する。" },
+        { name: "勇姿", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、50%の確率で追加の与ダメージが上昇する。" },
+        { name: "戦乙女", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
+      ]},
+      { type: "専用装備スキル", skills: [
+        { name: "紅の意志", description: "与ダメージが30%上昇する。" }
+      ]}
+    ]
+  },
+  "サロ": {
+    source: "https://altema.jp/kingshot/chara/3",
+    sourceName: "アルテマ「キングショット」サロの評価とスキル",
+    checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "連続射撃", initial: "55%", max: "75%", description: "連続攻撃を行い、毎回攻撃力×倍率のダメージを与え、目標を2秒間気絶させる。" },
+        { name: "金剛不壊", initial: "50%", max: "150%", description: "HPが50%以下になると自身の防御力が上昇する。" },
+        { name: "工法改良", initial: "10%", max: "30%", description: "攻撃速度が上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "特派訓練", initial: "2%, 3%", max: "10%, 15%", description: "味方全部隊の総防御力と総HPが上昇する。" },
+        { name: "リサイクル", initial: "3%, 3%", max: "15%, 15%", description: "建設物のレベルアップ速度が上昇し、必要資源が減少する。" },
+        { name: "陣地戦の強者", initial: "5%", max: "25%", description: "味方全部隊の総殺傷力が上昇する。" }
+      ]},
+      { type: "専用装備スキル", skills: [
+        { name: "義理尽", description: "攻撃力が24%上昇する。" }
+      ]}
+    ]
+  },
 };
 
 export default HERO_SKILLS_JA;
