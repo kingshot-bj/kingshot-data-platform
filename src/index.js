@@ -1377,11 +1377,12 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     var j=w.job;
     if(!j)return "";
     function phaseEta(pct){
-      if(!Number.isFinite(pct)||pct<10||pct>=100)return "";
+      if(!Number.isFinite(pct)||pct>=100)return "";
       try{
-        var phaseKey="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.status||"");
+        var phaseKey="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.job_id||j.created_at||"legacy")+"_"+String(j.status||"");
         var startedAt=Number(sessionStorage.getItem(phaseKey));
         if(!Number.isFinite(startedAt)||startedAt<=0){startedAt=Date.now();sessionStorage.setItem(phaseKey,String(startedAt));}
+        if(pct<10)return "";
         var elapsedMs=Date.now()-startedAt;
         if(elapsedMs<5000)return "";
         var remainingMs=Math.max(0,elapsedMs*(100-pct)/pct);
@@ -1391,6 +1392,13 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       }catch(e){return "";}
     }
     if(j.status==="COMPLETED"){
+      try{
+        var phasePrefix="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.job_id||j.created_at||"legacy")+"_";
+        sessionStorage.removeItem(phasePrefix+"RANKINGS");
+        sessionStorage.removeItem(phasePrefix+"PLAYERS");
+        sessionStorage.removeItem("eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_RANKINGS");
+        sessionStorage.removeItem("eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_PLAYERS");
+      }catch(e){}
       var sourceText="";
       if(j.source_first_at&&j.source_last_at){
         var first=new Date(j.source_first_at*1000).toLocaleString("ja-JP");
