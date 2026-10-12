@@ -663,3 +663,21 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - Cloudflare本番Workerへのデプロイ成功、実ブラウザ/iPhone Safariでの動作は未確認。
 - 既存のR2保存成功後のみD1詳細JSONをNULL化する安全条件は変更していない。
 - `ranking_snapshots` の広範囲検索は再導入していない。
+
+
+### 2026-10-12 継続：負荷テスト状態ポーリングの重複防止
+
+- `src/admin-kingdom-load-test.js` の復旧関数 `recoverRunningLoadTest()` は、起動時・リクエスト受理時・Queue通知時に複数回呼ばれ得る。重複した非同期呼び出しがそれぞれ状態ポーリング用setIntervalを作成する可能性があったため、リクエスト世代IDを導入し、最新の復旧リクエストだけがタイマーを作成できるようにした。
+- 復旧処理開始時に既存タイマーを解除。タイマー内の通信も世代IDを確認し、古い応答が新しいタイマーを誤って解除したりUIを上書きしたりしないようにした。
+- D1状態ポーリングは2秒間隔から5秒間隔へ変更。SSE/NDJSON進捗とD1による復旧確認は維持し、D1読み取り回数を抑える。
+- mainコミット: `a30328ab88431ce47c9453b813259b1f21772561`、追加のstale response guard: `5bcc9a45512ff9508d0e6cd9ac54f2f85352b100`.
+- `src/admin-kingdom-load-test.js` 全体と抽出した復旧関数周辺のV8構文解析成功。
+- fake fetchを使った並行復旧の簡易テストで、同時に2回呼んでもタイマーが1個だけ作られることを確認。
+- 実ブラウザ/iPhone Safariと実負荷テスト時のD1読み取り数は未測定。
+
+### 2026-10-12 継続：マイグレーション/本番適用状態
+
+- `.github/workflows/eagleeye-d1-apply-pending-migrations.yml` は `workflow_dispatch` のみで起動する手動ワークフロー。mainへのmigrationファイル追加だけでは本番D1へ適用されない。
+- GitHub Actions直近10件の取得結果は、最後の成功が2026-10-08のD1 migration apply（SHA `57d4491dc6738b513f42a56792ef8069a86137f7`）。今回のmainコミットを対象にした実行は見つからない。
+- この監査ではワークフローを起動しておらず、Cloudflare本番DBへ変更を適用していない。migration `0059_kingdom_watchlist_latest_job_index.sql` の本番適用は未確認/未実施として扱う。
+- Cloudflare本番Workerへのデプロイ成功も未確認。GitHub mainへの反映とは分けて報告する。
