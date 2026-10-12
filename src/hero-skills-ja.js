@@ -565,6 +565,20 @@ export const HERO_SKILLS_JA = {
         { name: "鍛冶職人", initial: "5%", max: "25%", description: "出征時、鉄鉱の採集速度が上昇する。" }
       ]}
     ]
+  },,
+
+  "フォルスト": {
+    source: "https://altema.jp/kingshot/chara/13", sourceName: "アルテマ「キングショット」フォルストの評価とスキル", checkedAt: "2026-10-13",
+    groups: [
+      { type: "討伐スキル", skills: [
+        { name: "斧旋風", initial: "80%", max: "110%", description: "素早く斧を振り回し、0.5秒毎に周囲の敵にダメージを与える。3秒間持続。" },
+        { name: "鋭刃", initial: "10%", max: "30%", description: "与ダメージが上昇する。" }
+      ]},
+      { type: "遠征スキル", skills: [
+        { name: "一子相伝", initial: "5%", max: "25%", description: "街の伐採場生産量が上昇する。" },
+        { name: "伐採名人", initial: "5%", max: "25%", description: "出征時、木材の採集速度が上昇する。" }
+      ]}
+    ]
   },
 };
 
