@@ -543,3 +543,18 @@ EagleEye全ページ共通の進捗表示を土台に、プレイヤー検索・
 - mainへコミットしても、本番デプロイの成功を確認できなければ「本番反映済み」と言わない。
 - D1 row readsを重視し、広範囲の `ranking_snapshots` 取得を復活させない。
 - 変更した場合は、実際に取得したGitHub内容・テスト結果・コミットSHAを報告する。未実施の確認を完了扱いにしない。
+
+
+## 2026-10-12 継続：プレイヤー検索・詳細取得の進捗ラベル
+
+- 作業開始時に main の指定引き継ぎファイルと最新コミット履歴を取得。現行 src/index.js は9,925行、取得時blob SHAは a4b30e1bbfc6a837dee92c50b24f759f50d7ad07。
+- プレイヤー関連の主要ルートを実コードで確認：/players、/player、/api/player、/api/player/refresh、/api/player/history、/api/player/rank-history、/api/player/changes、/api/player-compare、/player/history、/player/changes、/player/compare。
+- handlePlayerApi はプレイヤー本体と最新観測をD1から確認し、未取得・明示更新・詳細データ不足時に限り fetchPlayerThroughApiPool からMightPulse取得を行う。取得結果は観測データ保存、API Pool成功/失敗記録、materializePlayer等を通る。
+- プレイヤー比較は2〜4人を対象に、各人ごとにプロフィール、保存履歴、ランキング履歴を並列取得。4人の場合、最大12系統の取得処理が並行し得るが、これはD1読み取り回数そのものを意味しない。内部関数・D1/R2クエリコストは追加監査対象。
+- プレイヤー履歴APIはgetPlayerHistoryを使用。HTML履歴ページにはplayer_snapshotsを対象governor_idで絞り、最大100件取得する経路がある。変更履歴はchange_eventsをtarget_type='PLAYER'とtarget_idで絞り、最大100件取得する。
+- 共通フォーム送信ハンドラで、GET /players を「プレイヤー検索を実行中…」、/player?governor_id=... を「プレイヤー情報を取得しています…」と表示するよう追加。フォームの既存処理/API契約/D1処理は変更していない。
+- main直接コミット: 656efae308530238100f0e280151c3bd7cd6db12
+- 更新後のsrc/index.js blob SHA: 9e021470b00fa9f461126c7cd133d95ed4a5767b
+- 検証：更新前に共通進捗インラインスクリプトをV8構文解析し成功。更新後mainを再取得し、変更後のスクリプト構文解析と対象ラベル/主要ルートの静的assertionを実施する。
+- 未確認：実ブラウザ/iPhone Safari、実MightPulse応答の遅延/失敗/キャンセル時の見た目、Cloudflare本番デプロイ成功。main反映は本番デプロイ成功を意味しない。
+- 次：プレイヤー比較の内部履歴取得関数とD1/R2読み取りを追跡し、他の長時間処理（王国ウォッチリスト、R2 backfill、負荷テスト、API Pool診断/テスト、エクスポート）を同じ基準で棚卸しする。D1を増やすポーリングは追加しない。
