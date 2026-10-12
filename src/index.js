@@ -1306,10 +1306,10 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .rank-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
 .rank-title b{font-size:15px}
 .rank-key{font-size:10px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
+.rank-row{display:grid;grid-template-columns:28px 20px minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
 .rank-row:first-of-type{border-top:0}
 .rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
-.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-entity-icon{font-size:15px;line-height:1;text-align:center}.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rank-score{font-weight:900;text-align:right;white-space:nowrap;color:var(--accent-strong)}
 .section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 2px 10px}
 .section-title h2{margin:0;font-size:19px}
@@ -1357,6 +1357,15 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     island_prosperity:"島の繁栄度", migrant_score:"移民スコア", mystic_trial:"秘境の試練", coliseum:"闘技場",
     forest_of_life:"生命の森", crystal_cave:"水晶鉱山", knowledge_nexus:"知識の枢軸", molten_fort:"溶岩要塞",
     radiant_spire:"輝光の塔", master_power:"マスター全体総力"
+  };
+  var RANKING_BOARD_ICONS = {
+    alliance_power:"🛡️", alliance_kills:"⚔️", personal_power:"👤", kills:"⚔️",
+    town_center:"🏰", rebel_conquest:"🐺", single_hero:"🦸", hero_total:"🦸",
+    troop_power:"⚔️", building_power:"🏗️", research_power:"🔬", hero_no_equip:"🦸",
+    hero_equip:"🛡️", gov_gear:"🛡️", gov_charm:"💎", pet_power:"🐾",
+    island_prosperity:"🏝️", migrant_score:"✈️", mystic_trial:"🔮", coliseum:"🏟️",
+    forest_of_life:"🌳", crystal_cave:"💎", knowledge_nexus:"📚", molten_fort:"🔥",
+    radiant_spire:"✨", master_power:"👑"
   };
   function formatCompactNumber(value){
     if(value===null||value===undefined||value==="")return "-";
@@ -1467,10 +1476,15 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
         card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>🕐 最終チェック: "+esc(completionText)+"</p><p class='ok'>✓ 最新チェック済み</p>"+jobProgressHtml(w)+errorHtml;
         var row=document.createElement("div"); row.className="row";
         var refresh=document.createElement("button"); refresh.textContent=active?"更新を中断":"今すぐ更新"; refresh.disabled=false; refresh.onclick=function(){active?cancelWatch(w.watchlist_id):refreshWatch(w.watchlist_id);}; if(active)refresh.className="danger";
-        var view=document.createElement("button"); view.textContent="ランキングを見る"; view.disabled=active; view.onclick=function(){showData(w.watchlist_id);};
         var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.disabled=active; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
         var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.disabled=active; del.onclick=function(){deleteWatch(w.watchlist_id);};
-        row.appendChild(refresh);row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
+        row.appendChild(refresh);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
+
+        // Auto-display first watchlist; reload details only when job progress/status changes.
+        if(ws.length && String(w.watchlist_id)===String(ws[0].watchlist_id)){
+          var displayState=String(w.job&&w.job.status||"NONE")+":"+String(w.job&&w.job.board_index||0)+":"+String(w.job&&w.job.ranking_rows||0)+":"+String(w.last_success_at||"");
+          if(autoDisplayState[w.watchlist_id]!==displayState){autoDisplayState[w.watchlist_id]=displayState;showData(w.watchlist_id);}
+        }
 
         if(active && sessionStorage.getItem("eagleeye_watchlist_running_"+w.watchlist_id)==="1" && !running[w.watchlist_id]){
           continueWatch(w.watchlist_id);
@@ -1589,6 +1603,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   }
   window.togglePlayerWatch = togglePlayerWatch;
   if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}.rank-watch-star{margin-left:6px;padding:0 3px;border:0;background:transparent;color:#fbbf24;font-size:16px;line-height:1;cursor:pointer}.rank-watch-star:disabled{opacity:.5}";document.head.appendChild(st);}
+  var autoDisplayState={};
+  var autoScrolledToRankings=false;
   function showData(id){
     el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
     api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
@@ -1597,20 +1613,23 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
       Object.keys(boards).forEach(function(b){
         var label=RANKING_BOARD_LABELS[b]||b;
-        h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
+        h+='<div class="rank"><div class="rank-title"><b><span class="rank-board-icon" aria-hidden="true">'+esc(RANKING_BOARD_ICONS[b]||"🏆")+'</span> '+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
         boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
           var allianceAbbr=(r.abbr||playerAllianceById[String(r.governor_id)]||playerAllianceById[String(r.uid)]||playerAllianceById[String(r.target_id)]||"");
           var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
           var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
           var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
           var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span>'+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
+          var entityIcon=(b==="alliance_power"||b==="alliance_kills")?"🛡️":"👤";
+          var rankMark=Number(r.rank)===1?"🥇":Number(r.rank)===2?"🥈":Number(r.rank)===3?"🥉":esc(r.rank);
+          h+='<div class="rank-row"><span class="rank-no">'+rankMark+'</span><span class="rank-entity-icon" aria-hidden="true">'+entityIcon+'</span>'+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
         });
         h+='</div>';
       });
       h+='</div><div class="section-title"><h2>観測プレイヤー</h2><span>'+(d.players||[]).length+'人</span></div><div class="rank-grid">';
       (d.players||[]).forEach(function(p){h+='<div class="player-card"><b>'+esc(p.nick_name||p.governor_id)+'</b><div class="player-meta">戦力 '+esc(formatCompactNumber(p.power))+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
       h+='</div></div>';el("detail").innerHTML=h;
+      if((d.rankings||[]).length&&!autoScrolledToRankings){autoScrolledToRankings=true;setTimeout(function(){el("detail").scrollIntoView({behavior:"smooth",block:"start"});},120);}
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
   var creatingWatchlist=false;
