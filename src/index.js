@@ -4446,13 +4446,17 @@ export default {
             try {
               const runAll = String(form?.get("action") || "") === "run_all";
               const requestedBatchSize = runAll ? 100 : Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));
+              const submittedTotalTargetCount = Number(form?.get("totalTargetCount"));
+              const totalTargetCount = Number.isFinite(submittedTotalTargetCount) && submittedTotalTargetCount >= 0
+                ? submittedTotalTargetCount
+                : null;
               const result = await runKingdomCatalogR2Backfill(env, { batchSize: requestedBatchSize });
               const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env, { batchSize: result.archived }) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
               if (verification.failed > 0) {
                 await env.DB.prepare("UPDATE kingdom_catalog_r2_migration SET state = 'FAILED', last_error = ?, updated_at = ? WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL'")
                   .bind("VERIFICATION_FAILED:" + verification.failed, Math.floor(Date.now() / 1000)).run();
               }
-              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, autoContinue: runAll && !result.complete && Number(verification.failed || 0) === 0 }));
+              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, totalTargetCount, autoContinue: runAll && !result.complete && Number(verification.failed || 0) === 0 }));
             } catch (error) {
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ok:false, error:error?.message || String(error) }));
             }
