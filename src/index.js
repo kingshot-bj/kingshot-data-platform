@@ -1379,8 +1379,9 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     function phaseEta(pct){
       if(!Number.isFinite(pct)||pct<10||pct>=100)return "";
       try{
-        var startedAt=Number(sessionStorage.getItem("eagleeye_watchlist_started_at_"+String(w.watchlist_id||"")));
-        if(!Number.isFinite(startedAt)||startedAt<=0)return "";
+        var phaseKey="eagleeye_watchlist_phase_started_at_"+String(w.watchlist_id||"")+"_"+String(j.status||"");
+        var startedAt=Number(sessionStorage.getItem(phaseKey));
+        if(!Number.isFinite(startedAt)||startedAt<=0){startedAt=Date.now();sessionStorage.setItem(phaseKey,String(startedAt));}
         var elapsedMs=Date.now()-startedAt;
         if(elapsedMs<5000)return "";
         var remainingMs=Math.max(0,elapsedMs*(100-pct)/pct);
