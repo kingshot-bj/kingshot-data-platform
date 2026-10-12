@@ -2,7 +2,7 @@
 
 作成日：2026-10-13
 対象：`src/hero-skills-ja.js` の main
-辞典コミット：`5372362ce96094f71deb82fdcc9f1b4d4b62cb46`
+辞典コミット：`8feed19287b868d2b3a43f58aa15f5704543fd53`
 
 ## 状態の定義
 
@@ -16,9 +16,9 @@
 
 - 英雄数：37
 - スキル行：256
-- 今回の外部資料で再照合済み：156行
+- 今回の外部資料で再照合済み：181行
 - 前回監査の外部資料照合記録あり：34行
-- 今回未再照合：65行
+- 今回未再照合：40行
 - 要注意：出典内で数値表と説明文が不一致：1行
 
 ## 行別一覧
@@ -225,31 +225,31 @@
 | ヤン | 遠征スキル | アンブッシュ | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/31) |
 | ヤン | 専用装備スキル | ラピッドファイア | ダメージ40%、護衛対象は即時撃破 | ダメージ56%、護衛対象は即時撃破 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
 | ヤン | 専用装備スキル | アタックディフェンス | 集結部隊の殺傷力+5% | 集結部隊の殺傷力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/yang) |
-| クイン | 討伐スキル | ヘッドショット | 400% | 560% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 討伐スキル | クイックショット | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 討伐スキル | 適者生存 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 遠征スキル | 危険予知 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| クイン | 遠征スキル | 弱点射撃 | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/5) |
-| ハワード | 討伐スキル | 盾インパクト | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 討伐スキル | 盾の壁 | 5% | 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 討伐スキル | 盾ブロック | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 遠征スキル | プロテクト | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ハワード | 遠征スキル | 弱体化打撃 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/6) |
-| ダイアナ | 討伐スキル | 爆裂矢 | 210%, 70% | 290%, 98% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 討伐スキル | 射手の才 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 討伐スキル | 必殺 | 7% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 遠征スキル | 強靭ボディ | 10% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| ダイアナ | 遠征スキル | 迅速行動 | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/7) |
-| チェンコ | 討伐スキル | 機関銃掃射 | 55% | 75% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 討伐スキル | 防具改造 | 25% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 討伐スキル | 武器改造 | 8% | 24% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 遠征スキル | 完全武装 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| チェンコ | 遠征スキル | アーマー | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/8) |
-| ゴードン | 討伐スキル | バーベキュー | 200%, 5% | 280%, 7% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 討伐スキル | 嵐の厨房 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 討伐スキル | 非常食 | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 遠征スキル | 幸せグルメ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| ゴードン | 遠征スキル | 暴言 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| クイン | 討伐スキル | ヘッドショット | 400% | 560% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 討伐スキル | クイックショット | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 討伐スキル | 適者生存 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 遠征スキル | 危険予知 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| クイン | 遠征スキル | 弱点射撃 | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/5) |
+| ハワード | 討伐スキル | 盾インパクト | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 討伐スキル | 盾の壁 | 5% | 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 討伐スキル | 盾ブロック | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 遠征スキル | プロテクト | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ハワード | 遠征スキル | 弱体化打撃 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/6) |
+| ダイアナ | 討伐スキル | 爆裂矢 | 210%, 70% | 290%, 98% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 討伐スキル | 射手の才 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 討伐スキル | 必殺 | 7% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 遠征スキル | 強靭ボディ | 10% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| ダイアナ | 遠征スキル | 迅速行動 | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/7) |
+| チェンコ | 討伐スキル | 機関銃掃射 | 55% | 75% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 討伐スキル | 防具改造 | 25% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 討伐スキル | 武器改造 | 8% | 24% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 遠征スキル | 完全武装 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| チェンコ | 遠征スキル | アーマー | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/8) |
+| ゴードン | 討伐スキル | バーベキュー | 200%, 5% | 280%, 7% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 討伐スキル | 嵐の厨房 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 討伐スキル | 非常食 | 50% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 遠征スキル | 幸せグルメ | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
+| ゴードン | 遠征スキル | 暴言 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/9) |
 | オリーブ | 討伐スキル | 矢の雨 | 180% | 252% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
 | オリーブ | 討伐スキル | マーク | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
 | オリーブ | 遠征スキル | 栽培専門家 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
