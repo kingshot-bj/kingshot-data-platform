@@ -16,53 +16,53 @@
 
 - 英雄数：37
 - スキル行：256
-- 今回未再照合：205行
-- 今回の外部資料で再照合済み：16行
+- 今回の外部資料で再照合済み：46行
 - 前回監査の外部資料照合記録あり：34行
+- 今回未再照合：175行
 - 要注意：出典内で数値表と説明文が不一致：1行
 
 ## 行別一覧
 
 | 英雄 | 分類 | スキル | 初期値 | 最大値 | 状態 | 参照先 |
 |---|---|---|---|---|---|---|
-| アルカ | 討伐スキル | グローリー・モーメント | 30% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
-| アルカ | 討伐スキル | スプリット・ランス | 70% | 98% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
-| アルカ | 討伐スキル | リバイバル・スピリット | 30% | 42% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
-| アルカ | 遠征スキル | アシスト・アリー | 14% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
-| アルカ | 遠征スキル | チャンピオン・ウィル | 20%, 2% | 100%, 10% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
-| アルカ | 遠征スキル | チャンス・オブ・フューリー | 12%, 5% | 60%, 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 討伐スキル | グローリー・モーメント | 30% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 討伐スキル | スプリット・ランス | 70% | 98% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 討伐スキル | リバイバル・スピリット | 30% | 42% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 遠征スキル | アシスト・アリー | 14% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 遠征スキル | チャンピオン・ウィル | 20%, 2% | 100%, 10% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
+| アルカ | 遠征スキル | チャンス・オブ・フューリー | 12%, 5% | 60%, 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/25) |
 | アルカ | 専用装備スキル | 不屈の信念 | 攻撃力+30%（2.5秒） | 攻撃力+42%（2.5秒） | 今回の外部資料で再照合済み | [専用装備資料](https://kingshotwiki.com/ja/heroes/alcar-ja/) |
 | アルカ | 専用装備スキル | グローリー・オース | 防衛部隊HP+5% | 防衛部隊HP+15% | 今回の外部資料で再照合済み | [専用装備資料](https://kingshotwiki.com/ja/heroes/alcar-ja/) |
-| アマデウス | 討伐スキル | 三段斬り | 160% | 224% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
-| アマデウス | 討伐スキル | 剣気 | 15% | 23% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
-| アマデウス | 討伐スキル | 快進撃 | 16% | 48% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
-| アマデウス | 遠征スキル | 臨戦態勢 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
-| アマデウス | 遠征スキル | 剣術指導 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
-| アマデウス | 遠征スキル | 不義の一撃 | 8% | 40% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 討伐スキル | 三段斬り | 160% | 224% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 討伐スキル | 剣気 | 15% | 23% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 討伐スキル | 快進撃 | 16% | 48% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 遠征スキル | 臨戦態勢 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 遠征スキル | 剣術指導 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
+| アマデウス | 遠征スキル | 不義の一撃 | 8% | 40% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/1) |
 | アマデウス | 専用装備スキル | 双剣防御 | 自身の被ダメージ-10% | 自身の被ダメージ-30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/amadeus/) |
 | アマデウス | 専用装備スキル | 真実の術 | 集結部隊攻撃力+5% | 集結部隊攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/amadeus/) |
-| エリック | 討伐スキル | ハンマー・スウィング | 120% | 168% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
-| エリック | 討伐スキル | バトル・ボディ | 8%, 8% | 16%, 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
-| エリック | 討伐スキル | ヘビースマッシュ | 80% | 112% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
-| エリック | 遠征スキル | 浄化 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
-| エリック | 遠征スキル | 意志 | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
-| エリック | 遠征スキル | 鼓舞 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 討伐スキル | ハンマー・スウィング | 120% | 168% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 討伐スキル | バトル・ボディ | 8%, 8% | 16%, 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 討伐スキル | ヘビースマッシュ | 80% | 112% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 遠征スキル | 浄化 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 遠征スキル | 意志 | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
+| エリック | 遠征スキル | 鼓舞 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/17) |
 | エリック | 専用装備スキル | ハンマー・ブレス | 与ダメージ+10% | 与ダメージ+30% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/eric/) |
 | エリック | 専用装備スキル | ハンマー・ディフェンス | 防衛部隊防御力+5% | 防衛部隊防御力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/eric/) |
-| ペーラ | 討伐スキル | ジャッジカード | 270% | 378% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
-| ペーラ | 討伐スキル | サプライズカード | 100% | 140% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
-| ペーラ | 討伐スキル | 無情な運命 | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
-| ペーラ | 遠征スキル | ドゥーム | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
-| ペーラ | 遠征スキル | ラッキーカード | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
-| ペーラ | 遠征スキル | ガーディアンカード | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 討伐スキル | ジャッジカード | 270% | 378% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 討伐スキル | サプライズカード | 100% | 140% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 討伐スキル | 無情な運命 | 50% | 70% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 遠征スキル | ドゥーム | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 遠征スキル | ラッキーカード | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
+| ペーラ | 遠征スキル | ガーディアンカード | 10% | 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/18) |
 | ペーラ | 専用装備スキル | シャッフルマジック | 浮動効果の上限・下限+30% | 浮動効果の上限・下限+150% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/petra/) |
 | ペーラ | 専用装備スキル | 運命の計画 | 集結部隊攻撃力+5% | 集結部隊攻撃力+15% | 前回監査の外部資料照合記録あり | [専用装備資料](https://ks-toolkit.com/data/heroes/petra/) |
-| ディエゴ | 討伐スキル | 完全無欠 | 220% | 380% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
-| ディエゴ | 討伐スキル | 健在の剣心 | 敵攻撃力-1% / 自身+敵英雄数×1% | 敵攻撃力-5% / 自身+敵英雄数×5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
-| ディエゴ | 討伐スキル | 影渡し | 回避3% / 会心4% | 回避15% / 会心20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
-| ディエゴ | 遠征スキル | 防守の指導 | 総防御力+3% / 総HP+2% | 総防御力+15% / 総HP+10% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
-| ディエゴ | 遠征スキル | 無形の剣気 | 発動率50% / 追加ダメージ10% | 発動率50% / 追加ダメージ50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
-| ディエゴ | 遠征スキル | 凛然なる剣気 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 討伐スキル | 完全無欠 | 220% | 380% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 討伐スキル | 健在の剣心 | 敵攻撃力-1% / 自身+敵英雄数×1% | 敵攻撃力-5% / 自身+敵英雄数×5% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 討伐スキル | 影渡し | 回避3% / 会心4% | 回避15% / 会心20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 遠征スキル | 防守の指導 | 総防御力+3% / 総HP+2% | 総防御力+15% / 総HP+10% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 遠征スキル | 無形の剣気 | 発動率50% / 追加ダメージ10% | 発動率50% / 追加ダメージ50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
+| ディエゴ | 遠征スキル | 凛然なる剣気 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/35) |
 | ディエゴ | 専用装備スキル | 重剣無鋒 | 追加シールド攻撃力×55%、被ダメージの10%反射 | 追加シールド攻撃力×95%、被ダメージの30%反射 | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/diego) |
 | ディエゴ | 専用装備スキル | 大巧不工 | 防衛部隊の防御力+5% | 防衛部隊の防御力+15% | 今回の外部資料で再照合済み | [専用装備資料](https://www.kingshotcommand.com/hero-widgets/diego) |
 | リズ | 討伐スキル | ビッグバブル | 220% | 300% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/36) |
@@ -286,14 +286,20 @@
 
 - **トリトン「必殺の一撃」**：アルテマの数値表は初期20%・最大28%だが、初期値/最大値の双方の効果説明は通常攻撃毎に攻撃力×20%のダメージと記載。数値表の28%が何を表すかは資料上不明瞭。現時点では変更せず、実機確認候補にする。出典：[アルテマ](https://altema.jp/kingshot/chara/29)
 
-## 追加資料の出典
+## 今回再照合した英雄ページ
 
-- アルカ： [Kingshot Wiki](https://kingshotwiki.com/ja/heroes/alcar-ja/)
-- ディエゴ： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/diego)
-- リズ： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/liz)
-- ルナ： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/luna)
-- サロ： [Kingshot Wiki](https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/)
-- マリン： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/marlin)
-- イェーガー： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/jaeger)
-- ヤン： [Kingshot Alliance Command](https://www.kingshotcommand.com/hero-widgets/yang)
+- アルカ：[アルテマ](https://altema.jp/kingshot/chara/25)、専用装備は[Kingshot Wiki](https://kingshotwiki.com/ja/heroes/alcar-ja/)
+- アマデウス：[アルテマ](https://altema.jp/kingshot/chara/1)
+- エリック：[アルテマ](https://altema.jp/kingshot/chara/17)
+- ペーラ：[アルテマ](https://altema.jp/kingshot/chara/18)
+- ディエゴ：[アルテマ](https://altema.jp/kingshot/chara/35)、専用装備は[Alliance Command](https://www.kingshotcommand.com/hero-widgets/diego)
+
+## 専用装備の追加資料
+
+- リズ：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/liz)
+- ルナ：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/luna)
+- サロ：[Kingshot Wiki](https://kingshotwiki.com/ja/heroes/kingshot_wiki_hero_name_50017_kingshot_end-3/)
+- マリン：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/marlin)
+- イェーガー：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/jaeger)
+- ヤン：[Alliance Command](https://www.kingshotcommand.com/hero-widgets/yang)
 - 前回監査のKS-Toolkit資料：Amadeus / Eric / Helga / Jabel / Zoe / Hilde / Petra / Rosa / Margot / Vivian / Long Fei / Thrud / Sophia / Triton / Charles / Ava / Wee & Woo。各行のリンクを参照。
