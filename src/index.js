@@ -790,6 +790,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const traceId = diagnosticTraceId("ranking");
       const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : traceId;
       const startedAtMs = Date.now();
+      console.log("kingdom_watchlist_ranking_fetch_started", { jobId: job.job_id, kid: job.kid, board, traceId: requestTraceId, startedAt: Math.floor(startedAtMs / 1000) });
       try {
         const requestLimiter = apiLimiter;
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter || null;
