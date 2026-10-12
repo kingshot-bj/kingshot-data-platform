@@ -2,7 +2,7 @@
 
 作成日：2026-10-13
 対象：`src/hero-skills-ja.js` の main
-辞典コミット：`8feed19287b868d2b3a43f58aa15f5704543fd53`
+辞典コミット：`1cc2c2fbda5cb9cf1852f9f176f9bdc3a3537c7a`
 
 ## 状態の定義
 
@@ -250,37 +250,37 @@
 | ゴードン | 討伐スキル | 非常食 | 50% | 70% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
 | ゴードン | 遠征スキル | 幸せグルメ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
 | ゴードン | 遠征スキル | 暴言 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/9) |
-| オリーブ | 討伐スキル | 矢の雨 | 180% | 252% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 討伐スキル | マーク | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 遠征スキル | 栽培専門家 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| オリーブ | 遠征スキル | 食糧調達 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/10) |
-| エドウィン | 討伐スキル | 自家製爆弾 | 140% | 196% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 討伐スキル | 高威力爆弾 | 10%, 0.5秒 | 20%, 1.5秒 | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 遠征スキル | 発破技士 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| エドウィン | 遠征スキル | 巨石採掘 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/11) |
-| スミス | 討伐スキル | 火炎槌 | 200% | 280% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 討伐スキル | 防具強化 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 遠征スキル | 善は急げ | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
-| スミス | 遠征スキル | 鍛冶職人 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| オリーブ | 討伐スキル | 矢の雨 | 180% | 252% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 討伐スキル | マーク | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 遠征スキル | 栽培専門家 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| オリーブ | 遠征スキル | 食糧調達 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/10) |
+| エドウィン | 討伐スキル | 自家製爆弾 | 140% | 196% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 討伐スキル | 高威力爆弾 | 10%, 0.5秒 | 20%, 1.5秒 | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 遠征スキル | 発破技士 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| エドウィン | 遠征スキル | 巨石採掘 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/11) |
+| スミス | 討伐スキル | 火炎槌 | 200% | 280% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 討伐スキル | 防具強化 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 遠征スキル | 善は急げ | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
+| スミス | 遠征スキル | 鍛冶職人 | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/12) |
 | フォルスト | 討伐スキル | 斧旋風 | 80% | 110% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 討伐スキル | 鋭刃 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 遠征スキル | 一子相伝 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
 | フォルスト | 遠征スキル | 伐採名人 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/13) |
-| ファハド | 討伐スキル | サンドストーム | 1% | 5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 討伐スキル | ハヤブサの導き | 15% | 35% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 討伐スキル | 砂の将軍 | 10% | 30% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 遠征スキル | サンドシェード | 4% | 20% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
-| ファハド | 遠征スキル | 先行者 | 20% | 100% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | サンドストーム | 1% | 5% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | ハヤブサの導き | 15% | 35% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 討伐スキル | 砂の将軍 | 10% | 30% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 遠征スキル | サンドシェード | 4% | 20% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
+| ファハド | 遠征スキル | 先行者 | 20% | 100% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/20) |
 | あまね | 討伐スキル | 桜花爛漫 | 1.5%, 2.5% | 3.5%, 4.5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 討伐スキル | 破魔矢 | 150% | 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 討伐スキル | 神楽 | 1% | 5% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 遠征スキル | 三布の陣 | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
 | あまね | 遠征スキル | 破魔の祈り | 10% | 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/22) |
-| インウー | 討伐スキル | 散華 | 125%, 150% | 175%, 210% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 討伐スキル | 飛燕 | 100%, 30% | 140%, 50% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 討伐スキル | 双剣 | 8% | 24% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 遠征スキル | 戦の構え | 5% | 25% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
-| インウー | 遠征スキル | 多聞 | 3% | 15% | 今回未再照合 | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 散華 | 125%, 150% | 175%, 210% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 飛燕 | 100%, 30% | 140%, 50% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 討伐スキル | 双剣 | 8% | 24% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 遠征スキル | 戦の構え | 5% | 25% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
+| インウー | 遠征スキル | 多聞 | 3% | 15% | 今回の外部資料で再照合済み | [英雄ページ](https://altema.jp/kingshot/chara/21) |
 
 ## 要注意項目
 
