@@ -6,7 +6,18 @@ const MAX_HERO_ICON_BATCH = 100;
 function normalizeIconUrl(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === "http:" &&
+          (parsed.hostname === "mightpulse.com" || parsed.hostname.endsWith(".mightpulse.com"))) {
+        parsed.protocol = "https:";
+      }
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  }
   return "https://api.mightpulse.com" + (raw.startsWith("/") ? raw : "/" + raw);
 }
 
