@@ -1,0 +1,28 @@
+name: Hero Icon Build Validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/index.js"
+      - "src/hero-icon-store.js"
+      - "src/hero-catalog-page.js"
+      - "migrations/0060_hero_icon_assets.sql"
+      - ".github/workflows/hero-icon-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  worker-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+      - name: Compile Worker without deploying
+        run: wrangler deploy --dry-run --outdir /tmp/eagleeye-hero-icon-dry-run
