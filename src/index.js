@@ -4507,7 +4507,7 @@ export default {
         } catch (error) {
           console.error("hero_icon_catalog_lookup_failed", error?.message || error);
         }
-        return eagleEyeHtmlResponse(renderHeroCatalogPage(iconByName));
+        return await renderHeroCatalogPage(iconByName);
       }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
