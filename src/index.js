@@ -4586,7 +4586,7 @@ export default {
       console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
     }
     try {
-      await runHeroIconAssetWorker(env, { limit: 1 });
+      await runHeroIconAssetWorker(env, { limit: 5 });
     } catch (error) {
       console.error("hero_icon_asset_worker_failed", error?.message || error);
     }
