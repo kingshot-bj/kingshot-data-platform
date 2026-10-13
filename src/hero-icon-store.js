@@ -103,9 +103,10 @@ export async function runHeroIconAssetWorker(env, { limit = 1 } = {}) {
   for (let index = 0; index < safeLimit; index++) {
     const row = await env.DB.prepare(
       "SELECT hero_id, hero_name, source_url, status, attempts, updated_at FROM hero_icon_assets " +
-      "WHERE (status = 'PENDING' OR (status = 'FAILED' AND attempts < 3 AND updated_at <= ?)) " +
-      "ORDER BY CASE status WHEN 'PENDING' THEN 0 ELSE 1 END, updated_at ASC LIMIT 1"
-    ).bind(now - 300).first();
+      "WHERE (status = 'PENDING' OR (status = 'FAILED' AND attempts < 3 AND updated_at <= ?) " +
+      "OR (status = 'SAVING' AND updated_at <= ?)) " +
+      "ORDER BY CASE status WHEN 'PENDING' THEN 0 WHEN 'SAVING' THEN 1 ELSE 2 END, updated_at ASC LIMIT 1"
+    ).bind(now - 300, now - 900).first();
     if (!row) break;
 
     const claim = await env.DB.prepare(
@@ -116,6 +117,20 @@ export async function runHeroIconAssetWorker(env, { limit = 1 } = {}) {
     processed++;
 
     try {
+      const digest = await hashHeroId(row.hero_id);
+      if (row.status === "SAVING") {
+        const existingObjects = await env.ARCHIVE.list({ prefix: HERO_ICON_PREFIX + digest, limit: 5 });
+        const existingObject = (existingObjects.objects || []).find(item => safeAssetName(item.key));
+        if (existingObject) {
+          const savedAt = Math.floor(Date.now() / 1000);
+          await env.DB.prepare(
+            "UPDATE hero_icon_assets SET status = 'SAVED', object_key = ?, saved_at = ?, last_error = NULL, updated_at = ? WHERE hero_id = ? AND status = 'SAVING'"
+          ).bind(existingObject.key, savedAt, savedAt, row.hero_id).run();
+          saved++;
+          continue;
+        }
+      }
+
       const url = new URL(String(row.source_url || ""));
       if (!supportedIconHost(url)) {
         await env.DB.prepare(
@@ -139,7 +154,6 @@ export async function runHeroIconAssetWorker(env, { limit = 1 } = {}) {
       const body = await response.arrayBuffer();
       if (!body.byteLength || body.byteLength > MAX_HERO_ICON_BYTES) throw new Error("IMAGE_SIZE_INVALID");
 
-      const digest = await hashHeroId(row.hero_id);
       const objectKey = HERO_ICON_PREFIX + digest + contentInfo.extension;
       await env.ARCHIVE.put(objectKey, body, {
         httpMetadata: {
