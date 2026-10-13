@@ -1,5 +1,6 @@
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { renderHeroCatalogPage } from "./hero-catalog-page.js";
+import { queueHeroIconCandidates, runHeroIconAssetWorker, getSavedHeroIconMap, serveHeroIconAsset } from "./hero-icon-store.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -4498,7 +4499,16 @@ export default {
       if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
       if (url.pathname === "/kingdom-catalog") { return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
-      if (url.pathname === "/hero-catalog") return eagleEyeHtmlResponse(renderHeroCatalogPage());
+      if (url.pathname.startsWith("/hero-icons/assets/")) return await serveHeroIconAsset(request, env, url.pathname);
+      if (url.pathname === "/hero-catalog") {
+        let iconByName = {};
+        try {
+          iconByName = await getSavedHeroIconMap(env.DB);
+        } catch (error) {
+          console.error("hero_icon_catalog_lookup_failed", error?.message || error);
+        }
+        return eagleEyeHtmlResponse(renderHeroCatalogPage(iconByName));
+      }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
@@ -4574,6 +4584,11 @@ export default {
       await runKingdomCatalogDailyRefresh(env);
     } catch (error) {
       console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
+    }
+    try {
+      await runHeroIconAssetWorker(env, { limit: 1 });
+    } catch (error) {
+      console.error("hero_icon_asset_worker_failed", error?.message || error);
     }
     try {
       await runKingdomWatchlistJobs(env);
@@ -6626,6 +6641,16 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       sourceObservedAt: getMightPulseSourceTimestamp(result.data)
     });
     const savedObservation = await saveApiObservation(env.DB, observationEnvelopeData);
+    const heroPayload = Array.isArray(result?.data?.heroes)
+      ? result.data.heroes
+      : Array.isArray(result?.data?.player?.heroes) ? result.data.player.heroes : [];
+    if (heroPayload.length) {
+      try {
+        await queueHeroIconCandidates(env.DB, heroPayload, value => localizeHeroName(value));
+      } catch (error) {
+        console.error("hero_icon_queue_failed", error?.message || error);
+      }
+    }
     const observation = {
       ...observationEnvelopeData,
       observation_id: savedObservation.observation_id,
