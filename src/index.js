@@ -7028,11 +7028,16 @@ async function handlePlayerCompareApi(request, env) {
   if (ids.length < 2) return json({ok:false,error:"COMPARE_REQUIRES_TWO_PLAYERS",message:"比較するプレイヤーを2人以上選択してください。"},400);
   try {
     const visibility = await getPlayerVisibilitySettings(env.DB);
+    const canReadCoreRanks = visibilityEnabled(visibility,"ranks_core",auth.role);
+    const canReadLeaderboardRanks = visibilityEnabled(visibility,"ranks_leaderboards",auth.role);
     const from = Math.floor(Date.now()/1000)-30*86400;
     const players = await Promise.all(ids.map(async id => {
-      const [raw, storedHistory] = await Promise.all([
+      const [raw, storedHistory, rankRows] = await Promise.all([
         env.DB.prepare("SELECT p.*, o.payload_json AS current_observation_payload_json FROM players p LEFT JOIN api_observations o ON o.observation_id = p.source_observation_id WHERE p.governor_id = ? LIMIT 1").bind(id).first(),
-        getPlayerHistory(env.DB,id,30,env.ARCHIVE,env.HISTORY_STORAGE_MODE)
+        getPlayerHistory(env.DB,id,30,env.ARCHIVE,env.HISTORY_STORAGE_MODE),
+        (canReadCoreRanks || canReadLeaderboardRanks)
+          ? getPlayerRankHistory(env.DB,{governorId:id,limit:1,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE})
+          : Promise.resolve([])
       ]);
       if (!raw) return {governor_id:id,missing:true};
       let observationPayload = {};
@@ -7045,11 +7050,31 @@ async function handlePlayerCompareApi(request, env) {
       const gearVisible = visibilityEnabled(visibility,"gov_gear_list",auth.role) || visibilityEnabled(visibility,"gov_gear_gems",auth.role);
       const profileNeedsRich = (heroesVisible && !Array.isArray(observationPayload.heroes)) || (gearVisible && !(observationPayload.gov_gear && Array.isArray(observationPayload.gov_gear.items)));
       const snapshots = (storedHistory||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
+      const latestRankRow = Array.isArray(rankRows) ? rankRows[0] : null;
+      let leaderboardData = [];
+      if (latestRankRow && canReadLeaderboardRanks) {
+        try {
+          const parsed = JSON.parse(latestRankRow.leaderboards_json || "[]");
+          if (Array.isArray(parsed)) leaderboardData = parsed;
+        } catch {}
+      }
+      const rankings = latestRankRow ? {
+        observed_at: latestRankRow.observed_at ?? null,
+        source_observed_at: latestRankRow.source_observed_at ?? null,
+        ...(canReadCoreRanks ? {
+          power: latestRankRow.power ?? null, power_rank: latestRankRow.power_rank ?? null,
+          kills: latestRankRow.kills ?? null, kills_rank: latestRankRow.kills_rank ?? null,
+          town_center_level: latestRankRow.town_center_level ?? null, town_center_rank: latestRankRow.town_center_rank ?? null,
+          migrant_score: latestRankRow.migrant_score ?? null, migrant_rank: latestRankRow.migrant_rank ?? null,
+          mystic_trial: latestRankRow.mystic_trial ?? null, mystic_rank: latestRankRow.mystic_rank ?? null
+        } : {}),
+        leaderboards: leaderboardData
+      } : null;
       const series = buildPlayerCompareSeries({playerHistory:snapshots,rankHistory:[],fromUnix:from});
       const history = series.power;
       const first = history[0], last = history[history.length-1];
-      await trackServiceUsage(env,auth,"PLAYER_COMPARE_VIEW",{targetType:"PLAYER",targetId:id,metadata:{comparison_count:ids.length,history_days:30}});
-      return {governor_id:id,player,profile,profileNeedsRich,rankings:null,rankingsExpected:false,history,rankHistory:[],period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
+      await trackServiceUsage(env,auth,"PLAYER_COMPARE_VIEW",{targetType:"PLAYER",targetId:id,metadata:{comparison_count:ids.length,history_days:30,rank_snapshot_available:!!latestRankRow}});
+      return {governor_id:id,player,profile,profileNeedsRich,rankings,rankingsExpected:canReadCoreRanks||canReadLeaderboardRanks,history,rankHistory:[],period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
     }));
     return json({ok:true,players,period_days:30});
   } catch (error) {
