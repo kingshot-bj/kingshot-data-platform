@@ -7053,10 +7053,14 @@ async function handlePlayerCompareApi(request, env) {
       const latestRankRow = Array.isArray(rankRows) ? rankRows[0] : null;
       let leaderboardData = [];
       if (latestRankRow && canReadLeaderboardRanks) {
-        try {
-          const parsed = JSON.parse(latestRankRow.leaderboards_json || "[]");
-          if (Array.isArray(parsed)) leaderboardData = parsed;
-        } catch {}
+        if (Array.isArray(latestRankRow.leaderboards)) {
+          leaderboardData = latestRankRow.leaderboards;
+        } else {
+          try {
+            const parsed = JSON.parse(latestRankRow.leaderboards_json || "[]");
+            if (Array.isArray(parsed)) leaderboardData = parsed;
+          } catch {}
+        }
       }
       const rankings = latestRankRow ? {
         observed_at: latestRankRow.observed_at ?? null,
