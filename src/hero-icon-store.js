@@ -12,7 +12,7 @@ function normalizeIconUrl(value) {
 
 function supportedIconHost(url) {
   return url.protocol === "https:" &&
-    (url.hostname === "mightpulse.com" || url.hostname.endsWith(".mightpulse.com"));
+    (url.hostname === "mightpulse.com" || url.hostname.endsWith(".mightpulse.com")) && !url.username && !url.password;
 }
 
 async function hashHeroId(heroId) {
@@ -49,12 +49,12 @@ export async function queueHeroIconCandidates(db, heroes, resolveHeroName = valu
   for (const hero of heroes.slice(0, MAX_HERO_ICON_BATCH)) {
     const heroId = String(hero?.id ?? "").trim();
     const sourceUrl = normalizeIconUrl(hero?.icon);
-    if (!heroId || !sourceUrl) continue;
+    if (!heroId || !String(hero?.name ?? "").trim() || !sourceUrl) continue;
     let heroName = "";
     try {
-      heroName = String(resolveHeroName(hero?.name || heroId) || "").trim();
+      heroName = String(resolveHeroName(hero.name) || "").trim();
     } catch {
-      heroName = String(hero?.name || "").trim();
+      heroName = String(hero.name || "").trim();
     }
     if (!heroName || heroName === "-") continue;
     candidatesById.set(heroId, { heroId, heroName, sourceUrl });
