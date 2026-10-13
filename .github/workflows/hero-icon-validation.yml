@@ -12,6 +12,8 @@ on:
       - "migrations/0060_hero_icon_assets.sql"
       - ".github/workflows/hero-icon-validation.yml"
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   worker-dry-run:
