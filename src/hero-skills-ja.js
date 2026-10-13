@@ -314,7 +314,6 @@ export const HERO_SKILLS_JA = {
         { name: "苦行", initial: "総攻撃力+3% / 総防御力+2%", max: "総攻撃力+15% / 総防御力+10%", description: "味方全部隊の総攻撃力と総防御力が上昇する。" },
         { name: "ポーション注入", initial: "120%", max: "200%", description: "味方全部隊の攻撃時、25%の確率で追加ダメージを与える。" },
         { name: "意志の試練", initial: "発動率8% / 被ダメージ50%軽減", max: "発動率40% / 被ダメージ50%軽減", description: "一定確率で味方全部隊の被ダメージを50%軽減する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "聖なる祈祷", initial: "30%", max: "70%", description: "ヒルデの回復スキルの効果が30%（初期）〜70%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/hilde/"},
@@ -335,7 +334,6 @@ export const HERO_SKILLS_JA = {
         { name: "予測不能", initial: "発動率8% / 与ダメージ+50%", max: "発動率40% / 与ダメージ+50%", description: "一定確率で味方全部隊の与ダメージが50%上昇する。" },
         { name: "ラム酒", initial: "発動率20% / 総殺傷力-10%", max: "発動率20% / 総殺傷力-50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を減少させる。2ターン持続。" },
         { name: "強化ガンパウダー", initial: "発動率50% / 与ダメージ+10%", max: "発動率50% / 与ダメージ+50%", description: "味方全部隊の攻撃時、50%の確率で与ダメージが上昇する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "酒飲み", initial: "5%", max: "15%", description: "通常攻撃毎に、HPが最も低い味方英雄のHPを攻撃力×15%回復する。", source: "https://www.kingshotcommand.com/hero-widgets/marlin"},
@@ -355,7 +353,6 @@ export const HERO_SKILLS_JA = {
         { name: "ストームソング", initial: "8%", max: "40%", description: "20%の確率で味方全部隊の与ダメージが8%（初期値）/40%（最大強化時）上昇する。3ターン持続。" },
         { name: "コンフリクトソング", initial: "10%", max: "50%", description: "味方全部隊の攻撃時、20%の確率で敵の総殺傷力を10%（初期値）/50%（最大強化時）低下させる。2ターン持続。" },
         { name: "フェスティバルソング", initial: "5%", max: "25%", description: "味方全部隊の総HPが5%（初期値）/25%（最大強化時）上昇する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "サイレント・シレンス", initial: "ダメージ220%、沈黙3秒", max: "ダメージ300%、沈黙5秒", description: "ターゲットを初期3秒/最大5秒間スキル使用不可にし、攻撃力×220%（初期値）/×300%（最大強化時）のダメージを与える。", source: "https://www.kingshotcommand.com/hero-widgets/jaeger"},
@@ -375,7 +372,6 @@ export const HERO_SKILLS_JA = {
         { name: "デストロイ", initial: "5%", max: "25%", description: "味方全部隊の攻撃力が5%（初期値）/25%（最大強化時）上昇する。" },
         { name: "タクティクス", initial: "4%", max: "20%", description: "味方全部隊が通常攻撃を受けた際、4%（初期値）/20%（最大強化時）の確率でダメージを回避する。" },
         { name: "トリックテクニック", initial: "120%", max: "200%", description: "騎兵が25%の確率で1回追加攻撃を行い、120%（初期値）/200%（最大強化時）のダメージを与える。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "アンブッシュ", initial: "25%", max: "45%", description: "通常攻撃時、40%の確率で追加攻撃し、攻撃力×25%（初期）〜45%（最大強化時）のダメージを与える。", source: "https://ks-toolkit.com/data/heroes/margot/"},
@@ -395,7 +391,6 @@ export const HERO_SKILLS_JA = {
         { name: "ノイズ・タイム", initial: "10%", max: "50%", description: "40%の確率で味方全体の与ダメージが10%（初期値）/50%（最大強化時）上昇する。" },
         { name: "チャーム・ダンス", initial: "4%", max: "20%", description: "敵全体の与ダメージを4%（初期値）/20%（最大強化時）低下させる。" },
         { name: "ゴールデン・リズム", initial: "6%", max: "30%", description: "弓兵の総攻撃力が6%（初期値）/30%（最大強化時）上昇する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "オールナイト・フェスタ", initial: "5%", max: "15%", description: "センター・アテンション発動後、自身の攻撃力が5%（初期）〜15%（最大強化時）上昇。戦闘終了まで持続。", source: "https://ks-toolkit.com/data/heroes/rosa/"},
@@ -415,7 +410,6 @@ export const HERO_SKILLS_JA = {
         { name: "天昇豪胆", initial: "10%", max: "50%", description: "40%の確率で味方全部隊の被ダメージが減少する。" },
         { name: "剛筋頑健", initial: "5%", max: "25%", description: "全軍の総防御力が上昇する。" },
         { name: "杯投烈脚", initial: "120%", max: "200%", description: "味方全部隊の攻撃時、25%の確率で追加ダメージを与える。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "呑下三百杯", initial: "15%", max: "15%", description: "聖なる玉湯の持続時間が1.5秒延長。延長中、与ダメージの15%分HPを回復。", source: "https://ks-toolkit.com/data/heroes/long-fei/"},
@@ -435,7 +429,6 @@ export const HERO_SKILLS_JA = {
         { name: "ファナティック", initial: "3% / 3%", max: "15% / 15%", description: "歩兵と弓兵の被ダメージが3%（初期値）/15%（最大強化時）低下し、与ダメージが同率上昇する。" },
         { name: "レックレス", initial: "20%", max: "100%", description: "騎兵の攻撃時、20%の確率で敵全体に追加ダメージを与える。追加ダメージは攻撃力の20%（初期値）/100%（最大強化時）。" },
         { name: "アンセスター", initial: "5% / 5%", max: "25% / 25%", description: "騎兵が4回攻撃する度、味方全部隊の与ダメージが5%（初期値）/25%（最大強化時）上昇し、被ダメージが同率低下する。2ターン持続。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "レイジアックス", initial: "25%", max: "35%", description: "ストームアックス使用後、25%（初期）〜35%（最大強化時）の確率でターゲットを1秒間眩暈状態にする。", source: "https://ks-toolkit.com/data/heroes/thrud/"},
@@ -455,7 +448,6 @@ export const HERO_SKILLS_JA = {
         { name: "アウェイティング", initial: "5%", max: "25%", description: "味方全部隊の攻撃時、ターゲットの被ダメージが5%（初期値）/25%（最大強化時）上昇する。" },
         { name: "バラージショット", initial: "20% / 5%", max: "100% / 15%", description: "味方全部隊が4回攻撃する毎に、次の攻撃でターゲットに20%（初期値）/100%（最大強化時）の追加ダメージを与える。さらにターゲットは次の攻撃を受ける際、5%（初期値）/15%（最大強化時）の追加ダメージを受ける。" },
         { name: "グリードトラップ", initial: "12%", max: "60%", description: "弓兵部隊が4回攻撃する毎に罠を発動し、敵全体に12%（初期値）/60%（最大強化時）の追加ダメージを与える。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "ロイヤルシューター", initial: "50%", max: "70%", description: "スキル使用のたびに、ランダムなターゲット（英雄優先）へ攻撃力×50%（初期）〜70%（最大強化時）のダメージ。", source: "https://ks-toolkit.com/data/heroes/vivian/"},
@@ -475,7 +467,6 @@ export const HERO_SKILLS_JA = {
         { name: "律令の力", initial: "5%", max: "25%", description: "味方全部隊の総防御力が5%（初期値）/25%（最大強化時）上昇する。" },
         { name: "戦争の力", initial: "6%", max: "30%", description: "味方全部隊の与ダメージが6%（初期値）/30%（最大強化時）上昇する。" },
         { name: "誓約の力", initial: "4% / 6%", max: "20% / 30%", description: "味方歩兵の総HPが4%（初期値）/20%（最大強化時）、騎兵と弓兵の総HPが6%（初期値）/30%（最大強化時）上昇する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "クリスタル改造", initial: "10%", max: "30%", description: "トリトンの与ダメージが10%（初期）〜30%（最大強化時）上昇する。", source: "https://ks-toolkit.com/data/heroes/triton/"},
@@ -495,7 +486,6 @@ export const HERO_SKILLS_JA = {
         { name: "コントラクト・バインド", initial: "8%", max: "40%", description: "毎ターン8%（初期値）/40%（最大強化時）の確率で味方全部隊の被ダメージを50%軽減する。" },
         { name: "パニック・ダメージ", initial: "40%", max: "200%", description: "2ターン毎に敵を恐怖状態にし、次ターンに追加の騎兵攻撃ダメージ40%（初期値）/200%（最大強化時）を与える。恐怖は1ターン継続。" },
         { name: "パニック・ジエンド", initial: "15%", max: "75%", description: "味方全部隊の恐怖状態の敵への与ダメージが15%（初期値）/75%（最大強化時）上昇する。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "オーバーマインド・アイ", initial: "2%", max: "8%", description: "攻撃時2%（初期）〜8%（最大強化時）の確率でターゲットを1秒間混乱状態にする。混乱状態の敵は周囲のターゲットを無差別に攻撃する。", source: "https://ks-toolkit.com/data/heroes/sophia/"},
@@ -515,7 +505,6 @@ export const HERO_SKILLS_JA = {
         { name: "アバランチ", initial: "20%", max: "100%", description: "味方全部隊が4ターン毎に1度追加攻撃を行い、追加ダメージを与える。" },
         { name: "アイスゾーン", initial: "20%", max: "100%", description: "弓兵が攻撃する度、40%の確率で対象に20%（初期値）/100%（最大強化時）の追加ダメージを与える。" },
         { name: "アンブッシュ", initial: "8%", max: "40%", description: "毎ターン一定確率で全軍の与ダメージが上昇する。発動率は初期8%、最大40%。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "ラピッドファイア", initial: "ダメージ40%、護衛対象は即時撃破", max: "ダメージ56%、護衛対象は即時撃破", description: "連続5回射撃し、ランダムな敵に攻撃力×40%（初期値）/×56%（最大強化時）のダメージを与える。対象が護衛なら即座に撃破する。", source: "https://www.kingshotcommand.com/hero-widgets/yang"},
