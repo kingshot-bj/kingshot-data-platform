@@ -294,7 +294,6 @@ export const HERO_SKILLS_JA = {
         { name: "リッジワウンド", initial: "発動率20% / 毎ターン8%ダメージ", max: "発動率20% / 毎ターン40%ダメージ", description: "味方全部隊の攻撃時、20%の確率で裂傷を付与。敵は毎ターン追加ダメージを受ける。3ターン持続。" },
         { name: "感情支配", initial: "5%", max: "25%", description: "全部隊の総攻撃力が上昇する。" },
         { name: "無限テクニック", initial: "発動率50% / 被ダメージ+10%", max: "発動率50% / 被ダメージ+50%", description: "味方全部隊の攻撃時、50%の確率で敵軍の被ダメージを上昇させる。" },
-      ]}
       ]},
       { type: "専用装備スキル", skills: [
         { name: "デスファイト", initial: "8%", max: "24%", description: "ペインエキサイトメント発動後、攻撃力が8%（初期）〜24%（最大強化時）上昇。戦闘終了まで持続。", source: "https://ks-toolkit.com/data/heroes/zoe/"},
