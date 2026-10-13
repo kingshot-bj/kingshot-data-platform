@@ -23,7 +23,7 @@ export function renderHeroCatalogPage(iconByName = {}) {
   const heroes = Object.entries(HERO_SKILLS_JA).map(([name, data]) => {
     const groups = data.groups || [];
     const count = groups.reduce((sum, group) => sum + (group.skills || []).length, 0);
-    const iconPath = typeof iconByName?.[name] === "string" && /^[a-f0-9]{64}\\.(?:png|jpg|webp|gif|avif)$/.test(iconByName[name]) ? iconByName[name] : "";
+    const iconPath = typeof iconByName?.[name] === "string" && /^[a-f0-9]{64}\.(?:png|jpg|webp|gif|avif)$/.test(iconByName[name]) ? iconByName[name] : "";
     const detailAvatar = iconPath
       ? '<img class="hero-avatar hero-avatar-large hero-avatar-image" src="/hero-icons/assets/' + esc(iconPath) + '" alt="' + esc(name) + '" loading="lazy">'
       : '<div class="hero-avatar hero-avatar-large">' + esc(heroInitial(name)) + '</div>';
