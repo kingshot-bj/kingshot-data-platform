@@ -8,6 +8,7 @@ on:
       - "src/index.js"
       - "src/hero-icon-store.js"
       - "src/hero-catalog-page.js"
+      - "src/hero-skills-ja.js"
       - "migrations/0060_hero_icon_assets.sql"
       - ".github/workflows/hero-icon-validation.yml"
   workflow_dispatch:
