@@ -21,6 +21,7 @@ function esc(value) {
 }
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
+import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord } from "./mightpulse-probe.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
@@ -3982,6 +3983,18 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
       remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
     });
 
+    const safePayload = redactProbeSecrets(payload);
+    const archiveRecord = {
+      request_id: crypto.randomUUID(), command_type: spec.targetType, endpoint: spec.endpoint,
+      query: spec.query, status: "SUCCESS", http_status: result.status,
+      elapsed_ms: responseReceivedAt - requestStartedAt,
+      started_at: new Date(requestStartedAt).toISOString(), completed_at: new Date(responseReceivedAt).toISOString(),
+      trigger_reason: "MANUAL", raw_payload: safePayload
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, archiveRecord); }
+    catch (archiveError) { archive = { request_id: archiveRecord.request_id, r2_saved:false, metadata_saved:false, archive_error:String(archiveError?.message || archiveError).slice(0,300) }; }
+
     return {
       ok: true,
       probe: {
@@ -4007,6 +4020,8 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
         headers,
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
         diagnostic_payload: diagnosticPayload,
+        raw_payload: safePayload,
+        archive,
         timestamp_like_fields: timestampFields,
         response_sha256: responseHash,
         section_sha256: sectionHashes
@@ -4016,8 +4031,8 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     if (lease) {
       const status = Number(error?.status || 0);
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
-      const disable = status === 401 || status === 403;
-      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
+      const disable = false;
+      const keepAvailable = cooldown === 0 && (status === 400 || status === 403 || status === 404);
       await recordApiPoolFailure(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
@@ -4119,34 +4134,117 @@ async function handleMightPulseResearchApi(request, env) {
   }
 }
 
+async function executeManualMightPulseProbe(request, env, guard, body) {
+  const command = validateManualProbeCommand(body || {});
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:MANUAL:" + command.path + ":" + JSON.stringify(command.query);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok:false, error:"API_REQUEST_IN_PROGRESS", message:"同じコマンドが実行中です。" }, 409);
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  let lease = null;
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  try {
+    lease = await leaseApiKey(env.DB, {
+      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
+      purpose: "MIGHTPULSE_PROBE_MANUAL",
+      targetType: "MANUAL_COMMAND",
+      targetId: command.path
+    });
+    const result = await mightPulseFetch(env, command.path, {
+      method: "GET",
+      query: command.query,
+      apiKey: lease.api_key,
+      maxRetries: 0,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type, probeRequestId: requestId }
+    });
+    const completedAt = Date.now();
+    const safePayload = redactProbeSecrets(result.data);
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+      endpoint: command.path, targetType: "MANUAL_COMMAND", targetId: command.path,
+      purpose: "MIGHTPULSE_PROBE_MANUAL", httpStatus: result.status,
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    });
+    const record = {
+      request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
+      command_type: "MANUAL", endpoint: command.path, query: command.query,
+      status: "SUCCESS", http_status: result.status, elapsed_ms: completedAt-startedAt,
+      started_at: new Date(startedAt).toISOString(), completed_at: new Date(completedAt).toISOString(),
+      trigger_reason: "MANUAL", raw_payload: safePayload
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, record); }
+    catch (archiveError) { archive = { request_id: requestId, r2_saved:false, metadata_saved:false, archive_error:String(archiveError?.message || archiveError).slice(0,300) }; }
+    return json({ ok:true, probe:{
+      request_id: requestId, type:"MANUAL " + command.path, target_type:"MANUAL_COMMAND",
+      target_id: command.path, endpoint: command.path, request_path: command.path,
+      query: command.query, pool_type: lease.pool_type, http_status: result.status,
+      request_started_at_iso: record.started_at, response_received_at_iso: record.completed_at,
+      elapsed_ms: record.elapsed_ms, payload_keys: safePayload && typeof safePayload === "object" && !Array.isArray(safePayload) ? Object.keys(safePayload) : [],
+      raw_payload: safePayload, response_sha256: await sha256HexForProbe(safePayload), archive
+    }});
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    if (lease) {
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const keepAvailable = status === 400 || status === 403 || status === 404;
+      try {
+        await recordApiPoolFailure(env.DB, {
+          keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+          endpoint: command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
+          purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:status,
+          errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:error?.message || null, cooldownSeconds:cooldown,
+          disable:false, keepAvailable
+        });
+      } catch {}
+    }
+    const completedAt = Date.now();
+    const record = {
+      request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
+      command_type:"MANUAL", endpoint:command.path, query:command.query,
+      status:"FAILED", http_status:status || null, elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:"MANUAL", error_code:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+      error_message:String(error?.message || error).slice(0,1000),
+      diagnostic:redactProbeSecrets(error?.details || null)
+    };
+    try { await archiveMightPulseProbeRecord(env, record); } catch {}
+    return json({ ok:false, request_id:requestId, error:error?.code || "MIGHTPULSE_PROBE_FAILED",
+      status, message:error?.message || null, diagnostic:redactProbeSecrets(error?.details || null) },
+      status >= 400 && status < 600 ? status : 502);
+  } finally {
+    if (lease) { try { await releaseApiLease(env.DB, lease.lease_id); } catch {} }
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
+  }
+}
+
 async function handleMightPulseProbeApi(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    if (!body || String(body.mode || "") !== "manual") return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
+    try { return await executeManualMightPulseProbe(request, env, guard, body); }
+    catch (error) { return json({ok:false,error:error?.message || "INVALID_PROBE_COMMAND"},400); }
+  }
+  if (request.method !== "GET") return json({ok:false,error:"METHOD_NOT_ALLOWED"},405);
   const url = new URL(request.url);
   const type = String(url.searchParams.get("type") || "PLAYER").trim().toUpperCase();
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   const kid = String(url.searchParams.get("kid") || "").trim();
   const board = String(url.searchParams.get("board") || "").trim();
   const include = String(url.searchParams.get("include") || "base").trim();
-  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:"+type+":"+String(governorId||kid||"")+":"+String(board||"")+":"+include;
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:" + type + ":" + String(governorId || kid || "") + ":" + String(board || "") + ":" + include;
   const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
-
+  if (!apiLockToken) return json({ok:false,error:"API_REQUEST_IN_PROGRESS",message:"同じ対象への処理が現在実行中です。完了を待ってから再試行してください。",lock_key:apiLockKey},409);
   try {
     const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
     return json(await fetchMightPulseProbeThroughPool(env, spec));
   } catch (error) {
     const status = Number(error?.status || 0);
-    return json({
-      ok: false,
-      error: error?.code || "MIGHTPULSE_PROBE_FAILED",
-      status,
-      message: error?.message || null,
-      diagnostic: error?.details || null
-    }, status >= 400 && status < 600 ? status : 502);
-  }
-
+    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:error?.message || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
   } finally {
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
@@ -4170,6 +4268,7 @@ async function renderMightPulseProbePage(request, env) {
   "<label class='field'><span>Player include</span><select id='include'><option value='base'>base</option><option value='base,ranks'>base,ranks</option><option value='base,heroes,ranks,gov_gear'>base,heroes,ranks,gov_gear</option></select></label>" +
   "<label class='field'><span>Kingdom ranking</span><select id='board'>" + boardOptions + "</select></label>" +
   "</div><div class='actions'><button class='btn' data-type='PLAYER'>Playerを取得</button><button class='btn secondary' data-type='KINGDOM'>Kingdomを取得</button><button class='btn secondary' data-type='KINGDOM_RANKING'>Kingdom Rankingを取得</button><button class='btn secondary' id='clearHistory' type='button'>履歴クリア</button></div><div id='status' class='hint'></div></div>" +
+  "<div class='card'><h2>手入力コマンド実験</h2><p class='hint'>MightPulse APIの相対パスとクエリJSONを指定して、GETリクエストを1回だけ実行します。ホスト名・外部URLは指定できません。例: /players/225623582 と {&quot;include&quot;:&quot;base,ranks&quot;}。結果JSONは画面で確認・コピーでき、R2に保存します。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/225623582'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{"include":"base,ranks"}'></label></div><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></div>" +
   "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。履歴はこのブラウザのlocalStorageだけに保持します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
   `<script>(function(){var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.type)+'<br><span class=\"small\">'+esc(p.target_id)+'</span></td><td>'+esc(p.fresh==null?'-':p.fresh)+'</td><td>'+esc(p.cached_at||'-')+'</td><td>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</td><td>'+esc(p.http_status)+'</td><td>'+esc(p.elapsed_ms)+' ms</td><td class=\"mono\">'+esc(String(p.hash||'').slice(0,16))+'…</td></tr>';}).join('')||'<tr><td colspan=\"8\" class=\"small\">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
   if(!previous) return {title:"比較対象なし",tone:"muted",items:["同じ対象・同じProbe種別の過去結果がありません。まず同条件で2回以上取得してください。"]};
@@ -4203,12 +4302,13 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>Player activity</b><span>'+renderPlayerActivity(p.player_activity)+'</span>'+
   '<b>Payload keys</b><span class=\"mono\">'+esc((p.payload_keys||[]).join(', '))+'</span>'+
   '<b>検証用データ（英雄・装備・スキル）</b><span class=\"mono\" style=\"white-space:pre-wrap;display:block;max-height:420px;overflow:auto\">'+esc(JSON.stringify(p.diagnostic_payload||null,null,2))+'</span>'+
+  '<b>レスポンスJSON（全体）</b><span class=\"mono\" style=\"white-space:pre-wrap;display:block;max-height:560px;overflow:auto\">'+esc(JSON.stringify(p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,null,2))+'</span>'+
   '<b>HTTP headers</b><span class=\"mono\">'+esc(JSON.stringify(h,null,2))+'</span>'+
   '<b>Timestamp-like fields</b><span>'+th+'</span>'+
   '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
   '<b>Section SHA-256</b><span>'+sh+'</span>'+
   '<b>比較</b><span><strong>'+esc(comparison.title)+'</strong><br>'+comparison.items.map(function(x){return '• '+esc(x);}).join('<br>')+'</span>'+
-  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
+  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',manualProbe);async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
 }
 async function handleGoogleDriveVerifyApi(request, env) {
   const guard = await requireOwner(request, env);
