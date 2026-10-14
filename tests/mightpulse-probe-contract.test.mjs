@@ -17,6 +17,8 @@ test("Probe API includes manual, batch, resume, history and Owner key management
     "requireOwner(request, env)",
     "production_save:productionSave"
   ]) assert.ok(source.includes(marker), "missing source contract: " + marker);
+  assert.ok(source.includes("Never infer the returned player's identity from the request path alone."));
+  assert.ok(!source.includes("fallbackPathId"));
 });
 
 test("Probe never leases production SYSTEM pools and does not disable keys on 403", async () => {
