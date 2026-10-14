@@ -117,6 +117,7 @@ export function validateManualProbeCommand(input = {}) {
   if (entries.length > 50) throw new Error("PROBE_QUERY_TOO_MANY_FIELDS");
   for (const [key, value] of entries) {
     if (!/^[A-Za-z0-9_.-]{1,100}$/.test(key)) throw new Error("PROBE_QUERY_INVALID_FIELD_NAME");
+    if (/(?:api[_-]?key|authorization|token|secret|password|credential)/i.test(key)) throw new Error("PROBE_QUERY_SECRET_FIELD_NOT_ALLOWED");
     if (value !== null && !["string", "number", "boolean"].includes(typeof value)) throw new Error("PROBE_QUERY_VALUES_MUST_BE_SCALARS");
     if (typeof value === "string" && value.length > 2000) throw new Error("PROBE_QUERY_VALUE_TOO_LONG");
     if (typeof value === "number" && !Number.isFinite(value)) throw new Error("PROBE_QUERY_INVALID_NUMBER");
