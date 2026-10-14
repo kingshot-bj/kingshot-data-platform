@@ -109,3 +109,10 @@ test("player compare reports initialization failure instead of leaving the initi
   assert.ok(indexSource.includes("比較画面のJavaScript初期化エラーを検出しました"));
   assert.ok(indexSource.includes('status.textContent.trim()==="比較データを読み込み中…"'));
 });
+
+
+test("comparison refresh handler emits valid quote escapes for include checks", () => {
+  const refreshSnippet = indexSource.slice(indexSource.indexOf("rd.requested_include") - 120, indexSource.indexOf("rd.requested_include") + 120);
+  assert.ok(refreshSnippet.includes(String.raw`requested_include||\"\").includes(\"ranks\")`));
+  assert.ok(!refreshSnippet.includes(String.raw`requested_include||\\\"\\\"`));
+});
