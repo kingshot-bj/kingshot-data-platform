@@ -129,11 +129,12 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 
 ## 8. セキュリティ・運用上の注意
 
-- ProbeはAdmin以上の想定。キー登録・無効化・Mighty権限確認APIはOwner限定の仮実装。
-- 本番SYSTEM_GENERAL / SYSTEM_WATCHLISTキーをProbeに借りない。これはコード上の意図で、実際の全経路を監査する。
-- USER_CONTRIBUTEDキーはEagleEye利用時点で提供済み・利用同意済みとして扱い、Probe専用の追加同意フラグは作らない。Mighty必須コマンドはMighty確認済みキーに限定し、既存のキー状態・リース・無効化ルールは維持する。
+- ProbeはAdmin以上。Probe専用キー登録・無効化UI/APIは廃止し、Owner専用のキー管理画面を設けない。
+- Probeは既存API Poolの SYSTEM_GENERAL / SYSTEM_WATCHLIST / USER_CONTRIBUTED をすべて利用する。
+- Probeのリースでは `reserveAvailableKeys: 1` を指定し、共通claim SQLで通常ユーザー／定期処理向けに最低1本の利用可能キーを残す。利用可能キーが1本しかない場合はProbeがそれを借りず、通常処理向けに残す。
+- Mighty必須コマンドはMighty確認済みキーに限定。通常コマンドはMighty専用にしない。EagleEye利用時点で提供済みとみなし、Probe専用の追加同意フラグは作らない。
 - 403はMighty権限不足の可能性があり、キーが無効とは限らない。自動停止しない。
-- APIキー本体は画面の登録欄から送信後にクリアし、登録後は再表示しない。fingerprintは先頭数文字だけ表示。
+- APIキー本体はログ・レスポンス・R2/D1の実行メタデータに残さない。
 - D1に生レスポンスを入れない。生JSONはR2。履歴用D1列は小さいメタデータだけ。
 - API endpointやレスポンス構造の推測を公式仕様として書かない。取得できなかったものを勝手に補完しない。
 - 本番へのマージ・デプロイ前に、CI成功、migrationの順序、API契約、権限、R2/D1保存、実行履歴のテストを済ませる。
@@ -159,7 +160,8 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 
 ユーザー確定方針：
 - USER_CONTRIBUTEDキーはEagleEye利用時点で提供済み・利用同意済みとする。Probe専用の追加貸出同意フラグは作らない。
-- 通常コマンドは利用可能なUSER_CONTRIBUTEDキーを候補にする。Mighty必須コマンドだけ、Mighty確認済みキーに限定する。
+- Probe専用キーを廃止し、既存API Poolの3種類をすべて候補にする。Probeの貸出時は最低1本を通常処理向けに残す。
+- Mighty必須コマンドだけMighty確認済みキーに限定する。通常コマンドはMighty必須にしない。
 - mainマージ・本番デプロイは未実施。
 
 追加修正：
@@ -176,3 +178,22 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 - 最新コミットに対するGitHub Actions run / statusの照会結果は空で、CI成功は未確認。
 - この実行環境からGitHub cloneを試みたが、ネットワーク名前解決に失敗し、ローカルの `node --check` / `node --test` は実行できていない。
 - したがって、構文・単体テスト・D1実環境migrationは未検証。mainへのマージ、本番migration適用、Cloudflareデプロイは行わない。
+
+
+## 12. 追加追記（2026-10-14：共有Pool／migration監査）
+
+実装変更コミット：
+- `31b8cbe693d0d603544ccafc5e3e9a8479819cdc` — 既存API Pool共用、最低1キー予約、専用キーUI/API除去
+- `2f40568b7a5564e91f0249d7f6915b94b993b577` — Probeエラーハンドラーの未定義 `lease` 参照を修正
+- `78b7496ebcaaa90237579b1a7643261dd808e256` — 共有Poolポリシーのテスト更新
+- `172affd80d33375626e3c57bdfd9a4117d5eff91` — 予約枠SQLの契約テストとPR説明を更新
+
+Migrationに重大な確認事項：
+- mainのmigrationディレクトリには `0064_mightpulse_probe_key_audit.sql` が存在する一方、`0061`〜`0063` は存在しない。作業ブランチには `0061`〜`0065` が存在する。
+- mainの0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` に対してALTERを行うが、main上のmigration一覧だけではその元テーブルや追加カラムがどのmigrationで作成・適用されたか分からない。
+- リモートD1のmigration journalと実テーブルのカラムを確認するまで、migrationを適用・デプロイしない。0061〜0063が過去に適用済みでファイルだけ欠落したのか、未適用なのかを断定しない。重複ALTERやmigration順序問題を解消してからマージする。
+
+最新検証状態：
+- branch HEAD `172affd80d33375626e3c57bdfd9a4117d5eff91` のGitHub Actions runとcombined statusは照会結果が空で、CI成功は未確認。
+- この環境ではGitHub clone／ローカルNodeテストを実行できていない。構文・単体テスト・実D1 migrationは未検証。
+- mainマージ、本番migration適用、Cloudflareデプロイは未実施。
