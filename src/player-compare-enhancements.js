@@ -70,30 +70,29 @@ function enhance(){
  const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,color:colors[i%colors.length]}});
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
-  const existing=card.querySelector('.mystic-ring');
-  if(existing)existing.style.display='none';
-  const values=card.querySelector('.mystic-values');
-  let view=card.querySelector('.ee-chart-view');
+  const existing=card.querySelector('.mystic-ring');if(existing)existing.style.display='none';
+  const values=card.querySelector('.mystic-values');let view=card.querySelector('.ee-chart-view');
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
-  if(entries.length<2||available.length<2){status.textContent='一部のランキング値が未取得のため、スコア比較グラフは表示できません。';const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='両プレイヤーの実スコアがそろうと比較できます。';view.appendChild(msg);return}
-  const a=entries[0],b=entries[1],sum=Math.max(0,a.score)+Math.max(0,b.score),ratio=sum>0?Math.max(0,a.score)/sum:.5,diff=Math.abs(a.score-b.score);
+  if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
+  const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
   if(mode==='ring'){
-   const ring=document.createElement('div');ring.className='ee-split-ring';ring.innerHTML='<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="48"></circle><circle class="slice slice-a" cx="60" cy="60" r="48"></circle><circle class="slice slice-b" cx="60" cy="60" r="48"></circle></svg><div class="ee-center"></div><div class="ee-spark-layer" aria-hidden="true"></div>';
-   const circ=2*Math.PI*48,arcA=ratio*circ,arcB=(1-ratio)*circ;const slices=ring.querySelectorAll('.slice');slices[0].style.strokeDasharray=arcA+' '+(circ-arcA);slices[0].style.strokeDashoffset='0';slices[1].style.strokeDasharray=arcB+' '+(circ-arcB);slices[1].style.strokeDashoffset=String(-arcA);
-   const center=ring.querySelector('.ee-center');center.textContent=fmt(diff);const sm=document.createElement('small');sm.textContent='スコア差';center.appendChild(sm);
-   if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=ring.querySelector('.ee-spark-layer');for(let i=0;i<22;i++){const p=document.createElement('i');p.style.setProperty('--angle',(ratio*360+(i-10.5)*9)+'deg');p.style.setProperty('--distance',(25+(i%5)*12)+'px');p.style.setProperty('--delay',(-i*165)+'ms');p.style.setProperty('--spark',colors[i%2]);layer.appendChild(p)}}
-   view.appendChild(ring);
+   const ring=document.createElement('div');ring.className='ee-split-ring';
+   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 120 120');svg.setAttribute('aria-hidden','true');
+   const circ=2*Math.PI*48,track=document.createElementNS(ns,'circle');track.setAttribute('class','track');track.setAttribute('cx','60');track.setAttribute('cy','60');track.setAttribute('r','48');svg.appendChild(track);
+   let offset=0;players.forEach((e,i)=>{const circle=document.createElementNS(ns,'circle');circle.setAttribute('class','slice');circle.setAttribute('cx','60');circle.setAttribute('cy','60');circle.setAttribute('r','48');circle.style.stroke=colors[i%colors.length];circle.style.filter='drop-shadow(0 0 4px '+colors[i%colors.length]+'88)';const portion=sum>0?Math.max(0,e.score)/sum:1/players.length;circle.style.strokeDasharray=(portion*circ)+' '+(circ-portion*circ);circle.style.strokeDashoffset=String(-offset);offset+=portion*circ;svg.appendChild(circle)});
+   ring.appendChild(svg);const center=document.createElement('div');center.className='ee-center';center.textContent=players.length+'人';const sm=document.createElement('small');sm.textContent='比較中';center.appendChild(sm);ring.appendChild(center);
+   if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=document.createElement('div');layer.className='ee-spark-layer';players.forEach((e,i)=>{const p=document.createElement('i');p.style.setProperty('--angle',(players.slice(0,i+1).reduce((n,x)=>n+(sum>0?Math.max(0,x.score)/sum:1/players.length),0)*360)+'deg');p.style.setProperty('--distance',(25+(i%4)*10)+'px');p.style.setProperty('--delay',(-i*240)+'ms');p.style.setProperty('--spark',colors[i%colors.length]);layer.appendChild(p)});ring.appendChild(layer)}
+   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=players.map((e,i)=>e.name+' '+fmt(e.score)).join(' ／ ');view.append(ring,legend);
   }else if(mode==='bar'){
-   const wrap=document.createElement('div');wrap.className='ee-compare-bars';const max=Math.max(a.score,b.score,1);
-   [a,b].forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.setProperty('width',(Math.max(0,e.score)/max*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
+   const wrap=document.createElement('div');wrap.className='ee-compare-bars';
+   players.forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.background=colors[i%colors.length];fill.style.setProperty('width',(Math.max(0,e.score)/maximum*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
   }else if(mode==='number'){
-   const wrap=document.createElement('div');wrap.className='ee-compare-numeric';[a,b].forEach(e=>{const cell=document.createElement('div');const name=document.createElement('small');name.textContent=e.name;name.title=e.name;const val=document.createElement('strong');val.textContent=fmt(e.score);cell.append(name,val);wrap.appendChild(cell)});const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='差：'+fmt(diff)+' · '+(a.score===b.score?'同点':a.score>b.score?a.name+' が上':b.name+' が上');view.append(wrap,note);
-  }else{
-   const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg);
-  }
+   const wrap=document.createElement('div');wrap.className='ee-compare-numeric';wrap.style.gridTemplateColumns='repeat('+Math.min(2,players.length)+',minmax(0,1fr))';
+   players.forEach(e=>{const cell=document.createElement('div');const name=document.createElement('small');name.textContent=e.name;name.title=e.name;const val=document.createElement('strong');val.textContent=fmt(e.score);val.style.color=colors[players.indexOf(e)%colors.length];cell.append(name,val);wrap.appendChild(cell)});
+   const sorted=[...players].sort((a,b)=>b.score-a.score),note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='順位：'+sorted.map((e,i)=>(i+1)+'. '+e.name).join(' ／ ');view.append(wrap,note);
+  }else{const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg)}
  }
-
  const radarHost=document.createElement('div');radarHost.className='ee-radar-wrap';radarHost.hidden=true;
  radarHost.style.maxWidth='440px';radarHost.style.margin='12px auto';
  sec.insertBefore(radarHost,status.nextSibling);
@@ -126,7 +125,7 @@ function enhance(){
    candidateRows.get(label).push({name,score});
   });
  });
- const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,2)}));
+ const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,4)}));
  const customPanel=document.createElement('details');customPanel.className='ee-custom-rankings';
  const customSummary=document.createElement('summary');customSummary.textContent='追加ランキング（取得済みスコアのみ）';customPanel.appendChild(customSummary);
  const customList=document.createElement('div');customList.className='ee-custom-rank-list';
