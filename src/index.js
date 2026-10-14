@@ -4226,7 +4226,7 @@ async function handleMightPulseProbeKeysApi(request, env) {
 
 async function executeManualMightPulseProbe(request, env, guard, body) {
   const command = validateManualProbeCommand(body || {});
-  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:MANUAL:" + command.path + ":" + JSON.stringify(command.query);
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:MANUAL:" + (await sha256HexForProbe({path:command.path,query:command.query})).slice(0,32);
   const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
   if (!apiLockToken) return json({ ok:false, error:"API_REQUEST_IN_PROGRESS", message:"同じコマンドが実行中です。" }, 409);
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
@@ -4554,8 +4554,17 @@ async function handleMightPulseProbeApi(request, env) {
   const url = new URL(request.url);
   if (url.searchParams.get("history") === "1") {
     const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
-    const result = await env.DB.prepare("SELECT request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason FROM mightpulse_probe_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+    const result = await env.DB.prepare("SELECT request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason, batch_id, sequence_no, discovered_from, response_count, retry_count, save_destination FROM mightpulse_probe_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
     return json({ ok:true, history: result.results || [] });
+  }
+  const requestId = String(url.searchParams.get("request_id") || "").trim();
+  if (requestId) {
+    const row = await env.DB.prepare("SELECT request_id, r2_object_key FROM mightpulse_probe_runs WHERE request_id=? LIMIT 1").bind(requestId).first();
+    if (!row) return json({ok:false,error:"PROBE_RUN_NOT_FOUND"},404);
+    if (!row.r2_object_key || !env.ARCHIVE?.get) return json({ok:false,error:"PROBE_RAW_RESPONSE_NOT_ARCHIVED",request_id:requestId},404);
+    const object = await env.ARCHIVE.get(row.r2_object_key);
+    if (!object) return json({ok:false,error:"PROBE_R2_OBJECT_NOT_FOUND",request_id:requestId},404);
+    return json({ok:true,request_id:requestId,record:JSON.parse(await object.text())});
   }
   const type = String(url.searchParams.get("type") || "PLAYER").trim().toUpperCase();
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
