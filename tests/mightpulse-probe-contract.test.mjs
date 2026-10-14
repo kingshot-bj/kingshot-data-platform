@@ -32,6 +32,8 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   const lease = source.slice(start, end);
   assert.ok(lease.includes('poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"]'));
   assert.ok(lease.includes("reserveAvailableKeys: 1"));
+  assert.ok(lease.includes("reserveMightyKeys: mightyRequired ? 0 : 1"));
+  assert.ok(lease.includes("preferNonMighty: !mightyRequired"));
   assert.ok(lease.includes("mightyOnly: mightyRequired"));
   assert.ok(lease.includes('source_type: "API_POOL"'));
   assert.ok(!lease.includes("PROBE_DEDICATED"));
