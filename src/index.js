@@ -4150,7 +4150,7 @@ async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTP
     targetType,
     targetId
   });
-  return { ...borrowed, source_type: "USER_CONTRIBUTED_MIGHTY", key_owner_user_id:borrowed.contributed_by_user_id || null };
+  return { ...borrowed, source_type: "USER_CONTRIBUTED", key_owner_user_id:borrowed.contributed_by_user_id || null };
 }
 
 async function releaseProbeApiKey(env, lease, options = {}) {
