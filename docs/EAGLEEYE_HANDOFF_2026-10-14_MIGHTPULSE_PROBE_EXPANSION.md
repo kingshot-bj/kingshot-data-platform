@@ -155,3 +155,24 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 ## 10. 次スレに貼る開始メッセージ
 
 この引き継ぎMDを読んで、EagleEyeのMightPulse Probe拡張を続けてください。リポジトリは kingshot-bj/kingshot-data-platform、作業ブランチは feat/mightpulse-probe-expansion-2026-10-14 です。mainへのマージ・Cloudflareデプロイはまだしていません。まず現在のブランチHEAD、draft PR、GitHub Actionsの最新結果を確認し、差分・構文・テスト・migration・API Poolの既存キー利用条件・Mighty判定・リース処理を監査してください。特に手入力コマンド、単発／カテゴリ／全件一括、参照先の自動調査、R2保存・D1最小メタデータ、履歴からの再開、キー秘密情報の保護を壊さないでください。未確認のAPI仕様を推測で確定せず、既存本番データの保存ロジックへ無条件で書き込まないでください。進捗は10%刻みで報告してください。
+
+## 11. 最新作業追記（2026-10-14）
+
+ユーザー確定方針：
+- USER_CONTRIBUTEDキーはEagleEye利用時点で提供済み・利用同意済みとする。Probe専用の追加貸出同意フラグは作らない。
+- 通常コマンドは利用可能なUSER_CONTRIBUTEDキーを候補にする。Mighty必須コマンドだけ、Mighty確認済みキーに限定する。
+- mainマージ・本番デプロイは未実施。
+
+追加修正：
+- `migrations/0065_mightpulse_probe_batch_lease.sql` を追加。バッチの `lease_token` / `lease_until` で同一バッチの同時再開を抑止し、180秒経過後の再取得を可能にした。
+- `src/index.js` の通常コマンド／Mighty必須コマンドのキー選別を分離。手入力はMighty必須を既定にしない。
+- 本番プレイヤー保存では、リクエストパスからIDを推測せず、レスポンス内の明示的なプレイヤーIDを要求する。
+- `src/mightpulse-probe.js` でR2保存失敗時の保存先を `NONE` または `PRODUCTION` とし、R2/D1のエラー情報を固定コード化して内部エラーメッセージを履歴に残さないよう修正。
+- `tests/mightpulse-probe-contract.test.mjs` と `tests/mightpulse-probe.test.mjs` に排他制御、キー選別、ID確認、R2失敗時の記録を検証するチェックを追加。
+- PR #63の説明を更新し、最新CIが未確認であることを明記。
+
+最新検証状態：
+- 作業ブランチ上でファイル更新を確認済み。
+- 最新コミットに対するGitHub Actions run / statusの照会結果は空で、CI成功は未確認。
+- この実行環境からGitHub cloneを試みたが、ネットワーク名前解決に失敗し、ローカルの `node --check` / `node --test` は実行できていない。
+- したがって、構文・単体テスト・D1実環境migrationは未検証。mainへのマージ、本番migration適用、Cloudflareデプロイは行わない。
