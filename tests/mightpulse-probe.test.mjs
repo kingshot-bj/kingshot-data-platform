@@ -64,7 +64,7 @@ test("archive writes raw record to R2 and only metadata to D1", async () => {
   let insertSql = "";
   const env = {
     ARCHIVE: { put: async (key, body) => { savedKey = key; savedBody = body; } },
-    DB: { prepare: sql => ({ bind: (...args) => ({ run: async () => { insertSql = sql; assert.equal(args.length, 15); } }) }) }
+    DB: { prepare: sql => ({ bind: (...args) => ({ run: async () => { insertSql = sql; assert.equal(args.length, 21); } }) }) }
   };
   const result = await archiveMightPulseProbeRecord(env, {
     request_id: "probe-test-1", command_type: "MANUAL", endpoint: "/players/1",
