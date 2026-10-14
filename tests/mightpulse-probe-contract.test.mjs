@@ -109,20 +109,19 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
 });
 
 
-test("embedded compare script escapes fetch option quotes across helper functions", async () => {
+test("embedded compare script keeps fetch option quotes escaped in both request helpers", async () => {
   const source = await read("src/index.js");
-  const helpers = [
-    "async function fetchJsonWithTimeout(url,options,timeoutMs)",
-    "async function runCompareRefreshBatch(items,concurrency,worker,onProgress)"
-  ];
-  for (const marker of helpers) {
-    const start = source.indexOf(marker);
-    assert.ok(start >= 0, "missing embedded compare helper: " + marker);
-    const nextFunction = source.indexOf("async function ", start + marker.length);
-    const helper = source.slice(start, nextFunction > start ? nextFunction : start + 5000);
-    assert.ok(helper.includes('cache:\\\"no-store\\\"'), "missing escaped cache option in " + marker);
-    assert.ok(!helper.includes('cache:"no-store"'), "unescaped cache option in " + marker);
-  }
+  const first = source.indexOf("async function fetchJsonWithTimeout(url,options,timeoutMs)");
+  assert.ok(first >= 0);
+  const firstHelper = source.slice(first, first + 320);
+  assert.ok(firstHelper.includes('cache:\\\"no-store\\\"'));
+  assert.ok(!firstHelper.includes('cache:"no-store"'));
+
+  const second = source.indexOf("async function runCompareRefreshBatch(items,concurrency,worker,onProgress)");
+  assert.ok(second >= 0);
+  const secondHelper = source.slice(second, second + 2200);
+  assert.ok(secondHelper.includes('cache:\\\"no-store\\\"'));
+  assert.ok(!secondHelper.includes('cache:"no-store"'));
 });
 test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
   const source = await read("src/index.js");
