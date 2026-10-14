@@ -1,4 +1,4 @@
-name: Hero Icon Build Validation
+name: Worker Build Validation
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - "src/index.js"
       - "src/r2-archive.js"
       - "src/ranking-store.js"
+      - "tests/player-rank-latest-index.test.mjs"
       - "src/hero-icon-store.js"
       - "src/hero-catalog-page.js"
       - "src/hero-skills-ja.js"
@@ -27,5 +28,7 @@ jobs:
           node-version: 22
       - name: Install Wrangler
         run: npm install --global wrangler@4
+      - name: Run player rank latest-index tests
+        run: node --test tests/player-rank-latest-index.test.mjs
       - name: Compile Worker without deploying
-        run: wrangler deploy --dry-run --outdir /tmp/eagleeye-hero-icon-dry-run
+        run: wrangler deploy --dry-run --outdir /tmp/eagleeye-worker-dry-run
