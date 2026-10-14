@@ -34,6 +34,8 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   assert.ok(lease.includes("reserveAvailableKeys: 1"));
   assert.ok(lease.includes("reserveMightyKeys: mightyRequired ? 0 : 1"));
   assert.ok(lease.includes("preferNonMighty: !mightyRequired"));
+  assert.ok(lease.includes("reserveMightyKeys: mightyRequired ? 0 : 1"));
+  assert.ok(lease.includes("preferNonMighty: !mightyRequired"));
   assert.ok(lease.includes("mightyOnly: mightyRequired"));
   assert.ok(lease.includes('source_type: "API_POOL"'));
   assert.ok(!lease.includes("PROBE_DEDICATED"));
@@ -42,6 +44,9 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   assert.ok(source.includes("disable: false"));
   const pool = await read("src/api-pool.js");
   assert.ok(pool.includes("reserveAvailableKeys = 0"));
+  assert.ok(pool.includes("reserveMightyKeys = 0"));
+  assert.ok(pool.includes("const reserveMightyKeyCondition = reserveMighty > 0"));
+  assert.ok(pool.includes("const preferNonMightyOrder = preferNonMighty"));
   assert.ok(pool.includes("const reserveCondition = reserve > 0"));
   assert.ok(pool.includes("const reserveMightyCondition = mightyOnly"));
   assert.ok(pool.includes("reserve_keys.mighty_capable = 1 AND reserve_keys.mighty_check_status = 'CONFIRMED'"));
@@ -84,6 +89,9 @@ test("D1 migration workflow runs the Probe schema preflight before applying", as
   assert.ok(preflight.includes('const auditName = "0064_mightpulse_probe_key_audit.sql"'));
   assert.ok(preflight.includes("if (names.has(auditName) && missingBase.length)"));
   assert.ok(preflight.includes("const batchColumns ="));
+  assert.ok(preflight.includes("const baseTables ="));
+  assert.ok(preflight.includes("names.has(auditName) && auditColumns.some(column => !has(column))"));
+  assert.ok(preflight.includes("names.has(leaseName) && leaseColumns.some(column => !has(column))"));
   assert.ok(preflight.includes("const auditColumns ="));
   assert.ok(preflight.includes("const leaseColumns ="));
   assert.ok(preflight.includes("Stop before applying pending migrations"));
