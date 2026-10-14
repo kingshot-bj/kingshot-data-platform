@@ -4046,7 +4046,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
       await archiveMightPulseProbeRecord(env, {
         request_id: crypto.randomUUID(), user_id: actor?.user_id || null, actor_discord_id: actor?.discord_id || null, actor_label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), actor_role: actor?.role || null, command_type: spec.targetType,
         endpoint: spec.endpoint, query: spec.query, status: "FAILED", http_status: status || null,
-        elapsed_ms: failedAt - probeStartedAt, started_at: new Date(probeStartedAt).toISOString(),
+        elapsed_ms: failedAt - probeStartedAt, retry_count:Math.max(0,Number(error?.attempts||1)-1), started_at: new Date(probeStartedAt).toISOString(),
         completed_at: new Date(failedAt).toISOString(), trigger_reason: "MANUAL",
         key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
         error_code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
@@ -4450,7 +4450,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       targetId:command.path
     });
     const result = await mightPulseFetch(env, command.path, {
-      method:"GET", query:command.query, apiKey:lease.api_key, maxRetries:0,
+      method:"GET", query:command.query, apiKey:lease.api_key, maxRetries:1,
       metadata:{ leaseId:lease.lease_id, poolType:lease.pool_type, probeBatchId:batchId, probeSequence:item.sequence_no }
     });
     const completedAt = Date.now();
@@ -4472,7 +4472,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
       trigger_reason:item.trigger_reason || "MANUAL", batch_id:batchId,
       sequence_no:item.sequence_no, discovered_from:item.discovered_from || null,
-      response_count:probeResponseCount(payload), retry_count:0, save_destination:productionSave.saved?"R2+PRODUCTION":"R2",
+      response_count:probeResponseCount(payload), retry_count:Math.max(0,Number(result.attempts||1)-1), save_destination:productionSave.saved?"R2+PRODUCTION":"R2",
       raw_payload:payload, field_dictionary:buildProbeFieldDictionary(payload), production_save:productionSave,
       key_source:lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null
     };
@@ -4507,9 +4507,9 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       status:"FAILED",http_status:status||null,elapsed_ms:completedAt-startedAt,
       started_at:new Date(startedAt).toISOString(),completed_at:new Date(completedAt).toISOString(),
       trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
-      discovered_from:item.discovered_from||null,response_count:0,retry_count:0,save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
+      discovered_from:item.discovered_from||null,response_count:0,retry_count:Math.max(0,Number(error?.attempts||1)-1),save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
-      error_message:String(error?.message||error).slice(0,1000),diagnostic:redactProbeSecrets(error?.details||null)
+      error_message:String(error?.message||error).slice(0,1000),diagnostic:redactProbeSecrets(error?.details||null),retry_count:Math.max(0,Number(error?.attempts||1)-1)
     };
     let archive=null;
     try { archive=await archiveMightPulseProbeRecord(env,record); } catch {}
