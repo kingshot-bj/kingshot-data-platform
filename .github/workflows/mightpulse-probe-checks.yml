@@ -23,4 +23,4 @@ jobs:
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
       - name: Run Probe unit tests
-        run: node --test tests/mightpulse-probe.test.mjs
+        run: node --test tests/mightpulse-probe*.test.mjs
