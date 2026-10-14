@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const read = path => readFile(new URL(path, root), "utf8");
 
-test("Probe API includes manual, batch, resume, history and Owner key management", async () => {
+test("Probe API includes manual, batch, resume and history without a separate key manager", async () => {
   const source = await read("src/index.js");
   for (const marker of [
     "executeManualMightPulseProbe",
@@ -13,25 +13,29 @@ test("Probe API includes manual, batch, resume, history and Owner key management
     "automatic_discovery",
     'url.searchParams.get("history") === "1"',
     'url.searchParams.get("request_id")',
-    "handleMightPulseProbeKeysApi",
+    "leaseProbeApiKey",
     "requireOwner(request, env)",
     "production_save:productionSave"
   ]) assert.ok(source.includes(marker), "missing source contract: " + marker);
   assert.ok(source.includes("Never infer the returned player's identity from the request path alone."));
+  assert.ok(!source.includes("handleMightPulseProbeKeysApi"));
+  assert.ok(!source.includes("/api/admin/mightpulse-probe-keys"));
+  assert.ok(!source.includes("probeKeyManager"));
   assert.ok(!source.includes("fallbackPathId"));
 });
 
-test("Probe never leases production SYSTEM pools and does not disable keys on 403", async () => {
+test("Probe can lease all API Pool classes while reserving one key for normal users", async () => {
   const source = await read("src/index.js");
   const start = source.indexOf("async function leaseProbeApiKey");
   const end = source.indexOf("async function releaseProbeApiKey", start);
   assert.ok(start >= 0 && end > start);
   const lease = source.slice(start, end);
-  assert.ok(lease.includes('poolTypes: ["USER_CONTRIBUTED"]'));
-  assert.ok(lease.includes('"PROBE_DEDICATED"'));
-  assert.ok(!lease.includes("SYSTEM_GENERAL"));
-  assert.ok(!lease.includes("SYSTEM_WATCHLIST"));
+  assert.ok(lease.includes('poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"]'));
+  assert.ok(lease.includes("reserveAvailableKeys: 1"));
   assert.ok(lease.includes("mightyOnly: mightyRequired"));
+  assert.ok(lease.includes('source_type: "API_POOL"'));
+  assert.ok(!lease.includes("PROBE_DEDICATED"));
+  assert.ok(!lease.includes("leaseMightPulseProbeKey"));
   assert.ok(source.includes("mightyRequired: body?.mighty_required === true"));
   assert.ok(source.includes("disable: false"));
 });
