@@ -4446,7 +4446,8 @@ function probeBatchItemKey(item) {
     const command=buildCatalogProbeCommand(item.command_id,item.params||{});
     return command.path+":"+JSON.stringify(command.query||{});
   } catch {
-    return String(item.command_id||"")+":"+JSON.stringify(item.params||{});
+    const entry=MIGHTPULSE_PROBE_COMMANDS.find(command=>command.id===item.command_id);
+    return (entry?.endpoint||String(item.command_id||""))+":"+JSON.stringify(entry?.query||{})+":"+JSON.stringify(item.params||{});
   }
 }
 
