@@ -225,6 +225,8 @@ export async function archiveMightPulseProbeRecord(env, record) {
   const objectKey = "mightpulse-probe/" + date + "/" + id + ".json";
   const safeRecord = redactProbeSecrets(record);
   let r2Saved = false;
+  const requestedDestination = String(record?.save_destination || "R2");
+  const finalDestination = () => r2Saved ? requestedDestination : requestedDestination.includes("PRODUCTION") ? "PRODUCTION" : "NONE";
   let metadataSaved = false;
   let metadataError = null;
 
@@ -271,7 +273,7 @@ export async function archiveMightPulseProbeRecord(env, record) {
         record?.discovered_from == null ? null : String(record.discovered_from).slice(0, 500),
         Number.isFinite(Number(record?.response_count)) ? Number(record.response_count) : null,
         Number.isFinite(Number(record?.retry_count)) ? Number(record.retry_count) : 0,
-        String(record?.save_destination || (r2Saved ? "R2" : "NONE")).slice(0, 40),
+        String(finalDestination()).slice(0, 40),
         record?.key_source == null ? null : String(record.key_source).slice(0, 40),
         record?.key_id == null ? null : String(record.key_id).slice(0, 128),
         record?.key_owner_user_id == null ? null : String(record.key_owner_user_id).slice(0, 128)
