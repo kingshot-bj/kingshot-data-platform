@@ -37,17 +37,18 @@ test("archive writes raw record to R2 and only metadata to D1", async () => {
   let insertSql = "";
   const env = {
     ARCHIVE: { put: async (key, body) => { savedKey = key; savedBody = body; } },
-    DB: { prepare: sql => ({ bind: (...args) => ({ run: async () => { insertSql = sql; assert.equal(args.length, 12); } }) }) }
+    DB: { prepare: sql => ({ bind: (...args) => ({ run: async () => { insertSql = sql; assert.equal(args.length, 15); } }) }) }
   };
   const result = await archiveMightPulseProbeRecord(env, {
     request_id: "probe-test-1", command_type: "MANUAL", endpoint: "/players/1",
-    status: "SUCCESS", http_status: 200, raw_payload: { player: { api_key: "must-not-persist" }, score: 10 }
+    status: "SUCCESS", http_status: 200, actor_discord_id: "discord-123", actor_label: "Test Admin", actor_role: "ADMIN", raw_payload: { player: { api_key: "must-not-persist" }, score: 10 }
   });
   assert.equal(result.r2_saved, true);
   assert.equal(result.metadata_saved, true);
   assert.ok(savedKey.startsWith("mightpulse-probe/"));
   assert.equal(JSON.parse(savedBody).raw_payload.player.api_key, "[REDACTED]");
   assert.match(insertSql, /INSERT INTO mightpulse_probe_runs/);
+  assert.match(insertSql, /actor_discord_id, actor_label, actor_role/);
   assert.ok(!insertSql.includes("raw_payload"));
 });
 
