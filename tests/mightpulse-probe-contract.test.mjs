@@ -131,6 +131,15 @@ test("Probe error records redact leased keys and do not disable a shared pool ke
 });
 
 
+test("Probe batch pauses and preserves pending work when the shared pool reserve blocks a lease", async () => {
+  const source = await read("src/index.js");
+  assert.ok(source.includes("let poolUnavailable=false;"));
+  assert.ok(source.includes('result?.error==="NO_API_POOL_KEY_AVAILABLE"'));
+  assert.ok(source.includes("queue.unshift(item)"));
+  assert.ok(source.includes('saveProgress("INTERRUPTED","NO_API_POOL_KEY_AVAILABLE")'));
+  assert.ok(source.includes("waiting_for_api_pool:true"));
+});
+
 test("Probe batch resume requires creator ownership and an exclusive lease", async () => {
   const source = await read("src/index.js");
   assert.ok(source.includes("PROBE_BATCH_OWNER_MISMATCH"));
