@@ -4797,10 +4797,12 @@ try{
 var params={governor_id:governor,uid:governor,kid:kid,tag:tag,board:document.getElementById('board').value,limit:100,page:1,size:24};
 var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'batch',batch_type:'selected',command_ids:[cmd.id],params:params,concurrency:1,max_commands:1,automatic_discovery:false})});
 var d=await r.json();
-if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));
+if(!r.ok||(!d.ok&&!d.batch_id))throw new Error(d.message||d.error||('HTTP '+r.status));
+if(d.batch_id){try{localStorage.setItem('eagleeye_mightpulse_probe_last_batch_v1',d.batch_id);}catch(e){}}
 var item=(d.results||[])[0];
-if(!item)throw new Error('PROBE_RESULT_MISSING');
 renderBatchResults(d.results||[]);
+if(!d.ok&&d.batch_id){document.getElementById('catalogStatus').textContent='API Poolの空き待ちで一時停止しました。Batch IDを保存しました。「中断したバッチを再開」から再試行できます。';return;}
+if(!item)throw new Error('PROBE_RESULT_MISSING');
 if(item.request_id){
 var hr=await fetch('/api/admin/mightpulse-probe?request_id='+encodeURIComponent(item.request_id),{credentials:'same-origin',cache:'no-store'});
 var hd=await hr.json();
