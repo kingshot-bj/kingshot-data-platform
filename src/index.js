@@ -4230,6 +4230,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
   if (!apiLockToken) return json({ ok:false, error:"API_REQUEST_IN_PROGRESS", message:"同じコマンドが実行中です。" }, 409);
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
+  let leaseReleased = false;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   try {
@@ -4254,6 +4255,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
       remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
     });
+    leaseReleased = true;
     const record = {
       request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
       actor_discord_id: guard?.auth?.discord_id || null,
@@ -4287,6 +4289,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
           errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
           errorMessage:error?.message || null, cooldownSeconds:cooldown, keepAvailable
         });
+        leaseReleased = true;
       } catch {}
     }
     const completedAt = Date.now();
@@ -4307,7 +4310,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       status, message:error?.message || null, diagnostic:redactProbeSecrets(error?.details || null) },
       status >= 400 && status < 600 ? status : 502);
   } finally {
-    if (lease) { try { await releaseProbeApiKey(env, lease); } catch {} }
+    if (lease && !leaseReleased) { try { await releaseProbeApiKey(env, lease); } catch {} }
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
 }
