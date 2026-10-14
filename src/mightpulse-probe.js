@@ -62,7 +62,7 @@ export function buildProbeFieldDictionary(payload) {
   return [...fields.values()].map(field => ({ ...field, samples:seenValues.get(field.path) || [] })).sort((a,b)=>a.path.localeCompare(b.path));
 }
 
-export function extractProbeReferences(payload, { maxReferences = 20, maxDepth = 8 } = {}) {
+export function extractProbeReferences(payload, { maxReferences = 20, maxDepth = 8, kingdomId = null } = {}) {
   const found = new Map();
   const seenObjects = new Set();
   function walk(value, depth, inheritedKid = null) {
@@ -86,7 +86,7 @@ export function extractProbeReferences(payload, { maxReferences = 20, maxDepth =
       if (found.size >= maxReferences) break;
     }
   }
-  walk(payload, 0);
+  walk(payload, 0, kingdomId == null ? null : String(kingdomId));
   return [...found.values()].slice(0, maxReferences);
 }
 
