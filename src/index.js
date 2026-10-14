@@ -4351,7 +4351,9 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
   if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
   }
-  const identified = commandId ? { id:commandId, kind:(commandId.startsWith("player_")||commandId.startsWith("eagleeye_player")) ? "PLAYER" : (commandId==="kingdom_rank_board"||commandId==="eagleeye_kingdom_rank_refresh"||commandId==="eagleeye_alliance_rosters") ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
+  const playerCommandIds = new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
+  const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"]);
+  const identified = commandId ? { id:commandId, kind:playerCommandIds.has(commandId) ? "PLAYER" : rankingCommandIds.has(commandId) ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
   if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
   const safePayload = redactProbeSecrets(payload);
   const sourceObservedAt = getMightPulseSourceTimestamp(safePayload);
