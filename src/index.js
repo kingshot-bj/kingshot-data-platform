@@ -4060,7 +4060,6 @@ async function fetchMightPulseProbeThroughPool(env, spec, userId = null) {
     throw error;
   }
 }
-}
 
 async function handleKingdomCatalogR2BackfillApi(request, env) {
   const guard = await requireOwner(request, env);
