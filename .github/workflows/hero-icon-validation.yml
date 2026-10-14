@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - "src/index.js"
+      - "src/r2-archive.js"
+      - "src/ranking-store.js"
       - "src/hero-icon-store.js"
       - "src/hero-catalog-page.js"
       - "src/hero-skills-ja.js"
