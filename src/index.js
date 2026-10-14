@@ -4178,6 +4178,10 @@ async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTP
     poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"],
     mightyOnly: mightyRequired,
     reserveAvailableKeys: 1,
+    // Ordinary commands prefer non-Mighty keys and leave one confirmed Mighty key
+    // available when such a key exists; Mighty-required commands reserve one eligible Mighty key.
+    reserveMightyKeys: mightyRequired ? 0 : 1,
+    preferNonMighty: !mightyRequired,
     purpose,
     targetType,
     targetId
