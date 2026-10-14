@@ -4357,8 +4357,9 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
 
   if (identified.kind === "PLAYER") {
     const playerPayload = safePayload.player && typeof safePayload.player === "object" ? safePayload.player : safePayload;
-    const fallbackPathId = String(query?.id_type||"")==="uid" ? null : path.match(/^\/players\/([^/]+)$/)?.[1];
-    const governorId = normalizeGovernorId(playerPayload.governor_id ?? playerPayload.fid ?? safePayload.governor_id ?? identified.params?.governor_id ?? fallbackPathId);
+    // Never infer the returned player's identity from the request path alone.
+    // A successful HTTP status is not enough to prove the response is player data.
+    const governorId = normalizeGovernorId(playerPayload.governor_id ?? playerPayload.fid ?? safePayload.governor_id ?? safePayload.fid);
     if (!governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISSING" };
     const pathMatch=String(path||"").match(/^\/players\/([^/]+)$/);
     const requestedId=identified.params?.governor_id || (pathMatch&&String(query?.id_type||"")!=="uid"?decodeURIComponent(pathMatch[1]):null);
