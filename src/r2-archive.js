@@ -125,6 +125,16 @@ export { ARCHIVE_TABLES };
 
 const RANKING_HISTORY_ARCHIVE_VERSION = "v1";
 
+function playerRankLatestKey(governorId) {
+  return [
+    "latest",
+    RANKING_HISTORY_ARCHIVE_VERSION,
+    "player_rank_snapshots",
+    String(governorId)
+  ].join("/") + ".json";
+}
+
+
 function rankingHistoryArchiveKey({ kid, board, observedAt }) {
   return [
     "history",
@@ -394,6 +404,18 @@ export async function archivePlayerRankHistoryBatch(bucket, {
     }
   });
 
+  // Maintain an O(1) latest-snapshot pointer separately from immutable history.
+  // Pointer failure must not invalidate a successfully archived history row.
+  try {
+    await writeLatestPlayerRankHistoryToR2(bucket, row);
+  } catch (error) {
+    console.error("player_rank_latest_index_write_failed", {
+      governorId: String(governorId),
+      observedAt: Number(observedAt),
+      message: error?.message || String(error)
+    });
+  }
+
   return { key, rowCount: 1 };
 }
 
@@ -443,6 +465,84 @@ export async function listPlayerRankHistoryFromR2(bucket, {
 }
 
 
+
+async function writeLatestPlayerRankHistoryToR2(bucket, row) {
+  const key = playerRankLatestKey(row.governor_id);
+  const body = JSON.stringify(row);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await bucket.get(key);
+    let currentRow = null;
+    if (current?.body) {
+      try {
+        currentRow = await current.json();
+      } catch {
+        currentRow = null;
+      }
+    }
+
+    if (currentRow && Number(currentRow.observed_at) >= Number(row.observed_at)) {
+      return current;
+    }
+
+    const options = {
+      httpMetadata: {
+        contentType: "application/json",
+        cacheControl: "private, no-store"
+      },
+      customMetadata: {
+        sourceTable: "player_rank_snapshots",
+        archiveVersion: RANKING_HISTORY_ARCHIVE_VERSION,
+        governorId: String(row.governor_id),
+        observedAt: String(row.observed_at)
+      }
+    };
+    // Use compare-and-swap when a pointer already exists, so a late older
+    // refresh cannot overwrite a newer snapshot.
+    if (current?.etag) options.onlyIf = { etagMatches: current.etag };
+
+    const written = await bucket.put(key, body, options);
+    if (written) return written;
+  }
+
+  throw new Error("R2_LATEST_INDEX_CONFLICT");
+}
+
+export async function getLatestPlayerRankHistoryFromR2(bucket, { governorId }) {
+  if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!governorId) return [];
+
+  const key = playerRankLatestKey(governorId);
+  try {
+    const latest = await bucket.get(key);
+    if (latest?.body) {
+      const row = await latest.json();
+      if (row && String(row.governor_id) === String(governorId) && Number.isFinite(Number(row.observed_at))) {
+        return [row];
+      }
+    }
+  } catch (error) {
+    console.error("player_rank_latest_index_read_failed", {
+      governorId: String(governorId),
+      message: error?.message || String(error)
+    });
+  }
+
+  // Legacy players have history objects but no pointer yet. Scan once, then
+  // backfill the pointer so subsequent comparisons use one direct R2 GET.
+  const rows = await listPlayerRankHistoryFromR2(bucket, { governorId, limit: 1 });
+  if (rows.length) {
+    try {
+      await writeLatestPlayerRankHistoryToR2(bucket, rows[0]);
+    } catch (error) {
+      console.error("player_rank_latest_index_backfill_failed", {
+        governorId: String(governorId),
+        message: error?.message || String(error)
+      });
+    }
+  }
+  return rows;
+}
 
 const ALLIANCE_HISTORY_ARCHIVE_VERSION = "v1";
 
