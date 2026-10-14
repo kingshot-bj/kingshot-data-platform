@@ -112,7 +112,7 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
 test("embedded compare script keeps fetch option quotes escaped in both request helpers", async () => {
   const source = await read("src/index.js");
   // Build the literal source spelling explicitly to avoid confusing JS-string escape layers.
-  const escapedCacheOption = 'cache:' + "\\\\".repeat(3) + '"no-store' + "\\\\".repeat(3) + '"';
+  const escapedCacheOption = 'cache:' + "\\".repeat(3) + '"no-store' + "\\".repeat(3) + '"';
   const unescapedCacheOption = 'cache:"no-store"';
   const first = source.indexOf("async function fetchJsonWithTimeout(url,options,timeoutMs)");
   assert.ok(first >= 0);
