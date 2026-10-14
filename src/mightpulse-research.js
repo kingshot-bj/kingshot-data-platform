@@ -7,6 +7,16 @@ import {
 } from "./api-pool.js";
 
 export const MIGHTPULSE_RESEARCH_CANDIDATES = [
+  "buff",
+  "buffs",
+  "combat_stats",
+  "battle_stats",
+  "research",
+  "technology",
+  "tech",
+  "academy",
+  "war_academy",
+  "pet_stats",
   "pet",
   "pets",
   "mail",
