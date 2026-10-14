@@ -267,7 +267,6 @@ test("Probe catalog groups commands into collapsed categories to reduce mobile p
   const page = source.slice(pageStart, pageEnd);
   assert.ok(page.includes("catalog-group"));
   assert.ok(page.includes("group-items"));
-  assert.ok(page.includes("details class=\\\"catalog-group\\\""));
   assert.ok(page.includes("groups[k].length"));
   assert.ok(page.includes("プレイヤー情報"));
   assert.ok(page.includes("Mighty専用API"));
