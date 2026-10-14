@@ -10,7 +10,7 @@ test("manual command accepts a relative MightPulse path and scalar query values"
 });
 
 test("manual command rejects external URLs, host-relative paths, traversal and nested values", () => {
-  for (const path of ["https://example.com/players", "//example.com/players", "/players/../admin", "/players\\\\225623582"]) {
+  for (const path of ["https://example.com/players", "//example.com/players", "/players/../admin", "/players/%2e%2e/admin", "/players/%2E%2E/admin", "/players/%2fadmin", "/players/%5cadmin", "/players/%ZZ", "/players\\\\225623582"]) {
     assert.throws(() => validateManualProbeCommand({ path, query: {} }));
   }
   assert.throws(() => validateManualProbeCommand({ path: "/players/1", query: { include: { nested: true } } }), /PROBE_QUERY_VALUES_MUST_BE_SCALARS/);
