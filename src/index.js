@@ -4687,7 +4687,7 @@ async function handleMightPulseProbeApi(request, env) {
     return json(await fetchMightPulseProbeThroughPool(env, spec, guard.auth));
   } catch (error) {
     const status = Number(error?.status || 0);
-    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error,lease?.api_key) || null,diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key)},status >= 400 && status < 600 ? status : 502);
+    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error) || null,diagnostic:safeProbeDiagnostic(error?.details || null)},status >= 400 && status < 600 ? status : 502);
   } finally {
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
