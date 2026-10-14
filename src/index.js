@@ -3919,10 +3919,11 @@ function mightPulseProbeRequestSpec(type, { governorId, kid, board, include }) {
   };
 }
 
-async function fetchMightPulseProbeThroughPool(env, spec) {
+async function fetchMightPulseProbeThroughPool(env, spec, userId = null) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
   let poolType = null;
+  let probeStartedAt = Date.now();
 
   try {
     const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
@@ -3934,7 +3935,8 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     });
     poolType = lease.pool_type;
 
-    const requestStartedAt = Date.now();
+    probeStartedAt = Date.now();
+    const requestStartedAt = probeStartedAt;
     const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
     const responseReceivedAt = Date.now();
     const payload = result?.data ?? null;
@@ -3985,7 +3987,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
 
     const safePayload = redactProbeSecrets(payload);
     const archiveRecord = {
-      request_id: crypto.randomUUID(), command_type: spec.targetType, endpoint: spec.endpoint,
+      request_id: crypto.randomUUID(), user_id: userId, command_type: spec.targetType, endpoint: spec.endpoint,
       query: spec.query, status: "SUCCESS", http_status: result.status,
       elapsed_ms: responseReceivedAt - requestStartedAt,
       started_at: new Date(requestStartedAt).toISOString(), completed_at: new Date(responseReceivedAt).toISOString(),
@@ -3998,7 +4000,7 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     return {
       ok: true,
       probe: {
-        request_id: crypto.randomUUID(),
+        request_id: archiveRecord.request_id,
         type: spec.label,
         target_type: spec.targetType,
         target_id: spec.targetId,
@@ -4028,29 +4030,36 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
       }
     };
   } catch (error) {
+    const status = Number(error?.status || 0);
     if (lease) {
-      const status = Number(error?.status || 0);
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
-      const disable = false;
       const keepAvailable = cooldown === 0 && (status === 400 || status === 403 || status === 404);
-      await recordApiPoolFailure(env.DB, {
-        keyId: lease.key_id,
-        leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-        endpoint: spec.endpoint,
-        targetType: spec.targetType,
-        targetId: spec.targetId,
-        purpose: "MIGHTPULSE_PROBE",
-        httpStatus: status,
-        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-        errorMessage: error?.message || null,
-        cooldownSeconds: cooldown,
-        disable,
-        keepAvailable
-      });
+      try {
+        await recordApiPoolFailure(env.DB, {
+          keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+          endpoint: spec.endpoint, targetType: spec.targetType, targetId: spec.targetId,
+          purpose: "MIGHTPULSE_PROBE", httpStatus: status,
+          errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage: error?.message || null, cooldownSeconds: cooldown,
+          disable: false, keepAvailable
+        });
+      } catch {}
     }
+    const failedAt = Date.now();
+    try {
+      await archiveMightPulseProbeRecord(env, {
+        request_id: crypto.randomUUID(), user_id: userId, command_type: spec.targetType,
+        endpoint: spec.endpoint, query: spec.query, status: "FAILED", http_status: status || null,
+        elapsed_ms: failedAt - probeStartedAt, started_at: new Date(probeStartedAt).toISOString(),
+        completed_at: new Date(failedAt).toISOString(), trigger_reason: "MANUAL",
+        error_code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        error_message: String(error?.message || error).slice(0, 1000),
+        diagnostic: redactProbeSecrets(error?.details || null)
+      });
+    } catch {}
     throw error;
   }
+}
 }
 
 async function handleKingdomCatalogR2BackfillApi(request, env) {
@@ -4241,7 +4250,7 @@ async function handleMightPulseProbeApi(request, env) {
   if (!apiLockToken) return json({ok:false,error:"API_REQUEST_IN_PROGRESS",message:"同じ対象への処理が現在実行中です。完了を待ってから再試行してください。",lock_key:apiLockKey},409);
   try {
     const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
-    return json(await fetchMightPulseProbeThroughPool(env, spec));
+    return json(await fetchMightPulseProbeThroughPool(env, spec, guard?.auth?.user_id || guard?.auth?.id || null));
   } catch (error) {
     const status = Number(error?.status || 0);
     return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:error?.message || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
