@@ -4519,28 +4519,37 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
   let batchId=String(body?.batch_id||"").trim();
   let queue=[],seen=new Set(),nextSequence=1,completed=0,totalCommands=0;
   let concurrency=2,maxCommands=30,batchType="all",createdAt=Math.floor(Date.now()/1000);
+  const leaseToken=crypto.randomUUID();
+  let leaseAcquired=false;
+  const nowSeconds=()=>Math.floor(Date.now()/1000);
   if (mode==="resume") {
     if (!batchId) return json({ok:false,error:"BATCH_ID_REQUIRED"},400);
     const row=await env.DB.prepare("SELECT * FROM mightpulse_probe_batches WHERE batch_id=? LIMIT 1").bind(batchId).first();
     if (!row) return json({ok:false,error:"PROBE_BATCH_NOT_FOUND"},404);
+    const now=nowSeconds();
+    const claim=await env.DB.prepare(
+      "UPDATE mightpulse_probe_batches SET lease_token=?,lease_until=?,updated_at=? WHERE batch_id=? AND (lease_until IS NULL OR lease_until<=?) RETURNING batch_id"
+    ).bind(leaseToken,now+180,now,batchId,now).first();
+    if (!claim) return json({ok:false,error:"PROBE_BATCH_ALREADY_RUNNING",message:"このバッチは別の実行処理が使用中です。しばらく待ってから再開してください。"},409);
+    leaseAcquired=true;
     queue=JSON.parse(row.pending_json||"[]");
     seen=new Set(JSON.parse(row.seen_json||"[]"));
     nextSequence=Math.max(1,Number(row.next_sequence)||1);
     completed=Number(row.completed_commands||0);
     totalCommands=Number(row.total_commands||0);
     concurrency=Math.min(4,Math.max(1,Number(row.concurrency)||2));
-    maxCommands=Math.min(100,Math.max(1,Number(row.max_commands)||60));
+    maxCommands=Math.min(30,Math.max(1,Number(row.max_commands)||30));
     batchType=String(row.batch_type||"resumed");
     createdAt=Number(row.created_at)||createdAt;
     if (!queue.length) {
-      await env.DB.prepare("UPDATE mightpulse_probe_batches SET state='COMPLETED',updated_at=? WHERE batch_id=?").bind(Math.floor(Date.now()/1000),batchId).run();
+      await env.DB.prepare("UPDATE mightpulse_probe_batches SET state='COMPLETED',updated_at=?,lease_token=NULL,lease_until=NULL WHERE batch_id=? AND lease_token=?").bind(nowSeconds(),batchId,leaseToken).run();
       return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,results:[]});
     }
   } else {
     batchId=batchId||crypto.randomUUID();
     batchType=String(body?.batch_type||"all");
     concurrency=Math.min(4,Math.max(1,Number(body?.concurrency)||2));
-    maxCommands=Math.min(100,Math.max(1,Number(body?.max_commands)||60));
+    maxCommands=Math.min(30,Math.max(1,Number(body?.max_commands)||30));
     const params={
       governor_id:String(body?.params?.governor_id||"").trim(),
       uid:String(body?.params?.uid||"").trim(),
@@ -4557,23 +4566,17 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
       const ids=Array.isArray(body?.command_ids)?body.command_ids.map(String):[];
       selected=selected.filter(command=>ids.includes(command.id));
     }
-    const expanded=[];
-    for (const command of selected) {
-      if (command.id==="kingdom_rank_board") {
-        for (const board of KINGDOM_RANKING_BOARDS) expanded.push({command_id:command.id,params:{...params,board},trigger_reason:"MANUAL",discovered_from:null,depth:0});
-      } else {
-        expanded.push({command_id:command.id,params,trigger_reason:"MANUAL",discovered_from:null,depth:0});
-      }
-    }
-    const initial=expanded.slice(0,maxCommands);
+    const initial=selected.slice(0,maxCommands).map(command=>({command_id:command.id,params,trigger_reason:"MANUAL",discovered_from:null,depth:0}));
     for (const item of initial) {
       const key=probeBatchItemKey(item);
       if (!seen.has(key)) { seen.add(key); queue.push(item); }
     }
     totalCommands=seen.size;
+    const now=nowSeconds();
     await env.DB.prepare(
-      "INSERT INTO mightpulse_probe_batches (batch_id,created_at,updated_at,user_id,state,batch_type,total_commands,completed_commands,pending_json,seen_json,next_sequence,concurrency,max_commands,last_error) VALUES (?,?,?,?,'RUNNING',?,?,0,?,?,?,?,?,NULL)"
-    ).bind(batchId,createdAt,createdAt,userId,batchType,totalCommands,JSON.stringify(queue),JSON.stringify([...seen]),nextSequence,concurrency,maxCommands).run();
+      "INSERT INTO mightpulse_probe_batches (batch_id,created_at,updated_at,user_id,state,batch_type,total_commands,completed_commands,pending_json,seen_json,next_sequence,concurrency,max_commands,last_error,lease_token,lease_until) VALUES (?,?,?,?,'RUNNING',?,?,0,?,?,?,?,?,NULL,?,?)"
+    ).bind(batchId,createdAt,createdAt,userId,batchType,totalCommands,JSON.stringify(queue),JSON.stringify([...seen]),nextSequence,concurrency,maxCommands,leaseToken,now+180).run();
+    leaseAcquired=true;
   }
 
   const results=[];
@@ -4581,16 +4584,18 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
   let saveChain=Promise.resolve();
   const saveProgress=async(state,lastError=null)=>{
     const pending=[...queue,...inFlight.values()];
-    const now=Math.floor(Date.now()/1000);
-    const snapshot={state,now,totalCommands,completed,pendingJson:JSON.stringify(pending),seenJson:JSON.stringify([...seen]),nextSequence,lastError,batchId};
+    const now=nowSeconds();
+    const terminal=state==="COMPLETED"||state==="INTERRUPTED";
+    const snapshot={state,now,totalCommands,completed,pendingJson:JSON.stringify(pending),seenJson:JSON.stringify([...seen]),nextSequence,lastError,batchId,leaseToken,leaseUntil:terminal?null:now+180};
     const operation=()=>env.DB.prepare(
-      "UPDATE mightpulse_probe_batches SET state=?,updated_at=?,total_commands=?,completed_commands=?,pending_json=?,seen_json=?,next_sequence=?,last_error=? WHERE batch_id=?"
-    ).bind(snapshot.state,snapshot.now,snapshot.totalCommands,snapshot.completed,snapshot.pendingJson,snapshot.seenJson,snapshot.nextSequence,snapshot.lastError,snapshot.batchId).run();
+      "UPDATE mightpulse_probe_batches SET state=?,updated_at=?,total_commands=?,completed_commands=?,pending_json=?,seen_json=?,next_sequence=?,last_error=?,lease_token=?,lease_until=? WHERE batch_id=? AND lease_token=?"
+    ).bind(snapshot.state,snapshot.now,snapshot.totalCommands,snapshot.completed,snapshot.pendingJson,snapshot.seenJson,snapshot.nextSequence,snapshot.lastError,terminal?null:snapshot.leaseToken,snapshot.leaseUntil,snapshot.batchId,snapshot.leaseToken).run();
     saveChain=saveChain.then(operation,operation);
-    await saveChain;
+    const result=await saveChain;
+    if (Number(result?.meta?.changes||0)!==1) throw new Error("PROBE_BATCH_LEASE_LOST");
   };
   const scheduleDiscovered=(result,item)=>{
-    if (body?.automatic_discovery === false || !result?.ok || Number(item.depth||0)>=2) return;
+    if (body?.automatic_discovery===false||!result?.ok||Number(item.depth||0)>=2) return;
     const refs=Array.isArray(result.discovered_references)?result.discovered_references:[];
     for (const ref of refs) {
       const candidates=[];
@@ -4613,29 +4618,34 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
     }
   };
 
-  await saveProgress("RUNNING");
-  const worker=async()=>{
-    while(true) {
-      const item=queue.shift();
-      if(!item) return;
-      if(!item.sequence_no) item.sequence_no=nextSequence++;
-      inFlight.set(item.sequence_no,item);
-      await saveProgress("RUNNING");
-      const result=await executeCatalogProbeItem(env,guard,batchId,item);
-      results.push(result);
-      inFlight.delete(item.sequence_no);
-      completed++;
-      scheduleDiscovered(result,item);
-      await saveProgress("RUNNING");
-    }
-  };
   try {
+    await saveProgress("RUNNING");
+    const worker=async()=>{
+      while(true) {
+        const item=queue.shift();
+        if(!item) return;
+        if(!item.sequence_no) item.sequence_no=nextSequence++;
+        inFlight.set(item.sequence_no,item);
+        await saveProgress("RUNNING");
+        const result=await executeCatalogProbeItem(env,guard,batchId,item);
+        results.push(result);
+        inFlight.delete(item.sequence_no);
+        completed++;
+        scheduleDiscovered(result,item);
+        await saveProgress("RUNNING");
+      }
+    };
     await Promise.all(Array.from({length:concurrency},()=>worker()));
     await saveProgress("COMPLETED");
+    leaseAcquired=false;
     return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,concurrency,results});
   } catch(error) {
-    try { await saveProgress("INTERRUPTED",String(error?.message||error).slice(0,500)); } catch {}
+    try { await saveProgress("INTERRUPTED",String(error?.message||error).slice(0,500)); leaseAcquired=false; } catch {}
     return json({ok:false,batch_id:batchId,state:"INTERRUPTED",completed_commands:completed,total_commands:totalCommands,error:error?.message||"PROBE_BATCH_FAILED",results},500);
+  } finally {
+    if (leaseAcquired) {
+      try { await env.DB.prepare("UPDATE mightpulse_probe_batches SET lease_token=NULL,lease_until=NULL,updated_at=? WHERE batch_id=? AND lease_token=?").bind(nowSeconds(),batchId,leaseToken).run(); } catch {}
+    }
   }
 }
 
