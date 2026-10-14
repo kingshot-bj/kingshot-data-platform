@@ -4326,7 +4326,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
       trigger_reason:"MANUAL", key_source:lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-      error_message:String(error?.message || error).slice(0,1000),
+      error_message:safeProbeErrorMessage(error,lease?.api_key),
       diagnostic:redactProbeSecrets(error?.details || null)
     };
     try { await archiveMightPulseProbeRecord(env, record); } catch {}
@@ -4704,7 +4704,7 @@ async function handleMightPulseProbeApi(request, env) {
     return json(await fetchMightPulseProbeThroughPool(env, spec, guard.auth));
   } catch (error) {
     const status = Number(error?.status || 0);
-    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:error?.message || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
+    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error,lease?.api_key) || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
   } finally {
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
