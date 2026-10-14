@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS mightpulse_probe_batches (
   seen_json TEXT NOT NULL DEFAULT '[]',
   next_sequence INTEGER NOT NULL DEFAULT 1,
   concurrency INTEGER NOT NULL DEFAULT 2,
-  max_commands INTEGER NOT NULL DEFAULT 30,
+  max_commands INTEGER NOT NULL DEFAULT 60,
   last_error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_mightpulse_probe_batches_updated
