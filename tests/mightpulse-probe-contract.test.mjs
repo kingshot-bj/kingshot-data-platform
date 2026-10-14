@@ -111,18 +111,21 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
 
 test("embedded compare script keeps fetch option quotes escaped in both request helpers", async () => {
   const source = await read("src/index.js");
+  // Build the literal source spelling explicitly to avoid confusing JS-string escape layers.
+  const escapedCacheOption = 'cache:' + "\\\\".repeat(3) + '"no-store' + "\\\\".repeat(3) + '"';
+  const unescapedCacheOption = 'cache:"no-store"';
   const first = source.indexOf("async function fetchJsonWithTimeout(url,options,timeoutMs)");
   assert.ok(first >= 0);
   const firstHelper = source.slice(first, first + 320);
-  assert.ok(firstHelper.includes('cache:\\"no-store\\"'));
-  assert.ok(!firstHelper.includes('cache:"no-store"'));
+  assert.ok(firstHelper.includes(escapedCacheOption));
+  assert.ok(!firstHelper.includes(unescapedCacheOption));
 
   const second = source.indexOf("async function runCompareRefreshBatch(items,concurrency,worker,onProgress)");
   assert.ok(second >= 0);
   // This helper is followed by load(); its embedded fetch is in load(), not in the helper body.
   const compareScript = source.slice(second, second + 7000);
-  assert.ok(compareScript.includes('cache:\\"no-store\\"'));
-  assert.ok(!compareScript.includes('cache:"no-store"'));
+  assert.ok(compareScript.includes(escapedCacheOption));
+  assert.ok(!compareScript.includes(unescapedCacheOption));
 });
 test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
   const source = await read("src/index.js");
