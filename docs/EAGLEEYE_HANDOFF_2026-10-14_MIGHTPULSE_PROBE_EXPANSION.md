@@ -132,3 +132,56 @@ SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最�
 - .github/workflows/eagleeye-d1-apply-pending-migrations.yml は scripts/check-probe-migration-history.sh を通して、migration journalと実テーブル／列の不一致時に停止する事前確認を行う。
 - 未解決のデプロイブロッカー：本番D1の d1_migrations と実テーブルを、この作業から読み取り確認できていない。0064が既に記録済みか／0061〜0063がどの状態か不明のため、migration workflowを起動しない。migration確認完了までPR #63はdraft、mainへのマージ・Cloudflare本番デプロイ・remote migration適用は行わない。
 - 作業時のPR head取得値：311d3ed01be6dd18184a66ef30f193a69b7a672e（この追記自体でHEADは更新される）。
+
+
+## 2026-10-14 13:46Z 追記：最新デプロイ失敗ログとユーザー方針の再確認
+
+### ユーザーの最新確定方針
+
+- Probe専用キー／専用キー置き場は不要。runtimeから専用キー管理を復活させない。
+- Probeは既存API Poolのキーを利用する。対象は `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED`。Mighty必須コマンドはPool内のMighty確認済みキーを利用できるようにする。
+- ただし、Probeが利用可能キーを全部リースしてしまい、通常ユーザー・通常取得・王国ウォッチリストが使えなくなることを防ぐ。Pool共有とリース予備枠制御を優先し、用途別の複雑なキー管理を増やさない。
+- EagleEyeのAPI Poolにキーを提供した時点で既存用途への貸出同意は成立している。Probe専用の追加同意フラグや確認UIを追加しない。
+- API 403だけでキーを無効化しない。
+- 未確認のMightPulse API仕様は推測で確定しない。未確認データを既存の本番保存処理に無条件で流さない。
+
+### 直近のCloudflareデプロイエラー（ユーザー提供ログ）
+
+2026-10-14T13:46:40Z に `npx wrangler deploy` がビルド段階で失敗。
+
+```text
+Expected ";" but found "no"
+src/index.js:7186:33379
+...signal:controller.signal,cache:"no-store"});const data=...
+```
+
+**重要：このログの問題は解決済みと扱わない。** 現在ブランチrefから再取得した `src/index.js`（blob SHA `a21ca0d1efeab42c05f09958e9f6c387378e02a2`）にも、比較画面の埋め込みJavaScript文字列の中に次の未エスケープ箇所が確認できる。
+
+```js
+signal:controller.signal,cache:"no-store"
+```
+
+該当する文字列は `src/index.js` の非常に長い1行（取得時は表示行7731）にある。ユーザーのCloudflareログでは行7186だったため、ログ対象commitと取得時のファイル版が完全一致しているとは限らないが、現在のbranch sourceにも同種の構文破壊が残っている。**最初に該当文字列の外側の引用方法を確認し、必要な引用符を正しくエスケープすること。** その後、再発防止テストを実コードに合わせて確認し、Workerモジュール全体の構文チェックを実行する。単にエラー位置だけを置換して別の埋め込みJS文字列を壊さないこと。
+
+### 最新状態の識別情報
+
+- Repository: `kingshot-bj/kingshot-data-platform`
+- Branch: `feat/mightpulse-probe-expansion-2026-10-14`
+- Draft PR: [#63 — feat: expand MightPulse Probe command execution with shared API Pool](https://github.com/kingshot-bj/kingshot-data-platform/pull/63)
+- 直近のcommit検索結果で確認できたcommit: `67baac62704ceaf0971620b6336ebb1dd3f610e1`（`feat: audit Probe key source and lending owner`、2026-10-14T13:46:24Z）。作業再開時にbranch HEADとPR head SHAを必ず再取得すること。
+- 直近取得した `src/index.js` blob SHA: `a21ca0d1efeab42c05f09958e9f6c387378e02a2`
+- `src/api-pool.js` blob SHA: `70f10dbbdb88978f5102a4c48c2d9263cd604d3b`
+- `migrations/0065_mightpulse_probe_batch_lease.sql` blob SHA: `a944bca3f6ddc1c9fe9c0a7d968153e4a662acbe`
+- この最新HEADに対するActions/CIの成功は未確認。以前の成功ログを現在のHEADの成功として扱わないこと。
+- mainへのマージ、本番Workerへのデプロイ、本番D1 migration適用はいずれも未完了。今回のCloudflareログはビルド失敗を示している。
+
+### 次スレで行う順番
+
+1. branch HEAD、PR #63 head、最新Actions/combined status、変更差分を取り直す。
+2. `src/index.js` の埋め込み比較画面スクリプトに残る `cache:"no-store"` の引用符問題を根本修正し、同種の文字列連結箇所を検査。
+3. Probe専用キー管理がruntime・UI・APIから完全に除かれ、全3種類のAPI Pool共有に統一されていることを確認。
+4. Pool lease SQLの予備枠ロジックを確認する。通常コマンド・Mighty必須コマンドの両方で、並列リースでも利用可能キーをすべてProbeが占有しないことをテスト。Watchlist向けの必要な予備枠を不注意に取り崩さないこと。
+5. secret masking、403時のキー維持、バッチ再開と排他、保存先、コマンドID allowlistとプレイヤーID検証を回帰テスト。
+6. migration 0061〜0065とmain既存0064の順序、D1 migration journal／実テーブルの整合性を確認。本番journalが未確認のままmigration workflowを起動しない。
+7. 最新HEADで構文・テスト・CIが確認できるまではdraftを維持し、mainへのマージ／Cloudflareデプロイをしない。
+8. 進捗は10%刻みで報告する。Previewでユーザー確認を求めず、検証後にmainマージ・本番デプロイへ進む。
