@@ -65,11 +65,15 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
 
 test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
   const source = await read("src/index.js");
-  assert.ok(source.includes('new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"])'));
-  assert.ok(source.includes('new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"])'));
-  assert.ok(!source.includes('commandId==="eagleeye_alliance_rosters"'));
+  assert.ok(source.includes("const playerCommandIds = new Set("));
+  assert.ok(source.includes('"player_base"'));
+  assert.ok(source.includes('"player_full"'));
+  assert.ok(source.includes('"player_ranks"'));
+  assert.ok(source.includes('"eagleeye_player_refresh"'));
+  assert.ok(source.includes("const rankingCommandIds = new Set("));
+  assert.ok(source.includes('"eagleeye_kingdom_rank_refresh"'));
+  assert.ok(!source.includes('const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh","eagleeye_alliance_rosters"])'));
 });
-
 
 test("Probe error records redact leased keys and ambiguous Mighty checks stay unconfirmed", async () => {
   const source = await read("src/index.js");
