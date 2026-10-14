@@ -116,3 +116,11 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
   assert.ok(refreshSnippet.includes(String.raw`requested_include||\"\").includes(\"ranks\")`));
   assert.ok(!refreshSnippet.includes(String.raw`requested_include||\\\"\\\"`));
 });
+
+test("player compare automatic and manual refresh requests have finite timeouts", () => {
+  assert.ok(indexSource.includes("async function fetchJsonWithTimeout(url,options,timeoutMs)"));
+  assert.ok(indexSource.includes("setTimeout(()=>controller.abort(),timeoutMs||15000)"));
+  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player/refresh?governor_id=\\\"+encodeURIComponent(p.governor_id)"));
+  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player/refresh?governor_id=\\\"+encodeURIComponent(ids[i])"));
+  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player-compare?\\\"+q.toString(),null,12000)"));
+});
