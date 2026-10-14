@@ -4351,7 +4351,7 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
   if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
   }
-  const identified = commandId ? { id:commandId, kind:(commandId.startsWith("player_")||commandId.startsWith("eagleeye_player")) ? "PLAYER" : (commandId==="kingdom_rank_board"||commandId==="eagleeye_kingdom_rank_refresh") ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
+  const identified = commandId ? { id:commandId, kind:(commandId.startsWith("player_")||commandId.startsWith("eagleeye_player")) ? "PLAYER" : (commandId==="kingdom_rank_board"||commandId==="eagleeye_kingdom_rank_refresh"||commandId==="eagleeye_alliance_rosters") ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
   if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
   const safePayload = redactProbeSecrets(payload);
   const sourceObservedAt = getMightPulseSourceTimestamp(safePayload);
@@ -4483,7 +4483,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       discovered_from:item.discovered_from||null,endpoint:command.endpoint,path:command.path,
       query:command.query,http_status:result.status,elapsed_ms:record.elapsed_ms,
       response_count:record.response_count,field_count:record.field_dictionary.length,production_save:productionSave,
-      archive,discovered_references:extractProbeReferences(payload,{maxReferences:10})
+      archive,discovered_references:extractProbeReferences(payload,{maxReferences:10,kingdomId:item.params?.kid})
     };
   } catch (error) {
     const status = Number(error?.status || 0);
