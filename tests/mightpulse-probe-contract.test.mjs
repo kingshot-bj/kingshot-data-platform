@@ -180,3 +180,14 @@ test("Probe player persistence rejects unconfirmed response shapes before produc
   assert.ok(persist.indexOf("PLAYER_PAYLOAD_SHAPE_UNCONFIRMED") < persist.indexOf("saveApiObservation(env.DB,observationData)"));
   assert.ok(persist.includes("normalizeGovernorId(playerPayload.governor_id ?? safePayload.governor_id)"));
 });
+
+
+test("read-only Probe D1 audit workflow inspects production schema without applying migrations", async () => {
+  const workflow = await read(".github/workflows/eagleeye-d1-probe-readonly-audit.yml");
+  assert.ok(workflow.includes("workflow_dispatch"));
+  assert.ok(workflow.includes("SELECT name FROM d1_migrations"));
+  assert.ok(workflow.includes("pragma_table_info"));
+  assert.ok(workflow.includes("writes_performed: false"));
+  assert.ok(!/wrangler d1 migrations apply/i.test(workflow));
+  assert.ok(!/\\b(?:INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\\s+(?:INTO|TABLE|INDEX|SET|COLUMN|DATABASE)?\\b/i.test(workflow));
+});
