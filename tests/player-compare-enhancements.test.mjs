@@ -54,10 +54,10 @@ test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
 });
 
-test("radar supports all selected players instead of only the first two", () => {
-  assert.ok(script.includes("names.forEach((name,playerIndex)"));
+test("fixed-score table supports all selected players instead of only the first two", () => {
   assert.ok(script.includes("Math.min(...rows.map(row=>row.entries.length))"));
-  assert.ok(script.includes("playerCount+'人のプレイヤー比較レーダーチャート'"));
+  assert.ok(script.includes("row.entries.slice(0,playerCount).forEach((entry,index)"));
+  assert.ok(script.includes("values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)"));
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
