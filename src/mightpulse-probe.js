@@ -229,6 +229,7 @@ export async function archiveMightPulseProbeRecord(env, record) {
   const requestedDestination = String(record?.save_destination || "R2");
   const finalDestination = () => r2Saved ? requestedDestination : requestedDestination.includes("PRODUCTION") ? "PRODUCTION" : "NONE";
   let metadataSaved = false;
+  let r2Error = env?.ARCHIVE?.put ? null : "R2_NOT_CONFIGURED";
   let metadataError = null;
 
   if (env?.ARCHIVE?.put) {
@@ -244,8 +245,8 @@ export async function archiveMightPulseProbeRecord(env, record) {
         }
       });
       r2Saved = true;
-    } catch (error) {
-      metadataError = "R2_ARCHIVE_FAILED: " + String(error?.message || error).slice(0, 250);
+    } catch {
+      r2Error = "R2_ARCHIVE_FAILED";
     }
   }
 
@@ -280,10 +281,10 @@ export async function archiveMightPulseProbeRecord(env, record) {
         record?.key_owner_user_id == null ? null : String(record.key_owner_user_id).slice(0, 128)
       ).run();
       metadataSaved = true;
-    } catch (error) {
-      metadataError = String(error?.message || error).slice(0, 300);
+    } catch {
+      metadataError = "D1_METADATA_WRITE_FAILED";
     }
   }
 
-  return { request_id: id, r2_saved: r2Saved, metadata_saved: metadataSaved, object_key: r2Saved ? objectKey : null, metadata_error: metadataError };
+  return { request_id: id, r2_saved: r2Saved, metadata_saved: metadataSaved, object_key: r2Saved ? objectKey : null, r2_error: r2Error, metadata_error: metadataError };
 }
