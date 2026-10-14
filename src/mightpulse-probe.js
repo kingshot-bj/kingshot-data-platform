@@ -16,7 +16,13 @@ export const MIGHTPULSE_PROBE_COMMANDS = [
   { id:"kingdom_events", category:"Mighty", label:"王国イベント", method:"GET", endpoint:"/kingdoms/{kid}/events", query:{}, requiresMighty:true, references:["kid"] },
   { id:"kingdom_kvk", category:"Mighty", label:"王国KvK情報", method:"GET", endpoint:"/kingdoms/{kid}/kvk", query:{}, requiresMighty:true, references:["kid"] },
   { id:"kingdom_kvk_scores", category:"Mighty", label:"王国KvKスコア", method:"GET", endpoint:"/kingdoms/{kid}/kvk/scores", query:{}, requiresMighty:true, references:["kid"] },
-  { id:"kvk_matchups", category:"Mighty", label:"全KvKマッチアップ", method:"GET", endpoint:"/kvk/matchups", query:{}, requiresMighty:true, references:["kid"] }
+  { id:"kvk_matchups", category:"Mighty", label:"全KvKマッチアップ", method:"GET", endpoint:"/kvk/matchups", query:{}, requiresMighty:true, references:["kid"] },
+  { id:"eagleeye_player_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：プレイヤー詳細更新", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base,heroes,ranks,gov_gear"}, requiresMighty:false, references:["governor_id","kid"], command_kind:"EAGLEEYE_INTERNAL" },
+  { id:"eagleeye_player_rank_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：プレイヤーランキング更新", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base,ranks"}, requiresMighty:false, references:["governor_id","kid"], command_kind:"EAGLEEYE_INTERNAL" },
+  { id:"eagleeye_kingdom_rank_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：王国ランキング保存処理", method:"GET", endpoint:"/kingdoms/{kid}/ranks", query:{board:"personal_power",limit:100}, requiresMighty:false, references:["governor_id","kid","alliance_tag"], command_kind:"EAGLEEYE_INTERNAL" },
+  { id:"eagleeye_alliance_roster_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：同盟名簿取得", method:"GET", endpoint:"/alliances/{kid}/{tag}", query:{include:"info,roster"}, requiresMighty:false, references:["governor_id","kid","alliance_tag"], command_kind:"EAGLEEYE_INTERNAL" },
+  { id:"eagleeye_kingdom_events_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：王国イベント取得", method:"GET", endpoint:"/kingdoms/{kid}/events", query:{}, requiresMighty:true, references:["kid"], command_kind:"EAGLEEYE_INTERNAL" },
+  { id:"eagleeye_kvk_refresh", category:"EagleEye Retrieval", label:"EagleEye内部：KvKデータ取得", method:"GET", endpoint:"/kingdoms/{kid}/kvk", query:{}, requiresMighty:true, references:["kid"], command_kind:"EAGLEEYE_INTERNAL" }
 ];
 
 export const MIGHTPULSE_PROBE_FIELD_DICTIONARY_LIMIT = 400;
