@@ -109,9 +109,9 @@ SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最�
 
 ## 7. 未完了・最優先で監査すべき点
 
-**現時点でmainへのマージ・本番デプロイ・本番migration適用は未完了。CI成功も未確認。**
+**現時点でmainへのマージ・本番デプロイ・本番migration適用は未完了。**
 
-1. **構文・テスト・CI**：最新ファイルの `node --check` と `node --test tests/mightpulse-probe*.test.mjs` の成功結果が必要。GitHub Actions lookupでは最新コミットの実行結果が確認できていない。コンテナからGitHubへのネットワーク接続も利用できず、ローカル実行は未完了として扱う。
+1. **構文・テスト・CI**：commit `8c6251bfdf76f78c992cb15768c2288492004ac1` のGitHub Actions `MightPulse Probe checks` は成功。Workerモジュールの `node --check` とProbeテスト18件がすべて成功（18 pass / 0 fail）。この追記コミット後にCIが再実行されるため、最終HEADの結果も確認する。コンテナからGitHubへのネットワーク接続は利用できず、ローカル実行は行っていない。
 2. **Migration番号・本番D1ジャーナル（デプロイ阻害事項）**：mainには `migrations/0064_mightpulse_probe_key_audit.sql` が既に存在する一方、mainでは `0061`、`0062`、`0063` が見つからず、作業ブランチ側にある。0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` をALTERするため、リモートD1の `d1_migrations` と実テーブルを確認せずに `wrangler d1 migrations apply --remote` を実行してはいけない。既に0064が適用済みか、テーブル／列が手動作成済みかを確認し、必要なら既存migrationの再実行ではなく安全なreconciliation手順を設計する。workflow `eagleeye-d1-apply-pending-migrations.yml` は保留migrationを一括適用するため、現状のまま手動起動しない。
 3. **API Poolリース予備枠**：Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。SQLのCOUNTとUPDATEが並行リクエスト時にも予約枠を守るか、複数pool typeのbind数、Mighty限定時の候補選択、成功／失敗／例外時の解放をテストする。
 4. **旧専用キーmigration**：runtimeコードと `src/mightpulse-probe.js` から専用キー管理機能は削除済み。0062と0064の旧テーブル／監査列は既存migration履歴との依存があるため残している。runtimeがこれらを参照しないことをテストで維持し、migration順序を確認する前に削除・改変しない。
