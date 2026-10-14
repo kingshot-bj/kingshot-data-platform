@@ -1,6 +1,6 @@
 import { encryptSecret, decryptSecret } from "./api-pool.js";
 
-const SECRET_FIELD = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
+const SECRET_FIELD = /(?:^key$|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
 
 export const MIGHTPULSE_PROBE_COMMANDS = [
   { id:"player_base", category:"Player", label:"Player 基本情報", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base"}, requiresMighty:false, references:["governor_id","kid"] },
@@ -117,7 +117,7 @@ export function validateManualProbeCommand(input = {}) {
   if (entries.length > 50) throw new Error("PROBE_QUERY_TOO_MANY_FIELDS");
   for (const [key, value] of entries) {
     if (!/^[A-Za-z0-9_.-]{1,100}$/.test(key)) throw new Error("PROBE_QUERY_INVALID_FIELD_NAME");
-    if (/(?:api[_-]?key|authorization|token|secret|password|credential)/i.test(key)) throw new Error("PROBE_QUERY_SECRET_FIELD_NOT_ALLOWED");
+    if (/(?:^key$|api[_-]?key|authorization|token|secret|password|credential)/i.test(key)) throw new Error("PROBE_QUERY_SECRET_FIELD_NOT_ALLOWED");
     if (value !== null && !["string", "number", "boolean"].includes(typeof value)) throw new Error("PROBE_QUERY_VALUES_MUST_BE_SCALARS");
     if (typeof value === "string" && value.length > 2000) throw new Error("PROBE_QUERY_VALUE_TOO_LONG");
     if (typeof value === "number" && !Number.isFinite(value)) throw new Error("PROBE_QUERY_INVALID_NUMBER");
