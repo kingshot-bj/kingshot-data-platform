@@ -225,6 +225,7 @@ export async function archiveMightPulseProbeRecord(env, record) {
         httpMetadata: { contentType: "application/json; charset=utf-8" },
         customMetadata: {
           request_id: id,
+          batch_id: String(record?.batch_id || "").slice(0, 80),
           status: String(record?.status || "UNKNOWN").slice(0, 40),
           command_type: String(record?.command_type || "UNKNOWN").slice(0, 40),
           created_at: String(now)
@@ -239,7 +240,7 @@ export async function archiveMightPulseProbeRecord(env, record) {
   if (env?.DB) {
     try {
       await env.DB.prepare(
-        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason, batch_id, sequence_no, discovered_from, response_count, retry_count, save_destination) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         id,
         now,
@@ -255,7 +256,13 @@ export async function archiveMightPulseProbeRecord(env, record) {
         JSON.stringify(safeRecord).length,
         r2Saved ? objectKey : null,
         record?.error_code == null ? null : String(record.error_code).slice(0, 100),
-        String(record?.trigger_reason || "MANUAL").slice(0, 40)
+        String(record?.trigger_reason || "MANUAL").slice(0, 40),
+        record?.batch_id == null ? null : String(record.batch_id).slice(0, 80),
+        Number.isFinite(Number(record?.sequence_no)) ? Number(record.sequence_no) : null,
+        record?.discovered_from == null ? null : String(record.discovered_from).slice(0, 500),
+        Number.isFinite(Number(record?.response_count)) ? Number(record.response_count) : null,
+        Number.isFinite(Number(record?.retry_count)) ? Number(record.retry_count) : 0,
+        String(record?.save_destination || (r2Saved ? "R2" : "NONE")).slice(0, 40)
       ).run();
       metadataSaved = true;
     } catch (error) {
