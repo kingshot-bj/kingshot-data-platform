@@ -102,3 +102,10 @@ test("stored ranking values appear in desktop table and retain per-board observa
   assert.ok(indexSource.includes("EagleEye保存 "));
   assert.ok(indexSource.includes("（王国 "));
 });
+
+test("player compare reports initialization failure instead of leaving the initial loading placeholder forever", () => {
+  assert.ok(indexSource.includes("var startedAt=Date.now();var timer=setInterval"));
+  assert.ok(indexSource.includes("比較画面の初期化が完了しませんでした"));
+  assert.ok(indexSource.includes("比較画面のJavaScript初期化エラーを検出しました"));
+  assert.ok(indexSource.includes('status.textContent.trim()==="比較データを読み込み中…"'));
+});
