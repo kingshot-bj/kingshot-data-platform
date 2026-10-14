@@ -57,7 +57,7 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 ## 5. 現在ブランチに追加済みの主な変更
 
 ### src/mightpulse-probe.js
-- コマンドカタログ MIGHTPULSE_PROBE_COMMANDS（現状13エントリー。公式全コマンドを網羅した完成版ではない）
+- コマンドカタログ MIGHTPULSE_PROBE_COMMANDS（現状21エントリー。公式全コマンドを網羅した完成版ではない）
 - buildCatalogProbeCommand：カタログコマンドとパラメータからパス／クエリを組み立てる
 - validateManualProbeCommand：相対パス、長さ、クエリ型などを検証。secret風のクエリ名拒否も追加
 - redactProbeSecrets：秘密値を再帰的にマスク
@@ -85,7 +85,7 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 
 ### Tests / CI
 - tests/mightpulse-probe.test.mjs：手入力検証、秘密情報マスク、R2/D1アーカイブ、コマンド台帳、辞書、参照抽出などの単体テストを追加
-- .github/workflows/mightpulse-probe-checks.yml：Node 22で node --check と node --test tests/mightpulse-probe.test.mjs を実行するワークフロー
+- .github/workflows/mightpulse-probe-checks.yml：Node 22でWorkerの node --check と node --test tests/mightpulse-probe*.test.mjs を実行するワークフロー
 
 ## 6. 現在のブランチ状態とファイルSHA
 
