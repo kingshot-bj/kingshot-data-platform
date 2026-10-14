@@ -206,6 +206,8 @@ test("Probe UI runs catalog commands through the audited selected-command execut
     "batch_type:'selected'",
     "command_ids:[cmd.id]",
     "automatic_discovery:false",
+    "eagleeye_mightpulse_probe_last_batch_v1",
+    "中断したバッチを再開",
     "mode:'manual'",
     "manualPath",
     "manualQuery",
