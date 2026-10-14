@@ -4391,10 +4391,15 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
   const now = Math.floor(Date.now()/1000);
 
   if (identified.kind === "PLAYER") {
-    const playerPayload = safePayload.player && typeof safePayload.player === "object" ? safePayload.player : safePayload;
+    // materializePlayer requires the documented observation envelope to contain a player object.
+    // Reject unknown response shapes before writing even an API observation to production D1.
+    if (!safePayload.player || typeof safePayload.player !== "object" || Array.isArray(safePayload.player)) {
+      return { saved:false, destination:"R2", reason:"PLAYER_PAYLOAD_SHAPE_UNCONFIRMED" };
+    }
+    const playerPayload = safePayload.player;
     // Never infer the returned player's identity from the request path alone.
-    // A successful HTTP status is not enough to prove the response is player data.
-    const governorId = normalizeGovernorId(playerPayload.governor_id ?? playerPayload.fid ?? safePayload.governor_id ?? safePayload.fid);
+    // Use only explicit governor_id values and validate the response against the requested target.
+    const governorId = normalizeGovernorId(playerPayload.governor_id ?? safePayload.governor_id);
     if (!governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISSING" };
     const pathMatch=String(path||"").match(/^\/players\/([^/]+)$/);
     const requestedId=identified.params?.governor_id || (pathMatch&&String(query?.id_type||"")!=="uid"?decodeURIComponent(pathMatch[1]):null);
