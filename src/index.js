@@ -4145,7 +4145,7 @@ async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTP
   if (dedicated) return { ...dedicated, source_type: "PROBE_DEDICATED" };
   const borrowed = await leaseApiKey(env.DB, {
     poolTypes: ["USER_CONTRIBUTED"],
-    mightyOnly: true,
+    mightyOnly: mightyRequired,
     purpose,
     targetType,
     targetId
@@ -4242,7 +4242,8 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
   const startedAt = Date.now();
   try {
     lease = await leaseProbeApiKey(env, {
-      mightyRequired: body?.mighty_required !== false,
+      // Arbitrary manual probes default to ordinary API access; callers may explicitly require Mighty.
+      mightyRequired: body?.mighty_required === true,
       purpose: "MIGHTPULSE_PROBE_MANUAL",
       targetType: "MANUAL_COMMAND",
       targetId: command.path
