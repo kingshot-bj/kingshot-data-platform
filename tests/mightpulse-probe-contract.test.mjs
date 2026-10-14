@@ -95,6 +95,8 @@ test("Probe error records redact leased keys and ambiguous Mighty checks stay un
   assert.ok(source.includes("function safeProbeErrorMessage(error, apiKey = null)"));
   assert.ok(source.includes("message.split(secret).join(\"[REDACTED]\")"));
   assert.ok(source.includes("error_message: safeProbeErrorMessage(error,lease?.api_key)"));
+  assert.ok(source.includes("error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)"));
+  assert.ok(!source.includes("error:String(saveError?.message||saveError).slice(0,300)"));
   assert.ok(source.includes('status:"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"'));
   assert.ok(source.includes("Mighty権限を確認できませんでした。キーは無効化していません。"));
 });
