@@ -35,14 +35,21 @@ const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
 const fmt=v=>{if(v==null||!Number.isFinite(Number(v)))return '—';try{return new Intl.NumberFormat('ja-JP',{maximumFractionDigits:1}).format(Number(v))}catch{return String(v)}};
 const safeText=e=>String(e&&e.textContent||'').trim();
 function collapseDetails(){
+ const sec=document.querySelector('.mystic-section');
+ if(!sec)return;
  let panel=document.querySelector('.ee-compare-details');
  if(!panel){
   panel=document.createElement('details');panel.className='ee-compare-details';
   const summary=document.createElement('summary');summary.textContent='詳細プロフィール・一覧・履歴（必要なときに開く）';panel.appendChild(summary);
-  const sec=document.querySelector('.mystic-section');if(!sec)return;sec.after(panel);
+  sec.insertAdjacentElement('afterend',panel);
  }
- ['.panel','.power-showcase-wrap','.compare-player-cards','.table-wrap'].forEach(selector=>{
-  document.querySelectorAll(selector).forEach(el=>{if(el===panel||el.closest('.ee-compare-details'))return;panel.appendChild(el)});
+ // Never move a wrapper that contains the comparison section/panel into its own descendant.
+ // Doing so raises HierarchyRequestError and aborts the rest of this enhancement script.
+ ['.power-showcase-wrap','.compare-player-cards','.table-wrap'].forEach(selector=>{
+  document.querySelectorAll(selector).forEach(el=>{
+   if(el===panel||el.contains(panel)||panel.contains(el)||el.closest('.ee-compare-details'))return;
+   panel.appendChild(el);
+  });
  });
 }
 function enhance(){

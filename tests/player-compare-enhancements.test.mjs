@@ -33,3 +33,9 @@ test("radar does not fabricate a cross-ranking aggregate", () => {
   assert.ok(script.includes("評価尺度の同一性が未確認"));
   assert.ok(script.includes("同じ単位・同じ評価ルール"));
 });
+
+test("details collapsing cannot move a wrapper into its own descendant", () => {
+  assert.ok(script.includes("el.contains(panel)"));
+  assert.ok(script.includes("panel.contains(el)"));
+  assert.ok(!script.includes("['.panel','.power-showcase-wrap'"));
+});
