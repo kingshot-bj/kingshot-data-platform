@@ -4048,6 +4048,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
         endpoint: spec.endpoint, query: spec.query, status: "FAILED", http_status: status || null,
         elapsed_ms: failedAt - probeStartedAt, started_at: new Date(probeStartedAt).toISOString(),
         completed_at: new Date(failedAt).toISOString(), trigger_reason: "MANUAL",
+        key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
         error_code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
         error_message: String(error?.message || error).slice(0, 1000),
         diagnostic: redactProbeSecrets(error?.details || null)
