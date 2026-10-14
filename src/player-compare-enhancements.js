@@ -67,14 +67,14 @@ function enhance(){
  const buttons={};
  modes.forEach(([key,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.mode=key;b.setAttribute('aria-pressed',String(key===mode));b.addEventListener('click',()=>{mode=key;try{localStorage.setItem('eagleeye-player-compare-chart-v1',mode)}catch{}Object.entries(buttons).forEach(([k,node])=>node.setAttribute('aria-pressed',String(k===mode)));renderAll()});buttons[key]=b;tools.appendChild(b)});
  sec.insertBefore(tools,sec.children[1]||null);sec.insertBefore(status,tools.nextSibling);
- const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,color:colors[i%colors.length]}});
+ const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,stage:n&&n.dataset.stageValue==='1',color:colors[i%colors.length]}});
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
   const existing=card.querySelector('.mystic-ring');if(existing)existing.style.display='none';
   const values=card.querySelector('.mystic-values');let view=card.querySelector('.ee-chart-view');
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
-  if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
+  if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent=entries.some(e=>e.stage)?'ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。':'比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
   const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
   if(mode==='ring'){
    const ring=document.createElement('div');ring.className='ee-split-ring';
