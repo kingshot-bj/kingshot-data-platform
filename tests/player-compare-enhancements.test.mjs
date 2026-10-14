@@ -29,9 +29,11 @@ test("additional ranking candidates require saved numeric scores for both player
   assert.ok(script.includes("eagleeye-player-compare-order-v1"));
 });
 
-test("radar does not fabricate a cross-ranking aggregate", () => {
-  assert.ok(script.includes("評価尺度の同一性が未確認"));
-  assert.ok(script.includes("同じ単位・同じ評価ルール"));
+test("radar renders a relative comparison polygon without combining raw units", () => {
+  assert.ok(script.includes("function renderRadar()"));
+  assert.ok(script.includes("プレイヤー比較レーダーチャート"));
+  assert.ok(script.includes("高い方＝100%として相対化"));
+  assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
 
 test("details collapsing cannot move a wrapper into its own descendant", () => {
@@ -43,8 +45,9 @@ test("details collapsing cannot move a wrapper into its own descendant", () => {
 test("mobile chart layout keeps bars proportional and radar notice global", () => {
   assert.ok(script.includes("setProperty('width'"));
   assert.ok(script.includes("sm.textContent='スコア差'"));
-  assert.ok(script.includes("比較尺度が一致する複数項目を確認"));
-  assert.ok(!script.includes("レーダー表示は、同じ単位・同じ評価ルール"));
+  assert.ok(script.includes("function renderRadar()"));
+  assert.ok(script.includes("ee-spark 3.6s ease-out var(--delay) infinite"));
+  assert.ok(script.includes("ee-motion-in 1.6s"));
 });
 test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));

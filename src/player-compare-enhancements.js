@@ -8,25 +8,25 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-split-ring svg{width:100%;height:100%;overflow:visible;transform:rotate(-90deg)}
 .ee-split-ring circle{fill:none;stroke-width:12}
 .ee-split-ring .track{stroke:var(--border,#29425e);opacity:.8}
-.ee-split-ring .slice{transition:stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1),stroke-dashoffset 1.1s}
+.ee-split-ring .slice{transition:stroke-dasharray 2.2s cubic-bezier(.2,.8,.2,1),stroke-dashoffset 2.2s}
 .ee-split-ring .slice-a{stroke:#ffd166;filter:drop-shadow(0 0 4px #ffd166aa)}
 .ee-split-ring .slice-b{stroke:#42d9ff;filter:drop-shadow(0 0 4px #42d9ffaa)}
 .ee-split-ring .ee-center{position:absolute;text-align:center;max-width:76%;font-weight:800;font-size:clamp(15px,4vw,22px);line-height:1.15}
 .ee-split-ring .ee-center small{display:block;font-size:10px;font-weight:600;color:var(--sub,#91a7bf);margin-top:5px}
 .ee-spark-layer{position:absolute;inset:0;pointer-events:none}
-.ee-spark-layer i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px 2px var(--spark);animation:ee-spark .75s ease-out var(--delay) both;transform:rotate(var(--angle)) translateY(-38px)}
-@keyframes ee-spark{0%{opacity:0;transform:rotate(var(--angle)) translateY(-38px) scale(.4)}20%{opacity:1}100%{opacity:0;transform:rotate(var(--angle)) translateY(calc(-38px - var(--distance))) scale(0)}}
-.ee-compare-bars{display:grid;gap:9px;margin:12px 0;min-width:0}
+.ee-spark-layer i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px 2px var(--spark);animation:ee-spark 3.6s ease-out var(--delay) infinite;transform:rotate(var(--angle)) translateY(-38px)}
+@keyframes ee-spark{0%,72%,100%{opacity:0;transform:rotate(var(--angle)) translateY(-38px) scale(.35)}8%{opacity:1}45%{opacity:.8;transform:rotate(var(--angle)) translateY(calc(-38px - var(--distance))) scale(.9)}}
+.ee-compare-bars{display:grid;gap:9px;margin:12px 0;min-width:0;animation:ee-motion-in 1.4s ease both}
 .ee-compare-bar-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;font-size:12px}
 .ee-compare-bar-row .bar-label{grid-column:1/-1;display:flex;justify-content:space-between;gap:8px}
 .ee-compare-bar-track{grid-column:1/-1;height:9px;background:var(--border,#29425e);border-radius:99px;overflow:hidden;display:flex}
 .ee-compare-bar-track span{display:block;height:100%;flex:0 0 auto;max-width:100%;transition:width .8s ease}
 .ee-compare-bar-track .a{background:#ffd166}.ee-compare-bar-track .b{background:#42d9ff}
-.ee-compare-numeric{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.ee-compare-numeric{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;animation:ee-motion-in 1.4s ease both}
 .ee-compare-numeric>div{padding:10px;border:1px solid var(--border,#29425e);border-radius:10px;text-align:center;min-width:0}
 .ee-compare-numeric small{display:block;white-space:normal;overflow-wrap:normal;word-break:normal;color:var(--sub,#91a7bf);font-size:11px;line-height:1.25}
 .ee-compare-numeric strong{display:block;font-size:clamp(13px,3.8vw,16px);margin-top:5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}
+.ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}.mystic-card{transition:transform 1.2s ease,box-shadow 1.2s ease}.mystic-card.ee-motion-in{animation:ee-motion-in 1.6s cubic-bezier(.16,1,.3,1) both}@keyframes ee-motion-in{0%{opacity:.3;transform:translateY(12px) scale(.98)}70%{opacity:1;transform:translateY(-2px) scale(1.005)}100%{transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.ee-split-ring .slice{transition:none}.ee-spark-layer i{animation:none;display:none}}
 </style>
 <script>
@@ -82,7 +82,7 @@ function enhance(){
    const ring=document.createElement('div');ring.className='ee-split-ring';ring.innerHTML='<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="48"></circle><circle class="slice slice-a" cx="60" cy="60" r="48"></circle><circle class="slice slice-b" cx="60" cy="60" r="48"></circle></svg><div class="ee-center"></div><div class="ee-spark-layer" aria-hidden="true"></div>';
    const circ=2*Math.PI*48,arcA=ratio*circ,arcB=(1-ratio)*circ;const slices=ring.querySelectorAll('.slice');slices[0].style.strokeDasharray=arcA+' '+(circ-arcA);slices[0].style.strokeDashoffset='0';slices[1].style.strokeDasharray=arcB+' '+(circ-arcB);slices[1].style.strokeDashoffset=String(-arcA);
    const center=ring.querySelector('.ee-center');center.textContent=fmt(diff);const sm=document.createElement('small');sm.textContent='スコア差';center.appendChild(sm);
-   if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=ring.querySelector('.ee-spark-layer');for(let i=0;i<14;i++){const p=document.createElement('i');p.style.setProperty('--angle',(ratio*360+(i-6.5)*7)+'deg');p.style.setProperty('--distance',(25+(i%4)*10)+'px');p.style.setProperty('--delay',(i*18)+'ms');p.style.setProperty('--spark',colors[i%2]);layer.appendChild(p)}}
+   if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=ring.querySelector('.ee-spark-layer');for(let i=0;i<22;i++){const p=document.createElement('i');p.style.setProperty('--angle',(ratio*360+(i-10.5)*9)+'deg');p.style.setProperty('--distance',(25+(i%5)*12)+'px');p.style.setProperty('--delay',(-i*165)+'ms');p.style.setProperty('--spark',colors[i%2]);layer.appendChild(p)}}
    view.appendChild(ring);
   }else if(mode==='bar'){
    const wrap=document.createElement('div');wrap.className='ee-compare-bars';const max=Math.max(a.score,b.score,1);
@@ -92,6 +92,23 @@ function enhance(){
   }else{
    const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg);
   }
+ }
+
+ const radarHost=document.createElement('div');radarHost.className='ee-radar-wrap';radarHost.hidden=true;
+ radarHost.style.maxWidth='440px';radarHost.style.margin='12px auto';
+ sec.insertBefore(radarHost,status.nextSibling);
+ function renderRadar(){
+  radarHost.replaceChildren();
+  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)})).filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
+  if(rows.length<3){status.textContent='レーダー表示には、両プレイヤーの実スコアがそろった項目が3件以上必要です。';return}
+  status.textContent='各項目を2人の高い方＝100%として相対化。異なる項目の実数値を直接合算するグラフではありません。';
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 320 320');svg.setAttribute('role','img');svg.setAttribute('aria-label','プレイヤー比較レーダーチャート');
+  const cx=160,cy=145,r=105,n=rows.length;
+  const pt=(i,scale)=>{const angle=-Math.PI/2+i*2*Math.PI/n;return [cx+Math.cos(angle)*r*scale,cy+Math.sin(angle)*r*scale]};
+  for(let k=1;k<=5;k++){const g=document.createElementNS(ns,'polygon');g.setAttribute('fill','none');g.setAttribute('stroke','var(--border,#29425e)');g.setAttribute('points',rows.map((row,i)=>pt(i,k/5).join(',')).join(' '));svg.appendChild(g)}
+  rows.forEach((row,i)=>{const p=pt(i,1),line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',p[0]);line.setAttribute('y2',p[1]);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const t=document.createElementNS(ns,'text');t.setAttribute('x',cx+Math.cos(-Math.PI/2+i*2*Math.PI/n)*(r+20));t.setAttribute('y',cy+Math.sin(-Math.PI/2+i*2*Math.PI/n)*(r+20)+3);t.setAttribute('fill','var(--text,#e8f3ff)');t.setAttribute('font-size','10');t.setAttribute('text-anchor','middle');t.textContent=row.label;svg.appendChild(t)});
+  [0,1].forEach(idx=>{const points=rows.map((row,i)=>{const a=row.entries[0].score,b=row.entries[1].score,m=Math.max(a,b);const value=m>0?(idx===0?a:b)/m:1;return pt(i,value).join(',')});const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',points.join(' '));poly.setAttribute('fill',idx===0?'#ffd16633':'#42d9ff33');poly.setAttribute('stroke',idx===0?'#ffd166':'#42d9ff');poly.setAttribute('stroke-width','2.5');poly.style.transition='all 2.2s ease';svg.appendChild(poly)});
+  radarHost.appendChild(svg);const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=rows[0].entries[0].name+'（黄） ／ '+rows[0].entries[1].name+'（青）';radarHost.appendChild(legend);
  }
 
  const candidateRows=new Map();
@@ -134,7 +151,7 @@ function enhance(){
  if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
  customPanel.appendChild(customList);sec.appendChild(customPanel);
 
- function renderAll(){cards.forEach(renderCard);status.textContent=mode==='radar'?'レーダー表示は、比較尺度が一致する複数項目を確認できるまで無効です。分割リング・比較バー・数値をご利用ください。':''}
+ function renderAll(){cards.forEach(renderCard);radarHost.hidden=mode!=='radar';if(mode==='radar'){cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=true});renderRadar()}else{cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=false});status.textContent=''}cards.forEach(card=>{card.classList.remove('ee-motion-in');void card.offsetWidth;card.classList.add('ee-motion-in')})}
  syncCustomCards();renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
