@@ -3985,7 +3985,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
       query: spec.query, status: "SUCCESS", http_status: result.status,
       elapsed_ms: responseReceivedAt - requestStartedAt,
       started_at: new Date(requestStartedAt).toISOString(), completed_at: new Date(responseReceivedAt).toISOString(),
-      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave
+      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave, key_source:lease?.source_type || null, key_id:lease?.key_id || null, key_owner_user_id:lease?.key_owner_user_id || lease?.contributed_by_user_id || null
     };
     let archive = null;
     try { archive = await archiveMightPulseProbeRecord(env, archiveRecord); }
@@ -4148,7 +4148,7 @@ async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTP
     targetType,
     targetId
   });
-  return { ...borrowed, source_type: "USER_CONTRIBUTED_MIGHTY" };
+  return { ...borrowed, source_type: "USER_CONTRIBUTED_MIGHTY", key_owner_user_id:borrowed.contributed_by_user_id || null };
 }
 
 async function releaseProbeApiKey(env, lease, options = {}) {
@@ -4194,7 +4194,7 @@ async function handleMightPulseProbeKeysApi(request, env) {
       const apiKey = String(body?.api_key || "").trim();
       if (!apiKey) return json({ok:false,error:"PROBE_API_KEY_REQUIRED"},400);
       await mightPulseFetch(env, "/kingdoms", { query:{page:1,size:1}, apiKey, timeoutMs:12000, maxRetries:0 });
-      const key = await addMightPulseProbeKey(env.DB, { apiKey, label:body?.label || "Probe専用キー" });
+      const key = await addMightPulseProbeKey(env.DB, { apiKey, label:body?.label || "Probe専用キー", registeredByUserId:guard?.auth?.user_id || guard?.auth?.id || null });
       return json({ok:true,key,message:"Probe専用キーを登録しました。キー本体は保存後に再表示しません。"});
     }
     if (action === "revoke") {
@@ -4490,7 +4490,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       status:"FAILED",http_status:status||null,elapsed_ms:completedAt-startedAt,
       started_at:new Date(startedAt).toISOString(),completed_at:new Date(completedAt).toISOString(),
       trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
-      discovered_from:item.discovered_from||null,response_count:0,retry_count:0,save_destination:"R2",
+      discovered_from:item.discovered_from||null,response_count:0,retry_count:0,save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
       error_message:String(error?.message||error).slice(0,1000),diagnostic:redactProbeSecrets(error?.details||null)
     };
