@@ -93,17 +93,19 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 HEADコミットSHAは文書更新でも進むため固定値を記載しない。再開時はPR #63の最新 `head_sha` とブランチHEADを再取得すること。
 
 直近のファイルblob SHA：
-- `src/index.js`: `a21ca0d1efeab42c05f09958e9f6c387378e02a2`
+- `src/index.js`: `a8c1c44104ba386d0144f0b05342d6bdefbea061`
 - `src/mightpulse-probe.js`: `2f1b27f420422beecd1bb8bdba9b8f6f19a28870`
-- `src/api-pool.js`: `70f10dbbdb88978f5102a4c48c2d9263cd604d3b`
+- `src/api-pool.js`: `6c0da76d9f5684a3fa6f20fe802d80d991a6560a`
 - `tests/mightpulse-probe.test.mjs`: `f838ff7d9110907254010375173a229101035930`
-- `tests/mightpulse-probe-contract.test.mjs`: `c2c2b7c75a2b3b0f6819f3c2111b6be60bf45ff1`
+- `tests/mightpulse-probe-contract.test.mjs`: `d932b23675d459e0c33ca16d64c5c2718e209529`
+- `scripts/check-probe-migration-history.sh`: `8bbfb0a99b235fce91da8be94461af1ba87436b9`
 - `migrations/0061_mightpulse_probe_runs.sql`: `fe959d623d2d82960c683e1ef4d2b58b69975c04`
 - `migrations/0062_mightpulse_probe_keys.sql`: `e70adb01c2e8f720578baac141820ebc3d465708`
 - `migrations/0063_mightpulse_probe_batches.sql`: `6c34bbb5a9d2f06c74e1f8c739256bbbd4c0884d`
 - `migrations/0064_mightpulse_probe_key_audit.sql`: `9af372dc598ca705f2fe7416714250b58de6b0ba`
 - `migrations/0065_mightpulse_probe_batch_lease.sql`: `a944bca3f6ddc1c9fe9c0a7d968153e4a662acbe`
-- `.github/workflows/mightpulse-probe-checks.yml`: `81be6314aa0a0c276c9c79fa53b0f65e045fca15`
+- `.github/workflows/eagleeye-d1-apply-pending-migrations.yml`: `9146c7c07c1c2b6b5bfd8debda201563b19bd21e`
+- `.github/workflows/mightpulse-probe-checks.yml`: `73d6af40cf0024226a91de99a0372f05a603959f`
 
 SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最新のPR head/branch HEADは作業再開時に再取得すること。
 
@@ -111,9 +113,9 @@ SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最�
 
 **現時点でmainへのマージ・本番デプロイ・本番migration適用は未完了。**
 
-1. **構文・テスト・CI**：commit `f64fd684bdc4cf2fa04b0d943dbedee2680c44e2` のGitHub Actions `MightPulse Probe checks` は成功。Workerモジュールの `node --check`、migration preflightスクリプトの `bash -n`、Probeテスト23件がすべて成功（23 pass / 0 fail）。API PoolリースSQLのbind数テストも通過。コンテナからGitHubへのネットワーク接続は利用できず、ローカル実行は行っていない。
-2. **Migration番号・本番D1ジャーナル（デプロイ阻害事項）**：mainには `migrations/0064_mightpulse_probe_key_audit.sql` が既に存在する一方、mainでは `0061`、`0062`、`0063` が見つからず、作業ブランチ側にある。0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` をALTERするため、リモートD1の `d1_migrations` と実テーブルを確認せずに `wrangler d1 migrations apply --remote` を実行してはいけない。作業ブランチでは `scripts/check-probe-migration-history.sh` を追加し、0064が記録済みなのに0061〜0063が未記録の場合だけでなく、テーブル／カラムとmigration journalが食い違う場合にもpending migration適用前に停止するガードを `.github/workflows/eagleeye-d1-apply-pending-migrations.yml` に追加した。CIでは同スクリプトの `bash -n` とガード契約テストを実行する。既に0064が適用済みか、テーブル／列が手動作成済みかを確認し、必要なら既存migrationの再実行ではなく安全なreconciliation手順を設計する。workflow `eagleeye-d1-apply-pending-migrations.yml` は保留migrationを一括適用するため、現状のまま手動起動しない。
-3. **API Poolリース予備枠**：手元で同じSQL条件をSQLiteに再現した逐次シミュレーションでは、3キー中2キーをリースした後に追加リースを拒否し、1キーが未リースで残ることを確認した。ただしこれは本番D1・同時リクエストの実測ではない。Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。通常コマンドは非Mightyキーを優先し、確認済みMightyキーが存在する場合は `reserveMightyKeys: 1` で最低1本を通常のMighty利用向けに残す。Mighty必須コマンドはMighty確認済みキーだけを候補にし、その利用可能キーも最低1本残す。SQLのCOUNTとUPDATEが並行リクエスト時にも予約枠を守るか、複数pool typeのbind数、成功／失敗／例外時の解放をテストする。
+1. **構文・テスト・CI**：最後に確認できた成功記録はcommit `f64fd684bdc4cf2fa04b0d943dbedee2680c44e2` の `MightPulse Probe checks`（Worker `node --check`、migration preflight `bash -n`、Probeテスト23件 pass、SQL bind数テスト pass）。その後、Mighty予備枠・バッチ停止／再開・pool_type監査の修正と契約テストが追加されている。最新ソース／テストコミット `dad2dbaa06160cbfd350e99abb8824a64be4c7e8`／`0ff3c87f6bbe7f4978ef71faa1375f3f1cfa8da5` に対するCI結果は現在の照会では未確認。コンテナからGitHubへのネットワーク接続は利用できず、ローカル実行は行っていない。
+2. **Migration番号・本番D1ジャーナル（デプロイ阻害事項）**：mainには `migrations/0064_mightpulse_probe_key_audit.sql` が既に存在する一方、mainでは `0061`、`0062`、`0063` が見つからず、作業ブランチ側にある。0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` をALTERするため、リモートD1の `d1_migrations` と実テーブルを確認せずに `wrangler d1 migrations apply --remote` を実行してはいけない。作業ブランチでは `scripts/check-probe-migration-history.sh` を追加し、0064が記録済みなのに0061〜0063が未記録の場合だけでなく、migration記録と実テーブル／必須カラムが両方向で食い違う場合にもpending migration適用前に停止するガードを `.github/workflows/eagleeye-d1-apply-pending-migrations.yml` に追加した。CIでは同スクリプトの `bash -n` とガード契約テストを実行する。既に0064が適用済みか、テーブル／列が手動作成済みかを確認し、必要なら既存migrationの再実行ではなく安全なreconciliation手順を設計する。workflow `eagleeye-d1-apply-pending-migrations.yml` は保留migrationを一括適用するため、現状のまま手動起動しない。
+3. **API Poolリース予備枠**：手元で同じSQL条件をSQLiteに再現した逐次シミュレーションでは、3キー中2キーをリースした後に追加リースを拒否し、1キーが未リースで残ることを確認した。ただしこれは本番D1・同時リクエストの実測ではない。Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。通常コマンドは非Mightyキーを優先し、確認済みMightyキーが存在する場合は `reserveMightyKeys: 1` で最低1本をMighty必須処理向けに残す。Mighty必須コマンドはMighty確認済みキーだけを候補にし、その利用可能キーも最低1本残す。D1履歴の `key_source` には `pool_type` を記録する。SQLiteで再現したSQLシミュレーションでは通常／Mighty限定の候補選択、bind数、予備枠を確認したが、本番D1・実同時実行の証明ではない。予備枠のためにリースできない場合はバッチを中断し、項目をキューに戻して履歴から再開できるようにした。
 4. **旧専用キーmigration**：runtimeコードと `src/mightpulse-probe.js` から専用キー管理機能は削除済み。0062と0064の旧テーブル／監査列は既存migration履歴との依存があるため残している。runtimeがこれらを参照しないことをテストで維持し、migration順序を確認する前に削除・改変しない。
 5. **秘密情報保護**：成功・失敗・保存失敗・R2失敗のすべてでAPIキー／Authorization／token等がAPIレスポンス、R2記録、D1メタデータに出ないことをテストする。Probeの保存エラーも `safeProbeErrorMessage` でマスクする変更を追加済み。
 6. **Mighty判定**：`/kvk/matchups` のAPI契約は未確証。成功レスポンスだけでMighty確認済みにしてよいか、実データと仕様の裏付けが必要。失敗時は `UNCONFIRMED` とし、キーを自動無効化しない。
