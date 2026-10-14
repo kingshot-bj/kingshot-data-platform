@@ -3977,12 +3977,15 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
     });
 
     const safePayload = redactProbeSecrets(payload);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:spec.path,query:spec.query||{},payload:safePayload,httpStatus:result.status,actorRole:actor?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
     const archiveRecord = {
       request_id: crypto.randomUUID(), user_id: actor?.user_id || null, actor_discord_id: actor?.discord_id || null, actor_label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), actor_role: actor?.role || null, command_type: spec.targetType, endpoint: spec.endpoint,
       query: spec.query, status: "SUCCESS", http_status: result.status,
       elapsed_ms: responseReceivedAt - requestStartedAt,
       started_at: new Date(requestStartedAt).toISOString(), completed_at: new Date(responseReceivedAt).toISOString(),
-      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload)
+      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave
     };
     let archive = null;
     try { archive = await archiveMightPulseProbeRecord(env, archiveRecord); }
@@ -4016,6 +4019,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
         diagnostic_payload: redactProbeSecrets(diagnosticPayload),
         raw_payload: safePayload,
         field_dictionary: buildProbeFieldDictionary(safePayload),
+        production_save: productionSave,
         archive,
         timestamp_like_fields: timestampFields,
         response_sha256: responseHash,
@@ -4250,6 +4254,9 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     });
     const completedAt = Date.now();
     const safePayload = redactProbeSecrets(result.data);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload:safePayload,httpStatus:result.status,actorRole:guard?.auth?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:result.status,
@@ -4276,7 +4283,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       query: command.query, pool_type: lease.pool_type, http_status: result.status,
       request_started_at_iso: record.started_at, response_received_at_iso: record.completed_at,
       elapsed_ms: record.elapsed_ms, payload_keys: safePayload && typeof safePayload === "object" && !Array.isArray(safePayload) ? Object.keys(safePayload) : [],
-      raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), response_sha256: await sha256HexForProbe(safePayload), archive
+      raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave, response_sha256: await sha256HexForProbe(safePayload), archive
     }});
   } catch (error) {
     const status = Number(error?.status || 0);
@@ -4314,6 +4321,76 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     if (lease && !leaseReleased) { try { await releaseProbeApiKey(env, lease); } catch {} }
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
+}
+
+function identifyKnownProbeCommand(path, query = {}) {
+  const normalizedPath = String(path || "");
+  const include = String(query?.include || "base");
+  const player = normalizedPath.match(/^\/players\/([^/]+)$/);
+  if (player) {
+    const idType = String(query?.id_type || "");
+    if (idType === "uid") return { id:"player_uid", params:{uid:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (include === "base,heroes,ranks,gov_gear") return { id:"player_full", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (include === "ranks" || include === "base,ranks") return { id:"player_ranks", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (include === "base") return { id:"player_base", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+  }
+  const ranking = normalizedPath.match(/^\/kingdoms\/(\d+)\/ranks$/);
+  if (ranking && query?.board && KINGDOM_RANKING_BOARDS.includes(String(query.board))) {
+    return { id:"kingdom_rank_board", params:{kid:ranking[1],board:String(query.board),limit:Math.min(100,Math.max(1,Number(query.limit)||100))}, kind:"KINGDOM_RANKING" };
+  }
+  return null;
+}
+
+async function persistKnownProbeResponse(env, { path, query = {}, payload, httpStatus = 200, commandId = null, actorRole = null } = {}) {
+  if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
+  }
+  const identified = commandId ? { id:commandId, kind:commandId.startsWith("player_") ? "PLAYER" : commandId==="kingdom_rank_board" ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
+  if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
+  const safePayload = redactProbeSecrets(payload);
+  const sourceObservedAt = getMightPulseSourceTimestamp(safePayload);
+  const now = Math.floor(Date.now()/1000);
+
+  if (identified.kind === "PLAYER") {
+    const playerPayload = safePayload.player && typeof safePayload.player === "object" ? safePayload.player : safePayload;
+    const governorId = normalizeGovernorId(playerPayload.governor_id ?? playerPayload.fid ?? safePayload.governor_id ?? identified.params?.governor_id ?? path.match(/^\/players\/([^/]+)$/)?.[1]);
+    if (!governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISSING" };
+    const pathMatch=String(path||"").match(/^\/players\/([^/]+)$/);
+    const requestedId=identified.params?.governor_id || (pathMatch&&String(query?.id_type||"")!=="uid"?decodeURIComponent(pathMatch[1]):null);
+    if (requestedId && identified.id !== "player_uid" && normalizeGovernorId(requestedId) !== governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISMATCH" };
+    const observationData = observationEnvelope({ endpoint:"/players/:governor_id", httpStatus:Number(httpStatus)||200, raw:safePayload, sourceObservedAt });
+    const savedObservation = await saveApiObservation(env.DB,observationData);
+    const observation = { ...observationData, observation_id:savedObservation.observation_id, payload:safePayload };
+    const existing = await getPlayer(env.DB,governorId);
+    await materializePlayer(env.DB,observation,existing,env.ARCHIVE,env.HISTORY_STORAGE_MODE);
+    const heroPayload = Array.isArray(safePayload.heroes) ? safePayload.heroes : Array.isArray(playerPayload.heroes) ? playerPayload.heroes : [];
+    if (heroPayload.length) { try { await queueHeroIconCandidates(env.DB,heroPayload,value=>localizeHeroName(value)); } catch (error) { console.error("probe_hero_icon_queue_failed",error?.message||error); } }
+    const ranks = playerPayload.ranks || safePayload.ranks;
+    let rankSnapshotSaved=false;
+    if (ranks && typeof ranks==="object" && !Array.isArray(ranks) && Object.keys(ranks).length) {
+      const visibilitySettings=await getPlayerVisibilitySettings(env.DB);
+      const role=String(actorRole||"ADMIN").toUpperCase();
+      const ranksVisible=visibilityEnabled(visibilitySettings,"ranks_core",role)||visibilityEnabled(visibilitySettings,"ranks_leaderboards",role);
+      if (ranksVisible) {
+        await savePlayerRankSnapshot(env.DB,{governorId,uid:playerPayload.uid??safePayload.uid??null,kid:playerPayload.kid??safePayload.kid??null,ranks,observedAt:observation.observed_at,sourceObservedAt:observation.source_observed_at??null,sourceObservationId:observation.observation_id,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE});
+        rankSnapshotSaved=true;
+      }
+    }
+    return { saved:true,destination:rankSnapshotSaved?"API_OBSERVATIONS+PLAYER_CURRENT+PLAYER_RANK_SNAPSHOTS":"API_OBSERVATIONS+PLAYER_CURRENT",observation_id:observation.observation_id,governor_id:governorId,rank_snapshot_saved:rankSnapshotSaved };
+  }
+  if (identified.kind === "KINGDOM_RANKING") {
+    const pathMatch=String(path||"").match(/^\/kingdoms\/(\d+)\/ranks$/);
+    const kid=Number(identified.params?.kid ?? pathMatch?.[1]);
+    const board=String(identified.params?.board||query?.board||"");
+    if (!Number.isInteger(kid)||kid<0||!KINGDOM_RANKING_BOARDS.includes(board)) return {saved:false,destination:"R2",reason:"RANKING_TARGET_INVALID"};
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
+    const entries=extractKingdomRankingEntries(safePayload).slice(0,100);
+    if (!entries.length) return {saved:false,destination:"R2",reason:"RANKING_ENTRIES_EMPTY"};
+    const comparison=await getKingdomRankingChanges(env.DB,{kid,board,entries,observedAt:now});
+    const savedRows=await saveKingdomRankingBoard(env.DB,{kid,board,entries:comparison.changedEntries,removedTargets:comparison.removedTargets,entriesAlreadyFiltered:true,observedAt:now,sourceObservedAt,checkedAt:now,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE});
+    return {saved:true,destination:"KINGDOM_RANKING_CURRENT+HISTORY",kid,board,rows_saved:savedRows};
+  }
+  return {saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
 }
 
 function probeResponseCount(payload) {
@@ -4363,6 +4440,9 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
     });
     const completedAt = Date.now();
     const payload = redactProbeSecrets(result.data);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload,httpStatus:result.status,commandId:item.command_id,actorRole:guard?.auth?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.endpoint, targetType:command.category, targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_BATCH", httpStatus:result.status,
@@ -4387,7 +4467,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       sequence_no:item.sequence_no,trigger_reason:item.trigger_reason||"MANUAL",
       discovered_from:item.discovered_from||null,endpoint:command.endpoint,path:command.path,
       query:command.query,http_status:result.status,elapsed_ms:record.elapsed_ms,
-      response_count:record.response_count,field_count:record.field_dictionary.length,
+      response_count:record.response_count,field_count:record.field_dictionary.length,production_save:productionSave,
       archive,discovered_references:extractProbeReferences(payload,{maxReferences:10})
     };
   } catch (error) {
