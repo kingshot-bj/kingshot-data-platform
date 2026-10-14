@@ -90,7 +90,7 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 ## 6. 現在のブランチ状態とファイルSHA
 
 作業ブランチ：`feat/mightpulse-probe-expansion-2026-10-14`  
-直近の確認対象コミット：`e83e5bbdece376d48779f5e7596a8ffffb83b383`（ファイル更新コミット。PR head SHA は最新状態を再確認すること）
+HEADコミットSHAは文書更新でも進むため固定値を記載しない。再開時はPR #63の最新 `head_sha` とブランチHEADを再取得すること。
 
 直近のファイルblob SHA：
 - `src/index.js`: `a21ca0d1efeab42c05f09958e9f6c387378e02a2`
@@ -113,7 +113,7 @@ SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最�
 
 1. **構文・テスト・CI**：commit `8c6251bfdf76f78c992cb15768c2288492004ac1` のGitHub Actions `MightPulse Probe checks` は成功。Workerモジュールの `node --check` とProbeテスト18件がすべて成功（18 pass / 0 fail）。この追記コミット後にCIが再実行されるため、最終HEADの結果も確認する。コンテナからGitHubへのネットワーク接続は利用できず、ローカル実行は行っていない。
 2. **Migration番号・本番D1ジャーナル（デプロイ阻害事項）**：mainには `migrations/0064_mightpulse_probe_key_audit.sql` が既に存在する一方、mainでは `0061`、`0062`、`0063` が見つからず、作業ブランチ側にある。0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` をALTERするため、リモートD1の `d1_migrations` と実テーブルを確認せずに `wrangler d1 migrations apply --remote` を実行してはいけない。既に0064が適用済みか、テーブル／列が手動作成済みかを確認し、必要なら既存migrationの再実行ではなく安全なreconciliation手順を設計する。workflow `eagleeye-d1-apply-pending-migrations.yml` は保留migrationを一括適用するため、現状のまま手動起動しない。
-3. **API Poolリース予備枠**：Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。SQLのCOUNTとUPDATEが並行リクエスト時にも予約枠を守るか、複数pool typeのbind数、Mighty限定時の候補選択、成功／失敗／例外時の解放をテストする。
+3. **API Poolリース予備枠**：手元で同じSQL条件をSQLiteに再現した逐次シミュレーションでは、3キー中2キーをリースした後に追加リースを拒否し、1キーが未リースで残ることを確認した。ただしこれは本番D1・同時リクエストの実測ではない。Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。SQLのCOUNTとUPDATEが並行リクエスト時にも予約枠を守るか、複数pool typeのbind数、Mighty限定時の候補選択、成功／失敗／例外時の解放をテストする。
 4. **旧専用キーmigration**：runtimeコードと `src/mightpulse-probe.js` から専用キー管理機能は削除済み。0062と0064の旧テーブル／監査列は既存migration履歴との依存があるため残している。runtimeがこれらを参照しないことをテストで維持し、migration順序を確認する前に削除・改変しない。
 5. **秘密情報保護**：成功・失敗・保存失敗・R2失敗のすべてでAPIキー／Authorization／token等がAPIレスポンス、R2記録、D1メタデータに出ないことをテストする。Probeの保存エラーも `safeProbeErrorMessage` でマスクする変更を追加済み。
 6. **Mighty判定**：`/kvk/matchups` のAPI契約は未確証。成功レスポンスだけでMighty確認済みにしてよいか、実データと仕様の裏付けが必要。失敗時は `UNCONFIRMED` とし、キーを自動無効化しない。
