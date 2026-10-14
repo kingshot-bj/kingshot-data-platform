@@ -116,8 +116,11 @@ async function claimApiPoolKey(db, {
   const contributorCondition = contributedByUserId
     ? " AND contributed_by_user_id = ?"
     : "";
+  const reserveMightyCondition = mightyOnly
+    ? " AND reserve_keys.mighty_capable = 1 AND reserve_keys.mighty_check_status = 'CONFIRMED'"
+    : "";
   const reserveCondition = reserve > 0
-    ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN') AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
+    ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN')" + reserveMightyCondition + " AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
     : "";
   const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?, leased_until = ?, lease_job_id = ?, lease_purpose = ?, lease_target_type = ?, lease_target_id = ?, updated_at = ? " +
     "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN')" + mightyCondition + contributorCondition + " AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
