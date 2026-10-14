@@ -119,9 +119,10 @@ test("embedded compare script keeps fetch option quotes escaped in both request 
 
   const second = source.indexOf("async function runCompareRefreshBatch(items,concurrency,worker,onProgress)");
   assert.ok(second >= 0);
-  const secondHelper = source.slice(second, second + 2200);
-  assert.ok(secondHelper.includes('cache:\\\"no-store\\\"'));
-  assert.ok(!secondHelper.includes('cache:"no-store"'));
+  // This helper is followed by load(); its embedded fetch is in load(), not in the helper body.
+  const compareScript = source.slice(second, second + 7000);
+  assert.ok(compareScript.includes('cache:\\\"no-store\\\"'));
+  assert.ok(!compareScript.includes('cache:"no-store"'));
 });
 test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
   const source = await read("src/index.js");
