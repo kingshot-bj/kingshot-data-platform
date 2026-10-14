@@ -74,7 +74,7 @@ function enhance(){
   const values=card.querySelector('.mystic-values');let view=card.querySelector('.ee-chart-view');
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
-  if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent=entries.some(e=>e.stage)?'ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。':'比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
+  if(entries.some(e=>e.stage)){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。';view.appendChild(msg);return}if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
   const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
   if(mode==='ring'){
    const ring=document.createElement('div');ring.className='ee-split-ring';
