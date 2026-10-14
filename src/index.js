@@ -4562,6 +4562,10 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
     if (!batchId) return json({ok:false,error:"BATCH_ID_REQUIRED"},400);
     const row=await env.DB.prepare("SELECT * FROM mightpulse_probe_batches WHERE batch_id=? LIMIT 1").bind(batchId).first();
     if (!row) return json({ok:false,error:"PROBE_BATCH_NOT_FOUND"},404);
+    // History is shared for visibility, but execution/resume belongs to the creator.
+    if (!userId || !row.user_id || String(row.user_id)!==String(userId)) {
+      return json({ok:false,error:"PROBE_BATCH_OWNER_MISMATCH",message:"このバッチを再開できるのは作成した管理者のみです。"},403);
+    }
     const now=nowSeconds();
     const claim=await env.DB.prepare(
       "UPDATE mightpulse_probe_batches SET lease_token=?,lease_until=?,updated_at=? WHERE batch_id=? AND (lease_until IS NULL OR lease_until<=?) RETURNING batch_id"
