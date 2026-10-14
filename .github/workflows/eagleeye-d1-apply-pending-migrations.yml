@@ -123,3 +123,29 @@ jobs:
           set -euo pipefail
           wrangler d1 execute eagleeye-db --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_semaphore_slots';"
           wrangler d1 execute eagleeye-db --remote --command "SELECT semaphore_key, COUNT(*) AS slot_count FROM collection_semaphore_slots GROUP BY semaphore_key;"
+
+      - name: Verify MightPulse Probe schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          TEST_JSON="$(wrangler d1 execute eagleeye-db --remote --json --command "SELECT
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mightpulse_probe_runs') AS runs_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mightpulse_probe_keys') AS keys_table,
+            (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='mightpulse_probe_batches') AS batches_table,
+            (SELECT COUNT(*) FROM pragma_table_info('mightpulse_probe_runs') WHERE name IN ('batch_id','sequence_no','discovered_from','response_count','retry_count','save_destination','key_source','key_id','key_owner_user_id','actor_discord_id','actor_label','actor_role')) AS run_columns,
+            (SELECT COUNT(*) FROM pragma_table_info('mightpulse_probe_keys') WHERE name IN ('encrypted_key','mighty_capable','registered_by_user_id','lease_id','leased_until')) AS key_columns,
+            (SELECT COUNT(*) FROM pragma_table_info('mightpulse_probe_batches') WHERE name IN ('pending_json','seen_json','next_sequence','concurrency','max_commands')) AS batch_columns;")"
+          node - <<'NODE' "$TEST_JSON"
+          const payload = JSON.parse(process.argv[2]);
+          const row = payload?.[0]?.results?.[0];
+          if (!row) throw new Error("Could not read MightPulse Probe schema verification result.");
+          for (const key of ["runs_table","keys_table","batches_table"]) {
+            if (Number(row[key]) !== 1) throw new Error("Probe schema verification failed: " + key + "=" + row[key]);
+          }
+          if (Number(row.run_columns) !== 12) throw new Error("Probe run metadata columns missing: " + row.run_columns + "/12");
+          if (Number(row.key_columns) !== 5) throw new Error("Probe key columns missing: " + row.key_columns + "/5");
+          if (Number(row.batch_columns) !== 5) throw new Error("Probe batch columns missing: " + row.batch_columns + "/5");
+          console.log("MightPulse Probe schema verification passed.");
+          NODE
