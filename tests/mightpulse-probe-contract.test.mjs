@@ -77,8 +77,11 @@ test("D1 migration workflow blocks inconsistent Probe migration history before a
   const workflow = await read(".github/workflows/eagleeye-d1-apply-pending-migrations.yml");
   assert.ok(workflow.includes("Guard against Probe migration ordering drift"));
   assert.ok(workflow.includes("0064_mightpulse_probe_key_audit.sql"));
-  assert.ok(workflow.includes("const auditRecorded = names.has"));
-  assert.ok(workflow.includes("if (auditRecorded && missingBase.length)"));
+  assert.ok(workflow.includes('const auditName = "0064_mightpulse_probe_key_audit.sql"'));
+  assert.ok(workflow.includes("if (names.has(auditName) && missingBase.length)"));
+  assert.ok(workflow.includes("const batchColumns ="));
+  assert.ok(workflow.includes("const auditColumns ="));
+  assert.ok(workflow.includes("const leaseColumns ="));
   assert.ok(workflow.includes("Stop before applying pending migrations"));
 });
 
