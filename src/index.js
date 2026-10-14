@@ -4579,6 +4579,7 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
 
   const results=[];
   const inFlight=new Map();
+  let poolUnavailable=false;
   let saveChain=Promise.resolve();
   const saveProgress=async(state,lastError=null)=>{
     const pending=[...queue,...inFlight.values()];
@@ -4620,20 +4621,41 @@ async function handleMightPulseProbeBatchApi(request, env, guard, body) {
     await saveProgress("RUNNING");
     const worker=async()=>{
       while(true) {
+        if(poolUnavailable) return;
         const item=queue.shift();
         if(!item) return;
         if(!item.sequence_no) item.sequence_no=nextSequence++;
         inFlight.set(item.sequence_no,item);
         await saveProgress("RUNNING");
         const result=await executeCatalogProbeItem(env,guard,batchId,item);
-        results.push(result);
         inFlight.delete(item.sequence_no);
+        if(!result?.ok && result?.error==="NO_API_POOL_KEY_AVAILABLE") {
+          // No upstream request was made. Keep the item queued so the batch can
+          // resume when the shared API Pool has capacity again.
+          queue.unshift(item);
+          poolUnavailable=true;
+          results.push({...result,status:"WAITING_FOR_API_POOL"});
+          await saveProgress("RUNNING","NO_API_POOL_KEY_AVAILABLE");
+          return;
+        }
+        results.push(result);
         completed++;
         scheduleDiscovered(result,item);
         await saveProgress("RUNNING");
       }
     };
     await Promise.all(Array.from({length:concurrency},()=>worker()));
+    if(poolUnavailable) {
+      await saveProgress("INTERRUPTED","NO_API_POOL_KEY_AVAILABLE");
+      leaseAcquired=false;
+      return json({
+        ok:false,batch_id:batchId,state:"INTERRUPTED",waiting_for_api_pool:true,
+        completed_commands:completed,total_commands:totalCommands,concurrency,
+        error:"NO_API_POOL_KEY_AVAILABLE",
+        message:"通常処理向けのAPIキー予備枠を維持するため、Probeバッチを一時停止しました。API Poolに空きができたら履歴から再開できます。",
+        results
+      },503);
+    }
     await saveProgress("COMPLETED");
     leaseAcquired=false;
     return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,concurrency,results});
