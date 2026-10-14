@@ -45,7 +45,7 @@ test("archive writes raw record to R2 and only metadata to D1", async () => {
   });
   assert.equal(result.r2_saved, true);
   assert.equal(result.metadata_saved, true);
-  assert.match(savedKey, /^mightpulse-probe\\/);
+  assert.ok(savedKey.startsWith("mightpulse-probe/"));
   assert.equal(JSON.parse(savedBody).raw_payload.player.api_key, "[REDACTED]");
   assert.match(insertSql, /INSERT INTO mightpulse_probe_runs/);
   assert.ok(!insertSql.includes("raw_payload"));
