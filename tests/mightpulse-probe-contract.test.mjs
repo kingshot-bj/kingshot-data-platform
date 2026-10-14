@@ -109,15 +109,21 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
 });
 
 
-test("embedded compare script keeps fetch options escaped inside its source string", async () => {
+test("embedded compare script escapes fetch option quotes across helper functions", async () => {
   const source = await read("src/index.js");
-  const start = source.indexOf("async function fetchJsonWithTimeout(url,options,timeoutMs)");
-  assert.ok(start >= 0);
-  const helper = source.slice(start, start + 320);
-  assert.ok(helper.includes('cache:\\"no-store\\"'));
-  assert.ok(!helper.includes('cache:"no-store"'));
+  const helpers = [
+    "async function fetchJsonWithTimeout(url,options,timeoutMs)",
+    "async function runCompareRefreshBatch(items,concurrency,worker,onProgress)"
+  ];
+  for (const marker of helpers) {
+    const start = source.indexOf(marker);
+    assert.ok(start >= 0, "missing embedded compare helper: " + marker);
+    const nextFunction = source.indexOf("async function ", start + marker.length);
+    const helper = source.slice(start, nextFunction > start ? nextFunction : start + 5000);
+    assert.ok(helper.includes('cache:\\\"no-store\\\"'), "missing escaped cache option in " + marker);
+    assert.ok(!helper.includes('cache:"no-store"'), "unescaped cache option in " + marker);
+  }
 });
-
 test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
   const source = await read("src/index.js");
   assert.ok(source.includes("const playerCommandIds = new Set("));
