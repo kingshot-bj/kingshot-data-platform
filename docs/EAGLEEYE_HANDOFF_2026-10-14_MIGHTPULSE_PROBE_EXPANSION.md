@@ -87,113 +87,37 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 - tests/mightpulse-probe.test.mjs：手入力検証、秘密情報マスク、R2/D1アーカイブ、コマンド台帳、辞書、参照抽出などの単体テストを追加
 - .github/workflows/mightpulse-probe-checks.yml：Node 22で node --check と node --test tests/mightpulse-probe.test.mjs を実行するワークフロー
 
-## 6. 直近で取得確認できたファイルSHA
+## 6. 現在のブランチ状態とファイルSHA
 
-作業ブランチからの直近取得時点：
-- src/index.js: dca6cb29c1f48daed80366c764fcf72aafd4389f
-- src/mightpulse-probe.js: ed7b29be16964490ac41bd1d5eb7c627f9299ed6
-- src/api-pool.js: 4edeaf7c32006b8ea5a6febb6fb7bc4ae3a056e3
-- tests/mightpulse-probe.test.mjs: 2babd5a56c877a7e89bb0f4549ea18e7f609b8f2
-- migrations/0061_mightpulse_probe_runs.sql: fe959d623d2d82960c683e1ef4d2b58b69975c04
-- migrations/0062_mightpulse_probe_keys.sql: e70adb01c2e8f720578baac141820ebc3d465708
-- migrations/0063_mightpulse_probe_batches.sql: 64ca41c2ad77a87286e03000afd4f3a669338c28
-- .github/workflows/mightpulse-probe-checks.yml: 86bfb659cc9959ef778940901fb8190702265b74
+作業ブランチ：`feat/mightpulse-probe-expansion-2026-10-14`  
+直近の確認対象コミット：`e83e5bbdece376d48779f5e7596a8ffffb83b383`（ファイル更新コミット。PR head SHA は最新状態を再確認すること）
 
-SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは限らない。次スレでブランチHEADと最新CIを再取得すること。
+直近のファイルblob SHA：
+- `src/index.js`: `a21ca0d1efeab42c05f09958e9f6c387378e02a2`
+- `src/mightpulse-probe.js`: `2f1b27f420422beecd1bb8bdba9b8f6f19a28870`
+- `src/api-pool.js`: `70f10dbbdb88978f5102a4c48c2d9263cd604d3b`
+- `tests/mightpulse-probe.test.mjs`: `f838ff7d9110907254010375173a229101035930`
+- `tests/mightpulse-probe-contract.test.mjs`: `c2c2b7c75a2b3b0f6819f3c2111b6be60bf45ff1`
+- `migrations/0061_mightpulse_probe_runs.sql`: `fe959d623d2d82960c683e1ef4d2b58b69975c04`
+- `migrations/0062_mightpulse_probe_keys.sql`: `e70adb01c2e8f720578baac141820ebc3d465708`
+- `migrations/0063_mightpulse_probe_batches.sql`: `6c34bbb5a9d2f06c74e1f8c739256bbbd4c0884d`
+- `migrations/0064_mightpulse_probe_key_audit.sql`: `9af372dc598ca705f2fe7416714250b58de6b0ba`
+- `migrations/0065_mightpulse_probe_batch_lease.sql`: `a944bca3f6ddc1c9fe9c0a7d968153e4a662acbe`
+- `.github/workflows/mightpulse-probe-checks.yml`: `81be6314aa0a0c276c9c79fa53b0f65e045fca15`
+
+SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最新のPR head/branch HEADは作業再開時に再取得すること。
 
 ## 7. 未完了・最優先で監査すべき点
 
-**今のコードは初期実装段階。テスト・本番デプロイ済みとは扱わない。**
+**現時点でmainへのマージ・本番デプロイ・本番migration適用は未完了。CI成功も未確認。**
 
-1. 構文・CI再確認：初回のCIでテストのアーカイブキーassertionに問題が見つかり修正した。その後の最新CI成功は未確認。直近の全編集後に再実行・結果確認する。
-2. SQLバインド数／migration：archiveMightPulseProbeRecordのD1 INSERT列とbind引数の数が合っているか、0061→0062→0063の順で適用可能かを確認。既存migration番号の競合もmainと比較する。Cloudflare D1に未適用のままデプロイしない。
-3. API Poolキーの暗号化・共有リース：Probe専用キー処理は削除済み。既存API Poolの暗号化とリース処理、最低1キーの予備枠、同時実行時の原子性、返却処理を検証。
-4. Mighty権限チェック：現在 /kvk/matchups を使ってMighty権限を判定する仮実装。API契約上そのendpointが妥当か、401/403/429/5xxをどう区別するか確認。403でもキー本体を無効化しないこと。
-5. API Pool共有・貸出監査：現実装は leaseApiKey(... poolTypes: ["SYSTEM_GENERAL","SYSTEM_WATCHLIST","USER_CONTRIBUTED"], reserveAvailableKeys: 1) を使用する。通常コマンドはmightyOnly:false、Mighty必須コマンドはmightyOnly:true。API Poolの状態・Mighty確認・クールダウン・リース期限・成功／失敗処理を維持し、同時Probe実行でも通常ユーザー用の最低1キーを残せることを確認する。キーの返却・失敗時のクールダウンとリース期限切れを監査する。
-6. 本番データ汚染防止：Probe結果を既存の本番保存ルートへ書き込まない。既存データ反映の要件は「既存保存ロジックに対応していることを確認した場合のみ」。今のバッチ処理はR2調査保存を基本とし、通常のEagleEye保存への安全な振り分けはまだ完成していない。
-7. バッチの再開ロジック：pending_json / seen_json / inFlight の保存タイミング、並行ワーカーの競合、途中でWorkerが停止した場合のin-flight再投入、同じバッチIDを別ユーザーが再開できないこと、同じバッチが並行実行されないことを確認。D1の状態更新が重複／逆行しないようにする。
-8. バッチ応答サイズ：一括APIが全結果を1レスポンスに返す構造は、R2に大きいJSONを保存してもAPIレスポンスが肥大化しうる。レスポンスには概要と実行IDのみを返し、詳細は履歴からR2読込にする方式を検討。D1は大きなpayloadを保持しない。
-9. カテゴリ一括の対象引数：全コマンドで同じパラメータを使うため、governor_id / kid / tagが空なら一部はSKIPPEDになる。UIに必須入力を明示し、未入力を明確に表示。カテゴリ一括の前に対象パラメータを検証する。
-10. カタログは13件のみ：公式API全件・EagleEye既存取得処理全件を網羅していない。既存 src/mightpulse.js の各関数・各endpoint、ドキュメント、既存呼び出し箇所を照合してコマンド台帳を完成させる。未確認endpointを公式と断言しない。
-11. Mighty判定とカタログの権限：コマンドごとの requiresMighty が暫定。実際のAPI契約に基づいて修正する。
-12. 履歴UIの動作：履歴APIはD1メタデータを返し、詳細をR2から読み込む実装を追加。HTMLエスケープ、失敗記録の開き方、JSONの秘密マスク、存在しないR2オブジェクトの表示を確認。
-13. JSON export / copy：UIのコピー・ダウンロードが成功／失敗時に正しく動くか、実ブラウザで確認。
-14. R2失敗：R2失敗時にD1記録を残し、UIに「未保存」を正しく表示。生データが保存できていないのに保存成功と表示しない。
-15. キー登録時の疎通テスト：登録前の /kingdoms がそのキーで通常権限の有効性を確認できるか、API仕様を確認。疎通失敗の際にキーを誤って登録・破棄しない。
-16. 手入力APIの制約：GET専用で相対パスのみ。最大パス長、queryのscalar値制限、外部URL・host-relative・traversal拒否をテスト。ユーザーが入力した任意パスの監査・レート制限も必要。
-17. 監査記録：user ID、Discord ID、role、コマンド、時刻、状態、HTTP status、R2 object keyを必要な範囲で記録。APIキーそのもの、Authorizationヘッダー、secret queryは保存しない。
-18. 同時実行／API制限：初期値2、上限4は仮。API Poolの既存lease・cooldown・rate limitと矛盾しないこと。429はcooldown、403は自動無効化なし。
-19. 実装候補リスト：新規発見フィールドを既存機能と紐づける候補テーブル／JSON管理はまだ未実装。自動コード変更は禁止。
-20. Google Driveアーカイブ：長期保管・成功検証・削除禁止ルールは未実装。
-21. EagleEye本番取得処理との照合：src/mightpulse.js、API pool、保存処理を確認し、各既存取得をProbeのcatalog/processに紐付ける。既存のD1読み込みを無駄に増やさない。
-
-## 8. セキュリティ・運用上の注意
-
-- ProbeはAdmin以上。Probe専用キー登録・無効化UI/APIは廃止し、Owner専用のキー管理画面を設けない。
-- Probeは既存API Poolの SYSTEM_GENERAL / SYSTEM_WATCHLIST / USER_CONTRIBUTED をすべて利用する。
-- Probeのリースでは `reserveAvailableKeys: 1` を指定し、共通claim SQLで通常ユーザー／定期処理向けに最低1本の利用可能キーを残す。利用可能キーが1本しかない場合はProbeがそれを借りず、通常処理向けに残す。
-- Mighty必須コマンドはMighty確認済みキーに限定。通常コマンドはMighty専用にしない。EagleEye利用時点で提供済みとみなし、Probe専用の追加同意フラグは作らない。
-- 403はMighty権限不足の可能性があり、キーが無効とは限らない。自動停止しない。
-- APIキー本体はログ・レスポンス・R2/D1の実行メタデータに残さない。
-- D1に生レスポンスを入れない。生JSONはR2。履歴用D1列は小さいメタデータだけ。
-- API endpointやレスポンス構造の推測を公式仕様として書かない。取得できなかったものを勝手に補完しない。
-- 本番へのマージ・デプロイ前に、CI成功、migrationの順序、API契約、権限、R2/D1保存、実行履歴のテストを済ませる。
-
-## 9. 次スレでの具体的な作業順
-
-1. 作業ブランチのHEAD、draft PR、最新GitHub Actions結果を取得。
-2. 変更差分を監査。src/index.jsは巨大ファイルなので、関係箇所を関数単位で読み、置換ミス・重複処理・閉じ括弧を確認。
-3. node --check src/index.js、node --check src/mightpulse.js、node --check src/mightpulse-probe.js と node --test tests/mightpulse-probe.test.mjs を通す。CIログも確認。
-4. 0061/0062/0063 migrationの既存番号・SQL・bind数を確認。
-5. API Poolの leaseApiKey / recordApiPoolSuccess / recordApiPoolFailure / releaseApiLease の実際の引数仕様と、通常キー／Mighty確認済みキーの選別・リース解放を監査。
-6. カタログを既存 src/mightpulse.js と照合し、公式endpointと内部取得プロセスを別のリストにする。
-7. 手入力単発、カテゴリ一括、全件一括、再開、失敗保存、R2読込、キー権限のテストを追加。
-8. 新規発見データの実装候補台帳を追加。
-9. ユーザーへ10%刻みで進捗を報告（実装タスク）。Previewを確認手段として提案しない。
-10. ユーザーの意図に沿ってmainへマージしCloudflareへデプロイする段階に進むのは、テスト・権限・migrationの安全性を確認してから。実デプロイの結果を明示し、ユーザーの本番画面確認を待つ。
-
-## 10. 次スレに貼る開始メッセージ
-
-この引き継ぎMDを読んで、EagleEyeのMightPulse Probe拡張を続けてください。リポジトリは kingshot-bj/kingshot-data-platform、作業ブランチは feat/mightpulse-probe-expansion-2026-10-14 です。mainへのマージ・Cloudflareデプロイはまだしていません。まず現在のブランチHEAD、draft PR、GitHub Actionsの最新結果を確認し、差分・構文・テスト・migration・API Poolの既存キー利用条件・Mighty判定・リース処理を監査してください。特に手入力コマンド、単発／カテゴリ／全件一括、参照先の自動調査、R2保存・D1最小メタデータ、履歴からの再開、キー秘密情報の保護を壊さないでください。未確認のAPI仕様を推測で確定せず、既存本番データの保存ロジックへ無条件で書き込まないでください。進捗は10%刻みで報告してください。
-
-## 11. 最新作業追記（2026-10-14）
-
-ユーザー確定方針：
-- USER_CONTRIBUTEDキーはEagleEye利用時点で提供済み・利用同意済みとする。Probe専用の追加貸出同意フラグは作らない。
-- Probe専用キーを廃止し、既存API Poolの3種類をすべて候補にする。Probeの貸出時は最低1本を通常処理向けに残す。
-- Mighty必須コマンドだけMighty確認済みキーに限定する。通常コマンドはMighty必須にしない。
-- mainマージ・本番デプロイは未実施。
-
-追加修正：
-- `migrations/0065_mightpulse_probe_batch_lease.sql` を追加。バッチの `lease_token` / `lease_until` で同一バッチの同時再開を抑止し、180秒経過後の再取得を可能にした。
-- `src/index.js` の通常コマンド／Mighty必須コマンドのキー選別を分離。手入力はMighty必須を既定にしない。
-- 本番プレイヤー保存では、リクエストパスからIDを推測せず、レスポンス内の明示的なプレイヤーIDを要求する。
-- `src/mightpulse-probe.js` でR2保存失敗時の保存先を `NONE` または `PRODUCTION` とし、R2/D1のエラー情報を固定コード化して内部エラーメッセージを履歴に残さないよう修正。
-- `tests/mightpulse-probe-contract.test.mjs` と `tests/mightpulse-probe.test.mjs` に排他制御、キー選別、ID確認、R2失敗時の記録を検証するチェックを追加。
-- `docs/MIGHTPULSE_PROBE_CANDIDATES.md` を追加。実測した候補だけを記録し、未確認フィールドを推測で補完しない運用ルールを明記。
-- PR #63の説明を更新し、最新CIが未確認であることを明記。
-
-最新検証状態：
-- 作業ブランチ上でファイル更新を確認済み。
-- 最新コミットに対するGitHub Actions run / statusの照会結果は空で、CI成功は未確認。
-- この実行環境からGitHub cloneを試みたが、ネットワーク名前解決に失敗し、ローカルの `node --check` / `node --test` は実行できていない。
-- したがって、構文・単体テスト・D1実環境migrationは未検証。mainへのマージ、本番migration適用、Cloudflareデプロイは行わない。
-
-
-## 12. 追加追記（2026-10-14：共有Pool／migration監査）
-
-実装変更コミット：
-- `31b8cbe693d0d603544ccafc5e3e9a8479819cdc` — 既存API Pool共用、最低1キー予約、専用キーUI/API除去
-- `2f40568b7a5564e91f0249d7f6915b94b993b577` — Probeエラーハンドラーの未定義 `lease` 参照を修正
-- `78b7496ebcaaa90237579b1a7643261dd808e256` — 共有Poolポリシーのテスト更新
-- `172affd80d33375626e3c57bdfd9a4117d5eff91` — 予約枠SQLの契約テストとPR説明を更新
-
-Migrationに重大な確認事項：
-- mainのmigrationディレクトリには `0064_mightpulse_probe_key_audit.sql` が存在する一方、`0061`〜`0063` は存在しない。作業ブランチには `0061`〜`0065` が存在する。
-- mainの0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` に対してALTERを行うが、main上のmigration一覧だけではその元テーブルや追加カラムがどのmigrationで作成・適用されたか分からない。
-- リモートD1のmigration journalと実テーブルのカラムを確認するまで、migrationを適用・デプロイしない。0061〜0063が過去に適用済みでファイルだけ欠落したのか、未適用なのかを断定しない。重複ALTERやmigration順序問題を解消してからマージする。
-
-最新検証状態：
-- branch HEAD `172affd80d33375626e3c57bdfd9a4117d5eff91` のGitHub Actions runとcombined statusは照会結果が空で、CI成功は未確認。
-- この環境ではGitHub clone／ローカルNodeテストを実行できていない。構文・単体テスト・実D1 migrationは未検証。
-- mainマージ、本番migration適用、Cloudflareデプロイは未実施。
+1. **構文・テスト・CI**：最新ファイルの `node --check` と `node --test tests/mightpulse-probe*.test.mjs` の成功結果が必要。GitHub Actions lookupでは最新コミットの実行結果が確認できていない。コンテナからGitHubへのネットワーク接続も利用できず、ローカル実行は未完了として扱う。
+2. **Migration番号・本番D1ジャーナル（デプロイ阻害事項）**：mainには `migrations/0064_mightpulse_probe_key_audit.sql` が既に存在する一方、mainでは `0061`、`0062`、`0063` が見つからず、作業ブランチ側にある。0064は `mightpulse_probe_keys` と `mightpulse_probe_runs` をALTERするため、リモートD1の `d1_migrations` と実テーブルを確認せずに `wrangler d1 migrations apply --remote` を実行してはいけない。既に0064が適用済みか、テーブル／列が手動作成済みかを確認し、必要なら既存migrationの再実行ではなく安全なreconciliation手順を設計する。workflow `eagleeye-d1-apply-pending-migrations.yml` は保留migrationを一括適用するため、現状のまま手動起動しない。
+3. **API Poolリース予備枠**：Probeは `SYSTEM_GENERAL`、`SYSTEM_WATCHLIST`、`USER_CONTRIBUTED` を共有し、`reserveAvailableKeys: 1` で最低1キーを残す。SQLのCOUNTとUPDATEが並行リクエスト時にも予約枠を守るか、複数pool typeのbind数、Mighty限定時の候補選択、成功／失敗／例外時の解放をテストする。
+4. **旧専用キーmigration**：runtimeコードと `src/mightpulse-probe.js` から専用キー管理機能は削除済み。0062と0064の旧テーブル／監査列は既存migration履歴との依存があるため残している。runtimeがこれらを参照しないことをテストで維持し、migration順序を確認する前に削除・改変しない。
+5. **秘密情報保護**：成功・失敗・保存失敗・R2失敗のすべてでAPIキー／Authorization／token等がAPIレスポンス、R2記録、D1メタデータに出ないことをテストする。Probeの保存エラーも `safeProbeErrorMessage` でマスクする変更を追加済み。
+6. **Mighty判定**：`/kvk/matchups` のAPI契約は未確証。成功レスポンスだけでMighty確認済みにしてよいか、実データと仕様の裏付けが必要。失敗時は `UNCONFIRMED` とし、キーを自動無効化しない。
+7. **本番データ汚染防止**：既存の本番保存ルートへ流すのは、コマンドID allowlist・レスポンス形状・プレイヤーID等を検証できるものだけ。未確認のコマンドやエラー応答はR2の調査記録のみとし、推測で保存しない。
+8. **バッチ再開・権限**：pending_json / seen_json / inFlightの保存タイミング、Worker停止時の再開、作成者照合、同一バッチの排他リース、Admin以上の実行権限をテストする。
+9. **APIコマンド網羅率**：カタログは全公式APIコマンドを網羅した完成版ではない。未知の仕様を推測で確定せず、実際に取得できたデータだけを記録する。
+10. **マージ・デプロイ**：上記すべてのテストとmigration事前確認が終わるまではPR #63をdraftのままにし、mainへのマージ、Cloudflare本番デプロイ、リモートmigration適用を行わない。
