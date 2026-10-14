@@ -4144,8 +4144,8 @@ function safeProbeErrorMessage(error, apiKey = null) {
   const secret = String(apiKey || "");
   if (secret) message = message.split(secret).join("[REDACTED]");
   message = message
-    .replace(/(authorization\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s,;]+/ig, "$1[REDACTED]")
-    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|credential)\\s*[:=]\\s*)[^\\s,;]+/ig, "$1[REDACTED]");
+    .replace(/(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+/ig, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|credential)\s*[:=]\s*)[^\s,;]+/ig, "$1[REDACTED]");
   return message.slice(0, 1000);
 }
 
