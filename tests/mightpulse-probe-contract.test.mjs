@@ -69,6 +69,15 @@ test("Probe schema migrations cover run history, legacy key schema, batches and 
   assert.ok(!probeModule.includes("mightpulse_probe_keys"));
 });
 
+test("D1 migration workflow blocks inconsistent Probe migration history before applying", async () => {
+  const workflow = await read(".github/workflows/eagleeye-d1-apply-pending-migrations.yml");
+  assert.ok(workflow.includes("Guard against Probe migration ordering drift"));
+  assert.ok(workflow.includes("0064_mightpulse_probe_key_audit.sql"));
+  assert.ok(workflow.includes("const auditRecorded = names.has"));
+  assert.ok(workflow.includes("if (auditRecorded && missingBase.length)"));
+  assert.ok(workflow.includes("Stop before applying pending migrations"));
+});
+
 test("Probe catalog separates official API commands and EagleEye internal retrievals", async () => {
   const source = await read("src/mightpulse-probe.js");
   assert.ok(source.includes('category:"EagleEye Retrieval"'));
