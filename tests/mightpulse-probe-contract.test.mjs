@@ -205,9 +205,6 @@ test("Probe UI runs catalog commands through the audited selected-command execut
     "data-run-catalog",
     "data-config-catalog",
     "configureCatalogCommand",
-    "manualPath').value=path",
-    "manualQuery').value=JSON.stringify(query,null,2)",
-    "manualMightyRequired').value=cmd.requiresMighty?'true':'false'",
     "batch_type:'selected'",
     "command_ids:[cmd.id]",
     "automatic_discovery:false",
@@ -272,4 +269,27 @@ test("Probe catalog groups commands into collapsed categories to reduce mobile p
   assert.ok(page.includes("Mighty専用API"));
   assert.ok(page.includes("catalog-group .group-items{grid-template-columns:1fr"));
   assert.ok(page.includes("term?' open':''"));
+});
+
+
+test("Probe catalog opens command-specific inputs instead of requiring manual path/query editing", async () => {
+  const source = await read("src/index.js");
+  const pageStart = source.indexOf("async function renderMightPulseProbePage");
+  const pageEnd = source.indexOf("async function handleGoogleDriveVerifyApi", pageStart);
+  const page = source.slice(pageStart, pageEnd);
+  for (const marker of [
+    "id='catalogCommandForm'",
+    "id='catalogFormFields'",
+    "function configureCatalogCommand(cmd)",
+    "必要な項目だけ入力してください",
+    "key:'kid',label:'王国番号'",
+    "key:'governor_id',label:'領主ID'",
+    "key:'tag',label:'同盟タグ'",
+    "APIパスやクエリJSONの編集は不要です",
+    "catalogFormRun",
+    "catalogFormCancel"
+  ]) assert.ok(page.includes(marker), "missing focused input feature: " + marker);
+  assert.ok(page.includes("endpoint.indexOf('{kid}')>=0"));
+  assert.ok(page.includes("endpoint.indexOf('{governor_id}')>=0"));
+  assert.ok(page.includes("data-config-catalog"));
 });
