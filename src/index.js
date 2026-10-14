@@ -4037,7 +4037,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
           endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
           purpose:"MIGHTPULSE_PROBE", httpStatus:status,
           errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-          errorMessage:error?.message || null, cooldownSeconds:cooldown, keepAvailable
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null, cooldownSeconds:cooldown, keepAvailable
         });
       } catch {}
     }
@@ -4051,8 +4051,12 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
         key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
         error_code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
         error_message: String(error?.message || error).slice(0, 1000),
-        diagnostic: redactProbeSecrets(error?.details || null)
+        diagnostic: safeProbeDiagnostic(error?.details || null,lease?.api_key)
       });
+    } catch {}
+    try {
+      error.message = safeProbeErrorMessage(error, lease?.api_key);
+      if (error?.details != null) error.details = safeProbeDiagnostic(error.details, lease?.api_key);
     } catch {}
     throw error;
   }
@@ -4148,6 +4152,22 @@ function safeProbeErrorMessage(error, apiKey = null) {
     .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|credential)\s*[:=]\s*)[^\s,;]+/ig, "$1[REDACTED]");
   return message.slice(0, 1000);
 }
+
+function safeProbeDiagnostic(value, apiKey = null) {
+  const walk = input => {
+    if (typeof input === "string") return safeProbeErrorMessage(input, apiKey);
+    if (Array.isArray(input)) return input.map(walk);
+    if (!input || typeof input !== "object") return input;
+    const out = {};
+    for (const [key, child] of Object.entries(input)) {
+      out[key] = SECRET_PROBE_DIAGNOSTIC_FIELD.test(key) ? "[REDACTED]" : walk(child);
+    }
+    return out;
+  };
+  return walk(redactProbeSecrets(value));
+}
+const SECRET_PROBE_DIAGNOSTIC_FIELD = /(?:^key$|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
+
 
 async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetType = null, targetId = null } = {}) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
@@ -4311,7 +4331,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
           endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
           purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:status,
           errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-          errorMessage:error?.message || null, cooldownSeconds:cooldown, keepAvailable
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null, cooldownSeconds:cooldown, keepAvailable
         });
         leaseReleased = true;
       } catch {}
@@ -4328,11 +4348,11 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       trigger_reason:"MANUAL", key_source:lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code || "MIGHTPULSE_REQUEST_FAILED",
       error_message:safeProbeErrorMessage(error,lease?.api_key),
-      diagnostic:redactProbeSecrets(error?.details || null)
+      diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key)
     };
     try { await archiveMightPulseProbeRecord(env, record); } catch {}
     return json({ ok:false, request_id:requestId, error:error?.code || "MIGHTPULSE_PROBE_FAILED",
-      status, message:safeProbeErrorMessage(error,lease?.api_key) || null, diagnostic:redactProbeSecrets(error?.details || null) },
+      status, message:safeProbeErrorMessage(error,lease?.api_key) || null, diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key) },
       status >= 400 && status < 600 ? status : 502);
   } finally {
     if (lease && !leaseReleased) { try { await releaseProbeApiKey(env, lease); } catch {} }
@@ -4506,7 +4526,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
         await releaseProbeApiKey(env,lease,{
           endpoint:command.endpoint,targetType:command.category,targetId:command.path,
           purpose:"MIGHTPULSE_PROBE_BATCH",httpStatus:status,errorCode:error?.code||"MIGHTPULSE_REQUEST_FAILED",
-          errorMessage:error?.message||null,cooldownSeconds:cooldown,keepAvailable:cooldown===0&&(status===400||status===403||status===404)
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null,cooldownSeconds:cooldown,keepAvailable:cooldown===0&&(status===400||status===403||status===404)
         });
       } catch {}
     }
@@ -4520,7 +4540,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
       discovered_from:item.discovered_from||null,response_count:0,retry_count:Math.max(0,Number(error?.attempts||1)-1),save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
-      error_message:safeProbeErrorMessage(error,lease?.api_key),diagnostic:redactProbeSecrets(error?.details||null),retry_count:Math.max(0,Number(error?.attempts||1)-1)
+      error_message:safeProbeErrorMessage(error,lease?.api_key),diagnostic:safeProbeDiagnostic(error?.details||null,lease?.api_key),retry_count:Math.max(0,Number(error?.attempts||1)-1)
     };
     let archive=null;
     try { archive=await archiveMightPulseProbeRecord(env,record); } catch {}
@@ -4705,7 +4725,7 @@ async function handleMightPulseProbeApi(request, env) {
     return json(await fetchMightPulseProbeThroughPool(env, spec, guard.auth));
   } catch (error) {
     const status = Number(error?.status || 0);
-    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error,lease?.api_key) || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
+    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error,lease?.api_key) || null,diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key)},status >= 400 && status < 600 ? status : 502);
   } finally {
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
