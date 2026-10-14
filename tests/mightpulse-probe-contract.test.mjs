@@ -293,3 +293,23 @@ test("Probe catalog opens command-specific inputs instead of requiring manual pa
   assert.ok(page.includes("endpoint.indexOf('{governor_id}')>=0"));
   assert.ok(page.includes("data-config-catalog"));
 });
+
+
+test("Probe field dictionary is compact and readable on mobile instead of a wide raw table", async () => {
+  const source = await read("src/index.js");
+  const start = source.indexOf("function renderFieldDictionary(fields)");
+  const end = source.indexOf("function renderPlayerActivity", start);
+  assert.ok(start >= 0 && end > start, "field dictionary renderer must exist");
+  const renderer = source.slice(start, end);
+  for (const marker of [
+    "class=\\\"field-dictionary\\\"",
+    "class=\\\"field-entry\\\"",
+    "class=\\\"field-path\\\"",
+    "class=\\\"field-type\\\"",
+    "class=\\\"field-sample\\\"",
+    "samples.slice(0,2)"
+  ]) assert.ok(renderer.includes(marker), "missing readable field dictionary feature: " + marker);
+  assert.ok(renderer.includes("<details class=\\\"field-entry\\\">"));
+  assert.ok(source.includes(".field-path{font:11px ui-monospace"));
+  assert.ok(source.includes("overflow-wrap:anywhere;word-break:break-word"));
+});
