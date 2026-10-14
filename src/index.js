@@ -4228,10 +4228,11 @@ async function handleMightPulseProbeKeysApi(request, env) {
         return json({ok:true,mighty_capable:true,http_status:result.status,message:"Mighty権限を確認しました。"});
       } catch (error) {
         const status=Number(error?.status||0);
-        const isNotMighty=status===403||status===401;
-        await setMightPulseProbeKeyMighty(env.DB,keyId,{capable:false,status:isNotMighty?"NOT_MIGHTY":"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"});
+        // The probe endpoint's permission contract is not independently verified.
+        // Treat any failed check as unconfirmed rather than declaring the key non-Mighty.
+        await setMightPulseProbeKeyMighty(env.DB,keyId,{capable:false,status:"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"});
         await releaseMightPulseProbeKey(env.DB,lease.lease_id,{success:false,errorCode:error?.code||"MIGHTY_CHECK_FAILED",keepAvailable:true,cooldownSeconds:status===429?60:status>=500?15:0});
-        return json({ok:false,mighty_capable:false,status,error:error?.code||"MIGHTY_CHECK_FAILED",message:isNotMighty?"有効なAPIキーですがMighty権限は確認できませんでした。":"Mighty権限の確認に失敗しました。キーは無効化していません。"},200);
+        return json({ok:false,mighty_capable:false,status,error:error?.code||"MIGHTY_CHECK_FAILED",message:"Mighty権限を確認できませんでした。キーは無効化していません。"},200);
       }
     }
     return json({ok:false,error:"INVALID_ACTION"},400);
