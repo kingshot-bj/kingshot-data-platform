@@ -1,5 +1,6 @@
 export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
+.ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
 .ee-compare-chart-tools button{border:1px solid var(--border,#29425e);background:var(--panel,#102238);color:var(--text,#e8f3ff);border-radius:9px;padding:7px 10px;font:inherit;font-size:12px}
 .ee-compare-chart-tools button[aria-pressed="true"]{border-color:#42d9ff;background:#16364d;box-shadow:0 0 0 1px #42d9ff55}
@@ -33,7 +34,19 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
 const fmt=v=>{if(v==null||!Number.isFinite(Number(v)))return '—';try{return new Intl.NumberFormat('ja-JP',{maximumFractionDigits:1}).format(Number(v))}catch{return String(v)}};
 const safeText=e=>String(e&&e.textContent||'').trim();
+function collapseDetails(){
+ let panel=document.querySelector('.ee-compare-details');
+ if(!panel){
+  panel=document.createElement('details');panel.className='ee-compare-details';
+  const summary=document.createElement('summary');summary.textContent='詳細プロフィール・一覧・履歴（必要なときに開く）';panel.appendChild(summary);
+  const sec=document.querySelector('.mystic-section');if(!sec)return;sec.after(panel);
+ }
+ ['.panel','.power-showcase-wrap','.compare-player-cards','.table-wrap'].forEach(selector=>{
+  document.querySelectorAll(selector).forEach(el=>{if(el===panel||el.closest('.ee-compare-details'))return;panel.appendChild(el)});
+ });
+}
 function enhance(){
+ collapseDetails();
  const sec=document.querySelector('.mystic-section');
  if(!sec||sec.dataset.eeEnhanced==='1')return;
  const cards=[...sec.querySelectorAll('.mystic-card')];
