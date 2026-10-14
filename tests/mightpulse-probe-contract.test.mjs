@@ -191,3 +191,27 @@ test("read-only Probe D1 audit workflow inspects production schema without apply
   assert.ok(!/wrangler d1 migrations apply/i.test(workflow));
   assert.ok(!/\\b(?:INSERT|UPDATE|DELETE|ALTER|DROP|CREATE)\\s+(?:INTO|TABLE|INDEX|SET|COLUMN|DATABASE)?\\b/i.test(workflow));
 });
+
+test("Probe UI runs catalog commands through the audited selected-command executor and preserves manual API mode", async () => {
+  const source = await read("src/index.js");
+  const pageStart = source.indexOf("async function renderMightPulseProbePage");
+  const pageEnd = source.indexOf("async function handleGoogleDriveVerifyApi", pageStart);
+  assert.ok(pageStart >= 0 && pageEnd > pageStart, "Probe page source must be present");
+  const page = source.slice(pageStart, pageEnd);
+  for (const marker of [
+    "MIGHTPULSE_PROBE_COMMANDS",
+    "catalogCategory",
+    "catalogSearch",
+    "data-run-catalog",
+    "batch_type:'selected'",
+    "command_ids:[cmd.id]",
+    "automatic_discovery:false",
+    "mode:'manual'",
+    "manualPath",
+    "manualQuery",
+    "manualMightyRequired",
+    "max-width:600px",
+    "min-height:44px"
+  ]) assert.ok(page.includes(marker), "missing Probe UI contract: " + marker);
+  assert.ok(source.includes("ok:true,request_id:requestId,status:\"SUCCESS\",command_id:item.command_id"), "selected command response must include its request id for result lookup");
+});
