@@ -137,7 +137,7 @@ export function redactProbeSecrets(value, depth = 0) {
   return out;
 }
 
-export async function addMightPulseProbeKey(db, { apiKey, label = null } = {}) {
+export async function addMightPulseProbeKey(db, { apiKey, label = null, registeredByUserId = null } = {}) {
   const key = String(apiKey || "").trim();
   if (!key) throw new Error("PROBE_API_KEY_REQUIRED");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
@@ -148,14 +148,14 @@ export async function addMightPulseProbeKey(db, { apiKey, label = null } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const encrypted = await encryptSecret(key);
   await db.prepare(
-    "INSERT INTO mightpulse_probe_keys (key_id, label, encrypted_key, key_fingerprint, status, mighty_capable, mighty_check_status, created_at, updated_at) VALUES (?, ?, ?, ?, 'AVAILABLE', 0, 'UNCONFIRMED', ?, ?)"
-  ).bind(keyId, String(label || "Probe専用キー").slice(0, 100), encrypted, fingerprint, now, now).run();
+    "INSERT INTO mightpulse_probe_keys (key_id, label, registered_by_user_id, encrypted_key, key_fingerprint, status, mighty_capable, mighty_check_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'AVAILABLE', 0, 'UNCONFIRMED', ?, ?)"
+  ).bind(keyId, String(label || "Probe専用キー").slice(0, 100), registeredByUserId == null ? null : String(registeredByUserId).slice(0,128), encrypted, fingerprint, now, now).run();
   return { key_id: keyId, label: String(label || "Probe専用キー").slice(0, 100), key_fingerprint: fingerprint.slice(0, 8), status: "AVAILABLE", mighty_capable: false, mighty_check_status: "UNCONFIRMED" };
 }
 
 export async function listMightPulseProbeKeys(db) {
   const result = await db.prepare(
-    "SELECT key_id, label, key_fingerprint, status, mighty_capable, mighty_check_status, mighty_checked_at, last_used_at, last_success_at, last_error_at, last_error_code, cooldown_until, leased_until, created_at, updated_at, revoked_at FROM mightpulse_probe_keys ORDER BY created_at DESC"
+    "SELECT key_id, label, registered_by_user_id, key_fingerprint, status, mighty_capable, mighty_check_status, mighty_checked_at, last_used_at, last_success_at, last_error_at, last_error_code, cooldown_until, leased_until, created_at, updated_at, revoked_at FROM mightpulse_probe_keys ORDER BY created_at DESC"
   ).all();
   return (result.results || []).map(row => ({
     ...row,
@@ -173,13 +173,14 @@ export async function leaseMightPulseProbeKey(db, { keyId = null, mightyRequired
   const bindings = [leaseId, expiresAt, now, now, now];
   if (keyId) bindings.push(String(keyId));
   const row = await db.prepare(
-    "UPDATE mightpulse_probe_keys SET lease_id = ?, leased_until = ?, updated_at = ? WHERE key_id = (SELECT key_id FROM mightpulse_probe_keys WHERE status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) AND revoked_at IS NULL" + mightyCondition + keyCondition + " ORDER BY COALESCE(last_used_at,0) ASC, created_at ASC LIMIT 1) RETURNING key_id, label, key_fingerprint, encrypted_key, mighty_capable"
+    "UPDATE mightpulse_probe_keys SET lease_id = ?, leased_until = ?, updated_at = ? WHERE key_id = (SELECT key_id FROM mightpulse_probe_keys WHERE status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) AND revoked_at IS NULL" + mightyCondition + keyCondition + " ORDER BY COALESCE(last_used_at,0) ASC, created_at ASC LIMIT 1) RETURNING key_id, label, registered_by_user_id, key_fingerprint, encrypted_key, mighty_capable"
   ).bind(...bindings).first();
   if (!row) return null;
   return {
     lease_id: leaseId, key_id: row.key_id, pool_type: "PROBE_DEDICATED",
     label: row.label, key_fingerprint: String(row.key_fingerprint || "").slice(0, 8),
     mighty_capable: Number(row.mighty_capable) === 1,
+    key_owner_user_id: row.registered_by_user_id || null,
     api_key: await decryptSecret(row.encrypted_key), expires_at: expiresAt
   };
 }
@@ -241,7 +242,7 @@ export async function archiveMightPulseProbeRecord(env, record) {
   if (env?.DB) {
     try {
       await env.DB.prepare(
-        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason, batch_id, sequence_no, discovered_from, response_count, retry_count, save_destination) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason, batch_id, sequence_no, discovered_from, response_count, retry_count, save_destination, key_source, key_id, key_owner_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         id,
         now,
@@ -263,7 +264,10 @@ export async function archiveMightPulseProbeRecord(env, record) {
         record?.discovered_from == null ? null : String(record.discovered_from).slice(0, 500),
         Number.isFinite(Number(record?.response_count)) ? Number(record.response_count) : null,
         Number.isFinite(Number(record?.retry_count)) ? Number(record.retry_count) : 0,
-        String(record?.save_destination || (r2Saved ? "R2" : "NONE")).slice(0, 40)
+        String(record?.save_destination || (r2Saved ? "R2" : "NONE")).slice(0, 40),
+        record?.key_source == null ? null : String(record.key_source).slice(0, 40),
+        record?.key_id == null ? null : String(record.key_id).slice(0, 128),
+        record?.key_owner_user_id == null ? null : String(record.key_owner_user_id).slice(0, 128)
       ).run();
       metadataSaved = true;
     } catch (error) {
