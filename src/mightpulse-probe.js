@@ -63,14 +63,17 @@ export async function listMightPulseProbeKeys(db) {
   }));
 }
 
-export async function leaseMightPulseProbeKey(db, { mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetId = null, leaseSeconds = 120 } = {}) {
+export async function leaseMightPulseProbeKey(db, { keyId = null, mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetId = null, leaseSeconds = 120 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const leaseId = crypto.randomUUID();
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || 120);
   const mightyCondition = mightyRequired ? " AND mighty_capable = 1 AND mighty_check_status = 'CONFIRMED'" : "";
+  const keyCondition = keyId ? " AND key_id = ?" : "";
+  const bindings = [leaseId, expiresAt, now, now, now];
+  if (keyId) bindings.push(String(keyId));
   const row = await db.prepare(
-    "UPDATE mightpulse_probe_keys SET lease_id = ?, leased_until = ?, updated_at = ? WHERE key_id = (SELECT key_id FROM mightpulse_probe_keys WHERE status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) AND revoked_at IS NULL" + mightyCondition + " ORDER BY COALESCE(last_used_at,0) ASC, created_at ASC LIMIT 1) RETURNING key_id, label, key_fingerprint, encrypted_key, mighty_capable"
-  ).bind(leaseId, expiresAt, now, now, now).first();
+    "UPDATE mightpulse_probe_keys SET lease_id = ?, leased_until = ?, updated_at = ? WHERE key_id = (SELECT key_id FROM mightpulse_probe_keys WHERE status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) AND revoked_at IS NULL" + mightyCondition + keyCondition + " ORDER BY COALESCE(last_used_at,0) ASC, created_at ASC LIMIT 1) RETURNING key_id, label, key_fingerprint, encrypted_key, mighty_capable"
+  ).bind(...bindings).first();
   if (!row) return null;
   return {
     lease_id: leaseId, key_id: row.key_id, pool_type: "PROBE_DEDICATED",
