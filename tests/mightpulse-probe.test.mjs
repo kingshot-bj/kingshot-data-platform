@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord } from "../src/mightpulse-probe.js";
+import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord, MIGHTPULSE_PROBE_COMMANDS, buildCatalogProbeCommand, buildProbeFieldDictionary, extractProbeReferences } from "../src/mightpulse-probe.js";
 
 test("manual command accepts a relative MightPulse path and scalar query values", () => {
   assert.deepEqual(
@@ -14,6 +14,33 @@ test("manual command rejects external URLs, host-relative paths, traversal and n
     assert.throws(() => validateManualProbeCommand({ path, query: {} }));
   }
   assert.throws(() => validateManualProbeCommand({ path: "/players/1", query: { include: { nested: true } } }), /PROBE_QUERY_VALUES_MUST_BE_SCALARS/);
+});
+
+test("manual command rejects secret-like query parameter names", () => {
+  assert.throws(() => validateManualProbeCommand({ path: "/players/1", query: { api_key: "do-not-log" } }), /PROBE_QUERY_SECRET_FIELD_NOT_ALLOWED/);
+  assert.throws(() => validateManualProbeCommand({ path: "/players/1", query: { access_token: "do-not-log" } }), /PROBE_QUERY_SECRET_FIELD_NOT_ALLOWED/);
+});
+
+test("catalog covers documented command families and marks Mighty-only operations", () => {
+  assert.ok(MIGHTPULSE_PROBE_COMMANDS.length >= 13);
+  assert.equal(buildCatalogProbeCommand("player_full", { governor_id: "225623582" }).path, "/players/225623582");
+  assert.equal(buildCatalogProbeCommand("alliance_detail", { kid: "1524", tag: "ABC" }).path, "/alliances/1524/ABC");
+  assert.equal(MIGHTPULSE_PROBE_COMMANDS.find(item => item.id === "kingdom_events").requiresMighty, true);
+});
+
+test("field dictionary records observed paths, types and sample values", () => {
+  const dictionary = buildProbeFieldDictionary({ player: { governor_id: "12345", power: 42 }, heroes: [{ name: "Hero A" }] });
+  assert.ok(dictionary.some(field => field.path === "player.governor_id" && field.type === "string" && field.samples.includes("12345")));
+  assert.ok(dictionary.some(field => field.path === "player.power" && field.type === "integer"));
+  assert.ok(dictionary.some(field => field.path === "heroes[].name" && field.type === "string"));
+});
+
+test("reference discovery extracts only bounded player, kingdom and alliance references", () => {
+  const refs = extractProbeReferences({ player: { governor_id: "12345678", kid: 1524, alliance: { abbr: "ABC" } }, extra: [{ governor_id: "98765432" }] }, { maxReferences: 10 });
+  assert.ok(refs.some(ref => ref.type === "PLAYER" && ref.governor_id === "12345678"));
+  assert.ok(refs.some(ref => ref.type === "KINGDOM" && ref.kid === "1524"));
+  assert.ok(refs.some(ref => ref.type === "ALLIANCE" && ref.tag === "ABC"));
+  assert.ok(refs.some(ref => ref.type === "PLAYER" && ref.governor_id === "98765432"));
 });
 
 test("manual command enforces bounded path and query sizes", () => {
