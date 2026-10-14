@@ -22,5 +22,6 @@ jobs:
           node --check src/index.js
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
+          bash -n scripts/check-probe-migration-history.sh
       - name: Run Probe unit tests
         run: node --test tests/mightpulse-probe*.test.mjs
