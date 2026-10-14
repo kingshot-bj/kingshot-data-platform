@@ -97,7 +97,7 @@ test("Probe batch resume requires creator ownership and an exclusive lease", asy
 test("Probe player persistence rejects unconfirmed response shapes before production writes", async () => {
   const source = await read("src/index.js");
   const start = source.indexOf("async function persistKnownProbeResponse");
-  const end = source.indexOf("\\nfunction probeResponseCount", start);
+  const end = source.indexOf("\nfunction probeResponseCount", start);
   const persist = source.slice(start, end);
   assert.ok(persist.includes("PLAYER_PAYLOAD_SHAPE_UNCONFIRMED"));
   assert.ok(persist.includes("if (!safePayload.player || typeof safePayload.player !== \"object\" || Array.isArray(safePayload.player))"));
