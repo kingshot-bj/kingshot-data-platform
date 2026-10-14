@@ -4366,7 +4366,7 @@ function identifyKnownProbeCommand(path, query = {}) {
   const player = normalizedPath.match(/^\/players\/([^/]+)$/);
   if (player) {
     const idType = String(query?.id_type || "");
-    if (idType === "uid") return { id:"player_uid", params:{uid:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (idType === "uid") return null;
     if (include === "base,heroes,ranks,gov_gear") return { id:"player_full", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
     if (include === "ranks" || include === "base,ranks") return { id:"player_ranks", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
     if (include === "base") return { id:"player_base", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
@@ -4382,7 +4382,7 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
   if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
   }
-  const playerCommandIds = new Set(["player_base","player_full","player_ranks","player_uid","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
+  const playerCommandIds = new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
   const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"]);
   const identified = commandId ? { id:commandId, kind:playerCommandIds.has(commandId) ? "PLAYER" : rankingCommandIds.has(commandId) ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
   if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
