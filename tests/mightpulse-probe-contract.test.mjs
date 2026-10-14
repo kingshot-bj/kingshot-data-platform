@@ -37,12 +37,17 @@ test("Probe schema migrations cover run history, dedicated keys, batches and len
   const keys = await read("migrations/0062_mightpulse_probe_keys.sql");
   const batches = await read("migrations/0063_mightpulse_probe_batches.sql");
   const audit = await read("migrations/0064_mightpulse_probe_key_audit.sql");
+  const batchLease = await read("migrations/0065_mightpulse_probe_batch_lease.sql");
+  const index = await read("src/index.js");
   assert.ok(run.includes("CREATE TABLE IF NOT EXISTS mightpulse_probe_runs"));
   assert.ok(keys.includes("CREATE TABLE IF NOT EXISTS mightpulse_probe_keys"));
   assert.ok(batches.includes("CREATE TABLE IF NOT EXISTS mightpulse_probe_batches"));
   assert.ok(batches.includes("pending_json"));
   assert.ok(audit.includes("registered_by_user_id"));
   assert.ok(audit.includes("key_owner_user_id"));
+  assert.ok(batchLease.includes("lease_token") && batchLease.includes("lease_until"));
+  assert.ok(index.includes("PROBE_BATCH_ALREADY_RUNNING"));
+  assert.ok(index.includes("WHERE batch_id=? AND lease_token=?"));
 });
 
 test("Probe catalog separates official API commands and EagleEye internal retrievals", async () => {
