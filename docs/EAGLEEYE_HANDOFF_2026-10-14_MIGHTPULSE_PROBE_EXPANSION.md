@@ -77,7 +77,7 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 - 実行履歴のD1一覧とR2レコード読み戻し
 - フィールド辞書表示、JSONコピー・ダウンロード
 - Owner専用Probeキー管理UIとAPI（登録、一覧、無効化、Mighty権限チェック）
-- Probe実行では本番SYSTEM_*キーを借りず、Probe専用キーを優先し、次にユーザー提供Mightyキーを使う構造を入れた。実際の貸出許諾の連携は要検証。
+- Probe実行では本番SYSTEM_*キーを借りず、Probe専用キーを優先し、次にUSER_CONTRIBUTEDキーを使う。通常コマンドは通常キーも利用可能、Mighty必須コマンドはMighty確認済みキーに限定する。追加の貸出同意フラグは設けない。
 
 ### Migration
 - migrations/0061_mightpulse_probe_runs.sql：Probe実行メタデータ用テーブル
@@ -110,7 +110,7 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 2. SQLバインド数／migration：archiveMightPulseProbeRecordのD1 INSERT列とbind引数の数が合っているか、0061→0062→0063の順で適用可能かを確認。既存migration番号の競合もmainと比較する。Cloudflare D1に未適用のままデプロイしない。
 3. キー暗号化：configureApiPoolEncryption と encryptSecret/decryptSecret の使用を確認。専用キーの追加・取得・リース・無効化をDB mockと実D1相当テストで検証。
 4. Mighty権限チェック：現在 /kvk/matchups を使ってMighty権限を判定する仮実装。API契約上そのendpointが妥当か、401/403/429/5xxをどう区別するか確認。403でもキー本体を無効化しないこと。
-5. 借用キーの同意と貸出監査：現在のフォールバックは leaseApiKey(... poolTypes: ["USER_CONTRIBUTED"]) を呼ぶ。Probe専用の追加貸出同意フラグは不要（ユーザー確定：EagleEyeにキーを提供した時点で利用同意済み）。通常コマンドはmightyOnly:false、Mighty必須コマンドはmightyOnly:trueで利用候補を分ける。既存の状態・無効化・クールダウン・リース条件を維持し、貸出中のキーが本番処理と競合しないことを確認する。専用キーと借用キーの双方で確実な解放を検証する。
+5. 借用キーの利用条件と貸出監査：現在のフォールバックは leaseApiKey(... poolTypes: ["USER_CONTRIBUTED"]) を呼ぶ。Probe専用の追加貸出同意フラグは不要（ユーザー確定：EagleEyeにキーを提供した時点で利用同意済み）。通常コマンドはmightyOnly:false、Mighty必須コマンドはmightyOnly:trueで利用候補を分ける。既存の状態・無効化・クールダウン・リース条件を維持し、貸出中のキーが本番処理と競合しないことを確認する。専用キーと借用キーの双方で確実な解放を検証する。
 6. 本番データ汚染防止：Probe結果を既存の本番保存ルートへ書き込まない。既存データ反映の要件は「既存保存ロジックに対応していることを確認した場合のみ」。今のバッチ処理はR2調査保存を基本とし、通常のEagleEye保存への安全な振り分けはまだ完成していない。
 7. バッチの再開ロジック：pending_json / seen_json / inFlight の保存タイミング、並行ワーカーの競合、途中でWorkerが停止した場合のin-flight再投入、同じバッチIDを別ユーザーが再開できないこと、同じバッチが並行実行されないことを確認。D1の状態更新が重複／逆行しないようにする。
 8. バッチ応答サイズ：一括APIが全結果を1レスポンスに返す構造は、R2に大きいJSONを保存してもAPIレスポンスが肥大化しうる。レスポンスには概要と実行IDのみを返し、詳細は履歴からR2読込にする方式を検討。D1は大きなpayloadを保持しない。
@@ -145,7 +145,7 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 2. 変更差分を監査。src/index.jsは巨大ファイルなので、関係箇所を関数単位で読み、置換ミス・重複処理・閉じ括弧を確認。
 3. node --check src/index.js、node --check src/mightpulse.js、node --check src/mightpulse-probe.js と node --test tests/mightpulse-probe.test.mjs を通す。CIログも確認。
 4. 0061/0062/0063 migrationの既存番号・SQL・bind数を確認。
-5. API Poolの leaseApiKey / recordApiPoolSuccess / recordApiPoolFailure / releaseApiLease の実際の引数仕様と、Mighty貸出同意を監査。
+5. API Poolの leaseApiKey / recordApiPoolSuccess / recordApiPoolFailure / releaseApiLease の実際の引数仕様と、通常キー／Mighty確認済みキーの選別・リース解放を監査。
 6. カタログを既存 src/mightpulse.js と照合し、公式endpointと内部取得プロセスを別のリストにする。
 7. 手入力単発、カテゴリ一括、全件一括、再開、失敗保存、R2読込、キー権限のテストを追加。
 8. 新規発見データの実装候補台帳を追加。
@@ -154,4 +154,4 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 
 ## 10. 次スレに貼る開始メッセージ
 
-この引き継ぎMDを読んで、EagleEyeのMightPulse Probe拡張を続けてください。リポジトリは kingshot-bj/kingshot-data-platform、作業ブランチは feat/mightpulse-probe-expansion-2026-10-14 です。mainへのマージ・Cloudflareデプロイはまだしていません。まず現在のブランチHEAD、draft PR、GitHub Actionsの最新結果を確認し、差分・構文・テスト・migration・API PoolのMighty貸出同意とリース処理を監査してください。特に手入力コマンド、単発／カテゴリ／全件一括、参照先の自動調査、R2保存・D1最小メタデータ、履歴からの再開、キー秘密情報の保護を壊さないでください。未確認のAPI仕様を推測で確定せず、既存本番データの保存ロジックへ無条件で書き込まないでください。進捗は10%刻みで報告してください。
+この引き継ぎMDを読んで、EagleEyeのMightPulse Probe拡張を続けてください。リポジトリは kingshot-bj/kingshot-data-platform、作業ブランチは feat/mightpulse-probe-expansion-2026-10-14 です。mainへのマージ・Cloudflareデプロイはまだしていません。まず現在のブランチHEAD、draft PR、GitHub Actionsの最新結果を確認し、差分・構文・テスト・migration・API Poolの既存キー利用条件・Mighty判定・リース処理を監査してください。特に手入力コマンド、単発／カテゴリ／全件一括、参照先の自動調査、R2保存・D1最小メタデータ、履歴からの再開、キー秘密情報の保護を壊さないでください。未確認のAPI仕様を推測で確定せず、既存本番データの保存ロジックへ無条件で書き込まないでください。進捗は10%刻みで報告してください。
