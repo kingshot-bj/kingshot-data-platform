@@ -169,6 +169,7 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 - 本番プレイヤー保存では、リクエストパスからIDを推測せず、レスポンス内の明示的なプレイヤーIDを要求する。
 - `src/mightpulse-probe.js` でR2保存失敗時の保存先を `NONE` または `PRODUCTION` とし、R2/D1のエラー情報を固定コード化して内部エラーメッセージを履歴に残さないよう修正。
 - `tests/mightpulse-probe-contract.test.mjs` と `tests/mightpulse-probe.test.mjs` に排他制御、キー選別、ID確認、R2失敗時の記録を検証するチェックを追加。
+- `docs/MIGHTPULSE_PROBE_CANDIDATES.md` を追加。実測した候補だけを記録し、未確認フィールドを推測で補完しない運用ルールを明記。
 - PR #63の説明を更新し、最新CIが未確認であることを明記。
 
 最新検証状態：
