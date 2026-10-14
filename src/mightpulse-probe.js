@@ -117,8 +117,13 @@ export function validateManualProbeCommand(input = {}) {
     throw new Error("PROBE_PATH_MUST_BE_RELATIVE");
   }
   const pathOnly = rawPath.split("?")[0];
-  if (pathOnly.split("/").some(segment => segment === "." || segment === "..")) throw new Error("PROBE_PATH_TRAVERSAL_NOT_ALLOWED");
-  if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(pathOnly)) throw new Error("PROBE_PATH_HAS_INVALID_CHARACTERS");
+  let decodedPath;
+  try { decodedPath = decodeURIComponent(pathOnly); }
+  catch { throw new Error("PROBE_PATH_INVALID_PERCENT_ENCODING"); }
+  if (/(?:%2f|%5c)/i.test(pathOnly) || decodedPath.includes("\\") || decodedPath.split("/").some(segment => segment === "." || segment === "..")) {
+    throw new Error("PROBE_PATH_TRAVERSAL_NOT_ALLOWED");
+  }
+  if (!/^\\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(pathOnly)) throw new Error("PROBE_PATH_HAS_INVALID_CHARACTERS");
   const query = input.query == null || input.query === "" ? {} : input.query;
   if (!query || typeof query !== "object" || Array.isArray(query)) throw new Error("PROBE_QUERY_MUST_BE_JSON_OBJECT");
   const entries = Object.entries(query);
