@@ -68,3 +68,34 @@ test("ring, bar, numeric, and custom ranking modes retain up to four players", (
   assert.ok(script.includes("items.slice(0,4)"));
   assert.ok(script.includes("players.length+'人'"));
 });
+
+
+const compareApiStart = indexSource.indexOf("async function handlePlayerCompareApi");
+const compareApiEnd = indexSource.indexOf("async function renderPlayerComparePage", compareApiStart);
+const comparePageEnd = indexSource.indexOf("async function handlePlayerChangesApi", compareApiEnd);
+const compareApiSource = indexSource.slice(compareApiStart, compareApiEnd);
+const comparePageSource = indexSource.slice(compareApiEnd, comparePageEnd);
+
+test("compare API uses bounded current ranking lookup and avoids ranking history scans", () => {
+  assert.ok(compareApiSource.includes("FROM kingdom_ranking_current WHERE kid = ? AND board IN ("));
+  assert.ok(compareApiSource.includes("target_id IN ("));
+  assert.ok(compareApiSource.includes("rankTypeBoardKeys"));
+  assert.ok(!compareApiSource.includes("ranking_snapshots"));
+});
+
+test("stage-encoded value_label entries are not passed to numeric custom ranking charts", () => {
+  assert.ok(indexSource.includes("score.dataset.target=(entry.value.label||entry.value.score==null)?"));
+  assert.ok(indexSource.includes("score!=null&&!(board&&board.value_label)"));
+});
+
+test("compare API and page functions parse after ranking enrichment", () => {
+  const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+  assert.doesNotThrow(() => new AsyncFunction(compareApiSource));
+  assert.doesNotThrow(() => new AsyncFunction(comparePageSource));
+});
+
+test("stored ranking values appear in desktop table and retain per-board observation time", () => {
+  assert.ok(indexSource.includes("leaderboardRows.forEach(row=>{h+="));
+  assert.ok(indexSource.includes("EagleEye保存 "));
+  assert.ok(indexSource.includes("（王国 "));
+});
