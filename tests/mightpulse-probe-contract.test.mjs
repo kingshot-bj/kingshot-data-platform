@@ -73,16 +73,19 @@ test("Probe schema migrations cover run history, legacy key schema, batches and 
   assert.ok(!probeModule.includes("mightpulse_probe_keys"));
 });
 
-test("D1 migration workflow blocks inconsistent Probe migration history before applying", async () => {
+test("D1 migration workflow runs the Probe schema preflight before applying", async () => {
   const workflow = await read(".github/workflows/eagleeye-d1-apply-pending-migrations.yml");
+  const preflight = await read("scripts/check-probe-migration-history.sh");
+  const checks = await read(".github/workflows/mightpulse-probe-checks.yml");
   assert.ok(workflow.includes("Guard against Probe migration ordering drift"));
-  assert.ok(workflow.includes("0064_mightpulse_probe_key_audit.sql"));
-  assert.ok(workflow.includes('const auditName = "0064_mightpulse_probe_key_audit.sql"'));
-  assert.ok(workflow.includes("if (names.has(auditName) && missingBase.length)"));
-  assert.ok(workflow.includes("const batchColumns ="));
-  assert.ok(workflow.includes("const auditColumns ="));
-  assert.ok(workflow.includes("const leaseColumns ="));
-  assert.ok(workflow.includes("Stop before applying pending migrations"));
+  assert.ok(workflow.includes("bash scripts/check-probe-migration-history.sh"));
+  assert.ok(preflight.includes('const auditName = "0064_mightpulse_probe_key_audit.sql"'));
+  assert.ok(preflight.includes("if (names.has(auditName) && missingBase.length)"));
+  assert.ok(preflight.includes("const batchColumns ="));
+  assert.ok(preflight.includes("const auditColumns ="));
+  assert.ok(preflight.includes("const leaseColumns ="));
+  assert.ok(preflight.includes("Stop before applying pending migrations"));
+  assert.ok(checks.includes("bash -n scripts/check-probe-migration-history.sh"));
 });
 
 test("Probe catalog separates official API commands and EagleEye internal retrievals", async () => {
