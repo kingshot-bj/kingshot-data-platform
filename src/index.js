@@ -4198,7 +4198,7 @@ async function handleMightPulseProbeKeysApi(request, env) {
     if (action === "check_mighty") {
       const keyId = String(body?.key_id || "");
       if (!keyId) return json({ok:false,error:"PROBE_KEY_ID_REQUIRED"},400);
-      const lease = await leaseMightPulseProbeKey(env.DB, { mightyRequired:false, purpose:"PROBE_MIGHTY_CHECK", targetId:keyId });
+      const lease = await leaseMightPulseProbeKey(env.DB, { keyId, mightyRequired:false, purpose:"PROBE_MIGHTY_CHECK", targetId:keyId });
       if (!lease || lease.key_id !== keyId) {
         if (lease) await releaseMightPulseProbeKey(env.DB, lease.lease_id);
         return json({ok:false,error:"PROBE_KEY_NOT_AVAILABLE",message:"対象キーが使用中か利用できません。"},409);
