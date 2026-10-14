@@ -73,8 +73,49 @@ function enhance(){
    const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='レーダー表示は、同じ単位・同じ評価ルールで比較できる複数項目が確認できた場合のみ有効化します。現在のランキング群は評価尺度の同一性が未確認のため、誤った合成比較を避けてリング／バー／数値を使用してください。';view.appendChild(msg);
   }
  }
+
+ const candidateRows=new Map();
+ [...document.querySelectorAll('.compare-player-card')].forEach(playerCard=>{
+  const name=safeText(playerCard.querySelector('.pname'))||'プレイヤー';
+  playerCard.querySelectorAll('.compare-metric[data-rank-score]').forEach(metric=>{
+   const label=metric.getAttribute('data-compare-label')||'';
+   const score=Number(metric.dataset.rankScore);
+   if(!label.startsWith('ランキング：')||!Number.isFinite(score))return;
+   if(!candidateRows.has(label))candidateRows.set(label,[]);
+   candidateRows.get(label).push({name,score});
+  });
+ });
+ const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,2)}));
+ const customPanel=document.createElement('details');customPanel.className='ee-custom-rankings';
+ const customSummary=document.createElement('summary');customSummary.textContent='追加ランキング（取得済みスコアのみ）';customPanel.appendChild(customSummary);
+ const customList=document.createElement('div');customList.className='ee-custom-rank-list';
+ let selected=[];try{const saved=JSON.parse(localStorage.getItem('eagleeye-player-compare-custom-rankings-v1')||'null');if(Array.isArray(saved))selected=saved.filter(x=>candidates.some(c=>c.label===x))}catch{}
+ let order=[];try{const savedOrder=JSON.parse(localStorage.getItem('eagleeye-player-compare-order-v1')||'[]');if(Array.isArray(savedOrder))order=savedOrder}catch{}
+ const grid=sec.querySelector('.mystic-grid');
+ function saveCustom(){try{localStorage.setItem('eagleeye-player-compare-custom-rankings-v1',JSON.stringify(selected));localStorage.setItem('eagleeye-player-compare-order-v1',JSON.stringify(order))}catch{}}
+ function buildCustom(item){
+  const card=document.createElement('article');card.className='mystic-card is-sub';card.dataset.eeCustomBoard=item.label;
+  const title=document.createElement('div');title.className='mystic-name';title.textContent=item.label.replace(/^ランキング：/,'');card.appendChild(title);
+  const values=document.createElement('div');values.className='mystic-values';
+  item.items.forEach((entry,i)=>{const cell=document.createElement('div');cell.className='mystic-value';cell.style.color=colors[i%colors.length];const name=document.createElement('small');name.textContent=entry.name;name.style.color=colors[i%colors.length];const value=document.createElement('span');value.className='counter';value.dataset.target=String(entry.score);value.textContent=fmt(entry.score);cell.append(name,value);values.appendChild(cell)});
+  card.appendChild(values);const ranks=document.createElement('div');ranks.className='mystic-ranks';ranks.textContent='保存済みのランキング実スコア';card.appendChild(ranks);return card;
+ }
+ function syncCustomCards(){
+  if(!grid)return;
+  cards.splice(0,cards.length,...cards.filter(card=>!card.dataset.eeCustomBoard));
+  grid.querySelectorAll('[data-ee-custom-board]').forEach(el=>el.remove());
+  candidates.filter(c=>selected.includes(c.label)).forEach(item=>{const card=buildCustom(item);grid.appendChild(card);cards.push(card)});
+  const listCards=[...grid.querySelectorAll('.mystic-card')];
+  listCards.forEach((card,index)=>{if(card.dataset.eeOrderTools==='1')return;card.dataset.eeOrderTools='1';const label=card.dataset.eeCustomBoard||safeText(card.querySelector('.mystic-name'));const key=card.dataset.eeCustomBoard||('default:'+label);if(!order.includes(key))order.push(key);const tools=document.createElement('div');tools.className='ee-rank-order';tools.style.cssText='display:flex;gap:5px;justify-content:flex-end;margin-top:6px';[['↑','up'],['↓','down']].forEach(([text,dir])=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.setAttribute('aria-label',dir==='up'?'上へ移動':'下へ移動');b.style.cssText='border:1px solid var(--border,#29425e);background:transparent;color:var(--text,#e8f3ff);border-radius:6px;padding:2px 8px';b.addEventListener('click',()=>{const current=[...grid.children],from=current.indexOf(card),to=dir==='up'?from-1:from+1;if(to<0||to>=current.length)return;if(dir==='up')grid.insertBefore(card,current[to]);else grid.insertBefore(current[to],card);order=[...grid.children].map(el=>el.dataset.eeCustomBoard||('default:'+safeText(el.querySelector('.mystic-name'))));saveCustom()});tools.appendChild(b)});card.appendChild(tools);});
+  const byKey=new Map([...grid.children].map(el=>[el.dataset.eeCustomBoard||('default:'+safeText(el.querySelector('.mystic-name'))),el]));
+  const sorted=order.map(k=>byKey.get(k)).filter(Boolean);byKey.forEach((el,k)=>{if(!order.includes(k))sorted.push(el)});sorted.forEach(el=>grid.appendChild(el));
+ }
+ candidates.forEach(item=>{const label=document.createElement('label');label.style.cssText='display:flex;gap:8px;align-items:center;padding:6px 2px;font-size:12px';const input=document.createElement('input');input.type='checkbox';input.checked=selected.includes(item.label);input.addEventListener('change',()=>{if(input.checked){if(!selected.includes(item.label))selected.push(item.label)}else selected=selected.filter(x=>x!==item.label);saveCustom();syncCustomCards();renderAll()});const text=document.createElement('span');text.textContent=item.label.replace(/^ランキング：/,'');label.append(input,text);customList.appendChild(label)});
+ if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
+ customPanel.appendChild(customList);sec.appendChild(customPanel);
+
  function renderAll(){cards.forEach(renderCard);status.textContent=mode==='radar'?'レーダー：比較尺度の一致が未確認のため利用を保留しています。':''}
- renderAll();
+ syncCustomCards();renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
 observer.observe(document.documentElement,{childList:true,subtree:true});
