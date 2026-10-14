@@ -121,3 +121,14 @@ SHAは各ファイルのblob SHAであり、HEADコミットSHAとは別。最�
 8. **バッチ再開・権限**：pending_json / seen_json / inFlightの保存タイミング、Worker停止時の再開、作成者照合、同一バッチの排他リース、Admin以上の実行権限をテストする。
 9. **APIコマンド網羅率**：カタログは全公式APIコマンドを網羅した完成版ではない。未知の仕様を推測で確定せず、実際に取得できたデータだけを記録する。
 10. **マージ・デプロイ**：上記すべてのテストとmigration事前確認が終わるまではPR #63をdraftのままにし、mainへのマージ、Cloudflare本番デプロイ、リモートmigration適用を行わない。
+
+
+## 2026-10-14 14:16Z 追記：ビルド失敗・共通Pool制御・CI
+
+- Cloudflare Buildログの Expected ";" but found "no" は、比較画面用の埋め込みJavaScript文字列内にある cache:"no-store" の未エスケープが原因。Probe作業ブランチの src/index.js で cache:\"no-store\" に修正し、再発防止の契約テストを追加した。
+- 注意：この修正は作業ブランチ側に存在する。mainの src/index.js には同じ不正な引用符が残っていることを確認した。mainへのマージ／直接修正はまだ行っていないため、mainからのCloudflare Buildはこの修正が反映されるまで同じ構文エラーになる可能性がある。
+- Probe専用キー管理はruntimeから削除済み。SYSTEM_GENERAL、SYSTEM_WATCHLIST、USER_CONTRIBUTED の既存API Poolを共有し、通常リースは少なくとも1キーを残す。Mighty必須のリースでは、予備枠のCOUNTも確認済みMightyキーに限定する。
+- 最新確認済みGitHub Actions: MightPulse Probe checks は commit 961e40eca445b949db2cfa4429c5bcc2b142346d で成功。node --check 成功、Probeテスト20件 pass / 0 fail。途中の migration-preflight テスト失敗は、ワークフロー内のSQL文字列に依存していた古いテストを、独立スクリプトを検証する契約に直して解消した。
+- .github/workflows/eagleeye-d1-apply-pending-migrations.yml は scripts/check-probe-migration-history.sh を通して、migration journalと実テーブル／列の不一致時に停止する事前確認を行う。
+- 未解決のデプロイブロッカー：本番D1の d1_migrations と実テーブルを、この作業から読み取り確認できていない。0064が既に記録済みか／0061〜0063がどの状態か不明のため、migration workflowを起動しない。migration確認完了までPR #63はdraft、mainへのマージ・Cloudflare本番デプロイ・remote migration適用は行わない。
+- 作業時のPR head取得値：311d3ed01be6dd18184a66ef30f193a69b7a672e（この追記自体でHEADは更新される）。
