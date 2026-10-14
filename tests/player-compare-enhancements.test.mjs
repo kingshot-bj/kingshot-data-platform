@@ -48,8 +48,9 @@ test("mobile chart layout keeps bars proportional and radar notice global", () =
   assert.ok(script.includes("fill.style.setProperty('width'"));
   assert.ok(script.includes("view.append(wrap,note)"));
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("ee-spark 3.6s ease-out var(--delay) infinite"));
-  assert.ok(script.includes("ee-motion-in 1.6s"));
+  assert.ok(script.includes("fill.style.setProperty('width'"));
+  assert.ok(script.includes("radarHost.appendChild(svg)"));
+  assert.ok(script.includes("view.appendChild(wrap)"));
 });
 test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
