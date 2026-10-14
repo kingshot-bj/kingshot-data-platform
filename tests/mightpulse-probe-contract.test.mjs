@@ -22,6 +22,8 @@ test("Probe API includes manual, batch, resume and history without a separate ke
   assert.ok(!source.includes("/api/admin/mightpulse-probe-keys"));
   assert.ok(!source.includes("probeKeyManager"));
   assert.ok(!source.includes("fallbackPathId"));
+  assert.ok(source.includes("key_source:lease?.pool_type||lease?.source_type||null"));
+  assert.ok(source.includes("key_source:lease?.pool_type || lease?.source_type || null"));
 });
 
 test("Probe can lease all API Pool classes while reserving one key for normal users", async () => {
