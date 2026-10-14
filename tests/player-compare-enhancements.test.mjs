@@ -102,3 +102,10 @@ test("stored ranking values appear in desktop table and retain per-board observa
   assert.ok(indexSource.includes("EagleEye保存 "));
   assert.ok(indexSource.includes("（王国 "));
 });
+
+
+test("comparison refresh handler emits valid quote escapes for include checks", () => {
+  const refreshSnippet = indexSource.slice(indexSource.indexOf("rd.requested_include") - 120, indexSource.indexOf("rd.requested_include") + 120);
+  assert.ok(refreshSnippet.includes(String.raw`requested_include||\"\").includes(\"ranks\")`));
+  assert.ok(!refreshSnippet.includes(String.raw`requested_include||\\\"\\\"`));
+});
