@@ -3,7 +3,7 @@ const SECRET_FIELD = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?
 export function validateManualProbeCommand(input = {}) {
   const rawPath = String(input.path || "").trim();
   if (!rawPath || rawPath.length > 500) throw new Error("PROBE_PATH_REQUIRED_OR_TOO_LONG");
-  if (!rawPath.startsWith("/") || rawPath.startsWith("//") || rawPath.includes("\\\\") || /^[a-z][a-z0-9+.-]*:/i.test(rawPath)) {
+  if (!rawPath.startsWith("/") || rawPath.startsWith("//") || rawPath.includes("\\") || /^[a-z][a-z0-9+.-]*:/i.test(rawPath)) {
     throw new Error("PROBE_PATH_MUST_BE_RELATIVE");
   }
   const pathOnly = rawPath.split("?")[0];
@@ -45,16 +45,20 @@ export async function archiveMightPulseProbeRecord(env, record) {
   let metadataError = null;
 
   if (env?.ARCHIVE?.put) {
-    await env.ARCHIVE.put(objectKey, JSON.stringify(safeRecord), {
-      httpMetadata: { contentType: "application/json; charset=utf-8" },
-      customMetadata: {
-        request_id: id,
-        status: String(record?.status || "UNKNOWN").slice(0, 40),
-        command_type: String(record?.command_type || "UNKNOWN").slice(0, 40),
-        created_at: String(now)
-      }
-    });
-    r2Saved = true;
+    try {
+      await env.ARCHIVE.put(objectKey, JSON.stringify(safeRecord), {
+        httpMetadata: { contentType: "application/json; charset=utf-8" },
+        customMetadata: {
+          request_id: id,
+          status: String(record?.status || "UNKNOWN").slice(0, 40),
+          command_type: String(record?.command_type || "UNKNOWN").slice(0, 40),
+          created_at: String(now)
+        }
+      });
+      r2Saved = true;
+    } catch (error) {
+      metadataError = "R2_ARCHIVE_FAILED: " + String(error?.message || error).slice(0, 250);
+    }
   }
 
   if (env?.DB) {
