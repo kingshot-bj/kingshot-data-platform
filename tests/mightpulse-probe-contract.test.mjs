@@ -90,15 +90,16 @@ test("Probe production persistence is restricted to explicitly mapped command ID
   assert.ok(!source.includes('const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh","eagleeye_alliance_rosters"])'));
 });
 
-test("Probe error records redact leased keys and ambiguous Mighty checks stay unconfirmed", async () => {
+test("Probe error records redact leased keys and do not disable a shared pool key on 403", async () => {
   const source = await read("src/index.js");
   assert.ok(source.includes("function safeProbeErrorMessage(error, apiKey = null)"));
   assert.ok(source.includes("message.split(secret).join(\"[REDACTED]\")"));
   assert.ok(source.includes("error_message: safeProbeErrorMessage(error,lease?.api_key)"));
   assert.ok(source.includes("error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)"));
   assert.ok(!source.includes("error:String(saveError?.message||saveError).slice(0,300)"));
-  assert.ok(source.includes('status:"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"'));
-  assert.ok(source.includes("Mighty権限を確認できませんでした。キーは無効化していません。"));
+  assert.ok(source.includes("const keepAvailable = status === 400 || status === 403 || status === 404"));
+  assert.ok(source.includes("disable: false"));
+  assert.ok(!source.includes("handleMightPulseProbeKeysApi"));
 });
 
 
