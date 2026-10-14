@@ -61,3 +61,11 @@ test("Probe catalog separates official API commands and EagleEye internal retrie
   assert.ok(source.includes('id:"eagleeye_kingdom_rank_refresh"'));
   assert.ok(source.includes("MIGHTPULSE_PROBE_FIELD_DICTIONARY_LIMIT"));
 });
+
+
+test("Probe production persistence is restricted to explicitly mapped command IDs", async () => {
+  const source = await read("src/index.js");
+  assert.ok(source.includes('new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"])'));
+  assert.ok(source.includes('new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"])'));
+  assert.ok(!source.includes('commandId==="eagleeye_alliance_rosters"'));
+});
