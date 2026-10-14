@@ -86,6 +86,7 @@ test("compare API uses bounded current ranking lookup and avoids ranking history
 test("stage-encoded value_label entries are not passed to numeric custom ranking charts", () => {
   assert.ok(indexSource.includes("score.dataset.target=(entry.value.label||entry.value.score==null)?"));
   assert.ok(indexSource.includes("score!=null&&!(board&&board.value_label)"));
+  assert.ok(indexSource.includes("const display=board&&board.value_label?board.value_label"));
 });
 
 test("compare API and page functions parse after ranking enrichment", () => {
