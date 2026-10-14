@@ -236,3 +236,25 @@ test("navigation progress labels Probe and releases its overlay after a stalled 
   assert.ok(tracker.includes("clearNavigation()"));
   assert.ok(tracker.includes("ページの読み込みに時間がかかっています"));
 });
+
+
+test("Probe catalog explains command purpose and exposes endpoint/query/permissions in collapsible details", async () => {
+  const source = await read("src/index.js");
+  const pageStart = source.indexOf("async function renderMightPulseProbePage");
+  const pageEnd = source.indexOf("async function handleGoogleDriveVerifyApi", pageStart);
+  const page = source.slice(pageStart, pageEnd);
+  for (const marker of [
+    "function commandPurpose(c)",
+    "function commandInputs(c)",
+    "コマンドの詳細",
+    "実行先・HTTPメソッド",
+    "初期クエリ",
+    "必要な入力",
+    "通常権限",
+    "MIGHTY権限",
+    "grid-template-columns:1fr 1fr",
+    "commandPurpose(c)).toLowerCase()"
+  ]) assert.ok(page.includes(marker), "missing readable catalog feature: " + marker);
+  assert.ok(page.includes("player_full:'基本情報・英雄・ランキング・領主装備をまとめて取得"));
+  assert.ok(page.includes("kvk_matchups:'Mighty権限でKvKのマッチアップ一覧を取得します。"));
+});
