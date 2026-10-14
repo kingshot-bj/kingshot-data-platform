@@ -45,7 +45,7 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   assert.ok(pool.includes(") > ?"));
 });
 
-test("Probe schema migrations cover run history, dedicated keys, batches and lender audit", async () => {
+test("Probe schema migrations cover run history, legacy key schema, batches and batch leases", async () => {
   const run = await read("migrations/0061_mightpulse_probe_runs.sql");
   const keys = await read("migrations/0062_mightpulse_probe_keys.sql");
   const batches = await read("migrations/0063_mightpulse_probe_batches.sql");
@@ -61,6 +61,12 @@ test("Probe schema migrations cover run history, dedicated keys, batches and len
   assert.ok(batchLease.includes("lease_token") && batchLease.includes("lease_until"));
   assert.ok(index.includes("PROBE_BATCH_ALREADY_RUNNING"));
   assert.ok(index.includes("WHERE batch_id=? AND lease_token=?"));
+  assert.ok(!index.includes("handleMightPulseProbeKeysApi"));
+  assert.ok(!index.includes("PROBE_DEDICATED"));
+  const probeModule = await read("src/mightpulse-probe.js");
+  assert.ok(!probeModule.includes("addMightPulseProbeKey"));
+  assert.ok(!probeModule.includes("leaseMightPulseProbeKey"));
+  assert.ok(!probeModule.includes("mightpulse_probe_keys"));
 });
 
 test("Probe catalog separates official API commands and EagleEye internal retrievals", async () => {
