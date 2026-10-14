@@ -29,6 +29,8 @@ test("Probe never leases production SYSTEM pools and does not disable keys on 40
   assert.ok(lease.includes('"PROBE_DEDICATED"'));
   assert.ok(!lease.includes("SYSTEM_GENERAL"));
   assert.ok(!lease.includes("SYSTEM_WATCHLIST"));
+  assert.ok(lease.includes("mightyOnly: mightyRequired"));
+  assert.ok(source.includes("mightyRequired: body?.mighty_required === true"));
   assert.ok(source.includes("disable: false"));
 });
 
