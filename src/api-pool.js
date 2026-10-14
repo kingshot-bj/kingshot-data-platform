@@ -509,7 +509,7 @@ async function fingerprintKey(apiKey) {
   return toHex(new Uint8Array(digest));
 }
 
-async function encryptSecret(secret) {
+export async function encryptSecret(secret) {
   const key = await deriveEncryptionKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(secret));
