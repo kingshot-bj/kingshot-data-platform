@@ -4139,6 +4139,16 @@ async function handleMightPulseResearchApi(request, env) {
   }
 }
 
+function safeProbeErrorMessage(error, apiKey = null) {
+  let message = String(error?.message || error || "MIGHTPULSE_REQUEST_FAILED");
+  const secret = String(apiKey || "");
+  if (secret) message = message.split(secret).join("[REDACTED]");
+  message = message
+    .replace(/(authorization\\s*[:=]\\s*)(?:bearer\\s+)?[^\\s,;]+/ig, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|credential)\\s*[:=]\\s*)[^\\s,;]+/ig, "$1[REDACTED]");
+  return message.slice(0, 1000);
+}
+
 async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetType = null, targetId = null } = {}) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   const dedicated = await leaseMightPulseProbeKey(env.DB, { mightyRequired, purpose, targetId });
@@ -4321,7 +4331,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     };
     try { await archiveMightPulseProbeRecord(env, record); } catch {}
     return json({ ok:false, request_id:requestId, error:error?.code || "MIGHTPULSE_PROBE_FAILED",
-      status, message:error?.message || null, diagnostic:redactProbeSecrets(error?.details || null) },
+      status, message:safeProbeErrorMessage(error,lease?.api_key) || null, diagnostic:redactProbeSecrets(error?.details || null) },
       status >= 400 && status < 600 ? status : 502);
   } finally {
     if (lease && !leaseReleased) { try { await releaseProbeApiKey(env, lease); } catch {} }
@@ -4509,7 +4519,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
       discovered_from:item.discovered_from||null,response_count:0,retry_count:Math.max(0,Number(error?.attempts||1)-1),save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
       error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
-      error_message:String(error?.message||error).slice(0,1000),diagnostic:redactProbeSecrets(error?.details||null),retry_count:Math.max(0,Number(error?.attempts||1)-1)
+      error_message:safeProbeErrorMessage(error,lease?.api_key),diagnostic:redactProbeSecrets(error?.details||null),retry_count:Math.max(0,Number(error?.attempts||1)-1)
     };
     let archive=null;
     try { archive=await archiveMightPulseProbeRecord(env,record); } catch {}
