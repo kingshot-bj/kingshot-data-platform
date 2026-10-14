@@ -87,6 +87,8 @@ test("stage-encoded value_label entries are not passed to numeric custom ranking
   assert.ok(indexSource.includes("score.dataset.target=(entry.value.label||entry.value.score==null)?"));
   assert.ok(indexSource.includes("score!=null&&!(board&&board.value_label)"));
   assert.ok(indexSource.includes("const display=board&&board.value_label?board.value_label"));
+  assert.ok(indexSource.includes("const displayScore=Number.isFinite(numericScore)?numericScore:String(rawScore)"));
+  assert.ok(indexSource.includes("const scoreValue = Number.isFinite(numericScore) ? numericScore : String(row.score)"));
 });
 
 test("compare API and page functions parse after ranking enrichment", () => {
