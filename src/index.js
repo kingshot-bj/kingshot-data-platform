@@ -3979,7 +3979,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
     const safePayload = redactProbeSecrets(payload);
     let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
     try { productionSave=await persistKnownProbeResponse(env,{path:spec.path,query:spec.query||{},payload:safePayload,httpStatus:result.status,actorRole:actor?.role||null}); }
-    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
     const archiveRecord = {
       request_id: crypto.randomUUID(), user_id: actor?.user_id || null, actor_discord_id: actor?.discord_id || null, actor_label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), actor_role: actor?.role || null, command_type: spec.targetType, endpoint: spec.endpoint,
       query: spec.query, status: "SUCCESS", http_status: result.status,
@@ -3990,7 +3990,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
     };
     let archive = null;
     try { archive = await archiveMightPulseProbeRecord(env, archiveRecord); }
-    catch (archiveError) { archive = { request_id: archiveRecord.request_id, r2_saved:false, metadata_saved:false, archive_error:String(archiveError?.message || archiveError).slice(0,300) }; }
+    catch (archiveError) { archive = { request_id: archiveRecord.request_id, r2_saved:false, metadata_saved:false, archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,300) }; }
 
     return {
       ok: true,
@@ -4242,7 +4242,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     const safePayload = redactProbeSecrets(result.data);
     let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
     try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload:safePayload,httpStatus:result.status,actorRole:guard?.auth?.role||null}); }
-    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:result.status,
@@ -4264,7 +4264,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     };
     let archive = null;
     try { archive = await archiveMightPulseProbeRecord(env, record); }
-    catch (archiveError) { archive = { request_id: requestId, r2_saved:false, metadata_saved:false, archive_error:String(archiveError?.message || archiveError).slice(0,300) }; }
+    catch (archiveError) { archive = { request_id: requestId, r2_saved:false, metadata_saved:false, archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,300) }; }
     return json({ ok:true, probe:{
       request_id: requestId, actor:{user_id:guard?.auth?.user_id||null,discord_id:guard?.auth?.discord_id||null,label:guard?.auth?.global_name||guard?.auth?.username||(guard?.auth?.discord_id?"Discord "+guard.auth.discord_id:"Admin"),role:guard?.auth?.role||null}, type:"MANUAL " + command.path, target_type:"MANUAL_COMMAND",
       target_id: command.path, endpoint: command.path, request_path: command.path,
@@ -4446,7 +4446,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
     const payload = redactProbeSecrets(result.data);
     let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
     try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload,httpStatus:result.status,commandId:item.command_id,actorRole:guard?.auth?.role||null}); }
-    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:String(saveError?.message||saveError).slice(0,300)}; }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.endpoint, targetType:command.category, targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_BATCH", httpStatus:result.status,
@@ -4467,7 +4467,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
     };
     let archive = null;
     try { archive = await archiveMightPulseProbeRecord(env,record); }
-    catch (archiveError) { archive={r2_saved:false,metadata_saved:false,archive_error:String(archiveError?.message||archiveError).slice(0,250)}; }
+    catch (archiveError) { archive={r2_saved:false,metadata_saved:false,archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,250)}; }
     return {
       ok:true,status:"SUCCESS",command_id:item.command_id,category:command.category,
       sequence_no:item.sequence_no,trigger_reason:item.trigger_reason||"MANUAL",
@@ -4497,7 +4497,7 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
       started_at:new Date(startedAt).toISOString(),completed_at:new Date(completedAt).toISOString(),
       trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
       discovered_from:item.discovered_from||null,response_count:0,retry_count:Math.max(0,Number(error?.attempts||1)-1),save_destination:"R2",key_source:lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
-      error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
+      error_code:error?.code||safeProbeErrorMessage(error,lease?.api_key).slice(0,100),
       error_message:safeProbeErrorMessage(error,lease?.api_key),diagnostic:safeProbeDiagnostic(error?.details||null,lease?.api_key),retry_count:Math.max(0,Number(error?.attempts||1)-1)
     };
     let archive=null;
