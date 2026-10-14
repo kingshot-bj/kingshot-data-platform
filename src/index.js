@@ -502,7 +502,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
     if (Object.keys(a).length) visible.alliance = a;
   }
 
-  const heroes = Array.isArray(source.heroes) ? source.heroes : [];
+  const heroes = Array.isArray(source.heroes) ? source.heroes : Array.isArray(player.heroes) ? player.heroes : [];
   if (heroes.length && (visibilityEnabled(settings, "heroes_list", role) || visibilityEnabled(settings, "heroes_skills", role) || visibilityEnabled(settings, "heroes_exclusive_gear", role) || visibilityEnabled(settings, "heroes_gear", role))) {
     visible.heroes = heroes.map(hero => {
       const h = {};
@@ -517,16 +517,18 @@ function filterPlayerProfileForRole(payload, role, settings) {
     });
   }
 
-  if (source.ranks && typeof source.ranks === "object") {
+  const rankSource = source.ranks && typeof source.ranks === "object" ? source.ranks : player.ranks && typeof player.ranks === "object" ? player.ranks : null;
+  if (rankSource) {
     const ranks = {};
-    if (visibilityEnabled(settings, "ranks_core", role)) for (const key of ["power","power_rank","kills","kills_rank","town_center_level","town_center_rank","migrant_score","migrant_rank","mystic_trial","mystic_rank"]) if (source.ranks[key] !== undefined) ranks[key] = source.ranks[key];
-    if (visibilityEnabled(settings, "ranks_leaderboards", role) && source.ranks.leaderboards !== undefined) ranks.leaderboards = source.ranks.leaderboards;
+    if (visibilityEnabled(settings, "ranks_core", role)) for (const key of ["power","power_rank","kills","kills_rank","town_center_level","town_center_rank","migrant_score","migrant_rank","mystic_trial","mystic_rank"]) if (rankSource[key] !== undefined) ranks[key] = rankSource[key];
+    if (visibilityEnabled(settings, "ranks_leaderboards", role) && rankSource.leaderboards !== undefined) ranks.leaderboards = rankSource.leaderboards;
     if (Object.keys(ranks).length) visible.ranks = ranks;
   }
 
-  if (source.gov_gear && typeof source.gov_gear === "object") {
+  const gearSource = source.gov_gear && typeof source.gov_gear === "object" ? source.gov_gear : player.gov_gear && typeof player.gov_gear === "object" ? player.gov_gear : null;
+  if (gearSource) {
     const gear = {};
-    if (visibilityEnabled(settings, "gov_gear_list", role)) for (const key of ["hidden","message","items"]) if (source.gov_gear[key] !== undefined) gear[key] = source.gov_gear[key];
+    if (visibilityEnabled(settings, "gov_gear_list", role)) for (const key of ["hidden","message","items"]) if (gearSource[key] !== undefined) gear[key] = gearSource[key];
     if (visibilityEnabled(settings, "gov_gear_gems", role) && Array.isArray(gear.items)) gear.items = gear.items.map(item => ({ ...item, gems: item.gems || [] }));
     if (Object.keys(gear).length) visible.gov_gear = gear;
   }
@@ -6713,8 +6715,13 @@ async function handlePlayerApi(request, env) {
     let player = await getPlayer(env.DB, governorId);
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     let source = "D1";
-    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
-    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
+    const richPayload = observation?.payload || {};
+    const richPlayer = richPayload.player && typeof richPayload.player === "object" ? richPayload.player : richPayload;
+    const hasHeroesPayload = Array.isArray(richPayload.heroes) || Array.isArray(richPlayer.heroes);
+    const hasRanksPayload = Boolean((richPayload.ranks && typeof richPayload.ranks === "object") || (richPlayer.ranks && typeof richPlayer.ranks === "object"));
+    const hasGovGearPayload = Boolean((richPayload.gov_gear && typeof richPayload.gov_gear === "object") || (richPlayer.gov_gear && typeof richPlayer.gov_gear === "object"));
+    const needsRichProfile = !hasHeroesPayload || !hasRanksPayload || !hasGovGearPayload;
+    const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
     const fetchRich = rich || (refresh && hasRichProfile);
 
     if (!observation || refresh || (rich && needsRichProfile)) {
@@ -7049,7 +7056,10 @@ async function handlePlayerCompareApi(request, env) {
       const profile = filterPlayerProfileForRole(observationPayload,auth.role,visibility);
       const heroesVisible = ["heroes_list","heroes_skills","heroes_exclusive_gear","heroes_gear"].some(key => visibilityEnabled(visibility,key,auth.role));
       const gearVisible = visibilityEnabled(visibility,"gov_gear_list",auth.role) || visibilityEnabled(visibility,"gov_gear_gems",auth.role);
-      const profileNeedsRich = (heroesVisible && !Array.isArray(observationPayload.heroes)) || (gearVisible && !(observationPayload.gov_gear && Array.isArray(observationPayload.gov_gear.items)));
+      const observationPlayer = observationPayload.player && typeof observationPayload.player === "object" ? observationPayload.player : observationPayload;
+      const observedHeroes = Array.isArray(observationPayload.heroes) ? observationPayload.heroes : observationPlayer.heroes;
+      const observedGovGear = observationPayload.gov_gear && typeof observationPayload.gov_gear === "object" ? observationPayload.gov_gear : observationPlayer.gov_gear;
+      const profileNeedsRich = (heroesVisible && !Array.isArray(observedHeroes)) || (gearVisible && !(observedGovGear && Array.isArray(observedGovGear.items)));
       const snapshots = (storedHistory||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
       const latestRankRow = Array.isArray(rankRows) ? rankRows[0] : null;
       let leaderboardData = [];
@@ -7447,8 +7457,13 @@ async function renderPlayerPage(request, env) {
     const refresh = url.searchParams.get("refresh") === "1";
     const rich = url.searchParams.get("rich") === "1";
     let observation = await getLatestPlayerObservation(env.DB, governorId);
-    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
-    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
+    const richPayload = observation?.payload || {};
+    const richPlayer = richPayload.player && typeof richPayload.player === "object" ? richPayload.player : richPayload;
+    const hasHeroesPayload = Array.isArray(richPayload.heroes) || Array.isArray(richPlayer.heroes);
+    const hasRanksPayload = Boolean((richPayload.ranks && typeof richPayload.ranks === "object") || (richPlayer.ranks && typeof richPlayer.ranks === "object"));
+    const hasGovGearPayload = Boolean((richPayload.gov_gear && typeof richPayload.gov_gear === "object") || (richPlayer.gov_gear && typeof richPlayer.gov_gear === "object"));
+    const needsRichProfile = !hasHeroesPayload || !hasRanksPayload || !hasGovGearPayload;
+    const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
     const fetchRich = rich || (refresh && hasRichProfile);
 
     if (!observation || refresh || (rich && needsRichProfile)) {
