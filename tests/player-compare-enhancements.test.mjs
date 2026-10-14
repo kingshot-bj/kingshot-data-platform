@@ -29,11 +29,12 @@ test("additional ranking candidates require saved numeric scores for both player
   assert.ok(script.includes("eagleeye-player-compare-order-v1"));
 });
 
-test("radar renders a relative comparison polygon without combining raw units", () => {
+test("radar does not normalize the strongest selected player to 100% without a validated benchmark", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("プレイヤー比較レーダーチャート"));
-  assert.ok(script.includes("高い方＝100%として相対化"));
-  assert.ok(script.includes("createElementNS(ns,'polygon')"));
+  assert.ok(script.includes("固定の基準値とスコアの尺度が未検証"));
+  assert.ok(script.includes("最強者＝100%"));
+  assert.ok(script.includes("ランキング間の数値を直接比べないでください"));
+  assert.ok(!script.includes("高いプレイヤー＝100%として相対化"));
 });
 
 test("details collapsing cannot move a wrapper into its own descendant", () => {
@@ -53,10 +54,10 @@ test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
 });
 
-test("radar supports all selected players instead of only the first two", () => {
-  assert.ok(script.includes("names.forEach((name,playerIndex)"));
+test("fixed-score table supports all selected players instead of only the first two", () => {
   assert.ok(script.includes("Math.min(...rows.map(row=>row.entries.length))"));
-  assert.ok(script.includes("playerCount+'人のプレイヤー比較レーダーチャート'"));
+  assert.ok(script.includes("row.entries.slice(0,playerCount).forEach((entry,index)"));
+  assert.ok(script.includes("values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)"));
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
