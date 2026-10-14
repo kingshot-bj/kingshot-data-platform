@@ -4338,7 +4338,7 @@ async function handleMightPulseProbeApi(request, env) {
   if (!apiLockToken) return json({ok:false,error:"API_REQUEST_IN_PROGRESS",message:"同じ対象への処理が現在実行中です。完了を待ってから再試行してください。",lock_key:apiLockKey},409);
   try {
     const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
-    return json(await fetchMightPulseProbeThroughPool(env, spec, guard?.auth?.user_id || guard?.auth?.id || null));
+    return json(await fetchMightPulseProbeThroughPool(env, spec, guard.auth));
   } catch (error) {
     const status = Number(error?.status || 0);
     return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:error?.message || null,diagnostic:redactProbeSecrets(error?.details || null)},status >= 400 && status < 600 ? status : 502);
