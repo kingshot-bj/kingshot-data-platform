@@ -139,7 +139,8 @@ export async function mightPulseFetch(env, path, {
         return {
           data: body,
           status: response.status,
-          headers: response.headers
+          headers: response.headers,
+          attempts
         };
       }
       const retryable = response.status === 429 || response.status >= 500;
@@ -152,6 +153,7 @@ export async function mightPulseFetch(env, path, {
       });
 
       if (!retryable || attempt >= maxRetries) {
+        lastError.attempts = attempts;
         throw lastError;
       }
 
@@ -161,6 +163,7 @@ export async function mightPulseFetch(env, path, {
       if (error instanceof MightPulseError) {
         lastError = error;
         if (!error.retryable || attempt >= maxRetries) {
+          error.attempts = attempts;
           await recordSystemEvent(env.DB, {
             traceId: systemTrace,
             parentTraceId,
