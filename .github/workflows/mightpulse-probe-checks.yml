@@ -1,0 +1,27 @@
+name: MightPulse Probe checks
+
+on:
+  push:
+    branches:
+      - main
+      - feat/mightpulse-probe-expansion-2026-10-14
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  probe-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check Worker modules
+        run: |
+          node --check src/index.js
+          node --check src/mightpulse.js
+          node --check src/mightpulse-probe.js
+          bash -n scripts/check-probe-migration-history.sh
+      - name: Run Probe unit tests
+        run: node --test tests/mightpulse-probe*.test.mjs

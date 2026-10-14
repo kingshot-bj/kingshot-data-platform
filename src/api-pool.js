@@ -94,12 +94,15 @@ async function claimApiPoolKey(db, {
   targetId = null,
   leaseSeconds = LEASE_SECONDS,
   reserveAvailableKeys = 0,
+  reserveMightyKeys = 0,
+  preferNonMighty = false,
   mightyOnly = false,
   contributedByUserId = null
 } = {}) {
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + Math.max(30, Number(leaseSeconds) || LEASE_SECONDS);
   const reserve = Math.max(0, Math.floor(Number(reserveAvailableKeys) || 0));
+  const reserveMighty = Math.max(0, Math.floor(Number(reserveMightyKeys) || 0));
   const leaseId = crypto.randomUUID();
   const eligiblePoolTypes = Array.isArray(poolTypes) && poolTypes.length
     ? [...new Set(poolTypes.map(value => String(value || "").trim()).filter(Boolean))]
@@ -116,18 +119,29 @@ async function claimApiPoolKey(db, {
   const contributorCondition = contributedByUserId
     ? " AND contributed_by_user_id = ?"
     : "";
+  const reserveMightyCondition = mightyOnly
+    ? " AND reserve_keys.mighty_capable = 1 AND reserve_keys.mighty_check_status = 'CONFIRMED'"
+    : "";
   const reserveCondition = reserve > 0
-    ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN') AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
+    ? " AND (SELECT COUNT(*) FROM api_pool_keys AS reserve_keys WHERE reserve_keys.provider = ? AND reserve_keys.pool_type IN (" + placeholders + ") AND reserve_keys.status IN ('AVAILABLE','COOLDOWN')" + reserveMightyCondition + " AND (reserve_keys.cooldown_until IS NULL OR reserve_keys.cooldown_until <= ?) AND (reserve_keys.leased_until IS NULL OR reserve_keys.leased_until <= ?)) > ?"
+    : "";
+  const reserveMightyKeyCondition = reserveMighty > 0
+    ? " AND (api_pool_keys.mighty_capable != 1 OR api_pool_keys.mighty_check_status != 'CONFIRMED' OR (SELECT COUNT(*) FROM api_pool_keys AS reserve_mighty WHERE reserve_mighty.provider = ? AND reserve_mighty.pool_type IN (" + placeholders + ") AND reserve_mighty.status IN ('AVAILABLE','COOLDOWN') AND reserve_mighty.mighty_capable = 1 AND reserve_mighty.mighty_check_status = 'CONFIRMED' AND (reserve_mighty.cooldown_until IS NULL OR reserve_mighty.cooldown_until <= ?) AND (reserve_mighty.leased_until IS NULL OR reserve_mighty.leased_until <= ?)) > ?)"
+    : "";
+  const preferNonMightyOrder = preferNonMighty
+    ? "CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 1 ELSE 0 END, "
     : "";
   const sql = "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, lease_id = ?, leased_until = ?, lease_job_id = ?, lease_purpose = ?, lease_target_type = ?, lease_target_id = ?, updated_at = ? " +
-    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN')" + mightyCondition + contributorCondition + " AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
+    "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN')" + mightyCondition + contributorCondition + reserveMightyKeyCondition + " AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
     reserveCondition +
-    " ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
-    "RETURNING key_id, provider, pool_type, encrypted_key";
+    " ORDER BY " + preferNonMightyOrder + "CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
+    "RETURNING key_id, provider, pool_type, encrypted_key, contributed_by_user_id";
   const bindings = [
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
-    provider ?? PROVIDER, ...eligiblePoolTypes, ...(contributedByUserId ? [contributedByUserId] : []), now, now
+    provider ?? PROVIDER, ...eligiblePoolTypes, ...(contributedByUserId ? [contributedByUserId] : [])
   ];
+  if (reserveMighty > 0) bindings.push(provider ?? PROVIDER, ...eligiblePoolTypes, now, now, reserveMighty);
+  bindings.push(now, now);
   if (reserve > 0) bindings.push(provider ?? PROVIDER, ...eligiblePoolTypes, now, now, reserve);
   const row = await db.prepare(sql).bind(...bindings).first();
 
@@ -138,6 +152,7 @@ async function claimApiPoolKey(db, {
     key_id: row.key_id,
     provider: row.provider,
     pool_type: row.pool_type,
+    contributed_by_user_id: row.contributed_by_user_id || null,
     api_key: await decryptSecret(row.encrypted_key),
     expires_at: expiresAt
   };
@@ -509,7 +524,7 @@ async function fingerprintKey(apiKey) {
   return toHex(new Uint8Array(digest));
 }
 
-async function encryptSecret(secret) {
+export async function encryptSecret(secret) {
   const key = await deriveEncryptionKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(secret));
