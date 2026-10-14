@@ -123,7 +123,7 @@ export function validateManualProbeCommand(input = {}) {
   if (/(?:%2f|%5c)/i.test(pathOnly) || decodedPath.includes("\\") || decodedPath.split("/").some(segment => segment === "." || segment === "..")) {
     throw new Error("PROBE_PATH_TRAVERSAL_NOT_ALLOWED");
   }
-  if (!/^\\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(pathOnly)) throw new Error("PROBE_PATH_HAS_INVALID_CHARACTERS");
+  if (!/^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*$/.test(pathOnly)) throw new Error("PROBE_PATH_HAS_INVALID_CHARACTERS");
   const query = input.query == null || input.query === "" ? {} : input.query;
   if (!query || typeof query !== "object" || Array.isArray(query)) throw new Error("PROBE_QUERY_MUST_BE_JSON_OBJECT");
   const entries = Object.entries(query);
