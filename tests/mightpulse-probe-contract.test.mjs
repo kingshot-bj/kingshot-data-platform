@@ -41,6 +41,8 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   const pool = await read("src/api-pool.js");
   assert.ok(pool.includes("reserveAvailableKeys = 0"));
   assert.ok(pool.includes("const reserveCondition = reserve > 0"));
+  assert.ok(pool.includes("const reserveMightyCondition = mightyOnly"));
+  assert.ok(pool.includes("reserve_keys.mighty_capable = 1 AND reserve_keys.mighty_check_status = 'CONFIRMED'"));
   assert.ok(pool.includes("COUNT(*) FROM api_pool_keys AS reserve_keys"));
   assert.ok(pool.includes(") > ?"));
 });
