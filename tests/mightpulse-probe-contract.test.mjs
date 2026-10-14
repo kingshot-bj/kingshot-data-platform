@@ -273,3 +273,26 @@ test("Probe catalog groups commands into collapsed categories to reduce mobile p
   assert.ok(page.includes("catalog-group .group-items{grid-template-columns:1fr"));
   assert.ok(page.includes("term?' open':''"));
 });
+
+
+test("Probe catalog opens command-specific inputs instead of requiring manual path/query editing", async () => {
+  const source = await read("src/index.js");
+  const pageStart = source.indexOf("async function renderMightPulseProbePage");
+  const pageEnd = source.indexOf("async function handleGoogleDriveVerifyApi", pageStart);
+  const page = source.slice(pageStart, pageEnd);
+  for (const marker of [
+    "id='catalogCommandForm'",
+    "id='catalogFormFields'",
+    "function configureCatalogCommand(cmd)",
+    "このコマンドに必要な項目だけ入力してください",
+    "id='catalogInput_kid'",
+    "id='catalogInput_governor_id'",
+    "id='catalogInput_tag'",
+    "APIパスやクエリJSONの編集は不要です",
+    "catalogFormRun",
+    "catalogFormCancel"
+  ]) assert.ok(page.includes(marker), "missing focused input feature: " + marker);
+  assert.ok(page.includes("endpoint.indexOf('{kid}')>=0"));
+  assert.ok(page.includes("endpoint.indexOf('{governor_id}')>=0"));
+  assert.ok(page.includes("data-config-catalog"));
+});
