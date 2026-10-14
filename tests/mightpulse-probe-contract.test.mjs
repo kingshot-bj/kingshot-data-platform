@@ -258,3 +258,18 @@ test("Probe catalog explains command purpose and exposes endpoint/query/permissi
   assert.ok(page.includes("player_full:'基本情報・英雄・ランキング・領主装備をまとめて取得"));
   assert.ok(page.includes("kvk_matchups:'Mighty権限でKvKのマッチアップ一覧を取得します。"));
 });
+
+
+test("Probe catalog groups commands into collapsed categories to reduce mobile page length", async () => {
+  const source = await read("src/index.js");
+  const pageStart = source.indexOf("async function renderMightPulseProbePage");
+  const pageEnd = source.indexOf("async function handleGoogleDriveVerifyApi", pageStart);
+  const page = source.slice(pageStart, pageEnd);
+  assert.ok(page.includes("catalog-group"));
+  assert.ok(page.includes("group-items"));
+  assert.ok(page.includes("groups[k].length"));
+  assert.ok(page.includes("プレイヤー情報"));
+  assert.ok(page.includes("Mighty専用API"));
+  assert.ok(page.includes("catalog-group .group-items{grid-template-columns:1fr"));
+  assert.ok(page.includes("term?' open':''"));
+});
