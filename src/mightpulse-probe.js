@@ -4,6 +4,7 @@ const SECRET_FIELD = /(?:^key$|api[_-]?key|authorization|access[_-]?token|refres
 
 export const MIGHTPULSE_PROBE_COMMANDS = [
   { id:"player_base", category:"Player", label:"Player 基本情報", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base"}, requiresMighty:false, references:["governor_id","kid"] },
+  { id:"player_ranks", category:"Player", label:"Player ランキング", method:"GET", endpoint:"/players/{governor_id}", query:{include:"ranks"}, requiresMighty:false, references:["governor_id","kid"] },
   { id:"player_full", category:"Player", label:"Player 全セクション", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base,heroes,ranks,gov_gear"}, requiresMighty:false, references:["governor_id","kid"] },
   { id:"player_uid", category:"Player", label:"Player 内部UID検索", method:"GET", endpoint:"/players/{uid}", query:{id_type:"uid",include:"base"}, requiresMighty:false, references:["governor_id","kid"] },
   { id:"kingdom_list", category:"Kingdom", label:"王国一覧", method:"GET", endpoint:"/kingdoms", query:{page:1,size:24}, requiresMighty:false, references:["kid"] },
