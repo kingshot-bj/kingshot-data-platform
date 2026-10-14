@@ -1,5 +1,5 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
-import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2 } from "./r2-archive.js";
+import { archiveRankingHistoryBatch, listRankingHistoryFromR2, archivePlayerRankHistoryBatch, listPlayerRankHistoryFromR2, getLatestPlayerRankHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
 import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 
@@ -137,10 +137,12 @@ export async function getPlayerRankHistory(db, {
 
   let r2Rows = [];
   try {
-    r2Rows = await listPlayerRankHistoryFromR2(archiveBucket, {
-      governorId: String(governorId),
-      limit: safeLimit
-    });
+    r2Rows = safeLimit === 1
+      ? await getLatestPlayerRankHistoryFromR2(archiveBucket, { governorId: String(governorId) })
+      : await listPlayerRankHistoryFromR2(archiveBucket, {
+          governorId: String(governorId),
+          limit: safeLimit
+        });
   } catch (error) {
     await recordDiagnostic(db, {
       service: "ranking", feature: "player_history_storage", operation: "READ_R2", status: "FAILED",
