@@ -4013,7 +4013,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
         player_activity: playerActivity,
         headers,
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
-        diagnostic_payload: diagnosticPayload,
+        diagnostic_payload: redactProbeSecrets(diagnosticPayload),
         raw_payload: safePayload,
         field_dictionary: buildProbeFieldDictionary(safePayload),
         archive,
