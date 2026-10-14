@@ -94,6 +94,23 @@ function enhance(){
   }
  }
 
+ const radarHost=document.createElement('div');radarHost.className='ee-radar-wrap';radarHost.hidden=true;
+ radarHost.style.maxWidth='440px';radarHost.style.margin='12px auto';
+ sec.insertBefore(radarHost,status.nextSibling);
+ function renderRadar(){
+  radarHost.replaceChildren();
+  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)})).filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
+  if(rows.length<3){status.textContent='レーダー表示には、両プレイヤーの実スコアがそろった項目が3件以上必要です。';return}
+  status.textContent='各項目を2人の高い方＝100%として相対化。異なる項目の実数値を直接合算するグラフではありません。';
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 320 320');svg.setAttribute('role','img');svg.setAttribute('aria-label','プレイヤー比較レーダーチャート');
+  const cx=160,cy=145,r=105,n=rows.length;
+  const pt=(i,scale)=>{const angle=-Math.PI/2+i*2*Math.PI/n;return [cx+Math.cos(angle)*r*scale,cy+Math.sin(angle)*r*scale]};
+  for(let k=1;k<=5;k++){const g=document.createElementNS(ns,'polygon');g.setAttribute('fill','none');g.setAttribute('stroke','var(--border,#29425e)');g.setAttribute('points',rows.map((row,i)=>pt(i,k/5).join(',')).join(' '));svg.appendChild(g)}
+  rows.forEach((row,i)=>{const p=pt(i,1),line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',p[0]);line.setAttribute('y2',p[1]);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const t=document.createElementNS(ns,'text');t.setAttribute('x',cx+Math.cos(-Math.PI/2+i*2*Math.PI/n)*(r+20));t.setAttribute('y',cy+Math.sin(-Math.PI/2+i*2*Math.PI/n)*(r+20)+3);t.setAttribute('fill','var(--text,#e8f3ff)');t.setAttribute('font-size','10');t.setAttribute('text-anchor','middle');t.textContent=row.label;svg.appendChild(t)});
+  [0,1].forEach(idx=>{const points=rows.map((row,i)=>{const a=row.entries[0].score,b=row.entries[1].score,m=Math.max(a,b);const value=m>0?(idx===0?a:b)/m:1;return pt(i,value).join(',')});const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',points.join(' '));poly.setAttribute('fill',idx===0?'#ffd16633':'#42d9ff33');poly.setAttribute('stroke',idx===0?'#ffd166':'#42d9ff');poly.setAttribute('stroke-width','2.5');poly.style.transition='all 2.2s ease';svg.appendChild(poly)});
+  radarHost.appendChild(svg);const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=rows[0].entries[0].name+'（黄） ／ '+rows[0].entries[1].name+'（青）';radarHost.appendChild(legend);
+ }
+
  const candidateRows=new Map();
  [...document.querySelectorAll('.compare-player-card')].forEach(playerCard=>{
   const name=safeText(playerCard.querySelector('.pname'))||'プレイヤー';
@@ -134,7 +151,7 @@ function enhance(){
  if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
  customPanel.appendChild(customList);sec.appendChild(customPanel);
 
- function renderAll(){cards.forEach(renderCard);status.textContent=mode==='radar'?'レーダー表示は、比較尺度が一致する複数項目を確認できるまで無効です。分割リング・比較バー・数値をご利用ください。':''}
+ function renderAll(){cards.forEach(renderCard);radarHost.hidden=mode!=='radar';if(mode==='radar'){cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=true});renderRadar()}else{cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=false});status.textContent=''}cards.forEach(card=>{card.classList.remove('ee-motion-in');void card.offsetWidth;card.classList.add('ee-motion-in')})}
  syncCustomCards();renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
