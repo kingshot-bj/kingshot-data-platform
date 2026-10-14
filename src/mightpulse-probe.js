@@ -139,11 +139,14 @@ export async function archiveMightPulseProbeRecord(env, record) {
   if (env?.DB) {
     try {
       await env.DB.prepare(
-        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO mightpulse_probe_runs (request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         id,
         now,
         record?.user_id == null ? null : String(record.user_id).slice(0, 128),
+        record?.actor_discord_id == null ? null : String(record.actor_discord_id).slice(0, 128),
+        record?.actor_label == null ? null : String(record.actor_label).slice(0, 160),
+        record?.actor_role == null ? null : String(record.actor_role).slice(0, 32),
         String(record?.command_type || "UNKNOWN").slice(0, 40),
         String(record?.endpoint || "").slice(0, 500),
         String(record?.status || "UNKNOWN").slice(0, 40),
