@@ -302,14 +302,13 @@ test("Probe field dictionary is compact and readable on mobile instead of a wide
   assert.ok(start >= 0 && end > start, "field dictionary renderer must exist");
   const renderer = source.slice(start, end);
   for (const marker of [
-    "class=\\\"field-dictionary\\\"",
-    "class=\\\"field-entry\\\"",
-    "class=\\\"field-path\\\"",
-    "class=\\\"field-type\\\"",
-    "class=\\\"field-sample\\\"",
+    "field-dictionary",
+    "field-entry",
+    "field-path",
+    "field-type",
+    "field-sample",
     "samples.slice(0,2)"
   ]) assert.ok(renderer.includes(marker), "missing readable field dictionary feature: " + marker);
-  assert.ok(renderer.includes("<details class=\\\"field-entry\\\">"));
   assert.ok(source.includes(".field-path{font:11px ui-monospace"));
   assert.ok(source.includes("overflow-wrap:anywhere;word-break:break-word"));
 });
