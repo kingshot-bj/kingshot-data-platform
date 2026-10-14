@@ -38,6 +38,11 @@ test("Probe can lease all API Pool classes while reserving one key for normal us
   assert.ok(!lease.includes("leaseMightPulseProbeKey"));
   assert.ok(source.includes("mightyRequired: body?.mighty_required === true"));
   assert.ok(source.includes("disable: false"));
+  const pool = await read("src/api-pool.js");
+  assert.ok(pool.includes("reserveAvailableKeys = 0"));
+  assert.ok(pool.includes("const reserveCondition = reserve > 0"));
+  assert.ok(pool.includes("COUNT(*) FROM api_pool_keys AS reserve_keys"));
+  assert.ok(pool.includes(") > ?"));
 });
 
 test("Probe schema migrations cover run history, dedicated keys, batches and lender audit", async () => {
