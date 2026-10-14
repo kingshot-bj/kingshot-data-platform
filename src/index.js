@@ -21,7 +21,7 @@ function esc(value) {
 }
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord, addMightPulseProbeKey, listMightPulseProbeKeys, leaseMightPulseProbeKey, releaseMightPulseProbeKey, revokeMightPulseProbeKey, setMightPulseProbeKeyMighty } from "./mightpulse-probe.js";
+import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord, addMightPulseProbeKey, listMightPulseProbeKeys, leaseMightPulseProbeKey, releaseMightPulseProbeKey, revokeMightPulseProbeKey, setMightPulseProbeKeyMighty, MIGHTPULSE_PROBE_COMMANDS, buildCatalogProbeCommand, buildProbeFieldDictionary, extractProbeReferences } from "./mightpulse-probe.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
@@ -4015,6 +4015,7 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
         diagnostic_payload: diagnosticPayload,
         raw_payload: safePayload,
+        field_dictionary: buildProbeFieldDictionary(safePayload),
         archive,
         timestamp_like_fields: timestampFields,
         response_sha256: responseHash,
@@ -4275,7 +4276,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       query: command.query, pool_type: lease.pool_type, http_status: result.status,
       request_started_at_iso: record.started_at, response_received_at_iso: record.completed_at,
       elapsed_ms: record.elapsed_ms, payload_keys: safePayload && typeof safePayload === "object" && !Array.isArray(safePayload) ? Object.keys(safePayload) : [],
-      raw_payload: safePayload, response_sha256: await sha256HexForProbe(safePayload), archive
+      raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), response_sha256: await sha256HexForProbe(safePayload), archive
     }});
   } catch (error) {
     const status = Number(error?.status || 0);
@@ -4315,12 +4316,233 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
   }
 }
 
+function probeResponseCount(payload) {
+  if (Array.isArray(payload)) return payload.length;
+  if (!payload || typeof payload !== "object") return 0;
+  for (const value of Object.values(payload)) if (Array.isArray(value)) return value.length;
+  return 1;
+}
+
+function probeBatchItemKey(item) {
+  return String(item.command_id || "") + ":" + JSON.stringify(item.params || {});
+}
+
+async function executeCatalogProbeItem(env, guard, batchId, item) {
+  const entry = MIGHTPULSE_PROBE_COMMANDS.find(command => command.id === item.command_id);
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  let command = null;
+  let lease = null;
+  try {
+    command = buildCatalogProbeCommand(item.command_id, item.params || {});
+  } catch (error) {
+    const record = {
+      request_id:requestId, user_id:guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id:guard?.auth?.discord_id || null, actor_label:guard?.auth?.global_name || guard?.auth?.username || null, actor_role:guard?.auth?.role || null,
+      command_type:item.command_id || "UNKNOWN", endpoint:entry?.endpoint || "",
+      status:"SKIPPED", http_status:null, elapsed_ms:0, trigger_reason:item.trigger_reason || "MANUAL",
+      batch_id:batchId, sequence_no:item.sequence_no, discovered_from:item.discovered_from || null,
+      response_count:0, retry_count:0, save_destination:"R2",
+      error_code:String(error?.message || "PROBE_COMMAND_SKIPPED").slice(0,100)
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, record); } catch {}
+    return { ok:false, status:"SKIPPED", command_id:item.command_id, sequence_no:item.sequence_no, endpoint:entry?.endpoint || "", error:record.error_code, archive };
+  }
+
+  try {
+    lease = await leaseProbeApiKey(env, {
+      mightyRequired:command.requiresMighty,
+      purpose:"MIGHTPULSE_PROBE_BATCH",
+      targetType:command.category,
+      targetId:command.path
+    });
+    const result = await mightPulseFetch(env, command.path, {
+      method:"GET", query:command.query, apiKey:lease.api_key, maxRetries:0,
+      metadata:{ leaseId:lease.lease_id, poolType:lease.pool_type, probeBatchId:batchId, probeSequence:item.sequence_no }
+    });
+    const completedAt = Date.now();
+    const payload = redactProbeSecrets(result.data);
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:command.endpoint, targetType:command.category, targetId:command.path,
+      purpose:"MIGHTPULSE_PROBE_BATCH", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
+    });
+    const record = {
+      request_id:requestId, user_id:guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id:guard?.auth?.discord_id || null, actor_label:guard?.auth?.global_name || guard?.auth?.username || null, actor_role:guard?.auth?.role || null,
+      command_type:item.command_id, endpoint:command.endpoint, query:command.query,
+      status:"SUCCESS", http_status:result.status, elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:item.trigger_reason || "MANUAL", batch_id:batchId,
+      sequence_no:item.sequence_no, discovered_from:item.discovered_from || null,
+      response_count:probeResponseCount(payload), retry_count:0, save_destination:"R2", raw_payload:payload
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env,record); }
+    catch (archiveError) { archive={r2_saved:false,metadata_saved:false,archive_error:String(archiveError?.message||archiveError).slice(0,250)}; }
+    return {
+      ok:true,status:"SUCCESS",command_id:item.command_id,category:command.category,
+      sequence_no:item.sequence_no,trigger_reason:item.trigger_reason||"MANUAL",
+      discovered_from:item.discovered_from||null,endpoint:command.endpoint,path:command.path,
+      query:command.query,http_status:result.status,elapsed_ms:record.elapsed_ms,
+      response_count:record.response_count,field_dictionary:buildProbeFieldDictionary(payload),
+      raw_payload:payload,archive,discovered_references:extractProbeReferences(payload,{maxReferences:10})
+    };
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    if (lease) {
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      try {
+        await releaseProbeApiKey(env,lease,{
+          endpoint:command.endpoint,targetType:command.category,targetId:command.path,
+          purpose:"MIGHTPULSE_PROBE_BATCH",httpStatus:status,errorCode:error?.code||"MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:error?.message||null,cooldownSeconds:cooldown,keepAvailable:cooldown===0&&(status===400||status===403||status===404)
+        });
+      } catch {}
+    }
+    const completedAt=Date.now();
+    const record={
+      request_id:requestId,user_id:guard?.auth?.user_id||guard?.auth?.id||null,
+      actor_discord_id:guard?.auth?.discord_id||null,actor_label:guard?.auth?.global_name||guard?.auth?.username||null,actor_role:guard?.auth?.role||null,
+      command_type:item.command_id,endpoint:command?.endpoint||entry?.endpoint||"",query:command?.query||item.params||{},
+      status:"FAILED",http_status:status||null,elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(),completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
+      discovered_from:item.discovered_from||null,response_count:0,retry_count:0,save_destination:"R2",
+      error_code:error?.code||String(error?.message||"MIGHTPULSE_REQUEST_FAILED").slice(0,100),
+      error_message:String(error?.message||error).slice(0,1000),diagnostic:redactProbeSecrets(error?.details||null)
+    };
+    let archive=null;
+    try { archive=await archiveMightPulseProbeRecord(env,record); } catch {}
+    return {ok:false,status:"FAILED",command_id:item.command_id,sequence_no:item.sequence_no,endpoint:record.endpoint,error:record.error_code,http_status:status||null,elapsed_ms:record.elapsed_ms,archive};
+  }
+}
+
+async function handleMightPulseProbeBatchApi(request, env, guard, body) {
+  if (!env.DB) return json({ok:false,error:"D1_NOT_CONFIGURED"},503);
+  const mode=String(body?.mode||"batch");
+  const userId=guard?.auth?.user_id||guard?.auth?.id||null;
+  let batchId=String(body?.batch_id||"").trim();
+  let queue=[],seen=new Set(),nextSequence=1,completed=0,totalCommands=0;
+  let concurrency=2,maxCommands=30,batchType="all",createdAt=Math.floor(Date.now()/1000);
+  if (mode==="resume") {
+    if (!batchId) return json({ok:false,error:"BATCH_ID_REQUIRED"},400);
+    const row=await env.DB.prepare("SELECT * FROM mightpulse_probe_batches WHERE batch_id=? LIMIT 1").bind(batchId).first();
+    if (!row) return json({ok:false,error:"PROBE_BATCH_NOT_FOUND"},404);
+    queue=JSON.parse(row.pending_json||"[]");
+    seen=new Set(JSON.parse(row.seen_json||"[]"));
+    nextSequence=Math.max(1,Number(row.next_sequence)||1);
+    completed=Number(row.completed_commands||0);
+    totalCommands=Number(row.total_commands||0);
+    concurrency=Math.min(4,Math.max(1,Number(row.concurrency)||2));
+    maxCommands=Math.min(30,Math.max(1,Number(row.max_commands)||30));
+    batchType=String(row.batch_type||"resumed");
+    createdAt=Number(row.created_at)||createdAt;
+    if (!queue.length) {
+      await env.DB.prepare("UPDATE mightpulse_probe_batches SET state='COMPLETED',updated_at=? WHERE batch_id=?").bind(Math.floor(Date.now()/1000),batchId).run();
+      return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,results:[]});
+    }
+  } else {
+    batchId=batchId||crypto.randomUUID();
+    batchType=String(body?.batch_type||"all");
+    concurrency=Math.min(4,Math.max(1,Number(body?.concurrency)||2));
+    maxCommands=Math.min(30,Math.max(1,Number(body?.max_commands)||30));
+    const params={
+      governor_id:String(body?.params?.governor_id||"").trim(),
+      uid:String(body?.params?.uid||"").trim(),
+      kid:String(body?.params?.kid||"").trim(),
+      tag:String(body?.params?.tag||"").trim(),
+      board:String(body?.params?.board||"personal_power"),
+      limit:Math.min(100,Math.max(1,Number(body?.params?.limit)||100))
+    };
+    let selected=MIGHTPULSE_PROBE_COMMANDS;
+    if (batchType==="category") {
+      const category=String(body?.category||"");
+      selected=selected.filter(command=>command.category===category);
+    } else if (batchType==="selected") {
+      const ids=Array.isArray(body?.command_ids)?body.command_ids.map(String):[];
+      selected=selected.filter(command=>ids.includes(command.id));
+    }
+    const initial=selected.slice(0,maxCommands).map(command=>({command_id:command.id,params,trigger_reason:"MANUAL",discovered_from:null,depth:0}));
+    for (const item of initial) {
+      const key=probeBatchItemKey(item);
+      if (!seen.has(key)) { seen.add(key); queue.push(item); }
+    }
+    totalCommands=seen.size;
+    await env.DB.prepare(
+      "INSERT INTO mightpulse_probe_batches (batch_id,created_at,updated_at,user_id,state,batch_type,total_commands,completed_commands,pending_json,seen_json,next_sequence,concurrency,max_commands,last_error) VALUES (?,?,?,?,'RUNNING',?,?,0,?,?,?,?,?,NULL)"
+    ).bind(batchId,createdAt,createdAt,userId,batchType,totalCommands,JSON.stringify(queue),JSON.stringify([...seen]),nextSequence,concurrency,maxCommands).run();
+  }
+
+  const results=[];
+  const inFlight=new Map();
+  const saveProgress=async(state,lastError=null)=>{
+    const pending=[...queue,...inFlight.values()];
+    const now=Math.floor(Date.now()/1000);
+    await env.DB.prepare(
+      "UPDATE mightpulse_probe_batches SET state=?,updated_at=?,total_commands=?,completed_commands=?,pending_json=?,seen_json=?,next_sequence=?,last_error=? WHERE batch_id=?"
+    ).bind(state,now,totalCommands,completed,JSON.stringify(pending),JSON.stringify([...seen]),nextSequence,lastError,batchId).run();
+  };
+  const scheduleDiscovered=(result,item)=>{
+    if (!body?.automatic_discovery || !result?.ok || Number(item.depth||0)>=2) return;
+    const refs=Array.isArray(result.discovered_references)?result.discovered_references:[];
+    for (const ref of refs) {
+      const candidates=[];
+      if (ref.type==="PLAYER") {
+        candidates.push({command_id:"player_base",params:{...item.params,governor_id:ref.governor_id,kid:ref.kid||item.params?.kid}});
+        candidates.push({command_id:"player_full",params:{...item.params,governor_id:ref.governor_id,kid:ref.kid||item.params?.kid}});
+      } else if (ref.type==="KINGDOM") {
+        candidates.push({command_id:"kingdom_detail",params:{...item.params,kid:ref.kid}});
+        candidates.push({command_id:"kingdom_boards",params:{...item.params,kid:ref.kid}});
+        candidates.push({command_id:"kingdom_ranks",params:{...item.params,kid:ref.kid}});
+      } else if (ref.type==="ALLIANCE") {
+        candidates.push({command_id:"alliance_detail",params:{...item.params,kid:ref.kid,tag:ref.tag}});
+      }
+      for (const candidate of candidates) {
+        if (queue.length+inFlight.size+completed>=maxCommands) return;
+        const queued={...candidate,trigger_reason:"AUTO_DISCOVERED",discovered_from:item.command_id+"#"+item.sequence_no,depth:Number(item.depth||0)+1};
+        const key=probeBatchItemKey(queued);
+        if (!seen.has(key)) { seen.add(key);queue.push(queued);totalCommands++; }
+      }
+    }
+  };
+
+  await saveProgress("RUNNING");
+  const worker=async()=>{
+    while(true) {
+      const item=queue.shift();
+      if(!item) return;
+      if(!item.sequence_no) item.sequence_no=nextSequence++;
+      inFlight.set(item.sequence_no,item);
+      await saveProgress("RUNNING");
+      const result=await executeCatalogProbeItem(env,guard,batchId,item);
+      results.push(result);
+      inFlight.delete(item.sequence_no);
+      completed++;
+      scheduleDiscovered(result,item);
+      await saveProgress("RUNNING");
+    }
+  };
+  try {
+    await Promise.all(Array.from({length:concurrency},()=>worker()));
+    await saveProgress("COMPLETED");
+    return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,concurrency,results});
+  } catch(error) {
+    try { await saveProgress("INTERRUPTED",String(error?.message||error).slice(0,500)); } catch {}
+    return json({ok:false,batch_id:batchId,state:"INTERRUPTED",completed_commands:completed,total_commands:totalCommands,error:error?.message||"PROBE_BATCH_FAILED",results},500);
+  }
+}
+
 async function handleMightPulseProbeApi(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   if (request.method === "POST") {
     const body = await request.json().catch(() => null);
-    if (!body || String(body.mode || "") !== "manual") return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
+    if (!body) return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
+    if (String(body.mode||"")==="batch" || String(body.mode||"")==="resume") return await handleMightPulseProbeBatchApi(request,env,guard,body);
+    if (String(body.mode||"")!=="manual") return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
     try { return await executeManualMightPulseProbe(request, env, guard, body); }
     catch (error) { return json({ok:false,error:error?.message || "INVALID_PROBE_COMMAND"},400); }
   }
@@ -4365,10 +4587,12 @@ async function renderMightPulseProbePage(request, env) {
   "<div class='card'><h2>1. 対象を指定</h2><div class='form'>" +
   "<label class='field'><span>Player 領主ID</span><input id='governorId' inputmode='numeric' placeholder='例: 223636495'></label>" +
   "<label class='field'><span>Kingdom 王国番号</span><input id='kid' inputmode='numeric' placeholder='例: 1524'></label>" +
+  "<label class='field'><span>Alliance タグ</span><input id='manualAllianceTag' placeholder='例: ABC'></label>" +
   "<label class='field'><span>Player include</span><select id='include'><option value='base'>base</option><option value='base,ranks'>base,ranks</option><option value='base,heroes,ranks,gov_gear'>base,heroes,ranks,gov_gear</option></select></label>" +
   "<label class='field'><span>Kingdom ranking</span><select id='board'>" + boardOptions + "</select></label>" +
   "</div><div class='actions'><button class='btn' data-type='PLAYER'>Playerを取得</button><button class='btn secondary' data-type='KINGDOM'>Kingdomを取得</button><button class='btn secondary' data-type='KINGDOM_RANKING'>Kingdom Rankingを取得</button><button class='btn secondary' id='clearHistory' type='button'>履歴クリア</button></div><div id='status' class='hint'></div></div>" +
   "<div class='card'><h2>手入力コマンド実験</h2><p class='hint'>MightPulse APIの相対パスとクエリJSONを指定して、GETリクエストを1回だけ実行します。ホスト名・外部URLは指定できません。例: /players/225623582 と {&quot;include&quot;:&quot;base,ranks&quot;}。結果JSONは画面で確認・コピーでき、R2に保存します。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/225623582'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{"include":"base,ranks"}'></label></div><label class='field' style='margin-top:10px'><span>必要なAPI権限</span><select id='manualMightyRequired'><option value='true'>Mighty権限が必要（おすすめ）</option><option value='false'>通常権限でも可</option></select></label><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></div>" +
+  "<div class='card'><h2>コマンド台帳・一括実行</h2><p class='hint'>公式APIのコマンド一覧からカテゴリ単位・全件を実行します。一括実行ではレスポンス内のプレイヤー・王国・同盟参照を検出し、重複を避けながら関連コマンドを追加調査します。単体実行ボタンは連鎖しません。</p><div class='form'><label class='field'><span>カテゴリ</span><select id='probeBatchCategory'><option>Player</option><option>Kingdom</option><option>Ranking</option><option>Alliance</option><option>Mighty</option></select></label><label class='field'><span>同時実行数（1〜4）</span><select id='probeBatchConcurrency'><option value='1'>1</option><option value='2' selected>2</option><option value='3'>3</option><option value='4'>4</option></select></label></div><div class='actions'><button class='btn secondary' id='runCategoryBatch' type='button'>このカテゴリを一括実行</button><button class='btn' id='runAllBatch' type='button'>全コマンド一括実行</button><button class='btn secondary' id='resumeBatch' type='button'>中断したバッチを再開</button></div><div id='batchStatus' class='hint'></div><div id='batchResults' class='table-wrap'></div></div>" +
   (String(guard.auth?.role || "").toUpperCase() === "OWNER" ? "<div class='card' id='probeKeyManager'><h2>Owner専用 · Probeキー管理</h2><p class='hint'>専用キーは本番API Poolと別保管します。登録時に通常APIで疎通確認し、必要ならMighty権限を別途検証します。キー本体は登録後に再表示しません。</p><div class='form'><label class='field'><span>キーのラベル</span><input id='probeKeyLabel' placeholder='調査用キー'></label><label class='field'><span>MightPulse APIキー</span><input id='probeApiKey' type='password' autocomplete='off' placeholder='登録時のみ入力'></label></div><div class='actions'><button class='btn' id='addProbeKey' type='button'>キーを登録</button><button class='btn secondary' id='refreshProbeKeys' type='button'>一覧を更新</button></div><div id='probeKeyStatus' class='hint'></div><div id='probeKeyList'></div></div>" : "") +
   "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。履歴はこのブラウザのlocalStorageだけに保持します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>実行者</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
   `<script>(function(){var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||p.created_at*1000||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||p.actor&&p.actor.label||'-')+'<br><span class=\\\"small\\\">'+esc(p.actor_role||p.actor&&p.actor.role||'')+'</span></td><td>'+esc(p.type||p.command_type)+'<br><span class=\"small\">'+esc(p.target_id)+'</span></td><td>'+esc(p.fresh==null?'-':p.fresh)+'</td><td>'+esc(p.cached_at||'-')+'</td><td>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</td><td>'+esc(p.http_status)+'</td><td>'+esc(p.elapsed_ms)+' ms</td><td class=\"mono\">'+esc(String(p.hash||'').slice(0,16))+'…</td></tr>';}).join('')||'<tr><td colspan=\"8\" class=\"small\">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
@@ -4409,7 +4633,7 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
   '<b>Section SHA-256</b><span>'+sh+'</span>'+
   '<b>比較</b><span><strong>'+esc(comparison.title)+'</strong><br>'+comparison.items.map(function(x){return '• '+esc(x);}).join('<br>')+'</span>'+
-  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query,mighty_required:document.getElementById('manualMightyRequired').value!=='false'})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',manualProbe);async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});var keyManager=document.getElementById('probeKeyManager');if(keyManager){function loadProbeKeys(){fetch('/api/admin/mightpulse-probe-keys',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error||'KEY_LIST_FAILED');document.getElementById('probeKeyList').innerHTML=(d.keys||[]).map(function(k){return '<div class="row"><b>'+esc(k.label||'Probe key')+'</b> · '+esc(k.key_fingerprint)+' · '+esc(k.status)+' · Mighty: '+esc(k.mighty_check_status||'UNCONFIRMED')+'<div class="actions"><button type="button" data-check-mighty="'+esc(k.key_id)+'">Mighty権限を確認</button><button type="button" data-revoke-probe-key="'+esc(k.key_id)+'">無効化</button></div></div>';}).join('')||'<div class="row muted">専用キーはまだ登録されていません。</div>';}).catch(function(e){document.getElementById('probeKeyStatus').textContent='キー一覧取得失敗: '+esc(e.message||e);});}document.getElementById('refreshProbeKeys').addEventListener('click',loadProbeKeys);document.getElementById('addProbeKey').addEventListener('click',function(){var apiKey=document.getElementById('probeApiKey').value;var label=document.getElementById('probeKeyLabel').value.trim();if(!apiKey){document.getElementById('probeKeyStatus').textContent='APIキーを入力してください。';return;}document.getElementById('probeKeyStatus').textContent='キーを検証・登録中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:'add',api_key:apiKey,label:label})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ADD_FAILED');return d;});}).then(function(d){document.getElementById('probeApiKey').value='';document.getElementById('probeKeyStatus').textContent=d.message||'登録しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='登録失敗: '+esc(e.message||e);});});document.getElementById('probeKeyList').addEventListener('click',function(event){var check=event.target.closest('[data-check-mighty]');var revoke=event.target.closest('[data-revoke-probe-key]');var action=check?'check_mighty':revoke?'revoke':null;var keyId=check?check.getAttribute('data-check-mighty'):revoke?revoke.getAttribute('data-revoke-probe-key'):null;if(!action)return;if(action==='revoke'&&!confirm('このProbe専用キーを無効化しますか？'))return;document.getElementById('probeKeyStatus').textContent='処理中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:action,key_id:keyId})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ACTION_FAILED');return d;});}).then(function(d){document.getElementById('probeKeyStatus').textContent=d.message||'処理しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='処理失敗: '+esc(e.message||e);});});loadProbeKeys();}draw();fetch('/api/admin/mightpulse-probe?history=1&limit=50',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(!d||!d.ok||!Array.isArray(d.history))return;document.getElementById('history').innerHTML=d.history.map(function(p){return '<tr><td>'+new Date(Number(p.created_at||0)*1000).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||p.actor_discord_id||'-')+'<br><span class=\\\"small\\\">'+esc(p.actor_role||'')+'</span></td><td>'+esc(p.command_type||'')+'<br><span class=\\\"small\\\">'+esc(p.endpoint||'')+'</span></td><td>-</td><td>-</td><td>-</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td class=\\\"mono\\\">'+esc(String(p.request_id||'').slice(0,16))+'</td></tr>';}).join('')||'<tr><td colspan=\\\"9\\\" class=\\\"small\\\">履歴なし</td></tr>';}).catch(function(){});}());</script></body></html>`;}
+  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query,mighty_required:document.getElementById('manualMightyRequired').value!=='false'})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',manualProbe);async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});var lastBatchKey='eagleeye_mightpulse_probe_last_batch_v1';function renderBatchResults(results){document.getElementById('batchResults').innerHTML='<table><thead><tr><th>#</th><th>コマンド</th><th>起動理由</th><th>HTTP</th><th>結果</th><th>保存先</th></tr></thead><tbody>'+(results||[]).map(function(x){return '<tr><td>'+esc(x.sequence_no||'-')+'</td><td>'+esc(x.command_id||x.type||'-')+'<br><span class="small">'+esc(x.endpoint||x.path||'')+'</span></td><td>'+esc(x.trigger_reason||'MANUAL')+'</td><td>'+esc(x.http_status||'-')+'</td><td>'+esc(x.status|| (x.ok?'SUCCESS':'FAILED'))+' '+esc(x.error||'')+'</td><td>'+esc(x.archive&&x.archive.r2_saved?'R2':'未保存')+'</td></tr>';}).join('')+'</tbody></table>'; }async function runBatch(mode,batchType,category){var id=mode==='resume'?localStorage.getItem(lastBatchKey):null;if(mode==='resume'&&!id){document.getElementById('batchStatus').textContent='再開できるバッチIDがありません。';return;}if(mode!=='resume'){id=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random());localStorage.setItem(lastBatchKey,id);}document.getElementById('batchStatus').textContent=mode==='resume'?'バッチ再開中…':'一括実行中…';var params={governor_id:document.getElementById('governorId').value.trim(),kid:document.getElementById('kid').value.trim(),tag:document.getElementById('manualAllianceTag')?document.getElementById('manualAllianceTag').value.trim():'',board:document.getElementById('board').value};try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:mode==='resume'?'resume':'batch',batch_id:id,batch_type:batchType,category:category,params:params,concurrency:Number(document.getElementById('probeBatchConcurrency').value)||2,max_commands:30,automatic_discovery:true})});var d=await r.json();if(d.batch_id)localStorage.setItem(lastBatchKey,d.batch_id);renderBatchResults(d.results||[]);document.getElementById('batchStatus').textContent='状態: '+(d.state||'FAILED')+' / 完了 '+(d.completed_commands||0)+' / 対象 '+(d.total_commands||0)+' / Batch ID '+(d.batch_id||id)+(d.error?' / '+d.error:'');}catch(e){document.getElementById('batchStatus').textContent='一括実行が中断された可能性があります。Batch IDを保持しています。再開を押してください。';}}document.getElementById('runCategoryBatch').addEventListener('click',function(){runBatch('batch','category',document.getElementById('probeBatchCategory').value)});document.getElementById('runAllBatch').addEventListener('click',function(){if(confirm('最大30コマンドを実行し、関連データを追加調査します。APIリクエスト数が増える可能性があります。続けますか？'))runBatch('batch','all','')});document.getElementById('resumeBatch').addEventListener('click',function(){runBatch('resume','resume','')});var keyManager=document.getElementById('probeKeyManager');if(keyManager){function loadProbeKeys(){fetch('/api/admin/mightpulse-probe-keys',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error||'KEY_LIST_FAILED');document.getElementById('probeKeyList').innerHTML=(d.keys||[]).map(function(k){return '<div class="row"><b>'+esc(k.label||'Probe key')+'</b> · '+esc(k.key_fingerprint)+' · '+esc(k.status)+' · Mighty: '+esc(k.mighty_check_status||'UNCONFIRMED')+'<div class="actions"><button type="button" data-check-mighty="'+esc(k.key_id)+'">Mighty権限を確認</button><button type="button" data-revoke-probe-key="'+esc(k.key_id)+'">無効化</button></div></div>';}).join('')||'<div class="row muted">専用キーはまだ登録されていません。</div>';}).catch(function(e){document.getElementById('probeKeyStatus').textContent='キー一覧取得失敗: '+esc(e.message||e);});}document.getElementById('refreshProbeKeys').addEventListener('click',loadProbeKeys);document.getElementById('addProbeKey').addEventListener('click',function(){var apiKey=document.getElementById('probeApiKey').value;var label=document.getElementById('probeKeyLabel').value.trim();if(!apiKey){document.getElementById('probeKeyStatus').textContent='APIキーを入力してください。';return;}document.getElementById('probeKeyStatus').textContent='キーを検証・登録中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:'add',api_key:apiKey,label:label})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ADD_FAILED');return d;});}).then(function(d){document.getElementById('probeApiKey').value='';document.getElementById('probeKeyStatus').textContent=d.message||'登録しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='登録失敗: '+esc(e.message||e);});});document.getElementById('probeKeyList').addEventListener('click',function(event){var check=event.target.closest('[data-check-mighty]');var revoke=event.target.closest('[data-revoke-probe-key]');var action=check?'check_mighty':revoke?'revoke':null;var keyId=check?check.getAttribute('data-check-mighty'):revoke?revoke.getAttribute('data-revoke-probe-key'):null;if(!action)return;if(action==='revoke'&&!confirm('このProbe専用キーを無効化しますか？'))return;document.getElementById('probeKeyStatus').textContent='処理中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:action,key_id:keyId})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ACTION_FAILED');return d;});}).then(function(d){document.getElementById('probeKeyStatus').textContent=d.message||'処理しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='処理失敗: '+esc(e.message||e);});});loadProbeKeys();}draw();fetch('/api/admin/mightpulse-probe?history=1&limit=50',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(!d||!d.ok||!Array.isArray(d.history))return;document.getElementById('history').innerHTML=d.history.map(function(p){return '<tr><td>'+new Date(Number(p.created_at||0)*1000).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||p.actor_discord_id||'-')+'<br><span class=\\\"small\\\">'+esc(p.actor_role||'')+'</span></td><td>'+esc(p.command_type||'')+'<br><span class=\\\"small\\\">'+esc(p.endpoint||'')+'</span></td><td>-</td><td>-</td><td>-</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td class=\\\"mono\\\">'+esc(String(p.request_id||'').slice(0,16))+'</td></tr>';}).join('')||'<tr><td colspan=\\\"9\\\" class=\\\"small\\\">履歴なし</td></tr>';}).catch(function(){});}());</script></body></html>`;}
 async function handleGoogleDriveVerifyApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
