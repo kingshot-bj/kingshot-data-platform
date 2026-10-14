@@ -67,7 +67,7 @@ function enhance(){
  const buttons={};
  modes.forEach(([key,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.mode=key;b.setAttribute('aria-pressed',String(key===mode));b.addEventListener('click',()=>{mode=key;try{localStorage.setItem('eagleeye-player-compare-chart-v1',mode)}catch{}Object.entries(buttons).forEach(([k,node])=>node.setAttribute('aria-pressed',String(k===mode)));renderAll()});buttons[key]=b;tools.appendChild(b)});
  sec.insertBefore(tools,sec.children[1]||null);sec.insertBefore(status,tools.nextSibling);
- const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,color:colors[i%colors.length]}}).slice(0,2);
+ const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,color:colors[i%colors.length]}});
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
   const existing=card.querySelector('.mystic-ring');
@@ -99,16 +99,20 @@ function enhance(){
  sec.insertBefore(radarHost,status.nextSibling);
  function renderRadar(){
   radarHost.replaceChildren();
-  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)})).filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
-  if(rows.length<3){status.textContent='レーダー表示には、両プレイヤーの実スコアがそろった項目が3件以上必要です。';return}
-  status.textContent='各項目を2人の高い方＝100%として相対化。異なる項目の実数値を直接合算するグラフではありません。';
-  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 320 320');svg.setAttribute('role','img');svg.setAttribute('aria-label','プレイヤー比較レーダーチャート');
+  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)})).filter(row=>row.entries.length>=3&&row.entries.every(e=>e.score!==null));
+  const playerCount=rows.length?Math.min(...rows.map(row=>row.entries.length)):0;
+  if(rows.length<3||playerCount<3){status.textContent='レーダー表示には、3項目以上かつ3人以上のプレイヤーの実スコアが必要です。';return}
+  const names=rows[0].entries.slice(0,playerCount).map(e=>e.name);
+  const consistent=rows.every(row=>row.entries.length>=playerCount&&row.entries.slice(0,playerCount).every((e,i)=>e.name===names[i]));
+  if(!consistent){status.textContent='項目ごとのプレイヤー順が一致しないため、レーダーを表示できません。';return}
+  status.textContent='各項目を、その項目で最も高いプレイヤー＝100%として相対化しています。項目間の実数値を直接合算するものではありません。';
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 320 320');svg.setAttribute('role','img');svg.setAttribute('aria-label',playerCount+'人のプレイヤー比較レーダーチャート');
   const cx=160,cy=145,r=105,n=rows.length;
   const pt=(i,scale)=>{const angle=-Math.PI/2+i*2*Math.PI/n;return [cx+Math.cos(angle)*r*scale,cy+Math.sin(angle)*r*scale]};
   for(let k=1;k<=5;k++){const g=document.createElementNS(ns,'polygon');g.setAttribute('fill','none');g.setAttribute('stroke','var(--border,#29425e)');g.setAttribute('points',rows.map((row,i)=>pt(i,k/5).join(',')).join(' '));svg.appendChild(g)}
-  rows.forEach((row,i)=>{const p=pt(i,1),line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',p[0]);line.setAttribute('y2',p[1]);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const t=document.createElementNS(ns,'text');t.setAttribute('x',cx+Math.cos(-Math.PI/2+i*2*Math.PI/n)*(r+20));t.setAttribute('y',cy+Math.sin(-Math.PI/2+i*2*Math.PI/n)*(r+20)+3);t.setAttribute('fill','var(--text,#e8f3ff)');t.setAttribute('font-size','10');t.setAttribute('text-anchor','middle');t.textContent=row.label;svg.appendChild(t)});
-  [0,1].forEach(idx=>{const points=rows.map((row,i)=>{const a=row.entries[0].score,b=row.entries[1].score,m=Math.max(a,b);const value=m>0?(idx===0?a:b)/m:1;return pt(i,value).join(',')});const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',points.join(' '));poly.setAttribute('fill',idx===0?'#ffd16633':'#42d9ff33');poly.setAttribute('stroke',idx===0?'#ffd166':'#42d9ff');poly.setAttribute('stroke-width','2.5');poly.style.transition='all 2.2s ease';svg.appendChild(poly)});
-  radarHost.appendChild(svg);const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=rows[0].entries[0].name+'（黄） ／ '+rows[0].entries[1].name+'（青）';radarHost.appendChild(legend);
+  rows.forEach((row,i)=>{const p=pt(i,1),line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',p[0]);line.setAttribute('y2',p[1]);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const angle=-Math.PI/2+i*2*Math.PI/n;const t=document.createElementNS(ns,'text');t.setAttribute('x',cx+Math.cos(angle)*(r+20));t.setAttribute('y',cy+Math.sin(angle)*(r+20)+3);t.setAttribute('fill','var(--text,#e8f3ff)');t.setAttribute('font-size','10');t.setAttribute('text-anchor','middle');t.textContent=row.label;svg.appendChild(t)});
+  names.forEach((name,playerIndex)=>{const points=rows.map((row,i)=>{const scores=row.entries.slice(0,playerCount).map(e=>e.score);const max=Math.max(...scores);const score=row.entries[playerIndex].score;const value=max>0?score/max:1;return pt(i,value).join(',')});const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',points.join(' '));poly.setAttribute('fill',colors[playerIndex%colors.length]+'33');poly.setAttribute('stroke',colors[playerIndex%colors.length]);poly.setAttribute('stroke-width','2.5');poly.style.transition='all 2.2s ease';svg.appendChild(poly)});
+  radarHost.appendChild(svg);const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=names.map((name,i)=>name+'（'+['黄','青','紫','緑'][i%4]+'）').join(' ／ ');radarHost.appendChild(legend);
  }
 
  const candidateRows=new Map();
