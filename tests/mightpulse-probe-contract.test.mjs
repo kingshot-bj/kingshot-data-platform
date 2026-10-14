@@ -79,3 +79,12 @@ test("Probe error records redact leased keys and ambiguous Mighty checks stay un
   assert.ok(source.includes('status:"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"'));
   assert.ok(source.includes("Mighty権限を確認できませんでした。キーは無効化していません。"));
 });
+
+
+test("Probe batch resume requires creator ownership and an exclusive lease", async () => {
+  const source = await read("src/index.js");
+  assert.ok(source.includes("PROBE_BATCH_OWNER_MISMATCH"));
+  assert.ok(source.includes('String(row.user_id)!==String(userId)'));
+  assert.ok(source.includes("PROBE_BATCH_ALREADY_RUNNING"));
+  assert.ok(source.includes("WHERE batch_id=? AND lease_token=?"));
+});
