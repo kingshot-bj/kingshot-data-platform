@@ -38,12 +38,12 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 3. 結果表示：全JSON＋コピー／書き出し＋フィールド辞書。差分比較は今すぐ必須ではないが、後から追加できる設計にする。
 4. 保存：コマンド台帳・フィールド定義はコード管理。実行履歴・大きな生レスポンスはブラウザ／JSON書き出しとR2中心、D1負荷を低くする。
 5. 利用権限：ProbeはAdmin以上。VIP契約のないAdminでもMightyキーを借りて調査できるようにする。
-6. キー管理：Probe専用キーと、EagleEye利用時点で提供済みとみなす既存USER_CONTRIBUTEDキーの両方を利用する。Probe専用の追加貸出同意フラグは設けない。通常コマンドは利用可能な提供キーを候補にし、Mighty必須コマンドだけMighty確認済みキーに限定する。貸出元・利用者・時刻・コマンド・結果を監査できるようにする。キー本体はログに残さない。
+6. キー管理（ユーザー確定）：Probe専用キー・専用キー置き場・追加貸出同意は不要。EagleEyeの既存API Poolを全種類（SYSTEM_GENERAL／SYSTEM_WATCHLIST／USER_CONTRIBUTED）共有し、Mighty必須コマンドだけMighty確認済みキーに限定する。Probeが全キーをリースしないよう、共通の原子的リース処理で最低1キーを通常ユーザー／定期処理向けに残す。キー本体はログに残さず、貸出元・利用者・時刻・コマンド・結果を監査する。
 7. 借りたキーの範囲：公式コマンド、調査で見つかった機能、EagleEyeの取得処理の全対象。
 8. 保存先：実装済みデータは既存の正規保存処理へ。未実装データはR2。D1には必要最小限の索引・メタデータ。将来Google Driveへ移行しても、成功確認前にR2の元データを削除しない。
 9. 一括調査：一括実行では参照先を重複排除しながら自動調査。API制限、最大件数、深さ、同時実行数に上限を設ける。実行順序・状態を全件記録し、途中再開できるようにする。
 10. 新発見データ：実装候補リストで管理し、既存機能との対応・実装状況・本番反映可否を記録。コードを自動変更しない。
-11. Admin/Ownerの境界：既存コードを見て仮案を作ったが、この質問へのユーザーの明確な最終回答は未確認。現実装ではProbe専用キー登録・無効化をOwner専用に寄せ、Probe実行・結果閲覧はAdmin以上と仮定している。確定要件として扱わず、次スレでユーザーの合意を確認する。
+11. Admin/Ownerの境界：Probe実行・結果閲覧はAdmin以上。専用キー登録・無効化機能は廃止対象なのでOwner専用キー管理UI/APIを設けない。既存のProbe実行権限チェックを維持する。
 12. 同時実行数：仮実装は一括で1〜4、初期値2。ユーザーの最終回答が記録されていないため、暫定値。
 13. 最終安全確認・デプロイ方針：質問票の最後の確認は未完了。実装・テスト後に確認する。ユーザーはPreviewでの確認を求める方式を好まず、mainへマージしCloudflareへデプロイした上で確認することを希望している。ただし今回は未実施という状態。
 
@@ -63,12 +63,11 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 - redactProbeSecrets：秘密値を再帰的にマスク
 - buildProbeFieldDictionary：フィールドパス、型、観測数、サンプル（最大400フィールド）
 - extractProbeReferences：Player / Kingdom / Alliance参照候補の抽出
-- Probe専用キーの登録、一覧、リース、解放、無効化、Mighty確認状態の管理
+- APIキー専用管理機能は持たない。既存API Poolのキーを借り、Mighty確認済み判定はAPI Poolのメタデータを使う。
 - archiveMightPulseProbeRecord：R2へ生記録、D1へ実行メタデータを保存。R2失敗時にもD1記録を試みる処理を追加
 
 ### src/api-pool.js
-- 暗号化関数 encryptSecret をexportし、Probe専用キーを既存の暗号化方式で保存できるようにした。
-- 本番キー管理とProbe専用キーは別テーブルにする方針。
+- Probe専用キーのための暗号化・保存処理は不要。既存API Poolの暗号化、リース、成功／失敗、クールダウン処理を再利用する。
 
 ### src/index.js
 - /admin/mightpulse-probe のUI拡張
@@ -76,12 +75,12 @@ MightPulse APIを調査し、既知のコマンドだけでなく、公式公開
 - カテゴリ／全件バッチ、参照先の自動発見、バッチ状態のD1保存、再開API
 - 実行履歴のD1一覧とR2レコード読み戻し
 - フィールド辞書表示、JSONコピー・ダウンロード
-- Owner専用Probeキー管理UIとAPI（登録、一覧、無効化、Mighty権限チェック）
-- Probe実行では本番SYSTEM_*キーを借りず、Probe専用キーを優先し、次にUSER_CONTRIBUTEDキーを使う。通常コマンドは通常キーも利用可能、Mighty必須コマンドはMighty確認済みキーに限定する。追加の貸出同意フラグは設けない。
+- Probe専用キー管理UI/APIを削除。
+- Probeは既存API Poolの3種すべてを利用し、Mighty必須コマンドはMighty確認済みキーに限定。`reserveAvailableKeys: 1` により、リース可能キーをすべてProbeが占有しないようにする。
 
 ### Migration
 - migrations/0061_mightpulse_probe_runs.sql：Probe実行メタデータ用テーブル
-- migrations/0062_mightpulse_probe_keys.sql：Probe専用キー用テーブル
+- migrations/0062_mightpulse_probe_keys.sql：旧実装の互換用スキーマ。新しいProbe実行コードからは参照しない（0064の既存migration依存があるため、migration履歴の監査前に削除・改変しない）。
 - migrations/0063_mightpulse_probe_batches.sql：バッチ再開用状態テーブルとrunメタデータ列追加
 
 ### Tests / CI
@@ -108,9 +107,9 @@ SHAは各ファイルのblob SHAで、ブランチのHEADコミットSHAとは�
 
 1. 構文・CI再確認：初回のCIでテストのアーカイブキーassertionに問題が見つかり修正した。その後の最新CI成功は未確認。直近の全編集後に再実行・結果確認する。
 2. SQLバインド数／migration：archiveMightPulseProbeRecordのD1 INSERT列とbind引数の数が合っているか、0061→0062→0063の順で適用可能かを確認。既存migration番号の競合もmainと比較する。Cloudflare D1に未適用のままデプロイしない。
-3. キー暗号化：configureApiPoolEncryption と encryptSecret/decryptSecret の使用を確認。専用キーの追加・取得・リース・無効化をDB mockと実D1相当テストで検証。
+3. API Poolキーの暗号化・共有リース：Probe専用キー処理は削除済み。既存API Poolの暗号化とリース処理、最低1キーの予備枠、同時実行時の原子性、返却処理を検証。
 4. Mighty権限チェック：現在 /kvk/matchups を使ってMighty権限を判定する仮実装。API契約上そのendpointが妥当か、401/403/429/5xxをどう区別するか確認。403でもキー本体を無効化しないこと。
-5. 借用キーの利用条件と貸出監査：現在のフォールバックは leaseApiKey(... poolTypes: ["USER_CONTRIBUTED"]) を呼ぶ。Probe専用の追加貸出同意フラグは不要（ユーザー確定：EagleEyeにキーを提供した時点で利用同意済み）。通常コマンドはmightyOnly:false、Mighty必須コマンドはmightyOnly:trueで利用候補を分ける。既存の状態・無効化・クールダウン・リース条件を維持し、貸出中のキーが本番処理と競合しないことを確認する。専用キーと借用キーの双方で確実な解放を検証する。
+5. API Pool共有・貸出監査：現実装は leaseApiKey(... poolTypes: ["SYSTEM_GENERAL","SYSTEM_WATCHLIST","USER_CONTRIBUTED"], reserveAvailableKeys: 1) を使用する。通常コマンドはmightyOnly:false、Mighty必須コマンドはmightyOnly:true。API Poolの状態・Mighty確認・クールダウン・リース期限・成功／失敗処理を維持し、同時Probe実行でも通常ユーザー用の最低1キーを残せることを確認する。キーの返却・失敗時のクールダウンとリース期限切れを監査する。
 6. 本番データ汚染防止：Probe結果を既存の本番保存ルートへ書き込まない。既存データ反映の要件は「既存保存ロジックに対応していることを確認した場合のみ」。今のバッチ処理はR2調査保存を基本とし、通常のEagleEye保存への安全な振り分けはまだ完成していない。
 7. バッチの再開ロジック：pending_json / seen_json / inFlight の保存タイミング、並行ワーカーの競合、途中でWorkerが停止した場合のin-flight再投入、同じバッチIDを別ユーザーが再開できないこと、同じバッチが並行実行されないことを確認。D1の状態更新が重複／逆行しないようにする。
 8. バッチ応答サイズ：一括APIが全結果を1レスポンスに返す構造は、R2に大きいJSONを保存してもAPIレスポンスが肥大化しうる。レスポンスには概要と実行IDのみを返し、詳細は履歴からR2読込にする方式を検討。D1は大きなpayloadを保持しない。
