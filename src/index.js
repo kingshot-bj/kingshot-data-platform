@@ -4362,8 +4362,8 @@ async function persistKnownProbeResponse(env, { path, query = {}, payload, httpS
   if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
   }
-  const playerCommandIds = new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
-  const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"]);
+  const playerCommandIds = new Set(["player_base","player_full","player_ranks","player_uid","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
+  const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh","eagleeye_alliance_rosters"]);
   const identified = commandId ? { id:commandId, kind:playerCommandIds.has(commandId) ? "PLAYER" : rankingCommandIds.has(commandId) ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
   if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
   const safePayload = redactProbeSecrets(payload);
