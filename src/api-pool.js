@@ -123,7 +123,7 @@ async function claimApiPoolKey(db, {
     "WHERE key_id = (SELECT key_id FROM api_pool_keys WHERE provider = ? AND pool_type IN (" + placeholders + ") AND status IN ('AVAILABLE','COOLDOWN')" + mightyCondition + contributorCondition + " AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?)" +
     reserveCondition +
     " ORDER BY CASE WHEN last_used_at IS NULL THEN 0 ELSE 1 END, COALESCE(last_used_at, 0) ASC, created_at ASC LIMIT 1) " +
-    "RETURNING key_id, provider, pool_type, encrypted_key";
+    "RETURNING key_id, provider, pool_type, encrypted_key, contributed_by_user_id";
   const bindings = [
     leaseId, expiresAt, jobId ?? null, purpose ?? null, targetType ?? null, targetId ?? null, now,
     provider ?? PROVIDER, ...eligiblePoolTypes, ...(contributedByUserId ? [contributedByUserId] : []), now, now
@@ -138,6 +138,7 @@ async function claimApiPoolKey(db, {
     key_id: row.key_id,
     provider: row.provider,
     pool_type: row.pool_type,
+    contributed_by_user_id: row.contributed_by_user_id || null,
     api_key: await decryptSecret(row.encrypted_key),
     expires_at: expiresAt
   };
