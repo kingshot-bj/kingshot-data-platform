@@ -222,3 +222,17 @@ test("Probe UI runs catalog commands through the audited selected-command execut
   ]) assert.ok(page.includes(marker), "missing Probe UI contract: " + marker);
   assert.ok(source.includes("ok:true,request_id:requestId,status:\"SUCCESS\",command_id:item.command_id"), "selected command response must include its request id for result lookup");
 });
+
+
+test("navigation progress labels Probe and releases its overlay after a stalled navigation", async () => {
+  const source = await read("src/index.js");
+  const start = source.indexOf("function showNavigation(text)");
+  const end = source.indexOf("document.addEventListener(\"click\"", start);
+  assert.ok(start >= 0 && end > start, "navigation progress tracker must be present");
+  const tracker = source.slice(start, end);
+  assert.ok(source.includes('target.pathname==="/admin/mightpulse-probe")progressLabel="MightPulse Probeを開いています…";'));
+  assert.ok(tracker.includes("navWatchdog"));
+  assert.ok(tracker.includes("},20000)"));
+  assert.ok(tracker.includes("clearNavigation()"));
+  assert.ok(tracker.includes("ページの読み込みに時間がかかっています"));
+});
