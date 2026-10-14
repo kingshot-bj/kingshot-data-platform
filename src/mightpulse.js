@@ -203,6 +203,7 @@ export async function mightPulseFetch(env, path, {
           }
         }
       );
+      lastError.attempts = attempts;
 
       if (attempt >= maxRetries) {
         await recordSystemEvent(env.DB, {
