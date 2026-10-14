@@ -79,16 +79,20 @@ test("archive writes raw record to R2 and only metadata to D1", async () => {
   assert.ok(!insertSql.includes("raw_payload"));
 });
 
-test("archive metadata is still recorded when R2 write fails", async () => {
+test("archive metadata is still recorded and marked unsaved when R2 write fails", async () => {
   let insertCount = 0;
+  let savedDestination = null;
   const env = {
-    ARCHIVE: { put: async () => { throw new Error("R2 unavailable"); } },
-    DB: { prepare: () => ({ bind: () => ({ run: async () => { insertCount++; } }) }) }
+    ARCHIVE: { put: async () => { throw new Error("R2 unavailable: secret-value"); } },
+    DB: { prepare: () => ({ bind: (...args) => ({ run: async () => { insertCount++; savedDestination = args[20]; } }) }) }
   };
   const result = await archiveMightPulseProbeRecord(env, {
     request_id: "probe-test-2", command_type: "MANUAL", endpoint: "/players/1", status: "FAILED"
   });
   assert.equal(result.r2_saved, false);
   assert.equal(result.metadata_saved, true);
+  assert.equal(result.r2_error, "R2_ARCHIVE_FAILED");
+  assert.equal(result.metadata_error, null);
+  assert.equal(savedDestination, "NONE");
   assert.equal(insertCount, 1);
 });
