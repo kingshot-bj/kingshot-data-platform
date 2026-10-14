@@ -59,3 +59,11 @@ test("radar supports all selected players instead of only the first two", () => 
   assert.ok(script.includes("playerCount+'人のプレイヤー比較レーダーチャート'"));
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
+
+test("ring, bar, numeric, and custom ranking modes retain up to four players", () => {
+  assert.ok(script.includes("const players=available"));
+  assert.ok(script.includes("players.forEach((e,i)=>{const row"));
+  assert.ok(script.includes("players.forEach(e=>{const cell"));
+  assert.ok(script.includes("items.slice(0,4)"));
+  assert.ok(script.includes("players.length+'人'"));
+});
