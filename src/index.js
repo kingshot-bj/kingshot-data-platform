@@ -21,7 +21,7 @@ function esc(value) {
 }
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
-import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord } from "./mightpulse-probe.js";
+import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord, addMightPulseProbeKey, listMightPulseProbeKeys, leaseMightPulseProbeKey, releaseMightPulseProbeKey, revokeMightPulseProbeKey, setMightPulseProbeKeyMighty } from "./mightpulse-probe.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
@@ -3926,12 +3926,9 @@ async function fetchMightPulseProbeThroughPool(env, spec, userId = null) {
   let probeStartedAt = Date.now();
 
   try {
-    const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-    lease = await leaseApiKey(env.DB, {
-      poolTypes: automaticPoolTypes,
-      purpose: "MIGHTPULSE_PROBE",
-      targetType: spec.targetType,
-      targetId: spec.targetId
+    lease = await leaseProbeApiKey(env, {
+      mightyRequired:false, purpose:"MIGHTPULSE_PROBE",
+      targetType:spec.targetType, targetId:spec.targetId
     });
     poolType = lease.pool_type;
 
@@ -3972,17 +3969,11 @@ async function fetchMightPulseProbeThroughPool(env, spec, userId = null) {
       return out;
     })();
 
-    await recordApiPoolSuccess(env.DB, {
-      keyId: lease.key_id,
-      leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-      endpoint: spec.endpoint,
-      targetType: spec.targetType,
-      targetId: spec.targetId,
-      purpose: "MIGHTPULSE_PROBE",
-      httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
+      purpose:"MIGHTPULSE_PROBE", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
     });
 
     const safePayload = redactProbeSecrets(payload);
@@ -4035,13 +4026,11 @@ async function fetchMightPulseProbeThroughPool(env, spec, userId = null) {
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
       const keepAvailable = cooldown === 0 && (status === 400 || status === 403 || status === 404);
       try {
-        await recordApiPoolFailure(env.DB, {
-          keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
-          endpoint: spec.endpoint, targetType: spec.targetType, targetId: spec.targetId,
-          purpose: "MIGHTPULSE_PROBE", httpStatus: status,
-          errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-          errorMessage: error?.message || null, cooldownSeconds: cooldown,
-          disable: false, keepAvailable
+        await releaseProbeApiKey(env, lease, {
+          endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
+          purpose:"MIGHTPULSE_PROBE", httpStatus:status,
+          errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:error?.message || null, cooldownSeconds:cooldown, keepAvailable
         });
       } catch {}
     }
@@ -4142,6 +4131,97 @@ async function handleMightPulseResearchApi(request, env) {
   }
 }
 
+async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetType = null, targetId = null } = {}) {
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  const dedicated = await leaseMightPulseProbeKey(env.DB, { mightyRequired, purpose, targetId });
+  if (dedicated) return { ...dedicated, source_type: "PROBE_DEDICATED" };
+  const borrowed = await leaseApiKey(env.DB, {
+    poolTypes: ["USER_CONTRIBUTED"],
+    mightyOnly: true,
+    purpose,
+    targetType,
+    targetId
+  });
+  return { ...borrowed, source_type: "USER_CONTRIBUTED_MIGHTY" };
+}
+
+async function releaseProbeApiKey(env, lease, options = {}) {
+  if (!lease) return;
+  if (lease.source_type === "PROBE_DEDICATED") {
+    await releaseMightPulseProbeKey(env.DB, lease.lease_id, options);
+    return;
+  }
+  if (options.success) {
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+      endpoint: options.endpoint || null, targetType: options.targetType || null,
+      targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
+      httpStatus: options.httpStatus || 200,
+      remainingMinute: options.remainingMinute ?? null, remainingDay: options.remainingDay ?? null
+    });
+  } else if (options.errorCode || options.cooldownSeconds) {
+    await recordApiPoolFailure(env.DB, {
+      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+      endpoint: options.endpoint || null, targetType: options.targetType || null,
+      targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
+      httpStatus: options.httpStatus || 0, errorCode: options.errorCode || "MIGHTPULSE_REQUEST_FAILED",
+      errorMessage: options.errorMessage || null, cooldownSeconds: options.cooldownSeconds || 0,
+      disable: false, keepAvailable: options.keepAvailable === true
+    });
+  } else {
+    await releaseApiLease(env.DB, lease.lease_id);
+  }
+}
+
+async function handleMightPulseProbeKeysApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  if (request.method === "GET") {
+    return json({ ok:true, keys:await listMightPulseProbeKeys(env.DB) });
+  }
+  if (request.method !== "POST") return json({ ok:false, error:"METHOD_NOT_ALLOWED" },405);
+  const body = await request.json().catch(() => ({}));
+  const action = String(body?.action || "").toLowerCase();
+  try {
+    if (action === "add") {
+      const apiKey = String(body?.api_key || "").trim();
+      if (!apiKey) return json({ok:false,error:"PROBE_API_KEY_REQUIRED"},400);
+      await mightPulseFetch(env, "/kingdoms", { query:{page:1,size:1}, apiKey, timeoutMs:12000, maxRetries:0 });
+      const key = await addMightPulseProbeKey(env.DB, { apiKey, label:body?.label || "Probe専用キー" });
+      return json({ok:true,key,message:"Probe専用キーを登録しました。キー本体は保存後に再表示しません。"});
+    }
+    if (action === "revoke") {
+      const changed = await revokeMightPulseProbeKey(env.DB, String(body?.key_id || ""));
+      return json({ok:changed,error:changed?null:"PROBE_KEY_NOT_FOUND",message:changed?"Probe専用キーを無効化しました。":"対象キーが見つからないか、すでに無効です。"},changed?200:404);
+    }
+    if (action === "check_mighty") {
+      const keyId = String(body?.key_id || "");
+      if (!keyId) return json({ok:false,error:"PROBE_KEY_ID_REQUIRED"},400);
+      const lease = await leaseMightPulseProbeKey(env.DB, { mightyRequired:false, purpose:"PROBE_MIGHTY_CHECK", targetId:keyId });
+      if (!lease || lease.key_id !== keyId) {
+        if (lease) await releaseMightPulseProbeKey(env.DB, lease.lease_id);
+        return json({ok:false,error:"PROBE_KEY_NOT_AVAILABLE",message:"対象キーが使用中か利用できません。"},409);
+      }
+      try {
+        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey:lease.api_key, timeoutMs:12000, maxRetries:0, metadata:{probeKeyId:keyId} });
+        await setMightPulseProbeKeyMighty(env.DB,keyId,{capable:true,status:"CONFIRMED"});
+        await releaseMightPulseProbeKey(env.DB,lease.lease_id,{success:true});
+        return json({ok:true,mighty_capable:true,http_status:result.status,message:"Mighty権限を確認しました。"});
+      } catch (error) {
+        const status=Number(error?.status||0);
+        const isNotMighty=status===403||status===401;
+        await setMightPulseProbeKeyMighty(env.DB,keyId,{capable:false,status:isNotMighty?"NOT_MIGHTY":"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"});
+        await releaseMightPulseProbeKey(env.DB,lease.lease_id,{success:false,errorCode:error?.code||"MIGHTY_CHECK_FAILED",keepAvailable:true,cooldownSeconds:status===429?60:status>=500?15:0});
+        return json({ok:false,mighty_capable:false,status,error:error?.code||"MIGHTY_CHECK_FAILED",message:isNotMighty?"有効なAPIキーですがMighty権限は確認できませんでした。":"Mighty権限の確認に失敗しました。キーは無効化していません。"},200);
+      }
+    }
+    return json({ok:false,error:"INVALID_ACTION"},400);
+  } catch (error) {
+    return json({ok:false,error:error?.code||error?.message||"PROBE_KEY_ACTION_FAILED",message:String(error?.userMessage||error?.message||error).slice(0,500)},400);
+  }
+}
+
 async function executeManualMightPulseProbe(request, env, guard, body) {
   const command = validateManualProbeCommand(body || {});
   const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:MANUAL:" + command.path + ":" + JSON.stringify(command.query);
@@ -4152,8 +4232,8 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
   try {
-    lease = await leaseApiKey(env.DB, {
-      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
+    lease = await leaseProbeApiKey(env, {
+      mightyRequired: body?.mighty_required !== false,
       purpose: "MIGHTPULSE_PROBE_MANUAL",
       targetType: "MANUAL_COMMAND",
       targetId: command.path
@@ -4167,12 +4247,11 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     });
     const completedAt = Date.now();
     const safePayload = redactProbeSecrets(result.data);
-    await recordApiPoolSuccess(env.DB, {
-      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
-      endpoint: command.path, targetType: "MANUAL_COMMAND", targetId: command.path,
-      purpose: "MIGHTPULSE_PROBE_MANUAL", httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
+      purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
     });
     const record = {
       request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
@@ -4198,13 +4277,11 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
       const keepAvailable = status === 400 || status === 403 || status === 404;
       try {
-        await recordApiPoolFailure(env.DB, {
-          keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
-          endpoint: command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
+        await releaseProbeApiKey(env, lease, {
+          endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
           purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:status,
           errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-          errorMessage:error?.message || null, cooldownSeconds:cooldown,
-          disable:false, keepAvailable
+          errorMessage:error?.message || null, cooldownSeconds:cooldown, keepAvailable
         });
       } catch {}
     }
@@ -4223,7 +4300,7 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
       status, message:error?.message || null, diagnostic:redactProbeSecrets(error?.details || null) },
       status >= 400 && status < 600 ? status : 502);
   } finally {
-    if (lease) { try { await releaseApiLease(env.DB, lease.lease_id); } catch {} }
+    if (lease) { try { await releaseProbeApiKey(env, lease); } catch {} }
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
 }
@@ -4276,7 +4353,8 @@ async function renderMightPulseProbePage(request, env) {
   "<label class='field'><span>Player include</span><select id='include'><option value='base'>base</option><option value='base,ranks'>base,ranks</option><option value='base,heroes,ranks,gov_gear'>base,heroes,ranks,gov_gear</option></select></label>" +
   "<label class='field'><span>Kingdom ranking</span><select id='board'>" + boardOptions + "</select></label>" +
   "</div><div class='actions'><button class='btn' data-type='PLAYER'>Playerを取得</button><button class='btn secondary' data-type='KINGDOM'>Kingdomを取得</button><button class='btn secondary' data-type='KINGDOM_RANKING'>Kingdom Rankingを取得</button><button class='btn secondary' id='clearHistory' type='button'>履歴クリア</button></div><div id='status' class='hint'></div></div>" +
-  "<div class='card'><h2>手入力コマンド実験</h2><p class='hint'>MightPulse APIの相対パスとクエリJSONを指定して、GETリクエストを1回だけ実行します。ホスト名・外部URLは指定できません。例: /players/225623582 と {&quot;include&quot;:&quot;base,ranks&quot;}。結果JSONは画面で確認・コピーでき、R2に保存します。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/225623582'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{"include":"base,ranks"}'></label></div><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></div>" +
+  "<div class='card'><h2>手入力コマンド実験</h2><p class='hint'>MightPulse APIの相対パスとクエリJSONを指定して、GETリクエストを1回だけ実行します。ホスト名・外部URLは指定できません。例: /players/225623582 と {&quot;include&quot;:&quot;base,ranks&quot;}。結果JSONは画面で確認・コピーでき、R2に保存します。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/225623582'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{"include":"base,ranks"}'></label></div><label class='field' style='margin-top:10px'><span>必要なAPI権限</span><select id='manualMightyRequired'><option value='true'>Mighty権限が必要（おすすめ）</option><option value='false'>通常権限でも可</option></select></label><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></div>" +
+  + (String(guard.auth?.role || "").toUpperCase() === "OWNER" ? "<div class='card' id='probeKeyManager'><h2>Owner専用 · Probeキー管理</h2><p class='hint'>専用キーは本番API Poolと別保管します。登録時に通常APIで疎通確認し、必要ならMighty権限を別途検証します。キー本体は登録後に再表示しません。</p><div class='form'><label class='field'><span>キーのラベル</span><input id='probeKeyLabel' placeholder='調査用キー'></label><label class='field'><span>MightPulse APIキー</span><input id='probeApiKey' type='password' autocomplete='off' placeholder='登録時のみ入力'></label></div><div class='actions'><button class='btn' id='addProbeKey' type='button'>キーを登録</button><button class='btn secondary' id='refreshProbeKeys' type='button'>一覧を更新</button></div><div id='probeKeyStatus' class='hint'></div><div id='probeKeyList'></div></div>" : "") +
   "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。履歴はこのブラウザのlocalStorageだけに保持します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
   `<script>(function(){var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.type)+'<br><span class=\"small\">'+esc(p.target_id)+'</span></td><td>'+esc(p.fresh==null?'-':p.fresh)+'</td><td>'+esc(p.cached_at||'-')+'</td><td>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</td><td>'+esc(p.http_status)+'</td><td>'+esc(p.elapsed_ms)+' ms</td><td class=\"mono\">'+esc(String(p.hash||'').slice(0,16))+'…</td></tr>';}).join('')||'<tr><td colspan=\"8\" class=\"small\">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
   if(!previous) return {title:"比較対象なし",tone:"muted",items:["同じ対象・同じProbe種別の過去結果がありません。まず同条件で2回以上取得してください。"]};
@@ -4316,7 +4394,7 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
   '<b>Section SHA-256</b><span>'+sh+'</span>'+
   '<b>比較</b><span><strong>'+esc(comparison.title)+'</strong><br>'+comparison.items.map(function(x){return '• '+esc(x);}).join('<br>')+'</span>'+
-  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',manualProbe);async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
+  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query,mighty_required:document.getElementById('manualMightyRequired').value!=='false'})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',manualProbe);async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});var keyManager=document.getElementById('probeKeyManager');if(keyManager){function loadProbeKeys(){fetch('/api/admin/mightpulse-probe-keys',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error||'KEY_LIST_FAILED');document.getElementById('probeKeyList').innerHTML=(d.keys||[]).map(function(k){return '<div class="row"><b>'+esc(k.label||'Probe key')+'</b> · '+esc(k.key_fingerprint)+' · '+esc(k.status)+' · Mighty: '+esc(k.mighty_check_status||'UNCONFIRMED')+'<div class="actions"><button type="button" data-check-mighty="'+esc(k.key_id)+'">Mighty権限を確認</button><button type="button" data-revoke-probe-key="'+esc(k.key_id)+'">無効化</button></div></div>';}).join('')||'<div class="row muted">専用キーはまだ登録されていません。</div>';}).catch(function(e){document.getElementById('probeKeyStatus').textContent='キー一覧取得失敗: '+esc(e.message||e);});}document.getElementById('refreshProbeKeys').addEventListener('click',loadProbeKeys);document.getElementById('addProbeKey').addEventListener('click',function(){var apiKey=document.getElementById('probeApiKey').value;var label=document.getElementById('probeKeyLabel').value.trim();if(!apiKey){document.getElementById('probeKeyStatus').textContent='APIキーを入力してください。';return;}document.getElementById('probeKeyStatus').textContent='キーを検証・登録中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:'add',api_key:apiKey,label:label})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ADD_FAILED');return d;});}).then(function(d){document.getElementById('probeApiKey').value='';document.getElementById('probeKeyStatus').textContent=d.message||'登録しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='登録失敗: '+esc(e.message||e);});});document.getElementById('probeKeyList').addEventListener('click',function(event){var check=event.target.closest('[data-check-mighty]');var revoke=event.target.closest('[data-revoke-probe-key]');var action=check?'check_mighty':revoke?'revoke':null;var keyId=check?check.getAttribute('data-check-mighty'):revoke?revoke.getAttribute('data-revoke-probe-key'):null;if(!action)return;if(action==='revoke'&&!confirm('このProbe専用キーを無効化しますか？'))return;document.getElementById('probeKeyStatus').textContent='処理中…';fetch('/api/admin/mightpulse-probe-keys',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({action:action,key_id:keyId})}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.message||d.error||'KEY_ACTION_FAILED');return d;});}).then(function(d){document.getElementById('probeKeyStatus').textContent=d.message||'処理しました。';loadProbeKeys();}).catch(function(e){document.getElementById('probeKeyStatus').textContent='処理失敗: '+esc(e.message||e);});});loadProbeKeys();}draw();}());</script></body></html>`;
 }
 async function handleGoogleDriveVerifyApi(request, env) {
   const guard = await requireOwner(request, env);
@@ -4558,6 +4636,7 @@ export default {
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
+      if (url.pathname === "/api/admin/mightpulse-probe-keys") return await handleMightPulseProbeKeysApi(request, env);
       if (url.pathname === "/api/admin/mightpulse-research") return await handleMightPulseResearchApi(request, env);
       if (url.pathname === "/api/admin/rankings/player") return await handleRankingPlayerTest(request, env);
       if (url.pathname === "/api/admin/rankings/board") return await handleRankingBoardTest(request, env);
