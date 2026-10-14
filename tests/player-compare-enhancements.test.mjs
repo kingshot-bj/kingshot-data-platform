@@ -52,3 +52,10 @@ test("mobile chart layout keeps bars proportional and radar notice global", () =
 test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
 });
+
+test("radar supports all selected players instead of only the first two", () => {
+  assert.ok(script.includes("names.forEach((name,playerIndex)"));
+  assert.ok(script.includes("Math.min(...rows.map(row=>row.entries.length))"));
+  assert.ok(script.includes("playerCount+'人のプレイヤー比較レーダーチャート'"));
+  assert.ok(!script.includes("}}).slice(0,2)"));
+});
