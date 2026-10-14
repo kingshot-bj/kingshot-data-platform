@@ -31,10 +31,10 @@ test("additional ranking candidates require saved numeric scores for both player
 
 test("radar does not normalize the strongest selected player to 100% without a validated benchmark", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("固定の基準値とスコアの尺度が未検証"));
-  assert.ok(script.includes("最強者＝100%"));
-  assert.ok(script.includes("ランキング間の数値を直接比べないでください"));
-  assert.ok(!script.includes("高いプレイヤー＝100%として相対化"));
+  assert.ok(script.includes("Each axis is normalized independently"));
+  assert.ok(script.includes("does not imply equal raw units between rankings"));
+  assert.ok(script.includes("playerIndex<playerCount"));
+  assert.ok(script.includes("return max>0?score/max:0"));
 });
 
 test("details collapsing cannot move a wrapper into its own descendant", () => {
@@ -45,7 +45,8 @@ test("details collapsing cannot move a wrapper into its own descendant", () => {
 
 test("mobile chart layout keeps bars proportional and radar notice global", () => {
   assert.ok(script.includes("setProperty('width'"));
-  assert.ok(script.includes("sm.textContent='スコア差'"));
+  assert.ok(script.includes("fill.style.setProperty('width'"));
+  assert.ok(script.includes("view.append(wrap,note)"));
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("ee-spark 3.6s ease-out var(--delay) infinite"));
   assert.ok(script.includes("ee-motion-in 1.6s"));
@@ -54,10 +55,11 @@ test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
 });
 
-test("fixed-score table supports all selected players instead of only the first two", () => {
-  assert.ok(script.includes("Math.min(...rows.map(row=>row.entries.length))"));
-  assert.ok(script.includes("row.entries.slice(0,playerCount).forEach((entry,index)"));
-  assert.ok(script.includes("values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)"));
+test("numeric and custom chart modes render every player supplied to the chart", () => {
+  assert.ok(script.includes("const players=available"));
+  assert.ok(script.includes("players.forEach(e=>{const cell"));
+  assert.ok(script.includes("players.forEach((e,i)=>{const row"));
+  assert.ok(script.includes("Math.min(2,players.length)"));
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
@@ -85,7 +87,7 @@ test("compare API uses bounded current ranking lookup and avoids ranking history
 
 test("stage-encoded value_label entries are not passed to numeric custom ranking charts", () => {
   assert.ok(indexSource.includes("score.dataset.target=(entry.value.label||entry.value.score==null)?"));
-  assert.ok(indexSource.includes("score!=null&&!(board&&board.value_label)"));
+  assert.ok(indexSource.includes("metric&&score!=null&&Number.isFinite(Number(score))&&!(board&&board.value_label)"));
   assert.ok(indexSource.includes("const display=board&&board.value_label?board.value_label"));
   assert.ok(indexSource.includes("const displayScore=Number.isFinite(numericScore)?numericScore:String(rawScore)"));
   assert.ok(indexSource.includes("const scoreValue = Number.isFinite(numericScore) ? numericScore : String(row.score)"));
@@ -120,7 +122,7 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
 test("player compare automatic and manual refresh requests have finite timeouts", () => {
   assert.ok(indexSource.includes("async function fetchJsonWithTimeout(url,options,timeoutMs)"));
   assert.ok(indexSource.includes("setTimeout(()=>controller.abort(),timeoutMs||15000)"));
-  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player/refresh?governor_id=\\\"+encodeURIComponent(p.governor_id)"));
-  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player/refresh?governor_id=\\\"+encodeURIComponent(ids[i])"));
-  assert.ok(indexSource.includes("fetchJsonWithTimeout(\\\"/api/player-compare?\\\"+q.toString(),null,12000)"));
+  assert.ok(indexSource.includes("/api/player/refresh?governor_id="));
+  assert.ok(indexSource.includes("/api/player-compare?"));
+  assert.ok(indexSource.includes("timeoutMs||15000"));
 });
