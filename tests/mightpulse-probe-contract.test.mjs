@@ -69,3 +69,13 @@ test("Probe production persistence is restricted to explicitly mapped command ID
   assert.ok(source.includes('new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"])'));
   assert.ok(!source.includes('commandId==="eagleeye_alliance_rosters"'));
 });
+
+
+test("Probe error records redact leased keys and ambiguous Mighty checks stay unconfirmed", async () => {
+  const source = await read("src/index.js");
+  assert.ok(source.includes("function safeProbeErrorMessage(error, apiKey = null)"));
+  assert.ok(source.includes("message.split(secret).join(\"[REDACTED]\")"));
+  assert.ok(source.includes("error_message: safeProbeErrorMessage(error,lease?.api_key)"));
+  assert.ok(source.includes('status:"UNCONFIRMED",errorCode:error?.code||"MIGHTY_CHECK_FAILED"'));
+  assert.ok(source.includes("Mighty権限を確認できませんでした。キーは無効化していません。"));
+});
