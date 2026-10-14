@@ -1,5 +1,3 @@
-import { encryptSecret, decryptSecret } from "./api-pool.js";
-
 const SECRET_FIELD = /(?:^key$|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
 
 export const MIGHTPULSE_PROBE_COMMANDS = [
@@ -148,80 +146,6 @@ export function redactProbeSecrets(value, depth = 0) {
     out[key] = SECRET_FIELD.test(key) ? "[REDACTED]" : redactProbeSecrets(child, depth + 1);
   }
   return out;
-}
-
-export async function addMightPulseProbeKey(db, { apiKey, label = null, registeredByUserId = null } = {}) {
-  const key = String(apiKey || "").trim();
-  if (!key) throw new Error("PROBE_API_KEY_REQUIRED");
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
-  const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  const existing = await db.prepare("SELECT key_id FROM mightpulse_probe_keys WHERE key_fingerprint = ? LIMIT 1").bind(fingerprint).first();
-  if (existing) throw new Error("PROBE_API_KEY_ALREADY_REGISTERED");
-  const keyId = crypto.randomUUID();
-  const now = Math.floor(Date.now() / 1000);
-  const encrypted = await encryptSecret(key);
-  await db.prepare(
-    "INSERT INTO mightpulse_probe_keys (key_id, label, registered_by_user_id, encrypted_key, key_fingerprint, status, mighty_capable, mighty_check_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'AVAILABLE', 0, 'UNCONFIRMED', ?, ?)"
-  ).bind(keyId, String(label || "Probe専用キー").slice(0, 100), registeredByUserId == null ? null : String(registeredByUserId).slice(0,128), encrypted, fingerprint, now, now).run();
-  return { key_id: keyId, label: String(label || "Probe専用キー").slice(0, 100), key_fingerprint: fingerprint.slice(0, 8), status: "AVAILABLE", mighty_capable: false, mighty_check_status: "UNCONFIRMED" };
-}
-
-export async function listMightPulseProbeKeys(db) {
-  const result = await db.prepare(
-    "SELECT key_id, label, registered_by_user_id, key_fingerprint, status, mighty_capable, mighty_check_status, mighty_checked_at, last_used_at, last_success_at, last_error_at, last_error_code, cooldown_until, leased_until, created_at, updated_at, revoked_at FROM mightpulse_probe_keys ORDER BY created_at DESC"
-  ).all();
-  return (result.results || []).map(row => ({
-    ...row,
-    key_fingerprint: String(row.key_fingerprint || "").slice(0, 8),
-    mighty_capable: Number(row.mighty_capable) === 1
-  }));
-}
-
-export async function leaseMightPulseProbeKey(db, { keyId = null, mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetId = null, leaseSeconds = 120 } = {}) {
-  const now = Math.floor(Date.now() / 1000);
-  const leaseId = crypto.randomUUID();
-  const expiresAt = now + Math.max(30, Number(leaseSeconds) || 120);
-  const mightyCondition = mightyRequired ? " AND mighty_capable = 1 AND mighty_check_status = 'CONFIRMED'" : "";
-  const keyCondition = keyId ? " AND key_id = ?" : "";
-  const bindings = [leaseId, expiresAt, now, now, now];
-  if (keyId) bindings.push(String(keyId));
-  const row = await db.prepare(
-    "UPDATE mightpulse_probe_keys SET lease_id = ?, leased_until = ?, updated_at = ? WHERE key_id = (SELECT key_id FROM mightpulse_probe_keys WHERE status IN ('AVAILABLE','COOLDOWN') AND (cooldown_until IS NULL OR cooldown_until <= ?) AND (leased_until IS NULL OR leased_until <= ?) AND revoked_at IS NULL" + mightyCondition + keyCondition + " ORDER BY COALESCE(last_used_at,0) ASC, created_at ASC LIMIT 1) RETURNING key_id, label, registered_by_user_id, key_fingerprint, encrypted_key, mighty_capable"
-  ).bind(...bindings).first();
-  if (!row) return null;
-  return {
-    lease_id: leaseId, key_id: row.key_id, pool_type: "PROBE_DEDICATED",
-    label: row.label, key_fingerprint: String(row.key_fingerprint || "").slice(0, 8),
-    mighty_capable: Number(row.mighty_capable) === 1,
-    key_owner_user_id: row.registered_by_user_id || null,
-    api_key: await decryptSecret(row.encrypted_key), expires_at: expiresAt
-  };
-}
-
-export async function releaseMightPulseProbeKey(db, leaseId, { status = null, errorCode = null, cooldownSeconds = 0, success = false } = {}) {
-  if (!leaseId) return;
-  const now = Math.floor(Date.now() / 1000);
-  const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
-  const nextStatus = status || (cooldownSeconds > 0 ? "COOLDOWN" : "AVAILABLE");
-  await db.prepare(
-    "UPDATE mightpulse_probe_keys SET status = ?, cooldown_until = ?, last_used_at = ?, last_success_at = CASE WHEN ? = 1 THEN ? ELSE last_success_at END, last_error_at = CASE WHEN ? IS NOT NULL THEN ? ELSE last_error_at END, last_error_code = ?, lease_id = NULL, leased_until = NULL, updated_at = ? WHERE lease_id = ?"
-  ).bind(nextStatus, cooldownUntil, now, success ? 1 : 0, now, errorCode || null, now, errorCode || null, now, leaseId).run();
-}
-
-export async function revokeMightPulseProbeKey(db, keyId) {
-  if (!keyId) throw new Error("PROBE_KEY_ID_REQUIRED");
-  const now = Math.floor(Date.now() / 1000);
-  const result = await db.prepare(
-    "UPDATE mightpulse_probe_keys SET status = 'REVOKED', revoked_at = ?, lease_id = NULL, leased_until = NULL, updated_at = ? WHERE key_id = ? AND status != 'REVOKED'"
-  ).bind(now, now, keyId).run();
-  return Number(result?.meta?.changes || 0) === 1;
-}
-
-export async function setMightPulseProbeKeyMighty(db, keyId, { capable, status, errorCode = null } = {}) {
-  const now = Math.floor(Date.now() / 1000);
-  await db.prepare(
-    "UPDATE mightpulse_probe_keys SET mighty_capable = ?, mighty_check_status = ?, mighty_checked_at = ?, last_error_code = ?, updated_at = ? WHERE key_id = ?"
-  ).bind(capable ? 1 : 0, status || (capable ? "CONFIRMED" : "NOT_MIGHTY"), now, errorCode, now, keyId).run();
 }
 
 export async function archiveMightPulseProbeRecord(env, record) {
