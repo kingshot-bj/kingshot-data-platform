@@ -16,16 +16,16 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-spark-layer{position:absolute;inset:0;pointer-events:none}
 .ee-spark-layer i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px 2px var(--spark);animation:ee-spark .75s ease-out var(--delay) both;transform:rotate(var(--angle)) translateY(-38px)}
 @keyframes ee-spark{0%{opacity:0;transform:rotate(var(--angle)) translateY(-38px) scale(.4)}20%{opacity:1}100%{opacity:0;transform:rotate(var(--angle)) translateY(calc(-38px - var(--distance))) scale(0)}}
-.ee-compare-bars{display:grid;gap:9px;margin:12px 0}
+.ee-compare-bars{display:grid;gap:9px;margin:12px 0;min-width:0}
 .ee-compare-bar-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;font-size:12px}
 .ee-compare-bar-row .bar-label{grid-column:1/-1;display:flex;justify-content:space-between;gap:8px}
 .ee-compare-bar-track{grid-column:1/-1;height:9px;background:var(--border,#29425e);border-radius:99px;overflow:hidden;display:flex}
-.ee-compare-bar-track span{height:100%;transition:width .8s ease}
+.ee-compare-bar-track span{display:block;height:100%;flex:0 0 auto;max-width:100%;transition:width .8s ease}
 .ee-compare-bar-track .a{background:#ffd166}.ee-compare-bar-track .b{background:#42d9ff}
 .ee-compare-numeric{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
 .ee-compare-numeric>div{padding:10px;border:1px solid var(--border,#29425e);border-radius:10px;text-align:center;min-width:0}
-.ee-compare-numeric small{display:block;overflow-wrap:anywhere;color:var(--sub,#91a7bf);font-size:11px}
-.ee-compare-numeric strong{display:block;font-size:16px;margin-top:3px}
+.ee-compare-numeric small{display:block;white-space:normal;overflow-wrap:normal;word-break:normal;color:var(--sub,#91a7bf);font-size:11px;line-height:1.25}
+.ee-compare-numeric strong{display:block;font-size:clamp(13px,3.8vw,16px);margin-top:5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}
 @media(prefers-reduced-motion:reduce){.ee-split-ring .slice{transition:none}.ee-spark-layer i{animation:none;display:none}}
 </style>
@@ -81,16 +81,16 @@ function enhance(){
   if(mode==='ring'){
    const ring=document.createElement('div');ring.className='ee-split-ring';ring.innerHTML='<svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="48"></circle><circle class="slice slice-a" cx="60" cy="60" r="48"></circle><circle class="slice slice-b" cx="60" cy="60" r="48"></circle></svg><div class="ee-center"></div><div class="ee-spark-layer" aria-hidden="true"></div>';
    const circ=2*Math.PI*48,arcA=ratio*circ,arcB=(1-ratio)*circ;const slices=ring.querySelectorAll('.slice');slices[0].style.strokeDasharray=arcA+' '+(circ-arcA);slices[0].style.strokeDashoffset='0';slices[1].style.strokeDasharray=arcB+' '+(circ-arcB);slices[1].style.strokeDashoffset=String(-arcA);
-   const center=ring.querySelector('.ee-center');center.textContent=fmt(diff);const sm=document.createElement('small');sm.textContent=(a.score===b.score?'同点':a.score>b.score?a.name+' が上回る':b.name+' が上回る')+' · スコア差';center.appendChild(sm);
+   const center=ring.querySelector('.ee-center');center.textContent=fmt(diff);const sm=document.createElement('small');sm.textContent='スコア差';center.appendChild(sm);
    if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=ring.querySelector('.ee-spark-layer');for(let i=0;i<14;i++){const p=document.createElement('i');p.style.setProperty('--angle',(ratio*360+(i-6.5)*7)+'deg');p.style.setProperty('--distance',(25+(i%4)*10)+'px');p.style.setProperty('--delay',(i*18)+'ms');p.style.setProperty('--spark',colors[i%2]);layer.appendChild(p)}}
    view.appendChild(ring);
   }else if(mode==='bar'){
    const wrap=document.createElement('div');wrap.className='ee-compare-bars';const max=Math.max(a.score,b.score,1);
-   [a,b].forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.width=(Math.max(0,e.score)/max*100)+'%';track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
+   [a,b].forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.setProperty('width',(Math.max(0,e.score)/max*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
   }else if(mode==='number'){
-   const wrap=document.createElement('div');wrap.className='ee-compare-numeric';[a,b].forEach(e=>{const cell=document.createElement('div');const name=document.createElement('small');name.textContent=e.name;const val=document.createElement('strong');val.textContent=fmt(e.score);cell.append(name,val);wrap.appendChild(cell)});const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='差：'+fmt(diff)+' · '+(a.score===b.score?'同点':a.score>b.score?a.name+' が上':b.name+' が上');view.append(wrap,note);
+   const wrap=document.createElement('div');wrap.className='ee-compare-numeric';[a,b].forEach(e=>{const cell=document.createElement('div');const name=document.createElement('small');name.textContent=e.name;name.title=e.name;const val=document.createElement('strong');val.textContent=fmt(e.score);cell.append(name,val);wrap.appendChild(cell)});const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='差：'+fmt(diff)+' · '+(a.score===b.score?'同点':a.score>b.score?a.name+' が上':b.name+' が上');view.append(wrap,note);
   }else{
-   const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='レーダー表示は、同じ単位・同じ評価ルールで比較できる複数項目が確認できた場合のみ有効化します。現在のランキング群は評価尺度の同一性が未確認のため、誤った合成比較を避けてリング／バー／数値を使用してください。';view.appendChild(msg);
+   const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg);
   }
  }
 
@@ -134,7 +134,7 @@ function enhance(){
  if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
  customPanel.appendChild(customList);sec.appendChild(customPanel);
 
- function renderAll(){cards.forEach(renderCard);status.textContent=mode==='radar'?'レーダー：比較尺度の一致が未確認のため利用を保留しています。':''}
+ function renderAll(){cards.forEach(renderCard);status.textContent=mode==='radar'?'レーダー表示は、比較尺度が一致する複数項目を確認できるまで無効です。分割リング・比較バー・数値をご利用ください。':''}
  syncCustomCards();renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
