@@ -2,6 +2,106 @@ import { encryptSecret, decryptSecret } from "./api-pool.js";
 
 const SECRET_FIELD = /(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
 
+export const MIGHTPULSE_PROBE_COMMANDS = [
+  { id:"player_base", category:"Player", label:"Player 基本情報", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base"}, requiresMighty:false, references:["governor_id","kid"] },
+  { id:"player_full", category:"Player", label:"Player 全セクション", method:"GET", endpoint:"/players/{governor_id}", query:{include:"base,heroes,ranks,gov_gear"}, requiresMighty:false, references:["governor_id","kid"] },
+  { id:"player_uid", category:"Player", label:"Player 内部UID検索", method:"GET", endpoint:"/players/{uid}", query:{id_type:"uid",include:"base"}, requiresMighty:false, references:["governor_id","kid"] },
+  { id:"kingdom_list", category:"Kingdom", label:"王国一覧", method:"GET", endpoint:"/kingdoms", query:{page:1,size:24}, requiresMighty:false, references:["kid"] },
+  { id:"kingdom_detail", category:"Kingdom", label:"王国詳細", method:"GET", endpoint:"/kingdoms/{kid}", query:{}, requiresMighty:false, references:["kid"] },
+  { id:"kingdom_boards", category:"Ranking", label:"王国 全ランキングボード", method:"GET", endpoint:"/kingdoms/{kid}", query:{include:"boards",limit:100}, requiresMighty:false, references:["governor_id","kid","alliance_tag"] },
+  { id:"kingdom_ranks", category:"Ranking", label:"王国ランキング一覧", method:"GET", endpoint:"/kingdoms/{kid}/ranks", query:{limit:100}, requiresMighty:false, references:["governor_id","kid","alliance_tag"] },
+  { id:"kingdom_rank_board", category:"Ranking", label:"指定ランキング", method:"GET", endpoint:"/kingdoms/{kid}/ranks", query:{board:"personal_power",limit:100}, requiresMighty:false, references:["governor_id","kid","alliance_tag"] },
+  { id:"alliance_detail", category:"Alliance", label:"同盟詳細・メンバー", method:"GET", endpoint:"/alliances/{kid}/{tag}", query:{include:"info,roster"}, requiresMighty:false, references:["governor_id","kid","alliance_tag"] },
+  { id:"kingdom_events", category:"Mighty", label:"王国イベント", method:"GET", endpoint:"/kingdoms/{kid}/events", query:{}, requiresMighty:true, references:["kid"] },
+  { id:"kingdom_kvk", category:"Mighty", label:"王国KvK情報", method:"GET", endpoint:"/kingdoms/{kid}/kvk", query:{}, requiresMighty:true, references:["kid"] },
+  { id:"kingdom_kvk_scores", category:"Mighty", label:"王国KvKスコア", method:"GET", endpoint:"/kingdoms/{kid}/kvk/scores", query:{}, requiresMighty:true, references:["kid"] },
+  { id:"kvk_matchups", category:"Mighty", label:"全KvKマッチアップ", method:"GET", endpoint:"/kvk/matchups", query:{}, requiresMighty:true, references:["kid"] }
+];
+
+export const MIGHTPULSE_PROBE_FIELD_DICTIONARY_LIMIT = 400;
+
+export function buildProbeFieldDictionary(payload) {
+  const fields = new Map();
+  const seenValues = new Map();
+  function valueType(value) {
+    if (value === null) return "null";
+    if (Array.isArray(value)) return "array";
+    if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
+    return typeof value;
+  }
+  function sampleValue(value) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+    if (Array.isArray(value)) return "[array:" + value.length + "]";
+    return "{object}";
+  }
+  function visit(value, path, depth) {
+    if (fields.size >= MIGHTPULSE_PROBE_FIELD_DICTIONARY_LIMIT || depth > 9) return;
+    const type = valueType(value);
+    if (path) {
+      const prior = fields.get(path);
+      const sample = sampleValue(value);
+      fields.set(path, { path, type: prior?.type === type ? type : prior ? "mixed" : type, observed:true, observations:(prior?.observations || 0)+1 });
+      if (!seenValues.has(path)) seenValues.set(path, []);
+      const samples = seenValues.get(path);
+      if (samples.length < 3 && !samples.some(item => JSON.stringify(item) === JSON.stringify(sample))) samples.push(sample);
+    }
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 3)) visit(item, path ? path + "[]" : "[]", depth + 1);
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) visit(child, path ? path + "." + key : key, depth + 1);
+    }
+  }
+  visit(payload, "", 0);
+  return [...fields.values()].map(field => ({ ...field, samples:seenValues.get(field.path) || [] })).sort((a,b)=>a.path.localeCompare(b.path));
+}
+
+export function extractProbeReferences(payload, { maxReferences = 20, maxDepth = 8 } = {}) {
+  const found = new Map();
+  const seenObjects = new Set();
+  function walk(value, depth, inheritedKid = null) {
+    if (!value || typeof value !== "object" || depth > maxDepth || found.size >= maxReferences) return;
+    if (seenObjects.has(value)) return;
+    seenObjects.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 100)) walk(item, depth + 1, inheritedKid);
+      return;
+    }
+    const kidValue = value.kid ?? value.kingdom_id ?? value.kingdomId ?? inheritedKid;
+    const kid = kidValue == null ? null : String(kidValue).trim();
+    for (const [key, raw] of Object.entries(value)) {
+      if (raw == null) continue;
+      const val = String(raw).trim();
+      if (!val) continue;
+      if (["governor_id","governorId","fid"].includes(key) && /^\d{4,20}$/.test(val)) found.set("player:" + val, { type:"PLAYER", governor_id:val, kid });
+      if (["kid","kingdom_id","kingdomId"].includes(key) && /^\d{1,8}$/.test(val)) found.set("KINGDOM:" + val, { type:"KINGDOM", kid:val });
+      if (["abbr","alliance_tag","allianceTag"].includes(key) && kid && /^[A-Za-z0-9_\-]{1,20}$/.test(val)) found.set("ALLIANCE:" + kid + ":" + val, { type:"ALLIANCE", kid, tag:val });
+      if (raw && typeof raw === "object") walk(raw, depth + 1, kid);
+      if (found.size >= maxReferences) break;
+    }
+  }
+  walk(payload, 0);
+  return [...found.values()].slice(0, maxReferences);
+}
+
+export function buildCatalogProbeCommand(commandId, params = {}) {
+  const entry = MIGHTPULSE_PROBE_COMMANDS.find(item => item.id === String(commandId || ""));
+  if (!entry) throw new Error("UNKNOWN_PROBE_COMMAND");
+  const values = { governor_id:params.governor_id, uid:params.uid || params.governor_id, kid:params.kid, tag:params.tag };
+  const path = entry.endpoint.replace(/\{([a-z_]+)\}/g, (_, key) => {
+    const value = values[key];
+    if (value == null || String(value).trim() === "") throw new Error("PROBE_PARAMETER_REQUIRED:" + key);
+    return encodeURIComponent(String(value).trim());
+  });
+  const query = { ...entry.query };
+  if (entry.id === "kingdom_rank_board" && params.board) query.board = String(params.board);
+  if (entry.id === "kingdom_rank_board" && params.limit) query.limit = Math.min(100, Math.max(1, Number(params.limit) || 100));
+  if (entry.id === "kingdom_list") {
+    query.page = Math.max(1, Number(params.page) || 1);
+    query.size = Math.min(24, Math.max(1, Number(params.size) || 24));
+  }
+  return { ...entry, path, query };
+}
+
 export function validateManualProbeCommand(input = {}) {
   const rawPath = String(input.path || "").trim();
   if (!rawPath || rawPath.length > 500) throw new Error("PROBE_PATH_REQUIRED_OR_TOO_LONG");
