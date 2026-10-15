@@ -123,6 +123,7 @@ async function runDiagnosticHealthChecks(env) {
             targetId: String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
             purpose: "DIAGNOSTIC_HEALTH_CHECK",
             httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
             remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
             remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
           });
@@ -2030,7 +2031,8 @@ async function handleMyMightyCheckApi(request, env) {
         const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
         checked++;
         confirmed++;
-        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
+        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1), remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
         // Do not stop after the first confirmed key. Every user-contributed
         // key must be checked so the API pool can rotate across all confirmed
@@ -4919,6 +4921,7 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
         targetId: probeGovernorId,
         purpose: "API_POOL_AUTO_RECOVERY",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -6239,6 +6242,7 @@ async function handleApiPoolMightyCheck(request, env) {
         targetId: keyId,
         purpose: "API_POOL_MIGHTY_CHECK",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -6344,6 +6348,7 @@ async function handleApiPoolHealthCheck(request, env) {
         targetId: probeGovernorId,
         purpose: "API_POOL_HEALTH_CHECK",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -6502,6 +6507,7 @@ async function handleApiPoolTestPlayer(request, env) {
       targetId: governorId,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
     const sourcePlayer = result?.data?.player || {};
@@ -6611,6 +6617,7 @@ async function handleApiPoolTestRanking(request, env) {
       targetId: kid,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
     const response = {
@@ -7073,6 +7080,7 @@ async function fetchThroughWatchlistApiPool(env, {
       purpose,
       jobId,
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       traceId,
       parentTraceId,
       runId,
@@ -7211,6 +7219,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       targetId: id,
       purpose,
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
 
