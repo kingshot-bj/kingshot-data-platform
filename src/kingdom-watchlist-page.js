@@ -107,7 +107,7 @@ async function loadList(options){
  }catch(e){
   if(seq!==requestSeq)return;
   if(!quiet)report("LIST_FAILED","bad","一覧取得に失敗しました。登録フォームは引き続き使用できます。",errorDetails(e,"LIST"));
-  listNode.innerHTML='<div class="empty" style="color:var(--bad)">一覧を読み込めませんでした。<button id="retry-list" type="button" class="secondary" style="margin-top:12px">再読み込み</button></div>';
+  listNode.innerHTML='<div class="empty" style="color:var(--bad)">一覧を読み込めませんでした。登録フォームは引き続き使用できます。<button id="retry-list" type="button" class="secondary" style="margin-top:12px">再読み込み</button></div>';
   return null;
  }
 }
