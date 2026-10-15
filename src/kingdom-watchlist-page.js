@@ -157,7 +157,7 @@ async function pollJob(id,expectedJobId){
   lastUpdatedAt=updatedAt;lastProgress=progress;
   if(state==="COMPLETED"&&(!expectedJobId||String(job.job_id)===String(expectedJobId))){refreshing[id]=false;report("INITIAL_REFRESH_COMPLETE","good","今回の取得ジョブが完了しました。",{watchlist_id:id,job_id:job.job_id,status:state,ranking_rows:job.ranking_rows||0,player_rows:job.player_rows||0});await loadList({quiet:true});return;}
   if(["FAILED","CANCELLED","CANCELED"].indexOf(state)>=0){
-   if(state==="FAILED"&&job.retryable){report("RETRY_WAIT","busy","取得に失敗しました。自動再試行を待っています。",{watchlist_id:id,job_id:job.job_id,retry_attempt:job.retry_attempt||0,retry_after_at:job.retry_after_at||null,last_error:job.last_error||w.last_error||null});}
+   if(state==="FAILED"&&job.retryable){refreshing[id]=false;report("RETRY_WAIT","busy","取得に失敗しました。自動再試行を待っています。",{watchlist_id:id,job_id:job.job_id,retry_attempt:job.retry_attempt||0,retry_after_at:job.retry_after_at||null,last_error:job.last_error||w.last_error||null});}
    else{refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||job.last_error||null});}
    return;
   }
