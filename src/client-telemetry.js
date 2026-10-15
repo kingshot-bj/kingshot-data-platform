@@ -5,7 +5,11 @@ const MAX_TEXT = 120;
 const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_COMPLETE"]);
 
 function clean(value, max = MAX_TEXT) {
-  return String(value == null ? "" : value).replace(/[\r\n\t]+/g, " ").slice(0, max);
+  return String(value == null ? "" : value)
+    .replace(/[\\r\\n\\t]+/g, " ")
+    .replace(/(authorization\\s*[:=]\\s*bearer\\s+)\\S+/gi, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|token|secret|password)\\s*[:=]\\s*)[^\\s,;]+/gi, "$1[REDACTED]")
+    .slice(0, max);
 }
 
 function json(data, status = 200) {
