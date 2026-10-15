@@ -1347,7 +1347,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     var decimals=Math.abs(scaled)>=100?0:Math.abs(scaled)>=10?1:2;
     return scaled.toFixed(decimals).replace(/\\.?0+$|\\.$/,"")+suffix;
   }
-  function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.message||d.error||("HTTP "+r.status));return d;});});}
+  function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){var parseError=new Error("API応答エラー（HTTP "+r.status+"）");parseError.httpStatus=r.status;throw parseError;}if(!r.ok||d.ok===false){var apiError=new Error((d.message||d.error||"APIリクエスト失敗")+"（HTTP "+r.status+"）");apiError.httpStatus=r.status;apiError.apiCode=d.error||null;throw apiError;}return d;});}).catch(function(e){if(!e.httpStatus){e.httpStatus=0;e.apiCode="NETWORK_OR_FETCH_ERROR";}throw e;});}
   var running={};
   function isActiveJob(w){
     return w.job && (w.job.status==="RANKINGS" || w.job.status==="PLAYERS");
@@ -1457,8 +1457,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           continueWatch(w.watchlist_id);
         }
       });
-      el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
-    }).catch(function(e){el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
+      if(Date.now()>=registrationMessageUntil)el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
+    }).catch(function(e){if(Date.now()>=registrationMessageUntil)el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
   }
   function continueWatch(id){
     if(running[id])return;
@@ -1606,6 +1606,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
   var creatingWatchlist=false;
+  var registrationMessageUntil=0;
+  function setRegistrationMessage(html){registrationMessageUntil=Date.now()+60000;el("msg").innerHTML=html;}
   function handleCreateWatchlist(){
     if(creatingWatchlist)return;
     var kidValue=String(el("kid").value||"").trim();
@@ -1654,7 +1656,11 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       return load();
     })
     .catch(function(e){
-      el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
+      var status=Number(e.httpStatus)||0;
+      var code=e.apiCode?" / "+esc(e.apiCode):"";
+      var hint=status===401||status===403?"認証状態を確認してください。":status===404?"登録APIのルートを確認してください。":status===0?"通信失敗：APIへの接続を確認してください。":"サーバー側で登録処理が失敗しました。";
+      setRegistrationMessage("<span class='error'>登録失敗（HTTP "+status+code+"）: "+esc(e.message)+"。"+hint+"</span>");
+      if(window.__eeTrackAction)window.__eeTrackAction("ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","API_FAILED_HTTP_"+status);
     })
     .finally(function(){
       creatingWatchlist=false;
