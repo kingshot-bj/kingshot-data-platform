@@ -44,7 +44,7 @@ test("UI distinguishes retry wait, terminal failure, and completion", () => {
 
 test("client requests time out instead of leaving controls busy forever", () => {
   assert.match(page, /new AbortController\(\)/);
-  assert.match(page, /setTimeout\(function\(\)\{controller\.abort\(\);\},25000\)/);
+  assert.match(page, /setTimeout\(function\(\)\{controller\.abort\(\);\},60000\)/);
   assert.match(page, /REQUEST_TIMEOUT/);
 });
 
