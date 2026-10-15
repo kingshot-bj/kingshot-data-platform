@@ -6,7 +6,7 @@ const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8
 const telemetry = await readFile(new URL("../src/client-telemetry.js", import.meta.url), "utf8");
 
 test("Kingdom Watchlist records empty and invalid kingdom IDs before stopping", () => {
-  const start = source.indexOf('el("create").addEventListener("click"');
+  const start = source.indexOf("function handleCreateWatchlist(){");
   const end = source.indexOf('setInterval(function(){', start);
   const handler = source.slice(start, end);
   assert.ok(start >= 0 && end > start);
@@ -32,4 +32,14 @@ test("client telemetry accepts safe action lifecycle events without collecting t
 test("Kingdom Watchlist hover motion is restricted to hover-capable fine pointers", () => {
   assert.ok(source.includes("@media (hover:hover) and (pointer:fine){button:hover{filter:brightness(1.04);transform:translateY(-1px)}}"));
   assert.ok(source.includes("button:active{filter:brightness(.96);transform:none}"));
+});
+
+test("Kingdom Watchlist registration has a touch-pointer fallback", () => {
+  assert.ok(source.includes('function handleCreateWatchlist(){'));
+  assert.ok(source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
+  assert.ok(source.includes('createButton.addEventListener("pointerup",function(event){'));
+  assert.ok(source.includes('if(event.pointerType!=="touch")return;'));
+  assert.ok(source.includes("event.preventDefault();"));
+  assert.ok(source.includes("handleCreateWatchlist();"));
+  assert.ok(source.includes('if(!("PointerEvent" in window)){'));
 });
