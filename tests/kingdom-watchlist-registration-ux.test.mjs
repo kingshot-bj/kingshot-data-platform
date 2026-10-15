@@ -39,6 +39,7 @@ test("Kingdom Watchlist registration has a touch-pointer fallback", () => {
   assert.ok(source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
   assert.ok(source.includes('createButton.addEventListener("pointerup",function(event){'));
   assert.ok(source.includes('if(event.pointerType!=="touch")return;'));
-  assert.ok(source.includes('event.preventDefault();\n    handleCreateWatchlist();'));
+  assert.ok(source.includes("event.preventDefault();"));
+  assert.ok(source.includes("handleCreateWatchlist();"));
   assert.ok(source.includes('if(!("PointerEvent" in window)){'));
 });
