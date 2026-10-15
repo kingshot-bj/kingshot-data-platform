@@ -163,7 +163,7 @@ async function handleGatewayStatus(request, env) {
   const logRange = resolveGatewayLogRange(url.searchParams.get("range"));
 
   if (url.searchParams.get("full") === "1") {
-    return await handleGatewayFullLogExport(request, env, logRange);
+    return await handleGatewayFullStatusExport(request, env, logRange);
   }
 
   const retrievedAt = new Date();
@@ -183,7 +183,7 @@ async function handleGatewayStatus(request, env) {
       pageSize: 500
     }),
     env.DB
-      ? env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
+      ? env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
       : Promise.reject(new Error("D1_UNAVAILABLE"))
   ]);
 
@@ -312,6 +312,115 @@ async function handleGatewayStatus(request, env) {
         GOOGLE_SHEETS_SERVICE_ACCOUNT: Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID),
         GATEWAY: Boolean(env.EAGLEEYE_GATEWAY_TOKEN)
       }
+    }
+  });
+}
+
+async function handleGatewayFullStatusExport(request, env, logRange) {
+  // Build the exact same state/diagnostic payload as the normal status endpoint,
+  // then stream the entire selected event window into that same JSON document.
+  const snapshotUrl = new URL(request.url);
+  snapshotUrl.searchParams.delete("full");
+  const snapshotResponse = await handleGatewayStatus(new Request(snapshotUrl.toString(), request), env);
+  if (!snapshotResponse.ok) return snapshotResponse;
+  let snapshot;
+  try { snapshot = await snapshotResponse.json(); }
+  catch { return jsonResponse({ ok: false, error: "STATUS_SNAPSHOT_INVALID" }, 502); }
+  if (!snapshot?.systemLog || !Array.isArray(snapshot.systemLog.events)) {
+    return jsonResponse({ ok: false, error: "STATUS_LOG_SECTION_UNAVAILABLE" }, 502);
+  }
+
+  const from = Math.floor(new Date(snapshot.systemLog.range.from).getTime() / 1000);
+  const until = Math.floor(new Date(snapshot.systemLog.range.to).getTime() / 1000);
+  const [countResult, serviceCountsResult, statusCountsResult, traceCountResult] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
+    env.DB.prepare("SELECT service, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY service").bind(from, until).all(),
+    env.DB.prepare("SELECT status, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY status").bind(from, until).all(),
+    env.DB.prepare("SELECT COUNT(DISTINCT trace_id) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first()
+  ]);
+  const total = Number(countResult?.count || 0);
+  const allServices = Object.fromEntries((serviceCountsResult.results || []).map(row => [String(row.service || "unknown"), Number(row.count || 0)]));
+  const allStatuses = Object.fromEntries((statusCountsResult.results || []).map(row => [String(row.status || "unknown"), Number(row.count || 0)]));
+  snapshot.systemLog.event_count = total;
+  snapshot.systemLog.returned_event_count = total;
+  snapshot.systemLog.events = [];
+  snapshot.systemLog.truncated = false;
+  snapshot.systemLog.summary = {
+    ...(snapshot.systemLog.summary || {}),
+    event_count: total,
+    returned_event_count: total,
+    truncated: false,
+    trace_count: Number(traceCountResult?.count || 0),
+    services: allServices,
+    statuses: allStatuses,
+    metadata_parse_failures: Number(countResult?.metadata_parse_failures || 0),
+    oldest_created_at: countResult?.oldest_created_at ?? null,
+    newest_created_at: countResult?.newest_created_at ?? null,
+    complete_window_read: true,
+    full_window_available_via_export: true
+  };
+
+  // Stream instead of holding all events in Worker memory. The resulting file is
+  // one complete status JSON, not a separate event-only document.
+  const serialized = JSON.stringify(snapshot);
+  const marker = '"events":[]';
+  const markerIndex = serialized.indexOf(marker, serialized.indexOf('"systemLog"'));
+  if (markerIndex < 0) return jsonResponse({ ok: false, error: "STATUS_EVENTS_MARKER_MISSING" }, 502);
+  const prefix = serialized.slice(0, markerIndex) + '"events":[';
+  const suffix = serialized.slice(markerIndex + marker.length);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let cursorCreatedAt = null;
+      let cursorEventId = null;
+      let first = true;
+      const enqueueText = value => controller.enqueue(encoder.encode(value));
+      try {
+        enqueueText(prefix);
+        while (true) {
+          let sql = `SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,
+            actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,
+            completed_at,elapsed_ms,error_code,message,metadata_json,created_at
+            FROM system_event_log WHERE created_at>=? AND created_at<=?`;
+          const binds = [from, until];
+          if (cursorCreatedAt != null) {
+            sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
+            binds.push(cursorCreatedAt, cursorCreatedAt, cursorEventId);
+          }
+          sql += " ORDER BY created_at DESC, event_id DESC LIMIT ?";
+          binds.push(500);
+          const result = await env.DB.prepare(sql).bind(...binds).all();
+          const rows = result.results || [];
+          if (!rows.length) break;
+          for (const row of rows) {
+            const event = { ...row, metadata: row.metadata_json
+              ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })()
+              : null };
+            delete event.metadata_json;
+            enqueueText((first ? "" : ",") + JSON.stringify(event));
+            first = false;
+          }
+          if (rows.length < 500) break;
+          const last = rows[rows.length - 1];
+          cursorCreatedAt = Number(last.created_at);
+          cursorEventId = String(last.event_id);
+        }
+        enqueueText("]" + suffix);
+        controller.close();
+      } catch (error) {
+        console.error("gateway_full_status_export_failed", error?.message || error);
+        controller.error(error);
+      }
+    }
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "content-disposition": 'attachment; filename="status-full.json"',
+      "x-eagleeye-gateway": GATEWAY_VERSION,
+      "x-eagleeye-status-export": "complete-json-stream"
     }
   });
 }
