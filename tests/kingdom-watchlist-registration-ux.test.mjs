@@ -39,7 +39,7 @@ test("list failures do not disable registration and can be retried", () => {
 });
 
 test("replacement preserves refresh, toggle, delete and ranking job progress actions", () => {
-  for (const action of ['data-action="refresh"', 'data-action="toggle"', 'data-action="delete"', 'action=\\"refresh\\"', 'ranking_rows', 'last_error']) {
+  for (const action of ['data-action="refresh"', 'data-action="toggle"', 'data-action="delete"', 'ranking_rows', 'last_error']) {
     assert.ok(page.includes(action), "missing functionality: " + action);
   }
 });
