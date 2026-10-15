@@ -596,9 +596,16 @@ async function runKingdomWatchlistJobs(env) {
 
   // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
   const activeJobRows = await env.DB.prepare(
-    "SELECT watchlist_id FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%' AND updated_at <= ?)"
-  ).bind(now - 300).all();
-  const activeWatchlistIds = new Set((activeJobRows.results || []).map(item => String(item.watchlist_id)));
+    "SELECT watchlist_id, status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%')"
+  ).all();
+  const activeWatchlistIds = new Set((activeJobRows.results || []).filter(item => {
+    if (item.status !== "FAILED") return true;
+    const retry = String(item.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\\d+):/);
+    if (!retry) return false;
+    const retryCount = Number(retry[2]) || 1;
+    const delaySeconds = Math.min(3600, 300 * Math.pow(2, Math.max(0, retryCount - 1)));
+    return retryCount <= 5 && now - Number(item.updated_at || 0) >= delaySeconds;
+  }).map(item => String(item.watchlist_id)));
 
   // New background watchlist jobs are admitted by the real API Pool lease/request
   // path below. Do not pre-block them using a guessed fixed request count: the
