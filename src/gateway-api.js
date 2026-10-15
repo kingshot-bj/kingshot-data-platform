@@ -183,7 +183,7 @@ async function handleGatewayStatus(request, env) {
       pageSize: 500
     }),
     env.DB
-      ? env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
+      ? env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
       : Promise.reject(new Error("D1_UNAVAILABLE"))
   ]);
 
@@ -353,6 +353,9 @@ async function handleGatewayFullStatusExport(request, env, logRange) {
     trace_count: Number(traceCountResult?.count || 0),
     services: allServices,
     statuses: allStatuses,
+    metadata_parse_failures: Number(countResult?.metadata_parse_failures || 0),
+    oldest_created_at: countResult?.oldest_created_at ?? null,
+    newest_created_at: countResult?.newest_created_at ?? null,
     complete_window_read: true,
     full_window_available_via_export: true
   };
