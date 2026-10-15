@@ -600,7 +600,7 @@ async function runKingdomWatchlistJobs(env) {
   ).all();
   const activeWatchlistIds = new Set((activeJobRows.results || []).filter(item => {
     if (item.status !== "FAILED") return true;
-    const retry = String(item.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\\d+):/);
+    const retry = String(item.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
     if (!retry) return false;
     const retryCount = Number(retry[2]) || 1;
     const delaySeconds = Math.min(3600, 300 * Math.pow(2, Math.max(0, retryCount - 1)));
