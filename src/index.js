@@ -685,7 +685,8 @@ async function runKingdomWatchlistJobs(env) {
         const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
         const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
         const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
-        const retryable = !rawError.startsWith("USER_CANCELLED:") &&
+        const retryable = retryCount <= 5 &&
+          !rawError.startsWith("USER_CANCELLED:") &&
           !rawError.startsWith("API_POOL_LOAD_TEST_CAPACITY_WAIT");
         const storedError = retryable
           ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + rawError
@@ -2696,9 +2697,10 @@ async function handleKingdomWatchlistApi(request, env) {
         const staleByAge = Number(job.updated_at || job.created_at || 0) > 0 &&
           (Math.floor(Date.now() / 1000) - Number(job.updated_at || job.created_at)) > 15 * 60;
         if (staleByError || staleByAge) {
-          const recoveryMessage = job.last_error
-            ? String(job.last_error).slice(0, 1000)
-            : "ウォッチリスト更新ジョブが15分以上進行していないため停止しました。";
+          const recoveryDetail = job.last_error
+            ? String(job.last_error).slice(0, 800)
+            : "ウォッチリスト更新ジョブが15分以上進行していないため再開待ちです。";
+          const recoveryMessage = "RETRYABLE:" + job.status + ":1:" + recoveryDetail;
           await env.DB.prepare(
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
           ).bind(recoveryMessage, Math.floor(Date.now() / 1000), job.job_id).run();
@@ -2726,7 +2728,12 @@ async function handleKingdomWatchlistApi(request, env) {
           player_count: playerCount,
           ranking_rows: Number(job.ranking_rows || 0),
           player_rows: Number(job.player_rows || 0),
-          last_error: job.last_error || null,
+          last_error: job.last_error && !String(job.last_error).startsWith("RETRYABLE:") ? job.last_error : null,
+          retryable: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:"),
+          retry_attempt: Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 0),
+          retry_after_at: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:")
+            ? Number(job.updated_at || 0) + Math.min(3600, 300 * Math.pow(2, Math.max(0, Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 1) - 1))
+            : null,
           observed_at: Number(job.observed_at || 0),
           source_first_at: job.source_first_at ? Number(job.source_first_at) : null,
           source_last_at: job.source_last_at ? Number(job.source_last_at) : null,
