@@ -3252,10 +3252,9 @@ async function handleKingdomWatchlistApi(request, env) {
       return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit: kingdomLimit, used }, 409);
     }
 
-    // Start the first watchlist fetch immediately after registration.
-    // Reuse the same job/processing path as "今すぐ更新" instead of waiting
-    // for the next Cron tick. The job remains resumable if one invocation
-    // does not finish all ranking/player phases.
+    // Create a resumable job immediately. The browser starts collection
+    // through the existing action=refresh continuation loop after this
+    // registration response has returned.
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
