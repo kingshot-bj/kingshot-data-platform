@@ -2732,7 +2732,7 @@ async function handleKingdomWatchlistApi(request, env) {
           retryable: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:"),
           retry_attempt: Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 0),
           retry_after_at: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:")
-            ? Number(job.updated_at || 0) + Math.min(3600, 300 * Math.pow(2, Math.max(0, Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 1) - 1))
+            ? Number(job.updated_at || 0) + Math.min(3600, 300 * Math.pow(2, Math.max(0, Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 1) - 1)))
             : null,
           observed_at: Number(job.observed_at || 0),
           source_first_at: job.source_first_at ? Number(job.source_first_at) : null,
