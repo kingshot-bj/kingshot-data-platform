@@ -6,7 +6,7 @@ const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8
 const telemetry = await readFile(new URL("../src/client-telemetry.js", import.meta.url), "utf8");
 
 test("Kingdom Watchlist records empty and invalid kingdom IDs before stopping", () => {
-  const start = source.indexOf('el("create").addEventListener("click"');
+  const start = source.indexOf("function handleCreateWatchlist(){");
   const end = source.indexOf('setInterval(function(){', start);
   const handler = source.slice(start, end);
   assert.ok(start >= 0 && end > start);
