@@ -2,7 +2,7 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const MAX_BATCH = 20;
 const MAX_TEXT = 120;
-const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_COMPLETE"]);
+const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_START", "FETCH_COMPLETE"]);
 
 function clean(value, max = MAX_TEXT) {
   return String(value == null ? "" : value)
@@ -74,9 +74,11 @@ export function clientTelemetryScript() {
 (function(){
   if(window.__eeClientTelemetryInstalled)return;
   window.__eeClientTelemetryInstalled=true;
-  var queue=[],timer=null;
+  var queue=[],timer=null,activeInteractionTraceId="",activeInteractionAt=0;
   function clip(v,n){return String(v==null?"":v).replace(/[\\r\\n\\t]+/g," ").slice(0,n||120)}
   function page(){return location.pathname.slice(0,300)}
+  function traceId(){return "browser-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)}
+  function interactionTrace(){return activeInteractionTraceId&&Date.now()-activeInteractionAt<10000?activeInteractionTraceId:""}
   function push(e){queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
   function flush(){
     if(timer){clearTimeout(timer);timer=null}
@@ -95,27 +97,28 @@ export function clientTelemetryScript() {
   document.addEventListener("click",function(ev){
     var el=ev.target&&ev.target.closest?ev.target.closest("button,a,[role=button],input[type=button],input[type=submit]"):null;
     if(!el)return;
-    var d=describe(el);push({type:"CLICK",page:page(),operation:d.operation||"click",elementTag:d.elementTag,elementId:d.elementId,elementRole:d.elementRole,message:"Browser click event"});
+    var d=describe(el);activeInteractionTraceId=traceId();activeInteractionAt=Date.now();push({type:"CLICK",traceId:activeInteractionTraceId,page:page(),operation:d.operation||"click",elementTag:d.elementTag,elementId:d.elementId,elementRole:d.elementRole,message:"Browser click event"});
   },true);
   document.addEventListener("submit",function(ev){
-    var f=ev.target;push({type:"SUBMIT",page:page(),operation:clip(f&&f.id||f&&f.getAttribute("name")||"form submit",120),elementTag:"FORM",elementId:clip(f&&f.id,80),message:"Browser form submit"});
+    var f=ev.target;var t=interactionTrace()||traceId();push({type:"SUBMIT",traceId:t,page:page(),operation:clip(f&&f.id||f&&f.getAttribute("name")||"form submit",120),elementTag:"FORM",elementId:clip(f&&f.id,80),message:"Browser form submit"});
   },true);
   window.addEventListener("error",function(ev){
-    push({type:"JS_ERROR",page:page(),operation:"window.error",errorCode:"JAVASCRIPT_ERROR",message:clip((ev.message||"JavaScript error")+" @ "+(ev.filename||""),500)});
+    push({type:"JS_ERROR",traceId:interactionTrace()||traceId(),page:page(),operation:"window.error",errorCode:"JAVASCRIPT_ERROR",message:clip((ev.message||"JavaScript error")+" @ "+(ev.filename||""),500)});
   });
   window.addEventListener("unhandledrejection",function(ev){
-    var reason=ev.reason;push({type:"UNHANDLED_REJECTION",page:page(),operation:"unhandledrejection",errorCode:"UNHANDLED_REJECTION",message:clip(reason&&reason.message||reason||"Unhandled promise rejection",500)});
+    var reason=ev.reason;push({type:"UNHANDLED_REJECTION",traceId:interactionTrace()||traceId(),page:page(),operation:"unhandledrejection",errorCode:"UNHANDLED_REJECTION",message:clip(reason&&reason.message||reason||"Unhandled promise rejection",500)});
   });
   var nativeFetch=window.fetch;
   window.fetch=function(input,init){
     var url;try{url=new URL(typeof input==="string"?input:input.url,location.href)}catch(_){return nativeFetch.apply(this,arguments)}
     if(url.origin!==location.origin||url.pathname==="/api/client-telemetry")return nativeFetch.apply(this,arguments);
-    var started=Date.now(),method=String(init&&init.method||(input&&input.method)||"GET").toUpperCase();
+    var started=Date.now(),method=String(init&&init.method||(input&&input.method)||"GET").toUpperCase(),trace=interactionTrace()||traceId();
+    push({type:"FETCH_START",traceId:trace,page:page(),operation:method+" "+url.pathname,httpMethod:method,httpPath:url.pathname.slice(0,300),message:"Same-origin fetch started"});
     return nativeFetch.apply(this,arguments).then(function(res){
-      push({type:"FETCH_COMPLETE",page:page(),operation:method+" "+url.pathname,httpMethod:method,httpPath:url.pathname.slice(0,300),httpStatus:res.status,elapsedMs:Date.now()-started,errorCode:res.ok?"":"HTTP_"+res.status,message:"Same-origin fetch completed"});
+      push({type:"FETCH_COMPLETE",traceId:trace,page:page(),operation:method+" "+url.pathname,httpMethod:method,httpPath:url.pathname.slice(0,300),httpStatus:res.status,elapsedMs:Date.now()-started,errorCode:res.ok?"":"HTTP_"+res.status,message:"Same-origin fetch completed"});
       return res;
     },function(err){
-      push({type:"FETCH_COMPLETE",page:page(),operation:method+" "+url.pathname,httpMethod:method,httpPath:url.pathname.slice(0,300),httpStatus:0,elapsedMs:Date.now()-started,errorCode:"FETCH_FAILED",message:clip(err&&err.message||"Fetch failed",500)});
+      push({type:"FETCH_COMPLETE",traceId:trace,page:page(),operation:method+" "+url.pathname,httpMethod:method,httpPath:url.pathname.slice(0,300),httpStatus:0,elapsedMs:Date.now()-started,errorCode:"FETCH_FAILED",message:clip(err&&err.message||"Fetch failed",500)});
       throw err;
     });
   };
