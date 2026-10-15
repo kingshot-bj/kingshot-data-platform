@@ -6949,8 +6949,8 @@ async function renderApiPoolAdminPage(request, env) {
         "<div class='detail-item'><small>Discord ID</small><b>" + escapeHtml(c.discord_id || "未登録") + "</b></div>" +
         "<div class='detail-item'><small>Mighty</small><b>" + escapeHtml(detailMighty) + "</b></div>" +
         "<div class='detail-item'><small>判定日時</small><b>" + escapeHtml(k.mighty_checked_at ? new Date(Number(k.mighty_checked_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / min</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / day</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 分</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 日</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease用途</small><b>" + escapeHtml(k.lease_purpose || "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease対象</small><b>" + escapeHtml(k.lease_target_type && k.lease_target_id ? k.lease_target_type + " / " + k.lease_target_id : "-") + "</b></div>" +
         "<div class='detail-item'><small>最終使用</small><b>" + escapeHtml(k.last_used_at ? new Date(Number(k.last_used_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
