@@ -1609,15 +1609,28 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     var topValue=String(el("top").value||"").trim();
     var intervalValue=String(el("interval").value||"").trim();
     if(!kidValue){
-      el("msg").innerHTML="<span class='error'>登録失敗: 王国番号を入力してください。</span>";
+      if(window.__eeTrackAction)window.__eeTrackAction("ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_EMPTY");
+      el("kid").setAttribute("aria-invalid","true");
+      el("msg").innerHTML="<span class='error'>登録できません：王国番号を入力してください。</span>";
       el("kid").focus();
       return;
     }
+    el("kid").removeAttribute("aria-invalid");
+    if(!Number.isInteger(Number(kidValue))||Number(kidValue)<1){
+      if(window.__eeTrackAction)window.__eeTrackAction("ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_INVALID");
+      el("kid").setAttribute("aria-invalid","true");
+      el("msg").innerHTML="<span class='error'>登録できません：王国番号は1以上の整数で入力してください。</span>";
+      el("kid").focus();
+      return;
+    }
+    if(window.__eeTrackAction)window.__eeTrackAction("ACTION_START","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_PRESENT");
     creatingWatchlist=true;
     el("create").disabled=true;
     var originalCreateText=el("create").textContent;
     el("create").textContent="登録中…";
-    el("msg").innerHTML="<span class='muted'>監視対象を登録しています…</span>";
+    el("create").classList.add("is-registering");
+    el("create").setAttribute("aria-busy","true");
+    el("msg").innerHTML="<span class='muted'>王国番号を確認中：登録処理を開始しています…</span>";
     var payload={kid:Number(kidValue),top_n:Number(topValue),interval_hours:Number(intervalValue)};
     api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
     .then(function(d){
@@ -1643,6 +1656,8 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     .finally(function(){
       creatingWatchlist=false;
       el("create").disabled=false;
+      el("create").classList.remove("is-registering");
+      el("create").removeAttribute("aria-busy");
       el("create").textContent=originalCreateText;
     });
   });
