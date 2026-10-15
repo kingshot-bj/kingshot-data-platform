@@ -2698,7 +2698,7 @@ async function handleKingdomWatchlistApi(request, env) {
           (Math.floor(Date.now() / 1000) - Number(job.updated_at || job.created_at)) > 15 * 60;
         if (staleByError || staleByAge) {
           const recoveryDetail = job.last_error
-            ? String(job.last_error).replace(/^RETRYABLE:(?:RANKINGS|PLAYERS):\\d+:/, "").slice(0, 800)
+            ? String(job.last_error).replace(/^RETRYABLE:(?:RANKINGS|PLAYERS):\d+:/, "").slice(0, 800)
             : "ウォッチリスト更新ジョブが15分以上進行していないため再開待ちです。";
           const recoveryMessage = "RETRYABLE:" + job.status + ":1:" + recoveryDetail;
           await env.DB.prepare(
