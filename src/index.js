@@ -123,6 +123,7 @@ async function runDiagnosticHealthChecks(env) {
             targetId: String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
             purpose: "DIAGNOSTIC_HEALTH_CHECK",
             httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
             remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
             remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
           });
@@ -139,7 +140,8 @@ async function runDiagnosticHealthChecks(env) {
               keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
               endpoint:"/players/:governor_id", targetType:"API_KEY", targetId:String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
               purpose:"DIAGNOSTIC_HEALTH_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-              errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable
+              errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable,
+              requestCount: Math.max(1, Number(error?.attempts) || 1)
             });
           }
           const message = error?.message || "MightPulse診断プローブに失敗しました。";
@@ -2030,7 +2032,8 @@ async function handleMyMightyCheckApi(request, env) {
         const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
         checked++;
         confirmed++;
-        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
+        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1), remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
         // Do not stop after the first confirmed key. Every user-contributed
         // key must be checked so the API pool can rotate across all confirmed
@@ -2045,7 +2048,7 @@ async function handleMyMightyCheckApi(request, env) {
             await releaseApiLease(env.DB, lease.lease_id);
           } else {
             transient = true;
-            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401 });
+            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401, requestCount: Math.max(1, Number(error?.attempts) || 1) });
           }
         }
         if (status === 403) continue;
@@ -4147,7 +4150,8 @@ async function releaseProbeApiKey(env, lease, options = {}) {
       targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
       httpStatus: options.httpStatus || 0, errorCode: options.errorCode || "MIGHTPULSE_REQUEST_FAILED",
       errorMessage: options.errorMessage || null, cooldownSeconds: options.cooldownSeconds || 0,
-      disable: false, keepAvailable: options.keepAvailable === true
+      disable: false, keepAvailable: options.keepAvailable === true,
+      requestCount: Math.max(1, Number(options.requestCount) || 1)
     });
   } else {
     await releaseApiLease(env.DB, lease.lease_id);
@@ -4919,6 +4923,7 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
         targetId: probeGovernorId,
         purpose: "API_POOL_AUTO_RECOVERY",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -4944,7 +4949,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
           errorMessage: error?.message || null,
           cooldownSeconds: disable ? 0 : cooldown,
           disable,
-          keepAvailable: false
+          keepAvailable: false,
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
         if (disable) disabled++;
       }
@@ -6239,6 +6245,7 @@ async function handleApiPoolMightyCheck(request, env) {
         targetId: keyId,
         purpose: "API_POOL_MIGHTY_CHECK",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -6270,7 +6277,8 @@ async function handleApiPoolMightyCheck(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
       if (status !== 403) {
         await env.DB.prepare(
@@ -6344,6 +6352,7 @@ async function handleApiPoolHealthCheck(request, env) {
         targetId: probeGovernorId,
         purpose: "API_POOL_HEALTH_CHECK",
         httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
         remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
         remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
       });
@@ -6373,7 +6382,8 @@ async function handleApiPoolHealthCheck(request, env) {
           errorMessage: error?.message || null,
           cooldownSeconds: cooldown,
           disable,
-          keepAvailable
+          keepAvailable,
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
       }
       const status = Number(error?.status || 0);
@@ -6502,6 +6512,7 @@ async function handleApiPoolTestPlayer(request, env) {
       targetId: governorId,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
     const sourcePlayer = result?.data?.player || {};
@@ -6544,7 +6555,8 @@ async function handleApiPoolTestPlayer(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -6611,6 +6623,7 @@ async function handleApiPoolTestRanking(request, env) {
       targetId: kid,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
     const response = {
@@ -6647,7 +6660,8 @@ async function handleApiPoolTestRanking(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -6942,8 +6956,8 @@ async function renderApiPoolAdminPage(request, env) {
         "<div class='detail-item'><small>Discord ID</small><b>" + escapeHtml(c.discord_id || "未登録") + "</b></div>" +
         "<div class='detail-item'><small>Mighty</small><b>" + escapeHtml(detailMighty) + "</b></div>" +
         "<div class='detail-item'><small>判定日時</small><b>" + escapeHtml(k.mighty_checked_at ? new Date(Number(k.mighty_checked_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / min</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / day</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 分</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 日</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease用途</small><b>" + escapeHtml(k.lease_purpose || "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease対象</small><b>" + escapeHtml(k.lease_target_type && k.lease_target_id ? k.lease_target_type + " / " + k.lease_target_id : "-") + "</b></div>" +
         "<div class='detail-item'><small>最終使用</small><b>" + escapeHtml(k.last_used_at ? new Date(Number(k.last_used_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
@@ -6957,7 +6971,7 @@ async function renderApiPoolAdminPage(request, env) {
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
   return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>" +
     ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 50px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:14px 0 4px}.hint{color:#94a3b8;font-size:13px;line-height:1.65}.card{padding:15px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.stats{font-size:12px;color:#cbd5e1;line-height:1.7}.key-list{display:grid;gap:8px;margin-top:12px}.key-row{width:100%;display:block;padding:0;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#f8fafc;overflow:hidden}.key-row:hover{border-color:#64748b}.actions button[data-busy='1']{opacity:.6;cursor:wait}.key-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;list-style:none}.key-summary::-webkit-details-marker{display:none}.key-summary::after{content:'›';font-size:22px;color:#64748b;transition:transform .15s ease}.key-row[open] .key-summary::after{transform:rotate(90deg)}.key-detail-panel{padding:0 13px 13px;border-top:1px solid #26364d}.key-detail-panel .detail-grid{margin-top:12px}.key-row.available{border-left:4px solid #22c55e}.key-row.leased{border-left:4px solid #3b82f6;background:#101f3b}.key-row.cooldown{border-left:4px solid #eab308}.key-row.error{border-left:4px solid #ef4444;background:#241419}.key-row.revoked{opacity:.55}.key-row.mighty-confirmed{border-left:4px solid #f59e0b;background:linear-gradient(90deg,#2a210d 0%,#101827 62%);box-shadow:inset 0 0 0 1px rgba(245,158,11,.18)}.key-row.mighty-confirmed .mighty-pill{color:#fbbf24;border-color:#a16207;background:rgba(245,158,11,.10);font-weight:900}.key-row.mighty-in-use{border-left-color:#facc15;background:linear-gradient(90deg,#46320a 0%,#171b24 68%);box-shadow:inset 0 0 0 1px rgba(250,204,21,.38),0 0 14px rgba(245,158,11,.12)}.key-row.mighty-in-use .mighty-pill{color:#fde68a;border-color:#d97706;background:rgba(245,158,11,.22);font-weight:1000;animation:mightyPulse 1.6s ease-in-out infinite}@keyframes mightyPulse{0%,100%{box-shadow:0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 10px rgba(245,158,11,.28)}}.key-main{min-width:0;display:flex;flex-direction:column;gap:3px}.key-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.key-main small{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.api-key-prefix{display:inline-block;margin-left:7px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}.key-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:10px;color:#cbd5e1}.key-meta span{padding:4px 6px;border:1px solid #334155;border-radius:999px}.detail{display:none}.detail.show{display:block}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.detail-item{padding:9px;border-radius:9px;background:#0b1220;border:1px solid #26364d}.detail-item small{display:block;color:#64748b;font-size:10px}.detail-item b{display:block;margin-top:3px;overflow-wrap:anywhere}.danger{background:#7f1d1d!important;color:#fff!important}.ok{background:#166534!important;color:#fff!important}select,input{width:100%;padding:10px;margin-top:6px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button.action{padding:9px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;cursor:pointer}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.scroll{overflow:auto}@media(max-width:600px){.detail-grid{grid-template-columns:1fr}.key-summary{align-items:flex-start;flex-direction:column}.key-meta{justify-content:flex-start}.key-summary::after{position:absolute;right:28px;margin-top:0}.key-row{position:relative}}" +
-    "</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='hint'>一覧はスマホでも横スクロール不要。キーをタップすると詳細を表示します。MightPulseキーは照合用の先頭部分のみ表示します。</div>" +
+    "</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='hint'>一覧はスマホでも横スクロール不要。キーをタップすると詳細を表示します。MightPulseキーは照合用の先頭部分のみ表示します。 残量は公開仕様に残量ヘッダーの記載がないため、EagleEyeが記録した直近60秒・24時間のリクエスト数から算出する推定値です。</div>" +
     "<div class='card'><b>Pool Status</b><div class='stats'>" + escapeHtml(statText || "登録キーなし") + "</div></div>" +
     "<div class='card'><b>登録済みキー</b><div class='key-list'>" + (rows || "<div class='hint'>登録キーなし</div>") + "</div></div>" +
     "" +
@@ -7073,6 +7087,7 @@ async function fetchThroughWatchlistApiPool(env, {
       purpose,
       jobId,
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       traceId,
       parentTraceId,
       runId,
@@ -7108,7 +7123,8 @@ async function fetchThroughWatchlistApiPool(env, {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
@@ -7211,6 +7227,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       targetId: id,
       purpose,
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
     });
 
@@ -7234,7 +7251,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
