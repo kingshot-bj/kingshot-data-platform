@@ -338,6 +338,7 @@ async function handleGatewayFullStatusExport(request, env, logRange) {
   const total = Number(countResult?.count || 0);
   snapshot.systemLog.event_count = total;
   snapshot.systemLog.returned_event_count = total;
+  snapshot.systemLog.events = [];
   snapshot.systemLog.truncated = false;
   snapshot.systemLog.summary = {
     ...(snapshot.systemLog.summary || {}),
