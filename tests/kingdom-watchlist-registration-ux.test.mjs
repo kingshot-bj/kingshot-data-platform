@@ -3,53 +3,49 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+const page = await readFile(new URL("../src/kingdom-watchlist-page.js", import.meta.url), "utf8");
 const telemetry = await readFile(new URL("../src/client-telemetry.js", import.meta.url), "utf8");
 
-test("Kingdom Watchlist records empty and invalid kingdom IDs before stopping", () => {
-  const start = source.indexOf("function handleCreateWatchlist(){");
-  const end = source.indexOf('setInterval(function(){', start);
-  const handler = source.slice(start, end);
-  assert.ok(start >= 0 && end > start);
-  assert.match(handler, /ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_EMPTY"/);
-  assert.match(handler, /ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_INVALID"/);
-  assert.match(handler, /ACTION_START","KINGDOM_WATCHLIST_CREATE","KINGDOM_ID_PRESENT"/);
+test("Kingdom Watchlist route delegates to the isolated replacement page after authentication", () => {
+  assert.match(source, /import \{ renderKingdomWatchlistPageReplacement \} from "\.\/kingdom-watchlist-page\.js"/);
+  assert.match(source, /async function renderKingdomWatchlistPage\(request, env\)/);
+  assert.match(source, /return renderKingdomWatchlistPageReplacement\(\)/);
+  assert.match(source, /auth\.status !== "ACTIVE"/);
 });
 
-test("Kingdom Watchlist shows busy state while registration request is in flight", () => {
-  assert.match(source, /classList\.add\("is-registering"\)/);
-  assert.match(source, /setAttribute\("aria-busy","true"\)/);
-  assert.match(source, /王国番号を確認中：登録処理を開始しています/);
-  assert.match(source, /classList\.remove\("is-registering"\)/);
+test("replacement page uses one native submit path and prevents duplicate submissions", () => {
+  assert.match(page, /<form id="create-form" novalidate>/);
+  assert.match(page, /form\.addEventListener\("submit",async function\(event\)/);
+  assert.match(page, /event\.preventDefault\(\)/);
+  assert.match(page, /if\(busyCreate\)return/);
+  assert.match(page, /createButton\.disabled=true/);
+  assert.match(page, /createButton\.removeAttribute\("aria-busy"\)/);
+  assert.doesNotMatch(page, /addEventListener\("(?:click|pointerup|touchend)",[^\n]*create/);
 });
 
-test("client telemetry accepts safe action lifecycle events without collecting the kingdom ID", () => {
-  assert.match(telemetry, /"ACTION_START", "ACTION_BLOCKED"/);
+test("registration, list refresh and initial refresh are separately observable", () => {
+  for (const stage of ["CREATE_START", "CREATE_SUCCESS", "CREATE_FAILED", "LIST_START", "LIST_SUCCESS", "LIST_FAILED", "INITIAL_REFRESH_START", "INITIAL_REFRESH_COMPLETE", "INITIAL_REFRESH_JOB_FAILED"]) {
+    assert.ok(page.includes(stage), "missing diagnostic stage: " + stage);
+  }
+  assert.match(page, /trace_id/);
+  assert.match(page, /http_status/);
+  assert.match(page, /error_code/);
+});
+
+test("list failures do not disable registration and can be retried", () => {
+  assert.match(page, /一覧を読み込めませんでした。登録フォームは引き続き使用できます。/);
+  assert.match(page, /id="retry-list"/);
+  assert.match(page, /loadList\(\)\.catch/);
+});
+
+test("replacement preserves refresh, toggle, delete and ranking job progress actions", () => {
+  for (const action of ['data-action="refresh"', 'data-action="toggle"', 'data-action="delete"', 'action=\\"refresh\\"', 'ranking_rows', 'last_error']) {
+    assert.ok(page.includes(action), "missing functionality: " + action);
+  }
+});
+
+test("telemetry does not collect the entered kingdom ID", () => {
   assert.match(telemetry, /window\.__eeTrackAction=function/);
-  assert.match(source, /KINGDOM_ID_EMPTY/);
-  assert.doesNotMatch(telemetry, /inputState:.*kidInput\.value/);
-});
-
-test("Kingdom Watchlist hover motion is restricted to hover-capable fine pointers", () => {
-  assert.ok(source.includes("@media (hover:hover) and (pointer:fine){button:hover{filter:brightness(1.04);transform:translateY(-1px)}}"));
-  assert.ok(source.includes("button:active{filter:brightness(.96);transform:none}"));
-});
-
-test("Kingdom Watchlist registration uses one native form submit path across devices", () => {
-  assert.ok(source.includes('<form id="watchlist-create-form" novalidate>'));
-  assert.ok(source.includes('<button id="create" class="primary-action" type="submit">監視を登録</button>'));
-  assert.ok(source.includes('el("watchlist-create-form").addEventListener("submit",function(event){'));
-  assert.ok(source.includes("event.preventDefault();"));
-  assert.ok(source.includes("handleCreateWatchlist();"));
-  assert.ok(!source.includes('createButton.addEventListener("pointerup"'));
-  assert.ok(!source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
-  assert.ok(!source.includes('createButton.addEventListener("touchend"'));
-});
-
-test("Kingdom Watchlist submit listener is delegated before page initialization", () => {
-  const pageStart = source.indexOf('function el(id){return document.getElementById(id);}', source.indexOf('watchlist-create-form'));
-  const handlerStart = source.indexOf("function handleCreateWatchlist(){");
-  const delegated = source.indexOf('document.addEventListener("submit"', pageStart);
-  assert.ok(pageStart >= 0 && delegated > pageStart && delegated < handlerStart);
-  assert.match(source.slice(delegated, handlerStart), /form\.id!==\"watchlist-create-form\"/);
-  assert.doesNotMatch(source, /el\("watchlist-create-form"\)\.addEventListener\("submit"/);
+  assert.doesNotMatch(page, /__eeTrackAction\([^\n]*kid/);
+  assert.doesNotMatch(page, /inputState:.*kid\.value/);
 });
