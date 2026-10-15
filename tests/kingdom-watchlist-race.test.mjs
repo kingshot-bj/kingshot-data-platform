@@ -29,3 +29,20 @@ test("watchlist continuation retries after another worker holds the refresh lock
   assert.ok(continuation.includes("setTimeout(resolve,1000)"));
   assert.ok(continuation.includes(".then(step)"));
 });
+
+test("kingdom watchlist and ranking history APIs reject inactive users", () => {
+  for (const name of [
+    "handleKingdomRankingHistoryApi",
+    "handleKingdomWatchlistDataApi",
+    "handleKingdomWatchlistApi"
+  ]) {
+    const start = source.indexOf("async function " + name);
+    assert.ok(start >= 0, "missing handler: " + name);
+    const next = source.indexOf("\nasync function ", start + 10);
+    const handler = source.slice(start, next < 0 ? source.length : next);
+    assert.ok(
+      handler.includes('if (!auth || auth.status !== "ACTIVE")'),
+      name + " must reject inactive users"
+    );
+  }
+});
