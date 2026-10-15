@@ -1606,7 +1606,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
     }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
   }
   var creatingWatchlist=false;
-  el("create").addEventListener("click",function(){
+  function handleCreateWatchlist(){
     if(creatingWatchlist)return;
     var kidValue=String(el("kid").value||"").trim();
     var topValue=String(el("top").value||"").trim();
@@ -1663,7 +1663,20 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       el("create").removeAttribute("aria-busy");
       el("create").textContent=originalCreateText;
     });
+  }
+  var createButton=el("create");
+  createButton.addEventListener("click",handleCreateWatchlist);
+  createButton.addEventListener("pointerup",function(event){
+    if(event.pointerType!=="touch")return;
+    event.preventDefault();
+    handleCreateWatchlist();
   });
+  if(!("PointerEvent" in window)){
+    createButton.addEventListener("touchend",function(event){
+      event.preventDefault();
+      handleCreateWatchlist();
+    },{passive:false});
+  }
   setInterval(function(){
     Array.prototype.forEach.call(document.querySelectorAll(".phase-eta[data-remaining-seconds]"),function(node){
       var remaining=Math.max(0,Number(node.getAttribute("data-remaining-seconds")||"0")-1);
