@@ -1560,7 +1560,12 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
           running[id]=false;
           setWatchCardBusy(id,false);
           if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
-            return load();
+            // A Cron/manual refresh may have acquired the watchlist lock just
+            // before this continuation request. Keep the client job alive and
+            // retry instead of leaving sessionStorage stuck in "running".
+            return load().then(function(){
+              return new Promise(function(resolve){setTimeout(resolve,1000);});
+            }).then(step);
           }
           sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
           el("msg").innerHTML="<span class='error'>更新失敗: "+esc(e.message)+"</span>";
@@ -3260,10 +3265,10 @@ async function handleKingdomWatchlistApi(request, env) {
     const id = crypto.randomUUID();
     const inserted = await env.DB.prepare(
       "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) " +
-      "SELECT ?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ? " +
+      "SELECT ?, ?, ?, ?, ?, 1, ?, NULL, NULL, ?, ? " +
       "WHERE NOT EXISTS (SELECT 1 FROM kingdom_watchlists WHERE discord_id = ? AND kid = ? AND enabled = 1) " +
       "RETURNING watchlist_id"
-    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now, auth.discord_id, kid).first();
+    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now, now, auth.discord_id, kid).first();
 
     if (!inserted?.watchlist_id) {
       const existing = await env.DB.prepare(
