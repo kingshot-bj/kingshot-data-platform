@@ -1313,6 +1313,23 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 <script>
 (function(){
   function el(id){return document.getElementById(id);}
+  // Register the Kingdom Watchlist submit handler before the rest of page initialization.
+  // A later initialization error must not silently leave the visible form inert.
+  document.addEventListener("submit",function(event){
+    var form=event.target;
+    if(!form || form.id!=="watchlist-create-form")return;
+    event.preventDefault();
+    try{
+      handleCreateWatchlist();
+    }catch(error){
+      var message=el("msg");
+      if(message)message.innerHTML="<span class='error'>登録処理を開始できませんでした。画面を再読み込みしてください。</span>";
+      var button=el("create");
+      if(button){button.disabled=false;button.classList.remove("is-registering");button.removeAttribute("aria-busy");button.textContent="監視を登録";}
+      if(window.__eeTrackAction)window.__eeTrackAction("ACTION_BLOCKED","KINGDOM_WATCHLIST_CREATE","HANDLER_SYNC_ERROR");
+      console.error("[Kingdom Watchlist] submit handler failed",error);
+    }
+  },true);
   function esc(v){return String(v == null ? "" : v).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];});}
   var RANKING_BOARD_LABELS = {
     alliance_power:"同盟総力", alliance_kills:"同盟撃破", personal_power:"個人総力", kills:"個人撃破",
@@ -1672,10 +1689,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   }
   // Use the browser-native form submit path for mouse, keyboard, and iOS Safari.
   // Do not stack click/pointerup/touchend handlers: one submit = one registration attempt.
-  el("watchlist-create-form").addEventListener("submit",function(event){
-    event.preventDefault();
-    handleCreateWatchlist();
-  });
+  // Submit is delegated at the start of this IIFE so initialization order cannot disable it.
   setInterval(function(){
     Array.prototype.forEach.call(document.querySelectorAll(".phase-eta[data-remaining-seconds]"),function(node){
       var remaining=Math.max(0,Number(node.getAttribute("data-remaining-seconds")||"0")-1);
