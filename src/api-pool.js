@@ -19,7 +19,7 @@ export async function addApiPoolKey(db, { provider = PROVIDER, poolType, label =
   const keyId = crypto.randomUUID();
 
   await db.prepare(
-    "INSERT INTO api_pool_keys (key_id, provider, pool_type, label, encrypted_key, key_fingerprint, status, contributed_by_user_id, consent_version, contributed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?, ?, ?, ?)"
+    "INSERT INTO api_pool_keys (key_id, provider, pool_type, label, encrypted_key, key_fingerprint, status, contributed_by_user_id, consent_version, contributed_at, created_at, updated_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day) VALUES (?, ?, ?, ?, ?, ?, 'AVAILABLE', ?, ?, ?, ?, ?, 60, 5000, 60, 5000)"
   ).bind(keyId, provider, poolType, label || null, encrypted, fingerprint, contributedByUserId, consentVersion, poolType === "USER_CONTRIBUTED" ? now : null, now, now).run();
 
   return { key_id: keyId, provider, pool_type: poolType, key_fingerprint: fingerprint, status: "AVAILABLE" };
@@ -233,8 +233,8 @@ export async function setApiPoolMightyMetadata(db, {
   const checkStatus = status || (mightyCapable ? "CONFIRMED" : "NOT_MIGHTY");
   await db.prepare(
     mightyCapable
-      ? "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, mighty_capable = ?1, mighty_checked_at = ?2, mighty_check_status = ?3, mighty_last_error_code = ?4, last_error_code = NULL, last_error_message = NULL, updated_at = ?2 WHERE key_id = ?5"
-      : "UPDATE api_pool_keys SET mighty_capable = ?1, mighty_checked_at = ?2, mighty_check_status = ?3, mighty_last_error_code = ?4, updated_at = ?2 WHERE key_id = ?5"
+      ? "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, mighty_capable = ?1, quota_per_minute = CASE WHEN ?1 = 1 AND ?3 = 'CONFIRMED' THEN 120 ELSE 60 END, quota_per_day = CASE WHEN ?1 = 1 AND ?3 = 'CONFIRMED' THEN 10000 ELSE 5000 END, mighty_checked_at = ?2, mighty_check_status = ?3, mighty_last_error_code = ?4, last_error_code = NULL, last_error_message = NULL, updated_at = ?2 WHERE key_id = ?5"
+      : "UPDATE api_pool_keys SET mighty_capable = ?1, quota_per_minute = CASE WHEN ?1 = 1 AND ?3 = 'CONFIRMED' THEN 120 ELSE 60 END, quota_per_day = CASE WHEN ?1 = 1 AND ?3 = 'CONFIRMED' THEN 10000 ELSE 5000 END, mighty_checked_at = ?2, mighty_check_status = ?3, mighty_last_error_code = ?4, updated_at = ?2 WHERE key_id = ?5"
   ).bind(mightyCapable ? 1 : 0, now, checkStatus, errorCode, keyId).run();
 }
 
@@ -316,12 +316,28 @@ function prepareUsageInsert(db, { keyId, provider = PROVIDER, poolType = null, e
   ).bind(usageId, keyId, provider, resolvedPoolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount, measuredQuota, measuredRemaining, estimated ? 1 : 0, now, now);
 }
 
+async function refreshApiPoolLocalRemaining(db, keyId, now) {
+  await db.prepare(
+    `UPDATE api_pool_keys
+     SET quota_per_minute = COALESCE(quota_per_minute, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 120 ELSE 60 END),
+         quota_per_day = COALESCE(quota_per_day, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 10000 ELSE 5000 END),
+         remaining_minute = MAX(0, COALESCE(quota_per_minute, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 120 ELSE 60 END) -
+           COALESCE((SELECT SUM(request_count) FROM api_pool_usage WHERE key_id = ?1 AND used_at > ?2 AND used_at <= ?3), 0)),
+         remaining_day = MAX(0, COALESCE(quota_per_day, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 10000 ELSE 5000 END) -
+           COALESCE((SELECT SUM(request_count) FROM api_pool_usage WHERE key_id = ?1 AND used_at > ?4 AND used_at <= ?3), 0)),
+         quota_reset_at = ?3,
+         updated_at = ?3
+     WHERE key_id = ?1`
+  ).bind(keyId, now - 60, now, now - 86400).run();
+}
+
 export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null, traceId = null, parentTraceId = null, runId = null, startedAt = null, completedAt = null, requestCount = 1 } = {}) {
   const now = Math.floor(Date.now() / 1000);
-  await db.prepare(
-    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, remaining_minute = COALESCE(?1, remaining_minute), remaining_day = COALESCE(?2, remaining_day), quota_reset_at = COALESCE(?3, quota_reset_at), last_used_at = ?4, last_success_at = ?5, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?6 WHERE key_id = ?7 AND lease_id = ?8"
-  ).bind(remainingMinute ?? null, remainingDay ?? null, quotaResetAt ?? null, now, now, now, keyId, leaseId).run();
   await prepareUsageInsert(db, { keyId, provider:PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount:Math.max(1, Math.floor(Number(requestCount) || 1)), measuredQuota:null, measuredRemaining:remainingMinute, estimated:0, now }).run();
+  await db.prepare(
+    "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, last_used_at = ?1, last_success_at = ?2, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?3 WHERE key_id = ?4 AND lease_id = ?5"
+  ).bind(now, now, now, keyId, leaseId).run();
+  await refreshApiPoolLocalRemaining(db, keyId, now);
   await recordSystemEvent(db, { traceId:traceId || jobId || systemTraceId("pool"), parentTraceId, startedAt:startedAt || now, completedAt:completedAt || now, eventType:"API_SUCCESS", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"SUCCESS", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, leaseId:leaseId || null, traceId:traceId || null, runId:runId || null } });
 }
 
@@ -330,10 +346,11 @@ export async function recordApiPoolFailure(db, { keyId, leaseId, poolType = null
   const status = disable ? "DISABLED" : cooldownSeconds > 0 ? "COOLDOWN" : keepAvailable ? "AVAILABLE" : "ERROR";
   const cooldownUntil = cooldownSeconds > 0 ? now + cooldownSeconds : null;
 
+  await prepareUsageInsert(db, { keyId, provider:PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount:Math.max(1, Math.floor(Number(requestCount) || 1)), measuredQuota:null, measuredRemaining:null, estimated:0, now }).run();
   await db.prepare(
     "UPDATE api_pool_keys SET status = ?1, cooldown_until = ?2, last_used_at = ?3, last_error_at = ?4, last_error_code = ?5, last_error_message = ?6, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?7 WHERE key_id = ?8 AND lease_id = ?9"
   ).bind(status, cooldownUntil, now, now, errorCode ?? null, truncate(errorMessage, 500), now, keyId, leaseId).run();
-  await prepareUsageInsert(db, { keyId, provider:PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount:Math.max(1, Math.floor(Number(requestCount) || 1)), measuredQuota:null, measuredRemaining:null, estimated:0, now }).run();
+  await refreshApiPoolLocalRemaining(db, keyId, now);
   await recordSystemEvent(db, { traceId:traceId || jobId || systemTraceId("pool"), parentTraceId, startedAt:startedAt || now, completedAt:completedAt || now, eventType:"API_FAILURE", service:"api_pool", feature:"api_pool", operation:purpose || "API_REQUEST", status:"FAILED", targetType:targetType || "API_KEY", targetId:targetId || keyId, httpStatus, errorCode:errorCode || null, message:errorMessage || null, metadata:{ keyId, poolType, endpoint, jobId:jobId || null, leaseId:leaseId || null, traceId:traceId || null, runId:runId || null, cooldownSeconds, disable, keepAvailable } });
 }
 
@@ -413,7 +430,6 @@ export async function getApiPoolBudgetSnapshot(db, {
     measuredReserveCheckedAt: measuredReserve?.checkedAt || now,
     checkedAt: now,
     quotaSource: "LOCAL_REQUEST_ACCOUNTING",
-    quotaTrackingStartedAt: rows.length ? Math.min(...rows.map(row => Number(row.updated_at || now))) : now
   };
 }
 
