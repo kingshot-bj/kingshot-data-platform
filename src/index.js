@@ -63,6 +63,7 @@ import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, han
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } from "./system-log-export.js";
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
+import { handleClientTelemetry, clientTelemetryScript } from "./client-telemetry.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -4901,6 +4902,7 @@ export default {
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
     try {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
+      if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
@@ -5500,7 +5502,12 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 }
 
 function eagleEyeHtmlResponse(html, status = 200) {
-  return new Response(applyEagleEyeTheme(html), { status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+  const themed = applyEagleEyeTheme(html);
+  const telemetry = clientTelemetryScript();
+  const instrumented = themed.includes("</body>")
+    ? themed.replace("</body>", telemetry + "</body>")
+    : themed + telemetry;
+  return new Response(instrumented, { status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
 }
 
 function getConfig(env) {
