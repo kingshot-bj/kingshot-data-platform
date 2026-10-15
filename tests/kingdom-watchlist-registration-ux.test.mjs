@@ -44,3 +44,12 @@ test("Kingdom Watchlist registration uses one native form submit path across dev
   assert.ok(!source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
   assert.ok(!source.includes('createButton.addEventListener("touchend"'));
 });
+
+test("Kingdom Watchlist submit listener is delegated before page initialization", () => {
+  const pageStart = source.indexOf('function el(id){return document.getElementById(id);}', source.indexOf('watchlist-create-form'));
+  const handlerStart = source.indexOf("function handleCreateWatchlist(){");
+  const delegated = source.indexOf('document.addEventListener("submit"', pageStart);
+  assert.ok(pageStart >= 0 && delegated > pageStart && delegated < handlerStart);
+  assert.match(source.slice(delegated, handlerStart), /form\.id!==\"watchlist-create-form\"/);
+  assert.doesNotMatch(source, /el\("watchlist-create-form"\)\.addEventListener\("submit"/);
+});
