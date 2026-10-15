@@ -34,12 +34,13 @@ test("Kingdom Watchlist hover motion is restricted to hover-capable fine pointer
   assert.ok(source.includes("button:active{filter:brightness(.96);transform:none}"));
 });
 
-test("Kingdom Watchlist registration has a touch-pointer fallback", () => {
-  assert.ok(source.includes('function handleCreateWatchlist(){'));
-  assert.ok(source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
-  assert.ok(source.includes('createButton.addEventListener("pointerup",function(event){'));
-  assert.ok(source.includes('if(event.pointerType!=="touch")return;'));
+test("Kingdom Watchlist registration uses one native form submit path across devices", () => {
+  assert.ok(source.includes('<form id="watchlist-create-form" novalidate>'));
+  assert.ok(source.includes('<button id="create" class="primary-action" type="submit">監視を登録</button>'));
+  assert.ok(source.includes('el("watchlist-create-form").addEventListener("submit",function(event){'));
   assert.ok(source.includes("event.preventDefault();"));
   assert.ok(source.includes("handleCreateWatchlist();"));
-  assert.ok(source.includes('if(!("PointerEvent" in window)){'));
+  assert.ok(!source.includes('createButton.addEventListener("pointerup"'));
+  assert.ok(!source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
+  assert.ok(!source.includes('createButton.addEventListener("touchend"'));
 });
