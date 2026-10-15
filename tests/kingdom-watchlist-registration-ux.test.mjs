@@ -30,6 +30,6 @@ test("client telemetry accepts safe action lifecycle events without collecting t
 });
 
 test("Kingdom Watchlist hover motion is restricted to hover-capable fine pointers", () => {
-  assert.match(source, /@media \\(hover:hover\\) and \\(pointer:fine\\)\\{button:hover\\{filter:brightness\\(1\\.04\\);transform:translateY\\(-1px\\)\\}\\}/);
-  assert.match(source, /button:active\\{filter:brightness\\(\\.96\\);transform:none\\}/);
+  assert.ok(source.includes("@media (hover:hover) and (pointer:fine){button:hover{filter:brightness(1.04);transform:translateY(-1px)}}"));
+  assert.ok(source.includes("button:active{filter:brightness(.96);transform:none}"));
 });
