@@ -698,13 +698,14 @@ async function runKingdomWatchlistJobs(env) {
         const storedError = retryable
           ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + rawError
           : rawError;
+        const failedAt = Math.floor(Date.now() / 1000);
         await env.DB.prepare(
           "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-        ).bind(storedError.slice(0, 1000), now, job.job_id).run();
-        // Preserve the committed cursor and retry only after a bounded backoff.
+        ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
+        // Preserve the committed cursor and start the retry delay at failure time.
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, rawError, now, row.watchlist_id).run();
+        ).bind(failedAt, rawError, failedAt, row.watchlist_id).run();
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
