@@ -204,6 +204,10 @@ async function handleGatewayStatus(request, env) {
   const systemLogSummary = (() => {
     const services = {};
     const statuses = {};
+    const eventTypes = {};
+    const errorCodes = {};
+    const operationCounts = {};
+    const failureSamples = [];
     let metadataParseFailures = 0;
     let traceCount = 0;
     const traceIds = new Set();
@@ -213,6 +217,31 @@ async function handleGatewayStatus(request, env) {
       const status = String(event?.status || "unknown");
       services[service] = (services[service] || 0) + 1;
       statuses[status] = (statuses[status] || 0) + 1;
+      const eventType = String(event?.event_type || "unknown");
+      const operation = String(event?.operation || "unknown");
+      eventTypes[eventType] = (eventTypes[eventType] || 0) + 1;
+      operationCounts[operation] = (operationCounts[operation] || 0) + 1;
+      if (event?.error_code) {
+        const errorCode = String(event.error_code);
+        errorCodes[errorCode] = (errorCodes[errorCode] || 0) + 1;
+      }
+      if ((status === "FAILED" || status === "WARNING" || event?.error_code) && failureSamples.length < 20) {
+        failureSamples.push({
+          created_at: event?.created_at ?? null,
+          service,
+          feature: event?.feature ?? null,
+          operation,
+          status,
+          event_type: eventType,
+          error_code: event?.error_code ?? null,
+          http_status: event?.http_status ?? null,
+          target_type: event?.target_type ?? null,
+          target_id: event?.target_id ?? null,
+          trace_id: event?.trace_id ?? null,
+          parent_trace_id: event?.parent_trace_id ?? null,
+          message: event?.message ?? null
+        });
+      }
       if (event?.trace_id) {
         traceIds.add(String(event.trace_id));
       }
@@ -228,6 +257,10 @@ async function handleGatewayStatus(request, env) {
       trace_count: traceIds.size,
       services,
       statuses,
+      event_types: eventTypes,
+      operations: operationCounts,
+      error_codes: errorCodes,
+      failure_samples: failureSamples,
       metadata_parse_failures: metadataParseFailures,
       oldest_created_at: systemLogEvents.length
         ? systemLogEvents[systemLogEvents.length - 1]?.created_at ?? null
