@@ -2870,12 +2870,7 @@ async function handleKingdomWatchlistApi(request, env) {
       }
       if (active.status === "FAILED" && String(active.last_error || "").startsWith("RETRYABLE:")) {
         const retry = String(active.last_error).match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
-        if (retry) {
-          active.status = retry[1];
-          await env.DB.prepare(
-            "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
-          ).bind(active.status, now, active.job_id).run();
-        }
+        if (retry) active.status = retry[1];
       }
       const watch = { watchlist_id: active.watchlist_id, kid: active.kid, top_n: active.top_n };
 
@@ -2889,6 +2884,11 @@ async function handleKingdomWatchlistApi(request, env) {
       }
 
       try {
+        if (active.job_id && active.last_error && String(active.last_error).startsWith("RETRYABLE:") && active.status !== "FAILED") {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
+          ).bind(active.status, now, active.job_id).run();
+        }
         let job = active.job_id ? {
           job_id: active.job_id,
           watchlist_id: active.watchlist_id,
