@@ -15,8 +15,8 @@ test("new kingdom watchlists are not immediately due while their initial job is 
   );
   assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, "watchlist create handler must exist");
   const handler = source.slice(handlerStart, handlerEnd);
-  assert.match(handler, /SELECT \\?, \\?, \\?, \\?, \\?, 1, \\?, NULL, NULL, \\?, \\?/);
-  assert.match(handler, /\\.bind\\(id, auth\\.discord_id, kid, topN, intervalHours, now, now, now, auth\\.discord_id, kid\\)\\.first\\(\\)/);
+  assert.ok(handler.includes("SELECT ?, ?, ?, ?, ?, 1, ?, NULL, NULL, ?, ?"));
+  assert.ok(handler.includes(".bind(id, auth.discord_id, kid, topN, intervalHours, now, now, now, auth.discord_id, kid).first();"));
 });
 
 test("watchlist continuation retries after another worker holds the refresh lock", () => {
@@ -24,8 +24,8 @@ test("watchlist continuation retries after another worker holds the refresh lock
   const end = source.indexOf("function setWatchCardBusy", start);
   assert.ok(start >= 0 && end > start, "watchlist continuation handler must exist");
   const continuation = source.slice(start, end);
-  assert.match(continuation, /WATCHLIST_REFRESH_IN_PROGRESS/);
-  assert.match(continuation, /現在更新中です/);
-  assert.match(continuation, /setTimeout\\(resolve,1000\\)/);
-  assert.match(continuation, /\\.then\\(step\\)/);
+  assert.ok(continuation.includes("WATCHLIST_REFRESH_IN_PROGRESS"));
+  assert.ok(continuation.includes("現在更新中です"));
+  assert.ok(continuation.includes("setTimeout(resolve,1000)"));
+  assert.ok(continuation.includes(".then(step)"));
 });
