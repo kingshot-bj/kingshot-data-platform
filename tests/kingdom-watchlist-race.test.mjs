@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+const page = await readFile(new URL("../src/kingdom-watchlist-page.js", import.meta.url), "utf8");
 
 test("new kingdom watchlists are not immediately due while their initial job is being created", () => {
   const handlerStart = source.indexOf(
@@ -20,10 +21,10 @@ test("new kingdom watchlists are not immediately due while their initial job is 
 });
 
 test("watchlist continuation retries after another worker holds the refresh lock", () => {
-  const start = source.indexOf("function continueWatch(id)");
-  const end = source.indexOf("function setWatchCardBusy", start);
+  const start = page.indexOf("function continueWatch(id)");
+  const end = page.indexOf("function setWatchCardBusy", start);
   assert.ok(start >= 0 && end > start, "watchlist continuation handler must exist");
-  const continuation = source.slice(start, end);
+  const continuation = page.slice(start, end);
   assert.ok(continuation.includes("WATCHLIST_REFRESH_IN_PROGRESS"));
   assert.ok(continuation.includes("現在更新中です"));
   assert.ok(continuation.includes("setTimeout(resolve,1000)"));
