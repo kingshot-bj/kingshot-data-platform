@@ -20,10 +20,14 @@ jobs:
       - name: Syntax check Worker modules
         run: |
           node --check src/index.js
+          node --check src/client-telemetry.js
+          node --check src/diagnostics.js
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
           node --check src/api-pool.js
           bash -n scripts/check-probe-migration-history.sh
+      - name: Run diagnostic telemetry regression tests
+        run: node --test tests/diagnostic-telemetry-regression.test.mjs
       - name: Run Probe unit tests
         run: node --test tests/mightpulse-probe*.test.mjs
       - name: Run API Pool quota accounting tests

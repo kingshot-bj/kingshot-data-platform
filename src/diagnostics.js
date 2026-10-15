@@ -109,6 +109,33 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     if (!latestByService.has(event.service)) latestByService.set(event.service, event);
   }
 
+  // Operational activity is also recorded in system_event_log. If a critical
+  // service has no diagnostic_events heartbeat, use its latest operational
+  // event rather than reporting UNKNOWN while successful API calls are visible.
+  // Keep diagnostic_events authoritative whenever it has a record for the service.
+  const operationalResult = await db.prepare(
+    "SELECT service, status, event_type, trace_id, error_code, message, target_id, created_at FROM system_event_log WHERE service IN ('api_pool','mightpulse') ORDER BY created_at DESC LIMIT 100"
+  ).all();
+  for (const event of operationalResult.results || []) {
+    if (latestByService.has(event.service)) continue;
+    const status = String(event.status || "").toUpperCase();
+    const eventType = String(event.event_type || "").toUpperCase();
+    const normalizedStatus = status === "FAILED" || eventType.includes("FAIL") ? "FAILED"
+      : status === "WARNING" ? "WARNING"
+      : ["SUCCESS", "COMPLETED"].includes(status) ? "SUCCESS"
+      : null;
+    if (!normalizedStatus) continue;
+    latestByService.set(event.service, {
+      service: event.service,
+      status: normalizedStatus,
+      trace_id: event.trace_id || null,
+      error_code: event.error_code || null,
+      message: event.message || null,
+      target_id: event.target_id || null,
+      created_at: event.created_at || null
+    });
+  }
+
   const services = DIAGNOSTIC_SERVICES.map(([key, label, severity]) => {
     const latest = latestByService.get(key);
     return {
