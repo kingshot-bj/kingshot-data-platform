@@ -141,6 +141,7 @@ async function runDiagnosticHealthChecks(env) {
               endpoint:"/players/:governor_id", targetType:"API_KEY", targetId:String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
               purpose:"DIAGNOSTIC_HEALTH_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
               errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable
+              requestCount: Math.max(1, Number(error?.attempts) || 1)
             });
           }
           const message = error?.message || "MightPulse診断プローブに失敗しました。";
@@ -4150,6 +4151,7 @@ async function releaseProbeApiKey(env, lease, options = {}) {
       httpStatus: options.httpStatus || 0, errorCode: options.errorCode || "MIGHTPULSE_REQUEST_FAILED",
       errorMessage: options.errorMessage || null, cooldownSeconds: options.cooldownSeconds || 0,
       disable: false, keepAvailable: options.keepAvailable === true
+      requestCount: Math.max(1, Number(options.requestCount) || 1)
     });
   } else {
     await releaseApiLease(env.DB, lease.lease_id);
@@ -4948,6 +4950,7 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
           cooldownSeconds: disable ? 0 : cooldown,
           disable,
           keepAvailable: false
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
         if (disable) disabled++;
       }
@@ -6275,6 +6278,7 @@ async function handleApiPoolMightyCheck(request, env) {
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
       if (status !== 403) {
         await env.DB.prepare(
@@ -6379,6 +6383,7 @@ async function handleApiPoolHealthCheck(request, env) {
           cooldownSeconds: cooldown,
           disable,
           keepAvailable
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
       }
       const status = Number(error?.status || 0);
@@ -6551,6 +6556,7 @@ async function handleApiPoolTestPlayer(request, env) {
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -6655,6 +6661,7 @@ async function handleApiPoolTestRanking(request, env) {
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -7117,6 +7124,7 @@ async function fetchThroughWatchlistApiPool(env, {
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
@@ -7244,6 +7252,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
         cooldownSeconds: cooldown,
         disable,
         keepAvailable
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
