@@ -52,10 +52,18 @@ async function api(url,options,stage){
  var id=trace(),opts=options||{},headers=new Headers(opts.headers||{});
  headers.set("x-eagle-eye-trace-id",id);
  if(opts.body&&!headers.has("content-type"))headers.set("content-type","application/json");
- var response;
- try{response=await fetch(url,Object.assign({},opts,{headers:headers,credentials:"same-origin",cache:"no-store"}));}
- catch(e){var network=new Error("通信に失敗しました: "+(e&&e.message||e));network.httpStatus=0;network.apiCode="NETWORK_ERROR";network.traceId=id;throw network;}
- var text=await response.text(),data;
+ var response,controller=new AbortController(),timeout=setTimeout(function(){controller.abort();},60000);
+ try{
+  response=await fetch(url,Object.assign({},opts,{headers:headers,credentials:"same-origin",cache:"no-store",signal:controller.signal}));
+  var text=await response.text();
+ }catch(e){
+  clearTimeout(timeout);
+  var timedOut=!!(e&&e.name==="AbortError");
+  var network=new Error(timedOut?"通信が60秒以内に完了しませんでした。処理状態を一覧で確認してください。":"通信に失敗しました: "+(e&&e.message||e));
+  network.httpStatus=0;network.apiCode=timedOut?"REQUEST_TIMEOUT":"NETWORK_ERROR";network.traceId=id;throw network;
+ }
+ clearTimeout(timeout);
+ var data;
  try{data=JSON.parse(text);}catch(e){data={message:text.slice(0,500)||"応答が空です"};}
  if(!response.ok||data&&data.ok===false){
   var err=new Error(data.message||data.error||("HTTP "+response.status));
@@ -69,11 +77,20 @@ function renderList(rows){
  $("count").textContent="("+rows.length+"王国)";
  if(!rows.length){listNode.innerHTML='<div class="empty">監視対象はまだありません。</div>';return;}
  listNode.innerHTML=rows.map(function(w){
-  var id=String(w.watchlist_id||""),isBusy=active(w)||!!refreshing[id],statusText=isBusy?"初回取得・更新中":(w.last_error?"前回エラーあり":(w.last_success_at?"最終成功："+new Date(Number(w.last_success_at)*1000).toLocaleString("ja-JP"):"未取得"));
-  var err=w.last_error?'<p class="small" style="color:var(--bad)">エラー：'+escapeHtml(w.last_error)+'</p>':"";
-  var job=w.job||{},total=Number(job.total_boards||26),phase=String(job.status||"").toUpperCase(),progress=phase==="PLAYERS"?total:Number(job.ranking_fetch_progress!=null?job.ranking_fetch_progress:job.board_index||0),pct=total>0?Math.min(100,Math.round(progress/total*100)):0;
+  var id=String(w.watchlist_id||""),job=w.job||{},phase=String(job.status||"").toUpperCase();
+  var retryWait=phase==="FAILED"&&!!job.retryable;
+  var isBusy=active(w)||!!refreshing[id];
+  var statusText=retryWait?"再試行待ち（自動再開予定："+new Date(Number(job.retry_after_at||0)*1000).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})+"）":
+   isBusy?(job.retry_attempt?"再試行中":"取得・更新中"):
+   phase==="FAILED"?"失敗："+(job.last_error||w.last_error||"原因不明"):
+   phase==="COMPLETED"?"完了："+(job.completed_at?new Date(Number(job.completed_at)*1000).toLocaleString("ja-JP"):""):
+   (w.last_error?"前回エラーあり":(w.last_success_at?"最終成功："+new Date(Number(w.last_success_at)*1000).toLocaleString("ja-JP"):"未取得"));
+  var shownError=job.last_error||w.last_error;
+  var err=shownError?'<p class="small" style="color:var(--bad)">エラー：'+escapeHtml(String(shownError).replace(/^RETRYABLE:[^:]+:\d+:/,""))+'</p>':"";
+  var total=Number(job.total_boards||26),progress=phase==="PLAYERS"?total:Number(job.ranking_fetch_progress!=null?job.ranking_fetch_progress:job.board_index||0),pct=total>0?Math.min(100,Math.round(progress/total*100)):0;
+  var showProgress=isBusy||retryWait;
   return '<article class="watch" data-id="'+escapeHtml(id)+'"><h3>王国 '+escapeHtml(w.kid)+'</h3><p>上位'+escapeHtml(w.top_n)+'人 ・ '+escapeHtml(w.interval_hours)+'時間ごと ・ '+(w.enabled?'<span style="color:var(--good)">稼働中</span>':'停止中')+'</p><p class="muted small">'+escapeHtml(statusText)+'</p>'+
-   (isBusy?'<div class="progress"><span style="width:'+pct+'%"></span></div><p class="muted small">ランキング取得 '+escapeHtml(progress)+(total?' / '+escapeHtml(total)+'件':'')+' ・ 保存行数 '+escapeHtml(job.ranking_rows||0)+'行</p>':"")+err+
+   (showProgress?'<div class="progress"><span style="width:'+pct+'%"></span></div><p class="muted small">ランキング取得 '+escapeHtml(progress)+(total?' / '+escapeHtml(total)+'件':'')+' ・ 保存行数 '+escapeHtml(job.ranking_rows||0)+'行</p>':"")+err+
    '<div class="actions"><button type="button" data-action="refresh" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>今すぐ更新</button><button type="button" class="secondary" data-action="toggle" data-id="'+escapeHtml(id)+'" data-enabled="'+(w.enabled?'1':'0')+'" '+(isBusy?'disabled':'')+'>'+(w.enabled?'停止':'再開')+'</button><button type="button" class="danger" data-action="delete" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>削除</button></div></article>';
  }).join("");
 }
@@ -90,7 +107,7 @@ async function loadList(options){
  }catch(e){
   if(seq!==requestSeq)return;
   if(!quiet)report("LIST_FAILED","bad","一覧取得に失敗しました。登録フォームは引き続き使用できます。",errorDetails(e,"LIST"));
-  listNode.innerHTML='<div class="empty" style="color:var(--bad)">一覧を読み込めませんでした。<button id="retry-list" type="button" class="secondary" style="margin-top:12px">再読み込み</button></div>';
+  listNode.innerHTML='<div class="empty" style="color:var(--bad)">一覧を読み込めませんでした。登録フォームは引き続き使用できます。<button id="retry-list" type="button" class="secondary" style="margin-top:12px">再読み込み</button></div>';
   return null;
  }
 }
@@ -106,24 +123,24 @@ form.addEventListener("submit",async function(event){
   $("kid").value="";
   report("CREATE_SUCCESS","good","登録API成功（HTTP "+result.status+"）。一覧を更新しています。",{http_status:result.status,watchlist_id:result.data.watchlist_id||null,job_id:result.data.job_id||null,initial_refresh_status:result.data.initial_refresh_status||null});
   await loadList({quiet:true});
-  if(result.data.watchlist_id){refreshing[String(result.data.watchlist_id)]=true;await startInitialRefresh(String(result.data.watchlist_id));}
+  if(result.data.watchlist_id){refreshing[String(result.data.watchlist_id)]=true;await startInitialRefresh(String(result.data.watchlist_id),result.data.job_id||null);}
   else report("CREATE_SUCCESS_NO_ID","good","登録されました。一覧で状態を確認してください。",{http_status:result.status});
  }catch(e){report("CREATE_FAILED","bad","登録失敗（HTTP "+(Number(e.httpStatus)||0)+"）："+(e.message||"原因不明"),errorDetails(e,"CREATE"));}
  finally{busyCreate=false;createButton.disabled=false;createButton.textContent="監視を登録";createButton.removeAttribute("aria-busy");}
 });
-async function startInitialRefresh(id){
+async function startInitialRefresh(id,expectedJobId){
  try{
   report("INITIAL_REFRESH_START","busy","初回データ取得を開始しています…",{watchlist_id:id});
-  await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"INITIAL_REFRESH");
-  report("INITIAL_REFRESH_ACCEPTED","busy","初回取得ジョブを受け付けました。進捗を確認しています。",{watchlist_id:id});
-  await pollJob(id);
+  var accepted=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"INITIAL_REFRESH");
+  report("INITIAL_REFRESH_ACCEPTED","busy","初回取得ジョブを受け付けました。進捗を確認しています。",{watchlist_id:id,job_id:accepted.data.job_id||expectedJobId||null});
+  await pollJob(id,accepted.data.job_id||expectedJobId||null);
  }catch(e){
-  if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){report("INITIAL_REFRESH_ALREADY_RUNNING","busy","取得処理はすでに実行中です。既存ジョブの進捗を確認します。",{watchlist_id:id});await pollJob(id);return;}
+  if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){report("INITIAL_REFRESH_ALREADY_RUNNING","busy","取得処理はすでに実行中です。既存ジョブの進捗を確認します。",{watchlist_id:id});await pollJob(id,expectedJobId);return;}
   refreshing[id]=false;report("INITIAL_REFRESH_FAILED","bad","登録は成功しましたが、初回取得の開始に失敗しました。",errorDetails(e,"INITIAL_REFRESH"));
   await loadList({quiet:true});
  }
 }
-async function pollJob(id){
+async function pollJob(id,expectedJobId){
  var started=Date.now(),lastUpdatedAt=0,lastProgress="";
  while(Date.now()-started<180000){
   await new Promise(function(resolve){setTimeout(resolve,4000);});
@@ -138,8 +155,12 @@ async function pollJob(id){
    report("JOB_STALLED","bad","取得ジョブの進捗が30秒以上変化していません。自動継続を再試行します。",{watchlist_id:id,status:state,progress:progress,job_updated_at:updatedAt});
   }
   lastUpdatedAt=updatedAt;lastProgress=progress;
-  if(["COMPLETED","SUCCESS","DONE"].indexOf(state)>=0||w.last_success_at){refreshing[id]=false;report("INITIAL_REFRESH_COMPLETE","good","初回取得が完了しました。",{watchlist_id:id,status:state});await loadList({quiet:true});return;}
-  if(["FAILED","CANCELLED","CANCELED"].indexOf(state)>=0){refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||job.last_error||null});return;}
+  if(state==="COMPLETED"&&(!expectedJobId||String(job.job_id)===String(expectedJobId))){refreshing[id]=false;report("INITIAL_REFRESH_COMPLETE","good","今回の取得ジョブが完了しました。",{watchlist_id:id,job_id:job.job_id,status:state,ranking_rows:job.ranking_rows||0,player_rows:job.player_rows||0});await loadList({quiet:true});return;}
+  if(["FAILED","CANCELLED","CANCELED"].indexOf(state)>=0){
+   if(state==="FAILED"&&job.retryable){refreshing[id]=false;report("RETRY_WAIT","busy","取得に失敗しました。自動再試行を待っています。",{watchlist_id:id,job_id:job.job_id,retry_attempt:job.retry_attempt||0,retry_after_at:job.retry_after_at||null,last_error:job.last_error||w.last_error||null});}
+   else{refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||job.last_error||null});}
+   return;
+  }
   if(["RANKINGS","PLAYERS","RUNNING","QUEUED","PENDING","STARTED"].indexOf(state)>=0){
    try{
     var continuation=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CONTINUE_REFRESH");
@@ -167,8 +188,8 @@ listNode.addEventListener("click",async function(event){
  try{
   if(action==="refresh"){
    refreshing[id]=true;report("MANUAL_REFRESH_START","busy","手動更新を開始しています…",{watchlist_id:id});
-   await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"MANUAL_REFRESH");
-   report("MANUAL_REFRESH_ACCEPTED","good","更新を受け付けました。進捗を確認しています。",{watchlist_id:id});await loadList({quiet:true});await pollJob(id);
+   var accepted=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"MANUAL_REFRESH");
+   report("MANUAL_REFRESH_ACCEPTED","good","更新を受け付けました。進捗を確認しています。",{watchlist_id:id,job_id:accepted.data.job_id||null});await loadList({quiet:true});await pollJob(id,accepted.data.job_id||null);
   }else if(action==="toggle"){
    var enabled=btn.getAttribute("data-enabled")==="1";
    await api("/api/kingdom-watchlist?action=toggle",{method:"POST",body:JSON.stringify({watchlist_id:id,enabled:!enabled})},"TOGGLE");
