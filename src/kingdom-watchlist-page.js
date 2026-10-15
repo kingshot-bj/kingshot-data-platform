@@ -52,14 +52,14 @@ async function api(url,options,stage){
  var id=trace(),opts=options||{},headers=new Headers(opts.headers||{});
  headers.set("x-eagle-eye-trace-id",id);
  if(opts.body&&!headers.has("content-type"))headers.set("content-type","application/json");
- var response,controller=new AbortController(),timeout=setTimeout(function(){controller.abort();},25000);
+ var response,controller=new AbortController(),timeout=setTimeout(function(){controller.abort();},60000);
  try{
   response=await fetch(url,Object.assign({},opts,{headers:headers,credentials:"same-origin",cache:"no-store",signal:controller.signal}));
   var text=await response.text();
  }catch(e){
   clearTimeout(timeout);
   var timedOut=!!(e&&e.name==="AbortError");
-  var network=new Error(timedOut?"通信が25秒以内に完了しませんでした。処理状態を一覧で確認してください。":"通信に失敗しました: "+(e&&e.message||e));
+  var network=new Error(timedOut?"通信が60秒以内に完了しませんでした。処理状態を一覧で確認してください。":"通信に失敗しました: "+(e&&e.message||e));
   network.httpStatus=0;network.apiCode=timedOut?"REQUEST_TIMEOUT":"NETWORK_ERROR";network.traceId=id;throw network;
  }
  clearTimeout(timeout);
@@ -135,7 +135,7 @@ async function startInitialRefresh(id,expectedJobId){
   report("INITIAL_REFRESH_ACCEPTED","busy","初回取得ジョブを受け付けました。進捗を確認しています。",{watchlist_id:id,job_id:accepted.data.job_id||expectedJobId||null});
   await pollJob(id,accepted.data.job_id||expectedJobId||null);
  }catch(e){
-  if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){report("INITIAL_REFRESH_ALREADY_RUNNING","busy","取得処理はすでに実行中です。既存ジョブの進捗を確認します。",{watchlist_id:id});await pollJob(id);return;}
+  if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){report("INITIAL_REFRESH_ALREADY_RUNNING","busy","取得処理はすでに実行中です。既存ジョブの進捗を確認します。",{watchlist_id:id});await pollJob(id,expectedJobId);return;}
   refreshing[id]=false;report("INITIAL_REFRESH_FAILED","bad","登録は成功しましたが、初回取得の開始に失敗しました。",errorDetails(e,"INITIAL_REFRESH"));
   await loadList({quiet:true});
  }
