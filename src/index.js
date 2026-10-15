@@ -1250,7 +1250,8 @@ button,input,select{font:inherit}
 input,select{width:100%;padding:12px 13px;border:1px solid var(--border-strong);border-radius:12px;background:var(--input);color:var(--text);outline:none}
 input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,158,11,.16)}
 button{padding:12px 14px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-text);font-weight:900;cursor:pointer;transition:transform .12s,filter .12s,opacity .12s}
-button:hover{filter:brightness(1.04);transform:translateY(-1px)}
+@media (hover:hover) and (pointer:fine){button:hover{filter:brightness(1.04);transform:translateY(-1px)}}
+button:active{filter:brightness(.96);transform:none}
 button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .primary-action{min-width:145px}
 .primary-action.is-registering{background:#64748b!important;color:#fff!important;filter:saturate(.75);box-shadow:0 0 0 3px rgba(100,116,139,.2)}
