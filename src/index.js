@@ -2048,7 +2048,7 @@ async function handleMyMightyCheckApi(request, env) {
             await releaseApiLease(env.DB, lease.lease_id);
           } else {
             transient = true;
-            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401 });
+            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401, requestCount: Math.max(1, Number(error?.attempts) || 1) });
           }
         }
         if (status === 403) continue;
@@ -4150,7 +4150,7 @@ async function releaseProbeApiKey(env, lease, options = {}) {
       targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
       httpStatus: options.httpStatus || 0, errorCode: options.errorCode || "MIGHTPULSE_REQUEST_FAILED",
       errorMessage: options.errorMessage || null, cooldownSeconds: options.cooldownSeconds || 0,
-      disable: false, keepAvailable: options.keepAvailable === true
+      disable: false, keepAvailable: options.keepAvailable === true,
       requestCount: Math.max(1, Number(options.requestCount) || 1)
     });
   } else {
