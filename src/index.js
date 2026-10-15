@@ -4945,6 +4945,7 @@ export default {
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
     try {
+      if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
