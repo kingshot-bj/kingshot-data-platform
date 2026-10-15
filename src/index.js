@@ -2859,7 +2859,7 @@ async function handleKingdomWatchlistApi(request, env) {
       // job in one indexed lookup. The initial request may still need the watchlist
       // row when no active job exists.
       let active = await env.DB.prepare(
-        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.last_error, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND (j.status IN ('RANKINGS','PLAYERS') OR (j.status = 'FAILED' AND j.last_error LIKE 'RETRYABLE:%')) WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
+        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.last_error, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.collection_source, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND (j.status IN ('RANKINGS','PLAYERS') OR (j.status = 'FAILED' AND j.last_error LIKE 'RETRYABLE:%')) WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
       ).bind(watchlistId, auth.discord_id).first();
       if (!active) {
         const latestJob = await env.DB.prepare(
@@ -2961,13 +2961,23 @@ async function handleKingdomWatchlistApi(request, env) {
           });
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
-          const message = String(error?.userMessage || error?.message || error).slice(0, 1000);
+          const message = String(error?.userMessage || error?.message || error).slice(0, 850);
+          const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+          const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
+          const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
+          const retryable = retryCount <= 5 &&
+            !message.startsWith("USER_CANCELLED:") &&
+            !message.startsWith("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+          const storedError = retryable
+            ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + message
+            : message;
+          const failedAt = Math.floor(Date.now() / 1000);
           await env.DB.prepare(
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-          ).bind(message, now, job.job_id).run();
+          ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
           await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(message, now, watchlistId).run();
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
+          ).bind(failedAt, message, failedAt, watchlistId).run();
           await recordDiagnostic(env.DB, {
             service: "watchlist",
             feature: "kingdom_watchlist",
