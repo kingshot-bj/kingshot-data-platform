@@ -374,15 +374,23 @@ async function handleGatewayFullStatusExport(request, env, logRange) {
 
   const from = Math.floor(new Date(snapshot.systemLog.range.from).getTime() / 1000);
   const until = Math.floor(new Date(snapshot.systemLog.range.to).getTime() / 1000);
-  const [countResult, serviceCountsResult, statusCountsResult, traceCountResult] = await Promise.all([
+  const [countResult, serviceCountsResult, statusCountsResult, traceCountResult, eventTypeCountsResult, operationCountsResult, errorCodeCountsResult, failureSamplesResult] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
     env.DB.prepare("SELECT service, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY service").bind(from, until).all(),
     env.DB.prepare("SELECT status, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY status").bind(from, until).all(),
-    env.DB.prepare("SELECT COUNT(DISTINCT trace_id) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first()
+    env.DB.prepare("SELECT COUNT(DISTINCT trace_id) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
+    env.DB.prepare("SELECT event_type, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY event_type").bind(from, until).all(),
+    env.DB.prepare("SELECT operation, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY operation").bind(from, until).all(),
+    env.DB.prepare("SELECT error_code, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? AND error_code IS NOT NULL AND error_code!='' GROUP BY error_code").bind(from, until).all(),
+    env.DB.prepare("SELECT created_at,service,feature,operation,status,event_type,error_code,http_status,target_type,target_id,trace_id,parent_trace_id,message FROM system_event_log WHERE created_at>=? AND created_at<=? AND (status IN ('FAILED','WARNING') OR (error_code IS NOT NULL AND error_code!='')) ORDER BY created_at DESC,event_id DESC LIMIT 20").bind(from, until).all()
   ]);
   const total = Number(countResult?.count || 0);
   const allServices = Object.fromEntries((serviceCountsResult.results || []).map(row => [String(row.service || "unknown"), Number(row.count || 0)]));
   const allStatuses = Object.fromEntries((statusCountsResult.results || []).map(row => [String(row.status || "unknown"), Number(row.count || 0)]));
+  const allEventTypes = Object.fromEntries((eventTypeCountsResult.results || []).map(row => [String(row.event_type || "unknown"), Number(row.count || 0)]));
+  const allOperations = Object.fromEntries((operationCountsResult.results || []).map(row => [String(row.operation || "unknown"), Number(row.count || 0)]));
+  const allErrorCodes = Object.fromEntries((errorCodeCountsResult.results || []).map(row => [String(row.error_code || "unknown"), Number(row.count || 0)]));
+  const failureSamples = (failureSamplesResult.results || []).map(row => ({ ...row }));
   snapshot.systemLog.event_count = total;
   snapshot.systemLog.returned_event_count = total;
   snapshot.systemLog.events = [];
@@ -395,6 +403,10 @@ async function handleGatewayFullStatusExport(request, env, logRange) {
     trace_count: Number(traceCountResult?.count || 0),
     services: allServices,
     statuses: allStatuses,
+    event_types: allEventTypes,
+    operations: allOperations,
+    error_codes: allErrorCodes,
+    failure_samples: failureSamples,
     metadata_parse_failures: Number(countResult?.metadata_parse_failures || 0),
     oldest_created_at: countResult?.oldest_created_at ?? null,
     newest_created_at: countResult?.newest_created_at ?? null,
