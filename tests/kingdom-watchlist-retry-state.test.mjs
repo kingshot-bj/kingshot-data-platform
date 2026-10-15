@@ -39,6 +39,9 @@ test("UI distinguishes retry wait, terminal failure, and completion", () => {
   assert.match(page, /再試行待ち（自動再開予定：/);
   assert.match(page, /phase==="FAILED"\?"失敗：/);
   assert.match(page, /phase==="COMPLETED"\?"完了：/);
+  assert.match(page, /ランキング取得 /);
+  assert.match(page, /job\.ranking_rows\|\|0/);
+  assert.match(source, /total_boards: KINGDOM_RANKING_BOARDS\.length/);
   assert.match(page, /if\(state==="COMPLETED"&&\(!expectedJobId\|\|String\(job\.job_id\)===String\(expectedJobId\)\)\)/);
   assert.doesNotMatch(page, /\|\|w\.last_success_at\)/);
 });
