@@ -596,8 +596,8 @@ async function runKingdomWatchlistJobs(env) {
 
   // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
   const activeJobRows = await env.DB.prepare(
-    "SELECT watchlist_id FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS')"
-  ).all();
+    "SELECT watchlist_id FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%' AND updated_at <= ?)"
+  ).bind(now - 300).all();
   const activeWatchlistIds = new Set((activeJobRows.results || []).map(item => String(item.watchlist_id)));
 
   // New background watchlist jobs are admitted by the real API Pool lease/request
@@ -616,9 +616,25 @@ async function runKingdomWatchlistJobs(env) {
     if (!lockToken) continue;
 
     try {
-      const active = await env.DB.prepare(
-        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-      ).bind(row.watchlist_id).first();
+      let active = await env.DB.prepare(
+        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND (status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%' AND updated_at <= ?)) ORDER BY created_at DESC LIMIT 1"
+      ).bind(row.watchlist_id, now - 300).first();
+      if (active?.status === "FAILED") {
+        const retry = String(active.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        if (!retry) active = null;
+        else {
+          const retryPhase = retry[1];
+          const retryCount = Number(retry[2]) || 1;
+          const delaySeconds = Math.min(3600, 300 * Math.pow(2, Math.max(0, retryCount - 1)));
+          if (now - Number(active.updated_at || 0) < delaySeconds || retryCount > 5) active = null;
+          else {
+            await env.DB.prepare(
+              "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
+            ).bind(retryPhase, now, active.job_id).run();
+            active = { ...active, status: retryPhase, updated_at: now };
+          }
+        }
+      }
       if (!active && !due) continue;
 
       let job = active;
@@ -665,15 +681,22 @@ async function runKingdomWatchlistJobs(env) {
         }
         console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
       } catch (error) {
+        const rawError = String(error?.message || error).slice(0, 850);
+        const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
+        const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
+        const retryable = !rawError.startsWith("USER_CANCELLED:") &&
+          !rawError.startsWith("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+        const storedError = retryable
+          ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + rawError
+          : rawError;
         await env.DB.prepare(
           "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-        ).bind(String(error?.message || error).slice(0, 1000), now, job.job_id).run();
-        // Record the failed attempt time as well. Otherwise a failed watchlist
-        // keeps its old last_run_at and is retried on every 5-minute Cron tick,
-        // bypassing the user's configured interval and consuming API/D1 resources.
+        ).bind(storedError.slice(0, 1000), now, job.job_id).run();
+        // Preserve the committed cursor and retry only after a bounded backoff.
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
+        ).bind(now, rawError, now, row.watchlist_id).run();
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
@@ -922,7 +945,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         collectedAt: now
       });
       await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
+        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', last_error = NULL, completed_at = ?, updated_at = ? WHERE job_id = ?"
       ).bind(now, now, job.job_id).run();
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
@@ -2669,7 +2692,7 @@ async function handleKingdomWatchlistApi(request, env) {
       // A failed ranking request used to leave the job as RANKINGS/PLAYERS,
       // which made the UI show "更新中" forever even after the error.
       if (job && (job.status === "RANKINGS" || job.status === "PLAYERS")) {
-        const staleByError = Boolean(job.last_error);
+        const staleByError = Boolean(job.last_error) && !String(job.last_error).startsWith("RETRYABLE:");
         const staleByAge = Number(job.updated_at || job.created_at || 0) > 0 &&
           (Math.floor(Date.now() / 1000) - Number(job.updated_at || job.created_at)) > 15 * 60;
         if (staleByError || staleByAge) {
