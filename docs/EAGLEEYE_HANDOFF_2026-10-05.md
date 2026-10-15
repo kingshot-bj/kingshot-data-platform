@@ -1703,3 +1703,23 @@ Cloudflare公式仕様上、Previewはproductionとは別のPreview-safe resourc
 - Preview isolation: 今回の本番優先判定では保留
 - Production migration 0053: 未適用
 - Production deploy/E2E: 未実施
+
+
+## 2026-10-15 — Status JSON completeness / browser telemetry remediation
+
+### Findings from status-63.json investigation
+- `/api/gateway/v1/status` normal response reads only the newest 500 System Log events; `systemLog.truncated` can therefore be true even when the requested time range contains more events.
+- Existing `full=1` behavior exported only a standalone System Log document, not the full system-state JSON plus the complete event window.
+- Browser click handlers, client-side JavaScript errors, and same-origin fetch outcomes were not universally sent to `system_event_log`; server-side status could not reconstruct these missing events.
+
+### Branch changes (not yet production-verified)
+- Branch: `fix/status-json-complete-telemetry-2026-10-15`
+- Added `src/client-telemetry.js` to record browser click/submit events, JavaScript errors, unhandled promise rejections, and same-origin fetch completion status into System Log.
+- Injected the telemetry collector through `eagleEyeHtmlResponse()`, and added `POST /api/client-telemetry`.
+- Changed `/api/gateway/v1/status?full=1&range=24h` to stream the full current status snapshot and every System Log event in the selected range into one JSON document. Normal status behavior and the existing shortcut URL remain unchanged.
+- Telemetry deliberately excludes form values, request bodies, cookies, and authorization headers. Browser event messages and labels are length-limited.
+
+### Verification status
+- Source integration checked on the feature branch: module import, route, shared HTML injection, and full-status export path are present.
+- Not yet verified: CI/build syntax result, production deployment, live browser click appearing in `system_event_log`, and downloading/parsing the resulting complete JSON.
+- Do not describe this as deployed or production-fixed until those checks pass.
