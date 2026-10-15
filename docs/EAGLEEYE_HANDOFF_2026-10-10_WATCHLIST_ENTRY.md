@@ -7,7 +7,7 @@
 - Repository: `kingshot-bj/kingshot-data-platform`
 - Branch: `fix/kingdom-watchlist-retry-state-2026-10-16`
 - PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/89
-- 最新確認コミット: `277aef5427368e96a590a38478bcf3ba4ab9e83c`
+- 最新確認コミット: `a3232b3413d71254dbac6bcbcd3d1aaafb8fc50b`
 - 変更ファイル:
   - `src/index.js`
   - `src/kingdom-watchlist-page.js`
