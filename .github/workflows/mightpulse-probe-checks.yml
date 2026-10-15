@@ -21,7 +21,6 @@ jobs:
         run: |
           node --check src/index.js
           node --check src/client-telemetry.js
-          node --check src/client-telemetry.js
           node --check src/diagnostics.js
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
