@@ -20,15 +20,15 @@ test("new kingdom watchlists are not immediately due while their initial job is 
   assert.ok(handler.includes(".bind(id, auth.discord_id, kid, topN, intervalHours, now, now, now, auth.discord_id, kid).first();"));
 });
 
-test("watchlist continuation retries after another worker holds the refresh lock", () => {
-  const start = page.indexOf("function continueWatch(id)");
-  const end = page.indexOf("function setWatchCardBusy", start);
-  assert.ok(start >= 0 && end > start, "watchlist continuation handler must exist");
+test("watchlist polling retries continuation after another worker holds the refresh lock", () => {
+  const start = page.indexOf("async function pollJob(id,expectedJobId)");
+  const end = page.indexOf('listNode.addEventListener("click"', start);
+  assert.ok(start >= 0 && end > start, "watchlist polling handler must exist");
   const continuation = page.slice(start, end);
   assert.ok(continuation.includes("WATCHLIST_REFRESH_IN_PROGRESS"));
-  assert.ok(continuation.includes("現在更新中です"));
-  assert.ok(continuation.includes("setTimeout(resolve,1000)"));
-  assert.ok(continuation.includes(".then(step)"));
+  assert.ok(continuation.includes("CONTINUATION_BUSY"));
+  assert.ok(continuation.includes("CONTINUATION_ACCEPTED"));
+  assert.ok(continuation.includes("setTimeout(resolve,4000)"));
 });
 
 test("kingdom watchlist and ranking history APIs reject inactive users", () => {
