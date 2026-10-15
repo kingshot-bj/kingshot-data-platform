@@ -26,9 +26,18 @@ export async function addApiPoolKey(db, { provider = PROVIDER, poolType, label =
 }
 
 export async function listApiPoolKeys(db) {
+  const now = Math.floor(Date.now() / 1000);
   const result = await db.prepare(
-    "SELECT key_id, provider, pool_type, label, key_fingerprint, encrypted_key, status, contributed_by_user_id, consent_version, contributed_at, revoked_at, quota_per_minute, quota_per_day, remaining_minute, remaining_day, quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code, created_at, updated_at FROM api_pool_keys ORDER BY pool_type, created_at"
-  ).all();
+    `SELECT key_id, provider, pool_type, label, key_fingerprint, encrypted_key, status, contributed_by_user_id, consent_version, contributed_at, revoked_at,
+            COALESCE(quota_per_minute, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 120 ELSE 60 END) AS quota_per_minute,
+            COALESCE(quota_per_day, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 10000 ELSE 5000 END) AS quota_per_day,
+            MAX(0, COALESCE(quota_per_minute, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 120 ELSE 60 END) -
+              COALESCE((SELECT SUM(request_count) FROM api_pool_usage u WHERE u.key_id = api_pool_keys.key_id AND u.used_at > ? AND u.used_at <= ?), 0)) AS remaining_minute,
+            MAX(0, COALESCE(quota_per_day, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 10000 ELSE 5000 END) -
+              COALESCE((SELECT SUM(request_count) FROM api_pool_usage u WHERE u.key_id = api_pool_keys.key_id AND u.used_at > ? AND u.used_at <= ?), 0)) AS remaining_day,
+            quota_reset_at, cooldown_until, last_used_at, last_success_at, leased_until, lease_job_id, lease_purpose, lease_target_type, lease_target_id, last_error_at, last_error_code, last_error_message, mighty_capable, mighty_checked_at, mighty_check_status, mighty_last_error_code, created_at, updated_at
+     FROM api_pool_keys ORDER BY pool_type, created_at`
+  ).bind(now - 60, now, now - 86400, now).all();
   const rows = result.results || [];
   return Promise.all(rows.map(async row => {
     let apiKeyPrefix = null;
@@ -325,7 +334,7 @@ async function refreshApiPoolLocalRemaining(db, keyId, now) {
            COALESCE((SELECT SUM(request_count) FROM api_pool_usage WHERE key_id = ?1 AND used_at > ?2 AND used_at <= ?3), 0)),
          remaining_day = MAX(0, COALESCE(quota_per_day, CASE WHEN mighty_capable = 1 AND mighty_check_status = 'CONFIRMED' THEN 10000 ELSE 5000 END) -
            COALESCE((SELECT SUM(request_count) FROM api_pool_usage WHERE key_id = ?1 AND used_at > ?4 AND used_at <= ?3), 0)),
-         quota_reset_at = ?3,
+         quota_reset_at = ?3 + 60,
          updated_at = ?3
      WHERE key_id = ?1`
   ).bind(keyId, now - 60, now, now - 86400).run();
