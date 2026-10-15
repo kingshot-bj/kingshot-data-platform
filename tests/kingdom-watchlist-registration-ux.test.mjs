@@ -25,6 +25,6 @@ test("Kingdom Watchlist shows busy state while registration request is in flight
 test("client telemetry accepts safe action lifecycle events without collecting the kingdom ID", () => {
   assert.match(telemetry, /"ACTION_START", "ACTION_BLOCKED"/);
   assert.match(telemetry, /window\.__eeTrackAction=function/);
-  assert.match(telemetry, /KINGDOM_ID_EMPTY/);
+  assert.match(source, /KINGDOM_ID_EMPTY/);
   assert.doesNotMatch(telemetry, /inputState:.*kidInput\.value/);
 });
