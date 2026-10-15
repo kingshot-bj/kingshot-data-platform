@@ -124,18 +124,40 @@ async function startInitialRefresh(id){
  }
 }
 async function pollJob(id){
- var started=Date.now();
+ var started=Date.now(),lastUpdatedAt=0,lastProgress="";
  while(Date.now()-started<180000){
   await new Promise(function(resolve){setTimeout(resolve,4000);});
   var rows=await loadList({quiet:true});
   if(!rows)continue;
   var w=rows.find(function(x){return String(x.watchlist_id)===String(id);});
   if(!w){refreshing[id]=false;report("WATCHLIST_MISSING","bad","登録は成功しましたが一覧から対象を確認できません。",{watchlist_id:id});return;}
-  var state=String(w.job&&w.job.status||"").toUpperCase();
+  var job=w.job||{},state=String(job.status||"").toUpperCase();
+  var progress=state==="RANKINGS"?String(job.ranking_fetch_progress||job.board_index||0)+"/"+String(job.total_boards||26):state==="PLAYERS"?String(job.player_cursor||0)+"/"+String(job.player_count||0):state;
+  var updatedAt=Number(job.updated_at||0);
+  if(updatedAt&&updatedAt===lastUpdatedAt&&progress===lastProgress&&Date.now()-started>30000){
+   report("JOB_STALLED","bad","取得ジョブの進捗が30秒以上変化していません。自動継続を再試行します。",{watchlist_id:id,status:state,progress:progress,job_updated_at:updatedAt});
+  }
+  lastUpdatedAt=updatedAt;lastProgress=progress;
   if(["COMPLETED","SUCCESS","DONE"].indexOf(state)>=0||w.last_success_at){refreshing[id]=false;report("INITIAL_REFRESH_COMPLETE","good","初回取得が完了しました。",{watchlist_id:id,status:state});await loadList({quiet:true});return;}
-  if(["FAILED","CANCELLED","CANCELED"].indexOf(state)>=0){refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、初回取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||w.job&&w.job.last_error||null});return;}
+  if(["FAILED","CANCELLED","CANCELED"].indexOf(state)>=0){refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||job.last_error||null});return;}
+  if(["RANKINGS","PLAYERS","RUNNING","QUEUED","PENDING","STARTED"].indexOf(state)>=0){
+   try{
+    var continuation=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CONTINUE_REFRESH");
+    report("CONTINUATION_ACCEPTED","busy","次の取得バッチを実行しました。",{watchlist_id:id,status:continuation.data.status||state,result:continuation.data.result||null});
+   }catch(e){
+    if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){
+     report("CONTINUATION_BUSY","busy","別の処理が取得中です。次の確認時に再試行します。",{watchlist_id:id});
+    }else if(e&&e.apiCode==="WATCHLIST_NOT_FOUND"){
+     // The job may have completed between the list read and continuation request.
+     await loadList({quiet:true});
+    }else{
+     report("CONTINUATION_FAILED","bad","次の取得バッチを起動できませんでした。",errorDetails(e,"CONTINUE_REFRESH"));
+     await loadList({quiet:true});
+    }
+   }
+  }
  }
- refreshing[id]=false;report("INITIAL_REFRESH_TIMEOUT","busy","登録は成功しました。初回取得は継続中の可能性があるため、一覧を再読み込みして確認してください。",{watchlist_id:id,timeout_ms:180000});await loadList({quiet:true});
+ refreshing[id]=false;report("INITIAL_REFRESH_TIMEOUT","bad","取得ジョブが3分以内に完了しませんでした。進捗と診断情報を確認してください。",{watchlist_id:id,timeout_ms:180000});await loadList({quiet:true});
 }
 listNode.addEventListener("click",async function(event){
  var retry=event.target.closest("#retry-list");if(retry){await loadList();return;}
