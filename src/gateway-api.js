@@ -333,7 +333,7 @@ async function handleGatewayFullStatusExport(request, env, logRange) {
   const from = Math.floor(new Date(snapshot.systemLog.range.from).getTime() / 1000);
   const until = Math.floor(new Date(snapshot.systemLog.range.to).getTime() / 1000);
   const [countResult, serviceCountsResult, statusCountsResult, traceCountResult] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
     env.DB.prepare("SELECT service, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY service").bind(from, until).all(),
     env.DB.prepare("SELECT status, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY status").bind(from, until).all(),
     env.DB.prepare("SELECT COUNT(DISTINCT trace_id) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first()
