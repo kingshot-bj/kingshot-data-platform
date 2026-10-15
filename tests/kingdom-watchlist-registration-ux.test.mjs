@@ -33,3 +33,12 @@ test("Kingdom Watchlist hover motion is restricted to hover-capable fine pointer
   assert.ok(source.includes("@media (hover:hover) and (pointer:fine){button:hover{filter:brightness(1.04);transform:translateY(-1px)}}"));
   assert.ok(source.includes("button:active{filter:brightness(.96);transform:none}"));
 });
+
+test("Kingdom Watchlist registration has a touch-pointer fallback", () => {
+  assert.ok(source.includes('function handleCreateWatchlist(){'));
+  assert.ok(source.includes('createButton.addEventListener("click",handleCreateWatchlist)'));
+  assert.ok(source.includes('createButton.addEventListener("pointerup",function(event){'));
+  assert.ok(source.includes('if(event.pointerType!=="touch")return;'));
+  assert.ok(source.includes('event.preventDefault();\n    handleCreateWatchlist();'));
+  assert.ok(source.includes('if(!("PointerEvent" in window)){'));
+});
