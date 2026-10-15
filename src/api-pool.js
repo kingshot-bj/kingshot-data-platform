@@ -364,7 +364,7 @@ export async function getApiPoolBudgetSnapshot(db, {
   const rowsResult = await db.prepare(
     `SELECT k.key_id, k.pool_type, k.status, k.cooldown_until, k.leased_until,
             k.quota_per_minute, k.quota_per_day, k.remaining_minute, k.remaining_day,
-            k.mighty_capable, k.mighty_check_status,
+            k.mighty_capable, k.mighty_check_status, k.updated_at,
             COALESCE((SELECT SUM(u.request_count) FROM api_pool_usage u
                       WHERE u.key_id = k.key_id AND u.used_at >= ? AND u.used_at <= ?), 0) AS used_minute,
             COALESCE((SELECT SUM(u.request_count) FROM api_pool_usage u
