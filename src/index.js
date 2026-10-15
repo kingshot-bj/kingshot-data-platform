@@ -1253,6 +1253,8 @@ button{padding:12px 14px;border:0;border-radius:12px;background:var(--accent);co
 button:hover{filter:brightness(1.04);transform:translateY(-1px)}
 button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 .primary-action{min-width:145px}
+.primary-action.is-registering{background:#64748b!important;color:#fff!important;filter:saturate(.75);box-shadow:0 0 0 3px rgba(100,116,139,.2)}
+#kid[aria-invalid="true"]{border-color:#ef4444!important;box-shadow:0 0 0 3px rgba(239,68,68,.15)}
 .danger{background:var(--danger);color:#fff}
 .muted{color:var(--muted)}
 .error{color:#ef4444}
