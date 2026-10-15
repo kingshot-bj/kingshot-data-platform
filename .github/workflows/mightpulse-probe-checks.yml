@@ -22,8 +22,11 @@ jobs:
           node --check src/index.js
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
+          node --check src/api-pool.js
           bash -n scripts/check-probe-migration-history.sh
       - name: Run Probe unit tests
         run: node --test tests/mightpulse-probe*.test.mjs
+      - name: Run API Pool quota accounting tests
+        run: node --test tests/api-pool-quota-accounting.test.mjs
       - name: Run kingdom watchlist regression tests
         run: node --test tests/kingdom-watchlist*.test.mjs
