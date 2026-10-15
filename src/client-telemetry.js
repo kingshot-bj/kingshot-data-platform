@@ -81,6 +81,7 @@ export function clientTelemetryScript() {
   function traceId(){return "browser-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)}
   function interactionTrace(){return activeInteractionTraceId&&Date.now()-activeInteractionAt<10000?activeInteractionTraceId:""}
   function push(e){queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
+  window.__eeTrackAction=function(type,operation,inputState){if(type!=="ACTION_START"&&type!=="ACTION_BLOCKED")return;push({type:type,traceId:interactionTrace()||traceId(),page:page(),operation:clip(operation,120),inputState:clip(inputState,40),message:type==="ACTION_BLOCKED"?"Browser action blocked by validation":"Browser action handler started"});};
   function flush(){
     if(timer){clearTimeout(timer);timer=null}
     if(!queue.length)return;
