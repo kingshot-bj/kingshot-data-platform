@@ -1,17 +1,19 @@
 # 追記 — 王国ウォッチリスト自動再試行・状態表示の実装状況（2026-10-16 JST）
 
-> この追記はPR #89の作業ブランチ上の実装状況。mainへのマージ・Cloudflare本番デプロイは未確認。テストスイートは実行できておらず、静的構文解析と主要条件の確認のみ完了。
+> PR #89はmainへマージ済み。GitHub Actions run #303でWorker構文チェックと対象回帰テストは成功。Cloudflare本番デプロイと本番実機動作は未確認。
 
 ## 1. 作業リンク・コミット
 
 - Repository: `kingshot-bj/kingshot-data-platform`
 - Branch: `fix/kingdom-watchlist-retry-state-2026-10-16`
-- PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/89
-- 最新確認コミット: `a3232b3413d71254dbac6bcbcd3d1aaafb8fc50b`
+- PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/89 (merged)
+- Merge commit: `643beb7df73cbb6fc087e1fba316cf9f14fefb04`
+- PR head at merge: `9df199be41c60b766ece0692fc755c63887dac29`
 - 変更ファイル:
   - `src/index.js`
   - `src/kingdom-watchlist-page.js`
   - `tests/kingdom-watchlist-retry-state.test.mjs`
+  - `tests/kingdom-watchlist-race.test.mjs`
 
 ## 2. 実装した内容
 
@@ -36,10 +38,10 @@
 
 ## 3. 検証状況と残課題
 
-- GitHubから変更後の3ファイルを再取得し、Workerコード（import/exportを除去した静的解析）、画面内JavaScript、テストファイルの構文解析は通過。
-- 主要な再試行条件、バックオフ、ロック順序、状態表示に関する静的チェックは通過。
-- **Nodeのテストスイートは未実行。GitHub Actionsの実行結果も取得できていない。**
-- 本番D1への書き込み、王国収集の実機再現、Cloudflareデプロイは実施していない。
+- GitHub Actions run #303（2026-10-15T17:31Z）成功。Worker構文チェック、診断テレメトリー回帰、Probeユニット、API Pool quota accounting、Kingdom Watchlist registration UX、王国ウォッチリスト回帰テストがすべて成功。
+- 追加の静的チェックでもWorkerコード、画面内JavaScript、テストファイルの構文解析が通過。
+- PR #89はmainへマージ済み（merge commit `643beb7df73cbb6fc087e1fba316cf9f14fefb04`）。
+- 本番D1への書き込み、王国収集の実機再現は実施していない。Cloudflare本番デプロイの成功は未確認。
 - `ranking_snapshots` の広範囲取得クエリは追加していない。
 - マージ前に、回帰テストの実行結果とPR差分を確認する。マージ後もCloudflare本番への反映を別途確認し、正常なランキング取得・保存・画面表示と、エラー後の自動再試行を実機で検証する。
 
