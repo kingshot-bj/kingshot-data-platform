@@ -2852,7 +2852,7 @@ async function handleKingdomWatchlistApi(request, env) {
       // job in one indexed lookup. The initial request may still need the watchlist
       // row when no active job exists.
       let active = await env.DB.prepare(
-        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS') WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
+        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.last_error, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND (j.status IN ('RANKINGS','PLAYERS') OR (j.status = 'FAILED' AND j.last_error LIKE 'RETRYABLE:%')) WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
       ).bind(watchlistId, auth.discord_id).first();
       if (!active) {
         const latestJob = await env.DB.prepare(
@@ -2867,6 +2867,15 @@ async function handleKingdomWatchlistApi(request, env) {
           });
         }
         return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
+      }
+      if (active.status === "FAILED" && String(active.last_error || "").startsWith("RETRYABLE:")) {
+        const retry = String(active.last_error).match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        if (retry) {
+          active.status = retry[1];
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
+          ).bind(active.status, now, active.job_id).run();
+        }
       }
       const watch = { watchlist_id: active.watchlist_id, kid: active.kid, top_n: active.top_n };
 
@@ -2886,6 +2895,7 @@ async function handleKingdomWatchlistApi(request, env) {
           kid: Number(active.kid),
           top_n: Number(active.top_n),
           status: active.status,
+          last_error: active.last_error || null,
           board_index: Number(active.board_index || 0),
           player_cursor: Number(active.player_cursor || 0),
           player_ids_json: active.player_ids_json || "[]",
