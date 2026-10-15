@@ -71,9 +71,9 @@ function renderList(rows){
  listNode.innerHTML=rows.map(function(w){
   var id=String(w.watchlist_id||""),isBusy=active(w)||!!refreshing[id],statusText=isBusy?"初回取得・更新中":(w.last_error?"前回エラーあり":(w.last_success_at?"最終成功："+new Date(Number(w.last_success_at)*1000).toLocaleString("ja-JP"):"未取得"));
   var err=w.last_error?'<p class="small" style="color:var(--bad)">エラー：'+escapeHtml(w.last_error)+'</p>':"";
-  var job=w.job||{},progress=Number(job.ranking_rows||0),total=Number(job.total_boards||0),pct=total>0?Math.min(100,Math.round(progress/total*100)):0;
+  var job=w.job||{},total=Number(job.total_boards||26),phase=String(job.status||"").toUpperCase(),progress=phase==="PLAYERS"?total:Number(job.ranking_fetch_progress!=null?job.ranking_fetch_progress:job.board_index||0),pct=total>0?Math.min(100,Math.round(progress/total*100)):0;
   return '<article class="watch" data-id="'+escapeHtml(id)+'"><h3>王国 '+escapeHtml(w.kid)+'</h3><p>上位'+escapeHtml(w.top_n)+'人 ・ '+escapeHtml(w.interval_hours)+'時間ごと ・ '+(w.enabled?'<span style="color:var(--good)">稼働中</span>':'停止中')+'</p><p class="muted small">'+escapeHtml(statusText)+'</p>'+
-   (isBusy?'<div class="progress"><span style="width:'+pct+'%"></span></div><p class="muted small">取得進捗 '+escapeHtml(progress)+(total?' / '+escapeHtml(total)+'工程':'')+'</p>':"")+err+
+   (isBusy?'<div class="progress"><span style="width:'+pct+'%"></span></div><p class="muted small">ランキング取得 '+escapeHtml(progress)+(total?' / '+escapeHtml(total)+'件':'')+' ・ 保存行数 '+escapeHtml(job.ranking_rows||0)+'行</p>':"")+err+
    '<div class="actions"><button type="button" data-action="refresh" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>今すぐ更新</button><button type="button" class="secondary" data-action="toggle" data-id="'+escapeHtml(id)+'" data-enabled="'+(w.enabled?'1':'0')+'" '+(isBusy?'disabled':'')+'>'+(w.enabled?'停止':'再開')+'</button><button type="button" class="danger" data-action="delete" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>削除</button></div></article>';
  }).join("");
 }
@@ -118,6 +118,7 @@ async function startInitialRefresh(id){
   report("INITIAL_REFRESH_ACCEPTED","busy","初回取得ジョブを受け付けました。進捗を確認しています。",{watchlist_id:id});
   await pollJob(id);
  }catch(e){
+  if(e&&e.apiCode==="WATCHLIST_REFRESH_IN_PROGRESS"){report("INITIAL_REFRESH_ALREADY_RUNNING","busy","取得処理はすでに実行中です。既存ジョブの進捗を確認します。",{watchlist_id:id});await pollJob(id);return;}
   refreshing[id]=false;report("INITIAL_REFRESH_FAILED","bad","登録は成功しましたが、初回取得の開始に失敗しました。",errorDetails(e,"INITIAL_REFRESH"));
   await loadList({quiet:true});
  }
@@ -145,7 +146,7 @@ listNode.addEventListener("click",async function(event){
   if(action==="refresh"){
    refreshing[id]=true;report("MANUAL_REFRESH_START","busy","手動更新を開始しています…",{watchlist_id:id});
    await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"MANUAL_REFRESH");
-   report("MANUAL_REFRESH_ACCEPTED","good","更新を受け付けました。",{watchlist_id:id});await loadList({quiet:true});
+   report("MANUAL_REFRESH_ACCEPTED","good","更新を受け付けました。進捗を確認しています。",{watchlist_id:id});await loadList({quiet:true});await pollJob(id);
   }else if(action==="toggle"){
    var enabled=btn.getAttribute("data-enabled")==="1";
    await api("/api/kingdom-watchlist?action=toggle",{method:"POST",body:JSON.stringify({watchlist_id:id,enabled:!enabled})},"TOGGLE");
