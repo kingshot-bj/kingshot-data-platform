@@ -1304,11 +1304,11 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
   <button id="themeToggle" class="theme-toggle" type="button" aria-label="テーマ切り替え" title="テーマ切り替え">🌙</button>
 </div>
 <div id="msg" class="status-line"><span class="status-dot"></span><span>読み込み中…</span></div>
-<section class="card add-card"><h2>王国を監視対象に追加</h2><div class="row">
-<label class="form-field">王国番号<input id="kid" type="number" min="1" placeholder="例: 1524"></label>
-<label class="form-field">ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
-<label class="form-field">更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
-<button id="create" class="primary-action">監視を登録</button></div></section>
+<section class="card add-card"><h2>王国を監視対象に追加</h2><form id="watchlist-create-form" novalidate><div class="row">
+<label class="form-field" for="kid">王国番号<input id="kid" name="kid" type="number" inputmode="numeric" min="1" step="1" placeholder="例: 1524" required></label>
+<label class="form-field" for="top">ランキング上位<select id="top" name="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
+<label class="form-field" for="interval">更新間隔<select id="interval" name="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
+<button id="create" class="primary-action" type="submit">監視を登録</button></div></form></section>
 <div id="list"></div><div id="detail"></div>
 <script>
 (function(){
@@ -1664,19 +1664,12 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
       el("create").textContent=originalCreateText;
     });
   }
-  var createButton=el("create");
-  createButton.addEventListener("click",handleCreateWatchlist);
-  createButton.addEventListener("pointerup",function(event){
-    if(event.pointerType!=="touch")return;
+  // Use the browser-native form submit path for mouse, keyboard, and iOS Safari.
+  // Do not stack click/pointerup/touchend handlers: one submit = one registration attempt.
+  el("watchlist-create-form").addEventListener("submit",function(event){
     event.preventDefault();
     handleCreateWatchlist();
   });
-  if(!("PointerEvent" in window)){
-    createButton.addEventListener("touchend",function(event){
-      event.preventDefault();
-      handleCreateWatchlist();
-    },{passive:false});
-  }
   setInterval(function(){
     Array.prototype.forEach.call(document.querySelectorAll(".phase-eta[data-remaining-seconds]"),function(node){
       var remaining=Math.max(0,Number(node.getAttribute("data-remaining-seconds")||"0")-1);
