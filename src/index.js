@@ -607,11 +607,9 @@ async function runKingdomWatchlistJobs(env) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     // Do not write a lock for an idle watchlist that is not due.
     if (!due && !activeWatchlistIds.has(String(row.watchlist_id))) continue;
-    // Active jobs are allowed to continue; Safety Gate only blocks creation
-    // of new background work. This avoids abandoning a resumable job halfway.
-    if (!activeWatchlistIds.has(String(row.watchlist_id)) && watchlistSafety && !watchlistSafety.allowed) {
-      continue;
-    }
+    // Let the API Pool lease/request path decide whether work can proceed.
+    // Jobs are resumable, so capacity/quota failures are handled at the request
+    // boundary instead of rejecting the whole job from an estimated budget.
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
     if (!lockToken) continue;
 
