@@ -194,10 +194,13 @@ async function handleGatewayStatus(request, env) {
   const systemLogTotalCount = systemLogCountResult.status === "fulfilled"
     ? Number(systemLogCountResult.value?.count || 0)
     : null;
+  const systemLogCountError = systemLogCountResult.status === "rejected"
+    ? sanitizeDiagnosticText(systemLogCountResult.reason?.message || String(systemLogCountResult.reason))
+    : null;
 
-  // /status intentionally returns only the newest 500 events. Full-window logs are
-  // exported as one R2-backed JSON file by /api/admin/system-log/export, avoiding
-  // giant Worker responses and isolate-memory pressure.
+  // Normal status is intentionally bounded. Its completeness flag must describe
+  // the actual result, never a constant: count-query failures and capped results
+  // must be visible to the investigator rather than silently looking complete.
   const systemLogSummary = (() => {
     const services = {};
     const statuses = {};
@@ -219,9 +222,9 @@ async function handleGatewayStatus(request, env) {
     }
 
     return {
-      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      event_count: systemLogTotalCount,
       returned_event_count: systemLogEvents.length,
-      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
+      truncated: systemLogTotalCount == null ? null : systemLogTotalCount > systemLogEvents.length,
       trace_count: traceIds.size,
       services,
       statuses,
@@ -233,7 +236,12 @@ async function handleGatewayStatus(request, env) {
         ? systemLogEvents[0]?.created_at ?? null
         : null,
       page_size: 500,
-      complete_window_read: false,
+      complete_window_read: systemLogTotalCount != null
+        && systemLogTotalCount === systemLogEvents.length
+        && systemLogError == null
+        && systemLogCountError == null,
+      count_query_error: systemLogCountError,
+      event_query_error: systemLogError,
       full_window_available_via_export: true
     };
   })();
@@ -283,9 +291,10 @@ async function handleGatewayStatus(request, env) {
         to: retrievedAt.toISOString(),
         duration_seconds: logRange.seconds
       },
-      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      event_count: systemLogTotalCount,
       returned_event_count: systemLogEvents.length,
-      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
+      truncated: systemLogTotalCount == null ? null : systemLogTotalCount > systemLogEvents.length,
+      complete_window_read: systemLogSummary.complete_window_read,
       summary: systemLogSummary,
       events: systemLogEvents,
       export: {
