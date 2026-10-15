@@ -1723,7 +1723,7 @@ button:disabled{opacity:.58;cursor:not-allowed;transform:none}
 }
 async function handleKingdomRankingHistoryApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const board = url.searchParams.get("board");
@@ -1741,7 +1741,7 @@ async function handleKingdomRankingHistoryApi(request, env) {
 
 async function handleKingdomWatchlistDataApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const watchlistId = url.searchParams.get("watchlist_id");
   if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
@@ -3150,7 +3150,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
 }
 async function handleKingdomWatchlistApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const action = url.searchParams.get("action") || "list";
 
