@@ -32,5 +32,7 @@ jobs:
         run: node --test tests/mightpulse-probe*.test.mjs
       - name: Run API Pool quota accounting tests
         run: node --test tests/api-pool-quota-accounting.test.mjs
+      - name: Run Kingdom Watchlist registration UX tests
+        run: node --test tests/kingdom-watchlist-registration-ux.test.mjs
       - name: Run kingdom watchlist regression tests
         run: node --test tests/kingdom-watchlist*.test.mjs

@@ -2,7 +2,7 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const MAX_BATCH = 20;
 const MAX_TEXT = 120;
-const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_START", "FETCH_COMPLETE"]);
+const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_START", "FETCH_COMPLETE", "ACTION_START", "ACTION_BLOCKED"]);
 
 function clean(value, max = MAX_TEXT) {
   return String(value == null ? "" : value)
@@ -61,6 +61,7 @@ export async function handleClientTelemetry(request, env) {
         elementTag: clean(item?.elementTag, 20),
         elementId: clean(item?.elementId, 80),
         elementRole: clean(item?.elementRole, 40),
+        inputState: clean(item?.inputState, 40),
         httpStatus: type === "FETCH_COMPLETE" ? Number(item?.httpStatus) || null : null
       }
     });
@@ -80,6 +81,7 @@ export function clientTelemetryScript() {
   function traceId(){return "browser-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)}
   function interactionTrace(){return activeInteractionTraceId&&Date.now()-activeInteractionAt<10000?activeInteractionTraceId:""}
   function push(e){queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
+  window.__eeTrackAction=function(type,operation,inputState){if(type!=="ACTION_START"&&type!=="ACTION_BLOCKED")return;push({type:type,traceId:interactionTrace()||traceId(),page:page(),operation:clip(operation,120),inputState:clip(inputState,40),message:type==="ACTION_BLOCKED"?"Browser action blocked by validation":"Browser action handler started"});};
   function flush(){
     if(timer){clearTimeout(timer);timer=null}
     if(!queue.length)return;
@@ -97,7 +99,12 @@ export function clientTelemetryScript() {
   document.addEventListener("click",function(ev){
     var el=ev.target&&ev.target.closest?ev.target.closest("button,a,[role=button],input[type=button],input[type=submit]"):null;
     if(!el)return;
-    var d=describe(el);activeInteractionTraceId=traceId();activeInteractionAt=Date.now();push({type:"CLICK",traceId:activeInteractionTraceId,page:page(),operation:d.operation||"click",elementTag:d.elementTag,elementId:d.elementId,elementRole:d.elementRole,message:"Browser click event"});
+    var d=describe(el);
+    if(el.id==="create"){
+      var kidInput=document.getElementById("kid");
+      d.inputState=kidInput?(String(kidInput.value||"").trim()?"KINGDOM_ID_PRESENT":"KINGDOM_ID_EMPTY"):"KINGDOM_INPUT_MISSING";
+    }
+    activeInteractionTraceId=traceId();activeInteractionAt=Date.now();push({type:"CLICK",traceId:activeInteractionTraceId,page:page(),operation:d.operation||"click",elementTag:d.elementTag,elementId:d.elementId,elementRole:d.elementRole,inputState:d.inputState||"",message:"Browser click event"});
   },true);
   document.addEventListener("submit",function(ev){
     var f=ev.target;var t=interactionTrace()||traceId();push({type:"SUBMIT",traceId:t,page:page(),operation:clip(f&&f.id||f&&f.getAttribute("name")||"form submit",120),elementTag:"FORM",elementId:clip(f&&f.id,80),message:"Browser form submit"});
