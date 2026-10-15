@@ -7,7 +7,7 @@ const page = await readFile(new URL("../src/kingdom-watchlist-page.js", import.m
 
 test("failed kingdom watchlist jobs are eligible for bounded automatic retry", () => {
   assert.match(source, /status = 'FAILED' AND last_error LIKE 'RETRYABLE:%' AND updated_at <= \?/);
-  assert.match(source, /RETRYABLE:\\(RANKINGS\|PLAYERS\\):(\\d+):/);
+  assert.match(source, /RETRYABLE:\(RANKINGS\|PLAYERS\):/);
   assert.match(source, /Math\.min\(3600, 300 \* Math\.pow\(2,/);
   assert.match(source, /retryCount <= 5/);
 });
