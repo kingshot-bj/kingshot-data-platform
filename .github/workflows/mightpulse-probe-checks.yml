@@ -25,3 +25,5 @@ jobs:
           bash -n scripts/check-probe-migration-history.sh
       - name: Run Probe unit tests
         run: node --test tests/mightpulse-probe*.test.mjs
+      - name: Run kingdom watchlist regression tests
+        run: node --test tests/kingdom-watchlist*.test.mjs

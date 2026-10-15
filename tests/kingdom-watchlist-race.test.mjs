@@ -1,0 +1,31 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+
+test("new kingdom watchlists are not immediately due while their initial job is being created", () => {
+  const handlerStart = source.indexOf(
+    'if (request.method === "POST" && action === "create")',
+    source.indexOf("async function handleKingdomWatchlistApi")
+  );
+  const handlerEnd = source.indexOf(
+    'if (request.method === "POST" && action === "refresh")',
+    handlerStart
+  );
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart, "watchlist create handler must exist");
+  const handler = source.slice(handlerStart, handlerEnd);
+  assert.ok(handler.includes("SELECT ?, ?, ?, ?, ?, 1, ?, NULL, NULL, ?, ?"));
+  assert.ok(handler.includes(".bind(id, auth.discord_id, kid, topN, intervalHours, now, now, now, auth.discord_id, kid).first();"));
+});
+
+test("watchlist continuation retries after another worker holds the refresh lock", () => {
+  const start = source.indexOf("function continueWatch(id)");
+  const end = source.indexOf("function setWatchCardBusy", start);
+  assert.ok(start >= 0 && end > start, "watchlist continuation handler must exist");
+  const continuation = source.slice(start, end);
+  assert.ok(continuation.includes("WATCHLIST_REFRESH_IN_PROGRESS"));
+  assert.ok(continuation.includes("現在更新中です"));
+  assert.ok(continuation.includes("setTimeout(resolve,1000)"));
+  assert.ok(continuation.includes(".then(step)"));
+});
