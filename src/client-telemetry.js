@@ -2,7 +2,8 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 
 const MAX_BATCH = 20;
 const MAX_TEXT = 120;
-const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_START", "FETCH_COMPLETE", "ACTION_START", "ACTION_BLOCKED"]);
+const ALLOWED_TYPES = new Set(["CLICK", "SUBMIT", "JS_ERROR", "UNHANDLED_REJECTION", "FETCH_START", "FETCH_COMPLETE", "ACTION_START", "ACTION_BLOCKED", "APP_DIAGNOSTIC"]);
+const SAFE_DIAGNOSTIC_KEYS = new Set(["trace_id","stage","at","details","watchlist_id","job_id","expected_job_id","status","progress","ranking_rows","player_rows","http_status","error_code","elapsed_ms","retry_attempt","retry_after_at","last_error","count","message"]);
 
 function clean(value, max = MAX_TEXT) {
   return String(value == null ? "" : value)
@@ -10,6 +11,23 @@ function clean(value, max = MAX_TEXT) {
     .replace(/(authorization\s*[:=]\s*bearer\s+)\S+/gi, "$1[REDACTED]")
     .replace(/((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]")
     .slice(0, max);
+}
+
+function sanitizeDiagnostic(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!SAFE_DIAGNOSTIC_KEYS.has(key)) continue;
+    if (key === "details" && item && typeof item === "object" && !Array.isArray(item)) {
+      const details = {};
+      for (const [detailKey, detailValue] of Object.entries(item)) {
+        if (!SAFE_DIAGNOSTIC_KEYS.has(detailKey) || /key|token|secret|password|authorization|api/i.test(detailKey)) continue;
+        if (["string","number","boolean"].includes(typeof detailValue) || detailValue === null) details[detailKey] = typeof detailValue === "string" ? clean(detailValue, 300) : detailValue;
+      }
+      out.details = details;
+    } else if (["string","number","boolean"].includes(typeof item) || item === null) out[key] = typeof item === "string" ? clean(item, 300) : item;
+  }
+  return out;
 }
 
 function json(data, status = 200) {
@@ -62,7 +80,8 @@ export async function handleClientTelemetry(request, env) {
         elementId: clean(item?.elementId, 80),
         elementRole: clean(item?.elementRole, 40),
         inputState: clean(item?.inputState, 40),
-        httpStatus: type === "FETCH_COMPLETE" ? Number(item?.httpStatus) || null : null
+        httpStatus: type === "FETCH_COMPLETE" ? Number(item?.httpStatus) || null : null,
+        ...(type === "APP_DIAGNOSTIC" ? { diagnostic: sanitizeDiagnostic(item?.diagnostic) } : {})
       }
     });
     accepted++;
@@ -82,6 +101,10 @@ export function clientTelemetryScript() {
   function interactionTrace(){return activeInteractionTraceId&&Date.now()-activeInteractionAt<10000?activeInteractionTraceId:""}
   function push(e){queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
   window.__eeTrackAction=function(type,operation,inputState){if(type!=="ACTION_START"&&type!=="ACTION_BLOCKED")return;push({type:type,traceId:interactionTrace()||traceId(),page:page(),operation:clip(operation,120),inputState:clip(inputState,40),message:type==="ACTION_BLOCKED"?"Browser action blocked by validation":"Browser action handler started"});};
+  window.__eeTrackDiagnostic=function(stage,kind,diagnostic){
+    var safe=diagnostic&&typeof diagnostic==="object"?diagnostic:{};
+    push({type:"APP_DIAGNOSTIC",traceId:clip(safe.trace_id||traceId(),100),page:page(),operation:clip(stage,120),message:clip(kind==="bad"?"Watchlist diagnostic failure":kind==="busy"?"Watchlist diagnostic progress":"Watchlist diagnostic event",200),diagnostic:safe});
+  };
   function flush(){
     if(timer){clearTimeout(timer);timer=null}
     if(!queue.length)return;

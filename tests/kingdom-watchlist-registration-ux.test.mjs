@@ -49,3 +49,20 @@ test("telemetry does not collect the entered kingdom ID", () => {
   assert.doesNotMatch(page, /__eeTrackAction\([^\n]*kid/);
   assert.doesNotMatch(page, /inputState:.*kid\.value/);
 });
+
+
+test("watchlist job polling failures are visible in the diagnostic JSON", () => {
+  assert.match(page, /JOB_POLL_LIST_FAILED/);
+  assert.match(page, /JOB_POLL_RECOVERED/);
+  assert.match(page, /expected_job_id/);
+  assert.match(page, /elapsed_ms/);
+  assert.match(page, /window\.__eeTrackDiagnostic\(stage,kind,safe\)/);
+});
+
+test("structured watchlist diagnostics are persisted with a strict safe-field allowlist", () => {
+  assert.match(telemetry, /APP_DIAGNOSTIC/);
+  assert.match(telemetry, /function sanitizeDiagnostic\(value\)/);
+  assert.match(telemetry, /SAFE_DIAGNOSTIC_KEYS/);
+  assert.match(telemetry, /diagnostic: sanitizeDiagnostic\(item\?\.diagnostic\)/);
+  assert.match(telemetry, /api\/i\.test\(detailKey\)/);
+});

@@ -43,6 +43,8 @@ function report(stage,kind,message,details){
  var id=trace(); statusNode.className="status "+(kind||"");statusNode.textContent=message;
  var safe={trace_id:id,stage:stage,at:new Date().toISOString(),details:details||null};
  diagNode.textContent=JSON.stringify(safe,null,2);
+ try{if(window.__eeTrackDiagnostic)window.__eeTrackDiagnostic(stage,kind,safe);}
+ catch(e){}
  try{if(window.__eeTrackAction)window.__eeTrackAction(kind==="bad"?"ACTION_BLOCKED":"ACTION_START","KINGDOM_WATCHLIST_UI",stage);}
  catch(e){}
  try{console[kind==="bad"?"error":"info"]("[KingdomWatchlist]",safe);}
@@ -141,11 +143,18 @@ async function startInitialRefresh(id,expectedJobId){
  }
 }
 async function pollJob(id,expectedJobId){
- var started=Date.now(),lastUpdatedAt=0,lastProgress="";
+ var started=Date.now(),lastUpdatedAt=0,lastProgress="",lastPollErrorKey="";
  while(Date.now()-started<180000){
   await new Promise(function(resolve){setTimeout(resolve,4000);});
-  var rows=await loadList({quiet:true});
-  if(!rows)continue;
+  var rows=null;
+  try{rows=await loadList({quiet:true});}
+  catch(pollError){rows=null;}
+  if(!rows){
+   var pollErrorKey="LIST_POLL_FAILED";
+   if(lastPollErrorKey!==pollErrorKey){report("JOB_POLL_LIST_FAILED","bad","取得状況の確認に失敗しました。ジョブ自体の失敗とは限りません。",{watchlist_id:id,expected_job_id:expectedJobId||null,elapsed_ms:Date.now()-started,error_code:pollErrorKey});lastPollErrorKey=pollErrorKey;}
+   continue;
+  }
+  if(lastPollErrorKey){report("JOB_POLL_RECOVERED","good","取得状況の確認が復旧しました。",{watchlist_id:id,expected_job_id:expectedJobId||null,elapsed_ms:Date.now()-started});lastPollErrorKey="";}
   var w=rows.find(function(x){return String(x.watchlist_id)===String(id);});
   if(!w){refreshing[id]=false;report("WATCHLIST_MISSING","bad","登録は成功しましたが一覧から対象を確認できません。",{watchlist_id:id});return;}
   var job=w.job||{},state=String(job.status||"").toUpperCase();
