@@ -2761,19 +2761,51 @@ async function handleKingdomWatchlistApi(request, env) {
   const action = url.searchParams.get("action") || "list";
 
   if (request.method === "GET" && action === "list") {
+    // Return all watchlists and each watchlist's latest job in one D1 query.
+    // The browser polls this endpoint during long-running jobs; an N+1 query
+    // here multiplied reads by watchlist count on every 4-second poll.
     const rows = await env.DB.prepare(
-      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
+      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, " +
+      "j.job_id, j.status AS job_status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.last_error AS job_last_error, j.created_at AS job_created_at, j.updated_at AS job_updated_at, j.completed_at " +
+      "FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (" +
+      "SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id ORDER BY j2.created_at DESC LIMIT 1) " +
+      "WHERE w.discord_id = ? ORDER BY w.created_at DESC"
     ).bind(auth.discord_id).all();
 
     const watchlists = [];
-    for (const watch of rows.results || []) {
-      let job = await env.DB.prepare(
-        "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
-      ).bind(watch.watchlist_id).first();
+    for (const row of rows.results || []) {
+      const watch = {
+        watchlist_id: row.watchlist_id,
+        kid: row.kid,
+        top_n: row.top_n,
+        interval_hours: row.interval_hours,
+        enabled: row.enabled,
+        last_run_at: row.last_run_at,
+        last_success_at: row.last_success_at,
+        last_error: row.last_error,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      };
+      let job = row.job_id ? {
+        job_id: row.job_id,
+        status: row.job_status,
+        board_index: row.board_index,
+        player_cursor: row.player_cursor,
+        player_ids_json: row.player_ids_json,
+        observed_at: row.observed_at,
+        source_first_at: row.source_first_at,
+        source_last_at: row.source_last_at,
+        ranking_rows: row.ranking_rows,
+        player_rows: row.player_rows,
+        last_error: row.job_last_error,
+        created_at: row.job_created_at,
+        updated_at: row.job_updated_at,
+        completed_at: row.completed_at
+      } : null;
 
-      // Recover jobs that are visibly stuck in an active state.
-      // A failed ranking request used to leave the job as RANKINGS/PLAYERS,
-      // which made the UI show "更新中" forever even after the error.
+      // Recover genuinely stale jobs, but only reflect the transition in this
+      // response if this request won the conditional D1 state transition. This
+      // prevents a concurrent cancel from being shown as retryable in the UI.
       if (job && (job.status === "RANKINGS" || job.status === "PLAYERS")) {
         const staleByError = Boolean(job.last_error) && !String(job.last_error).startsWith("RETRYABLE:");
         const staleByAge = Number(job.updated_at || job.created_at || 0) > 0 &&
@@ -2783,10 +2815,17 @@ async function handleKingdomWatchlistApi(request, env) {
             ? String(job.last_error).replace(/^RETRYABLE:(?:RANKINGS|PLAYERS):\d+:/, "").slice(0, 800)
             : "ウォッチリスト更新ジョブが15分以上進行していないため再開待ちです。";
           const recoveryMessage = "RETRYABLE:" + job.status + ":1:" + recoveryDetail;
-          await env.DB.prepare(
+          const recovered = await env.DB.prepare(
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
           ).bind(recoveryMessage, Math.floor(Date.now() / 1000), job.job_id).run();
-          job = { ...job, status: "FAILED", last_error: recoveryMessage };
+          if (Number(recovered?.meta?.changes || 0) === 1) {
+            job = { ...job, status: "FAILED", last_error: recoveryMessage };
+          } else {
+            const latest = await env.DB.prepare(
+              "SELECT status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1"
+            ).bind(job.job_id).first();
+            if (latest) job = { ...job, status: latest.status, last_error: latest.last_error, updated_at: latest.updated_at };
+          }
         }
       }
 

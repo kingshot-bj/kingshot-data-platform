@@ -2,7 +2,7 @@
 
 Updated: 2026-10-16
 Repository: https://github.com/kingshot-bj/kingshot-data-platform
-Branch: fix/kingdom-watchlist-server-cancel-2026-10-16
+Branch: perf/kingdom-watchlist-list-d1-reads-2026-10-16
 Previous PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/98
 
 ## Required operating rules
@@ -44,8 +44,10 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 
 ## Current verification status
 - PR #98: merged to `main` at `a8097046eb304c735d16f01789dbd5bf40cad877`.
-- PR #99: open, cancellation race fix and regression tests added.
-- GitHub Actions `MightPulse Probe checks`: passed for source/test commit `12ac690221477963a646d0a8a5eed73caa0f30fa` (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889595698`).
-- Latest handoff-document-only update may trigger another CI run.
+- PR #99: merged to `main` at `bdbbd1c00c35b47c67b0dfe327e477310f407bf7`.
+- PR #99 `MightPulse Probe checks`: passed at `fcd83a610ceedb1638af5786e8c572beef260a9a` (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889692271`).
+- PR #99 `Worker Build Validation`: passed (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889730586`).
+- Cloudflare production Workers Builds check for merge commit `bdbbd1c00c35b47c67b0dfe327e477310f407bf7` was still `in_progress` at last check; production deployment completion must be verified separately.
+- Follow-up branch `perf/kingdom-watchlist-list-d1-reads-2026-10-16` changes the list endpoint from per-watchlist job reads to a joined query and adds regression tests. CI pending.
 - Production deployment of the latest source: not verified here.
 - Real-device verification: not yet performed.
