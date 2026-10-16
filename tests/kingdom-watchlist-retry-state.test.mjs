@@ -55,3 +55,9 @@ test("client requests time out instead of leaving controls busy forever", () => 
 test("retry-wait state releases the UI busy flag so manual refresh remains available", () => {
   assert.match(page, /if\(state==="FAILED"&&job\.retryable\)\{refreshing\[id\]=false/);
 });
+
+test("API Pool exhaustion waits instead of forcing a single request", () => {
+  assert.ok(source.includes('if (concurrency < 1)'));
+  assert.ok(source.includes('error.code = "NO_API_POOL_KEY_AVAILABLE"'));
+  assert.ok(source.includes('status: capacityWaitCode ? "WAITING" : "FAILED"'));
+});
