@@ -67,7 +67,7 @@ test("late failure handlers do not replace the watchlist-level cancellation mess
     "failure updates must verify the matching job failure is still current"
   );
   assert.ok(
-    (source.match(/AND EXISTS \\(SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = \\? AND status = 'FAILED' AND last_error = \\?\\)/g) || []).length >= 2,
+    source.split("AND EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = ? AND status = 'FAILED' AND last_error = ?)").length - 1 >= 2,
     "scheduler and manual failure paths must preserve USER_CANCELLED when a late error arrives"
   );
 });
