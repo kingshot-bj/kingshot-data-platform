@@ -50,14 +50,30 @@ if(!items.length){box.innerHTML='<div class="suggestion"><small>候補があり�
 box.innerHTML=items.map((x,i)=>'<button type="button" class="suggestion" role="option" data-index="'+i+'"><strong>王国 '+esc(x.kid)+'</strong><small>'+esc(x.name||'名称未取得')+(x.status?' ・ '+esc(x.status):'')+'</small></button>').join('');
 box.hidden=false;input.setAttribute('aria-expanded','true');
 }
-input.addEventListener('input',function(){
+function requestSuggestions(){
 clearTimeout(timer);if(controller)controller.abort();
 const q=input.value.trim();if(!q){close();return;}
+/* Show matching loaded catalog entries immediately; server results replace these when available. */
+const localRows=Array.from(document.querySelectorAll('.card .kid')).map(a=>{
+const m=a.textContent.match(/王国\\s*(\\d+)/);const kid=m?Number(m[1]):null;
+const card=a.closest('.card');const name=card?.querySelector('.name')?.textContent||'';
+return kid?{kid,name,status:card?.querySelector('.status')?.textContent||''}:null;
+}).filter(Boolean).filter(x=>String(x.kid).startsWith(q)||x.name.toLocaleLowerCase().includes(q.toLocaleLowerCase()));
+if(localRows.length)render(localRows.slice(0,8));
 timer=setTimeout(async function(){
 controller=new AbortController();
-try{const response=await fetch('/kingdom-catalog?suggest=1&q='+encodeURIComponent(q),{signal:controller.signal,headers:{'accept':'application/json'},cache:'no-store'});if(!response.ok)throw new Error('suggestions unavailable');const data=await response.json();if(input.value.trim()===q)render(data.suggestions||[]);}catch(e){if(e.name!=='AbortError')close();}
-},220);
-});
+try{
+const response=await fetch('/kingdom-catalog?suggest=1&q='+encodeURIComponent(q),{signal:controller.signal,headers:{'accept':'application/json'},cache:'no-store'});
+if(!response.ok)throw new Error('HTTP '+response.status);
+const data=await response.json();
+if(input.value.trim()===q&&Array.isArray(data.suggestions))render(data.suggestions);
+}catch(e){
+if(e.name!=='AbortError'&&input.value.trim()===q&&!localRows.length)render([{kid:'',name:'候補を取得できません。文字を入力して検索ボタンを押してください。',status:''}]);
+}
+},180);
+}
+input.addEventListener('input',requestSuggestions);
+input.addEventListener('compositionend',requestSuggestions);
 box.addEventListener('click',function(e){const button=e.target.closest('[data-index]');if(button&&items[Number(button.dataset.index)])choose(items[Number(button.dataset.index)].kid);});
 input.addEventListener('keydown',function(e){
 if(box.hidden||!items.length)return;
