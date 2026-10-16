@@ -33,7 +33,7 @@ test("radar mode does not invent percentage normalization before fixed score sca
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("固定基準値が未検証"));
   assert.ok(script.includes("entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score)"));
-  assert.ok(script.includes("API value: ' + fmt(entry.score)"));
+  assert.ok(script.includes("raw.textContent='API value: '+fmt(entry.score)"));
   assert.ok(!script.includes("return max>0?score/max:0"));
   assert.ok(!script.includes("Each axis is normalized independently"));
 });
