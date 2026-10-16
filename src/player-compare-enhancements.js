@@ -67,8 +67,9 @@ function enhance(){
    const panel=document.createElement('section');panel.className='ee-build-compare';
    const title=document.createElement('h2');title.textContent='育成要素の比較';panel.appendChild(title);
    const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
-   rows.forEach(tr=>{const cells=[...tr.children];const card=document.createElement('article');card.className='ee-build-row';
-    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=safeText(cells[0]).replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
+   let lastGroup='';
+   rows.forEach(tr=>{const cells=[...tr.children];const rawLabel=safeText(cells[0]);const group=(rawLabel.match(/^(闘技場防衛編成|防衛編成装備|英雄スキル|専用装備|領主装備)：/)||[])[1]||'';if(group!==lastGroup){const sub=document.createElement('h3');sub.textContent=group;panel.appendChild(sub);lastGroup=group}const card=document.createElement('article');card.className='ee-build-row';
+    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=rawLabel.replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
     const values=document.createElement('div');values.className='ee-build-values';
     cells.slice(1).forEach((cell,i)=>{const item=document.createElement('div');item.className='ee-build-value';const who=document.createElement('span');who.textContent=headers[i]||('プレイヤー'+(i+1));const val=document.createElement('b');val.textContent=safeText(cell)||'—';item.append(who,val);values.appendChild(item)});
     card.appendChild(values);panel.appendChild(card);
