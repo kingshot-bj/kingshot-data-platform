@@ -8,7 +8,7 @@ export async function renderKingdomCatalogPage(request, env) {
   const suggest = url.searchParams.get("suggest") === "1";
   if (suggest) {
     const term = q;
-    const suggestionRows = q ? await env.DB.prepare("SELECT kid,name,status,region,language,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE (CAST(kid AS TEXT) LIKE ? OR name LIKE ?) ORDER BY CASE WHEN CAST(kid AS TEXT) = ? THEN 0 WHEN CAST(kid AS TEXT) LIKE ? THEN 1 ELSE 2 END, kid ASC LIMIT 50")
+    const suggestionRows = q ? await env.DB.prepare("SELECT kid,name,status,region,language,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE (CAST(kid AS TEXT) LIKE ? OR name LIKE ?) ORDER BY CASE WHEN CAST(kid AS TEXT) = ? THEN 0 WHEN CAST(kid AS TEXT) LIKE ? THEN 1 ELSE 2 END, kid ASC LIMIT 8")
       .bind(term + "%", "%" + term + "%", q, term + "%").all() : { results: [] };
     return new Response(JSON.stringify({ ok: true, kingdoms: (suggestionRows.results || []).map(row => ({ kid: row.kid, name: row.name || "", status: row.status || "", region: row.region || "", language: row.language || "", last_seen_at: row.last_seen_at || null, has_r2: !!row.r2_latest_key })) }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
   }
