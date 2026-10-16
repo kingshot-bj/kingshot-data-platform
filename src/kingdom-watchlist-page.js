@@ -215,7 +215,6 @@ listNode.addEventListener("click",async function(event){
    report("CANCEL_START","busy","取得処理を中断しています…",{watchlist_id:id});
    var cancelled=await api("/api/kingdom-watchlist?action=cancel",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CANCEL");
    refreshing[id]=false;report("CANCEL_SUCCESS","good","中断を受け付けました。現在処理中のリクエスト終了後に停止します。",{watchlist_id:id,cancelled:cancelled.data.cancelled});
-   delete cancelRequested[id];
    await loadList({quiet:true});
   }else if(action==="refresh"){
    refreshing[id]=true;report("MANUAL_REFRESH_START","busy","手動更新を開始しています…",{watchlist_id:id});
