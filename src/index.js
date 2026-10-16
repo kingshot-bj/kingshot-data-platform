@@ -147,9 +147,11 @@ async function runDiagnosticHealthChecks(env) {
             });
           }
           const message = error?.message || "MightPulse診断プローブに失敗しました。";
-          const code = error?.code || "MIGHTPULSE_HEALTH_CHECK_FAILED";
-          if (due("api_pool")) await write({ service:"api_pool", status:"FAILED", errorCode:code, message:"API Pool診断中のMightPulse接続に失敗: " + message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
-          if (due("mightpulse")) await write({ service:"mightpulse", status:"FAILED", errorCode:code, message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+          const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+          const code = capacityWaitCode || error?.code || "MIGHTPULSE_HEALTH_CHECK_FAILED";
+          const status = capacityWaitCode ? "WAITING" : "FAILED";
+          if (due("api_pool")) await write({ service:"api_pool", status, errorCode:code, message:capacityWaitCode ? "診断用APIキーの確保待ちです。" : "API Pool診断中のMightPulse接続に失敗: " + message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+          if (due("mightpulse")) await write({ service:"mightpulse", status, errorCode:code, message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
         }
       }
     }
