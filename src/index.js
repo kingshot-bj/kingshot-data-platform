@@ -2754,7 +2754,8 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
 })();
 </script></body></html>`);
 }
-async function handleKingdomWatchlistApi(request, env) {
+async function handleKingdomWatchlistApi(request, env, requestTraceId = null) {
+  const operationTraceId = String(requestTraceId || request.headers.get("x-eagle-eye-trace-id") || systemTraceId("watchlist-http"));
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
@@ -2942,6 +2943,20 @@ async function handleKingdomWatchlistApi(request, env) {
     await env.DB.prepare(
       "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'USER', ?, ?)"
     ).bind(jobId, id, kid, topN, now, now, now).run();
+
+    await recordSystemEvent(env.DB, {
+      traceId: jobId,
+      parentTraceId: operationTraceId,
+      eventType: "REGISTERED",
+      service: "watchlist",
+      feature: "kingdom_watchlist",
+      operation: "REGISTER",
+      status: "QUEUED",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      message: "王国ウォッチリスト登録・初期ジョブ作成",
+      metadata: { watchlistId: id, jobId, kid, topN, intervalHours, source: "USER" }
+    });
 
     await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_ADD", {
       targetType: "KINGDOM",
@@ -3135,7 +3150,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const now = Math.floor(Date.now() / 1000);
     const cancelMessage = "USER_CANCELLED: ユーザーが更新を中断しました。";
     const target = await env.DB.prepare(
-      "SELECT watchlist_id, kid FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+      "SELECT watchlist_id, kid, (SELECT job_id FROM kingdom_watchlist_jobs WHERE watchlist_id = kingdom_watchlists.watchlist_id ORDER BY created_at DESC LIMIT 1) AS job_id FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
     ).bind(watchlistId, auth.discord_id).first();
     if (!target) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
@@ -3147,6 +3162,19 @@ async function handleKingdomWatchlistApi(request, env) {
         "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
       ).bind(now, cancelMessage, now, watchlistId, auth.discord_id)
     ]);
+    await recordSystemEvent(env.DB, {
+      traceId: target.job_id || operationTraceId,
+      parentTraceId: operationTraceId,
+      eventType: "CANCEL_REQUESTED",
+      service: "watchlist",
+      feature: "kingdom_watchlist",
+      operation: "CANCEL",
+      status: "CANCELLED",
+      targetType: "KINGDOM",
+      targetId: String(target.kid),
+      message: "王国ウォッチリストの中断要求を受け付けました。",
+      metadata: { watchlistId, jobId: target.job_id || null, source: "USER" }
+    });
 
     return json({
       ok: true,
@@ -4656,7 +4684,7 @@ export default {
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, requestTraceId);
       if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
       if (url.pathname === "/api/auth/ui-state") {
         const auth = await getAuthenticatedUser(request, env);
