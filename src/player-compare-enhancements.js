@@ -1,5 +1,8 @@
 export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
+.power-showcase-wrap{display:none!important}
+.compare-metric[hidden]{display:none!important}
+
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
 .ee-compare-chart-tools button{border:1px solid var(--border,#29425e);background:var(--panel,#102238);color:var(--text,#e8f3ff);border-radius:9px;padding:7px 10px;font:inherit;font-size:12px}
