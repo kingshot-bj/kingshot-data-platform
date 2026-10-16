@@ -2,7 +2,7 @@
 
 Updated: 2026-10-16
 Repository: https://github.com/kingshot-bj/kingshot-data-platform
-Branch: docs/update-watchlist-handoff-2026-10-16
+Branch: diag/kingdom-watchlist-cron-summary-2026-10-16
 Previous PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/98
 
 ## Required operating rules
@@ -35,12 +35,13 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 - Add regression tests for cancel/failure races, phase-guarded cursor writes, and ranking-button target.
 
 ## Remaining work
-1. Verify the Cloudflare production build for `773063fbc462717b3613ee42a1cd8225f97c22e6` completes successfully; do not use Preview as user acceptance testing.
-2. Audit fairness and duplicate work across users: the scheduler serially walks enabled watchlists, and multiple watchlist IDs for the same `kid` can independently request the same ranking boards. Any deduplication needs safe freshness semantics and bounded D1 reads.
-3. Review scheduler execution duration under a large number of active watchlists. Keep work resumable and driven by actual API Pool capacity; do not add an arbitrary fixed kingdom/user cap.
-4. Perform one real-device run that records trace ID, watchlist ID, job ID, kingdom ID, request/action, status transition, ranking rows saved, player rows saved, API Pool capacity/wait state, and elapsed time. Never log API keys or unnecessary personal data.
-5. Verify the ranking view opens the registered kingdom and cancellation remains terminal after in-flight requests settle.
-6. Distinguish D1 usage: Cloudflare Analytics measured value vs code-derived estimate vs unavailable. Do not invent usage values.
+1. Verify the Cloudflare production build for the latest merged code revision; do not use Preview as user acceptance testing.
+2. Review the Cron scheduler summary telemetry added on branch `diag/kingdom-watchlist-cron-summary-2026-10-16` after CI/merge. It reports per-run duration, considered watchlists, active jobs, attempts, completions, lock contention, capacity waits, and failures without extra D1 writes.
+3. Audit fairness and duplicate work across users: the scheduler serially walks enabled watchlists, and multiple watchlist IDs for the same `kid` can independently request the same ranking boards. Any deduplication needs safe freshness semantics and bounded D1 reads.
+4. Review scheduler execution duration under a large number of active watchlists. Keep work resumable and driven by actual API Pool capacity; do not add an arbitrary fixed kingdom/user cap.
+5. Perform one real-device run that records trace ID, watchlist ID, job ID, kingdom ID, request/action, status transition, ranking rows saved, player rows saved, API Pool capacity/wait state, and elapsed time. Never log API keys or unnecessary personal data.
+6. Verify the ranking view opens the registered kingdom and cancellation remains terminal after in-flight requests settle.
+7. Distinguish D1 usage: Cloudflare Analytics measured value vs code-derived estimate vs unavailable. Do not invent usage values.
 
 ## Current verification status
 - PR #98: merged to `main` at `a8097046eb304c735d16f01789dbd5bf40cad877`.

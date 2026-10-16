@@ -123,3 +123,15 @@ test("registration and cancellation events share the job trace and preserve the 
   assert.match(source, /traceId: jobId,[\s\S]{0,100}parentTraceId: operationTraceId/);
   assert.match(source, /traceId: target\.job_id \|\| operationTraceId,[\s\S]{0,100}parentTraceId: operationTraceId/);
 });
+
+
+test("Cron scheduler emits a bounded summary for fairness and capacity diagnosis", () => {
+  const start = source.indexOf("async function runKingdomWatchlistJobs");
+  const end = source.indexOf("\nasync function processKingdomWatchlistJob", start);
+  const scheduler = source.slice(start, end);
+  assert.match(scheduler, /const schedulerTraceId = systemTraceId\("watchlist-cron"\)/);
+  assert.match(scheduler, /watchlistsConsidered: \(rows\.results \|\| \[\]\)\.length/);
+  assert.match(scheduler, /activeJobsSeen: \(activeJobRows\.results \|\| \[\]\)\.length/);
+  assert.match(scheduler, /jobsAttempted,[\s\S]{0,100}jobsCompleted,[\s\S]{0,100}locksContended,[\s\S]{0,100}capacityWaits,[\s\S]{0,100}jobFailures/);
+  assert.match(scheduler, /console\.info\("kingdom_watchlist_scheduler_run_completed"/);
+});
