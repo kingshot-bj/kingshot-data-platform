@@ -35,7 +35,7 @@ export async function recordDiagnostic(db, input = {}) {
     const now = Math.floor(Date.now() / 1000);
     const startedAt = Number(input.startedAt || now);
     const completedAt = Number(input.completedAt || now);
-    const status = ["SUCCESS","WARNING","FAILED"].includes(String(input.status))
+    const status = ["SUCCESS","WARNING","FAILED","WAITING"].includes(String(input.status))
       ? String(input.status)
       : "WARNING";
     const throttleKey = [
@@ -121,6 +121,7 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     const status = String(event.status || "").toUpperCase();
     const eventType = String(event.event_type || "").toUpperCase();
     const normalizedStatus = status === "FAILED" || eventType.includes("FAIL") ? "FAILED"
+      : status === "WAITING" ? "WAITING"
       : status === "WARNING" ? "WARNING"
       : ["SUCCESS", "COMPLETED"].includes(status) ? "SUCCESS"
       : null;
@@ -154,16 +155,18 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
   const failed = services.filter(item => item.status === "FAILED").length;
   const criticalFailed = services.filter(item => item.severity === "CRITICAL" && item.status === "FAILED").length;
   const warning = services.filter(item => item.status === "WARNING").length;
+  const waiting = services.filter(item => item.status === "WAITING").length;
   const unknown = services.filter(item => item.status === "UNKNOWN").length;
   const criticalUnknown = services.filter(item => item.severity === "CRITICAL" && item.status === "UNKNOWN").length;
   const degraded = failed > 0 || warning > 0 || unknown > 0;
 
   return {
-    overall: criticalFailed ? "CRITICAL" : degraded ? "DEGRADED" : "SUCCESS",
+    overall: criticalFailed ? "CRITICAL" : degraded ? "DEGRADED" : waiting > 0 ? "WAITING" : "SUCCESS",
     counts: {
       failed,
       criticalFailed,
       warning,
+      waiting,
       unknown,
       criticalUnknown,
       healthy: services.filter(item => item.status === "SUCCESS").length
