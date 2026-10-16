@@ -36,3 +36,13 @@ test("Probe JSON export shares a real JSON file on iOS and falls back to a file 
   }
   assert.ok(!exportHandler.includes("window.open(objectUrl,'_blank')"), "does not open JSON as a browser tab");
 });
+
+
+test("Probe inputs use at least 16px font to prevent iOS Safari focus zoom", () => {
+  const probePageStart = source.indexOf("<title>MightPulse Probe | EagleEye</title>");
+  const probePageEnd = source.indexOf("async function manualProbe()", probePageStart);
+  const probePage = source.slice(probePageStart, probePageEnd);
+  assert.ok(probePageStart >= 0, "Probe page exists");
+  assert.match(probePage, /\.field input,\.field select,\.field textarea\{[^}]*font-size:16px/);
+  assert.match(probePage, /\.field input:focus,\.field select:focus,\.field textarea:focus\{font-size:16px\}/);
+});
