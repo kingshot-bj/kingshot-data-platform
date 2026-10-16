@@ -100,8 +100,8 @@ async function runDiagnosticHealthChecks(env) {
 
       if (!key) {
         const message = "診断用に利用できるMightPulse APIキーがありません。";
-        if (due("api_pool")) await write({ service:"api_pool", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
-        if (due("mightpulse")) await write({ service:"mightpulse", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+        if (due("api_pool")) await write({ service:"api_pool", status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+        if (due("mightpulse")) await write({ service:"mightpulse", status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
       } else {
         let lease = null;
         try {
@@ -704,7 +704,7 @@ async function runKingdomWatchlistJobs(env) {
         // Preserve the committed cursor and start the retry delay at failure time.
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(failedAt, rawError, failedAt, row.watchlist_id).run();
+        ).bind(failedAt, capacityWaitCode ? null : rawError, failedAt, row.watchlist_id).run();
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WARNING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
@@ -3208,12 +3208,14 @@ async function renderAdminDiagnosticsPage(request, env) {
   const overall = data.overall;
   const state = overall === "SUCCESS" ? { label:"すべて正常", tone:"good", icon:"✓", note:"すべての監視対象サービスが正常に動作しています。" }
     : overall === "CRITICAL" ? { label:"主要サービスに障害", tone:"bad", icon:"!", note:"主要サービスの一部で障害が発生しています。詳細を確認してください。" }
+    : overall === "WAITING" ? { label:"一時待機中", tone:"neutral", icon:"…", note:"API Poolの空き待ちです。実障害とは区別して表示しています。" }
     : { label:"一部注意", tone:"warn", icon:"i", note:"一部のサービスで注意または未診断の状態があります。" };
 
   const serviceState = (status) => status === "SUCCESS"
     ? {label:"正常",tone:"good",icon:"✓"}
     : status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"}
     : status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"}
+    : status === "WAITING" ? {label:"待機中",tone:"neutral",icon:"…"}
     : {label:"未診断",tone:"neutral",icon:"—"};
 
   const services = data.services.map(s => {
@@ -9519,18 +9521,26 @@ async function renderPublicStatusPage(request, env) {
     console.error("public_status_diagnostics_unavailable", diagnosticsResult.reason?.message || diagnosticsResult.reason);
   }
 
-  const apiPoolCritical = operational.apiPool.totalKeys > 0 && operational.apiPool.availableKeys === 0;
+  const poolTotals = operational.apiPool.totals || {};
+  const terminalKeyStates = Number(poolTotals.ERROR || 0) + Number(poolTotals.DISABLED || 0) + Number(poolTotals.REVOKED || 0);
+  const apiPoolCritical = operational.apiPool.totalKeys > 0 &&
+    operational.apiPool.availableKeys === 0 &&
+    Number(poolTotals.COOLDOWN || 0) === 0 &&
+    Number(operational.apiPool.activeLeases || 0) === 0 &&
+    terminalKeyStates >= Number(operational.apiPool.totalKeys || 0);
   const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
   const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
   const usageWarning = usage.status === "WARNING";
   const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
     ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
-    : usageWarning || data.overall === "DEGRADED" || watchlistWarning
-      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
-      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
+    : data.overall === "WAITING" && !usageWarning && !watchlistWarning
+      ? {label:"Capacity Waiting",tone:"neutral",icon:"…",desc:"API Poolの空き待ちです。収集処理は自動再試行の対象で、障害とは区別されています。"}
+      : usageWarning || data.overall === "DEGRADED" || watchlistWarning
+        ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
+        : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
 
   const rows = data.services.map(s => {
-    const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
+    const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : s.status === "WAITING" ? {label:"待機中",tone:"neutral",icon:"…"} : {label:"未確認",tone:"neutral",icon:"—"};
     return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
   }).join("");
 
