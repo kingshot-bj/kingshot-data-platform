@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
 const page = await readFile(new URL("../src/kingdom-watchlist-page.js", import.meta.url), "utf8");
+const diagnostics = await readFile(new URL("../src/diagnostics.js", import.meta.url), "utf8");
 
 test("failed kingdom watchlist jobs are eligible for bounded automatic retry", () => {
   assert.match(source, /status = 'FAILED' AND last_error LIKE 'RETRYABLE:%'/);
@@ -72,4 +73,11 @@ test("deferred players remain queued ahead of untouched players", () => {
   assert.ok(source.includes("const deferredPlayerIds = fetchedPlayers.filter(item => item.capacityWaitCode)"));
   assert.ok(source.includes("const consumedBatchIds = batchIds.filter(id => !deferredSet.has(String(id)))"));
   assert.ok(source.includes("player_ids_json = ?, player_cursor = ?"));
+});
+
+test("diagnostics represent capacity waits without counting them as degraded", () => {
+  assert.ok(diagnostics.includes('["SUCCESS","WARNING","FAILED","WAITING"]'));
+  assert.ok(diagnostics.includes('const waiting = services.filter(item => item.status === "WAITING").length'));
+  assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
+  assert.ok(source.includes('status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE"'));
 });
