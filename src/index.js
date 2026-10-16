@@ -575,8 +575,15 @@ const KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH = 100;
 
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
+  const schedulerStartedAtMs = Date.now();
+  const schedulerTraceId = systemTraceId("watchlist-cron");
+  let jobsAttempted = 0;
+  let jobsCompleted = 0;
+  let locksContended = 0;
+  let capacityWaits = 0;
+  let jobFailures = 0;
   await ensureKingdomWatchlistFreshnessSchema(env.DB);
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(schedulerStartedAtMs / 1000);
 
   // Job rows are runtime state, not durable ranking history. Keep completed,
   // failed, and user-cancelled rows only long enough for troubleshooting/UI
@@ -624,7 +631,7 @@ async function runKingdomWatchlistJobs(env) {
     // Jobs are resumable, so capacity/quota failures are handled at the request
     // boundary instead of rejecting the whole job from an estimated budget.
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
-    if (!lockToken) continue;
+    if (!lockToken) { locksContended++; continue; }
 
     try {
       let active = await env.DB.prepare(
@@ -676,8 +683,10 @@ async function runKingdomWatchlistJobs(env) {
 
       try {
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"START", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(row.kid), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, status:job.status } });
+        jobsAttempted++;
         const result = await processKingdomWatchlistJob(env, job);
         if (result.completed) {
+          jobsCompleted++;
           await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"COMPLETE", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(row.kid), message:"王国ウォッチリスト更新完了", metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, rankingRows:Number(result.rankingRows||0), playerRows:Number(result.playerRows||0) } });
           await recordDiagnostic(env.DB, {
             service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
@@ -695,6 +704,8 @@ async function runKingdomWatchlistJobs(env) {
         const rawError = String(error?.message || error).slice(0, 850);
         const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
         const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        jobFailures++;
+        if (capacityWaitCode) capacityWaits++;
         const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
         const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
         const retryable = Boolean(capacityWaitCode) || (retryCount <= 5 &&
@@ -725,6 +736,18 @@ async function runKingdomWatchlistJobs(env) {
       await releaseKingdomWatchlistLock(env, row.watchlist_id, lockToken);
     }
   }
+  console.info("kingdom_watchlist_scheduler_run_completed", {
+    traceId: schedulerTraceId,
+    startedAt: new Date(schedulerStartedAtMs).toISOString(),
+    durationMs: Date.now() - schedulerStartedAtMs,
+    watchlistsConsidered: (rows.results || []).length,
+    activeJobsSeen: (activeJobRows.results || []).length,
+    jobsAttempted,
+    jobsCompleted,
+    locksContended,
+    capacityWaits,
+    jobFailures
+  });
 }
 
 async function processKingdomWatchlistJob(env, job, options = {}) {
