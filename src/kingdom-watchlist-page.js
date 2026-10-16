@@ -36,7 +36,7 @@ main{max-width:760px;margin:0 auto}.top{display:flex;justify-content:space-betwe
 "use strict";
 var $=function(id){return document.getElementById(id);};
 var statusNode=$("status"),listNode=$("list"),diagNode=$("diagnostics"),form=$("create-form"),createButton=$("create");
-var busyCreate=false,requestSeq=0,watchTimers={},refreshing={};
+var busyCreate=false,requestSeq=0,watchTimers={},refreshing={},cancelRequested={};
 function trace(){return "kw-ui-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7);}
 function escapeHtml(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function report(stage,kind,message,details){
@@ -155,6 +155,7 @@ async function startInitialRefresh(id,expectedJobId){
 async function pollJob(id,expectedJobId){
  var started=Date.now(),lastUpdatedAt=0,lastProgress="",lastPollErrorKey="";
  while(true){
+  if(cancelRequested[id]){refreshing[id]=false;delete cancelRequested[id];await loadList({quiet:true});return;}
   await new Promise(function(resolve){setTimeout(resolve,4000);});
   var rows=null;
   try{rows=await loadList({quiet:true});}
@@ -180,6 +181,7 @@ async function pollJob(id,expectedJobId){
    else{refreshing[id]=false;report("INITIAL_REFRESH_JOB_FAILED","bad","監視対象は登録済みですが、取得ジョブが失敗しました。",{watchlist_id:id,status:state,last_error:w.last_error||job.last_error||null});}
    return;
   }
+  if(cancelRequested[id]){refreshing[id]=false;delete cancelRequested[id];await loadList({quiet:true});return;}
   if(["RANKINGS","PLAYERS","RUNNING","QUEUED","PENDING","STARTED"].indexOf(state)>=0){
    try{
     var continuation=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CONTINUE_REFRESH");
@@ -208,9 +210,12 @@ listNode.addEventListener("click",async function(event){
  btn.disabled=true;
  try{
   if(action==="cancel"){
+   cancelRequested[id]=true;
+   btn.textContent="中断要求中…";
    report("CANCEL_START","busy","取得処理を中断しています…",{watchlist_id:id});
    var cancelled=await api("/api/kingdom-watchlist?action=cancel",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CANCEL");
    refreshing[id]=false;report("CANCEL_SUCCESS","good","中断を受け付けました。現在処理中のリクエスト終了後に停止します。",{watchlist_id:id,cancelled:cancelled.data.cancelled});
+   delete cancelRequested[id];
    await loadList({quiet:true});
   }else if(action==="refresh"){
    refreshing[id]=true;report("MANUAL_REFRESH_START","busy","手動更新を開始しています…",{watchlist_id:id});
@@ -225,7 +230,7 @@ listNode.addEventListener("click",async function(event){
    await api("/api/kingdom-watchlist?watchlist_id="+encodeURIComponent(id),{method:"DELETE"},"DELETE");
    report("DELETE_SUCCESS","good","監視対象を削除しました。",{watchlist_id:id});await loadList({quiet:true});
   }
- }catch(e){refreshing[id]=false;report(action.toUpperCase()+"_FAILED","bad","操作に失敗しました（HTTP "+(Number(e.httpStatus)||0)+"）："+(e.message||"原因不明"),errorDetails(e,action.toUpperCase()));await loadList({quiet:true});}
+ }catch(e){if(action==="cancel")delete cancelRequested[id];refreshing[id]=false;report(action.toUpperCase()+"_FAILED","bad","操作に失敗しました（HTTP "+(Number(e.httpStatus)||0)+"）："+(e.message||"原因不明"),errorDetails(e,action.toUpperCase()));await loadList({quiet:true});}
  finally{btn.disabled=false;}
 });
 window.addEventListener("online",function(){report("NETWORK_ONLINE","good","ネットワークが復旧しました。一覧を再取得します。");loadList({quiet:true});});
