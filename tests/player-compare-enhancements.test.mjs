@@ -29,12 +29,13 @@ test("additional ranking candidates require saved numeric scores for both player
   assert.ok(script.includes("eagleeye-player-compare-order-v1"));
 });
 
-test("radar does not normalize the strongest selected player to 100% without a validated benchmark", () => {
+test("radar mode does not invent percentage normalization before fixed score scales are verified", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("Each axis is normalized independently"));
-  assert.ok(script.includes("does not imply equal raw units between rankings"));
-  assert.ok(script.includes("playerIndex<playerCount"));
-  assert.ok(script.includes("return max>0?score/max:0"));
+  assert.ok(script.includes("固定基準値が未検証"));
+  assert.ok(script.includes("entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score)"));
+  assert.ok(script.includes("API value: ' + fmt(entry.score)"));
+  assert.ok(!script.includes("return max>0?score/max:0"));
+  assert.ok(!script.includes("Each axis is normalized independently"));
 });
 
 test("details collapsing cannot move a wrapper into its own descendant", () => {
