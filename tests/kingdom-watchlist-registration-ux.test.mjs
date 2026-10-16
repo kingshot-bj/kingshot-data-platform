@@ -72,7 +72,7 @@ test("editing kingdom number clears stale validation error without logging the r
   assert.match(page, /addEventListener\("input",function\(\)/);
   assert.match(page, /statusNode\.textContent==="王国番号は1以上の整数で入力してください。"/);
   assert.match(page, /stage:"CREATE_VALIDATION_CLEARED"/);
-  assert.match(page, /details:\{field:"kid",valid:\/\^\\\\d\+\$\//);
+  assert.match(page, /details:\{field:"kid",valid:\/\^\\d\+\$\///);
   assert.doesNotMatch(page, /CREATE_VALIDATION_CLEARED[^\n]*kid\.value/);
 });
 
