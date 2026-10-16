@@ -2,7 +2,7 @@
 
 Updated: 2026-10-16
 Repository: https://github.com/kingshot-bj/kingshot-data-platform
-Branch: diag/kingdom-watchlist-cron-summary-2026-10-16
+Branch: docs/finalize-watchlist-handoff-2026-10-16
 Previous PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/98
 
 ## Required operating rules
@@ -35,8 +35,8 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 - Add regression tests for cancel/failure races, phase-guarded cursor writes, and ranking-button target.
 
 ## Remaining work
-1. Verify the Cloudflare production build for the latest merged code revision; do not use Preview as user acceptance testing.
-2. Review the Cron scheduler summary telemetry added on branch `diag/kingdom-watchlist-cron-summary-2026-10-16` after CI/merge. It reports per-run duration, considered watchlists, active jobs, attempts, completions, lock contention, capacity waits, and failures without extra D1 writes.
+1. The latest merged code revision `aa7392007c9676672b411985a559025014e1b3a1` has passed Cloudflare production `Workers Builds`, `Worker Build Validation`, and `MightPulse Probe checks`.
+2. PR #103 added Cron summary telemetry. It reports per-run duration, considered watchlists, active jobs, attempts, completions, lock contention, API Pool capacity waits, and failures without extra D1 writes.
 3. Audit fairness and duplicate work across users: the scheduler serially walks enabled watchlists, and multiple watchlist IDs for the same `kid` can independently request the same ranking boards. Any deduplication needs safe freshness semantics and bounded D1 reads.
 4. Review scheduler execution duration under a large number of active watchlists. Keep work resumable and driven by actual API Pool capacity; do not add an arbitrary fixed kingdom/user cap.
 5. Perform one real-device run that records trace ID, watchlist ID, job ID, kingdom ID, request/action, status transition, ranking rows saved, player rows saved, API Pool capacity/wait state, and elapsed time. Never log API keys or unnecessary personal data.
