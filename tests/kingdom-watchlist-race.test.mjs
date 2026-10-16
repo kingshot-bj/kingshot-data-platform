@@ -94,7 +94,7 @@ test("ranking view button navigates using the registered kingdom id", () => {
 });
 
 
-test("watchlist list API loads all latest jobs with one joined query instead of N+1 selects", () => {
+test("watchlist list API loads all latest jobs with one joined query instead of N+1 query fan-out", () => {
   const handlerStart = source.indexOf("async function handleKingdomWatchlistApi");
   const listStart = source.indexOf('if (request.method === "GET" && action === "list")', handlerStart);
   const createStart = source.indexOf('if (request.method === "POST" && action === "create")', listStart);
