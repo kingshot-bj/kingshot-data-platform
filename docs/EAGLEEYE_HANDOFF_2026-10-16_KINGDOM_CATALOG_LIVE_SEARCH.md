@@ -1,3 +1,23 @@
-# Kingdom Catalog Live Search Handoff
+# EagleEye 引き継ぎ：王国カタログのライブ検索（2026-10-16）
 
-PR #107 was merged. PR #108 fixes a Cloudflare build failure in src/kingdom-catalog-page.js by extracting the inline client script into a separate template literal. Do not merge PR #108 until GitHub checks and Cloudflare build pass. Production deployment is not yet confirmed.
+## 現状
+PR #107 は main にマージ済み。ライブ候補検索の実装は入ったが、Cloudflareビルド失敗が見つかったため、修正PR #108 を作成。PR #108 はまだ未マージで、本番反映も未確認。
+
+## 原因と修正
+原因は src/kingdom-catalog-page.js のHTML文字列内にクライアントスクリプトを直書きし、スクリプト内の二重引用符が外側のHTML文字列を途中で閉じていたこと。改行をエスケープするだけでは解決しなかった。修正ではクライアントスクリプトを独立した String.raw テンプレートに分離し、HTML側から連結するようにした。
+
+候補APIはKIDまたは王国名で検索し、バインド変数を使って最大8件を返す。レスポンスはキャッシュしない。追加した回帰テストではカタログページのJavaScript構文と候補APIの条件を検証する。
+
+## 確認済み
+PR #108 のコミット a28f34faac3e87a9e2a606c164721025d8066563 で、GitHubのprobe-checksは成功、Cloudflare Workers BuildsのPRプレビューも成功（Build ID: 8958dd52-f5bb-4225-890a-0d588be97167）。ただし、PRのマージ操作が完了していないため、本番ビルド成功とは扱わない。
+
+## iPhone Safariテスト（本番ビルド成功後）
+1. EagleEyeの「王国検索」から王国カタログを開く。
+2. KIDの一部を入力し、送信前に候補が出て更新されることを確認。
+3. 王国名の一部でも候補が出ること、候補が最大8件であることを確認。
+4. 候補をタップし、選んだKIDの王国詳細に移動することを確認。
+5. 入力を消すと候補が閉じること、通常検索・ステータス絞り込み・並べ替え・ページ送りが引き続き動くことを確認。
+6. 「＋ウォッチリスト」登録も回帰確認する。
+
+## 次の作業
+PR #108 をマージできるよう、GitHub側のマージ操作ブロックを解消する必要がある。マージ後はCloudflareのmain/productionビルドが成功するまで完了扱いにしない。
