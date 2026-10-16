@@ -104,6 +104,16 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     metadata: row.metadata_json ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })() : null
   }));
 
+  // Include the watchlist audit trail in the downloadable diagnostic JSON.
+  // Bound the query to keep D1 reads and payload size predictable.
+  const systemEventsResult = await db.prepare(
+    "SELECT event_id, trace_id, parent_trace_id, event_type, service, feature, operation, status, target_type, target_id, started_at, completed_at, elapsed_ms, error_code, message, metadata_json, created_at FROM system_event_log WHERE service = 'watchlist' AND feature = 'kingdom_watchlist' ORDER BY created_at DESC LIMIT ?"
+  ).bind(Math.min(Math.max(Number(recentLimit) || 100, 1), 100)).all();
+  const systemEvents = (systemEventsResult.results || []).map(row => ({
+    ...row,
+    metadata: row.metadata_json ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })() : null
+  }));
+
   const latestByService = new Map();
   for (const event of events) {
     if (!latestByService.has(event.service)) latestByService.set(event.service, event);
@@ -172,7 +182,8 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
       healthy: services.filter(item => item.status === "SUCCESS").length
     },
     services,
-    events
+    events,
+    systemEvents
   };
 }
 
