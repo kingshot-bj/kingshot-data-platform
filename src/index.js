@@ -542,7 +542,6 @@ function filterPlayerProfileForRole(payload, role, settings) {
 }
 
 const WATCHLIST_RANKING_LIMIT = 100;
-const WATCHLIST_PLAYER_BATCH = 8;
 
 function normalizeMightPulseTimestamp(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -690,13 +689,13 @@ async function runKingdomWatchlistJobs(env) {
       } catch (error) {
         const rawError = String(error?.message || error).slice(0, 850);
         const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
         const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
         const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
-        const retryable = retryCount <= 5 &&
-          !rawError.startsWith("USER_CANCELLED:") &&
-          !rawError.startsWith("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+        const retryable = Boolean(capacityWaitCode) || (retryCount <= 5 &&
+          !rawError.startsWith("USER_CANCELLED:"));
         const storedError = retryable
-          ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + rawError
+          ? "RETRYABLE:" + retryPhase + ":" + (capacityWaitCode ? 1 : retryCount) + ":" + rawError
           : rawError;
         const failedAt = Math.floor(Date.now() / 1000);
         await env.DB.prepare(
@@ -706,10 +705,10 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
         ).bind(failedAt, rawError, failedAt, row.watchlist_id).run();
-        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
+        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WARNING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
-          status: "FAILED", errorCode: String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
+          status: capacityWaitCode ? "WAITING" : "FAILED", errorCode: capacityWaitCode || String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
           message: String(error?.message || error).slice(0, 2000),
           targetType: "KINGDOM", targetId: row.kid,
           metadata: { watchlistId: row.watchlist_id, jobId: job.job_id }
@@ -943,9 +942,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     if (!Array.isArray(ids)) ids = [];
 
     const cursor = Number(job.player_cursor || 0);
-    const batchIds = ids.slice(cursor, cursor + WATCHLIST_PLAYER_BATCH);
 
-    if (!batchIds.length) {
+    if (cursor >= ids.length) {
       // Count a kingdom only after the complete ranking + player workflow
       // reaches its terminal state. Partial or failed jobs are not collection.
       await recordKingdomCollectionSuccess(env.DB, {
@@ -959,32 +957,40 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
+    const remaining = ids.length - cursor;
     const concurrency = apiLimiter
-      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), batchIds.length))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity || 0), remaining, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
-      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
-      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      const error = new Error("NO_API_POOL_KEY_AVAILABLE");
+      error.code = "NO_API_POOL_KEY_AVAILABLE";
       throw error;
     }
+    // The work size follows current pool capacity; no fixed player batch.
+    const batchIds = ids.slice(cursor, cursor + concurrency);
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
         const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : null;
         return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys })) };
       } catch (error) {
-        await recordDiagnostic(env.DB, {
-          service: "watchlist",
-          feature: "kingdom_watchlist",
-          operation: "PLAYER_FETCH",
-          status: "FAILED",
-          errorCode: String(error?.code || error?.message || "WATCHLIST_PLAYER_FETCH_FAILED").split(":")[0],
-          message: String(error?.message || error).slice(0, 2000),
-          provider: "MIGHTPULSE",
-          targetType: "PLAYER",
-          targetId: governorId
-        });
-        console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
-        return { governorId, error };
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        // Capacity waits are recorded once at the job level below. Writing one
+        // warning row per player would add avoidable D1 writes during pool exhaustion.
+        if (!capacityWaitCode) {
+          await recordDiagnostic(env.DB, {
+            service: "watchlist",
+            feature: "kingdom_watchlist",
+            operation: "PLAYER_FETCH",
+            status: "FAILED",
+            errorCode: String(error?.code || error?.message || "WATCHLIST_PLAYER_FETCH_FAILED").split(":")[0],
+            message: String(error?.message || error).slice(0, 2000),
+            provider: "MIGHTPULSE",
+            targetType: "PLAYER",
+            targetId: governorId
+          });
+          console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
+        }
+        return { governorId, error, capacityWaitCode };
       }
     });
 
@@ -1049,11 +1055,22 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       playerRows++;
     }
 
-    const nextCursor = cursor + batchIds.length;
-    const completed = nextCursor >= ids.length;
+    const deferredPlayerIds = fetchedPlayers.filter(item => item.capacityWaitCode).map(item => item.governorId);
+    const deferredSet = new Set(deferredPlayerIds.map(String));
+    const consumedBatchIds = batchIds.filter(id => !deferredSet.has(String(id)));
+    // Keep completed targets before the cursor, then retry deferred targets,
+    // then retain the untouched queue. Successful players are not fetched again.
+    const nextIds = ids.slice(0, cursor).concat(
+      consumedBatchIds,
+      deferredPlayerIds,
+      ids.slice(cursor + batchIds.length)
+    );
+    const nextCursor = cursor + consumedBatchIds.length;
+    const completed = deferredPlayerIds.length === 0 && nextCursor >= nextIds.length;
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET player_ids_json = ?, player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
     ).bind(
+      JSON.stringify(nextIds),
       nextCursor,
       playerRows,
       completed ? "COMPLETED" : "PLAYERS",
@@ -1064,13 +1081,27 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       job.job_id
     ).run();
 
-    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
+    if (deferredPlayerIds.length) {
+      const capacityWaitCode = fetchedPlayers.find(item => item.capacityWaitCode)?.capacityWaitCode || "NO_API_POOL_KEY_AVAILABLE";
+      const error = new Error(capacityWaitCode);
+      error.code = capacityWaitCode;
+      throw error;
+    }
+
+    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: nextIds.length, playerRows, concurrency };
   }
 
   return { completed: true, phase: job.status };
 }
 
 const WATCHLIST_MAX_API_CONCURRENCY = 26;
+
+function getApiPoolCapacityWaitCode(error) {
+  const code = String(error?.code || error?.message || "").split(":")[0].trim();
+  return ["NO_API_POOL_KEY_AVAILABLE", "GLOBAL_COLLECTION_SEMAPHORE_FULL", "API_POOL_LOAD_TEST_CAPACITY_WAIT"].includes(code)
+    ? code
+    : null;
+}
 
 async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
   const availability = await getApiPoolAvailability(env.DB, {
@@ -1081,14 +1112,9 @@ async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
   const reserve = Math.max(0, Number(reserveApiKeys) || 0);
   const usable = Math.max(0, available - reserve);
 
-  // Normal Watchlist processing keeps the historical minimum of one.
-  // Load Test processing can explicitly reserve one key for normal users and
-  // therefore returns zero when there is no safe capacity instead of violating
-  // the reservation.
-  if (reserve > 0) {
-    return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable);
-  }
-  return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable));
+  // A snapshot is only a planning signal. If no capacity is available, wait
+  // for the next scheduled run instead of forcing a request with zero keys.
+  return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable);
 }
 
 async function fetchWithConcurrency(items, concurrency, worker) {
@@ -2963,14 +2989,14 @@ async function handleKingdomWatchlistApi(request, env) {
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
           const message = String(error?.userMessage || error?.message || error).slice(0, 850);
+          const capacityWaitCode = getApiPoolCapacityWaitCode(error);
           const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
           const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
           const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
-          const retryable = retryCount <= 5 &&
-            !message.startsWith("USER_CANCELLED:") &&
-            !message.startsWith("API_POOL_LOAD_TEST_CAPACITY_WAIT");
+          const retryable = Boolean(capacityWaitCode) || (retryCount <= 5 &&
+            !message.startsWith("USER_CANCELLED:"));
           const storedError = retryable
-            ? "RETRYABLE:" + retryPhase + ":" + retryCount + ":" + message
+            ? "RETRYABLE:" + retryPhase + ":" + (capacityWaitCode ? 1 : retryCount) + ":" + message
             : message;
           const failedAt = Math.floor(Date.now() / 1000);
           await env.DB.prepare(
@@ -2978,23 +3004,31 @@ async function handleKingdomWatchlistApi(request, env) {
           ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
           await env.DB.prepare(
             "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(failedAt, message, failedAt, watchlistId).run();
+          ).bind(failedAt, capacityWaitCode ? null : message, failedAt, watchlistId).run();
           await recordDiagnostic(env.DB, {
             service: "watchlist",
             feature: "kingdom_watchlist",
             operation: "MANUAL_REFRESH",
-            status: "FAILED",
-            errorCode: String(error?.code || message || "WATCHLIST_REFRESH_FAILED").split(":")[0],
+            status: capacityWaitCode ? "WAITING" : "FAILED",
+            errorCode: capacityWaitCode || String(error?.code || message || "WATCHLIST_REFRESH_FAILED").split(":")[0],
             message,
             targetType: "WATCHLIST",
             targetId: watchlistId,
             metadata: { jobId: job.job_id, source: "MANUAL", poolAvailability: error?.poolAvailability || null }
           });
+          if (capacityWaitCode) {
+            return json({
+              ok: true,
+              watchlist_id: watchlistId,
+              job_id: job.job_id,
+              status: "WAITING",
+              retryable: true,
+              retry_after_at: failedAt + 300,
+              message: "API Poolの空き待ちです。空きができ次第、自動再試行します。"
+            }, 202);
+          }
           console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
-          const responseError = error?.code === "NO_API_POOL_KEY_AVAILABLE"
-            ? "NO_API_POOL_KEY_AVAILABLE"
-            : "WATCHLIST_REFRESH_FAILED";
-          return json({ ok: false, error: responseError, message, pool_availability: error?.poolAvailability || null }, responseError === "NO_API_POOL_KEY_AVAILABLE" ? 503 : 500);
+          return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message, pool_availability: error?.poolAvailability || null }, 500);
         }
       } finally {
         await releaseKingdomWatchlistLock(env, watchlistId, lockToken);
