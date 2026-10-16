@@ -51,3 +51,9 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 - Cloudflare production Workers Builds check for `773063fbc462717b3613ee42a1cd8225f97c22e6` was `in_progress` at the latest check; do not claim production deployment complete until it succeeds.
 - Production deployment of the latest source: not verified here.
 - Real-device verification: not yet performed.
+
+
+## Diagnostic JSON audit-trail integration (in progress)
+- Confirmed the downloadable `/api/admin/diagnostics` JSON was built from `getSystemDiagnostics()`, whose primary `events` array came from `diagnostic_events`; watchlist registration/cancellation records were written to the separate `system_event_log` and therefore were not included in that JSON payload.
+- The fix being prepared adds a bounded `systemEvents` array for `service=watchlist` and `feature=kingdom_watchlist`, and persists one summary event per Cron invocation so its counters can be included in the same JSON.
+- This is not complete until tests/CI pass, the PR is merged, and the Cloudflare production build is verified. The extra scheduler summary is one additional D1 write per Cron invocation; actual D1 row-read impact has not been measured.
