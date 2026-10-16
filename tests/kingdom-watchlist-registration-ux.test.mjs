@@ -75,3 +75,9 @@ test("editing kingdom number clears stale validation error without logging the r
   assert.match(page, /details:\{field:"kid",valid:\/\^\\\\d\+\$\//);
   assert.doesNotMatch(page, /CREATE_VALIDATION_CLEARED[^\n]*kid\.value/);
 });
+
+
+test("kingdom number regex survives template-string page generation", () => {
+  assert.match(page, /if\(!\/\^\\\\d\+\$\/.test\(kid\)\|\|Number\(kid\)<1\)/);
+  assert.match(page, /valid:\/\^\\d\+\$\/.test\(current\)/);
+});
