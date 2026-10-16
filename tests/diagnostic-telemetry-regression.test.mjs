@@ -29,7 +29,7 @@ test("diagnostic JSON includes bounded kingdom watchlist System Log events", asy
   const diagnostics = await readFile(new URL("../src/diagnostics.js", import.meta.url), "utf8");
   assert.match(diagnostics, /const systemEventsResult = await db\.prepare\(/);
   assert.match(diagnostics, /service = 'watchlist' AND feature = 'kingdom_watchlist'/);
-  assert.match(diagnostics, /systemEvents,/);
+  assert.match(diagnostics, /systemEvents\s*\n\s*\};/);
 });
 
 test("watchlist Cron summary is persisted for the diagnostic JSON", async () => {
