@@ -4800,7 +4800,7 @@ export default {
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
-      if (url.pathname === "/kingdom-catalog") { return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
+      if (url.pathname === "/kingdom-catalog") { if (url.searchParams.get("suggest") === "1") return await renderKingdomCatalogPage(request, env); return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
       if (url.pathname.startsWith("/hero-icons/assets/")) return await serveHeroIconAsset(request, env, url.pathname);
       if (url.pathname === "/hero-catalog") {
         let iconByName = {};
