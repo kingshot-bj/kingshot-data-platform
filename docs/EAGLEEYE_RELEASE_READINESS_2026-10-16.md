@@ -22,8 +22,9 @@ This is a source-and-repository audit, not proof of production health. No produc
 ### P0 — Fix CI before merging the active kingdom-number validation PR
 
 - PR: [#93](https://github.com/kingshot-bj/kingshot-data-platform/pull/93)
-- Observed CI run: [#38877291344](https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38877291344)
-- The Worker syntax check and earlier test groups passed, but `tests/kingdom-watchlist-registration-ux.test.mjs` failed to parse with `SyntaxError: Unexpected token ')'` around line 75. The kingdom-watchlist regression suite was skipped after that failure.
+- Latest observed PR #93 head at audit update: `c4074e35f3ea4b1ae036f64e67a93aea2da7a1de`.
+- Failing CI runs observed: [#38880221760](https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38880221760) and [#38877291344](https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38877291344).
+- The Worker syntax check and earlier test groups passed, but `tests/kingdom-watchlist-registration-ux.test.mjs` failed to parse with `SyntaxError: Unexpected token ')'` around line 75 in the first run; the latest observed run still fails at the Kingdom Watchlist registration UX test step. The kingdom-watchlist regression suite is skipped after that failure.
 - Acceptance: fix the test source, rerun the affected test and full PR CI, inspect the diff, then merge only when checks pass. Do not treat the feature fix as validated while its regression test cannot run.
 
 ### P0 — Verify the normal production Kingdom Watchlist user journey
