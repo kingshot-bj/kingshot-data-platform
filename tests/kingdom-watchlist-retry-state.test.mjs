@@ -93,3 +93,11 @@ test("public status distinguishes temporary waiting from terminal API Pool failu
   assert.ok(source.includes('terminalKeyStates >= Number(operational.apiPool.totalKeys || 0)'));
   assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
 });
+
+test("health check treats a lease race as a capacity wait", () => {
+  const start = source.indexOf('if (due("api_pool") || due("mightpulse"))');
+  const end = source.indexOf('if (due("discord"))', start);
+  const block = source.slice(start, end);
+  assert.ok(block.includes("const capacityWaitCode = getApiPoolCapacityWaitCode(error)"));
+  assert.ok(block.includes('const status = capacityWaitCode ? "WAITING" : "FAILED"'));
+});
