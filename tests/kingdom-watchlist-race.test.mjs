@@ -49,12 +49,15 @@ test("kingdom watchlist and ranking history APIs reject inactive users", () => {
 });
 
 test("server-side cancellation is not overwritten by a late job failure", () => {
-  const failureUpdates = [...source.matchAll(/UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = \?, updated_at = \? WHERE job_id = \?([^"]*)/g)];
-  assert.ok(failureUpdates.length >= 2, "scheduler and manual refresh failure paths must exist");
-  for (const update of failureUpdates) {
-    assert.match(update[1], /AND status IN \('RANKINGS','PLAYERS'\)/,
-      "late error handling must not overwrite a job already cancelled");
-  }
+  assert.ok(
+    (source.match(/UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = \?, updated_at = \? WHERE job_id = \? AND status IN \('RANKINGS','PLAYERS'\)/g) || []).length >= 2,
+    "scheduler and manual refresh failure paths must guard active jobs"
+  );
+  assert.equal(
+    (source.match(/UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = \?, updated_at = \? WHERE job_id = \?"/g) || []).length,
+    0,
+    "failure handlers must not unconditionally overwrite a cancelled job"
+  );
 });
 
 test("ranking phase checks durable cancellation before persisting fetched ranking boards", () => {
@@ -75,5 +78,5 @@ test("ranking and player cursor writes are guarded by the active phase", () => {
 });
 
 test("ranking view button navigates using the registered kingdom id", () => {
-  assert.match(page, /href=\\"\/kingdom\/rankings\?kid=\\"\s*\+/);
+  assert.match(page, /if\(action==="rankings"\).*location\.href="\/kingdom\/rankings\?kid="\+encodeURIComponent\(kid\)/s);
 });
