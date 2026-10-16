@@ -592,7 +592,10 @@ async function runKingdomWatchlistJobs(env) {
     ).bind(cleanupBefore, KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH).run();
   }
   const rows = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
+    "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.last_run_at, " +
+    "(SELECT MIN(j.updated_at) FROM kingdom_watchlist_jobs j WHERE j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS')) AS active_job_updated_at " +
+    "FROM kingdom_watchlists w WHERE w.enabled = 1 " +
+    "ORDER BY CASE WHEN active_job_updated_at IS NULL THEN 1 ELSE 0 END, active_job_updated_at ASC, w.created_at ASC"
   ).all();
 
   // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
@@ -717,7 +720,7 @@ async function runKingdomWatchlistJobs(env) {
         });
         console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
       }
-      break;
+      // One batch per scheduled invocation; the next invocation prioritizes the least recently advanced active job.
     } finally {
       await releaseKingdomWatchlistLock(env, row.watchlist_id, lockToken);
     }
@@ -957,7 +960,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
 
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'"
     ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
 
     return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows, concurrency };
@@ -971,16 +974,19 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const cursor = Number(job.player_cursor || 0);
 
     if (cursor >= ids.length) {
-      // Count a kingdom only after the complete ranking + player workflow
-      // reaches its terminal state. Partial or failed jobs are not collection.
+      // Cancellation may arrive while a batch is in flight. Never overwrite it
+      // with COMPLETED, and only count collection after the terminal transition succeeds.
+      const terminal = await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', last_error = NULL, completed_at = ?, updated_at = ? WHERE job_id = ? AND status = 'PLAYERS'"
+      ).bind(now, now, job.job_id).run();
+      if (Number(terminal?.meta?.changes || 0) !== 1) {
+        return { completed: false, cancelled: true, phase: "CANCELLED", playerRows: Number(job.player_rows || 0) };
+      }
       await recordKingdomCollectionSuccess(env.DB, {
         kid: job.kid,
         source: String(job.collection_source || "OPERATOR").toUpperCase(),
         collectedAt: now
       });
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', last_error = NULL, completed_at = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(now, now, job.job_id).run();
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
@@ -1094,8 +1100,8 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     );
     const nextCursor = cursor + consumedBatchIds.length;
     const completed = deferredPlayerIds.length === 0 && nextCursor >= nextIds.length;
-    await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET player_ids_json = ?, player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+    const playerUpdate = await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET player_ids_json = ?, player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ? AND status = 'PLAYERS'"
     ).bind(
       JSON.stringify(nextIds),
       nextCursor,
@@ -1107,6 +1113,9 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       now,
       job.job_id
     ).run();
+    if (Number(playerUpdate?.meta?.changes || 0) !== 1) {
+      return { completed: false, cancelled: true, phase: "CANCELLED", playerRows };
+    }
 
     if (deferredPlayerIds.length) {
       const capacityWaitCode = fetchedPlayers.find(item => item.capacityWaitCode)?.capacityWaitCode || "NO_API_POOL_KEY_AVAILABLE";
