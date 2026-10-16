@@ -705,7 +705,7 @@ async function runKingdomWatchlistJobs(env) {
         await env.DB.prepare(
           "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
         ).bind(failedAt, capacityWaitCode ? null : rawError, failedAt, row.watchlist_id).run();
-        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WARNING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
+        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WAITING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
           status: capacityWaitCode ? "WAITING" : "FAILED", errorCode: capacityWaitCode || String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
@@ -812,6 +812,19 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?")
           .bind(startIndex + itemIndex, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
         if (item.capacityWaitCode) {
+          await recordDiagnostic(env.DB, {
+            traceId: item.traceId,
+            service: "ranking",
+            feature: "kingdom_watchlist",
+            operation: "FETCH",
+            status: "WAITING",
+            errorCode: item.capacityWaitCode,
+            message: "API Poolの空き待ちです。未処理ランキングから自動再試行します。",
+            provider: "MIGHTPULSE",
+            targetType: "KINGDOM",
+            targetId: job.kid,
+            metadata: { board: item.board, jobId: job.job_id, phase: "FETCH" }
+          });
           const error = new Error(item.capacityWaitCode);
           error.code = item.capacityWaitCode;
           throw error;
