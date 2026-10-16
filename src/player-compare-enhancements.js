@@ -67,7 +67,7 @@ function enhance(){
  const buttons={};
  modes.forEach(([key,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.mode=key;b.setAttribute('aria-pressed',String(key===mode));b.addEventListener('click',()=>{mode=key;try{localStorage.setItem('eagleeye-player-compare-chart-v1',mode)}catch{}Object.entries(buttons).forEach(([k,node])=>node.setAttribute('aria-pressed',String(k===mode)));renderAll()});buttons[key]=b;tools.appendChild(b)});
  sec.insertBefore(tools,sec.children[1]||null);sec.insertBefore(status,tools.nextSibling);
- const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,stage:n&&n.dataset.stageValue==='1',color:colors[i%colors.length]}});
+ const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const name=safeText(cell.querySelector('small'));const n=cell.querySelector('.counter');const raw=n&&n.dataset.target!==''?Number(n.dataset.target):null;return{name:name||('プレイヤー'+(i+1)),score:Number.isFinite(raw)?raw:null,display:n?safeText(n):'—',stage:n&&n.dataset.stageValue==='1',color:colors[i%colors.length]}});
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
   const existing=card.querySelector('.mystic-ring');if(existing)existing.style.display='none';
@@ -99,31 +99,29 @@ function enhance(){
  function renderRadar(){
   radarHost.replaceChildren();
   const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)}))
-   .filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null&&!e.stage));
-  if(rows.length<3){status.textContent='レーダー表示には、3項目以上の数値スコアが必要です。';return}
-  const names=rows[0].entries.map(e=>e.name);
-  const playerCount=names.length;
-  const consistent=playerCount>=2&&rows.every(row=>row.entries.length===playerCount&&row.entries.every((e,i)=>e.name===names[i]));
-  if(!consistent){status.textContent='各項目のプレイヤーと順序が一致しないため、レーダーを表示できません。';return}
-  // Each axis is normalized independently against the best observed score among the selected players.
-  // This compares relative standing per metric; it does not imply equal raw units between rankings.
-  const width=360,height=340,cx=180,cy=160,radius=112,n=rows.length;
-  const point=(index,r)=>{const angle=(-Math.PI/2)+(Math.PI*2*index/n);return [cx+Math.cos(angle)*r,cy+Math.sin(angle)*r]};
-  const ns='http://www.w3.org/2000/svg';
-  const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 '+width+' '+height);svg.setAttribute('role','img');svg.setAttribute('aria-label','選択プレイヤーの相対スコアを重ねたレーダーチャート');svg.style.width='100%';svg.style.display='block';
-  [0.2,0.4,0.6,0.8,1].forEach(scale=>{const polygon=document.createElementNS(ns,'polygon');polygon.setAttribute('points',rows.map((_,i)=>point(i,radius*scale).join(',')).join(' '));polygon.setAttribute('fill','none');polygon.setAttribute('stroke','var(--border,#29425e)');polygon.setAttribute('stroke-width','1');svg.appendChild(polygon)});
-  rows.forEach((row,i)=>{const [x,y]=point(i,radius);const axis=document.createElementNS(ns,'line');axis.setAttribute('x1',cx);axis.setAttribute('y1',cy);axis.setAttribute('x2',x);axis.setAttribute('y2',y);axis.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(axis);const label=document.createElementNS(ns,'text');const [lx,ly]=point(i,radius+22);label.setAttribute('x',lx);label.setAttribute('y',ly);label.setAttribute('fill','var(--sub,#91a7bf)');label.setAttribute('font-size','10');label.setAttribute('text-anchor',lx<cx-8?'end':lx>cx+8?'start':'middle');label.setAttribute('dominant-baseline','middle');label.textContent=row.label.length>16?row.label.slice(0,15)+'…':row.label;svg.appendChild(label)});
-  for(let playerIndex=0;playerIndex<playerCount;playerIndex++){
-   const scores=rows.map(row=>Math.max(0,row.entries[playerIndex].score));
-   const normalized=scores.map((score,i)=>{const max=Math.max(0,...rows.map(row=>Math.max(0,row.entries[playerIndex].score)));return max>0?score/max:0});
-   const polygon=document.createElementNS(ns,'polygon');polygon.setAttribute('points',normalized.map((score,i)=>point(i,Math.max(3,radius*score)).join(',')).join(' '));polygon.setAttribute('fill',colors[playerIndex%colors.length]);polygon.setAttribute('fill-opacity','0.18');polygon.setAttribute('stroke',colors[playerIndex%colors.length]);polygon.setAttribute('stroke-width','2');svg.appendChild(polygon);
-   normalized.forEach((score,i)=>{const [x,y]=point(i,Math.max(3,radius*score));const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');dot.setAttribute('fill',colors[playerIndex%colors.length]);svg.appendChild(dot)});
-  }
-  radarHost.appendChild(svg);
-  const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.style.display='flex';legend.style.flexWrap='wrap';legend.style.justifyContent='center';legend.style.gap='8px';
-  names.forEach((name,i)=>{const item=document.createElement('span');item.style.color=colors[i%colors.length];item.textContent='● '+name;legend.appendChild(item)});
-  radarHost.appendChild(legend);
-  const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='各軸は選択プレイヤー内の最高スコアを100%として個別に正規化。軸をまたいだ生数値の大小比較には使いません。';radarHost.appendChild(note);
+   .filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
+  const playerCount=rows.length?Math.min(...rows.map(row=>row.entries.length)):0;
+  if(rows.length<3||playerCount<2){status.textContent='比較表示には、2人以上の実スコアがある項目が3件以上必要です。';return}
+  const names=rows[0].entries.slice(0,playerCount).map(e=>e.name);
+  const consistent=rows.every(row=>row.entries.length>=playerCount&&row.entries.slice(0,playerCount).every((e,i)=>e.name===names[i]));
+  if(!consistent){status.textContent='項目ごとのプレイヤー順が一致しないため、比較を表示できません。';return}
+  status.textContent='秘境の試練の各スコアは尺度・固定基準値が未検証のため、レーダーの割合換算は行いません。以下は各項目の取得値をそのまま並べた比較です。ステージ項目はゲーム内表記とAPI値を区別して表示します。';
+  const table=document.createElement('div');table.className='ee-compare-numeric';table.style.gridTemplateColumns='minmax(0,1fr)';
+  rows.forEach(row=>{
+   const block=document.createElement('div');block.style.textAlign='left';
+   const heading=document.createElement('strong');heading.textContent=row.label;heading.style.display='block';heading.style.marginBottom='8px';block.appendChild(heading);
+   const values=document.createElement('div');values.style.display='grid';values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)+',minmax(0,1fr))';values.style.gap='8px';
+   row.entries.slice(0,playerCount).forEach((entry,index)=>{
+    const item=document.createElement('div');item.style.padding='6px';item.style.border='1px solid var(--border,#29425e)';item.style.borderRadius='8px';
+    const name=document.createElement('small');name.textContent=entry.name;name.style.display='block';name.style.color=colors[index%colors.length];
+    const value=document.createElement('strong');value.textContent=entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score);value.style.display='block';value.style.overflowWrap='anywhere';
+    item.append(name,value);
+    if(entry.stage){const raw=document.createElement('small');raw.textContent='API value: '+fmt(entry.score);raw.style.display='block';raw.style.marginTop='4px';raw.style.color='var(--sub,#91a7bf)';item.appendChild(raw)}
+    values.appendChild(item);
+   });
+   block.appendChild(values);table.appendChild(block);
+  });
+  radarHost.appendChild(table);
  }
 
  const candidateRows=new Map();
