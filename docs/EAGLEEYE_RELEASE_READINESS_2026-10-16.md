@@ -115,6 +115,60 @@ The old inventory enumerates many pages and API routes but labels most as code-p
 
 Prioritize actual release scope rather than trying to certify all 110+ route entries at once.
 
+## P1 — External integrations and deployment configuration (new audit scope)
+
+The earlier inventory focused too heavily on code paths. The following items must be tracked separately as **configured**, **verified against provider settings**, and **tested end-to-end**. The Git repository cannot reveal whether Cloudflare Secrets are actually populated or whether Discord/Google consoles match the repository configuration.
+
+### Discord Support / inquiry tickets
+
+Static code/config evidence:
+- `src/discord-support.js` implements ticket creation, private channel permission overwrites, incident context, diagnostic logging, and `/close` / `/reopen` guild commands.
+- `src/index.js` routes `/api/discord/interactions`, `/api/admin/discord-support/register-command`, `/api/support`, and `/api/support/context`.
+- `wrangler.jsonc` lists these required secrets: `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DISCORD_SUPPORT_GUILD_ID`, `DISCORD_SUPPORT_CATEGORY_ID`, `DISCORD_SUPPORT_ROLE_ID`, and `DISCORD_SUPPORT_ARCHIVE_CATEGORY_ID`. `DISCORD_CLIENT_ID` is a non-secret Worker var.
+- Code can resolve category/role IDs by exact names when category/role IDs are missing, but it still requires a usable support guild and archive category. The interaction handler directly checks configured support role and guild IDs.
+- Code existence does **not** prove that the bot is installed in the intended guild, has the needed permissions, the Interaction Endpoint URL is configured, the public key matches, or the slash commands are registered.
+
+Required verification:
+1. Confirm each required Cloudflare secret exists in the production Worker (never print secret values).
+2. Verify Discord Developer Portal application ID/public key, bot installation/scopes, interaction endpoint URL `https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/discord/interactions`, and required channel/role permissions.
+3. Verify support guild, open category, archive category, and support role IDs resolve to the intended objects.
+4. Run the admin command-registration endpoint with an authorized account; then verify `/close` and `/reopen` exist in the guild.
+5. With an approved test account, create one ticket, verify only the user/support role/bot can access it, verify the first message and diagnostic trace, close it, confirm the user loses access and the channel archives, then reopen it and verify access returns.
+6. Check failure behavior for missing config, non-member users, Discord API permission failures, and failed first-message cleanup.
+
+### Google Drive OAuth / archive integration
+
+Static code/config evidence:
+- `src/google-drive.js` requires `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_DRIVE_OAUTH_REDIRECT_URI`, `GOOGLE_DRIVE_REFRESH_TOKEN`, and `GOOGLE_DRIVE_FOLDER_ID`.
+- `wrangler.jsonc` currently sets `GOOGLE_DRIVE_OAUTH_REDIRECT_URI` to `https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback`, while the route inventory identifies a separate handler at `/api/admin/google-drive/callback`. This is a **static callback-path mismatch candidate** that must be reconciled against the actual intended OAuth flow and Google Cloud Console authorized redirect URIs before claiming Drive OAuth works.
+- `src/google-drive.js` documents the R2-to-Drive upload function as an explicit primitive that is not wired to cron, retention, or automatic R2 deletion. Do not assume Google Drive archiving is automatic.
+- Required secrets listed in `wrangler.jsonc` include `GOOGLE_OAUTH_CLIENT_SECRET` and `GOOGLE_DRIVE_REFRESH_TOKEN`; presence in the list does not prove they are set or valid.
+
+Required verification:
+1. Resolve the correct redirect URI and make the Worker config, callback handler, and Google Cloud Console URI list agree.
+2. Verify secret presence without exposing values, refresh-token validity, OAuth scope/consent, target Drive account, folder ID, and write access.
+3. Run the existing connection verification endpoint, then a controlled upload/readback test against a designated test object/folder.
+4. Decide explicitly whether Drive is optional/manual or part of release acceptance. Until code is wired to a scheduled/archive workflow, label it manual/experimental and do not claim automatic backup.
+
+### Cloudflare / GitHub deployment and service prerequisites
+
+- `wrangler.jsonc` defines production bindings for D1, R2, three Queue producers/consumers, Cron (every 5 minutes), assets, and version metadata. The Preview section does not mirror all production Queue bindings and points to the same D1 database/R2 bucket; do not use it as an isolated acceptance environment.
+- The migration workflow expects GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Their presence/permissions and the latest production deployment were not verified by this source audit.
+- Secrets/vars to verify against actual deployment include Discord, Google OAuth/Drive, `EAGLEEYE_SESSION_SECRET`, MightPulse API Pool credentials/keys, and any credentials consumed by admin diagnostics/Cloudflare usage. Never copy secret values into docs, logs, or screenshots.
+- Confirm that Queue names and dead-letter queues exist in Cloudflare and match `wrangler.jsonc`; confirm Cron actually runs and the currently serving Worker revision matches intended main.
+- Confirm Discord notification channel configuration and delivery path separately from the Discord Support ticket bot. Notification code existing is not evidence that the target channel IDs/configuration or delivery are valid.
+
+### Other external-service readiness checklist
+
+Track each as `configured` / `provider-verified` / `end-to-end-tested` / `not-in-release-scope`:
+- Discord OAuth login and callback, bot token, interactions/public key, guild/category/role IDs, slash-command registration, support ticket lifecycle, notification destinations.
+- Google OAuth redirect URI, OAuth client/secret, refresh token, Drive folder permissions, and whether archive upload is manual or automated.
+- Cloudflare Worker secrets/vars, deployed version, Cron, D1 migrations/schema, R2 bucket, Queue producers/consumers/dead-letter queues, and required API token permissions.
+- MightPulse API keys, API Pool eligibility/lease/cooldown, key reserve policy, and health-check behavior.
+- GitHub Actions secrets and permissions for deploy/migration workflows; workflow success and production deployment must be recorded separately.
+- Google Sheets export/OAuth if still in release scope, including the exact credential path and a real authorized export test.
+- User-facing links, redirects, callback URLs, custom domains (if any), CORS/security headers, and mobile Safari behavior for OAuth and support flows.
+
 ## Recommended execution order
 
 1. Fix PR #93's test syntax error and get CI green.
