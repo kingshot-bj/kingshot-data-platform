@@ -6675,17 +6675,13 @@ async function fetchThroughWatchlistApiPool(env, {
       }
     }
     if (!lease) {
-      const availability = await getApiPoolAvailability(env.DB, {
-        provider: "MIGHTPULSE",
-        poolTypes: automaticPoolTypes
-      });
-      const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
+      // The batch planner already checked pool availability. Avoid issuing a
+      // second availability query for every failed concurrent request when
+      // another feature claims the remaining keys between planning and leasing.
       const error = lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
       error.code = "NO_API_POOL_KEY_AVAILABLE";
-      error.poolAvailability = availability;
-      error.userMessage = exhaustedByLease
-        ? "現在、利用可能なAPIキーがすべて処理中（リース中）のため更新できません。キー自体の無効化とは限りません。しばらく待ってから再試行してください。"
-        : "現在、利用可能なMightPulse APIキーを確保できません。キーの無効化・クールダウン等の状態を確認してください。";
+      error.poolAvailability = null;
+      error.userMessage = "現在、利用可能なMightPulse APIキーを確保できません。空きが回復するまで待機し、自動再試行します。";
       throw error;
     }
 
