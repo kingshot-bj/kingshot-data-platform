@@ -113,3 +113,13 @@ test("stale-job recovery does not report retryable state if a concurrent termina
   assert.match(listHandler, /if \(Number\(recovered\?\.meta\?\.changes \|\| 0\) === 1\)/);
   assert.match(listHandler, /SELECT status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE job_id = \? LIMIT 1/);
 });
+
+
+test("registration and cancellation events share the job trace and preserve the request parent trace", () => {
+  assert.match(source, /handleKingdomWatchlistApi\(request, env, requestTraceId\)/);
+  assert.match(source, /async function handleKingdomWatchlistApi\(request, env, requestTraceId = null\)/);
+  assert.match(source, /eventType: "REGISTERED"[\s\S]{0,450}metadata: \{ watchlistId: id, jobId, kid, topN, intervalHours, source: "USER" \}/);
+  assert.match(source, /eventType: "CANCEL_REQUESTED"[\s\S]{0,500}metadata: \{ watchlistId, jobId: target\.job_id \|\| null, source: "USER" \}/);
+  assert.match(source, /traceId: jobId,[\s\S]{0,100}parentTraceId: operationTraceId/);
+  assert.match(source, /traceId: target\.job_id \|\| operationTraceId,[\s\S]{0,100}parentTraceId: operationTraceId/);
+});
