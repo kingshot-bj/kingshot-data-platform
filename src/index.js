@@ -2956,7 +2956,7 @@ async function handleKingdomWatchlistApi(request, env, requestTraceId = null) {
       targetId: String(kid),
       message: "王国ウォッチリスト登録・初期ジョブ作成",
       metadata: { watchlistId: id, jobId, kid, topN, intervalHours, source: "USER" }
-    });
+    }).catch(error => console.error("kingdom_watchlist_registration_event_failed", error?.message || error));
 
     await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_ADD", {
       targetType: "KINGDOM",
@@ -3174,7 +3174,7 @@ async function handleKingdomWatchlistApi(request, env, requestTraceId = null) {
       targetId: String(target.kid),
       message: "王国ウォッチリストの中断要求を受け付けました。",
       metadata: { watchlistId, jobId: target.job_id || null, source: "USER" }
-    });
+    }).catch(error => console.error("kingdom_watchlist_cancel_event_failed", error?.message || error));
 
     return json({
       ok: true,
