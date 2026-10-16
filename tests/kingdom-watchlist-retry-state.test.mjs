@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
 const page = await readFile(new URL("../src/kingdom-watchlist-page.js", import.meta.url), "utf8");
+const diagnostics = await readFile(new URL("../src/diagnostics.js", import.meta.url), "utf8");
 
 test("failed kingdom watchlist jobs are eligible for bounded automatic retry", () => {
   assert.match(source, /status = 'FAILED' AND last_error LIKE 'RETRYABLE:%'/);
@@ -54,4 +55,49 @@ test("client requests time out instead of leaving controls busy forever", () => 
 
 test("retry-wait state releases the UI busy flag so manual refresh remains available", () => {
   assert.match(page, /if\(state==="FAILED"&&job\.retryable\)\{refreshing\[id\]=false/);
+});
+
+test("API Pool exhaustion waits instead of forcing a single request", () => {
+  assert.ok(source.includes('if (concurrency < 1)'));
+  assert.ok(source.includes('error.code = "NO_API_POOL_KEY_AVAILABLE"'));
+  assert.ok(source.includes('status: capacityWaitCode ? "WAITING" : "FAILED"'));
+});
+
+test("watchlist batch size follows API Pool capacity rather than a fixed player count", () => {
+  assert.ok(!source.includes("WATCHLIST_PLAYER_BATCH = 8"));
+  assert.ok(source.includes("const batchIds = ids.slice(cursor, cursor + concurrency)"));
+  assert.ok(source.includes("return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable)"));
+});
+
+test("deferred players remain queued ahead of untouched players", () => {
+  assert.ok(source.includes("const deferredPlayerIds = fetchedPlayers.filter(item => item.capacityWaitCode)"));
+  assert.ok(source.includes("const consumedBatchIds = batchIds.filter(id => !deferredSet.has(String(id)))"));
+  assert.ok(source.includes("player_ids_json = ?, player_cursor = ?"));
+});
+
+test("diagnostics represent capacity waits without counting them as degraded", () => {
+  assert.ok(diagnostics.includes('["SUCCESS","WARNING","FAILED","WAITING"]'));
+  assert.ok(diagnostics.includes('const waiting = services.filter(item => item.status === "WAITING").length'));
+  assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
+  assert.ok(source.includes('status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE"'));
+});
+
+test("ranking collection resumes at the first failed board when API capacity disappears", () => {
+  assert.ok(source.includes("const code = apiLimiter ? \"API_POOL_LOAD_TEST_CAPACITY_WAIT\" : \"NO_API_POOL_KEY_AVAILABLE\""));
+  assert.ok(source.includes("if (item.capacityWaitCode)"));
+  assert.ok(source.includes("SET board_index = ?, ranking_rows = ?, updated_at = ?"));
+});
+
+test("public status distinguishes temporary waiting from terminal API Pool failure", () => {
+  assert.ok(source.includes('data.overall === "WAITING" && !usageWarning && !watchlistWarning'));
+  assert.ok(source.includes('terminalKeyStates >= Number(operational.apiPool.totalKeys || 0)'));
+  assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
+});
+
+test("health check treats a lease race as a capacity wait", () => {
+  const start = source.indexOf('if (due("api_pool") || due("mightpulse"))');
+  const end = source.indexOf('if (due("discord"))', start);
+  const block = source.slice(start, end);
+  assert.ok(block.includes("const capacityWaitCode = getApiPoolCapacityWaitCode(error)"));
+  assert.ok(block.includes('const status = capacityWaitCode ? "WAITING" : "FAILED"'));
 });
