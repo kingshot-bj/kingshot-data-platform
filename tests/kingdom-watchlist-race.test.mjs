@@ -92,3 +92,24 @@ test("ranking and player cursor writes are guarded by the active phase", () => {
 test("ranking view button navigates using the registered kingdom id", () => {
   assert.match(page, /if\(action==="rankings"\).*location\.href="\/kingdom\/rankings\?kid="\+encodeURIComponent\(kid\)/s);
 });
+
+
+test("watchlist list API loads all latest jobs with one joined query instead of N+1 selects", () => {
+  const handlerStart = source.indexOf("async function handleKingdomWatchlistApi");
+  const listStart = source.indexOf('if (request.method === "GET" && action === "list")', handlerStart);
+  const createStart = source.indexOf('if (request.method === "POST" && action === "create")', listStart);
+  assert.ok(listStart >= 0 && createStart > listStart, "list handler must exist");
+  const listHandler = source.slice(listStart, createStart);
+  assert.match(listHandler, /LEFT JOIN kingdom_watchlist_jobs j ON j\.job_id = \(/);
+  assert.match(listHandler, /SELECT j2\.job_id FROM kingdom_watchlist_jobs j2 WHERE j2\.watchlist_id = w\.watchlist_id ORDER BY j2\.created_at DESC LIMIT 1/);
+  assert.doesNotMatch(listHandler, /SELECT job_id, status, board_index, player_cursor, player_ids_json FROM kingdom_watchlist_jobs WHERE watchlist_id/);
+});
+
+test("stale-job recovery does not report retryable state if a concurrent terminal transition won", () => {
+  const handlerStart = source.indexOf("async function handleKingdomWatchlistApi");
+  const listStart = source.indexOf('if (request.method === "GET" && action === "list")', handlerStart);
+  const createStart = source.indexOf('if (request.method === "POST" && action === "create")', listStart);
+  const listHandler = source.slice(listStart, createStart);
+  assert.match(listHandler, /if \(Number\(recovered\?\.meta\?\.changes \|\| 0\) === 1\)/);
+  assert.match(listHandler, /SELECT status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE job_id = \? LIMIT 1/);
+});
