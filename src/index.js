@@ -592,7 +592,10 @@ async function runKingdomWatchlistJobs(env) {
     ).bind(cleanupBefore, KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH).run();
   }
   const rows = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
+    "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.last_run_at, " +
+    "(SELECT MIN(j.updated_at) FROM kingdom_watchlist_jobs j WHERE j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS')) AS active_job_updated_at " +
+    "FROM kingdom_watchlists w WHERE w.enabled = 1 " +
+    "ORDER BY CASE WHEN active_job_updated_at IS NULL THEN 1 ELSE 0 END, active_job_updated_at ASC, w.created_at ASC"
   ).all();
 
   // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
@@ -717,7 +720,7 @@ async function runKingdomWatchlistJobs(env) {
         });
         console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
       }
-      break;
+      // One batch per scheduled invocation; the next invocation prioritizes the least recently advanced active job.
     } finally {
       await releaseKingdomWatchlistLock(env, row.watchlist_id, lockToken);
     }
