@@ -708,8 +708,8 @@ async function runKingdomWatchlistJobs(env) {
         ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
         // Preserve the committed cursor and start the retry delay at failure time.
         await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(failedAt, capacityWaitCode ? null : rawError, failedAt, row.watchlist_id).run();
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = ? AND status = 'FAILED' AND last_error = ?)"
+        ).bind(failedAt, capacityWaitCode ? null : rawError, failedAt, row.watchlist_id, job.job_id, storedError.slice(0, 1000)).run();
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WAITING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
@@ -3051,8 +3051,8 @@ async function handleKingdomWatchlistApi(request, env) {
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
           ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
           await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(failedAt, capacityWaitCode ? null : message, failedAt, watchlistId).run();
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = ? AND status = 'FAILED' AND last_error = ?)"
+          ).bind(failedAt, capacityWaitCode ? null : message, failedAt, watchlistId, job.job_id, storedError.slice(0, 1000)).run();
           await recordDiagnostic(env.DB, {
             service: "watchlist",
             feature: "kingdom_watchlist",
