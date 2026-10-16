@@ -60,6 +60,18 @@ test("server-side cancellation is not overwritten by a late job failure", () => 
   );
 });
 
+test("late failure handlers do not replace the watchlist-level cancellation message", () => {
+  assert.equal(
+    (source.match(/UPDATE kingdom_watchlists SET last_run_at = \\?, last_error = \\?, updated_at = \\? WHERE watchlist_id = \\?"/g) || []).length,
+    0,
+    "failure updates must verify the matching job failure is still current"
+  );
+  assert.ok(
+    (source.match(/AND EXISTS \\(SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = \\? AND status = 'FAILED' AND last_error = \\?\\)/g) || []).length >= 2,
+    "scheduler and manual failure paths must preserve USER_CANCELLED when a late error arrives"
+  );
+});
+
 test("ranking phase checks durable cancellation before persisting fetched ranking boards", () => {
   const start = source.indexOf("async function processKingdomWatchlistJob");
   const end = source.indexOf("\nasync function ", start + 20);
