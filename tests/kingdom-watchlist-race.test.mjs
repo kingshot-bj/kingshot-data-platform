@@ -47,3 +47,33 @@ test("kingdom watchlist and ranking history APIs reject inactive users", () => {
     );
   }
 });
+
+test("server-side cancellation is not overwritten by a late job failure", () => {
+  const failureUpdates = [...source.matchAll(/UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = \?, updated_at = \? WHERE job_id = \?([^"]*)/g)];
+  assert.ok(failureUpdates.length >= 2, "scheduler and manual refresh failure paths must exist");
+  for (const update of failureUpdates) {
+    assert.match(update[1], /AND status IN \('RANKINGS','PLAYERS'\)/,
+      "late error handling must not overwrite a job already cancelled");
+  }
+});
+
+test("ranking phase checks durable cancellation before persisting fetched ranking boards", () => {
+  const start = source.indexOf("async function processKingdomWatchlistJob");
+  const end = source.indexOf("\nasync function ", start + 20);
+  const processor = source.slice(start, end);
+  const checkpoint = processor.indexOf("WATCHLIST_JOB_STATE_CHANGED");
+  const persistence = processor.indexOf("saveKingdomRankingBoard");
+  assert.ok(checkpoint >= 0, "ranking batch must check durable job state after requests settle");
+  assert.ok(persistence > checkpoint, "cancelled ranking batch must stop before ranking persistence");
+  assert.match(processor.slice(checkpoint - 600, persistence), /USER_CANCELLED:/);
+});
+
+test("ranking and player cursor writes are guarded by the active phase", () => {
+  assert.match(source, /SET player_cursor = player_cursor \+ 1, updated_at = \? WHERE job_id = \? AND status = 'RANKINGS'/);
+  assert.match(source, /SET board_index = \?, player_cursor = 0, ranking_rows = [\s\S]{0,600}WHERE job_id = \? AND status = 'RANKINGS'/);
+  assert.match(source, /SET player_ids_json = \?, player_cursor = \?, player_rows = \?, status = \?[\s\S]{0,600}WHERE job_id = \? AND status = 'PLAYERS'/);
+});
+
+test("ranking view button navigates using the registered kingdom id", () => {
+  assert.match(page, /href=\\"\/kingdom\/rankings\?kid=\\"\s*\+/);
+});
