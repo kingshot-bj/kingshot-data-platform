@@ -74,6 +74,7 @@ function enhance(){
   const values=card.querySelector('.mystic-values');let view=card.querySelector('.ee-chart-view');
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
+  if(/秘境の試練|Mystic Trial/i.test(safeText(card.querySelector('.mystic-name')))){const progress=document.createElement('div');progress.className='ee-compare-chart-note';progress.textContent=available.map(e=>e.name+'：'+(Math.max(0,e.score)/12000*100).toFixed(1)+'%').join(' ／ ');if(available.length) {const label=document.createElement('div');label.className='ee-compare-chart-note';label.textContent='総合進行率の目安';view.append(label,progress)}}
   if(entries.some(e=>e.stage)){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。';view.appendChild(msg);return}if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
   const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
   if(mode==='ring'){
@@ -98,30 +99,48 @@ function enhance(){
  sec.insertBefore(radarHost,status.nextSibling);
  function renderRadar(){
   radarHost.replaceChildren();
-  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)}))
-   .filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
+  const axisDefs=[
+   {key:'coliseum',label:'闘技場',offset:10000},
+   {key:'forest',label:'生命の森',offset:20000},
+   {key:'crystal',label:'水晶鉱山',offset:30000},
+   {key:'knowledge',label:'知識の枢軸',offset:40000},
+   {key:'molten',label:'溶岩要塞',offset:50000},
+   {key:'radiant',label:'輝光の塔',offset:60000}
+  ];
+  const identify=label=>{
+   const n=String(label||'').replace(/^ランキング：/,'').replace(/\s+/g,'');
+   if(/闘技場|Coliseum/i.test(n))return axisDefs[0];
+   if(/生命の森|ForestofLife/i.test(n))return axisDefs[1];
+   if(/水晶鉱山|CrystalCave/i.test(n))return axisDefs[2];
+   if(/知識の枢軸|KnowledgeNexus/i.test(n))return axisDefs[3];
+   if(/溶岩要塞|MoltenFort/i.test(n))return axisDefs[4];
+   if(/輝光の塔|RadiantSpire/i.test(n))return axisDefs[5];
+   return null;
+  };
+  const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),axis:identify(safeText(card.querySelector('.mystic-name'))),entries:readEntries(card)}))
+   .filter(row=>row.axis&&row.entries.length>=2&&row.entries.every(e=>e.score!==null&&e.stage))
+   .sort((a,b)=>axisDefs.findIndex(x=>x.key===a.axis.key)-axisDefs.findIndex(x=>x.key===b.axis.key));
   const playerCount=rows.length?Math.min(...rows.map(row=>row.entries.length)):0;
-  if(rows.length<3||playerCount<2){status.textContent='比較表示には、2人以上の実スコアがある項目が3件以上必要です。';return}
+  if(rows.length!==6||playerCount<2){status.textContent='秘境の試練6項目すべてについて、2人以上のステージ値がそろうとレーダーを表示します。';return}
   const names=rows[0].entries.slice(0,playerCount).map(e=>e.name);
   const consistent=rows.every(row=>row.entries.length>=playerCount&&row.entries.slice(0,playerCount).every((e,i)=>e.name===names[i]));
   if(!consistent){status.textContent='項目ごとのプレイヤー順が一致しないため、比較を表示できません。';return}
-  status.textContent='秘境の試練の各スコアは尺度・固定基準値が未検証のため、レーダーの割合換算は行いません。以下は各項目の取得値をそのまま並べた比較です。ステージ項目はゲーム内表記とAPI値を区別して表示します。';
-  const table=document.createElement('div');table.className='ee-compare-numeric';table.style.gridTemplateColumns='minmax(0,1fr)';
-  rows.forEach(row=>{
-   const block=document.createElement('div');block.style.textAlign='left';
-   const heading=document.createElement('strong');heading.textContent=row.label;heading.style.display='block';heading.style.marginBottom='8px';block.appendChild(heading);
-   const values=document.createElement('div');values.style.display='grid';values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)+',minmax(0,1fr))';values.style.gap='8px';
-   row.entries.slice(0,playerCount).forEach((entry,index)=>{
-    const item=document.createElement('div');item.style.padding='6px';item.style.border='1px solid var(--border,#29425e)';item.style.borderRadius='8px';
-    const name=document.createElement('small');name.textContent=entry.name;name.style.display='block';name.style.color=colors[index%colors.length];
-    const value=document.createElement('strong');value.textContent=entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score);value.style.display='block';value.style.overflowWrap='anywhere';
-    item.append(name,value);
-    if(entry.stage){const raw=document.createElement('small');raw.textContent='API value: '+fmt(entry.score);raw.style.display='block';raw.style.marginTop='4px';raw.style.color='var(--sub,#91a7bf)';item.appendChild(raw)}
-    values.appendChild(item);
-   });
-   block.appendChild(values);table.appendChild(block);
-  });
-  radarHost.appendChild(table);
+  // Internal EagleEye-only provisional benchmark. Do not render benchmark constants or disclose them in UI.
+  const maxProgress=2000;
+  const players=names.map((name,index)=>({name,color:colors[index%colors.length],values:rows.map(row=>Math.max(0,Number(row.entries[index].score)-row.axis.offset))}));
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 360 330');svg.setAttribute('role','img');svg.setAttribute('aria-label','秘境の試練6項目の進捗比較レーダーチャート');
+  svg.style.cssText='width:100%;height:auto;overflow:visible;display:block';
+  const cx=180,cy=157,r=105;
+  const point=(i,scale)=>{const angle=(-Math.PI/2)+(Math.PI*2*i/6);return{x:cx+Math.cos(angle)*r*scale,y:cy+Math.sin(angle)*r*scale}};
+  [0.25,0.5,0.75,1].forEach(scale=>{const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',axisDefs.map((_,i)=>{const p=point(i,scale);return p.x+','+p.y}).join(' '));poly.setAttribute('fill','none');poly.setAttribute('stroke','var(--border,#29425e)');poly.setAttribute('stroke-width','1');svg.appendChild(poly)});
+  axisDefs.forEach((axis,i)=>{const p=point(i,1),line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',p.x);line.setAttribute('y2',p.y);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const label=document.createElementNS(ns,'text');label.setAttribute('x',cx+Math.cos((-Math.PI/2)+(Math.PI*2*i/6))*(r+25));label.setAttribute('y',cy+Math.sin((-Math.PI/2)+(Math.PI*2*i/6))*(r+25));label.setAttribute('fill','var(--text,#e8f3ff)');label.setAttribute('font-size','10');label.setAttribute('text-anchor','middle');label.setAttribute('dominant-baseline','middle');label.textContent=axis.label;svg.appendChild(label)});
+  players.forEach(player=>{const points=player.values.map((value,i)=>{const p=point(i,Math.min(1,value/maxProgress));return p.x+','+p.y}).join(' ');const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',points);poly.setAttribute('fill',player.color);poly.setAttribute('fill-opacity',players.length===2?'0.16':'0.09');poly.setAttribute('stroke',player.color);poly.setAttribute('stroke-width','2');svg.appendChild(poly);player.values.forEach((value,i)=>{const p=point(i,Math.min(1,value/maxProgress)),dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',p.x);dot.setAttribute('cy',p.y);dot.setAttribute('r','3');dot.setAttribute('fill',player.color);svg.appendChild(dot)})});
+  radarHost.appendChild(svg);
+  const legend=document.createElement('div');legend.className='ee-compare-numeric';legend.style.gridTemplateColumns='repeat('+Math.min(2,players.length)+',minmax(0,1fr))';
+  players.forEach(player=>{const cell=document.createElement('div'),name=document.createElement('small'),total=document.createElement('strong'),pct=document.createElement('small');name.textContent=player.name;name.style.color=player.color;total.textContent=fmt(player.values.reduce((a,v)=>a+v,0));pct.textContent=(player.values.reduce((a,v)=>a+v,0)/12000*100).toFixed(1)+'%';cell.append(name,total,pct);legend.appendChild(cell)});
+  radarHost.appendChild(legend);
+  status.textContent='6項目の進行プロフィール。数値は各項目の進行値、割合はイーグルアイ独自の比較基準による目安です。ゲーム内の公式上限を示すものではありません。';
  }
 
  const candidateRows=new Map();
