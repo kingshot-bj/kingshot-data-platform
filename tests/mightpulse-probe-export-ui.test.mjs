@@ -19,15 +19,16 @@ test("Probe JSON export includes complete diagnostic metadata and raw payload", 
   }
 });
 
-test("Probe JSON export validates the full payload and uses an iOS JSON tab plus browser download", () => {
-  assert.match(exportHandler, /p\.raw_payload===undefined\|\|p\.raw_payload===null/);
-  assert.match(exportHandler, /raw_payload:p\.raw_payload/);
-  assert.match(exportHandler, /JSON\.parse\(data\)/);
-  assert.match(exportHandler, /data\.length<100/);
-  assert.match(exportHandler, /window\.open\(objectUrl,'_blank'\)/);
-  assert.match(exportHandler, /document\.body\.appendChild\(link\)/);
-  assert.match(exportHandler, /URL\.revokeObjectURL\(objectUrl\)/);
+test("Probe JSON export shares a real JSON file on iOS and falls back to a file download", () => {
+  assert.match(exportHandler, /p\\.raw_payload===undefined\\|\\|p\\.raw_payload===null/);
+  assert.match(exportHandler, /raw_payload:p\\.raw_payload/);
+  assert.match(exportHandler, /JSON\\.parse\\(data\\)/);
+  assert.match(exportHandler, /data\\.length<100/);
+  assert.match(exportHandler, /new File\\(\\[blob\\],fileName/);
+  assert.match(exportHandler, /navigator\\.canShare\\(\\{files:\\[file\\]\\}\\)/);
+  assert.match(exportHandler, /navigator\\.share\\(\\{files:\\[file\\],title:fileName\\}\\)/);
+  assert.doesNotMatch(exportHandler, /window\\.open\\(objectUrl,'_blank'\\)/);
+  assert.match(exportHandler, /document\\.body\\.appendChild\\(link\\)/);
+  assert.match(exportHandler, /URL\\.revokeObjectURL\\(objectUrl\\)/);
   assert.match(exportHandler, /書き出し失敗/);
-  assert.doesNotMatch(exportHandler, /navigator\.share&&navigator\.canShare/);
-  assert.doesNotMatch(exportHandler, /setTimeout\(function\(\)\{URL\.revokeObjectURL\(url\);\},1000\)/);
 });
