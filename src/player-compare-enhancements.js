@@ -57,6 +57,24 @@ function collapseDetails(){
 }
 function enhance(){
  collapseDetails();
+ document.querySelectorAll('.compare-metric').forEach(row=>{const label=safeText(row.querySelector('span'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))row.hidden=true});
+ const table=document.querySelector('.table-wrap table');
+ if(table&&!document.querySelector('.ee-build-compare')){
+  const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
+  if(rows.length){
+   const panel=document.createElement('section');panel.className='ee-build-compare';
+   const title=document.createElement('h2');title.textContent='育成要素の比較';panel.appendChild(title);
+   const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
+   rows.forEach(tr=>{const cells=[...tr.children];const card=document.createElement('article');card.className='ee-build-row';
+    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=safeText(cells[0]).replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
+    const values=document.createElement('div');values.className='ee-build-values';
+    cells.slice(1).forEach((cell,i)=>{const item=document.createElement('div');item.className='ee-build-value';const who=document.createElement('span');who.textContent=headers[i]||('プレイヤー'+(i+1));const val=document.createElement('b');val.textContent=safeText(cell)||'—';item.append(who,val);values.appendChild(item)});
+    card.appendChild(values);panel.appendChild(card);
+   });
+   const sec=document.querySelector('.mystic-section');if(sec)sec.before(panel);else table.before(panel);
+  }
+ }
+
  const sec=document.querySelector('.mystic-section');
  if(!sec||sec.dataset.eeEnhanced==='1')return;
  const cards=[...sec.querySelectorAll('.mystic-card')];
