@@ -10367,7 +10367,7 @@ async function renderHome(request, env) {
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
   <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge">0</b></a>
   <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
-  <a class="ee-tile" href="/kingdom"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
+  <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
   <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
   <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><strong>マイKingshot</strong><small>自分のデータ</small></a>
 </section>

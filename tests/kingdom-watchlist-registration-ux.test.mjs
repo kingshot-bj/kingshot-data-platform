@@ -81,3 +81,9 @@ test("kingdom number regex survives template-string page generation", () => {
   assert.ok(page.includes(String.raw`if(!/^\\d+$/.test(kid)||Number(kid)<1)`));
   assert.ok(page.includes(String.raw`valid:/^\d+$/.test(current)`));
 });
+
+
+test("home Kingdom Search tile opens the kingdom catalog instead of a detail page without a KID", async () => {
+  const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(source, /href="\/kingdom-catalog"><img src="\/assets\/eagleeye\/bjnyan\/11_kingdom_search\.png" alt=""><strong>王国検索<\/strong>/);
+});
