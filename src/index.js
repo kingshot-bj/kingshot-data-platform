@@ -748,6 +748,27 @@ async function runKingdomWatchlistJobs(env) {
     capacityWaits,
     jobFailures
   });
+  await recordSystemEvent(env.DB, {
+    traceId: schedulerTraceId,
+    eventType: "SCHEDULER_RUN",
+    service: "watchlist",
+    feature: "kingdom_watchlist",
+    operation: "WATCHLIST_CRON",
+    status: jobFailures > 0 ? "WARNING" : "SUCCESS",
+    message: "王国ウォッチリストCron実行集計",
+    startedAt: Math.floor(schedulerStartedAtMs / 1000),
+    completedAt: Math.floor(Date.now() / 1000),
+    elapsedMs: Date.now() - schedulerStartedAtMs,
+    metadata: {
+      watchlistsConsidered: (rows.results || []).length,
+      activeJobsSeen: (activeJobRows.results || []).length,
+      jobsAttempted,
+      jobsCompleted,
+      locksContended,
+      capacityWaits,
+      jobFailures
+    }
+  });
 }
 
 async function processKingdomWatchlistJob(env, job, options = {}) {

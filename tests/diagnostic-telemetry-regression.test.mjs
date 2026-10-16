@@ -24,3 +24,18 @@ test("diagnostics has operational-event fallback for API Pool and MightPulse", a
   assert.match(diagnostics, /system_event_log WHERE service IN \('api_pool','mightpulse'\)/);
   assert.match(diagnostics, /\["SUCCESS", "COMPLETED"\]\.includes\(status\)/);
 });
+
+test("diagnostic JSON includes bounded kingdom watchlist System Log events", async () => {
+  const diagnostics = await readFile(new URL("../src/diagnostics.js", import.meta.url), "utf8");
+  assert.match(diagnostics, /const systemEventsResult = await db\.prepare\(/);
+  assert.match(diagnostics, /service = 'watchlist' AND feature = 'kingdom_watchlist'/);
+  assert.match(diagnostics, /systemEvents\s*\n\s*\};/);
+});
+
+test("watchlist Cron summary is persisted for the diagnostic JSON", async () => {
+  const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(source, /eventType: "SCHEDULER_RUN"/);
+  assert.match(source, /operation: "WATCHLIST_CRON"/);
+  assert.match(source, /jobsAttempted,/);
+  assert.match(source, /capacityWaits,/);
+});
