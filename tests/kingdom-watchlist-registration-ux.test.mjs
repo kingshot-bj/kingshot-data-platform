@@ -78,6 +78,6 @@ test("editing kingdom number clears stale validation error without logging the r
 
 
 test("kingdom number regex survives template-string page generation", () => {
-  assert.match(page, /if\(!\/\^\\\\d\+\$\/.test\(kid\)\|\|Number\(kid\)<1\)/);
-  assert.match(page, /valid:\/\^\\d\+\$\/.test\(current\)/);
+  assert.ok(page.includes(String.raw`if(!/^\\d+$/.test(kid)||Number(kid)<1)`));
+  assert.ok(page.includes(String.raw`valid:/^\d+$/.test(current)`));
 });
