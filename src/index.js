@@ -747,7 +747,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     // boards if a Worker invocation ends before the batch is persisted.
     await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = 0, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
     const concurrency = apiLimiter
-      ? Math.max(0, Math.min(Number(apiLimiter.capacity || 0), KINGDOM_RANKING_BOARDS.length - startIndex, WATCHLIST_MAX_API_CONCURRENCY))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), KINGDOM_RANKING_BOARDS.length - startIndex, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const code = apiLimiter ? "API_POOL_LOAD_TEST_CAPACITY_WAIT" : "NO_API_POOL_KEY_AVAILABLE";
@@ -971,7 +971,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
 
     const remaining = ids.length - cursor;
     const concurrency = apiLimiter
-      ? Math.max(0, Math.min(Number(apiLimiter.capacity || 0), remaining, WATCHLIST_MAX_API_CONCURRENCY))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), remaining, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
       const error = new Error("NO_API_POOL_KEY_AVAILABLE");
