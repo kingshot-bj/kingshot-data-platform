@@ -83,6 +83,7 @@ function renderList(rows){
   var retryWait=phase==="FAILED"&&!!job.retryable;
   var isBusy=active(w)||!!refreshing[id];
   var statusText=retryWait?"再試行待ち（自動再開予定："+new Date(Number(job.retry_after_at||0)*1000).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})+"）":
+   String(job.last_error||"").startsWith("USER_CANCELLED:")?"中断しました":
    isBusy?(job.retry_attempt?"再試行中":"取得・更新中"):
    phase==="FAILED"?"失敗："+(job.last_error||w.last_error||"原因不明"):
    phase==="COMPLETED"?"完了："+(job.completed_at?new Date(Number(job.completed_at)*1000).toLocaleString("ja-JP"):""):
@@ -93,7 +94,7 @@ function renderList(rows){
   var showProgress=isBusy||retryWait;
   return '<article class="watch" data-id="'+escapeHtml(id)+'"><h3>王国 '+escapeHtml(w.kid)+'</h3><p>上位'+escapeHtml(w.top_n)+'人 ・ '+escapeHtml(w.interval_hours)+'時間ごと ・ '+(w.enabled?'<span style="color:var(--good)">稼働中</span>':'停止中')+'</p><p class="muted small">'+escapeHtml(statusText)+'</p>'+
    (showProgress?'<div class="progress"><span style="width:'+pct+'%"></span></div><p class="muted small">ランキング取得 '+escapeHtml(progress)+(total?' / '+escapeHtml(total)+'件':'')+' ・ 保存行数 '+escapeHtml(job.ranking_rows||0)+'行</p>':"")+err+
-   '<div class="actions"><button type="button" data-action="refresh" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>今すぐ更新</button><button type="button" class="secondary" data-action="toggle" data-id="'+escapeHtml(id)+'" data-enabled="'+(w.enabled?'1':'0')+'" '+(isBusy?'disabled':'')+'>'+(w.enabled?'停止':'再開')+'</button><button type="button" class="danger" data-action="delete" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>削除</button></div></article>';
+   '<div class="actions"><button type="button" data-action="rankings" data-kid="'+escapeHtml(w.kid)+'">ランキングを見る</button><button type="button" data-action="refresh" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>今すぐ更新</button>'+(isBusy?'<button type="button" class="danger" data-action="cancel" data-id="'+escapeHtml(id)+'">中断</button>':'')+'<button type="button" class="secondary" data-action="toggle" data-id="'+escapeHtml(id)+'" data-enabled="'+(w.enabled?'1':'0')+'" '+(isBusy?'disabled':'')+'>'+(w.enabled?'停止':'再開')+'</button><button type="button" class="danger" data-action="delete" data-id="'+escapeHtml(id)+'" '+(isBusy?'disabled':'')+'>削除</button></div></article>';
  }).join("");
 }
 async function loadList(options){
@@ -153,7 +154,7 @@ async function startInitialRefresh(id,expectedJobId){
 }
 async function pollJob(id,expectedJobId){
  var started=Date.now(),lastUpdatedAt=0,lastProgress="",lastPollErrorKey="";
- while(Date.now()-started<180000){
+ while(true){
   await new Promise(function(resolve){setTimeout(resolve,4000);});
   var rows=null;
   try{rows=await loadList({quiet:true});}
@@ -196,15 +197,22 @@ async function pollJob(id,expectedJobId){
    }
   }
  }
- refreshing[id]=false;report("INITIAL_REFRESH_TIMEOUT","bad","取得ジョブが3分以内に完了しませんでした。進捗と診断情報を確認してください。",{watchlist_id:id,timeout_ms:180000});await loadList({quiet:true});
+
 }
 listNode.addEventListener("click",async function(event){
  var retry=event.target.closest("#retry-list");if(retry){await loadList();return;}
  var btn=event.target.closest("button[data-action]");if(!btn)return;
- var id=btn.getAttribute("data-id"),action=btn.getAttribute("data-action");if(!id)return;
+ var id=btn.getAttribute("data-id"),action=btn.getAttribute("data-action");
+ if(action==="rankings"){var kid=btn.getAttribute("data-kid");if(kid)location.href="/kingdom/rankings?kid="+encodeURIComponent(kid);return;}
+ if(!id)return;
  btn.disabled=true;
  try{
-  if(action==="refresh"){
+  if(action==="cancel"){
+   report("CANCEL_START","busy","取得処理を中断しています…",{watchlist_id:id});
+   var cancelled=await api("/api/kingdom-watchlist?action=cancel",{method:"POST",body:JSON.stringify({watchlist_id:id})},"CANCEL");
+   refreshing[id]=false;report("CANCEL_SUCCESS","good","中断を受け付けました。現在処理中のリクエスト終了後に停止します。",{watchlist_id:id,cancelled:cancelled.data.cancelled});
+   await loadList({quiet:true});
+  }else if(action==="refresh"){
    refreshing[id]=true;report("MANUAL_REFRESH_START","busy","手動更新を開始しています…",{watchlist_id:id});
    var accepted=await api("/api/kingdom-watchlist?action=refresh",{method:"POST",body:JSON.stringify({watchlist_id:id})},"MANUAL_REFRESH");
    report("MANUAL_REFRESH_ACCEPTED","good","更新を受け付けました。進捗を確認しています。",{watchlist_id:id,job_id:accepted.data.job_id||null});await loadList({quiet:true});await pollJob(id,accepted.data.job_id||null);
