@@ -2,6 +2,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
 .power-showcase-wrap{display:none!important}
 .compare-metric[hidden]{display:none!important}
+.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>h2{font-size:16px;margin:0 0 10px}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
@@ -59,6 +60,7 @@ function enhance(){
  collapseDetails();
  document.querySelectorAll('.compare-metric').forEach(row=>{const label=safeText(row.querySelector('span'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))row.hidden=true});
  const table=document.querySelector('.table-wrap table');
+ if(table){[...table.querySelectorAll('tr')].forEach(tr=>{const label=safeText(tr.querySelector('th,td'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))tr.hidden=true})}
  if(table&&!document.querySelector('.ee-build-compare')){
   const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
   if(rows.length){
