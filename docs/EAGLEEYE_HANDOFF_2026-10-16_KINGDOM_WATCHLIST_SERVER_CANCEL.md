@@ -2,7 +2,7 @@
 
 Updated: 2026-10-16
 Repository: https://github.com/kingshot-bj/kingshot-data-platform
-Branch: perf/kingdom-watchlist-list-d1-reads-2026-10-16
+Branch: diag/kingdom-watchlist-trace-correlation-2026-10-16
 Previous PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/98
 
 ## Required operating rules
@@ -44,10 +44,9 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 
 ## Current verification status
 - PR #98: merged to `main` at `a8097046eb304c735d16f01789dbd5bf40cad877`.
-- PR #99: merged to `main` at `bdbbd1c00c35b47c67b0dfe327e477310f407bf7`.
-- PR #99 `MightPulse Probe checks`: passed at `fcd83a610ceedb1638af5786e8c572beef260a9a` (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889692271`).
-- PR #99 `Worker Build Validation`: passed (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889730586`).
-- Cloudflare production Workers Builds check for merge commit `bdbbd1c00c35b47c67b0dfe327e477310f407bf7` was still `in_progress` at last check; production deployment completion must be verified separately.
-- Follow-up branch `perf/kingdom-watchlist-list-d1-reads-2026-10-16` changes the list endpoint from per-watchlist job reads to a joined query and adds regression tests. CI pending.
+- PR #99: merged to `main` at `bdbbd1c00c35b47c67b0dfe327e477310f407bf7`; regression checks and Worker dry run passed.
+- PR #100: merged to `main` at `6da82953d7abb332d93cb32d8c49c9d805326aab`; regression checks passed. The list API now uses a joined query instead of a separate latest-job query per watchlist. This reduces SQL statement/round-trip count; D1 row-read savings are not measured.
+- Cloudflare production Worker build for PR #100 merge commit was `in_progress` at the latest check. Verify final result separately.
+- Follow-up branch `diag/kingdom-watchlist-trace-correlation-2026-10-16` adds registration/cancellation system events correlated by job ID and request parent trace; CI pending.
 - Production deployment of the latest source: not verified here.
 - Real-device verification: not yet performed.
