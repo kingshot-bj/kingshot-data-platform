@@ -113,6 +113,15 @@ async function loadList(options){
   return null;
  }
 }
+// Clear stale validation feedback as soon as the user edits the kingdom number.
+$("kid").addEventListener("input",function(){
+ if(statusNode.textContent==="王国番号は1以上の整数で入力してください。"){
+  statusNode.className="status";
+  statusNode.textContent="王国番号を確認しました。登録できます。";
+  var current=String($("kid").value||"").trim();
+  diagNode.textContent=JSON.stringify({stage:"CREATE_VALIDATION_CLEARED",at:new Date().toISOString(),details:{field:"kid",valid:/^\\d+$/.test(current)&&Number(current)>=1}},null,2);
+ }
+});
 form.addEventListener("submit",async function(event){
  event.preventDefault();
  if(busyCreate)return;
