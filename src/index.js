@@ -8427,7 +8427,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
           marlin: "弓兵", margot: "騎兵", olive: "弓兵", petra: "騎兵",
           quinn: "弓兵", rosa: "弓兵", saul: "弓兵", seth: "歩兵",
           sophia: "騎兵", thrud: "騎兵", triton: "歩兵", vivian: "弓兵",
-          wee&woo: "弓兵", yang: "弓兵", yeonwoo: "弓兵", zoe: "歩兵",
+          "wee&woo": "弓兵", yang: "弓兵", yeonwoo: "弓兵", zoe: "歩兵",
           amane: "弓兵", ava: "騎兵"
         };
         return verifiedHeroTroops[key] || "";
