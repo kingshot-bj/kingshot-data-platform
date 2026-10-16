@@ -61,3 +61,15 @@ test("API Pool exhaustion waits instead of forcing a single request", () => {
   assert.ok(source.includes('error.code = "NO_API_POOL_KEY_AVAILABLE"'));
   assert.ok(source.includes('status: capacityWaitCode ? "WAITING" : "FAILED"'));
 });
+
+test("watchlist batch size follows API Pool capacity rather than a fixed player count", () => {
+  assert.ok(!source.includes("WATCHLIST_PLAYER_BATCH = 8"));
+  assert.ok(source.includes("const batchIds = ids.slice(cursor, cursor + concurrency)"));
+  assert.ok(source.includes("return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable)"));
+});
+
+test("deferred players remain queued ahead of untouched players", () => {
+  assert.ok(source.includes("const deferredPlayerIds = fetchedPlayers.filter(item => item.capacityWaitCode)"));
+  assert.ok(source.includes("const consumedBatchIds = batchIds.filter(id => !deferredSet.has(String(id)))"));
+  assert.ok(source.includes("player_ids_json = ?, player_cursor = ?"));
+});
