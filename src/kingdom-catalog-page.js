@@ -7,7 +7,7 @@ export async function renderKingdomCatalogPage(request, env) {
   const q = String(url.searchParams.get("q") || "").trim().slice(0, 80);
   const suggest = url.searchParams.get("suggest") === "1";
   if (suggest) {
-    const term = q.replace(/[\\%_]/g, "\\    const term = q.replace(/[\\%_]/g, "\\  const q = String(url.searchParams.get("q") || "").trim().slice(0, 80);");");
+    const term = q;
     const suggestionRows = q ? await env.DB.prepare("SELECT kid,name,status FROM kingdom_catalog WHERE CAST(kid AS TEXT) LIKE ? ESCAPE '\\\\' OR name LIKE ? ESCAPE '\\\\' ORDER BY CASE WHEN CAST(kid AS TEXT) = ? THEN 0 WHEN CAST(kid AS TEXT) LIKE ? ESCAPE '\\\\' THEN 1 ELSE 2 END, kid ASC LIMIT 8")
       .bind(term + "%", "%" + term + "%", q, term + "%").all() : { results: [] };
     return new Response(JSON.stringify({ ok: true, suggestions: (suggestionRows.results || []).map(row => ({ kid: row.kid, name: row.name || "", status: row.status || "" })) }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
