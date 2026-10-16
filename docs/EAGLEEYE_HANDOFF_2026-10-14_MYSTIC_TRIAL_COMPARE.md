@@ -93,3 +93,24 @@ This is a guide-based classification, not confirmation of MightPulse's exact sco
 - Related investigation: `docs/EAGLEEYE_PLAYER_COMPARE_RANKING_INVESTIGATION_2026-10-13.md`
 - Related design: `docs/EAGLEEYE_PLAYER_COMPARE_DESIGN_2026-10-13.md`
 - Related benchmark notes: `docs/EAGLEEYE_PLAYER_COMPARE_FIXED_BENCHMARKS_2026-10-14.md`
+
+
+---
+
+## 9. 追記 — プレイヤー比較UIの目的と次の調査（2026-10-17）
+
+### ユーザーが求めていること
+
+秘境の試練の6コンテンツの進捗は、単なる順位やスコアではない。英雄・英雄装備、ペット、領主宝石、研究、領主装備などへの育成投資の度合いを推し量る指標として扱い、6分野の進捗パターンからプレイヤーごとの育成傾向や相対的に遅れている分野を読み取りたい。ユーザーはこの意図を何度も説明済みなので、次スレッドで同じ一般論を繰り返さないこと。
+
+### 既出説明を繰り返さずに進めること
+
+- 「6分野の育成プロフィールを見せる」という提案だけを再度提示しない。
+- 現行UIの言い訳に終始せず、既存コードと実データを調べ、今より有用な表示方法を具体化する。
+- `src/index.js` の `renderPlayerComparePage()`、`src/player-compare-enhancements.js`、既存Probe JSON / Observationを照合し、どのフィールドを現状どう描画しているかを追う。
+- 6項目それぞれの `name` / `value` / `value_label` / `kingdom_rank` / `rank_type` を既存サンプルで照合する。まず保存済みデータを使い、比較のためだけの追加API呼び出しは増やさない。
+- 同一コンテンツ内でステージ進捗を比較するための正しい順序・差分表現を検証する。欠損、100+、古い観測、表示ラベルと内部値の不一致も考慮する。
+- 英雄装備・領主装備・ペットなどの実データと6項目の関連をどこまで同一Observationから確認できるかを調べる。進捗からの推測と、直接取得した育成データを混同しない。
+- ステージ表記の内部変換式、カテゴリーオフセット、固定上限値は未確定。根拠なく変換したり、分野をまたいで足し合わせたり、総合育成スコアや割合を捏造しない。
+- 調査結果は「既に確定済み」「今回新たに確認」「未確定」を分け、コードの具体的な箇所とテスト方法を添える。設計が固まる前のコード変更・デプロイは行わない。
+- D1 Freeの読み取りを増やさず、既存Observationを優先する。広範囲な `ranking_snapshots` 読み取りは復活させない。
