@@ -704,7 +704,7 @@ async function runKingdomWatchlistJobs(env) {
           : rawError;
         const failedAt = Math.floor(Date.now() / 1000);
         await env.DB.prepare(
-          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
+          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
         ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
         // Preserve the committed cursor and start the retry delay at failure time.
         await env.DB.prepare(
@@ -779,7 +779,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
           { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys }
         ));
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = player_cursor + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = player_cursor + 1, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
         const capacityWaitCode = getApiPoolCapacityWaitCode(error);
@@ -805,6 +805,18 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       }
     });
 
+    // Cancellation is durable in D1. Let in-flight API requests settle, then
+    // stop before persisting this batch if the user cancelled while it was running.
+    const liveJob = await env.DB.prepare(
+      "SELECT status, last_error FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1"
+    ).bind(job.job_id).first();
+    if (liveJob?.status !== "RANKINGS") {
+      if (liveJob?.status === "FAILED" && String(liveJob.last_error || "").startsWith("USER_CANCELLED:")) {
+        return { completed: false, cancelled: true, phase: "CANCELLED", rankingRows: Number(job.ranking_rows || 0) };
+      }
+      throw new Error("WATCHLIST_JOB_STATE_CHANGED:" + String(liveJob?.status || "MISSING"));
+    }
+
     // board_index advances as each parallel fetch succeeds, so the UI can show
     // live progress before the slowest request finishes. Persistence below
     // updates ranking_rows independently; failed jobs are never resumed in-place.
@@ -814,7 +826,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         // Earlier boards in this ordered batch have already been persisted.
         // Commit the cursor at the first failed board so a retry does not
         // repeat successful boards or skip the failed one.
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?")
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'")
           .bind(startIndex + itemIndex, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
         if (item.capacityWaitCode) {
           await recordDiagnostic(env.DB, {
@@ -938,7 +950,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const batchSourceFirstAt = batchSourceTimes.length ? Math.min(...batchSourceTimes) : null;
     const batchSourceLastAt = batchSourceTimes.length ? Math.max(...batchSourceTimes) : null;
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET board_index = ?, player_cursor = 0, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET board_index = ?, player_cursor = 0, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'"
     ).bind(
       endIndex,
       rankingRows,
@@ -3036,7 +3048,7 @@ async function handleKingdomWatchlistApi(request, env) {
             : message;
           const failedAt = Math.floor(Date.now() / 1000);
           await env.DB.prepare(
-            "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
+            "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
           ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
           await env.DB.prepare(
             "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
