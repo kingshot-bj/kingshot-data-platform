@@ -81,3 +81,15 @@ test("diagnostics represent capacity waits without counting them as degraded", (
   assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
   assert.ok(source.includes('status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE"'));
 });
+
+test("ranking collection resumes at the first failed board when API capacity disappears", () => {
+  assert.ok(source.includes("const code = apiLimiter ? \"API_POOL_LOAD_TEST_CAPACITY_WAIT\" : \"NO_API_POOL_KEY_AVAILABLE\""));
+  assert.ok(source.includes("if (item.capacityWaitCode)"));
+  assert.ok(source.includes("SET board_index = ?, ranking_rows = ?, updated_at = ?"));
+});
+
+test("public status distinguishes temporary waiting from terminal API Pool failure", () => {
+  assert.ok(source.includes('data.overall === "WAITING" && !usageWarning && !watchlistWarning'));
+  assert.ok(source.includes('terminalKeyStates >= Number(operational.apiPool.totalKeys || 0)'));
+  assert.ok(diagnostics.includes('waiting > 0 ? "WAITING" : "SUCCESS"'));
+});
