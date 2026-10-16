@@ -66,3 +66,12 @@ test("structured watchlist diagnostics are persisted with a strict safe-field al
   assert.match(telemetry, /diagnostic: sanitizeDiagnostic\(item\?\.diagnostic\)/);
   assert.match(telemetry, /api\/i\.test\(detailKey\)/);
 });
+
+
+test("editing kingdom number clears stale validation error without logging the raw number", () => {
+  assert.match(page, /addEventListener\("input",function\(\)/);
+  assert.match(page, /statusNode\.textContent==="王国番号は1以上の整数で入力してください。"/);
+  assert.match(page, /stage:"CREATE_VALIDATION_CLEARED"/);
+  assert.match(page, /details:\{field:"kid",valid:\/\^\\\\d\+\$\//);
+  assert.doesNotMatch(page, /CREATE_VALIDATION_CLEARED[^\n]*kid\.value/);
+});
