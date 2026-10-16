@@ -119,14 +119,14 @@ $("kid").addEventListener("input",function(){
   statusNode.className="status";
   statusNode.textContent="王国番号を確認しました。登録できます。";
   var current=String($("kid").value||"").trim();
-  diagNode.textContent=JSON.stringify({stage:"CREATE_VALIDATION_CLEARED",at:new Date().toISOString(),details:{field:"kid",valid:/^\\d+$/.test(current)&&Number(current)>=1}},null,2);
+  diagNode.textContent=JSON.stringify({stage:"CREATE_VALIDATION_CLEARED",at:new Date().toISOString(),details:{field:"kid",valid:/^\d+$/.test(current)&&Number(current)>=1}},null,2);
  }
 });
 form.addEventListener("submit",async function(event){
  event.preventDefault();
  if(busyCreate)return;
  var kid=String($("kid").value||"").trim();
- if(!/^\d+$/.test(kid)||Number(kid)<1){report("CREATE_VALIDATION","bad","王国番号は1以上の整数で入力してください。",{field:"kid",reason:"INVALID_KINGDOM_ID"});$("kid").focus();return;}
+ if(!/^\\d+$/.test(kid)||Number(kid)<1){report("CREATE_VALIDATION","bad","王国番号は1以上の整数で入力してください。",{field:"kid",reason:"INVALID_KINGDOM_ID"});$("kid").focus();return;}
  busyCreate=true;createButton.disabled=true;createButton.textContent="登録中…";createButton.setAttribute("aria-busy","true");
  report("CREATE_START","busy","登録APIへ送信しています…",{request:"POST /api/kingdom-watchlist?action=create"});
  try{

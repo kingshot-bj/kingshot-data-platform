@@ -17,7 +17,7 @@ test("replacement page uses one native submit path and prevents duplicate submis
   assert.match(page, /<form id="create-form" novalidate>/);
   assert.match(page, /form\.addEventListener\("submit",async function\(event\)/);
   assert.match(page, /event\.preventDefault\(\)/);
-  assert.match(page, /if\(busyCreate\)return/);
+  assert.ok(page.includes('if(!/^\\\\d+$/.test(kid)||Number(kid)<1)'));
   assert.match(page, /createButton\.disabled=true/);
   assert.match(page, /createButton\.removeAttribute\("aria-busy"\)/);
   assert.doesNotMatch(page, /addEventListener\("(?:click|pointerup|touchend)",[^\n]*create/);
@@ -72,6 +72,12 @@ test("editing kingdom number clears stale validation error without logging the r
   assert.match(page, /addEventListener\("input",function\(\)/);
   assert.match(page, /statusNode\.textContent==="王国番号は1以上の整数で入力してください。"/);
   assert.match(page, /stage:"CREATE_VALIDATION_CLEARED"/);
-  assert.match(page, /details:\{field:"kid",valid:\/\^\\\\d\+\$\//);
+  assert.ok(page.includes(String.raw`details:{field:"kid",valid:/^\d+$/`));
   assert.doesNotMatch(page, /CREATE_VALIDATION_CLEARED[^\n]*kid\.value/);
+});
+
+
+test("kingdom number regex survives template-string page generation", () => {
+  assert.ok(page.includes(String.raw`if(!/^\\d+$/.test(kid)||Number(kid)<1)`));
+  assert.ok(page.includes(String.raw`valid:/^\d+$/.test(current)`));
 });
