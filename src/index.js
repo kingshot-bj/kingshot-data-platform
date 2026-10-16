@@ -2765,7 +2765,7 @@ async function handleKingdomWatchlistApi(request, env) {
     // The browser polls this endpoint during long-running jobs; an N+1 query
     // here multiplied reads by watchlist count on every 4-second poll.
     const rows = await env.DB.prepare(
-      "SELECT w.watchlist_id, w.discord_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, " +
+      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, " +
       "j.job_id, j.status AS job_status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.last_error AS job_last_error, j.created_at AS job_created_at, j.updated_at AS job_updated_at, j.completed_at " +
       "FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (" +
       "SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id ORDER BY j2.created_at DESC LIMIT 1) " +
@@ -2776,7 +2776,6 @@ async function handleKingdomWatchlistApi(request, env) {
     for (const row of rows.results || []) {
       const watch = {
         watchlist_id: row.watchlist_id,
-        discord_id: row.discord_id,
         kid: row.kid,
         top_n: row.top_n,
         interval_hours: row.interval_hours,
