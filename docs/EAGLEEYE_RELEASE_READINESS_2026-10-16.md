@@ -176,9 +176,10 @@ Track each as `configured` / `provider-verified` / `end-to-end-tested` / `not-in
 3. With explicit approval, run one controlled end-to-end Kingdom Watchlist registration and initial-collection test in production; collect correlated diagnostics.
 4. Investigate the separate API Pool/MightPulse failures from their timestamps and traces.
 5. Read-only production D1 migration/schema preflight; do not apply migrations until the discrepancy report is understood.
-6. Confirm Retention/emergency-buffer triggers and Owner export route wiring; fix only confirmed gaps.
-7. Run the scoped smoke-test matrix and decide the release boundary.
-8. Keep ChatGPT/API/browser automation infrastructure on hold until release blockers are resolved or the measured time savings clearly justify parallel investment.
+6. Verify external service setup (Discord Support/OAuth/notifications, Google Drive OAuth and manual-vs-automatic archive behavior, Cloudflare secrets/bindings/queues/Cron, and GitHub Actions permissions). Resolve the Google Drive callback-path mismatch candidate.
+7. Confirm Retention/emergency-buffer triggers and Owner export route wiring; fix only confirmed gaps.
+8. Run the scoped smoke-test matrix and decide the release boundary.
+9. Keep ChatGPT/API/browser automation infrastructure on hold until release blockers are resolved or the measured time savings clearly justify parallel investment.
 
 ## Non-negotiable constraints
 
