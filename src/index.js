@@ -747,11 +747,12 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     // boards if a Worker invocation ends before the batch is persisted.
     await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = 0, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
     const concurrency = apiLimiter
-      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), KINGDOM_RANKING_BOARDS.length - startIndex))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity || 0), KINGDOM_RANKING_BOARDS.length - startIndex, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
-      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
-      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      const code = apiLimiter ? "API_POOL_LOAD_TEST_CAPACITY_WAIT" : "NO_API_POOL_KEY_AVAILABLE";
+      const error = new Error(code);
+      error.code = code;
       throw error;
     }
     const endIndex = Math.min(startIndex + concurrency, KINGDOM_RANKING_BOARDS.length);
@@ -776,6 +777,10 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = player_cursor + 1, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        if (capacityWaitCode) {
+          return { board, traceId, startedAtMs, error, capacityWaitCode };
+        }
         const message = "RANKING_FETCH_FAILED:" + board + ":" + String(error?.message || error).slice(0, 500);
         const failure = new Error(message);
         failure.cause = error;
@@ -801,9 +806,16 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     for (let itemIndex = 0; itemIndex < fetchedBoards.length; itemIndex++) {
       const item = fetchedBoards[itemIndex];
       if (item.error) {
-        // Preserve the number of rows saved before the failed board without
-        // adding one D1 write for every successful save in the batch.
-        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET ranking_rows = ?, updated_at = ? WHERE job_id = ?").bind(rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        // Earlier boards in this ordered batch have already been persisted.
+        // Commit the cursor at the first failed board so a retry does not
+        // repeat successful boards or skip the failed one.
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?")
+          .bind(startIndex + itemIndex, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        if (item.capacityWaitCode) {
+          const error = new Error(item.capacityWaitCode);
+          error.code = item.capacityWaitCode;
+          throw error;
+        }
         throw item.error;
       }
       const { board, traceId, startedAtMs, fetched } = item;
