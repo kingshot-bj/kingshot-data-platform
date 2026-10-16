@@ -35,18 +35,17 @@ It prevents browser polling from sending another `action=refresh` after a cancel
 - Add regression tests for cancel/failure races, phase-guarded cursor writes, and ranking-button target.
 
 ## Remaining work
-1. Run `node --test tests/kingdom-watchlist-race.test.mjs tests/kingdom-watchlist-registration-ux.test.mjs tests/kingdom-watchlist-retry-state.test.mjs` and the relevant full CI workflow.
-2. Inspect the branch diff carefully for accidental SQL/status-guard changes.
-3. Audit fairness and duplicate work across users: the current scheduler serially walks enabled watchlists, and multiple watchlist IDs for the same `kid` can independently request the same ranking boards. Design any deduplication with safe freshness semantics and bounded D1 reads.
-4. Add a bounded, fair scheduler policy driven by real API Pool availability and resumable state, rather than an arbitrary fixed kingdom/user cap.
-5. Confirm the deployed production Worker revision after merge; do not use Preview as user acceptance testing.
-6. One real-device run should record trace ID, watchlist ID, job ID, kingdom ID, request/action, status transition, ranking rows saved, player rows saved, API Pool availability/capacity wait, and elapsed time. Never log API keys or unnecessary personal data.
-7. Verify the ranking view opens the registered kingdom and cancellation remains terminal after any in-flight request settles.
-8. Distinguish D1 usage: Cloudflare Analytics measured value vs code-derived estimate vs unavailable. Do not invent usage values.
+1. Audit fairness and duplicate work across users: the scheduler serially walks enabled watchlists, and multiple watchlist IDs for the same `kid` can independently request the same ranking boards. Any deduplication needs safe freshness semantics and bounded D1 reads.
+2. Review scheduler execution duration under a large number of active watchlists. Keep work resumable and driven by actual API Pool capacity; do not add an arbitrary fixed kingdom/user cap.
+3. After merge, verify the production Worker revision through available deployment evidence; do not use Preview as user acceptance testing.
+4. Perform one real-device run that records trace ID, watchlist ID, job ID, kingdom ID, request/action, status transition, ranking rows saved, player rows saved, API Pool capacity/wait state, and elapsed time. Never log API keys or unnecessary personal data.
+5. Verify the ranking view opens the registered kingdom and cancellation remains terminal after in-flight requests settle.
+6. Distinguish D1 usage: Cloudflare Analytics measured value vs code-derived estimate vs unavailable. Do not invent usage values.
 
 ## Current verification status
-- PR #98: merged.
-- PR #98's MightPulse Probe checks: passed.
-- This branch's new tests/CI: pending.
+- PR #98: merged to `main` at `a8097046eb304c735d16f01789dbd5bf40cad877`.
+- PR #99: open, cancellation race fix and regression tests added.
+- GitHub Actions `MightPulse Probe checks`: passed for source/test commit `12ac690221477963a646d0a8a5eed73caa0f30fa` (`https://github.com/kingshot-bj/kingshot-data-platform/actions/runs/38889595698`).
+- Latest handoff-document-only update may trigger another CI run.
 - Production deployment of the latest source: not verified here.
 - Real-device verification: not yet performed.
