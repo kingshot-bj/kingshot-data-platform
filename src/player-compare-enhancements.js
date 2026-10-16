@@ -74,7 +74,7 @@ function enhance(){
   const values=card.querySelector('.mystic-values');let view=card.querySelector('.ee-chart-view');
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
-  if(/秘境の試練|Mystic Trial/i.test(safeText(card.querySelector('.mystic-name')))){const total=available[0]&&available[0].score;if(total!==null&&total!==undefined){const progress=document.createElement('div');progress.className='ee-compare-chart-note';progress.textContent='総合進行率の目安：'+(Math.max(0,total)/12000*100).toFixed(1)+'%';view.appendChild(progress)}}
+  if(/秘境の試練|Mystic Trial/i.test(safeText(card.querySelector('.mystic-name')))){const progress=document.createElement('div');progress.className='ee-compare-chart-note';progress.textContent=available.map(e=>e.name+'：'+(Math.max(0,e.score)/12000*100).toFixed(1)+'%').join(' ／ ');if(available.length) {const label=document.createElement('div');label.className='ee-compare-chart-note';label.textContent='総合進行率の目安';view.append(label,progress)}}
   if(entries.some(e=>e.stage)){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。';view.appendChild(msg);return}if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
   const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
   if(mode==='ring'){
