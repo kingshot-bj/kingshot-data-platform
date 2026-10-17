@@ -121,6 +121,17 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
   assert.ok(!refreshSnippet.includes(String.raw`requested_include||\\\"\\\"`));
 });
 
+test("growth comparison includes ordinary hero gear from existing mobile metrics", () => {
+  assert.ok(script.includes("label.startsWith('防衛編成装備：')"));
+  assert.ok(script.includes("makeTable('英雄の通常装備',allHeroGear,'heroGear','データなし')"));
+  assert.ok(script.includes("helmet:'兜'"));
+  assert.ok(script.includes("gloves:'手袋'"));
+  assert.ok(script.includes("armor:'鎧'"));
+  assert.ok(script.includes("boots:'ブーツ'"));
+  assert.ok(script.includes("編成で未確認"));
+  assert.ok(script.includes("装備データなし"));
+});
+
 test("player compare automatic and manual refresh requests have finite timeouts", () => {
   assert.ok(indexSource.includes("async function fetchJsonWithTimeout(url,options,timeoutMs)"));
   assert.ok(indexSource.includes("setTimeout(()=>controller.abort(),timeoutMs||15000)"));
