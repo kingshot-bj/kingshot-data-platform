@@ -204,19 +204,29 @@ function enhance(){
     const hero=label.slice(3).trim();
     const useful=value.split(' · ').filter(part=>!/^戦力\s/.test(part));
     records[index].heroes.set(hero,useful.join(' · ')||'育成情報なし');
-   }else if(label.startsWith('防衛編成装備：')){
-    const rawKey=label.slice('防衛編成装備：'.length).trim();
-    const split=rawKey.lastIndexOf(' / ');
-    const hero=split>=0?rawKey.slice(0,split).trim():'英雄';
-    const slot=split>=0?normalizeSlot(rawKey.slice(split+3)):normalizeSlot(rawKey);
-    const key=hero+' / '+slot;
-    records[index].heroGear.set(key,{hero,value:value==='装備情報なし'?'装備データなし':value});
    }else if(label.startsWith('領主装備：')){
     const slot=label.slice(5).trim();
     const useful=value.split(' · ').filter(part=>!/^スコア\s|^戦闘力\s/.test(part));
     records[index].gear.set(slot,useful.join(' · ')||'装備情報なし');
    }
   }));
+  const comparisonTable=document.querySelector('.table-wrap .compare-table');
+  if(comparisonTable){
+   [...comparisonTable.querySelectorAll('tbody tr')].forEach(row=>{
+    const header=safeText(row.querySelector('th'));
+    if(!header.startsWith('防衛編成装備：'))return;
+    const rawKey=header.slice('防衛編成装備：'.length).trim();
+    const split=rawKey.lastIndexOf(' / ');
+    const hero=split>=0?rawKey.slice(0,split).trim():'英雄';
+    const slot=split>=0?normalizeSlot(rawKey.slice(split+3)):normalizeSlot(rawKey);
+    const key=hero+' / '+slot;
+    records.forEach((record,index)=>{
+     const cell=row.children[index+1];
+     const value=cell?safeText(cell):'データなし';
+     record.heroGear.set(key,{hero,value:value==='装備情報なし'?'装備データなし':value||'データなし'});
+    });
+   });
+  }
   const commonHeroes=[...records[0].heroes.keys()].filter(name=>records.every(r=>r.heroes.has(name)));
   const allHeroGear=[...new Set(records.flatMap(r=>[...r.heroGear.keys()]))];
   const allGovernorGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
