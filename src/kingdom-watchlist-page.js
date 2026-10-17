@@ -29,20 +29,19 @@ main{max-width:760px;margin:0 auto}.top{display:flex;justify-content:space-betwe
 </form>
 </section>
 <section class="panel"><h2>登録済みの王国 <span id="count" class="muted"></span></h2><div id="list" aria-live="polite"><div class="empty">一覧を取得しています…</div></div></section>
-<section class="panel"><h2>診断情報</h2><p class="muted small">失敗時はこの欄に処理段階・HTTP状態・エラーコードを表示します。入力した王国番号は診断ログへ送信しません。</p><pre id="diagnostics" class="debug">画面初期化中</pre></section>
+
 </main>
 <script>
 (function(){
 "use strict";
 var $=function(id){return document.getElementById(id);};
-var statusNode=$("status"),listNode=$("list"),diagNode=$("diagnostics"),form=$("create-form"),createButton=$("create");
+var statusNode=$("status"),listNode=$("list"),form=$("create-form"),createButton=$("create");
 var busyCreate=false,requestSeq=0,watchTimers={},refreshing={},cancelRequested={};
 function trace(){return "kw-ui-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7);}
 function escapeHtml(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function report(stage,kind,message,details){
  var id=trace(); statusNode.className="status "+(kind||"");statusNode.textContent=message;
  var safe={trace_id:id,stage:stage,at:new Date().toISOString(),details:details||null};
- diagNode.textContent=JSON.stringify(safe,null,2);
  try{if(window.__eeTrackDiagnostic)window.__eeTrackDiagnostic(stage,kind,safe);}
  catch(e){}
  try{if(window.__eeTrackAction)window.__eeTrackAction(kind==="bad"?"ACTION_BLOCKED":"ACTION_START","KINGDOM_WATCHLIST_UI",stage);}
@@ -120,7 +119,6 @@ $("kid").addEventListener("input",function(){
   statusNode.className="status";
   statusNode.textContent="王国番号を確認しました。登録できます。";
   var current=String($("kid").value||"").trim();
-  diagNode.textContent=JSON.stringify({stage:"CREATE_VALIDATION_CLEARED",at:new Date().toISOString(),details:{field:"kid",valid:/^\d+$/.test(current)&&Number(current)>=1}},null,2);
  }
 });
 form.addEventListener("submit",async function(event){
