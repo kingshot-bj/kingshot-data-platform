@@ -32,10 +32,10 @@ test("additional ranking candidates require saved numeric scores for both player
 test("radar mode does not invent percentage normalization before fixed score scales are verified", () => {
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("固定基準値が未検証"));
-  assert.ok(script.includes("entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score)"));
+  assert.ok(script.includes("!e.stage"));
   assert.ok(script.includes("raw.textContent='API value: '+fmt(entry.score)"));
-  assert.ok(!script.includes("return max>0?score/max:0"));
-  assert.ok(!script.includes("Each axis is normalized independently"));
+  assert.ok(script.includes("const maxValue=Math.max(1,...metrics.flatMap"));
+  assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
 
 test("details collapsing cannot move a wrapper into its own descendant", () => {
@@ -50,7 +50,7 @@ test("mobile chart layout keeps bars proportional and radar notice global", () =
   assert.ok(script.includes("view.append(wrap,note)"));
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("fill.style.setProperty('width'"));
-  assert.ok(script.includes("radarHost.appendChild(svg)"));
+  assert.ok(script.includes("radarHost.append(svg,legend)"));
   assert.ok(script.includes("view.appendChild(wrap)"));
 });
 test("successful compare render removes the stale loading status", () => {
@@ -139,4 +139,12 @@ test("player compare automatic and manual refresh requests have finite timeouts"
   assert.ok(indexSource.includes("/api/player/refresh?governor_id="));
   assert.ok(indexSource.includes("/api/player-compare?"));
   assert.ok(indexSource.includes("timeoutMs||15000"));
+});
+
+test("growth comparison is collapsed by default and radar mode renders an SVG polygon chart", () => {
+  assert.ok(script.includes("document.createElement('details');panel.className='ee-build-compare'"));
+  assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
+  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+  assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
+  assert.ok(script.includes("各軸は取得した実スコアを共通の最大値に対する距離で描画"));
 });
