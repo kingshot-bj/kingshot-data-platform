@@ -14,6 +14,10 @@ PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/142
    - API client reads `MIGHTPULSE_API_BASE_URL` and falls back to `https://api.mightpulse.com/v1`.
    - System Status was checking `MIGHTPULSE_BASE_URL`, which can falsely show “未設定”.
    - Changed the diagnostic to check `MIGHTPULSE_API_BASE_URL`. An unset optional override is not necessarily a service failure because a default URL exists.
+3. **Billing token visibility**
+   - Added a Runtime / Configuration row for `CLOUDFLARE_BILLING_TOKEN`; this is separate from the Analytics token and must have Billing Read permission for actual cycle boundaries.
+4. **D1 status color**
+   - D1 `UNKNOWN` / `WAITING` no longer uses the healthy green style.
 
 ## Snapshot items still to investigate
 - **Cloudflare billing cycle:** Billing API anchor not obtained; page falls back to calendar-month estimation. Check API response/permissions and do not present fallback as confirmed billing-cycle data.
@@ -31,8 +35,9 @@ PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/142
 - Query Insights: 506 unique query groups. `system_event_log` insert activity and API Pool update/read activity merit efficiency review after the status issues are resolved.
 
 ## Validation / release status
-- Static source inspection performed for the two fixes.
-- GitHub Actions workflow `MightPulse Probe checks` was observed queued for the first PR commit; latest commit status still needs rechecking.
+- Static source inspection performed for the code fixes.
+- GitHub Actions workflow `MightPulse Probe checks` completed with failure in `Kingdom Watchlist registration UX tests` (9/11 passed; two existing regex/template-string assertions failed). Syntax check, diagnostic telemetry tests, Probe unit tests, and API Pool quota tests passed. Failure is outside the System Status code path, but it blocks treating the PR as CI-green.
+- Recheck CI for the latest branch head after the subsequent commits.
 - Not merged and not deployed to production.
 - Keep production D1/API traffic low while investigating; no ranking/watchlist load test is required for these fixes.
 
