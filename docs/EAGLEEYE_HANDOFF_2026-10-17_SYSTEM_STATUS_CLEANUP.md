@@ -86,3 +86,6 @@ Official references checked:
 - https://blog.cloudflare.com/billable-usage-api/ (2026-08-03)
 
 Validation note: verify the returned `BilledCost` schema and date coverage against the user's account after a Billing Read token is configured. The API is marked Alpha in the docs; until confirmed, keep its values separate from final invoice claims.
+
+
+- The System Status UI now renders the Cloudflare API-reported billed-cost field separately from the local estimate. If the API has no records or the call is unavailable, it shows `—` / an explicit unavailable reason rather than implying zero cost.
