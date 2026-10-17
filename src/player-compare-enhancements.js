@@ -191,6 +191,10 @@ function enhance(){
  function buildGrowthComparison(){
   const playerCards=[...document.querySelectorAll('.compare-player-card')];
   if(playerCards.length<2)return;
+  const signature=playerCards.map(card=>card.innerText).join('\\n--PLAYER--\\n');
+  const existingPanel=document.querySelector('.ee-growth-comparison');
+  if(existingPanel&&existingPanel.dataset.signature===signature)return;
+  if(existingPanel)existingPanel.remove();
   const records=playerCards.map(card=>({name:safeText(card.querySelector('.pname'))||'プレイヤー',heroes:new Map(),heroGear:new Map(),gear:new Map()}));
   const slotLabels={helmet:'兜',helm:'兜',head:'兜',gloves:'手袋',glove:'手袋',gauntlets:'手袋',gauntlet:'手袋',armor:'鎧',armour:'鎧',chest:'鎧',chestplate:'鎧',boots:'ブーツ',boot:'ブーツ',footwear:'ブーツ'};
   const normalizeSlot=value=>{const raw=String(value||'').trim();const key=raw.toLowerCase().replace(/[ _-]+/g,'');return slotLabels[key]||raw||'部位不明'};
@@ -217,7 +221,7 @@ function enhance(){
   const allHeroGear=[...new Set(records.flatMap(r=>[...r.heroGear.keys()]))];
   const allGovernorGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
   if(!commonHeroes.length&&!allHeroGear.length&&!allGovernorGear.length)return;
-  const panel=document.createElement('section');panel.className='ee-growth-comparison';
+  const panel=document.createElement('section');panel.className='ee-growth-comparison';panel.dataset.signature=signature;
   const heading=document.createElement('h2');heading.textContent='育成要素の比較';panel.appendChild(heading);
   const makeTable=(title,keys,source,missingLabel)=>{
    if(!keys.length)return;
