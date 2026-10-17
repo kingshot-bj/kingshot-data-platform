@@ -122,7 +122,8 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
 });
 
 test("growth comparison includes ordinary hero gear from existing mobile metrics", () => {
-  assert.ok(script.includes("label.startsWith('防衛編成装備：')"));
+  assert.ok(script.includes("document.querySelector('.table-wrap .compare-table')"));
+  assert.ok(script.includes("header.startsWith('防衛編成装備：')"));
   assert.ok(script.includes("makeTable('英雄の通常装備',allHeroGear,'heroGear','データなし')"));
   assert.ok(script.includes("helmet:'兜'"));
   assert.ok(script.includes("gloves:'手袋'"));
