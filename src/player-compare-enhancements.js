@@ -191,13 +191,22 @@ function enhance(){
  function buildGrowthComparison(){
   const playerCards=[...document.querySelectorAll('.compare-player-card')];
   if(playerCards.length<2)return;
-  const records=playerCards.map(card=>({name:safeText(card.querySelector('.pname'))||'プレイヤー',heroes:new Map(),gear:new Map()}));
+  const records=playerCards.map(card=>({name:safeText(card.querySelector('.pname'))||'プレイヤー',heroes:new Map(),heroGear:new Map(),gear:new Map()}));
+  const slotLabels={helmet:'兜',helm:'兜',head:'兜',gloves:'手袋',glove:'手袋',gauntlets:'手袋',gauntlet:'手袋',armor:'鎧',armour:'鎧',chest:'鎧',chestplate:'鎧',boots:'ブーツ',boot:'ブーツ',footwear:'ブーツ'};
+  const normalizeSlot=value=>{const raw=String(value||'').trim();const key=raw.toLowerCase().replace(/[ _-]+/g,'');return slotLabels[key]||raw||'部位不明'};
   playerCards.forEach((card,index)=>card.querySelectorAll('.compare-metric').forEach(metric=>{
    const label=metric.getAttribute('data-compare-label')||'',value=safeText(metric.querySelector('strong'))||'未取得';
    if(label.startsWith('英雄：')){
     const hero=label.slice(3).trim();
     const useful=value.split(' · ').filter(part=>!/^戦力\s/.test(part));
     records[index].heroes.set(hero,useful.join(' · ')||'育成情報なし');
+   }else if(label.startsWith('防衛編成装備：')){
+    const rawKey=label.slice('防衛編成装備：'.length).trim();
+    const split=rawKey.lastIndexOf(' / ');
+    const hero=split>=0?rawKey.slice(0,split).trim():'英雄';
+    const slot=split>=0?normalizeSlot(rawKey.slice(split+3)):normalizeSlot(rawKey);
+    const key=hero+' / '+slot;
+    records[index].heroGear.set(key,{hero,value:value==='装備情報なし'?'装備データなし':value});
    }else if(label.startsWith('領主装備：')){
     const slot=label.slice(5).trim();
     const useful=value.split(' · ').filter(part=>!/^スコア\s|^戦闘力\s/.test(part));
@@ -205,12 +214,12 @@ function enhance(){
    }
   }));
   const commonHeroes=[...records[0].heroes.keys()].filter(name=>records.every(r=>r.heroes.has(name)));
-  const allGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
-  if(!commonHeroes.length&&!allGear.length)return;
+  const allHeroGear=[...new Set(records.flatMap(r=>[...r.heroGear.keys()]))];
+  const allGovernorGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
+  if(!commonHeroes.length&&!allHeroGear.length&&!allGovernorGear.length)return;
   const panel=document.createElement('section');panel.className='ee-growth-comparison';
   const heading=document.createElement('h2');heading.textContent='育成要素の比較';panel.appendChild(heading);
-  const note=document.createElement('p');note.textContent='同じ英雄・同じ装備部位を優先して比較。未取得・非公開の情報は推測しません。';panel.appendChild(note);
-  const makeTable=(title,keys,source)=>{
+  const makeTable=(title,keys,source,missingLabel)=>{
    if(!keys.length)return;
    const sub=document.createElement('h3');sub.textContent=title;panel.appendChild(sub);
    const wrap=document.createElement('div');wrap.className='ee-growth-table-wrap';
@@ -221,12 +230,14 @@ function enhance(){
    thead.appendChild(tr);table.appendChild(thead);
    const tbody=document.createElement('tbody');
    keys.forEach(key=>{const row=document.createElement('tr'),th=document.createElement('th');th.textContent=key;row.appendChild(th);
-    records.forEach(record=>{const td=document.createElement('td');td.textContent=record[source].get(key)||'データなし';row.appendChild(td)});
+    records.forEach(record=>{const td=document.createElement('td');const entry=record[source].get(key);td.textContent=entry?(typeof entry==='string'?entry:entry.value):(source==='heroGear'?(record.heroes.has(key.split(' / ')[0])?'装備データなし':'編成で未確認'):missingLabel);row.appendChild(td)});
     tbody.appendChild(row);
    });
    table.appendChild(tbody);wrap.appendChild(table);panel.appendChild(wrap);
   };
-  makeTable('共通する英雄',commonHeroes,'heroes');makeTable('領主装備',allGear,'gear');
+  makeTable('共通する英雄',commonHeroes,'heroes','データなし');
+  makeTable('英雄の通常装備',allHeroGear,'heroGear','データなし');
+  makeTable('領主装備',allGovernorGear,'gear','データなし');
   const anchor=document.querySelector('.mystic-section')||document.querySelector('.ee-compare-details');
   if(anchor)anchor.insertAdjacentElement('beforebegin',panel);
  }
