@@ -200,3 +200,12 @@ test("Mystic Trial radar uses the live adjustable baseline instead of a hard-cod
   assert.ok(!script.includes("const maxPerAxis=2000"));
   assert.ok(script.includes("fmt(maxPerAxis*6)"));
 });
+
+
+test("Mystic Trial radar excludes Radiant Spire and uses five-axis baseline", () => {
+  assert.ok(script.includes("const required=['闘技場','生命の森','水晶鉱山','知識の枢軸','溶岩要塞']"));
+  assert.ok(!script.includes("const required=['闘技場','生命の森','水晶鉱山','知識の枢軸','溶岩要塞','輝光の塔']"));
+  assert.ok(script.includes("fmt(maxPerAxis*5)"));
+  assert.ok(!script.includes("fmt(maxPerAxis*6)"));
+  assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
+});
