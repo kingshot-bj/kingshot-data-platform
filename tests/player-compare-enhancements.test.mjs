@@ -145,7 +145,7 @@ test("growth comparison is collapsed by default and radar mode renders an SVG po
   assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
   assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
-  assert.ok(script.includes("ランキングのAPI実スコアを共通の最大値に対する距離で描画"));
+  assert.ok(script.includes("各項目ごとに、比較対象内の最高値を100として相対表示"));
 });
 
 
@@ -154,4 +154,13 @@ test("radar chart uses numeric API scores from ranking rows rather than stage la
   assert.ok(script.includes("data-compare-label^="));
   assert.ok(script.includes("detail.match(/API値"));
   assert.ok(script.includes("values.set(label,score)"));
+});
+
+
+test("radar chart normalizes each unlike ranking axis independently and uses readable legend labels", () => {
+  assert.ok(script.includes("metrics.forEach(row=>row.max=Math.max(1,...row.entries)"));
+  assert.ok(script.includes("radius*row.entries[player]/row.max"));
+  assert.ok(script.includes("比較対象内の最高値を100として相対表示"));
+  assert.ok(script.includes("playerNames.forEach((name,i)=>{const item=document.createElement('span')"));
+  assert.ok(!script.includes("name+'：'+colors[i%colors.length]"));
 });
