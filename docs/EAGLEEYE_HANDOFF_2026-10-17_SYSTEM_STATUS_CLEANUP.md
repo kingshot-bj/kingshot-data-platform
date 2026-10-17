@@ -67,3 +67,22 @@ PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/142
 
 - Main's `Worker Build Validation` remains blocked by four Player Compare enhancement test failures unrelated to these System Status changes. The workflow skipped its compile-without-deploy step after those failures.
 - No production deployment has been verified. Do not report these changes as live until the production Worker version is checked after a successful release.
+
+
+## Cloudflare billing cost accuracy follow-up — 2026-10-17
+
+Branch: `fix/cloudflare-billing-cost-accuracy-2026-10-17`
+
+- The Billing API token is now treated as a separate secret. `CLOUDFLARE_ANALYTICS_TOKEN` is no longer silently reused for Billing API calls; this makes the runtime diagnostic row truthful and preserves least-privilege separation.
+- Added a separate read of Cloudflare's Billable Usage endpoint (`GET /accounts/{account_id}/billable-usage`) when Paid monitoring is selected and the Billing token plus real billing-cycle anchor are available.
+- The API-reported `BilledCost` totals are returned under `monitoring.billableUsage`, grouped by currency and product. They are intentionally not added to the estimated overage/monthly cost because they represent API-reported billed amounts, not a forecast of the final invoice.
+- The existing local rate model is explicitly described as an estimate; it omits R2 overage, taxes, contract-specific pricing, and other adjustments, and must not be represented as actual Cloudflare charges.
+- If the token or billing-cycle anchor is missing, the Billable Usage API result is explicitly unavailable instead of substituting Analytics credentials or fabricating a cost.
+- No Cloudflare secrets were created or changed, and no production deployment or load test was run.
+
+Official references checked:
+- https://developers.cloudflare.com/api/resources/billing/subresources/usage/methods/paygo_info/
+- https://developers.cloudflare.com/api/python/resources/billing/subresources/usage/methods/get_account_usage_v1/
+- https://blog.cloudflare.com/billable-usage-api/ (2026-08-03)
+
+Validation note: verify the returned `BilledCost` schema and date coverage against the user's account after a Billing Read token is configured. The API is marked Alpha in the docs; until confirmed, keep its values separate from final invoice claims.
