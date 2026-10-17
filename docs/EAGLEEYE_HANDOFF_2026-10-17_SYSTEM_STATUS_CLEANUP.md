@@ -40,7 +40,8 @@ PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/142
 ## Validation / release status
 - Static source inspection performed for the code fixes.
 - GitHub Actions run `39028531693` passed on commit `36c832c0facf5cbafb4ad2f23dba795ca7bc9c49`: syntax check, diagnostic telemetry, Probe unit tests, API Pool quota tests, Kingdom Watchlist registration UX tests, and Kingdom Watchlist regression tests all passed.
-- This handoff update creates a new branch commit; recheck CI for the new head before merging.
+- PR #142 was squash-merged into `main` as `87450981c3dab63df066c8591fbbb6a48434291f`.
+- The PR checks passed, including the full MightPulse Probe checks suite. After merge, `Worker Build Validation` on main failed in four Player Compare enhancement tests (`mobile chart layout`, `redundant growth comparison section`, `growth comparison collapsed/radar SVG`, `Mystic Trial radar scale`); the compile-without-deploy step was skipped. These failures were present on the prior main baseline as well and are outside this cleanup patch. Do not claim a successful production deploy from this run.
 - Not merged and not deployed to production.
 - Keep production D1/API traffic low while investigating; no ranking/watchlist load test is required for these fixes.
 
