@@ -117,9 +117,9 @@ function enhance(){
    const sorted=[...players].sort((a,b)=>b.score-a.score),note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='順位：'+sorted.map((e,i)=>(i+1)+'. '+e.name).join(' ／ ');view.append(wrap,note);
   }else{const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg)}
  }
- const radarHost=document.createElement('div');radarHost.className='ee-radar-wrap';radarHost.hidden=true;
+ const radarSettings=document.createElement('div');radarSettings.className='ee-radar-settings';radarSettings.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px solid var(--border,#29425e);border-radius:10px;background:var(--panel,#102238)';const radarScaleLabel=document.createElement('label');radarScaleLabel.textContent='レーダー100%基準';radarScaleLabel.style.cssText='font-size:12px;color:var(--sub,#91a7bf)';const radarScale=document.createElement('input');radarScale.type='range';radarScale.min='500';radarScale.max='3000';radarScale.step='100';radarScale.style.cssText='flex:1;min-width:120px;accent-color:var(--accent,#39d8f4)';const radarScaleValue=document.createElement('strong');radarScaleValue.style.cssText='font-size:13px;min-width:58px;text-align:right';let savedScale=null;try{savedScale=Number(localStorage.getItem('ee-mystic-radar-scale-v1'))}catch{}let maxPerAxis=Number.isFinite(savedScale)&&savedScale>=500&&savedScale<=3000&&savedScale%100===0?savedScale:1500;radarScale.value=String(maxPerAxis);radarScaleValue.textContent=maxPerAxis.toLocaleString();radarScaleLabel.htmlFor='ee-mystic-radar-scale';radarScale.id='ee-mystic-radar-scale';radarScale.addEventListener('input',()=>{maxPerAxis=Number(radarScale.value);radarScaleValue.textContent=maxPerAxis.toLocaleString();try{localStorage.setItem('ee-mystic-radar-scale-v1',String(maxPerAxis))}catch{}renderRadar()});
  radarHost.style.maxWidth='440px';radarHost.style.margin='12px auto';
- sec.insertBefore(radarHost,status.nextSibling);
+ sec.insertBefore(radarHost,status.nextSibling);sec.insertBefore(radarSettings,radarHost);
  function renderRadar(){
   radarHost.replaceChildren();
   // Fixed internal offsets for the six Mystic Trial rankings only.
@@ -170,7 +170,7 @@ function enhance(){
   }
   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.style.display='flex';legend.style.flexWrap='wrap';legend.style.justifyContent='center';legend.style.gap='8px 14px';
   names.forEach((name,i)=>{const item=document.createElement('span');item.style.display='inline-flex';item.style.alignItems='center';item.style.gap='5px';const swatch=document.createElement('i');swatch.style.display='inline-block';swatch.style.width='9px';swatch.style.height='9px';swatch.style.borderRadius='50%';swatch.style.background=colors[i%colors.length];const text=document.createElement('span');text.textContent=name;item.append(swatch,text);legend.appendChild(item)});
-  const totals=document.createElement('div');totals.className='ee-compare-chart-note';totals.textContent=names.map((name,player)=>name+'：'+fmt(ordered.reduce((sum,row)=>sum+row.entries[player].corrected,0))+' / 12,000').join(' ／ ');
+  const totals=document.createElement('div');totals.className='ee-compare-chart-note';totals.textContent=names.map((name,player)=>name+'：'+fmt(ordered.reduce((sum,row)=>sum+row.entries[player].corrected,0))+' / '+fmt(maxPerAxis*6)).join(' ／ ');
   radarHost.append(svg,legend,totals);
  }
 
