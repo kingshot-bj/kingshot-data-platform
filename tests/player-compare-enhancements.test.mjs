@@ -181,3 +181,14 @@ test("Mystic Trial radar reads rendered API値 small labels without regex escapi
   assert.ok(script.includes("score:raw"));
   assert.ok(!script.includes("/^API値\\\\s*"));
 });
+
+
+test("Mystic Trial radar baseline is adjustable and persisted locally with 1500 default", () => {
+  assert.ok(script.includes("ee-mystic-radar-scale-v1"));
+  assert.ok(script.includes("savedScale>=500&&savedScale<=3000"));
+  assert.ok(script.includes(":1500"));
+  assert.ok(script.includes("radarScale.min='500'"));
+  assert.ok(script.includes("radarScale.max='3000'"));
+  assert.ok(script.includes("radarScale.addEventListener('input'"));
+  assert.ok(script.includes("fmt(maxPerAxis*6)"));
+});
