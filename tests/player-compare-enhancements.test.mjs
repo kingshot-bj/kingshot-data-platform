@@ -16,7 +16,9 @@ test("player compare enhancement script parses", () => {
 });
 
 test("chart modes and preference persistence are present", () => {
-  for (const mode of ["ring", "bar", "radar", "number"]) assert.ok(script.includes("'" + mode + "'"));
+  for (const mode of ["ring", "bar", "radar"]) assert.ok(script.includes("'" + mode + "'"));
+  assert.ok(!script.includes("'number'"));
+  assert.ok(!script.includes("ee-compare-numeric"));
   assert.ok(script.includes("eagleeye-player-compare-chart-v1"));
   assert.ok(script.includes("prefers-reduced-motion"));
 });
@@ -31,9 +33,9 @@ test("additional ranking candidates require saved numeric scores for both player
 
 test("radar mode applies the agreed Mystic Trial offset scale", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("秘境の試練6項目すべてのAPI値がそろう"));
+  assert.ok(script.includes("秘境の試練の比較対象5項目すべてのAPI値がそろう"));
   assert.ok(script.includes("const offsets={"));
-  assert.ok(script.includes("const maxPerAxis=2000"));
+  assert.ok(script.includes("let maxPerAxis="));
   assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
 
@@ -56,18 +58,15 @@ test("successful compare render removes the stale loading status", () => {
   assert.ok(indexSource.includes("function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());"));
 });
 
-test("numeric and custom chart modes render every player supplied to the chart", () => {
+test("remaining chart modes render every player supplied to the chart", () => {
   assert.ok(script.includes("const players=available"));
-  assert.ok(script.includes("players.forEach(e=>{const cell"));
   assert.ok(script.includes("players.forEach((e,i)=>{const row"));
-  assert.ok(script.includes("Math.min(2,players.length)"));
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
-test("ring, bar, numeric, and custom ranking modes retain up to four players", () => {
+test("ring, bar, and custom ranking modes retain up to four players", () => {
   assert.ok(script.includes("const players=available"));
   assert.ok(script.includes("players.forEach((e,i)=>{const row"));
-  assert.ok(script.includes("players.forEach(e=>{const cell"));
   assert.ok(script.includes("items.slice(0,4)"));
   assert.ok(script.includes("players.length+'人'"));
 });
@@ -164,13 +163,13 @@ test("radar chart uses Mystic Trial cards only and excludes general profile metr
   assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
 });
 
-test("Mystic Trial radar applies the six agreed offsets and 2000/12000 scales", () => {
+test("Mystic Trial radar keeps source offsets and uses the adjustable five-axis scale", () => {
   for (const offset of ["'闘技場':10000","'生命の森':20000","'水晶鉱山':30000","'知識の枢軸':40000","'溶岩要塞':50000","'輝光の塔':60000"]) {
     assert.ok(script.includes(offset), "missing offset " + offset);
   }
   assert.ok(script.includes("const maxPerAxis=2000"));
   assert.ok(script.includes("sum+row.entries[player].corrected"));
-  assert.ok(script.includes("/ 12,000"));
+  assert.ok(script.includes("fmt(maxPerAxis*5)"));
   assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
   assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
 });
@@ -190,7 +189,7 @@ test("Mystic Trial radar baseline is adjustable and persisted locally with 1500 
   assert.ok(script.includes("radarScale.min='500'"));
   assert.ok(script.includes("radarScale.max='3000'"));
   assert.ok(script.includes("radarScale.addEventListener('input'"));
-  assert.ok(script.includes("fmt(maxPerAxis*6)"));
+  assert.ok(script.includes("fmt(maxPerAxis*5)"));
 });
 
 
