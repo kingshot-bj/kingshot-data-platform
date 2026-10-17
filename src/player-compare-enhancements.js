@@ -244,13 +244,13 @@ function enhance(){
    thead.appendChild(tr);table.appendChild(thead);
    const tbody=document.createElement('tbody');
    keys.forEach(key=>{const row=document.createElement('tr'),th=document.createElement('th');th.textContent=key;row.appendChild(th);
-    records.forEach(record=>{const td=document.createElement('td');const entry=record[source].get(key);td.textContent=entry?(typeof entry==='string'?entry:entry.value):(source==='heroGear'?(record.heroes.has(key.split(' / ')[0])?'装備データなし':'編成で未確認'):missingLabel);row.appendChild(td)});
+    records.forEach(record=>{const td=document.createElement('td');const entry=record[source].get(key);td.textContent=entry?(typeof entry==='string'?entry:entry.value):(source==='heroGear'?('データなし'):missingLabel);row.appendChild(td)});
     tbody.appendChild(row);
    });
    table.appendChild(tbody);wrap.appendChild(table);panel.appendChild(wrap);
   };
   makeTable('共通する英雄',commonHeroes,'heroes','データなし');
-  makeTable('英雄の通常装備',allHeroGear,'heroGear','データなし');
+  makeTable('防衛編成の英雄装備',allHeroGear,'heroGear','データなし');
   makeTable('領主装備',allGovernorGear,'gear','データなし');
   const anchor=document.querySelector('.mystic-section')||document.querySelector('.ee-compare-details');
   if(anchor)anchor.insertAdjacentElement('beforebegin',panel);
