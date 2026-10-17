@@ -7823,7 +7823,7 @@ async function handlePlayerSectionExport(request, env) {
     console.error("Player section Google Sheets export error:", error);
     if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED") return json({
       ok: false, error: "GOOGLE_SHEETS_NOT_CONFIGURED",
-      message: "Google Sheets連携が未設定です。GOOGLE_SHEETS_SPREADSHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY を設定してください。"
+      message: "Google Sheets連携が未設定です。GOOGLE_SHEETS_SPREADSHEET_ID と、Service Account（GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY）または Apps Script（GOOGLE_SHEETS_WEBAPP_URL / GOOGLE_SHEETS_WEBAPP_SECRET）を設定してください。"
     }, 503);
     return json({ ok: false, error: error?.code || "PLAYER_EXPORT_FAILED", message: error?.message || "Google Sheetsへの出力に失敗しました。", status: error?.status || 0 }, 502);
   }
@@ -9845,7 +9845,7 @@ async function renderPublicStatusPage(request, env) {
       </div>
     </section>` : "";
   const googleModes = [
-    env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
+    env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Apps Script Web App" : null,
     env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account" : null
   ].filter(Boolean);
   const googleSection = `
@@ -9880,7 +9880,7 @@ async function renderPublicStatusPage(request, env) {
     ["Cloudflare Billing API", "Billing Read Token", Boolean(env.CLOUDFLARE_BILLING_TOKEN)],
     ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_API_BASE_URL)],
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
-    ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
+    ["Google Sheets Apps Script", "Web App / Spreadsheet", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
     ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
     ["Google Drive OAuth", "OAuth Client / Refresh Token / Folder", Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID)],
     ["Gateway", "Read-only Status API", Boolean(env.EAGLEEYE_GATEWAY_TOKEN)]
