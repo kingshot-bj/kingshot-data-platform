@@ -31,8 +31,8 @@ test("additional ranking candidates require saved numeric scores for both player
 
 test("radar mode does not invent percentage normalization before fixed score scales are verified", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("固定基準値が未検証"));
-  assert.ok(script.includes("!e.stage"));
+  assert.ok(script.includes("全プレイヤーで数値のAPI実スコアがそろったランキング項目"));
+  assert.ok(script.includes("row.querySelector('small')"));
   assert.ok(script.includes("const maxValue=Math.max(1,...metrics.flatMap"));
   assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
@@ -145,5 +145,13 @@ test("growth comparison is collapsed by default and radar mode renders an SVG po
   assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
   assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
-  assert.ok(script.includes("各軸は取得した実スコアを共通の最大値に対する距離で描画"));
+  assert.ok(script.includes("ランキングのAPI実スコアを共通の最大値に対する距離で描画"));
+});
+
+
+test("radar chart uses numeric API scores from ranking rows rather than stage labels", () => {
+  assert.ok(script.includes(".compare-player-cards .compare-player-card"));
+  assert.ok(script.includes("data-compare-label^="));
+  assert.ok(script.includes("detail.match(/API値"));
+  assert.ok(script.includes("values.set(label,score)"));
 });
