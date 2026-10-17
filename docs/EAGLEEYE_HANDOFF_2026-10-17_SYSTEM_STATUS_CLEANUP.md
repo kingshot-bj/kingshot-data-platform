@@ -51,3 +51,19 @@ PR: https://github.com/kingshot-bj/kingshot-data-platform/pull/142
 3. Investigate the 317 Worker errors and detailed R2 userError counts.
 4. Decide the intended Google Sheets export method, then document the exact account-owner setup needed.
 5. Recheck all System Status “未設定 / 未取得 / UNKNOWN” items against runtime code so diagnostic labels match actual configuration.
+
+
+## Follow-up: Google Sheets diagnostics — 2026-10-17
+
+- Found a second mismatch: the System Status page could label Apps Script as configured when `GOOGLE_SHEETS_SPREADSHEET_ID` was missing, but the actual exporter requires the Spreadsheet ID for either transport.
+- Updated the Apps Script mode check and Runtime / Configuration row to require the Spreadsheet ID.
+- Updated the export error message to document both valid transports:
+  - Service Account: `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+  - Apps Script: `GOOGLE_SHEETS_WEBAPP_URL` + `GOOGLE_SHEETS_WEBAPP_SECRET`
+  - Both transports require `GOOGLE_SHEETS_SPREADSHEET_ID`.
+- PR #144 merged into `main` as `aa2acff28e300a6b9b34754028d4de9fcfe14b81`. PR checks and Cloudflare preview build passed.
+
+## Release caveat
+
+- Main's `Worker Build Validation` remains blocked by four Player Compare enhancement test failures unrelated to these System Status changes. The workflow skipped its compile-without-deploy step after those failures.
+- No production deployment has been verified. Do not report these changes as live until the production Worker version is checked after a successful release.
