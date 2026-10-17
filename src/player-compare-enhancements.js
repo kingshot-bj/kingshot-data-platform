@@ -2,7 +2,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
 .power-showcase-wrap{display:none!important}
 .compare-metric[hidden]{display:none!important}
-.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>h2{font-size:16px;margin:0 0 10px}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>summary{font-size:13px;font-weight:700;cursor:pointer;list-style:none}.ee-build-compare>summary::-webkit-details-marker{display:none}.ee-build-compare[open]{display:grid;gap:8px}.ee-build-compare>summary:before{content:'＋';margin-right:6px}.ee-build-compare[open]>summary:before{content:'−'}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
 
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
@@ -64,8 +64,8 @@ function enhance(){
  if(table&&!document.querySelector('.ee-build-compare')){
   const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
   if(rows.length){
-   const panel=document.createElement('section');panel.className='ee-build-compare';
-   const title=document.createElement('h2');title.textContent='育成要素の比較';panel.appendChild(title);
+   const panel=document.createElement('details');panel.className='ee-build-compare';
+   const title=document.createElement('summary');title.textContent='育成要素の比較（詳細）';panel.appendChild(title);
    const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
    let lastGroup='';
    rows.forEach(tr=>{const cells=[...tr.children];const rawLabel=safeText(cells[0]);const group=(rawLabel.match(/^(闘技場防衛編成|防衛編成装備|英雄スキル|専用装備|領主装備)：/)||[])[1]||'';if(group!==lastGroup){const sub=document.createElement('h3');sub.textContent=group;panel.appendChild(sub);lastGroup=group}const card=document.createElement('article');card.className='ee-build-row';
@@ -123,29 +123,24 @@ function enhance(){
  function renderRadar(){
   radarHost.replaceChildren();
   const rows=cards.map(card=>({label:safeText(card.querySelector('.mystic-name')),entries:readEntries(card)}))
-   .filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null));
+   .filter(row=>row.entries.length>=2&&row.entries.every(e=>e.score!==null&&!e.stage));
   const playerCount=rows.length?Math.min(...rows.map(row=>row.entries.length)):0;
-  if(rows.length<3||playerCount<2){status.textContent='比較表示には、2人以上の実スコアがある項目が3件以上必要です。';return}
+  if(rows.length<3||playerCount<2){status.textContent='レーダー表示には、数値スコアがそろった項目が3件以上必要です。ステージ表記は対象外です。';return}
   const names=rows[0].entries.slice(0,playerCount).map(e=>e.name);
   const consistent=rows.every(row=>row.entries.length>=playerCount&&row.entries.slice(0,playerCount).every((e,i)=>e.name===names[i]));
-  if(!consistent){status.textContent='項目ごとのプレイヤー順が一致しないため、比較を表示できません。';return}
-  status.textContent='秘境の試練の各スコアは尺度・固定基準値が未検証のため、レーダーの割合換算は行いません。以下は各項目の取得値をそのまま並べた比較です。ステージ項目はゲーム内表記とAPI値を区別して表示します。';
-  const table=document.createElement('div');table.className='ee-compare-numeric';table.style.gridTemplateColumns='minmax(0,1fr)';
-  rows.forEach(row=>{
-   const block=document.createElement('div');block.style.textAlign='left';
-   const heading=document.createElement('strong');heading.textContent=row.label;heading.style.display='block';heading.style.marginBottom='8px';block.appendChild(heading);
-   const values=document.createElement('div');values.style.display='grid';values.style.gridTemplateColumns='repeat('+Math.min(2,playerCount)+',minmax(0,1fr))';values.style.gap='8px';
-   row.entries.slice(0,playerCount).forEach((entry,index)=>{
-    const item=document.createElement('div');item.style.padding='6px';item.style.border='1px solid var(--border,#29425e)';item.style.borderRadius='8px';
-    const name=document.createElement('small');name.textContent=entry.name;name.style.display='block';name.style.color=colors[index%colors.length];
-    const value=document.createElement('strong');value.textContent=entry.stage?(entry.display||'ステージ表記あり'):fmt(entry.score);value.style.display='block';value.style.overflowWrap='anywhere';
-    item.append(name,value);
-    if(entry.stage){const raw=document.createElement('small');raw.textContent='API value: '+fmt(entry.score);raw.style.display='block';raw.style.marginTop='4px';raw.style.color='var(--sub,#91a7bf)';item.appendChild(raw)}
-    values.appendChild(item);
-   });
-   block.appendChild(values);table.appendChild(block);
-  });
-  radarHost.appendChild(table);
+  if(!consistent){status.textContent='項目ごとのプレイヤー順が一致しないため、レーダーを表示できません。';return}
+  const metrics=rows.slice(0,8),maxValue=Math.max(1,...metrics.flatMap(row=>row.entries.slice(0,playerCount).map(e=>Math.max(0,e.score))));
+  status.textContent='各軸は取得した実スコアを共通の最大値に対する距離で描画しています。能力評価の百分率や未確認の基準値ではありません。';
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 320 310');svg.setAttribute('role','img');svg.setAttribute('aria-label','取得済みスコアのレーダーチャート');
+  svg.style.width='100%';svg.style.maxWidth='440px';svg.style.display='block';svg.style.margin='0 auto';
+  const cx=160,cy=145,radius=94,count=metrics.length;
+  const point=(index,r)=>{const angle=(-Math.PI/2)+(Math.PI*2*index/count);return [cx+Math.cos(angle)*r,cy+Math.sin(angle)*r]};
+  for(let level=1;level<=4;level++){const pts=metrics.map((_,i)=>point(i,radius*level/4).join(',')).join(' ');const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',pts);poly.setAttribute('fill','none');poly.setAttribute('stroke','var(--border,#29425e)');poly.setAttribute('stroke-width','1');svg.appendChild(poly)}
+  metrics.forEach((row,i)=>{const [x,y]=point(i,radius);const line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',x);line.setAttribute('y2',y);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);const label=document.createElementNS(ns,'text');const [lx,ly]=point(i,radius+17);label.setAttribute('x',lx);label.setAttribute('y',ly);label.setAttribute('fill','var(--text,#e8f3ff)');label.setAttribute('font-size','9');label.setAttribute('text-anchor',lx<cx-8?'end':lx>cx+8?'start':'middle');label.textContent=row.label.slice(0,15);svg.appendChild(label)});
+  for(let player=0;player<playerCount;player++){const pts=metrics.map((row,i)=>point(i,radius*Math.max(0,row.entries[player].score)/maxValue).join(',')).join(' ');const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',pts);poly.setAttribute('fill',colors[player%colors.length]);poly.setAttribute('fill-opacity','.13');poly.setAttribute('stroke',colors[player%colors.length]);poly.setAttribute('stroke-width','2');svg.appendChild(poly);metrics.forEach((row,i)=>{const [x,y]=point(i,radius*Math.max(0,row.entries[player].score)/maxValue);const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');dot.setAttribute('fill',colors[player%colors.length]);svg.appendChild(dot)})}
+  const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=names.map((name,i)=>name+'：'+colors[i%colors.length]).join(' ／ ');
+  radarHost.append(svg,legend);
  }
 
  const candidateRows=new Map();
