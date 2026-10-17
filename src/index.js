@@ -9816,7 +9816,7 @@ async function renderPublicStatusPage(request, env) {
     <section class="section">
       <h2>Database</h2>
       <div class="card resource-card">
-        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : "good"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
+        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : data.services.find(item => item.key === "d1")?.status === "SUCCESS" ? "good" : "neutral"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
         <div class="resource-row"><div><b>D1 Storage</b><small>Cloudflare Analytics ${usage.database?.databaseSizeBytes != null ? "取得済み" : "未確認"}</small></div><strong>${usage.database?.databaseSizeBytes != null ? formatBytes(usage.database.databaseSizeBytes) : "—"}</strong></div>
         <div class="resource-note">D1のRows Read / Rows Written / Storageの使用量はCloudflareリソース監視に表示しています。</div>
       </div>
@@ -9877,6 +9877,7 @@ async function renderPublicStatusPage(request, env) {
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
     ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
     ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
+    ["Cloudflare Billing API", "Billing Read Token", Boolean(env.CLOUDFLARE_BILLING_TOKEN)],
     ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_API_BASE_URL)],
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
     ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
