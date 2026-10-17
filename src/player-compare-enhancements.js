@@ -26,10 +26,6 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-compare-bar-track{grid-column:1/-1;height:9px;background:var(--border,#29425e);border-radius:99px;overflow:hidden;display:flex}
 .ee-compare-bar-track span{display:block;height:100%;flex:0 0 auto;max-width:100%;transition:width .8s ease}
 .ee-compare-bar-track .a{background:#ffd166}.ee-compare-bar-track .b{background:#42d9ff}
-.ee-compare-numeric{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;animation:ee-motion-in 1.4s ease both}
-.ee-compare-numeric>div{padding:10px;border:1px solid var(--border,#29425e);border-radius:10px;text-align:center;min-width:0}
-.ee-compare-numeric small{display:block;white-space:normal;overflow-wrap:normal;word-break:normal;color:var(--sub,#91a7bf);font-size:11px;line-height:1.25}
-.ee-compare-numeric strong{display:block;font-size:clamp(13px,3.8vw,16px);margin-top:5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}.mystic-card{transition:transform 1.2s ease,box-shadow 1.2s ease}.mystic-card.ee-motion-in{animation:ee-motion-in 1.6s cubic-bezier(.16,1,.3,1) both}@keyframes ee-motion-in{0%{opacity:.3;transform:translateY(12px) scale(.98)}70%{opacity:1;transform:translateY(-2px) scale(1.005)}100%{transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.ee-split-ring .slice{transition:none}.ee-spark-layer i{animation:none;display:none}}
 .ee-growth-comparison{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238);min-width:0}.ee-growth-comparison h2{font-size:15px;margin:0 0 5px}.ee-growth-comparison p{font-size:11px;color:var(--sub,#91a7bf);margin:0 0 12px}.ee-growth-comparison h3{font-size:12px;margin:12px 0 6px}.ee-growth-table-wrap{overflow-x:auto;max-width:100%}.ee-growth-table{width:100%;border-collapse:collapse;font-size:11px;min-width:260px}.ee-growth-table th,.ee-growth-table td{padding:7px 6px;border-bottom:1px solid var(--border,#29425e);text-align:left;vertical-align:top;overflow-wrap:anywhere}.ee-growth-table thead th{color:var(--sub,#91a7bf);font-weight:600}.ee-growth-table tbody th{font-weight:700;min-width:82px}@media(max-width:480px){.ee-growth-comparison{padding:9px}.ee-growth-table{font-size:10px}.ee-growth-table th,.ee-growth-table td{padding:6px 4px}}</style>
@@ -84,7 +80,7 @@ function enhance(){
  if(!cards.length)return;
  sec.dataset.eeEnhanced='1';
  const tools=document.createElement('div');tools.className='ee-compare-chart-tools';tools.setAttribute('aria-label','グラフ表示設定');
- const modes=[['ring','分割リング'],['bar','比較バー'],['radar','レーダー'],['number','数値']];
+ const modes=[['ring','分割リング'],['bar','比較バー'],['radar','レーダー']];
  let mode='ring';try{mode=localStorage.getItem('eagleeye-player-compare-chart-v1')||'ring'}catch{}
  if(!modes.some(x=>x[0]===mode))mode='ring';
  const status=document.createElement('div');status.className='ee-compare-chart-note';status.setAttribute('aria-live','polite');
@@ -111,12 +107,7 @@ function enhance(){
   }else if(mode==='bar'){
    const wrap=document.createElement('div');wrap.className='ee-compare-bars';
    players.forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.background=colors[i%colors.length];fill.style.setProperty('width',(Math.max(0,e.score)/maximum*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
-  }else if(mode==='number'){
-   const wrap=document.createElement('div');wrap.className='ee-compare-numeric';wrap.style.gridTemplateColumns='repeat('+Math.min(2,players.length)+',minmax(0,1fr))';
-   players.forEach(e=>{const cell=document.createElement('div');const name=document.createElement('small');name.textContent=e.name;name.title=e.name;const val=document.createElement('strong');val.textContent=fmt(e.score);val.style.color=colors[players.indexOf(e)%colors.length];cell.append(name,val);wrap.appendChild(cell)});
-   const sorted=[...players].sort((a,b)=>b.score-a.score),note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='順位：'+sorted.map((e,i)=>(i+1)+'. '+e.name).join(' ／ ');view.append(wrap,note);
-  }else{const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='';view.appendChild(msg)}
- }
+  }else{const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='表示できる比較モードを選択してください。';view.appendChild(msg)}}
  const radarHost=document.createElement('div');radarHost.className='ee-radar-host';
  const radarSettings=document.createElement('div');radarSettings.className='ee-radar-settings';radarSettings.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px solid var(--border,#29425e);border-radius:10px;background:var(--panel,#102238)';const radarScaleLabel=document.createElement('label');radarScaleLabel.textContent='レーダー100%基準';radarScaleLabel.style.cssText='font-size:12px;color:var(--sub,#91a7bf)';const radarScale=document.createElement('input');radarScale.type='range';radarScale.min='500';radarScale.max='3000';radarScale.step='100';radarScale.style.cssText='flex:1;min-width:120px;accent-color:var(--accent,#39d8f4)';const radarScaleValue=document.createElement('strong');radarScaleValue.style.cssText='font-size:13px;min-width:58px;text-align:right';let savedScale=null;try{savedScale=Number(localStorage.getItem('ee-mystic-radar-scale-v1'))}catch{}let maxPerAxis=Number.isFinite(savedScale)&&savedScale>=500&&savedScale<=3000&&savedScale%100===0?savedScale:1500;radarScale.value=String(maxPerAxis);radarScaleValue.textContent=maxPerAxis.toLocaleString();radarScaleLabel.htmlFor='ee-mystic-radar-scale';radarScale.id='ee-mystic-radar-scale';radarScale.addEventListener('input',()=>{maxPerAxis=Number(radarScale.value);radarScaleValue.textContent=maxPerAxis.toLocaleString();try{localStorage.setItem('ee-mystic-radar-scale-v1',String(maxPerAxis))}catch{}renderRadar()});
  radarSettings.append(radarScaleLabel,radarScale,radarScaleValue);
