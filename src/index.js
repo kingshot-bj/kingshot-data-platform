@@ -1225,7 +1225,7 @@ async function runPlayerWatchlistAutoRefresh(env) {
   }
 
   const due = await env.DB.prepare(`
-    SELECT p.governor_id, s.last_success_at, s.failure_count
+    SELECT w.governor_id, s.last_success_at, s.failure_count
     FROM (
       SELECT DISTINCT governor_id
       FROM player_watchlists
@@ -1233,7 +1233,7 @@ async function runPlayerWatchlistAutoRefresh(env) {
     ) w
     LEFT JOIN players p ON p.governor_id = w.governor_id
     LEFT JOIN player_watchlist_refresh_state s ON s.governor_id = w.governor_id
-    WHERE COALESCE(s.next_refresh_at, 0) <= ?
+    WHERE COALESCE(s.next_refresh_at, p.observed_at + PLAYER_WATCHLIST_AUTO_REFRESH_INTERVAL_SECONDS, 0) <= ?
       AND COALESCE(s.lease_until, 0) <= ?
     ORDER BY COALESCE(s.last_success_at, 0) ASC,
              COALESCE(p.observed_at, 0) ASC,
