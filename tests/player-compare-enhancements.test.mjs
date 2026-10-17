@@ -192,3 +192,11 @@ test("Mystic Trial radar baseline is adjustable and persisted locally with 1500 
   assert.ok(script.includes("radarScale.addEventListener('input'"));
   assert.ok(script.includes("fmt(maxPerAxis*6)"));
 });
+
+
+test("Mystic Trial radar uses the live adjustable baseline instead of a hard-coded 2000", () => {
+  assert.ok(script.includes("let maxPerAxis="));
+  assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
+  assert.ok(!script.includes("const maxPerAxis=2000"));
+  assert.ok(script.includes("fmt(maxPerAxis*6)"));
+});
