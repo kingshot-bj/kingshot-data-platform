@@ -72,14 +72,14 @@ test("editing kingdom number clears stale validation error without logging the r
   assert.match(page, /addEventListener\("input",function\(\)/);
   assert.match(page, /statusNode\.textContent==="王国番号は1以上の整数で入力してください。"/);
   assert.match(page, /stage:"CREATE_VALIDATION_CLEARED"/);
-  assert.ok(page.includes(String.raw`details:{field:"kid",valid:/^\d+$/`));
+  assert.ok(page.includes(String.raw`details:{field:"kid",valid:/^\\d+$/`));
   assert.doesNotMatch(page, /CREATE_VALIDATION_CLEARED[^\n]*kid\.value/);
 });
 
 
 test("kingdom number regex survives template-string page generation", () => {
   assert.ok(page.includes(String.raw`if(!/^\\d+$/.test(kid)||Number(kid)<1)`));
-  assert.ok(page.includes(String.raw`valid:/^\d+$/.test(current)`));
+  assert.ok(page.includes(String.raw`valid:/^\\d+$/.test(current)`));
 });
 
 
