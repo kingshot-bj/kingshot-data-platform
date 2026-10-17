@@ -9877,7 +9877,7 @@ async function renderPublicStatusPage(request, env) {
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
     ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
     ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
-    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_BASE_URL)],
+    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_API_BASE_URL)],
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
     ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
     ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
