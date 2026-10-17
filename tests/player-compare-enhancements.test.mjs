@@ -155,3 +155,11 @@ test("radar chart uses numeric API scores from ranking rows rather than stage la
   assert.ok(script.includes("detail.match(/API値"));
   assert.ok(script.includes("values.set(label,score)"));
 });
+
+
+test("radar chart uses Mystic Trial cards only and excludes general profile metrics", () => {
+  assert.ok(script.includes(".mystic-card:not([data-ee-custom-board])"));
+  assert.ok(script.includes("秘境の試練に含まれるランキングのみを比較"));
+  assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
+  assert.ok(!script.includes("data-compare-label^=\"ランキング：\""));
+});
