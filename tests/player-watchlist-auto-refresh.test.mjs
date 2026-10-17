@@ -14,7 +14,7 @@ test("refresh interval and batch size are bounded by real API Pool availability"
   assert.match(source, /PLAYER_WATCHLIST_AUTO_REFRESH_INTERVAL_SECONDS = 6 \* 60 \* 60/);
   assert.match(source, /PLAYER_WATCHLIST_AUTO_REFRESH_MAX_PER_TICK = 26/);
   assert.match(source, /Math\.min\(PLAYER_WATCHLIST_AUTO_REFRESH_MAX_PER_TICK, available\)/);
-  assert.match(source, /LIMIT \\?[\\s\\S]{0,40}\\.bind\\(now, now, concurrency\\)/);
+  assert.match(source, /LIMIT \?[\s\S]{0,40}\.bind\(now, now, concurrency\)/);
 });
 
 test("only enabled, distinct watched players are eligible and least-recently refreshed players go first", () => {
