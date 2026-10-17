@@ -1,5 +1,9 @@
 export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
+.power-showcase-wrap{display:none!important}
+.compare-metric[hidden]{display:none!important}
+.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>h2{font-size:16px;margin:0 0 10px}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
 .ee-compare-chart-tools button{border:1px solid var(--border,#29425e);background:var(--panel,#102238);color:var(--text,#e8f3ff);border-radius:9px;padding:7px 10px;font:inherit;font-size:12px}
@@ -28,7 +32,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-compare-numeric strong{display:block;font-size:clamp(13px,3.8vw,16px);margin-top:5px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}.mystic-card{transition:transform 1.2s ease,box-shadow 1.2s ease}.mystic-card.ee-motion-in{animation:ee-motion-in 1.6s cubic-bezier(.16,1,.3,1) both}@keyframes ee-motion-in{0%{opacity:.3;transform:translateY(12px) scale(.98)}70%{opacity:1;transform:translateY(-2px) scale(1.005)}100%{transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.ee-split-ring .slice{transition:none}.ee-spark-layer i{animation:none;display:none}}
-</style>
+.ee-growth-comparison{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238);min-width:0}.ee-growth-comparison h2{font-size:15px;margin:0 0 5px}.ee-growth-comparison p{font-size:11px;color:var(--sub,#91a7bf);margin:0 0 12px}.ee-growth-comparison h3{font-size:12px;margin:12px 0 6px}.ee-growth-table-wrap{overflow-x:auto;max-width:100%}.ee-growth-table{width:100%;border-collapse:collapse;font-size:11px;min-width:260px}.ee-growth-table th,.ee-growth-table td{padding:7px 6px;border-bottom:1px solid var(--border,#29425e);text-align:left;vertical-align:top;overflow-wrap:anywhere}.ee-growth-table thead th{color:var(--sub,#91a7bf);font-weight:600}.ee-growth-table tbody th{font-weight:700;min-width:82px}@media(max-width:480px){.ee-growth-comparison{padding:9px}.ee-growth-table{font-size:10px}.ee-growth-table th,.ee-growth-table td{padding:6px 4px}}</style>
 <script>
 (function(){
 const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
@@ -54,6 +58,26 @@ function collapseDetails(){
 }
 function enhance(){
  collapseDetails();
+ document.querySelectorAll('.compare-metric').forEach(row=>{const label=safeText(row.querySelector('span'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))row.hidden=true});
+ const table=document.querySelector('.table-wrap table');
+ if(table){[...table.querySelectorAll('tr')].forEach(tr=>{const label=safeText(tr.querySelector('th,td'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))tr.hidden=true})}
+ if(table&&!document.querySelector('.ee-build-compare')){
+  const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
+  if(rows.length){
+   const panel=document.createElement('section');panel.className='ee-build-compare';
+   const title=document.createElement('h2');title.textContent='育成要素の比較';panel.appendChild(title);
+   const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
+   let lastGroup='';
+   rows.forEach(tr=>{const cells=[...tr.children];const rawLabel=safeText(cells[0]);const group=(rawLabel.match(/^(闘技場防衛編成|防衛編成装備|英雄スキル|専用装備|領主装備)：/)||[])[1]||'';if(group!==lastGroup){const sub=document.createElement('h3');sub.textContent=group;panel.appendChild(sub);lastGroup=group}const card=document.createElement('article');card.className='ee-build-row';
+    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=rawLabel.replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
+    const values=document.createElement('div');values.className='ee-build-values';
+    cells.slice(1).forEach((cell,i)=>{const item=document.createElement('div');item.className='ee-build-value';const who=document.createElement('span');who.textContent=headers[i]||('プレイヤー'+(i+1));const val=document.createElement('b');val.textContent=safeText(cell)||'—';item.append(who,val);values.appendChild(item)});
+    card.appendChild(values);panel.appendChild(card);
+   });
+   const sec=document.querySelector('.mystic-section');if(sec)sec.before(panel);else table.before(panel);
+  }
+ }
+
  const sec=document.querySelector('.mystic-section');
  if(!sec||sec.dataset.eeEnhanced==='1')return;
  const cards=[...sec.querySelectorAll('.mystic-card')];
@@ -164,8 +188,75 @@ function enhance(){
  if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
  customPanel.appendChild(customList);sec.appendChild(customPanel);
 
+ function buildGrowthComparison(){
+  const playerCards=[...document.querySelectorAll('.compare-player-card')];
+  if(playerCards.length<2)return;
+  const signature=playerCards.map(card=>card.innerText).join('\\n--PLAYER--\\n');
+  const existingPanel=document.querySelector('.ee-growth-comparison');
+  if(existingPanel&&existingPanel.dataset.signature===signature)return;
+  if(existingPanel)existingPanel.remove();
+  const records=playerCards.map(card=>({name:safeText(card.querySelector('.pname'))||'プレイヤー',heroes:new Map(),heroGear:new Map(),gear:new Map()}));
+  const slotLabels={helmet:'兜',helm:'兜',head:'兜',gloves:'手袋',glove:'手袋',gauntlets:'手袋',gauntlet:'手袋',armor:'鎧',armour:'鎧',chest:'鎧',chestplate:'鎧',boots:'ブーツ',boot:'ブーツ',footwear:'ブーツ'};
+  const normalizeSlot=value=>{const raw=String(value||'').trim();const key=raw.toLowerCase().replace(/[ _-]+/g,'');return slotLabels[key]||raw||'部位不明'};
+  playerCards.forEach((card,index)=>card.querySelectorAll('.compare-metric').forEach(metric=>{
+   const label=metric.getAttribute('data-compare-label')||'',value=safeText(metric.querySelector('strong'))||'未取得';
+   if(label.startsWith('英雄：')){
+    const hero=label.slice(3).trim();
+    const useful=value.split(' · ').filter(part=>!/^戦力\s/.test(part));
+    records[index].heroes.set(hero,useful.join(' · ')||'育成情報なし');
+   }else if(label.startsWith('領主装備：')){
+    const slot=label.slice(5).trim();
+    const useful=value.split(' · ').filter(part=>!/^スコア\s|^戦闘力\s/.test(part));
+    records[index].gear.set(slot,useful.join(' · ')||'装備情報なし');
+   }
+  }));
+  const comparisonTable=document.querySelector('.table-wrap .compare-table');
+  if(comparisonTable){
+   [...comparisonTable.querySelectorAll('tbody tr')].forEach(row=>{
+    const header=safeText(row.querySelector('th'));
+    if(!header.startsWith('防衛編成装備：'))return;
+    const rawKey=header.slice('防衛編成装備：'.length).trim();
+    const split=rawKey.lastIndexOf(' / ');
+    const hero=split>=0?rawKey.slice(0,split).trim():'英雄';
+    const slot=split>=0?normalizeSlot(rawKey.slice(split+3)):normalizeSlot(rawKey);
+    const key=hero+' / '+slot;
+    records.forEach((record,index)=>{
+     const cell=row.children[index+1];
+     const value=cell?safeText(cell):'データなし';
+     record.heroGear.set(key,{hero,value:value==='装備情報なし'?'装備データなし':value||'データなし'});
+    });
+   });
+  }
+  const commonHeroes=[...records[0].heroes.keys()].filter(name=>records.every(r=>r.heroes.has(name)));
+  const allHeroGear=[...new Set(records.flatMap(r=>[...r.heroGear.keys()]))];
+  const allGovernorGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
+  if(!commonHeroes.length&&!allHeroGear.length&&!allGovernorGear.length)return;
+  const panel=document.createElement('section');panel.className='ee-growth-comparison';panel.dataset.signature=signature;
+  const heading=document.createElement('h2');heading.textContent='育成要素の比較';panel.appendChild(heading);
+  const makeTable=(title,keys,source,missingLabel)=>{
+   if(!keys.length)return;
+   const sub=document.createElement('h3');sub.textContent=title;panel.appendChild(sub);
+   const wrap=document.createElement('div');wrap.className='ee-growth-table-wrap';
+   const table=document.createElement('table');table.className='ee-growth-table';
+   const thead=document.createElement('thead'),tr=document.createElement('tr');
+   const first=document.createElement('th');first.textContent='項目';tr.appendChild(first);
+   records.forEach(record=>{const th=document.createElement('th');th.textContent=record.name;tr.appendChild(th)});
+   thead.appendChild(tr);table.appendChild(thead);
+   const tbody=document.createElement('tbody');
+   keys.forEach(key=>{const row=document.createElement('tr'),th=document.createElement('th');th.textContent=key;row.appendChild(th);
+    records.forEach(record=>{const td=document.createElement('td');const entry=record[source].get(key);td.textContent=entry?(typeof entry==='string'?entry:entry.value):(source==='heroGear'?('データなし'):missingLabel);row.appendChild(td)});
+    tbody.appendChild(row);
+   });
+   table.appendChild(tbody);wrap.appendChild(table);panel.appendChild(wrap);
+  };
+  makeTable('共通する英雄',commonHeroes,'heroes','データなし');
+  makeTable('防衛編成の英雄装備',allHeroGear,'heroGear','データなし');
+  makeTable('領主装備',allGovernorGear,'gear','データなし');
+  const anchor=document.querySelector('.mystic-section')||document.querySelector('.ee-compare-details');
+  if(anchor)anchor.insertAdjacentElement('beforebegin',panel);
+ }
  function renderAll(){cards.forEach(renderCard);radarHost.hidden=mode!=='radar';if(mode==='radar'){cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=true});renderRadar()}else{cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=false});status.textContent=''}cards.forEach(card=>{card.classList.remove('ee-motion-in');void card.offsetWidth;card.classList.add('ee-motion-in')})}
- syncCustomCards();renderAll();
+ syncCustomCards();buildGrowthComparison();renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
 observer.observe(document.documentElement,{childList:true,subtree:true});
