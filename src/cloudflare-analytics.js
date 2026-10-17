@@ -394,9 +394,11 @@ function billingCycleBoundary(anchorTimestamp, date, direction = "start") {
   return boundary;
 }
 
-async function getCloudflareBillingCycle(env, { now = new Date(), token = "" } = {}) {
+async function getCloudflareBillingCycle(env, { now = new Date() } = {}) {
   const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
-  const billingToken = String(env.CLOUDFLARE_BILLING_TOKEN || token || "").trim();
+  // Keep billing access separate from the Analytics token so diagnostics match
+  // the least-privilege secret that this endpoint actually requires.
+  const billingToken = String(env.CLOUDFLARE_BILLING_TOKEN || "").trim();
   if (!accountId || !billingToken) {
     return {
       available: false,
@@ -472,6 +474,81 @@ async function getCloudflareBillingCycle(env, { now = new Date(), token = "" } =
     cycleEnd: cycleEnd.toISOString(),
     billingDayUtc: cycleStart.getUTCDate()
   };
+}
+
+
+async function getCloudflareBillableUsage(env, billingCycle, now = new Date()) {
+  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  const billingToken = String(env.CLOUDFLARE_BILLING_TOKEN || "").trim();
+  if (!accountId || !billingToken || !billingCycle?.available) {
+    return {
+      available: false,
+      state: !accountId || !billingToken ? "UNCONFIGURED" : "BILLING_CYCLE_UNAVAILABLE",
+      message: !accountId || !billingToken
+        ? "Billing Read Tokenが未設定のため、Cloudflare Billable Usage APIの費用情報は取得していません。"
+        : "請求サイクルを確認できないため、Billable Usage APIの費用情報は取得していません。"
+    };
+  }
+
+  // The API requires the requested range to include the billing-cycle anchor.
+  // Use this cycle's start through today; this is API-reported billable usage,
+  // not a forecast of the final invoice.
+  const from = String(billingCycle.cycleStart).slice(0, 10);
+  const to = utcDateString(now);
+  const url = CLOUDFLARE_API_ENDPOINT + "/accounts/" + encodeURIComponent(accountId)
+    + "/billable-usage?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": "Bearer " + billingToken,
+        "Content-Type": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || (Array.isArray(payload?.errors) && payload.errors.length)) {
+      const message = payload?.errors?.map(item => item?.message).filter(Boolean).join("; ");
+      return {
+        available: false,
+        state: "ERROR",
+        httpStatus: response.status,
+        message: message || "Cloudflare Billable Usage API HTTP " + response.status
+      };
+    }
+    const records = Array.isArray(payload?.result) ? payload.result : [];
+    const totalsByCurrency = {};
+    const productTotals = {};
+    for (const record of records) {
+      const currency = String(record?.BillingCurrency || record?.billing_currency || "").trim().toUpperCase();
+      const cost = Number(record?.BilledCost ?? record?.billed_cost);
+      if (!currency || !Number.isFinite(cost)) continue;
+      totalsByCurrency[currency] = (totalsByCurrency[currency] || 0) + cost;
+      const product = String(record?.x_ProductFamilyName || record?.x_product_family_name || "Other");
+      productTotals[product] = (productTotals[product] || 0) + cost;
+    }
+    return {
+      available: true,
+      state: "OK",
+      source: "CLOUDFLARE_BILLABLE_USAGE_API",
+      from,
+      to,
+      recordCount: records.length,
+      totalsByCurrency,
+      productTotals,
+      // BilledCost is the API's reported invoiced amount for each charge.
+      // Do not call it a projected final invoice or combine it with estimates.
+      reportedBilledCostUsd: Object.prototype.hasOwnProperty.call(totalsByCurrency, "USD")
+        ? Number(totalsByCurrency.USD.toFixed(6))
+        : null,
+      note: "Cloudflare APIが返したBilledCostの集計です。最終請求見込みではなく、推定超過額とは別の指標です。"
+    };
+  } catch (error) {
+    return {
+      available: false,
+      state: "ERROR",
+      message: String(error?.message || "Cloudflare Billable Usage API request failed")
+    };
+  }
 }
 
 function dayStartUtcString(date = new Date()) {
@@ -788,7 +865,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   // We intentionally do not silently label a calendar-month fallback as a
   // billing period.
   const billingCycle = paidMode
-    ? await getCloudflareBillingCycle(env, { now, token })
+    ? await getCloudflareBillingCycle(env, { now })
     : {
         available: true,
         state: "FREE_DAILY",
@@ -800,6 +877,9 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   if (paidMode && !billingCycle.available) {
     console.warn("cloudflare_billing_cycle_unavailable", billingCycle.message || billingCycle.state);
   }
+  const billableUsage = paidMode
+    ? await getCloudflareBillableUsage(env, billingCycle, now)
+    : { available: false, state: "NOT_APPLICABLE", message: "Billable Usage APIの費用情報はPaid監視時のみ取得します。" };
 
   const usagePeriodStart = paidMode && billingCycle.available
     ? billingCycle.cycleStart
@@ -1036,11 +1116,14 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       budgetState,
       estimatedOverageUsd,
       estimatedMonthlyCostUsd,
+      // Cloudflare-reported billed cost is intentionally kept separate from
+      // this resource-rate estimate. It may not represent the final invoice.
+      billableUsage,
       usdJpyRate: monitoring.usdJpyRate,
       estimatedMonthlyCostJpy: Math.round(estimatedMonthlyCostUsd * monitoring.usdJpyRate),
       estimatedOverageJpy: Math.round(estimatedOverageUsd * monitoring.usdJpyRate),
       costEstimateBasis: paidMode
-        ? "D1 rows + Workers requests/CPUの請求単価による推計。Cloudflare請求額そのものではなく、R2無料枠は含めない。"
+        ? "推定値のみ：D1 rows + Workers requests/CPUの単価モデル。Cloudflareの請求額ではなく、R2の超過料金・税・契約条件などを含まない。実請求情報はmonitoring.billableUsageに分離。"
         : "Free profile: billable cost estimate is not applicable.",
       d1: monitoring.d1,
       workers: monitoring.workers,
