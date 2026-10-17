@@ -122,43 +122,56 @@ function enhance(){
  sec.insertBefore(radarHost,status.nextSibling);
  function renderRadar(){
   radarHost.replaceChildren();
-  // The radar belongs to the Mystic Trial comparison only. Never mix in
-  // general player-profile metrics such as total power or kills.
-  const trialCards=[...sec.querySelectorAll('.mystic-card:not([data-ee-custom-board])')];
-  const rows=trialCards.map(card=>{
-   const entries=readEntries(card);
-   return {label:safeText(card.querySelector('.mystic-name')),entries};
-  }).filter(row=>row.label&&row.entries.length>=2&&row.entries.every(entry=>entry.score!==null&&entry.score>=0));
-  const playerCount=rows.length?Math.min(...rows.map(row=>row.entries.length)):0;
-  if(rows.length<3||playerCount<2){
-   status.textContent='秘境の試練の各ランキングで、比較対象全員の数値スコアが3項目以上そろうとレーダーを表示します。';
+  // Fixed internal offsets for the six Mystic Trial rankings only.
+  const offsets={
+   '闘技場':10000,'生命の森':20000,'水晶鉱山':30000,
+   '知識の枢軸':40000,'溶岩要塞':50000,'輝光の塔':60000
+  };
+  const cards=[...sec.querySelectorAll('.mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])')];
+  const metrics=cards.map(card=>{
+   const label=safeText(card.querySelector('.mystic-name'));
+   const offset=offsets[label];
+   const entries=readEntries(card).map(entry=>({...entry,corrected:entry.score===null?null:entry.score-offset}));
+   return {label,offset,entries};
+  }).filter(row=>Number.isFinite(row.offset)&&row.entries.length>=2&&row.entries.every(entry=>Number.isFinite(entry.corrected)&&entry.corrected>=0));
+  const required=['闘技場','生命の森','水晶鉱山','知識の枢軸','溶岩要塞','輝光の塔'];
+  const ordered=required.map(label=>metrics.find(row=>row.label===label)).filter(Boolean);
+  if(ordered.length!==6){
+   status.textContent='秘境の試練6項目すべてのAPI値がそろうと、オフセット補正後のレーダーを表示します。';
    return;
   }
-  const names=rows[0].entries.slice(0,playerCount).map(entry=>entry.name);
-  const consistent=rows.every(row=>row.entries.slice(0,playerCount).every((entry,index)=>entry.name===names[index]));
-  if(!consistent){status.textContent='秘境の試練のプレイヤー順が一致しないため、レーダーを表示できません。';return}
-  const metrics=rows.slice(0,8).map(row=>({label:row.label,entries:row.entries.slice(0,playerCount).map(entry=>entry.score)}));
-  // Compare only like-for-like values within each Mystic Trial ranking.
-  metrics.forEach(row=>row.max=Math.max(1,...row.entries));
-  status.textContent='秘境の試練に含まれるランキングのみを比較しています。各項目は、そのランキング内の比較対象最高値を100とした相対値です。';
+  const playerCount=Math.min(...ordered.map(row=>row.entries.length));
+  const names=ordered[0].entries.slice(0,playerCount).map(entry=>entry.name);
+  if(playerCount<2||ordered.some(row=>row.entries.slice(0,playerCount).some((entry,index)=>entry.name!==names[index]))){
+   status.textContent='秘境の試練6項目で比較対象の順番が一致しないため、レーダーを表示できません。';
+   return;
+  }
+  const maxPerAxis=2000;
+  status.textContent='秘境の試練のみ。各項目はオフセット補正後の値を使用し、2,000を100%として表示します。6項目合計は12,000を100%とします。';
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
-  svg.setAttribute('viewBox','0 0 340 330');svg.setAttribute('role','img');svg.setAttribute('aria-label','秘境の試練ランキング比較レーダーチャート');
+  svg.setAttribute('viewBox','0 0 340 340');svg.setAttribute('role','img');svg.setAttribute('aria-label','オフセット補正済み秘境の試練6項目レーダーチャート');
   svg.style.width='100%';svg.style.maxWidth='440px';svg.style.display='block';svg.style.margin='0 auto';
-  const cx=170,cy=155,radius=96,count=metrics.length;
+  const cx=170,cy=158,radius=100,count=ordered.length;
   const point=(index,r)=>{const angle=(-Math.PI/2)+(Math.PI*2*index/count);return [cx+Math.cos(angle)*r,cy+Math.sin(angle)*r]};
-  for(let level=1;level<=4;level++){const pts=metrics.map((_,i)=>point(i,radius*level/4).join(',')).join(' ');const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',pts);poly.setAttribute('fill','none');poly.setAttribute('stroke','var(--border,#29425e)');poly.setAttribute('stroke-width','1');svg.appendChild(poly)}
-  metrics.forEach((row,i)=>{
+  for(let level=1;level<=4;level++){
+   const pts=ordered.map((_,i)=>point(i,radius*level/4).join(',')).join(' ');
+   const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',pts);poly.setAttribute('fill','none');poly.setAttribute('stroke','var(--border,#29425e)');poly.setAttribute('stroke-width','1');svg.appendChild(poly);
+   const tick=document.createElementNS(ns,'text');tick.setAttribute('x',cx+4);tick.setAttribute('y',cy-radius*level/4+11);tick.setAttribute('fill','var(--sub,#91a7bf)');tick.setAttribute('font-size','8');tick.textContent=String(level*25)+'%';svg.appendChild(tick);
+  }
+  ordered.forEach((row,i)=>{
    const [x,y]=point(i,radius);const line=document.createElementNS(ns,'line');line.setAttribute('x1',cx);line.setAttribute('y1',cy);line.setAttribute('x2',x);line.setAttribute('y2',y);line.setAttribute('stroke','var(--border,#29425e)');svg.appendChild(line);
-   const [lx,ly]=point(i,radius+20);const label=document.createElementNS(ns,'text');label.setAttribute('x',lx);label.setAttribute('y',ly);label.setAttribute('fill','var(--text,#e8f3ff)');label.setAttribute('font-size','10');label.setAttribute('text-anchor',lx<cx-8?'end':lx>cx+8?'start':'middle');label.textContent=row.label.length>13?row.label.slice(0,12)+'…':row.label;svg.appendChild(label);
+   const [lx,ly]=point(i,radius+20);const label=document.createElementNS(ns,'text');label.setAttribute('x',lx);label.setAttribute('y',ly);label.setAttribute('fill','var(--text,#e8f3ff)');label.setAttribute('font-size','10');label.setAttribute('text-anchor',lx<cx-8?'end':lx>cx+8?'start':'middle');label.textContent=row.label;svg.appendChild(label);
   });
   for(let player=0;player<playerCount;player++){
-   const pts=metrics.map((row,i)=>point(i,radius*row.entries[player]/row.max).join(',')).join(' ');
+   const normalized=ordered.map(row=>Math.max(0,Math.min(1,row.entries[player].corrected/maxPerAxis)));
+   const pts=normalized.map((value,i)=>point(i,radius*value).join(',')).join(' ');
    const poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',pts);poly.setAttribute('fill',colors[player%colors.length]);poly.setAttribute('fill-opacity','.16');poly.setAttribute('stroke',colors[player%colors.length]);poly.setAttribute('stroke-width','2.5');svg.appendChild(poly);
-   metrics.forEach((row,i)=>{const [x,y]=point(i,radius*row.entries[player]/row.max);const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');dot.setAttribute('fill',colors[player%colors.length]);svg.appendChild(dot)});
+   normalized.forEach((value,i)=>{const [x,y]=point(i,radius*value);const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');dot.setAttribute('fill',colors[player%colors.length]);svg.appendChild(dot)});
   }
   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.style.display='flex';legend.style.flexWrap='wrap';legend.style.justifyContent='center';legend.style.gap='8px 14px';
   names.forEach((name,i)=>{const item=document.createElement('span');item.style.display='inline-flex';item.style.alignItems='center';item.style.gap='5px';const swatch=document.createElement('i');swatch.style.display='inline-block';swatch.style.width='9px';swatch.style.height='9px';swatch.style.borderRadius='50%';swatch.style.background=colors[i%colors.length];const text=document.createElement('span');text.textContent=name;item.append(swatch,text);legend.appendChild(item)});
-  radarHost.append(svg,legend);
+  const totals=document.createElement('div');totals.className='ee-compare-chart-note';totals.textContent=names.map((name,player)=>name+'：'+fmt(ordered.reduce((sum,row)=>sum+row.entries[player].corrected,0))+' / 12,000').join(' ／ ');
+  radarHost.append(svg,legend,totals);
  }
 
  const candidateRows=new Map();

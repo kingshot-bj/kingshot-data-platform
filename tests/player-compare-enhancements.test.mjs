@@ -29,11 +29,11 @@ test("additional ranking candidates require saved numeric scores for both player
   assert.ok(script.includes("eagleeye-player-compare-order-v1"));
 });
 
-test("radar mode does not invent percentage normalization before fixed score scales are verified", () => {
+test("radar mode applies the agreed Mystic Trial offset scale", () => {
   assert.ok(script.includes("function renderRadar()"));
-  assert.ok(script.includes("全プレイヤーで数値のAPI実スコアがそろったランキング項目"));
-  assert.ok(script.includes("row.querySelector('small')"));
-  assert.ok(script.includes("const maxValue=Math.max(1,...metrics.flatMap"));
+  assert.ok(script.includes("秘境の試練6項目すべてのAPI値がそろう"));
+  assert.ok(script.includes("const offsets={"));
+  assert.ok(script.includes("const maxPerAxis=2000"));
   assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
 
@@ -145,21 +145,32 @@ test("growth comparison is collapsed by default and radar mode renders an SVG po
   assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
   assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
-  assert.ok(script.includes("ランキングのAPI実スコアを共通の最大値に対する距離で描画"));
+  assert.ok(script.includes("オフセット補正後の値を使用"));
 });
 
 
-test("radar chart uses numeric API scores from ranking rows rather than stage labels", () => {
-  assert.ok(script.includes(".compare-player-cards .compare-player-card"));
-  assert.ok(script.includes("data-compare-label^="));
-  assert.ok(script.includes("detail.match(/API値"));
-  assert.ok(script.includes("values.set(label,score)"));
+test("radar chart uses only offset-corrected Mystic Trial API values", () => {
+  assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
+  assert.ok(script.includes("entry.score-offset"));
+  assert.ok(script.includes("闘技場':10000"));
+  assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
 });
 
 
 test("radar chart uses Mystic Trial cards only and excludes general profile metrics", () => {
-  assert.ok(script.includes(".mystic-card:not([data-ee-custom-board])"));
-  assert.ok(script.includes("秘境の試練に含まれるランキングのみを比較"));
+  assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
+  assert.ok(script.includes("秘境の試練のみ。各項目はオフセット補正後の値を使用"));
   assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
-  assert.ok(!script.includes("data-compare-label^=\"ランキング：\""));
+  assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
+});
+
+test("Mystic Trial radar applies the six agreed offsets and 2000/12000 scales", () => {
+  for (const offset of ["'闘技場':10000","'生命の森':20000","'水晶鉱山':30000","'知識の枢軸':40000","'溶岩要塞':50000","'輝光の塔':60000"]) {
+    assert.ok(script.includes(offset), "missing offset " + offset);
+  }
+  assert.ok(script.includes("const maxPerAxis=2000"));
+  assert.ok(script.includes("sum+row.entries[player].corrected"));
+  assert.ok(script.includes("/ 12,000"));
+  assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
+  assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
 });
