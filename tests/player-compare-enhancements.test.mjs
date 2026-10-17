@@ -119,18 +119,12 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
   assert.ok(!refreshSnippet.includes(String.raw`requested_include||\\\"\\\"`));
 });
 
-test("growth comparison includes ordinary hero gear from existing mobile metrics", () => {
-  assert.ok(script.includes("document.querySelector('.table-wrap .compare-table')"));
-  assert.ok(script.includes("header.startsWith('防衛編成装備：')"));
-  assert.ok(script.includes("makeTable('防衛編成の英雄装備',allHeroGear,'heroGear','データなし')"));
-  assert.ok(script.includes("helmet:'兜'"));
-  assert.ok(script.includes("gloves:'手袋'"));
-  assert.ok(script.includes("armor:'鎧'"));
-  assert.ok(script.includes("boots:'ブーツ'"));
-  assert.ok(!script.includes("編成で未確認"));
-  assert.ok(script.includes("装備データなし"));
+test("redundant growth comparison section is removed while radar and detailed profile remain", () => {
+  assert.ok(!script.includes("function buildGrowthComparison()"));
+  assert.ok(!script.includes("育成要素の比較"));
+  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+  assert.ok(script.includes("オフセット補正後の値を使用"));
 });
-
 test("player compare automatic and manual refresh requests have finite timeouts", () => {
   assert.ok(indexSource.includes("async function fetchJsonWithTimeout(url,options,timeoutMs)"));
   assert.ok(indexSource.includes("setTimeout(()=>controller.abort(),timeoutMs||15000)"));
@@ -141,7 +135,7 @@ test("player compare automatic and manual refresh requests have finite timeouts"
 
 test("growth comparison is collapsed by default and radar mode renders an SVG polygon chart", () => {
   assert.ok(script.includes("document.createElement('details');panel.className='ee-build-compare'"));
-  assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
+  assert.ok(!script.includes("title.textContent='育成要素の比較（詳細）'"));
   assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));

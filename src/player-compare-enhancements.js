@@ -28,7 +28,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-compare-bar-track .a{background:#ffd166}.ee-compare-bar-track .b{background:#42d9ff}
 .ee-compare-chart-note{font-size:11px;color:var(--sub,#91a7bf);text-align:center;margin:6px 0}.mystic-card{transition:transform 1.2s ease,box-shadow 1.2s ease}.mystic-card.ee-motion-in{animation:ee-motion-in 1.6s cubic-bezier(.16,1,.3,1) both}@keyframes ee-motion-in{0%{opacity:.3;transform:translateY(12px) scale(.98)}70%{opacity:1;transform:translateY(-2px) scale(1.005)}100%{transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.ee-split-ring .slice{transition:none}.ee-spark-layer i{animation:none;display:none}}
-.ee-growth-comparison{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238);min-width:0}.ee-growth-comparison h2{font-size:15px;margin:0 0 5px}.ee-growth-comparison p{font-size:11px;color:var(--sub,#91a7bf);margin:0 0 12px}.ee-growth-comparison h3{font-size:12px;margin:12px 0 6px}.ee-growth-table-wrap{overflow-x:auto;max-width:100%}.ee-growth-table{width:100%;border-collapse:collapse;font-size:11px;min-width:260px}.ee-growth-table th,.ee-growth-table td{padding:7px 6px;border-bottom:1px solid var(--border,#29425e);text-align:left;vertical-align:top;overflow-wrap:anywhere}.ee-growth-table thead th{color:var(--sub,#91a7bf);font-weight:600}.ee-growth-table tbody th{font-weight:700;min-width:82px}@media(max-width:480px){.ee-growth-comparison{padding:9px}.ee-growth-table{font-size:10px}.ee-growth-table th,.ee-growth-table td{padding:6px 4px}}</style>
+@media(max-width:480px){}</style>
 <script>
 (function(){
 const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
@@ -207,75 +207,8 @@ function enhance(){
  if(!candidates.length){const note=document.createElement('div');note.className='ee-compare-chart-note';note.textContent='追加候補はありません。両プレイヤーの保存済みスコアが確認できたランキングだけが候補に表示されます。';customList.appendChild(note)}
  customPanel.appendChild(customList);sec.appendChild(customPanel);
 
- function buildGrowthComparison(){
-  const playerCards=[...document.querySelectorAll('.compare-player-card')];
-  if(playerCards.length<2)return;
-  const signature=playerCards.map(card=>card.innerText).join('\\n--PLAYER--\\n');
-  const existingPanel=document.querySelector('.ee-growth-comparison');
-  if(existingPanel&&existingPanel.dataset.signature===signature)return;
-  if(existingPanel)existingPanel.remove();
-  const records=playerCards.map(card=>({name:safeText(card.querySelector('.pname'))||'プレイヤー',heroes:new Map(),heroGear:new Map(),gear:new Map()}));
-  const slotLabels={helmet:'兜',helm:'兜',head:'兜',gloves:'手袋',glove:'手袋',gauntlets:'手袋',gauntlet:'手袋',armor:'鎧',armour:'鎧',chest:'鎧',chestplate:'鎧',boots:'ブーツ',boot:'ブーツ',footwear:'ブーツ'};
-  const normalizeSlot=value=>{const raw=String(value||'').trim();const key=raw.toLowerCase().replace(/[ _-]+/g,'');return slotLabels[key]||raw||'部位不明'};
-  playerCards.forEach((card,index)=>card.querySelectorAll('.compare-metric').forEach(metric=>{
-   const label=metric.getAttribute('data-compare-label')||'',value=safeText(metric.querySelector('strong'))||'未取得';
-   if(label.startsWith('英雄：')){
-    const hero=label.slice(3).trim();
-    const useful=value.split(' · ').filter(part=>!/^戦力\s/.test(part));
-    records[index].heroes.set(hero,useful.join(' · ')||'育成情報なし');
-   }else if(label.startsWith('領主装備：')){
-    const slot=label.slice(5).trim();
-    const useful=value.split(' · ').filter(part=>!/^スコア\s|^戦闘力\s/.test(part));
-    records[index].gear.set(slot,useful.join(' · ')||'装備情報なし');
-   }
-  }));
-  const comparisonTable=document.querySelector('.table-wrap .compare-table');
-  if(comparisonTable){
-   [...comparisonTable.querySelectorAll('tbody tr')].forEach(row=>{
-    const header=safeText(row.querySelector('th'));
-    if(!header.startsWith('防衛編成装備：'))return;
-    const rawKey=header.slice('防衛編成装備：'.length).trim();
-    const split=rawKey.lastIndexOf(' / ');
-    const hero=split>=0?rawKey.slice(0,split).trim():'英雄';
-    const slot=split>=0?normalizeSlot(rawKey.slice(split+3)):normalizeSlot(rawKey);
-    const key=hero+' / '+slot;
-    records.forEach((record,index)=>{
-     const cell=row.children[index+1];
-     const value=cell?safeText(cell):'データなし';
-     record.heroGear.set(key,{hero,value:value==='装備情報なし'?'装備データなし':value||'データなし'});
-    });
-   });
-  }
-  const commonHeroes=[...records[0].heroes.keys()].filter(name=>records.every(r=>r.heroes.has(name)));
-  const allHeroGear=[...new Set(records.flatMap(r=>[...r.heroGear.keys()]))];
-  const allGovernorGear=[...new Set(records.flatMap(r=>[...r.gear.keys()]))];
-  if(!commonHeroes.length&&!allHeroGear.length&&!allGovernorGear.length)return;
-  const panel=document.createElement('section');panel.className='ee-growth-comparison';panel.dataset.signature=signature;
-  const heading=document.createElement('h2');heading.textContent='育成要素の比較';panel.appendChild(heading);
-  const makeTable=(title,keys,source,missingLabel)=>{
-   if(!keys.length)return;
-   const sub=document.createElement('h3');sub.textContent=title;panel.appendChild(sub);
-   const wrap=document.createElement('div');wrap.className='ee-growth-table-wrap';
-   const table=document.createElement('table');table.className='ee-growth-table';
-   const thead=document.createElement('thead'),tr=document.createElement('tr');
-   const first=document.createElement('th');first.textContent='項目';tr.appendChild(first);
-   records.forEach(record=>{const th=document.createElement('th');th.textContent=record.name;tr.appendChild(th)});
-   thead.appendChild(tr);table.appendChild(thead);
-   const tbody=document.createElement('tbody');
-   keys.forEach(key=>{const row=document.createElement('tr'),th=document.createElement('th');th.textContent=key;row.appendChild(th);
-    records.forEach(record=>{const td=document.createElement('td');const entry=record[source].get(key);td.textContent=entry?(typeof entry==='string'?entry:entry.value):(source==='heroGear'?('データなし'):missingLabel);row.appendChild(td)});
-    tbody.appendChild(row);
-   });
-   table.appendChild(tbody);wrap.appendChild(table);panel.appendChild(wrap);
-  };
-  makeTable('共通する英雄',commonHeroes,'heroes','データなし');
-  makeTable('防衛編成の英雄装備',allHeroGear,'heroGear','データなし');
-  makeTable('領主装備',allGovernorGear,'gear','データなし');
-  const anchor=document.querySelector('.mystic-section')||document.querySelector('.ee-compare-details');
-  if(anchor)anchor.insertAdjacentElement('beforebegin',panel);
- }
- function renderAll(){cards.forEach(renderCard);radarHost.hidden=mode!=='radar';if(mode==='radar'){cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=true});renderRadar()}else{cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=false});status.textContent=''}cards.forEach(card=>{card.classList.remove('ee-motion-in');void card.offsetWidth;card.classList.add('ee-motion-in')})}
- syncCustomCards();buildGrowthComparison();renderAll();
+function renderAll(){cards.forEach(renderCard);radarHost.hidden=mode!=='radar';if(mode==='radar'){cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=true});renderRadar()}else{cards.forEach(card=>{const view=card.querySelector('.ee-chart-view');if(view)view.hidden=false});status.textContent=''}cards.forEach(card=>{card.classList.remove('ee-motion-in');void card.offsetWidth;card.classList.add('ee-motion-in')})}
+ syncCustomCards();document.querySelectorAll('.ee-growth-comparison').forEach(el=>el.remove());renderAll();
 }
 const observer=new MutationObserver(()=>enhance());
 observer.observe(document.documentElement,{childList:true,subtree:true});
