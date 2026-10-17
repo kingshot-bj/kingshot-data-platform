@@ -197,7 +197,7 @@ test("Mystic Trial radar uses the live adjustable baseline instead of a hard-cod
   assert.ok(script.includes("let maxPerAxis="));
   assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
   assert.ok(!script.includes("const maxPerAxis=2000"));
-  assert.ok(script.includes("fmt(maxPerAxis*6)"));
+  assert.ok(script.includes("fmt(maxPerAxis*5)"));
 });
 
 
