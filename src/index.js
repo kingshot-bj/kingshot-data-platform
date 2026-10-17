@@ -1195,6 +1195,155 @@ function getApiPoolCapacityWaitCode(error) {
     : null;
 }
 
+const PLAYER_WATCHLIST_AUTO_REFRESH_INTERVAL_SECONDS = 6 * 60 * 60;
+const PLAYER_WATCHLIST_AUTO_REFRESH_RETRY_SECONDS = 15 * 60;
+const PLAYER_WATCHLIST_AUTO_REFRESH_LEASE_SECONDS = 10 * 60;
+const PLAYER_WATCHLIST_AUTO_REFRESH_MAX_PER_TICK = 26;
+
+async function runPlayerWatchlistAutoRefresh(env) {
+  if (!env.DB) return;
+  const startedAt = Date.now();
+  const now = Math.floor(startedAt / 1000);
+  await ensurePlayerWatchlistRefreshStateSchema(env.DB);
+
+  // This is only a capacity snapshot. Every request still obtains its own
+  // API Pool lease; if another job consumes capacity first, the player is
+  // deferred instead of forcing a request.
+  const availability = await getApiPoolAvailability(env.DB, {
+    provider: "MIGHTPULSE",
+    poolTypes: ["SYSTEM_GENERAL", "USER_CONTRIBUTED"]
+  });
+  const available = Math.max(0, Number(availability?.totals?.available || 0));
+  const concurrency = Math.min(PLAYER_WATCHLIST_AUTO_REFRESH_MAX_PER_TICK, available);
+  if (concurrency < 1) {
+    console.info("player_watchlist_auto_refresh_waiting", {
+      reason: "NO_API_POOL_CAPACITY",
+      available,
+      startedAt: new Date(startedAt).toISOString()
+    });
+    return;
+  }
+
+  const due = await env.DB.prepare(`
+    SELECT w.governor_id, s.last_success_at, s.failure_count
+    FROM (
+      SELECT DISTINCT governor_id
+      FROM player_watchlists
+      WHERE enabled = 1
+    ) w
+    LEFT JOIN players p ON p.governor_id = w.governor_id
+    LEFT JOIN player_watchlist_refresh_state s ON s.governor_id = w.governor_id
+    WHERE COALESCE(s.next_refresh_at, p.observed_at + ${PLAYER_WATCHLIST_AUTO_REFRESH_INTERVAL_SECONDS}, 0) <= ?
+      AND COALESCE(s.lease_until, 0) <= ?
+    ORDER BY COALESCE(s.last_success_at, 0) ASC,
+             COALESCE(p.observed_at, 0) ASC,
+             w.governor_id ASC
+    LIMIT ?
+  `).bind(now, now, concurrency).all();
+
+  const candidates = due.results || [];
+  let attempted = 0;
+  let refreshed = 0;
+  let deferred = 0;
+  let failed = 0;
+
+  await fetchWithConcurrency(candidates, concurrency, async candidate => {
+    const governorId = normalizeGovernorId(candidate.governor_id);
+    if (!governorId) return;
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO player_watchlist_refresh_state
+        (governor_id, next_refresh_at, lease_until, failure_count, updated_at)
+      VALUES (?, 0, 0, 0, ?)
+    `).bind(governorId, now).run();
+
+    const leaseUntil = now + PLAYER_WATCHLIST_AUTO_REFRESH_LEASE_SECONDS;
+    const claim = await env.DB.prepare(`
+      UPDATE player_watchlist_refresh_state
+      SET lease_until = ?, last_attempt_at = ?, updated_at = ?
+      WHERE governor_id = ?
+        AND COALESCE(lease_until, 0) <= ?
+        AND COALESCE(next_refresh_at, 0) <= ?
+        AND EXISTS (
+          SELECT 1 FROM player_watchlists w
+          WHERE w.governor_id = ? AND w.enabled = 1
+        )
+    `).bind(leaseUntil, now, now, governorId, now, now, governorId).run();
+    if (Number(claim.meta?.changes || 0) !== 1) {
+      deferred++;
+      return;
+    }
+
+    attempted++;
+    try {
+      const fetched = await fetchPlayerThroughApiPool(
+        env,
+        governorId,
+        "PLAYER_WATCHLIST_AUTO_REFRESH",
+        "base"
+      );
+      const existing = await getPlayer(env.DB, governorId);
+      await materializePlayer(
+        env.DB,
+        fetched.observation,
+        existing,
+        env.ARCHIVE,
+        env.HISTORY_STORAGE_MODE
+      );
+      const completedAt = Math.floor(Date.now() / 1000);
+      await env.DB.prepare(`
+        UPDATE player_watchlist_refresh_state
+        SET last_success_at = ?, next_refresh_at = ?, lease_until = 0,
+            failure_count = 0, last_error = NULL, updated_at = ?
+        WHERE governor_id = ?
+      `).bind(
+        completedAt,
+        completedAt + PLAYER_WATCHLIST_AUTO_REFRESH_INTERVAL_SECONDS,
+        completedAt,
+        governorId
+      ).run();
+      refreshed++;
+    } catch (error) {
+      const failedAt = Math.floor(Date.now() / 1000);
+      const code = String(error?.code || error?.message || "PLAYER_WATCHLIST_REFRESH_FAILED").slice(0, 160);
+      const previousFailures = Math.max(0, Number(candidate.failure_count) || 0);
+      const nextDelay = Math.min(
+        6 * 60 * 60,
+        PLAYER_WATCHLIST_AUTO_REFRESH_RETRY_SECONDS * Math.pow(2, Math.min(5, previousFailures))
+      );
+      await env.DB.prepare(`
+        UPDATE player_watchlist_refresh_state
+        SET next_refresh_at = ?, lease_until = 0,
+            failure_count = failure_count + 1, last_error = ?, updated_at = ?
+        WHERE governor_id = ?
+      `).bind(failedAt + nextDelay, code, failedAt, governorId).run();
+      if (getApiPoolCapacityWaitCode(error)) deferred++;
+      else failed++;
+      console.error("player_watchlist_auto_refresh_player_failed", {
+        governorId,
+        error: String(error?.message || error).slice(0, 500)
+      });
+    }
+  });
+
+  console.info("player_watchlist_auto_refresh_completed", {
+    startedAt: new Date(startedAt).toISOString(),
+    durationMs: Date.now() - startedAt,
+    availableApiKeys: available,
+    concurrency,
+    duePlayers: candidates.length,
+    attempted,
+    refreshed,
+    deferred,
+    failed
+  });
+}
+
+async function ensurePlayerWatchlistRefreshStateSchema(db) {
+  // The schema is provisioned by the dedicated migration. Runtime DDL is
+  // intentionally avoided so a deployment cannot mutate production schema.
+  return Boolean(db);
+}
+
 async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
   const availability = await getApiPoolAvailability(env.DB, {
     provider: "MIGHTPULSE",
@@ -4897,6 +5046,11 @@ export default {
       await runKingdomWatchlistJobs(env);
     } catch (error) {
       console.error("kingdom_watchlist_scheduler_failed", error?.message || error);
+    }
+    try {
+      await runPlayerWatchlistAutoRefresh(env);
+    } catch (error) {
+      console.error("player_watchlist_auto_refresh_scheduler_failed", error?.message || error);
     }
     try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
