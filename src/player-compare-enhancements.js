@@ -146,8 +146,8 @@ function enhance(){
    status.textContent='秘境の試練6項目で比較対象の順番が一致しないため、レーダーを表示できません。';
    return;
   }
-  const maxPerAxis=2000;
-  status.textContent='秘境の試練のみ。各項目はオフセット補正後の値を使用し、2,000を100%として表示します。6項目合計は12,000を100%とします。';
+  // Use the user-selected maxPerAxis from the scale control.
+  status.textContent='秘境の試練のみ。各項目はオフセット補正後の値を使用し、基準値を100%として表示します。6項目合計の基準値も連動します。';
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.setAttribute('viewBox','0 0 340 340');svg.setAttribute('role','img');svg.setAttribute('aria-label','オフセット補正済み秘境の試練6項目レーダーチャート');
   svg.style.width='100%';svg.style.maxWidth='440px';svg.style.display='block';svg.style.margin='0 auto';
