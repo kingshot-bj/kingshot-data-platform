@@ -175,8 +175,9 @@ test("Mystic Trial radar applies the six agreed offsets and 2000/12000 scales", 
   assert.ok(!script.includes(".compare-player-cards .compare-player-card"));
 });
 
-test("Mystic Trial radar reads numeric API値 labels even when game display is a stage string", () => {
-  assert.ok(script.includes("smalls.find(el=>/^API値"));
-  assert.ok(script.includes("replace(/^API値"));
+test("Mystic Trial radar reads rendered API値 small labels without regex escaping", () => {
+  assert.ok(script.includes("smalls.find(el=>safeText(el).startsWith('API値:'))"));
+  assert.ok(script.includes("slice('API値:'.length).replace(/,/g,'').trim()"));
   assert.ok(script.includes("score:raw"));
+  assert.ok(!script.includes("/^API値\\\\s*"));
 });
