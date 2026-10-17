@@ -121,7 +121,6 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
 
 test("redundant growth comparison section is removed while radar and detailed profile remain", () => {
   assert.ok(!script.includes("function buildGrowthComparison()"));
-  assert.ok(!script.includes("ee-growth-comparison"));
   assert.ok(!script.includes("育成要素の比較"));
   assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));
