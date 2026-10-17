@@ -136,22 +136,22 @@ function enhance(){
    const entries=readEntries(card).map(entry=>({...entry,corrected:entry.score===null?null:entry.score-offset}));
    return {label,offset,entries};
   }).filter(row=>Number.isFinite(row.offset)&&row.entries.length>=2&&row.entries.every(entry=>Number.isFinite(entry.corrected)&&entry.corrected>=0));
-  const required=['闘技場','生命の森','水晶鉱山','知識の枢軸','溶岩要塞','輝光の塔'];
+  const required=['闘技場','生命の森','水晶鉱山','知識の枢軸','溶岩要塞'];
   const ordered=required.map(label=>metrics.find(row=>row.label===label)).filter(Boolean);
-  if(ordered.length!==6){
-   status.textContent='秘境の試練6項目すべてのAPI値がそろうと、オフセット補正後のレーダーを表示します。';
+  if(ordered.length!==5){
+   status.textContent='秘境の試練の比較対象5項目すべてのAPI値がそろうと、オフセット補正後のレーダーを表示します。';
    return;
   }
   const playerCount=Math.min(...ordered.map(row=>row.entries.length));
   const names=ordered[0].entries.slice(0,playerCount).map(entry=>entry.name);
   if(playerCount<2||ordered.some(row=>row.entries.slice(0,playerCount).some((entry,index)=>entry.name!==names[index]))){
-   status.textContent='秘境の試練6項目で比較対象の順番が一致しないため、レーダーを表示できません。';
+   status.textContent='秘境の試練の比較対象5項目で比較対象の順番が一致しないため、レーダーを表示できません。';
    return;
   }
   // Use the user-selected maxPerAxis from the scale control.
-  status.textContent='秘境の試練のみ。各項目はオフセット補正後の値を使用し、基準値を100%として表示します。6項目合計の基準値も連動します。';
+  status.textContent='秘境の試練のみ。各項目はオフセット補正後の値を使用し、基準値を100%として表示します。5項目合計の基準値も連動します。';
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
-  svg.setAttribute('viewBox','0 0 340 340');svg.setAttribute('role','img');svg.setAttribute('aria-label','オフセット補正済み秘境の試練6項目レーダーチャート');
+  svg.setAttribute('viewBox','0 0 340 340');svg.setAttribute('role','img');svg.setAttribute('aria-label','オフセット補正済み秘境の試練5項目レーダーチャート');
   svg.style.width='100%';svg.style.maxWidth='440px';svg.style.display='block';svg.style.margin='0 auto';
   const cx=170,cy=158,radius=100,count=ordered.length;
   const point=(index,r)=>{const angle=(-Math.PI/2)+(Math.PI*2*index/count);return [cx+Math.cos(angle)*r,cy+Math.sin(angle)*r]};
@@ -172,7 +172,7 @@ function enhance(){
   }
   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.style.display='flex';legend.style.flexWrap='wrap';legend.style.justifyContent='center';legend.style.gap='8px 14px';
   names.forEach((name,i)=>{const item=document.createElement('span');item.style.display='inline-flex';item.style.alignItems='center';item.style.gap='5px';const swatch=document.createElement('i');swatch.style.display='inline-block';swatch.style.width='9px';swatch.style.height='9px';swatch.style.borderRadius='50%';swatch.style.background=colors[i%colors.length];const text=document.createElement('span');text.textContent=name;item.append(swatch,text);legend.appendChild(item)});
-  const totals=document.createElement('div');totals.className='ee-compare-chart-note';totals.textContent=names.map((name,player)=>name+'：'+fmt(ordered.reduce((sum,row)=>sum+row.entries[player].corrected,0))+' / '+fmt(maxPerAxis*6)).join(' ／ ');
+  const totals=document.createElement('div');totals.className='ee-compare-chart-note';totals.textContent=names.map((name,player)=>name+'：'+fmt(ordered.reduce((sum,row)=>sum+row.entries[player].corrected,0))+' / '+fmt(maxPerAxis*5)).join(' ／ ');
   radarHost.append(svg,legend,totals);
  }
 
