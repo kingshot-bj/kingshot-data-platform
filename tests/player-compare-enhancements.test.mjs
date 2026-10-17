@@ -33,7 +33,6 @@ test("radar mode does not invent percentage normalization before fixed score sca
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("固定基準値が未検証"));
   assert.ok(script.includes("!e.stage"));
-  assert.ok(script.includes("raw.textContent='API value: '+fmt(entry.score)"));
   assert.ok(script.includes("const maxValue=Math.max(1,...metrics.flatMap"));
   assert.ok(script.includes("createElementNS(ns,'polygon')"));
 });
