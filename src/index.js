@@ -10030,6 +10030,19 @@ async function renderPublicStatusPage(request, env) {
 
 ${canViewDetailedUsage ? `<script>
 (function(){
+  // This script runs in the browser; server-side helpers are not in scope here.
+  function escapeHtml(value){
+    return String(value == null ? "" : value).replace(/[&<>"']/g,function(char){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char];
+    });
+  }
+  function formatBytes(value){
+    var bytes=Number(value||0);
+    if(!Number.isFinite(bytes)||bytes<1024)return Math.round(bytes).toLocaleString("ja-JP")+" B";
+    var units=["KB","MB","GB","TB"],size=bytes,unit=-1;
+    while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
+    return size.toFixed(size>=100?0:size>=10?1:2)+" "+units[unit];
+  }
   document.querySelectorAll("[data-monitoring-profile]").forEach(function(btn){
     btn.addEventListener("click", async function(){
       var profile=btn.getAttribute("data-monitoring-profile");
