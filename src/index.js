@@ -10028,6 +10028,93 @@ async function renderPublicStatusPage(request, env) {
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0;background:var(--card,#fff)}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head{background:linear-gradient(110deg,rgba(15,23,42,.035),transparent 72%)}.resource-head>div,.resource-row>div{min-width:0;flex:1}.resource-head b,.resource-row b{display:block;font-size:12px;line-height:1.4;letter-spacing:.01em}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:11px;line-height:1.45;margin-top:4px;overflow-wrap:anywhere}.resource-row strong{flex:0 1 auto;min-width:0;font-size:12px;line-height:1.45;text-align:right;white-space:normal;overflow-wrap:anywhere}.resource-note{padding:11px 17px;color:#737780;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.billing-cost-row{background:linear-gradient(110deg,rgba(59,130,246,.055),transparent 85%)}.billing-cost-row strong{font-size:17px;color:#1d4ed8;font-variant-numeric:tabular-nums}.billing-overage-row{background:linear-gradient(110deg,rgba(22,163,74,.08),transparent 85%)}.billing-overage-row strong{font-size:20px;color:#15803d;font-variant-numeric:tabular-nums}.monitoring-switch{display:flex;gap:5px;padding:4px;background:#f2f2f7;border-radius:12px}.monitoring-switch-btn{border:0;border-radius:9px;padding:9px 10px;background:transparent;color:#6e6e73;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.monitoring-switch-btn.active{background:#fff;color:#1d1d1f;box-shadow:0 2px 8px rgba(0,0,0,.10)}.monitoring-switch-btn:disabled{opacity:.55;cursor:wait}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.wrap{padding:20px 12px calc(92px + env(safe-area-inset-bottom))}.hero{padding:22px 16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.section{margin-top:22px}.section h2{font-size:16px;margin:0 4px 9px}.card{border-radius:16px}.resource-head,.resource-row{align-items:flex-start;gap:10px;padding:13px 12px}.resource-head>div,.resource-row>div{min-width:0}.resource-row strong{max-width:48%;font-size:11px}.resource-head small,.resource-row small{font-size:10px}.resource-note{padding:10px 12px;font-size:10px}.billing-cost-row strong{font-size:16px}.billing-overage-row strong{font-size:19px}.monitoring-switch-row{flex-direction:column}.monitoring-switch{width:100%}.monitoring-switch-btn{flex:1;padding:10px 6px}.resource-head .state{flex-shrink:0}}
+
+/* System Status v2: operational console visual hierarchy */
+body{background:#08111f;color:#e6edf7;background-image:radial-gradient(ellipse at 50% -15%,rgba(35,99,160,.22),transparent 52%);min-height:100vh}
+.wrap{max-width:1040px;padding:24px 22px calc(48px + env(safe-area-inset-bottom))}
+.nav{padding:4px 2px 22px;border-bottom:1px solid rgba(148,163,184,.16);margin-bottom:20px}
+.back{color:#93c5fd;font-size:13px;letter-spacing:.01em}
+.refresh{color:#8ea1b9;font-size:11px;display:inline-flex;align-items:center;gap:7px}
+.refresh:before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.12)}
+.hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#111f33 0%,#0d1929 58%,#10243a 100%);border:1px solid #263a53;border-radius:24px;padding:28px 30px;box-shadow:0 18px 55px rgba(0,0,0,.24)}
+.hero:after{content:"";position:absolute;right:-75px;top:-125px;width:300px;height:300px;border:1px solid rgba(125,180,255,.12);border-radius:50%;box-shadow:0 0 0 28px rgba(125,180,255,.025),0 0 0 58px rgba(125,180,255,.02);pointer-events:none}
+.hero-line{position:relative;z-index:1;gap:17px}
+.icon{width:54px;height:54px;flex:0 0 54px;border-radius:16px;font-size:23px}
+.icon.good{background:rgba(52,211,153,.13);color:#6ee7b7}.icon.warn{background:rgba(251,191,36,.14);color:#fcd34d}.icon.bad{background:rgba(248,113,113,.14);color:#fca5a5}.icon.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}
+.eyebrow{color:#8ea8c7;font-size:10px;letter-spacing:2.1px}
+.title{font-size:clamp(25px,4vw,34px);color:#f8fbff;letter-spacing:-.045em;font-weight:760}
+.desc{max-width:680px;margin:16px 0 0;color:#a9bad0;font-size:13px;line-height:1.7}
+.stats{position:relative;z-index:1;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:25px;padding-top:20px;border-top:1px solid rgba(148,163,184,.17)}
+.stat{border:1px solid rgba(148,163,184,.16);border-radius:13px;background:rgba(4,13,25,.28);padding:13px 8px;text-align:left}
+.stat:last-child{border:1px solid rgba(148,163,184,.16)}
+.stat b{font-size:25px;color:#f4f8ff;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{display:block;margin-top:7px;color:#8fa4bd;font-size:10px;letter-spacing:.04em}
+.section{margin-top:30px}
+.section h2{display:flex;align-items:center;gap:10px;margin:0 3px 12px;color:#e8f1fc;font-size:16px;font-weight:750;letter-spacing:-.015em}
+.section h2:before{content:"";width:3px;height:17px;border-radius:4px;background:#60a5fa}
+.card{background:#0e1a2a;border:1px solid #25364b;border-radius:17px;box-shadow:0 12px 30px rgba(0,0,0,.14)}
+.row{padding:15px 17px;border-bottom-color:rgba(148,163,184,.12);gap:12px}
+.dot{width:30px;height:30px;flex:0 0 30px;border-radius:10px;background:#1b2a3d;color:#c4d4e8}
+.dot.good{background:rgba(52,211,153,.12);color:#6ee7b7}.dot.warn{background:rgba(251,191,36,.12);color:#fcd34d}.dot.bad{background:rgba(248,113,113,.12);color:#fca5a5}
+.name{color:#dce7f5;font-size:13px;font-weight:650}.state{font-size:11px;letter-spacing:.01em}
+.good{color:#6ee7b7}.warn{color:#fcd34d}.bad{color:#fca5a5}.neutral{color:#a8b8cb}
+.resource-card{background:#0e1a2a}
+.resource-head,.resource-row{padding:16px 18px;border-bottom-color:rgba(148,163,184,.13);gap:18px}
+.resource-head{background:linear-gradient(100deg,rgba(96,165,250,.09),rgba(96,165,250,0))}
+.resource-head b,.resource-row b{color:#dce8f7;font-size:12px;font-weight:720}
+.resource-head small,.resource-row small{color:#8499b2;font-size:10px;line-height:1.55}
+.resource-row strong{color:#dce8f7;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums}
+.resource-note{color:#8196af;padding:12px 18px;font-size:10px;line-height:1.7;border-bottom:1px solid rgba(148,163,184,.08)}
+.billing-cost-row{background:linear-gradient(100deg,rgba(59,130,246,.13),rgba(59,130,246,.025))}
+.billing-cost-row strong{color:#93c5fd;font-size:21px}
+.billing-overage-row{background:linear-gradient(100deg,rgba(16,185,129,.12),rgba(16,185,129,.025))}
+.billing-overage-row strong{color:#6ee7b7;font-size:25px}
+.monitoring-switch{background:#081321;border:1px solid #2a3b51;border-radius:13px}
+.monitoring-switch-btn{color:#91a4bc;font-size:11px}
+.monitoring-switch-btn.active{background:#263a53;color:#f3f8ff;box-shadow:inset 0 0 0 1px rgba(147,197,253,.18)}
+.insight-list{border-top-color:rgba(148,163,184,.14)}
+.insight-query{border-bottom-color:rgba(148,163,184,.12)}
+.insight-query-head{color:#c7d6e8}
+.insight-query code{padding:10px 11px;border:1px solid rgba(148,163,184,.12);border-radius:9px;background:#081321;color:#a9c2df;font-size:10px}
+.insight-query small{color:#7f93ab}
+.foot{color:#71869f;font-size:10px;line-height:1.7;margin:20px 4px}
+@media(min-width:800px){.stats{gap:12px}.stat{padding:16px}.section{margin-top:32px}.resource-head,.resource-row{padding:17px 20px}}
+@media(max-width:600px){
+.wrap{padding:14px 12px calc(104px + env(safe-area-inset-bottom))}
+.nav{padding:4px 2px 16px;margin-bottom:15px}
+.hero{padding:21px 17px;border-radius:19px}
+.hero-line{gap:12px}
+.icon{width:46px;height:46px;flex-basis:46px;border-radius:13px;font-size:20px}
+.eyebrow{font-size:9px;letter-spacing:1.5px}
+.title{font-size:25px}
+.desc{font-size:12px;line-height:1.65;margin-top:14px}
+.stats{gap:8px;margin-top:20px;padding-top:16px}
+.stat{padding:12px 10px;border-radius:11px}
+.stat b{font-size:23px}
+.stat span{font-size:10px;margin-top:6px}
+.section{margin-top:23px}
+.section h2{font-size:14px;margin:0 3px 10px}
+.card{border-radius:14px}
+.row{padding:13px 12px;gap:10px}
+.name{font-size:12px}
+.state{font-size:10px}
+.resource-head,.resource-row{align-items:flex-start;gap:9px;padding:13px 12px}
+.resource-head>div,.resource-row>div{min-width:0;flex:1}
+.resource-row strong{max-width:43%;font-size:11px;line-height:1.45}
+.resource-head b,.resource-row b{font-size:11px}
+.resource-head small,.resource-row small{font-size:9px;line-height:1.5}
+.resource-note{padding:10px 12px;font-size:9px;line-height:1.65}
+.billing-cost-row strong{font-size:18px}
+.billing-overage-row strong{font-size:21px}
+.monitoring-switch-row{flex-direction:column}
+.monitoring-switch{width:100%}
+.monitoring-switch-btn{flex:1;padding:10px 5px;font-size:10px}
+.insight-query{padding:11px 12px}
+.insight-query-head{font-size:10px}
+.insight-query code{font-size:9px;overflow-wrap:anywhere}
+.foot{font-size:9px}
+}
+@media(prefers-reduced-motion:no-preference){.card,.hero{transition:border-color .18s ease,box-shadow .18s ease}.card:hover{border-color:#385271;box-shadow:0 15px 36px rgba(0,0,0,.2)}}
 </style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section" id="service-status"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
 
 ${canViewDetailedUsage ? `<script>
