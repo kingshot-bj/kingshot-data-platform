@@ -964,12 +964,21 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   const workerCpuOverage = workers.available && WORKERS_PAID_INCLUDED.cpuTimeMsPerMonth && Number.isFinite(workers.cpuTimeMs)
     ? Math.max(0, workers.cpuTimeMs - WORKERS_PAID_INCLUDED.cpuTimeMsPerMonth)
     : 0;
+  // CPU usage is estimated from Requests × CPU P50, not a directly measured
+  // billable total. Keep it in resource monitoring, but exclude it from the
+  // monetary overage estimate until a validated billable CPU metric is available.
+  const estimatedOverageBreakdownUsd = {
+    d1RowsRead: (d1ReadOverage / 1_000_000) * 0.001,
+    d1RowsWritten: (d1WriteOverage / 1_000_000) * 1,
+    d1Storage: (d1StorageOverageBytes / (1024 ** 3)) * 0.75,
+    workerRequests: (workerRequestOverage / 1_000_000) * 0.30,
+    workerCpuExcludedEstimate: (workerCpuOverage / 1_000_000) * 0.02
+  };
   const estimatedOverageUsd = paidMode
-    ? (d1ReadOverage / 1_000_000) * 0.001
-      + (d1WriteOverage / 1_000_000) * 1
-      + (d1StorageOverageBytes / (1024 ** 3)) * 0.75
-      + (workerRequestOverage / 1_000_000) * 0.30
-      + (workerCpuOverage / 1_000_000) * 0.02
+    ? estimatedOverageBreakdownUsd.d1RowsRead
+      + estimatedOverageBreakdownUsd.d1RowsWritten
+      + estimatedOverageBreakdownUsd.d1Storage
+      + estimatedOverageBreakdownUsd.workerRequests
     : 0;
   // PAID_5USDの「全体使用率」は、個別リソースの最大使用率ではなく、
   // $5/月の基本枠を超えて発生する推定超過額を$5に対する割合として表示する。
@@ -1035,6 +1044,7 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
       budgetUtilizationPercent,
       budgetState,
       estimatedOverageUsd,
+      estimatedOverageBreakdownUsd,
       estimatedMonthlyCostUsd,
       usdJpyRate: monitoring.usdJpyRate,
       estimatedMonthlyCostJpy: Math.round(estimatedMonthlyCostUsd * monitoring.usdJpyRate),
