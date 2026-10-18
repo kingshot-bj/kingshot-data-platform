@@ -10115,6 +10115,11 @@ body{background:#08111f;color:#e6edf7;background-image:radial-gradient(ellipse a
 .foot{font-size:9px}
 }
 @media(prefers-reduced-motion:no-preference){.card,.hero{transition:border-color .18s ease,box-shadow .18s ease}.card:hover{border-color:#385271;box-shadow:0 15px 36px rgba(0,0,0,.2)}}
+
+/* Keep status-page controls above card layers and reliably tappable on mobile. */
+.resource-head,.resource-row{position:relative}
+.monitoring-switch,.monitoring-switch-btn,#r2-object-check{position:relative;z-index:2;pointer-events:auto;touch-action:manipulation;cursor:pointer}
+.monitoring-switch-btn:disabled,#r2-object-check:disabled{opacity:.65;cursor:wait}
 </style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section" id="service-status"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
 
 ${canViewDetailedUsage ? `<script>
@@ -10132,58 +10137,64 @@ ${canViewDetailedUsage ? `<script>
     while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
     return size.toFixed(size>=100?0:size>=10?1:2)+" "+units[unit];
   }
-  document.querySelectorAll("[data-monitoring-profile]").forEach(function(btn){
-    btn.addEventListener("click", async function(){
-      var profile=btn.getAttribute("data-monitoring-profile");
+  // Delegate clicks from the page so controls still work if the status panel is
+  // re-rendered or the browser delays individual listener setup.
+  document.addEventListener("click", async function(event){
+    var profileButton=event.target && event.target.closest ? event.target.closest("[data-monitoring-profile]") : null;
+    if(profileButton){
+      event.preventDefault();
+      if(profileButton.disabled) return;
+      var profile=profileButton.getAttribute("data-monitoring-profile");
       var buttons=Array.from(document.querySelectorAll("[data-monitoring-profile]"));
       buttons.forEach(function(b){b.disabled=true;});
       var msg=document.getElementById("monitoring-profile-message");
       if(msg) msg.textContent="監視プロファイルを切り替えています…";
       try{
-        var res=await fetch("/api/admin/monitoring-profile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({profile:profile}),credentials:"same-origin"});
+        var res=await fetch("/api/admin/monitoring-profile",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({profile:profile}),credentials:"same-origin",cache:"no-store"});
         var data=await res.json().catch(function(){return {};});
-        if(!res.ok||!data.ok) throw new Error(data.error||"切替に失敗しました");
+        if(!res.ok||!data.ok) throw new Error(data.error||("HTTP "+res.status));
+        if(msg) msg.textContent="切り替えました。画面を更新しています…";
         window.location.reload();
       }catch(error){
         if(msg) msg.textContent="切替失敗: "+(error.message||String(error));
         buttons.forEach(function(b){b.disabled=false;});
       }
-    });
-  });
+      return;
+    }
 
-  var button=document.getElementById("r2-object-check");
-  var result=document.getElementById("r2-object-check-result");
-  if(button&&result){
-    button.addEventListener("click",async function(){
-      button.disabled=true;
-      button.textContent="確認中…";
-      result.textContent="R2実オブジェクトを取得しています…";
-      try{
-        var res=await fetch("/api/admin/r2-archive-objects?limit=50",{cache:"no-store",credentials:"same-origin"});
-        var data=await res.json().catch(function(){return {};});
-        if(!res.ok||!data.ok)throw new Error(data.error||("HTTP "+res.status));
-        var objects=data.objects||[];
-        var prefixText=(data.prefixes||[]).map(function(p){return p.prefix+" "+p.listedCount+"件"+(p.truncated?"（続きあり）":"");}).join(" / ");
-        var html="<div><b>確認時刻</b> "+new Date(data.checkedAt||Date.now()).toLocaleString("ja-JP")+" · <b>一覧取得</b> "+objects.length+"件</div>";
-        html+="<div style='margin-top:5px'>"+prefixText+"</div>";
-        if(objects.length){
-          html+="<div class='insight-list' style='margin:10px -17px -12px'>";
-          objects.forEach(function(o){
-            html+="<div class='insight-query'><div class='insight-query-head'><span>"+escapeHtml(o.key)+"</span><span>"+formatBytes(o.size)+"</span></div><small>"+(o.uploaded?new Date(o.uploaded).toLocaleString("ja-JP"):"—")+" · ETag "+escapeHtml(o.etag||o.httpEtag||"—")+"</small></div>";
-          });
-          html+="</div>";
-        }else{
-          html+="<div style='margin-top:6px'><b>実オブジェクトなし</b></div>";
-        }
-        result.innerHTML=html;
-      }catch(error){
-        result.textContent="R2実オブジェクト確認失敗: "+(error.message||String(error));
-      }finally{
-        button.disabled=false;
-        button.textContent="再確認";
+    var r2Button=event.target && event.target.closest ? event.target.closest("#r2-object-check") : null;
+    if(!r2Button) return;
+    event.preventDefault();
+    var result=document.getElementById("r2-object-check-result");
+    if(!result||r2Button.disabled) return;
+    r2Button.disabled=true;
+    r2Button.textContent="確認中…";
+    result.textContent="R2実オブジェクトを取得しています…";
+    try{
+      var res=await fetch("/api/admin/r2-archive-objects?limit=50",{cache:"no-store",credentials:"same-origin"});
+      var data=await res.json().catch(function(){return {};});
+      if(!res.ok||!data.ok) throw new Error(data.error||("HTTP "+res.status));
+      var objects=data.objects||[];
+      var prefixText=(data.prefixes||[]).map(function(p){return p.prefix+" "+p.listedCount+"件"+(p.truncated?"（続きあり）":"");}).join(" / ");
+      var html="<div><b>確認時刻</b> "+new Date(data.checkedAt||Date.now()).toLocaleString("ja-JP")+" · <b>一覧取得</b> "+objects.length+"件</div>";
+      html+="<div style='margin-top:5px'>"+escapeHtml(prefixText)+"</div>";
+      if(objects.length){
+        html+="<div class='insight-list' style='margin:10px -12px -10px'>";
+        objects.forEach(function(o){
+          html+="<div class='insight-query'><div class='insight-query-head'><span>"+escapeHtml(o.key)+"</span><span>"+formatBytes(o.size)+"</span></div><small>"+(o.uploaded?new Date(o.uploaded).toLocaleString("ja-JP"):"—")+" · ETag "+escapeHtml(o.etag||o.httpEtag||"—")+"</small></div>";
+        });
+        html+="</div>";
+      }else{
+        html+="<div style='margin-top:6px'><b>実オブジェクトなし</b></div>";
       }
-    });
-  }
+      result.innerHTML=html;
+    }catch(error){
+      result.textContent="R2実オブジェクト確認失敗: "+(error.message||String(error));
+    }finally{
+      r2Button.disabled=false;
+      r2Button.textContent="再確認";
+    }
+  }, true);
 })();
 </script>` : ""}
 <style>@media print{body{background:#fff!important}.wrap{max-width:none;padding:8mm}.nav .back{display:none}.hero,.card{box-shadow:none!important;break-inside:avoid}.section{break-inside:avoid}.resource-row,.row{break-inside:avoid}.foot{font-size:9px}details>summary{display:none!important}details> :not(summary){display:block!important}}</style></main></body></html>`);
