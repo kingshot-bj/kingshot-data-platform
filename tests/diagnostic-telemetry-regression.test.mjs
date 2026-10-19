@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { clientTelemetryScript, handleClientTelemetry } from "../src/client-telemetry.js";
+import { getSystemEventLog } from "../src/system-log.js";
 
 const source = await readFile(new URL("../src/client-telemetry.js", import.meta.url), "utf8");
 
@@ -88,4 +89,44 @@ test("browser telemetry retries failed batches and reuses event IDs", () => {
   assert.match(script, /queue=events\.concat\(queue\)\.slice\(-100\)/);
   assert.match(script, /TELEMETRY_HTTP_/);
   assert.doesNotMatch(script, /navigator\.sendBeacon/);
+});
+
+
+test("system log browser filters use exact SQL predicates and bind values in order", async () => {
+  let capturedSql = "";
+  let capturedBinds = [];
+  const db = {
+    prepare(sql) {
+      capturedSql = sql;
+      return { bind(...values) { capturedBinds = values; return { async all() { return { results: [] }; } }; } };
+    }
+  };
+  await getSystemEventLog(db, {
+    limit: 20,
+    since: 100,
+    until: 200,
+    service: "browser",
+    feature: "client_telemetry",
+    eventType: "CLICK"
+  });
+  assert.match(capturedSql, /created_at>=\?/);
+  assert.match(capturedSql, /created_at<=\?/);
+  assert.match(capturedSql, /service=\?/);
+  assert.match(capturedSql, /feature=\?/);
+  assert.match(capturedSql, /event_type=\?/);
+  assert.deepEqual(capturedBinds, [100, 200, "browser", "client_telemetry", "CLICK", 20]);
+});
+
+test("system log filters remain optional for existing callers", async () => {
+  let capturedSql = "";
+  let capturedBinds = [];
+  const db = {
+    prepare(sql) {
+      capturedSql = sql;
+      return { bind(...values) { capturedBinds = values; return { async all() { return { results: [] }; } }; } };
+    }
+  };
+  await getSystemEventLog(db, { limit: 5 });
+  assert.doesNotMatch(capturedSql, /service=\?|feature=\?|event_type=\?/);
+  assert.deepEqual(capturedBinds, [5]);
 });
