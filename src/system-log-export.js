@@ -4,7 +4,8 @@ const SYSTEM_LOG_EXPORT_RANGES = Object.freeze({
   "1h": 60 * 60,
   "3h": 3 * 60 * 60,
   "12h": 12 * 60 * 60,
-  "24h": 24 * 60 * 60
+  "24h": 24 * 60 * 60,
+  "7d": 7 * 24 * 60 * 60
 });
 
 const EXPORT_PREFIX = "exports/system-log/";
@@ -62,7 +63,7 @@ function rowToEvent(row) {
   return { ...row, metadata };
 }
 
-async function createSystemLogExport(db, bucket, { range = "24h", traceId = null } = {}) {
+async function createSystemLogExport(db, bucket, { range = "24h", traceId = null, service = null, feature = null, eventType = null } = {}) {
   if (!db) throw new Error("D1_UNAVAILABLE");
   if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
 
@@ -70,11 +71,15 @@ async function createSystemLogExport(db, bucket, { range = "24h", traceId = null
   const toUnix = Math.floor(Date.now() / 1000);
   const fromUnix = toUnix - resolved.seconds;
   const trace = buildTraceFilter(traceId);
+  const serviceSql = service ? " AND service=?" : "";
+  const featureSql = feature ? " AND feature=?" : "";
+  const eventTypeSql = eventType ? " AND event_type=?" : "";
+  const extraBinds = [service, feature, eventType].filter(value => value != null).map(value => String(value).slice(0, 160));
 
   const countResult = await db.prepare(
     `SELECT COUNT(*) AS count FROM system_event_log
-     WHERE created_at>=? AND created_at<=?${trace.sql}`
-  ).bind(fromUnix, toUnix, ...trace.binds).first();
+     WHERE created_at>=? AND created_at<=?${trace.sql}${serviceSql}${featureSql}${eventTypeSql}`
+  ).bind(fromUnix, toUnix, ...trace.binds, ...extraBinds).first();
   const eventCount = Number(countResult?.count || 0);
 
   const timestamp = new Date(toUnix * 1000).toISOString().replace(/[:.]/g, "-");
@@ -111,8 +116,8 @@ async function createSystemLogExport(db, bucket, { range = "24h", traceId = null
           actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,
           completed_at,elapsed_ms,error_code,message,metadata_json,created_at
           FROM system_event_log
-          WHERE created_at>=? AND created_at<=?${trace.sql}`;
-        const binds = [fromUnix, toUnix, ...trace.binds];
+          WHERE created_at>=? AND created_at<=?${trace.sql}${serviceSql}${featureSql}${eventTypeSql}`;
+        const binds = [fromUnix, toUnix, ...trace.binds, ...extraBinds];
 
         if (cursorCreatedAt != null) {
           sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
@@ -159,6 +164,9 @@ async function createSystemLogExport(db, bucket, { range = "24h", traceId = null
     customMetadata: {
       source: "system_event_log",
       range: resolved.key,
+      service: service || "",
+      feature: feature || "",
+      eventType: eventType || "",
       from: String(fromUnix),
       to: String(toUnix),
       eventCount: String(eventCount),
@@ -186,7 +194,10 @@ export async function handleAdminSystemLogExportApi(request, env, auth) {
     const url = new URL(request.url);
     const result = await createSystemLogExport(env.DB, env.ARCHIVE, {
       range: url.searchParams.get("range") || "24h",
-      traceId: url.searchParams.get("trace_id") || null
+      traceId: url.searchParams.get("trace_id") || null,
+      service: url.searchParams.get("service") || null,
+      feature: url.searchParams.get("feature") || null,
+      eventType: url.searchParams.get("event_type") || null
     });
     return json({ ok: true, export: result });
   } catch (error) {
