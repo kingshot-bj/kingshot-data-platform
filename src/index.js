@@ -5128,35 +5128,14 @@ const EAGLEEYE_THEME_SCRIPT = `
         return false;
       }
 
+      // Do not intercept clicks globally. Capture-phase locking can suppress
+      // page-specific handlers (including delegated handlers and mobile Safari
+      // interactions). Duplicate mutating requests are guarded in fetch instead.
       document.addEventListener("click",function(event){
         try {
           var button=event.target&&event.target.closest?event.target.closest("button"):null;
-          if(!button) return;
-          if(button.classList.contains("eagle-theme-toggle") || button.id==="themeToggle") return;
-          if(button.dataset.eagleBusy==="1"){
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-          }
-          // Do not disable the button during capture: doing so can suppress its
-          // own click handler on mobile browsers. Mark the action immediately,
-          // then apply the visual/disabled lock after the click has propagated.
-          button.dataset.eagleBusy="1";
-          button.setAttribute("aria-disabled","true");
-          button.classList.add("eagle-action-busy");
-          if(!button.dataset.eagleOriginalAriaLabel && button.hasAttribute("aria-label"))button.dataset.eagleOriginalAriaLabel=button.getAttribute("aria-label");
-          if(!button.hasAttribute("aria-label"))button.setAttribute("aria-label",(button.textContent||"ボタン").trim()+"、処理中");
+          if(!button || button.classList.contains("eagle-theme-toggle") || button.id==="themeToggle") return;
           window.__eagleEyeCurrentActionButton=button;
-          setTimeout(function(){
-            if(window.__eagleEyeCurrentActionButton===button) window.__eagleEyeCurrentActionButton=null;
-            if(button.dataset.eagleBusy==="1" && !button.dataset.eagleFetchBound){
-              button.disabled=true;
-              button.dataset.eagleAutoDisabled="1";
-            }
-          },0);
-          setTimeout(function(){
-            if(button.dataset.eagleBusy==="1" && !button.dataset.eagleFetchBound) release(button);
-          },1500);
         } catch(e) {}
       },true);
 
@@ -5171,13 +5150,17 @@ const EAGLEEYE_THEME_SCRIPT = `
           }
           form.dataset.eagleSubmitting="1";
           var submitter=event.submitter || form.querySelector("button[type='submit'],input[type='submit']");
-          if(submitter && submitter.dataset.eagleBusy!=="1"){
-            lock(submitter);
-          }
-          form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(function(b){
-            b.disabled=true;
-            b.dataset.eagleFormDisabled="1";
-          });
+          // Let the form's own submit listeners run before changing controls.
+          // The prior capture-phase disable could block the page's submission logic.
+          setTimeout(function(){
+            try {
+              form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(function(b){
+                if(b.dataset.eagleBusy==="1") return;
+                b.disabled=true;
+                b.dataset.eagleFormDisabled="1";
+              });
+            } catch(e) {}
+          },0);
         } catch(e) {}
       },true);
 
