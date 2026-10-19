@@ -13,11 +13,17 @@ export async function handleAdminSystemLogApi(request, env, auth) {
     const traceId = url.searchParams.get("trace_id") || null;
     const since = url.searchParams.get("since");
     const until = url.searchParams.get("until");
+    const service = url.searchParams.get("service") || null;
+    const feature = url.searchParams.get("feature") || null;
+    const eventType = url.searchParams.get("event_type") || null;
     const events = await getSystemEventLog(env.DB, {
       limit,
       traceId,
       since: since == null || since === "" ? null : Number(since),
-      until: until == null || until === "" ? null : Number(until)
+      until: until == null || until === "" ? null : Number(until),
+      service,
+      feature,
+      eventType
     });
     return new Response(JSON.stringify({ ok:true, count:events.length, events }), {
       headers:{ "content-type":"application/json; charset=UTF-8", "cache-control":"no-store" }
