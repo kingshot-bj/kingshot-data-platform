@@ -5138,10 +5138,21 @@ const EAGLEEYE_THEME_SCRIPT = `
             event.stopImmediatePropagation();
             return;
           }
-          if(lock(button)) return;
+          // Do not disable the button during capture: doing so can suppress its
+          // own click handler on mobile browsers. Mark the action immediately,
+          // then apply the visual/disabled lock after the click has propagated.
+          button.dataset.eagleBusy="1";
+          button.setAttribute("aria-disabled","true");
+          button.classList.add("eagle-action-busy");
+          if(!button.dataset.eagleOriginalAriaLabel && button.hasAttribute("aria-label"))button.dataset.eagleOriginalAriaLabel=button.getAttribute("aria-label");
+          if(!button.hasAttribute("aria-label"))button.setAttribute("aria-label",(button.textContent||"ボタン").trim()+"、処理中");
           window.__eagleEyeCurrentActionButton=button;
           setTimeout(function(){
             if(window.__eagleEyeCurrentActionButton===button) window.__eagleEyeCurrentActionButton=null;
+            if(button.dataset.eagleBusy==="1" && !button.dataset.eagleFetchBound){
+              button.disabled=true;
+              button.dataset.eagleAutoDisabled="1";
+            }
           },0);
           setTimeout(function(){
             if(button.dataset.eagleBusy==="1" && !button.dataset.eagleFetchBound) release(button);
@@ -5160,12 +5171,7 @@ const EAGLEEYE_THEME_SCRIPT = `
           }
           form.dataset.eagleSubmitting="1";
           var submitter=event.submitter || form.querySelector("button[type='submit'],input[type='submit']");
-          if(submitter){
-            if(submitter.dataset.eagleBusy==="1"){
-              event.preventDefault();
-              event.stopImmediatePropagation();
-              return;
-            }
+          if(submitter && submitter.dataset.eagleBusy!=="1"){
             lock(submitter);
           }
           form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(function(b){
