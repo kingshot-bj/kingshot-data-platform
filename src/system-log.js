@@ -130,7 +130,10 @@ export async function getSystemEventLog(db, {
   traceId = null,
   since = null,
   until = null,
-  pageSize = 500
+  pageSize = 500,
+  service = null,
+  feature = null,
+  eventType = null
 } = {}) {
   if (!db) return [];
   await ensureSystemLogSchema(db);
@@ -179,6 +182,9 @@ export async function getSystemEventLog(db, {
       sql += " AND created_at<=?";
       binds.push(Number(until));
     }
+    if (service) { sql += " AND service=?"; binds.push(String(service).slice(0,120)); }
+    if (feature) { sql += " AND feature=?"; binds.push(String(feature).slice(0,160)); }
+    if (eventType) { sql += " AND event_type=?"; binds.push(String(eventType).slice(0,80)); }
 
     if (cursorCreatedAt != null) {
       sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
