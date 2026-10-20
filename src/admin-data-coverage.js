@@ -40,18 +40,29 @@ export async function renderAdminDataCoveragePage(env, auth) {
     });
 
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye データ登録状況</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:22px}.metric{padding:22px;border:1px solid #334155;border-radius:16px;background:#162238}.metric-label{color:#94a3b8;font-size:13px}.metric-value{margin-top:8px;font-size:38px;font-weight:900;letter-spacing:-1px}.metric-note{margin-top:7px;color:#64748b;font-size:12px;line-height:1.5}.section{margin-top:24px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.detail{display:grid;gap:10px}.row{display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid #334155;border-radius:12px;background:#111c30}.row span{color:#94a3b8}.row b{font-variant-numeric:tabular-nums}.meta{margin-top:18px;color:#64748b;font-size:12px;line-height:1.6}.refresh{display:inline-block;padding:9px 12px;border:1px solid #475569;border-radius:10px;color:#e2e8f0;text-decoration:none;background:#162238}.refresh:hover{border-color:#64748b}@media(max-width:640px){.grid{grid-template-columns:1fr}.top{align-items:flex-start}.title{font-size:26px}.metric-value{font-size:34px}}</style></head><body><main class="wrap">
+<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:22px}.metric{padding:22px;border:1px solid #334155;border-radius:16px;background:#162238}.role-card{width:100%;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s}.role-card:hover,.role-card:focus-visible{border-color:#f59e0b;background:#1b2a42;outline:none}.role-card[aria-pressed="true"]{border-color:#f59e0b;box-shadow:inset 0 0 0 1px #f59e0b}.role-card:focus-visible{outline:2px solid #fbbf24;outline-offset:2px}.role-hint{margin-top:8px;color:#fbbf24;font-size:11px}.metric-label{color:#94a3b8;font-size:13px}.metric-value{margin-top:8px;font-size:38px;font-weight:900;letter-spacing:-1px}.metric-note{margin-top:7px;color:#64748b;font-size:12px;line-height:1.5}.section{margin-top:24px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.detail{display:grid;gap:10px}.row{display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid #334155;border-radius:12px;background:#111c30}.row span{color:#94a3b8}.row b{font-variant-numeric:tabular-nums}.meta{margin-top:18px;color:#64748b;font-size:12px;line-height:1.6}.refresh{display:inline-block;padding:9px 12px;border:1px solid #475569;border-radius:10px;color:#e2e8f0;text-decoration:none;background:#162238}.refresh:hover{border-color:#64748b}@media(max-width:640px){.grid{grid-template-columns:1fr}.top{align-items:flex-start}.title{font-size:26px}.metric-value{font-size:34px}}</style></head><body><main class="wrap">
 <div class="top"><a class="back" href="/admin">← ADMIN CONTROL</a><a class="refresh" href="/admin/data-coverage">再読み込み</a></div>
 <div class="eyebrow">EAGLEEYE DATA COVERAGE</div><h1 class="title">データ登録状況</h1><p class="sub">現在のEagleEye D1に保持しているプレイヤー数と王国数を確認できます。件数はこの画面を開いた時点のD1集計値です。</p><div class="badge">ROLE: ${String(auth?.role || "ADMIN")}</div>
 <div class="grid"><div class="metric"><div class="metric-label">登録プレイヤー</div><div class="metric-value">${formatCount(players)}人</div><div class="metric-note">players テーブルの現在登録件数。governor_id単位で1件です。</div></div>
 <div class="metric"><div class="metric-label">登録王国</div><div class="metric-value">${formatCount(playerKingdoms)}王国</div><div class="metric-note">players テーブルに存在する kid のユニーク数。</div></div></div>
 <div class="section"><h2>ユーザー・ロール</h2><div class="grid">
 <div class="metric"><div class="metric-label">EagleEye登録アカウント</div><div class="metric-value">${formatCount(totalAccounts)}人</div><div class="metric-note">Discord認証で作成されたEagleEyeユーザーアカウント数。</div></div>
-<div class="metric"><div class="metric-label">OWNER</div><div class="metric-value">${formatCount(accountByRole.get("OWNER") || 0)}人</div></div>
-<div class="metric"><div class="metric-label">ADMIN</div><div class="metric-value">${formatCount(accountByRole.get("ADMIN") || 0)}人</div></div>
-<div class="metric"><div class="metric-label">ADVANCED</div><div class="metric-value">${formatCount(accountByRole.get("ADVANCED") || 0)}人</div></div>
-<div class="metric"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div></div>
+<button class="metric role-card" type="button" data-role="OWNER" aria-pressed="false"><div class="metric-label">OWNER</div><div class="metric-value">${formatCount(accountByRole.get("OWNER") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
+<button class="metric role-card" type="button" data-role="ADMIN" aria-pressed="false"><div class="metric-label">ADMIN</div><div class="metric-value">${formatCount(accountByRole.get("ADMIN") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
+<button class="metric role-card" type="button" data-role="ADVANCED" aria-pressed="false"><div class="metric-label">ADVANCED</div><div class="metric-value">${formatCount(accountByRole.get("ADVANCED") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
+<button class="metric role-card" type="button" data-role="BASIC" aria-pressed="false"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
 </div></div>
+</div></div>
+<div class="section" id="roleUsersSection" hidden>
+<h2 id="roleUsersTitle">ロール別ユーザー一覧</h2>
+<div style="display:flex;gap:8px;align-items:center;margin:0 0 12px">
+<input id="roleUserSearch" type="search" placeholder="名前・Discord IDで検索" autocomplete="off" style="min-width:0;flex:1;padding:12px;border:1px solid #334155;border-radius:10px;background:#111c30;color:#f8fafc;font:inherit">
+<button id="roleUserSearchButton" type="button" class="refresh">検索</button>
+</div>
+<div id="roleUsersStatus" class="meta" aria-live="polite">ロールを選択してください。</div>
+<div id="roleUsersList" class="detail"></div>
+<button id="roleUsersMore" type="button" class="refresh" style="display:none;margin-top:12px">さらに表示</button>
+</div>
 <div class="section"><h2>王国コレクション状況</h2><div class="detail">
 <div class="row"><span>把握済み王国</span><b>${formatCount(collection.catalogTotal)}王国</b></div>
 <div class="row"><span>取得済み王国</span><b>${formatCount(collection.collectedCount)}王国</b></div>
@@ -66,7 +77,53 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="row"><span>ウォッチ対象のユニーク王国</span><b>${formatCount(watchedKingdoms)}王国</b></div>
 </div></div>
 <div class="meta">取得時刻（日本時間）：${generatedAt}<br>集計処理：約${elapsedMs}ms<br>王国コレクションは「ランキング＋プレイヤー取得が正常完了した王国」を取得済みとして記録します。<br>※「把握済み王国」は王国Catalogの存在確認件数です。Catalog Discoveryは5分ごとに1ページずつ探索を継続し、新規王国だけをD1へ登録します。既存王国の詳細データはR2へ保存し、D1には検索用インデックスを残します。取得済み王国との差分を未取得王国として表示します。プレイヤーDB基準の王国数は上の「登録王国」で確認できます。</div>
-</main></body></html>`;
+</main><script>
+(function(){
+ const section=document.getElementById("roleUsersSection"),title=document.getElementById("roleUsersTitle"),search=document.getElementById("roleUserSearch"),searchButton=document.getElementById("roleUserSearchButton"),status=document.getElementById("roleUsersStatus"),list=document.getElementById("roleUsersList"),more=document.getElementById("roleUsersMore");
+ const cards=Array.from(document.querySelectorAll(".role-card"));
+ let selectedRole="",offset=0,total=0,loading=false;
+ function addText(parent,tag,className,value){const el=document.createElement(tag);if(className)el.className=className;el.textContent=value==null?"":String(value);parent.appendChild(el);return el;}
+ function drawRows(rows){
+   rows.forEach(function(user){
+     const row=document.createElement("div");row.className="row";row.style.display="block";
+     const top=document.createElement("div");top.style.display="flex";top.style.justifyContent="space-between";top.style.gap="12px";
+     const name=String(user.global_name||user.username||"名前未設定");
+     addText(top,"strong","",name);
+     const role=addText(top,"b","",String(user.role||"BASIC"));role.style.color="#fbbf24";
+     row.appendChild(top);
+     addText(row,"div","meta","Discord ID: "+String(user.discord_id||"-"));
+     addText(row,"div","meta","状態: "+String(user.status||"-")+" / 登録: "+(user.created_at?new Date(Number(user.created_at)*1000).toLocaleDateString("ja-JP"):"-")+" / 最終ログイン: "+(user.last_login_at?new Date(Number(user.last_login_at)*1000).toLocaleString("ja-JP"):"-"));
+     list.appendChild(row);
+   });
+ }
+ async function load(reset){
+   if(loading||!selectedRole)return;
+   loading=true;searchButton.disabled=true;more.disabled=true;
+   if(reset){offset=0;list.replaceChildren();}
+   status.textContent="読み込み中…";
+   try{
+     const params=new URLSearchParams({role:selectedRole,q:search.value.trim(),limit:"100",offset:String(offset)});
+     const response=await fetch("/api/admin/data-coverage/users?"+params.toString(),{credentials:"same-origin",cache:"no-store"});
+     const data=await response.json();
+     if(!response.ok||!data.ok)throw new Error(data.message||data.error||("HTTP "+response.status));
+     total=Number(data.total||0);drawRows(data.users||[]);offset+=(data.users||[]).length;
+     status.textContent=total+"人中 "+Math.min(offset,total)+"人を表示";
+     more.style.display=offset<total?"inline-block":"none";
+     if(total===0)addText(list,"div","row","該当するユーザーはいません。");
+   }catch(error){status.textContent="取得失敗: "+String(error&&error.message||error);}
+   finally{loading=false;searchButton.disabled=false;more.disabled=false;}
+ }
+ cards.forEach(function(card){card.addEventListener("click",function(){
+   selectedRole=card.getAttribute("data-role")||"";
+   cards.forEach(function(other){other.setAttribute("aria-pressed",String(other===card));});
+   section.hidden=false;title.textContent=selectedRole+" ユーザー一覧";search.value="";
+   load(true);
+ });});
+ searchButton.addEventListener("click",function(){load(true);});
+ search.addEventListener("keydown",function(event){if(event.key==="Enter"){event.preventDefault();load(true);}});
+ more.addEventListener("click",function(){load(false);});
+})();
+</script></body></html>`;
   } catch (error) {
     return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye データ登録状況</title><style>body{background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px}.error{margin-top:18px;padding:16px;border:1px solid #7f1d1d;background:#3a1418;border-radius:12px;color:#fca5a5}a{color:#cbd5e1}</style></head><body><a href="/admin">← ADMIN CONTROL</a><h1>データ登録状況を取得できません</h1><div class="error">${String(error?.message || error)}</div></body></html>`;
   }
