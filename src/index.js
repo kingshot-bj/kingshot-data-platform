@@ -4800,6 +4800,24 @@ export default {
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
+      if (url.pathname === "/api/admin/data-coverage/users") {
+        const guard = await requireAdmin(request, env);
+        if (guard.error) return guard.error;
+        if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        const params = url.searchParams;
+        const role = String(params.get("role") || "").toUpperCase();
+        if (!["OWNER", "ADMIN", "ADVANCED", "BASIC"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
+        const q = String(params.get("q") || "").trim().slice(0, 100);
+        const like = "%" + q + "%";
+        const limit = Math.min(Math.max(Number(params.get("limit") || 100), 1), 100);
+        const offset = Math.max(0, Math.min(Number(params.get("offset") || 0), 10000));
+        const filter = "role = ? AND (COALESCE(global_name, '') LIKE ? OR COALESCE(username, '') LIKE ? OR discord_id LIKE ?)";
+        const [count, result] = await Promise.all([
+          env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE " + filter).bind(role, like, like, like).first(),
+          env.DB.prepare("SELECT user_id, discord_id, username, global_name, role, status, created_at, last_login_at FROM users WHERE " + filter + " ORDER BY COALESCE(global_name, username, discord_id), created_at LIMIT ? OFFSET ?").bind(role, like, like, like, limit, offset).all()
+        ]);
+        return json({ ok: true, role, total: Number(count?.count || 0), users: result.results || [], limit, offset });
+      }
       if (url.pathname === "/kingdom-catalog") { if (url.searchParams.get("suggest") === "1") return await renderKingdomCatalogPage(request, env); return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
       if (url.pathname.startsWith("/hero-icons/assets/")) return await serveHeroIconAsset(request, env, url.pathname);
       if (url.pathname === "/hero-catalog") {
