@@ -5374,6 +5374,35 @@ async function joinDiscordSupportGuild(env, discordUserId, userAccessToken) {
   if (!discordUserId) throw new Error("DISCORD_USER_ID_REQUIRED");
   if (!userAccessToken) throw new Error("DISCORD_USER_ACCESS_TOKEN_REQUIRED");
 
+  // Record safe OAuth/Bot identity diagnostics only; never persist token values.
+  let botUserId = null;
+  let botIdentityHttpStatus = null;
+  try {
+    const botIdentityResponse = await fetch("https://discord.com/api/v10/users/@me", {
+      headers: { Authorization: `Bot ${botToken}` }
+    });
+    botIdentityHttpStatus = botIdentityResponse.status;
+    if (botIdentityResponse.ok) {
+      const botIdentity = await botIdentityResponse.json();
+      botUserId = botIdentity?.id ? String(botIdentity.id) : null;
+    }
+  } catch {}
+  // Record safe OAuth diagnostics only; never persist access tokens or bot tokens.
+  let oauthApplicationId = null;
+  let oauthScopes = [];
+  let oauthInfoHttpStatus = null;
+  try {
+    const oauthInfoResponse = await fetch("https://discord.com/api/v10/oauth2/@me", {
+      headers: { Authorization: "Bearer " + userAccessToken }
+    });
+    oauthInfoHttpStatus = oauthInfoResponse.status;
+    if (oauthInfoResponse.ok) {
+      const oauthInfo = await oauthInfoResponse.json();
+      oauthApplicationId = oauthInfo?.application?.id ? String(oauthInfo.application.id) : null;
+      oauthScopes = Array.isArray(oauthInfo?.scopes) ? oauthInfo.scopes.filter(x => typeof x === "string") : [];
+    }
+  } catch {}
+
   const response = await fetch(
     `https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`,
     {
@@ -5396,10 +5425,11 @@ async function joinDiscordSupportGuild(env, discordUserId, userAccessToken) {
     const error = new Error(data?.message || `Discord guild join failed (HTTP ${response.status})`);
     error.status = response.status;
     error.discord = data;
+    error.oauthDiagnostics = { oauthApplicationId, oauthScopes, oauthInfoHttpStatus, botUserId, botIdentityHttpStatus };
     throw error;
   }
 
-  return response.status === 201 ? "ADDED" : "ALREADY_MEMBER";
+  return { result: response.status === 201 ? "ADDED" : "ALREADY_MEMBER", oauthDiagnostics: { oauthApplicationId, oauthScopes, oauthInfoHttpStatus, botUserId, botIdentityHttpStatus } };
 }
 
 async function handleDiscordCallback(request, env) {
@@ -5464,8 +5494,8 @@ async function handleDiscordCallback(request, env) {
     const joinResult = await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
     if (env.DB) await recordDiagnostic(env.DB, {
       service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "SUCCESS",
-      message: joinResult === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
-      metadata: { result: joinResult }
+      message: joinResult.result === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
+      metadata: { result: joinResult.result, ...joinResult.oauthDiagnostics }
     });
   } catch (error) {
     // Support guild auto-join is an auxiliary feature and must never block
@@ -5474,7 +5504,7 @@ async function handleDiscordCallback(request, env) {
       service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "FAILED",
       errorCode: String(error?.message || "DISCORD_SUPPORT_GUILD_JOIN_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000),
-      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null }
+      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null, ...(error?.oauthDiagnostics || {}) }
     });
     console.error("discord_support_guild_join_failed", {
       discord_id: String(discordUser.id),
