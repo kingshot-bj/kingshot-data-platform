@@ -411,11 +411,14 @@ async function closeSupportTicketInternal(env, {
   userOverwrite.allow = "0";
   userOverwrite.deny = "68608";
 
+  // Ticket state is the channel's category (archive = CLOSED). Do not edit the
+  // topic: Discord allows only 2 name/topic edits per channel per 10 minutes,
+  // so close → reopen → close would be rate limited. Category moves and
+  // permission overwrites are not subject to that limit.
   const payload = {
-    topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=CLOSED"),
-    permission_overwrites: overwrites
+    permission_overwrites: overwrites,
+    parent_id: archiveCategoryId
   };
-  if (archiveCategoryId) payload.parent_id = archiveCategoryId;
 
   const updated = await discordRequest(env, `/channels/${id}`, {
     method: "PATCH",
@@ -447,13 +450,12 @@ async function reopenSupportTicketInternal(env, {
   const topic = String(channel?.topic || "");
   const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
   const topicUser = topic.match(/\buser=(\d{15,25})\b/);
-  const statusMatch = topic.match(/status=(OPEN|WAITING|CLOSED)/);
   if (!configuredGuildId || String(channel?.guild_id || "") !== configuredGuildId) throw new Error("SUPPORT_CHANNEL_WRONG_GUILD");
   if (!topicTicket) throw new Error("NOT_EAGLEEYE_SUPPORT_CHANNEL");
-  if (!statusMatch || statusMatch[1] !== "CLOSED") throw new Error("SUPPORT_TICKET_NOT_CLOSED");
   if (![supportCategoryId, archiveCategoryId].filter(Boolean).includes(String(channel?.parent_id || ""))) {
     throw new Error("SUPPORT_CHANNEL_WRONG_CATEGORY");
   }
+  if (String(channel?.parent_id || "") !== String(archiveCategoryId)) throw new Error("SUPPORT_TICKET_NOT_CLOSED");
 
   const overwrites = Array.isArray(channel?.permission_overwrites)
     ? channel.permission_overwrites.map(item => ({ ...item }))
@@ -469,7 +471,6 @@ async function reopenSupportTicketInternal(env, {
   const updated = await discordRequest(env, `/channels/${id}`, {
     method: "PATCH",
     body: JSON.stringify({
-      topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=OPEN"),
       parent_id: supportCategoryId,
       permission_overwrites: overwrites
     })
@@ -613,20 +614,46 @@ export async function handleSupportInteraction(request, env) {
     });
     return interactionJson(4, { content: "問い合わせをリオープンしました。ユーザーが再び投稿できます。", flags: 64 });
   } catch (error) {
+    const failure = describeSupportCommandFailure(error, commandName);
     await recordSupportDiagnostic(env, {
       operation: commandName === "close" ? "CLOSE_TICKET" : "REOPEN_TICKET",
       status: "FAILED",
-      errorCode: String(error?.message || "SUPPORT_COMMAND_FAILED").split(":")[0],
+      errorCode: failure.code,
       message: String(error?.message || error).slice(0, 2000),
       targetType: "CHANNEL",
-      targetId: channelId
+      targetId: channelId,
+      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code ?? null, retryAfterSeconds: failure.retryAfterSeconds }
     });
-    console.error(`support_${commandName}_failed`, error?.message || error);
-    const message = commandName === "close"
-      ? "問い合わせのクローズに失敗しました。"
-      : "問い合わせのリオープンに失敗しました。";
-    return interactionJson(4, { content: message, flags: 64 });
+    console.error(`support_${commandName}_failed`, failure.code, Number(error?.status || 0) || null);
+    return interactionJson(4, { content: failure.content, flags: 64 });
   }
+}
+
+// Maps a /close or /reopen failure to a diagnostic code and an operator-facing
+// message. Never includes token values; only Discord status/code are used.
+export function describeSupportCommandFailure(error, commandName) {
+  const action = commandName === "close" ? "クローズ" : "リオープン";
+  const status = Number(error?.status || 0);
+  const discordCode = Number(error?.discord?.code || 0);
+  const message = String(error?.message || "");
+  if (status === 429) {
+    const retryAfter = Number(error?.discord?.retry_after);
+    const retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : null;
+    const wait = retryAfterSeconds
+      ? (retryAfterSeconds >= 60 ? "約" + Math.ceil(retryAfterSeconds / 60) + "分後" : retryAfterSeconds + "秒後")
+      : "しばらくしてから";
+    return { code: "DISCORD_RATE_LIMITED", retryAfterSeconds, content: "Discordの回数制限中のため" + action + "できませんでした。" + wait + "に再実行してください。" };
+  }
+  if (discordCode === 50013 || message === "Missing Permissions") {
+    return { code: "DISCORD_MISSING_PERMISSIONS", retryAfterSeconds: null, content: "Botの権限が不足しているため" + action + "できませんでした。カテゴリー「サポート窓口」「サポート窓口クローズ」でBotの権限（チャンネルを見る・チャンネルの管理・権限の管理）を確認してください。" };
+  }
+  if (message === "SUPPORT_TICKET_NOT_CLOSED") {
+    return { code: message, retryAfterSeconds: null, content: "この問い合わせはクローズされていないため、リオープンできません。" };
+  }
+  if (["NOT_EAGLEEYE_SUPPORT_CHANNEL", "SUPPORT_CHANNEL_WRONG_CATEGORY", "SUPPORT_CHANNEL_WRONG_GUILD"].includes(message)) {
+    return { code: message, retryAfterSeconds: null, content: "このチャンネルはEagleEyeの問い合わせチャンネルではないため、" + action + "できません。" };
+  }
+  return { code: message.split(":")[0] || "SUPPORT_COMMAND_FAILED", retryAfterSeconds: null, content: "問い合わせの" + action + "に失敗しました。" };
 }
 
 async function registerOrUpdateSupportCommand(env, applicationId, guildId, command) {

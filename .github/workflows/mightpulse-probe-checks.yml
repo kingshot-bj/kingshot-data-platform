@@ -40,5 +40,7 @@ jobs:
         run: node --test tests/kingdom-watchlist*.test.mjs
       - name: Run Discord OAuth / support guild tests
         run: node --test tests/discord-oauth.test.mjs
+      - name: Run Discord support /close and /reopen tests
+        run: node --test tests/discord-support-commands.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
