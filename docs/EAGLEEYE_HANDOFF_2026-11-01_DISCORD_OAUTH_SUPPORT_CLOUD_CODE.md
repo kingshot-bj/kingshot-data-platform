@@ -152,5 +152,14 @@ Discordログイン時に発生していた `Invalid OAuth2 access token`（Disc
 - [x] 参加済みユーザーが問い合わせを作成できる（iPhone Safari）
 - [ ] 未参加ユーザーはAPI側でも問い合わせ作成を拒否される（任意確認）
 - [x] Token/Secretがログ・画面・DBに露出しない
-- [ ] `/close`・`/reopen` の登録と動作（本PRデプロイ後、診断画面から登録）
-- [ ] 本PRのCI成功・本番デプロイ
+- [x] `/close`・`/reopen` の登録と動作（#159 デプロイ後、診断画面から登録。iPhoneで成功を確認）
+- [x] #159 のCI成功・本番デプロイ
+
+## 10. /close・/reopen の追加対応（2026-11-01）
+
+- 初回の `/close` は `Missing Permissions`（Discord 50013）。カテゴリー「サポート窓口クローズ」でBotに権限（チャンネルを見る・チャンネルの管理・権限の管理・メッセージを送信・メッセージ履歴を読む）を付与して解消。
+- close → reopen → close を数分以内に行うと `The resource is being rate limited.`（429）。Discordのチャンネル名・トピック変更は1チャンネル10分2回までのため、トピックの `status=` 書き換えが原因。
+- 対応: チケット状態をカテゴリーで判定（「サポート窓口クローズ」にある＝CLOSED）し、トピックは作成時以降書き換えない。カテゴリー移動と権限上書きはこの制限の対象外。
+- 失敗時の返答を具体化（回数制限は待ち時間、権限不足は確認すべきカテゴリーと権限を表示）。診断にHTTP status / Discord code / retry_afterを記録（秘密値なし）。
+- 既存チケットのトピックに残る `status=` は参照しない（表示用の初期値として残るだけ）。
+- テスト: `tests/discord-support-commands.test.mjs`（連続 close/reopen でトピック編集0回、旧トピック値に依存しない、エラー文言）。
