@@ -54,6 +54,7 @@ import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
+import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
@@ -5368,87 +5369,6 @@ async function startDiscordLogin(request, env) {
   });
 }
 
-async function joinDiscordSupportGuild(env, discordUserId, userAccessToken) {
-  const guildId = String(env.DISCORD_SUPPORT_GUILD_ID || "").trim();
-  const botToken = String(env.DISCORD_BOT_TOKEN || "").trim();
-  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
-  if (!botToken) throw new Error("DISCORD_BOT_TOKEN_NOT_CONFIGURED");
-  if (!discordUserId) throw new Error("DISCORD_USER_ID_REQUIRED");
-  if (!userAccessToken) throw new Error("DISCORD_USER_ACCESS_TOKEN_REQUIRED");
-
-  // Record safe OAuth/Bot identity diagnostics only; never persist token values.
-  let botUserId = null;
-  let botIdentityHttpStatus = null;
-  try {
-    const botIdentityResponse = await fetch("https://discord.com/api/v10/users/@me", {
-      headers: { Authorization: `Bot ${botToken}` }
-    });
-    botIdentityHttpStatus = botIdentityResponse.status;
-    if (botIdentityResponse.ok) {
-      const botIdentity = await botIdentityResponse.json();
-      botUserId = botIdentity?.id ? String(botIdentity.id) : null;
-    }
-  } catch {}
-  // Record safe OAuth diagnostics only; never persist access tokens or bot tokens.
-  let oauthApplicationId = null;
-  let oauthScopes = [];
-  let oauthInfoHttpStatus = null;
-  try {
-    const oauthInfoResponse = await fetch("https://discord.com/api/v10/oauth2/@me", {
-      headers: { Authorization: "Bearer " + userAccessToken }
-    });
-    oauthInfoHttpStatus = oauthInfoResponse.status;
-    if (oauthInfoResponse.ok) {
-      const oauthInfo = await oauthInfoResponse.json();
-      oauthApplicationId = oauthInfo?.application?.id ? String(oauthInfo.application.id) : null;
-      oauthScopes = Array.isArray(oauthInfo?.scopes) ? oauthInfo.scopes.filter(x => typeof x === "string") : [];
-    }
-  } catch {}
-
-  const response = await fetch(
-    `https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`,
-    {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bot ${botToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": "EagleEye/1.0 (support)"
-      },
-      body: JSON.stringify({
-        access_token: userAccessToken
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    let data = null;
-    try { data = body ? JSON.parse(body) : null; } catch {}
-    const error = new Error(data?.message || `Discord guild join failed (HTTP ${response.status})`);
-    error.status = response.status;
-    error.discord = data;
-    error.oauthDiagnostics = { oauthApplicationId, oauthScopes, oauthInfoHttpStatus, botUserId, botIdentityHttpStatus };
-    throw error;
-  }
-
-  const membershipResponse = await fetch(
-    `https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`,
-    { headers: { Authorization: `Bot ${botToken}`, "User-Agent": "EagleEye/1.0 (support)" } }
-  );
-  if (!membershipResponse.ok) {
-    const verifyBody = await membershipResponse.text();
-    let verifyData = null;
-    try { verifyData = verifyBody ? JSON.parse(verifyBody) : null; } catch {}
-    const verifyError = new Error(verifyData?.message || `Discord guild membership verification failed (HTTP ${membershipResponse.status})`);
-    verifyError.status = membershipResponse.status;
-    verifyError.discord = verifyData;
-    verifyError.code = membershipResponse.status === 404 ? "DISCORD_GUILD_MEMBERSHIP_NOT_CONFIRMED" : "DISCORD_GUILD_MEMBERSHIP_VERIFY_FAILED";
-    verifyError.oauthDiagnostics = { oauthApplicationId, oauthScopes, oauthInfoHttpStatus, botUserId, botIdentityHttpStatus, joinHttpStatus: response.status };
-    throw verifyError;
-  }
-  return { result: response.status === 201 ? "ADDED" : "ALREADY_MEMBER", membershipVerified: true, oauthDiagnostics: { oauthApplicationId, oauthScopes, oauthInfoHttpStatus, botUserId, botIdentityHttpStatus, joinHttpStatus: response.status, membershipVerifyHttpStatus: membershipResponse.status } };
-}
-
 async function handleDiscordCallback(request, env) {
   const config = getConfig(env);
   const url = new URL(request.url);
@@ -9296,13 +9216,20 @@ async function handleOwnerDiscordDiagnosticsApi(request, env) {
       try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch {}
       return { ...row, metadata };
     });
+    // Live comparison with the Discord application (no D1 access, no secret values returned).
+    let checks = null;
+    try {
+      checks = await getDiscordConfigCheck(env, { origin: new URL(request.url).origin });
+    } catch (error) {
+      checks = { error: String(error?.code || "DISCORD_CONFIG_CHECK_FAILED") };
+    }
     return json({ ok: true, config: {
       clientId: String(env.DISCORD_CLIENT_ID || ""),
       hasClientSecret: Boolean(env.DISCORD_CLIENT_SECRET),
       hasBotToken: Boolean(env.DISCORD_BOT_TOKEN),
       supportGuildId: String(env.DISCORD_SUPPORT_GUILD_ID || ""),
       hasDatabase: Boolean(env.DB)
-    }, events });
+    }, checks, events });
   } catch (error) {
     return json({ ok: false, error: "DIAGNOSTICS_QUERY_FAILED", message: String(error?.message || error).slice(0, 300) }, 500);
   }
@@ -9312,9 +9239,11 @@ async function renderOwnerDiscordDiagnosticsPage(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return "<!doctype html><html lang='ja'><body>OWNER権限が必要です</body></html>";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Discord連携調査 | EagleEye</title>
-  <style>*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 12px 48px}.card{background:#162238;border:1px solid #334155;border-radius:14px;padding:15px;margin:12px 0}.muted{color:#94a3b8;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.item{background:#0b1220;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item b{display:block;margin-top:5px}.event{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}.status{font-weight:800}.FAILED{color:#fca5a5}.SUCCESS{color:#86efac}button,a{display:inline-block;border:0;border-radius:8px;padding:10px 12px;background:#f59e0b;color:#111827;font-weight:800;text-decoration:none;cursor:pointer;margin-right:6px}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style></head><body><main class="wrap"><a href="/owner">← Owner管理へ戻る</a><h1>Discord連携調査</h1><p class="muted">秘密情報の値は表示しません。ログインし直すと新しい自動参加診断が記録されます。</p><div class="card"><h2>設定状態</h2><div id="config" class="grid">読み込み中…</div></div><div class="card"><h2>自動参加の診断履歴</h2><button id="refresh">再読み込み</button><button id="copy">結果をコピー</button><div id="msg" class="muted"></div><div id="events"></div></div></main><script>
+  <style>*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 12px 48px}.card{background:#162238;border:1px solid #334155;border-radius:14px;padding:15px;margin:12px 0}.muted{color:#94a3b8;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.item{background:#0b1220;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item b{display:block;margin-top:5px}.event{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}.status{font-weight:800}.FAILED{color:#fca5a5}.SUCCESS{color:#86efac}button,a{display:inline-block;border:0;border-radius:8px;padding:10px 12px;background:#f59e0b;color:#111827;font-weight:800;text-decoration:none;cursor:pointer;margin-right:6px}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style></head><body><main class="wrap"><a href="/owner">← Owner管理へ戻る</a><h1>Discord連携調査</h1><p class="muted">秘密情報の値は表示しません。ログインし直すと新しい自動参加診断が記録されます。</p><div class="card"><h2>設定状態</h2><div id="config" class="grid">読み込み中…</div></div><div class="card"><h2>接続チェック</h2><p class="muted">Cloudflareの設定とDiscordアプリの実際の設定を照合します。すべて「OK」なら、ログイン時の自動参加と /close・/reopen が動作する状態です。</p><div id="checks" class="grid">読み込み中…</div><div style="margin-top:12px"><button id="registerCommands">/close・/reopen コマンドを登録</button><div id="registerMsg" class="muted" style="margin-top:6px"></div></div></div><div class="card"><h2>自動参加の診断履歴</h2><button id="refresh">再読み込み</button><button id="copy">結果をコピー</button><div id="msg" class="muted"></div><div id="events"></div></div></main><script>
 let snapshot=null;const esc=s=>String(s??"-").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-async function load(){document.getElementById("msg").textContent="取得中…";try{const r=await fetch("/api/owner/discord-diagnostics",{credentials:"same-origin"});snapshot=await r.json();if(!r.ok||!snapshot.ok)throw Error(snapshot.message||snapshot.error||"取得失敗");const c=snapshot.config;document.getElementById("config").innerHTML=[["OAuth Client ID",c.clientId||"未設定"],["Client Secret",c.hasClientSecret?"設定済み":"未設定"],["Bot Token",c.hasBotToken?"設定済み":"未設定"],["Support Guild ID",c.supportGuildId||"未設定"],["D1 Database",c.hasDatabase?"接続設定あり":"未設定"]].map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("");document.getElementById("events").innerHTML=snapshot.events.length?snapshot.events.map(e=>'<div class="event"><div class="status '+esc(e.status)+'">'+esc(e.status)+' · '+esc(new Date(Number(e.created_at)*1000).toLocaleString("ja-JP"))+'</div><b>'+esc(e.error_code||"エラーコードなし")+'</b><div>'+esc(e.message||"メッセージなし")+'</div><div class="muted">HTTP: '+esc(e.metadata?.httpStatus??e.metadata?.discordHttpStatus??"-")+' / OAuth App: '+esc(e.metadata?.oauthApplicationId||"-")+' / OAuth照会HTTP: '+esc(e.metadata?.oauthInfoHttpStatus??"-")+' / Bot User ID: '+esc(e.metadata?.botUserId||"-")+' / Bot照会HTTP: '+esc(e.metadata?.botIdentityHttpStatus??"-")+'</div><div class="muted">Trace: '+esc(e.trace_id||"-")+' / '+esc(e.target_id||"-")+'</div></div>').join(""):"診断履歴がありません。Discordログインをやり直してから再読み込みしてください。";document.getElementById("msg").textContent="更新済み · "+snapshot.events.length+"件";}catch(e){document.getElementById("msg").textContent="取得失敗: "+e.message}}
+async function load(){document.getElementById("msg").textContent="取得中…";try{const r=await fetch("/api/owner/discord-diagnostics",{credentials:"same-origin"});snapshot=await r.json();if(!r.ok||!snapshot.ok)throw Error(snapshot.message||snapshot.error||"取得失敗");const c=snapshot.config;document.getElementById("config").innerHTML=[["OAuth Client ID",c.clientId||"未設定"],["Client Secret",c.hasClientSecret?"設定済み":"未設定"],["Bot Token",c.hasBotToken?"設定済み":"未設定"],["Support Guild ID",c.supportGuildId||"未設定"],["D1 Database",c.hasDatabase?"接続設定あり":"未設定"]].map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("");renderChecks(snapshot.checks);document.getElementById("events").innerHTML=snapshot.events.length?snapshot.events.map(e=>'<div class="event"><div class="status '+esc(e.status)+'">'+esc(e.status)+' · '+esc(new Date(Number(e.created_at)*1000).toLocaleString("ja-JP"))+'</div><b>'+esc(e.error_code||"エラーコードなし")+'</b><div>'+esc(e.message||"メッセージなし")+'</div><div class="muted">HTTP: '+esc(e.metadata?.httpStatus??e.metadata?.discordHttpStatus??"-")+' / OAuth App: '+esc(e.metadata?.oauthApplicationId||"-")+' / OAuth照会HTTP: '+esc(e.metadata?.oauthInfoHttpStatus??"-")+' / Bot App ID: '+esc(e.metadata?.botApplicationId||e.metadata?.botUserId||"-")+' / 参加HTTP: '+esc(e.metadata?.joinHttpStatus??"-")+' / 参加確認HTTP: '+esc(e.metadata?.membershipVerifyHttpStatus??"-")+' / 結果: '+esc(e.metadata?.result||"-")+'</div><div class="muted">Trace: '+esc(e.trace_id||"-")+' / '+esc(e.target_id||"-")+'</div></div>').join(""):"診断履歴がありません。Discordログインをやり直してから再読み込みしてください。";document.getElementById("msg").textContent="更新済み · "+snapshot.events.length+"件";}catch(e){document.getElementById("msg").textContent="取得失敗: "+e.message}}
+function renderChecks(k){const box=document.getElementById("checks");if(!k||k.error){box.innerHTML='<div class="item">照合できませんでした: '+esc(k&&k.error||"不明")+'</div>';return}const ok=v=>v?'<span class="SUCCESS">OK</span>':'<span class="FAILED">NG</span>';const rows=[["Bot所属アプリ",(k.botApplication&&k.botApplication.id)||("取得失敗 "+((k.botApplication&&(k.botApplication.error||k.botApplication.httpStatus))||"")),null],["Client IDとBotのアプリが一致",k.clientIdMatchesBotApplication?"一致":"不一致",k.clientIdMatchesBotApplication],["DISCORD_PUBLIC_KEY",k.publicKeyConfigured?(k.publicKeyMatches?"Discordアプリと一致":"Discordアプリと不一致"):"未設定",k.publicKeyMatches],["Interactions Endpoint URL",k.interactionsEndpointUrl||"未設定",k.interactionsEndpointMatches],["期待するEndpoint URL",k.expectedInteractionsEndpointUrl||"-",null],["/close コマンド",k.commands&&k.commands.close?"登録済み":"未登録",k.commands&&k.commands.close],["/reopen コマンド",k.commands&&k.commands.reopen?"登録済み":"未登録",k.commands&&k.commands.reopen]];box.innerHTML=rows.map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+(x[2]===null?"":ok(x[2])+' ')+esc(x[1])+'</b></div>').join("")}
+document.getElementById("registerCommands").onclick=async()=>{const b=document.getElementById("registerCommands"),m=document.getElementById("registerMsg");b.disabled=true;m.textContent="登録中…";try{const r=await fetch("/api/admin/discord-support/register-command",{method:"POST",credentials:"same-origin"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw Error(d.error||("HTTP "+r.status));m.textContent="登録しました: "+(d.commands||[]).map(c=>"/"+c.name).join(" ");await load();}catch(e){m.textContent="登録失敗: "+e.message}finally{b.disabled=false}};
 document.getElementById("refresh").onclick=load;document.getElementById("copy").onclick=async()=>{if(!snapshot)return;await navigator.clipboard.writeText(JSON.stringify(snapshot,null,2));document.getElementById("msg").textContent="診断JSONをコピーしました";};load();
 </script></body></html>`;
 }

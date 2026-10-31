@@ -25,6 +25,8 @@ jobs:
           node --check src/mightpulse.js
           node --check src/mightpulse-probe.js
           node --check src/api-pool.js
+          node --check src/discord-oauth.js
+          node --check src/discord-support.js
           bash -n scripts/check-probe-migration-history.sh
       - name: Run diagnostic telemetry regression tests
         run: node --test tests/diagnostic-telemetry-regression.test.mjs
@@ -36,3 +38,7 @@ jobs:
         run: node --test tests/kingdom-watchlist-registration-ux.test.mjs
       - name: Run kingdom watchlist regression tests
         run: node --test tests/kingdom-watchlist*.test.mjs
+      - name: Run Discord OAuth / support guild tests
+        run: node --test tests/discord-oauth.test.mjs
+      - name: Run player compare enhancement tests
+        run: node --test tests/player-compare-enhancements.test.mjs

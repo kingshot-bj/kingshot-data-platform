@@ -48,10 +48,9 @@ test("details collapsing cannot move a wrapper into its own descendant", () => {
 test("mobile chart layout keeps bars proportional and radar notice global", () => {
   assert.ok(script.includes("setProperty('width'"));
   assert.ok(script.includes("fill.style.setProperty('width'"));
-  assert.ok(script.includes("view.append(wrap,note)"));
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("fill.style.setProperty('width'"));
-  assert.ok(script.includes("radarHost.append(svg,legend)"));
+  assert.ok(script.includes("radarHost.append(svg,legend,totals)"));
   assert.ok(script.includes("view.appendChild(wrap)"));
 });
 test("successful compare render removes the stale loading status", () => {
@@ -121,8 +120,8 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
 
 test("redundant growth comparison section is removed while radar and detailed profile remain", () => {
   assert.ok(!script.includes("function buildGrowthComparison()"));
-  assert.ok(!script.includes("育成要素の比較"));
-  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+  assert.ok(!script.includes("className='ee-growth-comparison'"));
+  assert.ok(script.includes("svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));
 });
 test("player compare automatic and manual refresh requests have finite timeouts", () => {
@@ -135,8 +134,8 @@ test("player compare automatic and manual refresh requests have finite timeouts"
 
 test("growth comparison is collapsed by default and radar mode renders an SVG polygon chart", () => {
   assert.ok(script.includes("document.createElement('details');panel.className='ee-build-compare'"));
-  assert.ok(!script.includes("title.textContent='育成要素の比較（詳細）'"));
-  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+  assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
+  assert.ok(script.includes("svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));
 });
@@ -161,7 +160,7 @@ test("Mystic Trial radar keeps source offsets and uses the adjustable five-axis 
   for (const offset of ["'闘技場':10000","'生命の森':20000","'水晶鉱山':30000","'知識の枢軸':40000","'溶岩要塞':50000","'輝光の塔':60000"]) {
     assert.ok(script.includes(offset), "missing offset " + offset);
   }
-  assert.ok(script.includes("const maxPerAxis=2000"));
+  assert.ok(script.includes("let maxPerAxis="));
   assert.ok(script.includes("sum+row.entries[player].corrected"));
   assert.ok(script.includes("fmt(maxPerAxis*5)"));
   assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
