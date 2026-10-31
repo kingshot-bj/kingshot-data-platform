@@ -124,3 +124,33 @@ Discordログイン時に発生していた `Invalid OAuth2 access token`（Disc
 ---
 
 この文書は作業引き継ぎであり、Cloudflare本番反映・Discord実機検証の完了報告ではない。
+
+---
+
+## 9. 調査結果（2026-11-01 Cloud Code 追記）
+
+### 原因（確定）
+- `PUT /guilds/{guild}/members/{user}` は、ユーザーのOAuthアクセストークンとBotトークンが**同じDiscordアプリ**のものでないと HTTP 403 / code 50025 を返す。
+- 本番D1 `diagnostic_events` の記録: 10/23〜10/31 の失敗はすべて OAuth App `1552660062063829093`（旧）／Bot `1554817307988205618`。#158 で `DISCORD_CLIENT_ID` を `…618` に揃えた後は失敗が出ていない。
+- 2026-11-01 03:35 JST、サーバー未参加のテストアカウントで `result=ADDED` / 参加HTTP 201 / 参加確認HTTP 200 を確認。
+- 同日、iPhone Safari から問い合わせを作成し、チケットチャンネル作成・メッセージ送受信を確認。
+
+### 追加で判明したこと
+- `/close`・`/reopen` が候補に出ない: スラッシュコマンドが `…618` アプリに未登録だった（登録APIは手動POSTのみで、旧Client ID時代は登録不能だった）。
+- 対応: Owner専用 `/owner/discord-diagnostics` に「接続チェック」（Client ID↔Botアプリ一致、Public Key一致、Interactions Endpoint URL、コマンド登録状態）と「コマンド登録」ボタンを追加。iPhoneのみで確認・登録できる。
+
+### 再発防止
+- `src/discord-oauth.js`: 参加APIの前にBot所属アプリとClient IDを照合し、不一致なら参加を呼ばず `DISCORD_OAUTH_BOT_APP_MISMATCH` を記録。Discord呼び出しに5秒タイムアウト。トークン情報照会は失敗時のみ（通常ログインのDiscord往復を削減）。
+- `tests/discord-oauth.test.mjs` をCIに追加。
+
+### 完了条件の状況
+- [x] Client IDとBotアプリの一致（D1診断で確認）
+- [x] Redirect URI（本番で認可→コールバック成功）
+- [x] Botが正しいGuildに所属（参加・参加確認が成功）
+- [x] 50025 が再発しない（#158 以降）
+- [x] Guild参加処理と参加確認の成功
+- [x] 参加済みユーザーが問い合わせを作成できる（iPhone Safari）
+- [ ] 未参加ユーザーはAPI側でも問い合わせ作成を拒否される（任意確認）
+- [x] Token/Secretがログ・画面・DBに露出しない
+- [ ] `/close`・`/reopen` の登録と動作（本PRデプロイ後、診断画面から登録）
+- [ ] 本PRのCI成功・本番デプロイ
