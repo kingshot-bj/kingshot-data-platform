@@ -85,6 +85,20 @@ export async function handleSupportContextApi(request, env, auth) {
   return supportJson({ok:true, incident:await getSupportIncidentContext(env)});
 }
 
+export async function handleSupportMembershipApi(request, env, auth) {
+  if (!auth?.user_id || !auth?.discord_id || auth.status !== "ACTIVE") return supportJson({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (request.method !== "GET") return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  if (!guildId) return supportJson({ ok: false, error: "DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED" }, 503);
+  try {
+    const member = await getGuildMember(env, guildId, auth.discord_id);
+    return supportJson({ ok: true, member: Boolean(member) });
+  } catch (error) {
+    console.error("support_membership_check_failed", { discord_id: String(auth.discord_id), status: Number(error?.status || 0), discord_code: error?.discord?.code || null });
+    return supportJson({ ok: false, error: "DISCORD_MEMBERSHIP_CHECK_FAILED" }, 503);
+  }
+}
+
 
 
 
