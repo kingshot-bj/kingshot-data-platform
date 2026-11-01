@@ -134,6 +134,9 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   const normalized = matchups.map(m => ({ kid: Number(m.kingdom), opponent: m.opponent == null ? null : Number(m.opponent), kingdom_name: m.kingdom_name ?? null, opponent_name: m.opponent_name ?? null }))
     .filter(m => Number.isInteger(m.kid)).sort((a, b) => a.kid - b.kid);
   const stage = String(payload.stage || "");
+  // Schedule the next check from the stage just received.
+  const nextInterval = stage.toLowerCase() === "prediction" ? KVK_MATCHUPS_PREDICTION_INTERVAL_SECONDS : KVK_MATCHUPS_INTERVAL_SECONDS;
+  await db.prepare("UPDATE api_request_locks SET lock_until = ? WHERE lock_key = 'KVK_MATCHUPS'").bind(now + nextInterval).run().catch(() => {});
   const sha = await sha256Hex(JSON.stringify({ season, stage, matchups: normalized }));
   const previous = await getState(db, "matchups");
   if (previous?.sha === sha) {
