@@ -28,6 +28,8 @@ jobs:
           node --check src/discord-oauth.js
           node --check src/discord-support.js
           node --check src/user-eligibility.js
+          node --check src/player-store.js
+          node --check src/data-collection-engine.js
           bash -n scripts/check-probe-migration-history.sh
       - name: Run diagnostic telemetry regression tests
         run: node --test tests/diagnostic-telemetry-regression.test.mjs
@@ -45,5 +47,7 @@ jobs:
         run: node --test tests/discord-support-commands.test.mjs
       - name: Run MightPulse key registration guide tests
         run: node --test tests/mightpulse-key-guide.test.mjs
+      - name: Run MightPulse quota accounting and stale activity tests
+        run: node --test tests/mightpulse-quota-activity.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs

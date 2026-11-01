@@ -127,8 +127,8 @@ async function runDiagnosticHealthChecks(env) {
             purpose: "DIAGNOSTIC_HEALTH_CHECK",
             httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-            remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-            remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+            remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+            remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
           });
           const elapsed = Date.now() - started;
           if (due("api_pool")) await write({ service:"api_pool", status:"SUCCESS", message:"API Pool診断プローブ成功", provider:"MIGHTPULSE", targetType:"API_KEY", targetId:lease.key_id, elapsedMs:elapsed, metadata:{ poolType:lease.pool_type } });
@@ -388,7 +388,7 @@ const PLAYER_VISIBILITY_ITEMS = [
   { key: "base_vip", category: "基本情報", label: "VIP", description: "VIPレベル" },
   { key: "base_coordinates", category: "基本情報", label: "座標", description: "X/Y座標" },
   { key: "base_kills", category: "基本情報", label: "撃破数", description: "撃破数" },
-  { key: "base_activity", category: "基本情報", label: "オンライン・最終活動", description: "オンライン状態・最終活動・最終ログイン" },
+  { key: "base_activity", category: "基本情報", label: "オンライン・最終活動", description: "MightPulse側で更新が停止したため、現在はどのロールにも表示しません" },
   { key: "base_profile", category: "基本情報", label: "プロフィール補助情報", description: "アバター・言語・シールド・炎上状態・役職" },
   { key: "alliance_identity", category: "同盟", label: "同盟基本情報", description: "同盟ID・略称・同盟名" },
   { key: "alliance_rank", category: "同盟", label: "同盟順位情報", description: "同盟内順位・順位ラベル" },
@@ -498,7 +498,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
   if (visibilityEnabled(settings, "base_vip", role) && player.vip !== undefined) visible.vip = player.vip;
   if (visibilityEnabled(settings, "base_coordinates", role)) for (const key of ["x","y"]) if (player[key] !== undefined) visible[key] = player[key];
   if (visibilityEnabled(settings, "base_kills", role) && player.kills !== undefined) visible.kills = player.kills;
-  if (visibilityEnabled(settings, "base_activity", role) && player.online !== undefined) visible.online = player.online;
+  // online / last_active_at / last_login are stale per MightPulse (the game no longer sends activity); never expose them.
   if (visibilityEnabled(settings, "base_profile", role)) for (const key of ["avatar_url","language","shield_endtime","burn_endtime","office"]) if (player[key] !== undefined) visible[key] = player[key];
 
   const alliance = player.alliance;
@@ -1482,7 +1482,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (playerGovernorCandidates.length) {
     const placeholders = playerGovernorCandidates.map(() => "?").join(",");
     players = await env.DB.prepare(
-      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, avatar_url, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
+      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, avatar_url, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
     ).bind(...playerGovernorCandidates).all();
   }
 
@@ -1685,7 +1685,7 @@ async function handleMyMightyCheckApi(request, env) {
         checked++;
         confirmed++;
         await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status,
-      requestCount: Math.max(1, Number(result.attempts) || 1), remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
+      requestCount: Math.max(1, Number(result.attempts) || 1), remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
         // Do not stop after the first confirmed key. Every user-contributed
         // key must be checked so the API pool can rotate across all confirmed
@@ -3610,7 +3610,9 @@ function mightPulseProbeHeaders(headers) {
   const names = [
     "date", "age", "etag", "last-modified", "cache-control", "expires",
     "cf-cache-status", "cf-ray", "x-cache", "via",
-    "x-ratelimit-remaining", "x-ratelimit-day-remaining", "content-age", "vary"
+    "x-ratelimit-limit-minute", "x-ratelimit-remaining-minute", "x-ratelimit-reset-minute",
+    "x-ratelimit-limit-day", "x-ratelimit-remaining-day", "x-ratelimit-reset-day",
+    "content-age", "vary"
   ];
   const result = {};
   for (const name of names) {
@@ -3730,8 +3732,8 @@ async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
       purpose:"MIGHTPULSE_PROBE", httpStatus:result.status,
-      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
-      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
     });
 
     const safePayload = redactProbeSecrets(payload);
@@ -3951,6 +3953,11 @@ async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTP
   };
 }
 
+function isQuotaFreeMightPulsePath(path) {
+  const pathOnly = String(path || "").split("?")[0].replace(/\/+$/, "");
+  return pathOnly === "/usage" || pathOnly === "/v1/usage";
+}
+
 async function releaseProbeApiKey(env, lease, options = {}) {
   if (!lease) return;
   if (options.success) {
@@ -3959,7 +3966,9 @@ async function releaseProbeApiKey(env, lease, options = {}) {
       endpoint: options.endpoint || null, targetType: options.targetType || null,
       targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
       httpStatus: options.httpStatus || 200,
-      remainingMinute: options.remainingMinute ?? null, remainingDay: options.remainingDay ?? null
+      remainingMinute: options.remainingMinute ?? null, remainingDay: options.remainingDay ?? null,
+      // GET /v1/usage "does not count against either limit" (MightPulse API docs).
+      countsAgainstQuota: !isQuotaFreeMightPulsePath(options.endpoint)
     });
   } else if (options.errorCode || options.cooldownSeconds) {
     await recordApiPoolFailure(env.DB, {
@@ -4009,8 +4018,8 @@ async function executeManualMightPulseProbe(request, env, guard, body) {
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:result.status,
-      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
-      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
     });
     leaseReleased = true;
     const record = {
@@ -4213,8 +4222,8 @@ async function executeCatalogProbeItem(env, guard, batchId, item) {
     await releaseProbeApiKey(env, lease, {
       success:true, endpoint:command.endpoint, targetType:command.category, targetId:command.path,
       purpose:"MIGHTPULSE_PROBE_BATCH", httpStatus:result.status,
-      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"),
-      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining")
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
     });
     const record = {
       request_id:requestId, user_id:guard?.auth?.user_id || guard?.auth?.id || null,
@@ -4502,7 +4511,7 @@ async function renderMightPulseProbePage(request, env) {
   "<div class='card'><details><summary style='cursor:pointer;font-weight:800'>未知のAPIを手入力で試す（詳細）</summary><p class='hint'>相対パスとクエリJSONを指定してGETを1回実行します。外部URLは指定できません。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/223636495'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{&quot;include&quot;:&quot;base,ranks&quot;}'></label></div><label class='field' style='margin-top:10px'><span>必要なAPI権限</span><select id='manualMightyRequired'><option value='false'>通常権限でも可</option><option value='true'>Mighty権限が必要</option></select></label><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></details></div>" +
   "<div class='card'><h2>コマンド台帳・一括実行</h2><p class='hint'>公式APIのコマンド一覧からカテゴリ単位・全件を実行します。一括実行ではレスポンス内のプレイヤー・王国・同盟参照を検出し、重複を避けながら関連コマンドを追加調査します。単体実行ボタンは連鎖しません。</p><div class='form'><label class='field'><span>カテゴリ</span><select id='probeBatchCategory'><option>Player</option><option>Kingdom</option><option>Ranking</option><option>Alliance</option><option>Mighty</option><option>EagleEye Retrieval</option></select></label><label class='field'><span>同時実行数（1〜4）</span><select id='probeBatchConcurrency'><option value='1'>1</option><option value='2' selected>2</option><option value='3'>3</option><option value='4'>4</option></select></label></div><div class='actions'><button class='btn secondary' id='runCategoryBatch' type='button'>このカテゴリを一括実行</button><button class='btn' id='runAllBatch' type='button'>全コマンド一括実行</button><button class='btn secondary' id='resumeBatch' type='button'>中断したバッチを再開</button></div><div id='batchStatus' class='hint'></div><div id='batchResults' class='table-wrap'></div></div>" +
   "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。概要はこのブラウザに保持し、実行記録と生レスポンスはD1の最小メタデータとR2に保存します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>実行者</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
-  `<script>(function(){var probeCatalog=${probeCatalogJson};var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function commandPurpose(c){var d={player_base:'領主の基本プロフィールを取得します。名前・所属などの基本項目を確認する入口です。',player_ranks:'指定プレイヤーのランキング情報を取得します。順位系フィールドが返るか調べます。',player_full:'基本情報・英雄・ランキング・領主装備をまとめて取得し、返却範囲を確認します。',player_uid:'領主IDではなく内部UIDを指定してプレイヤー検索を試します。',kingdom_list:'ページ単位で王国一覧を取得します。ページング仕様の確認向けです。',kingdom_detail:'指定した王国の基本情報を取得します。',kingdom_boards:'王国が持つランキングボード一覧を取得します。',kingdom_ranks:'指定王国のランキング一覧を取得します。',kingdom_rank_board:'選択したランキング種別の順位データを取得します。',alliance_detail:'指定王国・同盟タグの同盟情報とメンバー一覧を取得します。',kingdom_events:'Mighty権限で王国イベント情報を取得します。',kingdom_kvk:'Mighty権限で王国のKvK情報を取得します。',kingdom_kvk_scores:'Mighty権限でKvKのスコア情報を取得します。',kvk_matchups:'Mighty権限でKvKのマッチアップ一覧を取得します。',eagleeye_player_refresh:'EagleEye側のプレイヤー詳細更新経路を調べます。外部API直呼びではなく内部取得フローの検証用です。',eagleeye_player_rank_refresh:'EagleEye側のプレイヤーランキング更新フローを検証します。',eagleeye_kingdom_rank_refresh:'EagleEye側で王国ランキングを保存する内部処理を検証します.'};if(d[c.id])return d[c.id];if(c.command_kind==='EAGLEEYE_INTERNAL')return 'EagleEye内部の取得・保存フローを検証するコマンドです。';return 'このAPIの返却内容・フィールド構造を確認します。';}function commandInputs(c){var refs=c.references||[];var names={governor_id:'領主ID',uid:'内部UID',kid:'王国番号',alliance_tag:'同盟タグ'};return refs.map(function(x){return names[x]||x;}).join('、')||'追加の対象入力なし';}function renderCatalog(){var cat=document.getElementById('catalogCategory').value;var term=document.getElementById('catalogSearch').value.trim().toLowerCase();var list=probeCatalog.filter(function(c){return (cat==='ALL'||c.category===cat)&&(!term||(c.label+' '+c.endpoint+' '+c.category+' '+c.id+' '+commandPurpose(c)).toLowerCase().indexOf(term)>=0);});var groups={};list.forEach(function(c){(groups[c.category]||(groups[c.category]=[])).push(c);});var order=['Player','Kingdom','Ranking','Alliance','Mighty','EagleEye Retrieval'];var labels={Player:'プレイヤー情報',Kingdom:'王国情報',Ranking:'ランキング',Alliance:'同盟情報',Mighty:'Mighty専用API', 'EagleEye Retrieval':'EagleEye内部処理'};document.getElementById('catalogList').innerHTML=order.filter(function(k){return groups[k]&&groups[k].length;}).map(function(k){var cards=groups[k].map(function(c){var internal=String(c.command_kind||'').indexOf('EAGLEEYE_INTERNAL')===0;var query=JSON.stringify(c.query||{},null,2);return '<article class="catalog-item"><span class="catalog-tag '+(internal?'internal':c.requiresMighty?'mighty':'')+'">'+esc(internal?'EAGLEEYE内部':c.requiresMighty?'MIGHTY権限':'通常権限')+'</span><h3>'+esc(c.label)+'</h3><p class="purpose">'+esc(commandPurpose(c))+'</p><div class="actions"><button class="btn secondary" type="button" data-config-catalog="'+esc(c.id)+'">必要項目を入力</button><button class="btn" type="button" data-run-catalog="'+esc(c.id)+'">入力して実行</button></div><details class="details"><summary>API・入力の詳細</summary><div class="detail-body"><b>コマンドID</b>'+esc(c.id)+'<b>実行先・HTTPメソッド</b>'+esc(c.method||'GET')+' '+esc(c.endpoint)+'<b>初期クエリ</b><pre style="white-space:pre-wrap;margin:3px 0">'+esc(query)+'</pre><b>必要な入力</b>'+esc(commandInputs(c))+'<b>実行方式</b>'+esc(internal?'EagleEye内部の取得・保存フロー': 'MightPulse APIを1回呼び出し')+'</div></details></article>';}).join('');return '<details class="catalog-group"'+(term?' open':'')+'><summary>'+esc(labels[k]||k)+'<span class="group-count">'+groups[k].length+' コマンド</span></summary><div class="group-items">'+cards+'</div></details>';}).join('')||'<p class="hint">該当するコマンドがありません。</p>';document.getElementById('catalogStatus').textContent=list.length+'件表示 / 登録済み'+probeCatalog.length+'件。カテゴリを開いてコマンドを選択してください。';}var activeProbeActions=new WeakSet();function setButtonState(btn,state,label){if(!btn)return;btn.classList.remove('is-clicked','is-running','is-success','is-error');if(state)btn.classList.add('is-'+state);if(label!=null){if(!btn.dataset.originalLabel)btn.dataset.originalLabel=btn.textContent;btn.textContent=label;} }async function runButtonAction(btn,fn,statusEl){if(btn&&activeProbeActions.has(btn))return;if(btn)activeProbeActions.add(btn);var originalLabel=btn?btn.textContent:'';if(btn){setButtonState(btn,'clicked');btn.disabled=true;}if(statusEl)statusEl.textContent='クリックを受け付けました。処理を開始します…';await Promise.resolve();if(btn)setButtonState(btn,'running','実行中…');try{await fn();var message=statusEl?String(statusEl.textContent||''):'';var failed=/失敗|エラー|FAILED|空き待ち|中断|入力してください|正しくありません|ありません|MISSING|HTTP [45]\\d{2}/i.test(message);var successful=/成功|完了|SUCCESS|HTTP \d{3}/i.test(message);if(btn){if(failed)setButtonState(btn,'error','失敗');else if(successful)setButtonState(btn,'success','完了');else setButtonState(btn,'success','受付完了');}}catch(error){if(statusEl)statusEl.textContent='実行失敗: '+String(error&&error.message||error);if(btn)setButtonState(btn,'error','失敗');}finally{if(btn){btn.disabled=false;activeProbeActions.delete(btn);setTimeout(function(){setButtonState(btn,'',null);btn.textContent=originalLabel;},2200);}}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||'-')+'</td><td>'+esc(p.type||'-')+'<br><span class="small">'+esc(p.target_id||'')+'</span></td><td>ブラウザ履歴</td><td>MANUAL</td><td>-</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td>'+ (p.request_id?'<button type="button" data-open-probe="'+esc(p.request_id)+'">開く</button>':'-')+'</td></tr>';}).join('')||'<tr><td colspan="9" class="small">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
+  `<script>(function(){var probeCatalog=${probeCatalogJson};var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function commandPurpose(c){var d={player_base:'領主の基本プロフィールを取得します。名前・所属などの基本項目を確認する入口です。',player_ranks:'指定プレイヤーのランキング情報を取得します。順位系フィールドが返るか調べます。',player_full:'基本情報・英雄・ランキング・領主装備をまとめて取得し、返却範囲を確認します。',player_uid:'領主IDではなく内部UIDを指定してプレイヤー検索を試します。',kingdom_list:'ページ単位で王国一覧を取得します。ページング仕様の確認向けです。',kingdom_detail:'指定した王国の基本情報を取得します。',kingdom_boards:'王国が持つランキングボード一覧を取得します。',kingdom_ranks:'指定王国のランキング一覧を取得します。',kingdom_rank_board:'選択したランキング種別の順位データを取得します。',alliance_detail:'指定王国・同盟タグの同盟情報とメンバー一覧を取得します。',kingdom_events:'Mighty権限で王国イベント情報を取得します。',kingdom_kvk:'Mighty権限で王国のKvK情報を取得します。',kingdom_kvk_scores:'Mighty権限でKvKのスコア情報を取得します。',kvk_matchups:'Mighty権限でKvKのマッチアップ一覧を取得します。',eagleeye_player_refresh:'EagleEye側のプレイヤー詳細更新経路を調べます。外部API直呼びではなく内部取得フローの検証用です。',eagleeye_player_rank_refresh:'EagleEye側のプレイヤーランキング更新フローを検証します。',eagleeye_kingdom_rank_refresh:'EagleEye側で王国ランキングを保存する内部処理を検証します.'};if(d[c.id])return d[c.id];if(c.command_kind==='EAGLEEYE_INTERNAL')return 'EagleEye内部の取得・保存フローを検証するコマンドです。';return 'このAPIの返却内容・フィールド構造を確認します。';}function commandInputs(c){var refs=c.references||[];var names={governor_id:'領主ID',uid:'内部UID',kid:'王国番号',alliance_tag:'同盟タグ'};return refs.map(function(x){return names[x]||x;}).join('、')||'追加の対象入力なし';}function renderCatalog(){var cat=document.getElementById('catalogCategory').value;var term=document.getElementById('catalogSearch').value.trim().toLowerCase();var list=probeCatalog.filter(function(c){return (cat==='ALL'||c.category===cat)&&(!term||(c.label+' '+c.endpoint+' '+c.category+' '+c.id+' '+commandPurpose(c)).toLowerCase().indexOf(term)>=0);});var groups={};list.forEach(function(c){(groups[c.category]||(groups[c.category]=[])).push(c);});var order=['Usage','Player','Kingdom','Ranking','Alliance','Mighty','EagleEye Retrieval'];var labels={Usage:'API使用量',Player:'プレイヤー情報',Kingdom:'王国情報',Ranking:'ランキング',Alliance:'同盟情報',Mighty:'Mighty専用API', 'EagleEye Retrieval':'EagleEye内部処理'};document.getElementById('catalogList').innerHTML=order.filter(function(k){return groups[k]&&groups[k].length;}).map(function(k){var cards=groups[k].map(function(c){var internal=String(c.command_kind||'').indexOf('EAGLEEYE_INTERNAL')===0;var query=JSON.stringify(c.query||{},null,2);return '<article class="catalog-item"><span class="catalog-tag '+(internal?'internal':c.requiresMighty?'mighty':'')+'">'+esc(internal?'EAGLEEYE内部':c.requiresMighty?'MIGHTY権限':'通常権限')+'</span><h3>'+esc(c.label)+'</h3><p class="purpose">'+esc(commandPurpose(c))+'</p><div class="actions"><button class="btn secondary" type="button" data-config-catalog="'+esc(c.id)+'">必要項目を入力</button><button class="btn" type="button" data-run-catalog="'+esc(c.id)+'">入力して実行</button></div><details class="details"><summary>API・入力の詳細</summary><div class="detail-body"><b>コマンドID</b>'+esc(c.id)+'<b>実行先・HTTPメソッド</b>'+esc(c.method||'GET')+' '+esc(c.endpoint)+'<b>初期クエリ</b><pre style="white-space:pre-wrap;margin:3px 0">'+esc(query)+'</pre><b>必要な入力</b>'+esc(commandInputs(c))+'<b>実行方式</b>'+esc(internal?'EagleEye内部の取得・保存フロー': 'MightPulse APIを1回呼び出し')+'</div></details></article>';}).join('');return '<details class="catalog-group"'+(term?' open':'')+'><summary>'+esc(labels[k]||k)+'<span class="group-count">'+groups[k].length+' コマンド</span></summary><div class="group-items">'+cards+'</div></details>';}).join('')||'<p class="hint">該当するコマンドがありません。</p>';document.getElementById('catalogStatus').textContent=list.length+'件表示 / 登録済み'+probeCatalog.length+'件。カテゴリを開いてコマンドを選択してください。';}var activeProbeActions=new WeakSet();function setButtonState(btn,state,label){if(!btn)return;btn.classList.remove('is-clicked','is-running','is-success','is-error');if(state)btn.classList.add('is-'+state);if(label!=null){if(!btn.dataset.originalLabel)btn.dataset.originalLabel=btn.textContent;btn.textContent=label;} }async function runButtonAction(btn,fn,statusEl){if(btn&&activeProbeActions.has(btn))return;if(btn)activeProbeActions.add(btn);var originalLabel=btn?btn.textContent:'';if(btn){setButtonState(btn,'clicked');btn.disabled=true;}if(statusEl)statusEl.textContent='クリックを受け付けました。処理を開始します…';await Promise.resolve();if(btn)setButtonState(btn,'running','実行中…');try{await fn();var message=statusEl?String(statusEl.textContent||''):'';var failed=/失敗|エラー|FAILED|空き待ち|中断|入力してください|正しくありません|ありません|MISSING|HTTP [45]\\d{2}/i.test(message);var successful=/成功|完了|SUCCESS|HTTP \d{3}/i.test(message);if(btn){if(failed)setButtonState(btn,'error','失敗');else if(successful)setButtonState(btn,'success','完了');else setButtonState(btn,'success','受付完了');}}catch(error){if(statusEl)statusEl.textContent='実行失敗: '+String(error&&error.message||error);if(btn)setButtonState(btn,'error','失敗');}finally{if(btn){btn.disabled=false;activeProbeActions.delete(btn);setTimeout(function(){setButtonState(btn,'',null);btn.textContent=originalLabel;},2200);}}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||'-')+'</td><td>'+esc(p.type||'-')+'<br><span class="small">'+esc(p.target_id||'')+'</span></td><td>ブラウザ履歴</td><td>MANUAL</td><td>-</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td>'+ (p.request_id?'<button type="button" data-open-probe="'+esc(p.request_id)+'">開く</button>':'-')+'</td></tr>';}).join('')||'<tr><td colspan="9" class="small">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
   if(!previous) return {title:"比較対象なし",tone:"muted",items:["同じ対象・同じProbe種別の過去結果がありません。まず同条件で2回以上取得してください。"]};
   var items=[];
   var cachedSame=String(previous.cached_at||"")===String(p.cached_at||"");
@@ -4742,8 +4751,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
         purpose: "API_POOL_AUTO_RECOVERY",
         httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
       recovered++;
     } catch (error) {
@@ -6044,8 +6053,8 @@ async function handleApiPoolMightyCheck(request, env) {
         purpose: "API_POOL_MIGHTY_CHECK",
         httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
     } catch (error) {
       const status = Number(error?.status || 0);
@@ -6151,8 +6160,8 @@ async function handleApiPoolHealthCheck(request, env) {
         purpose: "API_POOL_HEALTH_CHECK",
         httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
       if (contentType.includes("application/json")) {
         return json({ ok: true, key_id: keyId, status: "AVAILABLE", upstream_status: result.status, message: "接続確認成功。APIキーをAVAILABLEにしました。" });
@@ -6311,7 +6320,7 @@ async function handleApiPoolTestPlayer(request, env) {
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
     const sourcePlayer = result?.data?.player || {};
     const sourceTownCenterLevel = sourcePlayer.town_center_level ?? null;
@@ -6422,7 +6431,7 @@ async function handleApiPoolTestRanking(request, env) {
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
     const response = {
       ok: true,
@@ -6840,7 +6849,10 @@ async function fetchThroughWatchlistApiPool(env, {
           targetType,
           targetId,
           jobId,
-          reserveAvailableKeys: reserve
+          reserveAvailableKeys: reserve,
+          // Ordinary endpoints: use confirmed Mighty keys only after normal keys,
+          // so Mighty quota stays available for Mighty-only features.
+          preferNonMighty: true
         });
         poolType = candidatePoolType;
         break;
@@ -6887,8 +6899,8 @@ async function fetchThroughWatchlistApiPool(env, {
       runId,
       startedAt: requestStartedAt,
       completedAt: Math.floor(Date.now() / 1000),
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
     });
 
     return { result, pool_type: poolType, key_id: lease.key_id };
@@ -6972,7 +6984,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
           poolType: candidatePoolType,
           purpose,
           targetType: "PLAYER",
-          targetId: id
+          targetId: id,
+          preferNonMighty: true
         });
         poolType = candidatePoolType;
         break;
@@ -7022,7 +7035,7 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       purpose,
       httpStatus: result.status,
       requestCount: Math.max(1, Number(result.attempts) || 1),
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
 
     return { result, observation, key_id: lease.key_id };
@@ -7110,7 +7123,6 @@ async function handlePlayerApi(request, env) {
         kills: player?.kills,
         x: player?.x,
         y: player?.y,
-        online: player?.online,
         observed_at: observation.observed_at,
         cached_at: observation.payload?.cached_at ?? null,
         age_seconds: observation.payload?.age_seconds ?? null
@@ -7204,7 +7216,6 @@ async function handlePlayerRefresh(request, env) {
         kills: player?.kills,
         x: player?.x,
         y: player?.y,
-        online: player?.online,
         observed_at: fetched.observation.observed_at,
         source_observed_at: fetched.observation.source_observed_at ?? null
       }
@@ -7645,6 +7656,8 @@ function isChangeVisibleForRole(change, role, settings = null) {
     return false;
   }
   const field = String(change.field_name || "");
+  // Activity fields are stale upstream; hide previously recorded activity changes.
+  if (field === "online" || field === "last_active_at" || field === "last_login") return false;
   const key = field === "vip" ? "base_vip"
     : field === "x" || field === "y" ? "base_coordinates"
     : field === "power" || field === "town_center_level" ? "base_power"
@@ -7772,12 +7785,12 @@ async function handlePlayerSectionExport(request, env) {
 
     if (section === "profile") {
       sheetTitle = "プロフィール";
-      headers = ["出力日時","領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","オンライン","最終活動","最終ログイン","言語","役職","シールド終了","炎上終了"];
+      headers = ["出力日時","領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","言語","役職","シールド終了","炎上終了"];
       const p = visiblePlayer || {};
       rows = [{
         "出力日時": exportedAt, "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,
         "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,
-        "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",
+        "座標X": p.x, "座標Y": p.y,
         "言語": p.language, "役職": p.office,
         "シールド終了": p.shield_endtime, "炎上終了": p.burn_endtime
       }];
@@ -8014,7 +8027,7 @@ function filterPlayerForRole(player, role, payload = null, settings = null) {
   if (!visibilityEnabled(settings, "base_identity", role)) { delete visible.uid; delete visible.governor_id; delete visible.fid; delete visible.nick_name; delete visible.kid; }
   if (!visibilityEnabled(settings, "base_power", role)) { delete visible.power; delete visible.town_center_level; }
   if (!visibilityEnabled(settings, "base_kills", role)) delete visible.kills;
-  if (!visibilityEnabled(settings, "base_activity", role)) { delete visible.online; }
+  delete visible.online;
   delete visible.last_active_at;
   delete visible.last_login;
   if (!visibilityEnabled(settings, "base_profile", role)) { delete visible.avatar_url; delete visible.language; delete visible.shield_endtime; delete visible.burn_endtime; delete visible.office; }
@@ -8043,7 +8056,6 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
-      ${card("オンライン", p.online ? "オンライン" : "オフライン")}
       ${card("同盟", p.alliance_name || "-")}
     </div>
     ${noticeHtml}

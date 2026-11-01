@@ -358,7 +358,7 @@ async function savePlayerIdentityHistory(db, previous, current, observation) {
   ).run();
 }
 
-async function savePlayerChangeEvents(db, previous, current, observation) {
+export async function savePlayerChangeEvents(db, previous, current, observation) {
   if (!previous) return;
 
   const oldValues = {
@@ -368,7 +368,8 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     x: previous.x ?? null,
     y: previous.y ?? null,
     kills: previous.kills ?? null,
-    online: previous.online ?? null,
+    // `online` is not compared: MightPulse states the game no longer sends
+    // activity, so the value is stale and must not produce change events.
     alliance_aid: previous.alliance_aid ?? null,
     alliance_name: previous.alliance_name ?? null,
     alliance_rank: previous.alliance_rank ?? null,
@@ -384,7 +385,6 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     x: current.x ?? null,
     y: current.y ?? null,
     kills: current.kills ?? null,
-    online: current.online == null ? null : (current.online ? 1 : 0),
     alliance_aid: alliance.aid ?? null,
     alliance_name: alliance.name ?? null,
     alliance_rank: alliance.rank ?? null,
@@ -407,7 +407,6 @@ async function savePlayerChangeEvents(db, previous, current, observation) {
     else if (field === "town_center_level") changeType = "TOWN_CENTER_CHANGED";
     else if (field === "alliance_aid" || field === "alliance_name") changeType = "ALLIANCE_CHANGED";
     else if (field === "x" || field === "y") changeType = "COORDINATES_CHANGED";
-    else if (field === "online") changeType = "ACTIVITY_CHANGED";
     else if (field === "kills") changeType = "KILLS_CHANGED";
 
     statements.push(db.prepare(

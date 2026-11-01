@@ -340,9 +340,12 @@ async function refreshApiPoolLocalRemaining(db, keyId, now) {
   ).bind(keyId, now - 60, now, now - 86400).run();
 }
 
-export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null, traceId = null, parentTraceId = null, runId = null, startedAt = null, completedAt = null, requestCount = 1 } = {}) {
+export async function recordApiPoolSuccess(db, { keyId, leaseId, poolType = null, endpoint = null, targetType = null, targetId = null, jobId = null, purpose = null, httpStatus = 200, remainingMinute = null, remainingDay = null, quotaResetAt = null, traceId = null, parentTraceId = null, runId = null, startedAt = null, completedAt = null, requestCount = 1, countsAgainstQuota = true } = {}) {
   const now = Math.floor(Date.now() / 1000);
-  await prepareUsageInsert(db, { keyId, provider:PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount:Math.max(1, Math.floor(Number(requestCount) || 1)), measuredQuota:null, measuredRemaining:remainingMinute, estimated:0, now }).run();
+  // Quota-free calls (e.g. GET /v1/usage) are still logged for traceability but
+  // with request_count 0, so local quota accounting matches MightPulse.
+  const countedRequests = countsAgainstQuota === false ? 0 : Math.max(1, Math.floor(Number(requestCount) || 1));
+  await prepareUsageInsert(db, { keyId, provider:PROVIDER, poolType, endpoint, targetType, targetId, jobId, purpose, httpStatus, requestCount:countedRequests, measuredQuota:null, measuredRemaining:remainingMinute, estimated:0, now }).run();
   await db.prepare(
     "UPDATE api_pool_keys SET status = 'AVAILABLE', cooldown_until = NULL, last_used_at = ?1, last_success_at = ?2, last_error_code = NULL, last_error_message = NULL, lease_id = NULL, leased_until = NULL, lease_job_id = NULL, lease_purpose = NULL, lease_target_type = NULL, lease_target_id = NULL, updated_at = ?3 WHERE key_id = ?4 AND lease_id = ?5"
   ).bind(now, now, now, keyId, leaseId).run();
