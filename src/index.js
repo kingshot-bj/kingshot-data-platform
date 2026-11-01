@@ -81,10 +81,12 @@ async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
   const now = Math.floor(Date.now() / 1000);
   try {
-    const recent = await env.DB.prepare(
-      "SELECT service, MAX(created_at) AS created_at FROM diagnostic_events GROUP BY service"
-    ).all();
-    const lastByService = new Map((recent.results || []).map(row => [String(row.service), Number(row.created_at || 0)]));
+    // One indexed lookup per service (idx_diagnostic_events_service) instead of a GROUP BY over the whole table.
+    const lastByService = new Map();
+    for (const service of ["d1", "api_pool", "mightpulse", "discord", "discord_support", "google_sheets", "notifications", "retention", "history_storage"]) {
+      const row = await env.DB.prepare("SELECT MAX(created_at) AS created_at FROM diagnostic_events WHERE service = ?").bind(service).first();
+      if (row?.created_at) lastByService.set(service, Number(row.created_at));
+    }
     const due = service => !lastByService.has(service) || now - lastByService.get(service) >= 3600;
     const write = input => recordDiagnostic(env.DB, { ...input, feature: input.feature || "diagnostic_probe", operation: input.operation || "HEALTH_CHECK" });
 
@@ -187,6 +189,17 @@ async function runDiagnosticHealthChecks(env) {
         status:configured ? "SUCCESS" : "WARNING",
         errorCode:configured ? null : "DISCORD_SUPPORT_NOT_CONFIGURED",
         message:configured ? "Discord Support設定の診断確認成功" : "Discord Supportに必要な設定が未構成です。"
+      });
+    }
+
+    if (due("notifications")) {
+      // KvK notifications go to per-kingdom Discord threads through the bot.
+      const configured = Boolean(env.DISCORD_BOT_TOKEN && env.DISCORD_SUPPORT_GUILD_ID && env.DISCORD_CLIENT_ID);
+      await write({
+        service:"notifications",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "DISCORD_NOTIFICATION_NOT_CONFIGURED",
+        message:configured ? "通知システム（Discord Bot・KvKスレッド）の設定確認成功" : "Discord通知に必要な設定が未構成です。"
       });
     }
 
@@ -1021,14 +1034,15 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
         traceId, service: "ranking", feature: "kingdom_watchlist",
-        operation: "FETCH_COMPARE_SAVE", status: sourceObservedAt ? "SUCCESS" : "WARNING",
-        errorCode: sourceObservedAt ? null : "SOURCE_TIME_UNAVAILABLE",
+        // Saving succeeded either way; a missing MightPulse source time is noted, not a warning.
+        operation: "FETCH_COMPARE_SAVE", status: "SUCCESS",
+        errorCode: null,
         message: sourceObservedAt ? "ランキング取得・比較・保存成功" : "ランキング取得・比較・保存は成功しましたがMightPulse基準時刻を取得できませんでした。",
         provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
         startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
         elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
         rowsReceived: entries.length, rowsSaved: saved,
-        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type, changedRows: rankingComparison.changedEntries.length }
+        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type, changedRows: rankingComparison.changedEntries.length, sourceTimeMissing: !sourceObservedAt }
       });
 
       const rankingChanges = rankingComparison.rankingChanges;
@@ -5109,6 +5123,16 @@ export default {
       await runDataRetentionJob(env);
     } catch (error) {
       console.error("data_retention_job_failed", error?.message || error);
+    }
+    try {
+      // Hourly-per-service health probes (D1, Discord, Sheets, ...) so the status page is not "未確認".
+      const nowSec = Math.floor(Date.now() / 1000);
+      const claim = await env.DB.prepare(
+        "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES ('DIAG_HEALTH_CHECK', ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at WHERE api_request_locks.lock_until <= ?"
+      ).bind(crypto.randomUUID(), nowSec + 600, nowSec, nowSec).run();
+      if (Number(claim?.meta?.changes || 0) === 1) await runDiagnosticHealthChecks(env);
+    } catch (error) {
+      console.error("diagnostic_health_checks_failed", error?.message || error);
     }
     try {
       const kvk = await runKvkCollection(env);
