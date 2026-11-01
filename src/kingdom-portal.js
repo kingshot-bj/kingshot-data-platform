@@ -1,3 +1,4 @@
+import { loadKingdomGrowthHistory, renderKingdomGrowthSection, KINGDOM_GROWTH_CSS } from "./kingdom-growth-history.js";
 import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly, collectAllianceDetail } from "./data-collection-engine.js";
 import { archiveAllianceHistoryBatch, listAllianceHistoryFromR2 } from "./r2-archive.js";
 import { evaluateVipEligibility } from "./user-eligibility.js";
@@ -85,6 +86,9 @@ export async function renderKingdomDetailPage(request, env) {
     "SELECT rank,target_id,aid,abbr,name,score,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 10"
   ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 10 });
 
+  let growthHtml = "";
+  try { growthHtml = renderKingdomGrowthSection(await loadKingdomGrowthHistory(env.ARCHIVE, kid)) + "<style>" + KINGDOM_GROWTH_CSS + "</style>"; }
+  catch (error) { console.error("kingdom_growth_history_failed", kid, error?.message || error); }
   const fields = [
     ["Power",detail.power],["平均Power",detail.avg_power],["領主数",detail.player_count],["Active",detail.active_players],
     ["Active 7d",detail.active_7d],["Active 30d",detail.active_30d],["同盟数",detail.alliance_count],["Health",detail.health],
@@ -106,6 +110,7 @@ export async function renderKingdomDetailPage(request, env) {
     "<div class='actions'><a href='/kingdom/rankings?kid="+kid+"'>26ランキングを見る</a><a href='/kingdom/compare?kid="+kid+"'>王国比較</a><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a><a href='/kingdom/mighty?kid="+kid+"'>Mighty Events / KvK</a></div>"+
     "<section><h2>基本情報</h2><div class='grid'>"+fields.map(([k,v])=>"<div class='card'><small>"+esc(k)+"</small><strong>"+esc(num(v))+"</strong></div>").join("")+"</div></section>"+
     "<section><h2>Momentum</h2><div class='momentum'><b>Power Gain 7d</b><span>"+esc(num(detail.power_gain_7d))+"</span><b>TC Pushers 7d</b><span>"+esc(num(detail.tc_pushers_7d))+"</span><b>Active 7d / 30d</b><span>"+esc(num(detail.active_7d))+" / "+esc(num(detail.active_30d))+"</span><b>Health</b><span>"+esc(num(detail.health))+"</span></div></section>"+
+    growthHtml+
     "<section><h2>Top Player</h2><div class='list'>"+(playerRows||"<div class='empty'>現在のランキングデータなし</div>")+"</div></section>"+
     "<section><h2>Top Alliance</h2><div class='list'>"+(allianceRows||"<div class='empty'>現在の同盟ランキングデータなし</div>")+"</div></section>"+
     "<section><h2>ランキングボード</h2><div class='boards'>"+(boardRows||"<div class='empty'>ランキング未取得</div>")+"</div></section>"+
