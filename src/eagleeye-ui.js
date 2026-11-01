@@ -85,8 +85,8 @@ export const EAGLEEYE_NAV_CSS = `
   transform-origin:center!important;
 }
 .ee-nav a.active,.ee-global-nav a.active{
-  color:#20d7f2!important;
-  background:linear-gradient(180deg,rgba(32,215,242,.12),rgba(32,215,242,.025))!important;
+  color:var(--ee-cyan,#20d7f2)!important;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--ee-cyan,#20d7f2) 12%,transparent),color-mix(in srgb,var(--ee-cyan,#20d7f2) 2.5%,transparent))!important;
 }
 .ee-nav a.active:before,.ee-global-nav a.active:before{
   content:""!important;
@@ -96,8 +96,8 @@ export const EAGLEEYE_NAV_CSS = `
   right:25%!important;
   height:3px!important;
   border-radius:4px!important;
-  background:#20d7f2!important;
-  box-shadow:0 0 12px rgba(32,215,242,.65)!important;
+  background:var(--ee-cyan,#20d7f2)!important;
+  box-shadow:0 0 12px color-mix(in srgb,var(--ee-cyan,#20d7f2) 65%,transparent)!important;
 }
 .ee-nav-badge,.ee-global-nav-badge{
   min-width:17px!important;
@@ -387,11 +387,11 @@ const LEGACY_PALETTE = {
   "--ee-panel-raised": ["172a40", "12283d", "10243a", "1e293b", "12334b"],
   "--ee-border": ["334155", "2a4664", "25415f", "294763", "2c4d69", "2a4965", "475569"],
   "--ee-border-soft": ["1d344d", "203b55", "23415f", "1e3a5f"],
-  "--ee-text": ["f8fafc", "e8f3ff", "f1f8ff", "edf6ff", "e2e8f0", "e7f7ff", "f0f8ff"],
-  "--ee-subtext": ["94a3b8", "91a7bf", "9bb0c8", "91a9c0", "a9bed3", "cbd5e1"],
-  "--ee-muted": ["64748b", "7f9ab3", "71869e"],
+  "--ee-text": ["f8fafc", "e8f3ff", "f1f8ff", "edf6ff", "e2e8f0", "e7f7ff", "f0f8ff", "eff8ff", "e7edf5"],
+  "--ee-subtext": ["94a3b8", "91a7bf", "9bb0c8", "91a9c0", "a9bed3", "cbd5e1", "9db4c8", "8da2b8", "8098b0"],
+  "--ee-muted": ["64748b", "7f9ab3", "71869e", "718aa2", "7089a1", "7892aa"],
   // EagleEye cyan accent: follows the chosen colour theme.
-  "--ee-cyan": ["22d3ee", "20d7f2", "20c8e8"]
+  "--ee-cyan": ["22d3ee", "20d7f2", "20c8e8", "66e7f6"]
 };
 const TOKEN_ROLE = {
   "--ee-bg": "surface", "--ee-panel": "surface", "--ee-panel-deep": "surface", "--ee-panel-raised": "surface",
@@ -405,10 +405,45 @@ const LEGACY_TO_TOKEN = new Map(Object.entries(LEGACY_PALETTE).flatMap(([token, 
 // so a page is never converted twice.
 const CSS_COLOR_DECL = /((?:background|background-color|color|border|border-color|border-(?:top|bottom|left|right)(?:-color)?|outline|outline-color)\s*:\s*[^;"'{}<>(,]*?)#([0-9a-fA-F]{6})\b/g;
 
+// Translucent legacy colours (rgba) inside <style> blocks. Only clear cases are
+// mapped, by role: the EagleEye cyan accent anywhere, dark navy surfaces in
+// background declarations, and navy-blue lines in border declarations. They
+// become color-mix() over the theme token with the same opacity, so they follow
+// the colour theme and the light/dark switch. Inline scripts are not touched.
+function rgbaRole(r, g, b) {
+  if (r <= 40 && g >= 195 && b >= 225) return "accent";
+  const max = Math.max(r, g, b);
+  if (max <= 70 && b >= r && b >= g - 4) return r <= 5 && g <= 12 ? "bg" : max <= 30 ? "deep" : max <= 50 ? "surface" : "raised";
+  if (r <= 90 && g >= 60 && g <= 120 && b >= 95 && b <= 150 && b > g && g > r) return "line";
+  return null;
+}
+const RGBA_TOKEN = { accent: "--ee-cyan", bg: "--ee-bg", deep: "--ee-panel-deep", surface: "--ee-panel", raised: "--ee-panel-raised", line: "--ee-border" };
+const STYLE_BLOCK = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+const CSS_DECL = /(^|[{;\s])(--[a-z0-9-]+|[a-z-]+)\s*:\s*([^;{}]*)/gi;
+const RGBA = /rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0?\.\d+|1(?:\.0+)?|0)\s*\)/g;
+function normalizeRgbaInCss(css) {
+  return css.replace(CSS_DECL, (match, lead, property, value) => {
+    if (!value.includes("rgba(")) return match;
+    const prop = property.toLowerCase();
+    const isBackground = prop.startsWith("background");
+    const isLine = prop.startsWith("border") || prop.startsWith("outline");
+    const replaced = value.replace(RGBA, (m, r, g, b, a) => {
+      const role = rgbaRole(Number(r), Number(g), Number(b));
+      if (!role) return m;
+      const ok = role === "accent" ? true : role === "line" ? isLine : isBackground;
+      if (!ok) return m;
+      const pct = Math.round(Math.min(1, Math.max(0, Number(a))) * 1000) / 10;
+      return "color-mix(in srgb,var(" + RGBA_TOKEN[role] + ") " + pct + "%,transparent)";
+    });
+    return replaced === value ? match : lead + property + ":" + replaced;
+  });
+}
+
 export function normalizeLegacyPalette(html) {
   if (typeof html !== "string") return html;
   // Pages intentionally designed in the light Apple style keep their own colours.
   if (html.includes("background:#f5f5f7")) return html;
+  if (html.includes("rgba(")) html = html.replace(STYLE_BLOCK, (block, css) => block.replace(css, normalizeRgbaInCss(css)));
   return html.replace(CSS_COLOR_DECL, (match, prefix, hex) => {
     const token = LEGACY_TO_TOKEN.get(hex.toLowerCase());
     if (!token) return match;

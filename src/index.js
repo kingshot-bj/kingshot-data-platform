@@ -51,6 +51,7 @@ import { runAllianceRoller } from "./alliance-catalog.js";
 import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
+import { buildHomeSummary } from "./home-summary.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
 import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
@@ -4965,6 +4966,7 @@ export default {
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
+      if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
@@ -10570,6 +10572,22 @@ function renderInitial(){var p=catalog.find(function(x){return x.key===state.cat
 boot();})();</script></body></html>`;
 }
 
+async function handleHomeSummary(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const summary = await buildHomeSummary(env.DB, auth, {
+      visible: key => visibilityEnabled(settings, key, auth.role),
+      changeVisible: change => isChangeVisibleForRole(change, auth.role, settings)
+    });
+    return json({ ok: true, ...summary });
+  } catch (error) {
+    console.error("home_summary_failed", error?.message || error);
+    return json({ ok: false, error: "HOME_SUMMARY_FAILED" }, 500);
+  }
+}
+
 async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
@@ -10588,8 +10606,8 @@ async function renderHome(request, env) {
     ? `<a class="ee-profile" href="/my-player" aria-label="マイKingShotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
-:root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,#06101d,#030811 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
+:root{color-scheme:dark;--bg:var(--ee-bg,#050b14);--panel:var(--ee-panel,#0a1728);--panel2:var(--ee-panel-raised,#0d2035);--line:var(--ee-border,#23415f);--text:var(--ee-text,#eff8ff);--sub:var(--ee-subtext,#8098b0);--cyan:var(--ee-cyan,#20d7f2);--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,var(--ee-bg,#06101d),color-mix(in srgb,var(--ee-bg,#06101d) 80%,#000) 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
 .ee-app{height:100dvh;min-height:0;display:grid;grid-template-rows:60px minmax(0,1fr) 72px;overflow:hidden}.ee-top{display:flex;align-items:center;justify-content:space-between;padding:0 max(18px,calc((100vw - 1100px)/2));border-bottom:1px solid rgba(35,65,95,.7);background:rgba(4,10,18,.86);backdrop-filter:blur(18px);z-index:10}.ee-brand{font-weight:950;letter-spacing:.09em;font-size:16px}.ee-brand span{color:var(--cyan)}.ee-brand b{color:#7189a2;font-size:11px;margin-left:7px}.ee-profile{display:flex;align-items:center;gap:8px}.ee-avatar{width:35px;height:35px;border:1px solid #31516f;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#0b1c2e;color:var(--gold);font-weight:950;font-size:10px}.ee-avatar img{width:100%;height:100%;object-fit:cover}.ee-profile-copy{display:grid;line-height:1.05}.ee-profile-copy b{font-size:13px}.ee-profile-copy small{margin-top:4px;color:var(--gold);font-size:10px;font-weight:900;letter-spacing:.08em}
 .ee-main{min-height:0;overflow:hidden;overscroll-behavior:none;padding:20px 14px 10px}.ee-screen{width:min(920px,100%);margin:auto}.ee-welcome{position:relative;min-height:116px;display:flex;align-items:center;overflow:hidden;padding:15px 18px;border:1px solid rgba(44,93,137,.8);border-radius:20px;background:radial-gradient(circle at 75% 50%,rgba(34,211,238,.25),transparent 35%),linear-gradient(135deg,#0c2945,#071525 72%);box-shadow:0 14px 40px rgba(0,0,0,.24)}.ee-welcome-copy{position:relative;z-index:2;max-width:58%}.ee-kicker{font-size:10px;letter-spacing:.16em;color:var(--cyan);font-weight:950}.ee-welcome h1{margin:5px 0 2px;font-size:22px;letter-spacing:-.04em}.ee-welcome p{margin:0;color:#a1b7ca;font-size:11px;line-height:1.5}.ee-welcome-state{display:inline-flex;margin-top:8px;align-items:center;gap:5px;color:#8ff0ba;font-size:10px;font-weight:900}.ee-welcome-state i{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(73,230,154,.8)}.ee-welcome-bj{position:absolute;right:4%;bottom:-18px;width:150px;height:150px;object-fit:contain;filter:drop-shadow(0 14px 18px rgba(0,0,0,.5));animation:heroIn .85s cubic-bezier(.2,.8,.2,1) both}.ee-menu-title{display:flex;align-items:end;justify-content:space-between;margin:14px 3px 7px}.ee-menu-title b{font-size:15px;letter-spacing:.08em}.ee-menu-title span{font-size:10px;color:#6f879e}
 .ee-mainmenu{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.ee-tile{position:relative;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:1px solid rgba(39,75,108,.85);border-radius:16px;background:linear-gradient(180deg,rgba(12,34,55,.94),rgba(7,20,34,.96));box-shadow:inset 0 1px rgba(255,255,255,.03);transition:transform .16s,border-color .16s,box-shadow .16s}.ee-tile:active{transform:scale(.97)}.ee-tile.primary{border-color:rgba(34,211,238,.42)}.ee-tile img{width:48px;height:48px;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.38))}.ee-tile strong{font-size:13px;font-weight:950}.ee-tile small{font-size:9px;color:#718aa2;font-weight:800}.ee-tile .badge{position:absolute;right:7px;top:7px;min-width:20px;height:20px;padding:0 5px;display:grid;place-items:center;border-radius:999px;background:var(--cyan);color:#04111c;font-size:10px;font-weight:950}
@@ -10605,7 +10623,7 @@ async function renderHome(request, env) {
 .ee-app{grid-template-rows:60px minmax(0,1fr) 72px}.ee-top{padding-left:max(18px,calc((100vw - 1040px)/2));padding-right:max(18px,calc((100vw - 1040px)/2));background:rgba(3,9,17,.94)}
 .ee-brand{font-size:15px;letter-spacing:.13em}.ee-brand b{font-size:9px;letter-spacing:.12em;color:#718aa2}.ee-profile{padding:5px 9px 5px 5px;border:1px solid rgba(49,81,111,.62);border-radius:999px;background:rgba(11,28,46,.72)}.ee-profile-copy b{font-size:11px}.ee-profile-copy small{font-size:8px;color:var(--cyan);letter-spacing:.04em}
 .ee-main{padding:14px 14px 22px;overscroll-behavior:contain}.ee-screen{width:min(860px,100%)}
-.ee-welcome{min-height:148px;padding:20px;border-radius:22px;border-color:rgba(32,215,242,.34);background:radial-gradient(ellipse at 85% 40%,rgba(32,215,242,.18),transparent 38%),linear-gradient(135deg,#0b2944 0%,#08192b 55%,#061321 100%);box-shadow:0 14px 36px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.04)}
+.ee-welcome{min-height:148px;padding:20px;border-radius:22px;border-color:rgba(32,215,242,.34);background:radial-gradient(ellipse at 85% 40%,rgba(32,215,242,.18),transparent 38%),linear-gradient(135deg,var(--ee-panel-raised,#0b2944) 0%,var(--ee-panel,#08192b) 55%,var(--ee-panel-deep,#061321) 100%);box-shadow:0 14px 36px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.04)}
 .ee-welcome-copy{max-width:66%}.ee-welcome-copy:before{content:"KINGSHOT INTELLIGENCE";display:block;margin-bottom:8px;color:#66e7f6;font-size:9px;font-weight:950;letter-spacing:.18em}.ee-welcome-copy:after{content:"王国とプレイヤーの動きを、ひと目で。";display:block;margin-top:7px;color:#9db4c8;font-size:11px;line-height:1.65}
 .ee-welcome-state{margin-top:0;padding:5px 8px;border:1px solid rgba(73,230,154,.22);border-radius:999px;background:rgba(73,230,154,.06);font-size:9px}.ee-welcome-bj{right:3%;bottom:-10px;width:158px;height:158px}
 .ee-menu-title{margin:20px 3px 10px;align-items:center}.ee-menu-title b{font-size:13px;letter-spacing:.04em}.ee-menu-title span{font-size:9px}.ee-mainmenu{gap:9px}
@@ -10618,7 +10636,7 @@ async function renderHome(request, env) {
 .ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
 .ee-drawer-milestone-icon{color:#f6c84b;font-size:23px}.ee-drawer-grid .ee-drawer-milestone span{font-size:9px;font-weight:900}.ee-drawer-grid .ee-drawer-milestone small{display:block;margin-top:3px;color:#d0b66e;font-size:8px}
 .ee-nav{padding-top:7px;gap:5px;background:rgba(3,9,17,.97);padding-bottom:max(7px,env(safe-area-inset-bottom))}.ee-nav a,.ee-nav button{min-height:49px;font-size:8px;border-radius:13px;gap:4px}.ee-nav-icon{font-size:20px}.ee-nav a.active{background:linear-gradient(180deg,rgba(32,215,242,.11),rgba(32,215,242,.025))}
-.ee-drawer{z-index:1000;align-items:flex-end;padding-top:env(safe-area-inset-top)}.ee-drawer-panel{box-sizing:border-box;position:relative;flex:0 1 auto;min-height:0;width:min(920px,100%);height:min(82vh,calc(100vh - env(safe-area-inset-top) - 12px));height:min(82dvh,calc(100dvh - env(safe-area-inset-top) - 12px));max-height:calc(100vh - env(safe-area-inset-top) - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);overflow-x:hidden;overflow-y:scroll;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:16px 16px calc(22px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:linear-gradient(180deg,#0d2339,#050e19)}.ee-drawer-head{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;margin:-16px -16px 14px;padding:16px;background:linear-gradient(180deg,#0d2339,#0d2339);border-radius:25px 25px 0 0}.ee-drawer-head b{font-size:14px;letter-spacing:.03em}.ee-close{flex-shrink:0;width:36px;height:36px;border:1px solid rgba(80,115,145,.4);border-radius:50%;background:rgba(255,255,255,.04)}.ee-drawer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ee-drawer-grid a{min-height:82px;border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.96),rgba(6,17,29,.96));border-color:rgba(43,78,110,.7)}.ee-drawer-grid img{width:37px;height:37px}.ee-drawer-grid span{font-size:9px}
+.ee-drawer{z-index:1000;align-items:flex-end;padding-top:env(safe-area-inset-top)}.ee-drawer-panel{box-sizing:border-box;position:relative;flex:0 1 auto;min-height:0;width:min(920px,100%);height:min(82vh,calc(100vh - env(safe-area-inset-top) - 12px));height:min(82dvh,calc(100dvh - env(safe-area-inset-top) - 12px));max-height:calc(100vh - env(safe-area-inset-top) - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);overflow-x:hidden;overflow-y:scroll;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:16px 16px calc(22px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:linear-gradient(180deg,var(--ee-panel-raised,#0d2339),var(--ee-bg,#050e19))}.ee-drawer-head{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;margin:-16px -16px 14px;padding:16px;background:var(--ee-panel-raised,#0d2339);border-radius:25px 25px 0 0}.ee-drawer-head b{font-size:14px;letter-spacing:.03em}.ee-close{flex-shrink:0;width:36px;height:36px;border:1px solid rgba(80,115,145,.4);border-radius:50%;background:rgba(255,255,255,.04)}.ee-drawer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ee-drawer-grid a{min-height:82px;border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.96),rgba(6,17,29,.96));border-color:rgba(43,78,110,.7)}.ee-drawer-grid img{width:37px;height:37px}.ee-drawer-grid span{font-size:9px}
 @media(min-width:760px){.ee-welcome{min-height:172px;padding:26px}.ee-welcome-bj{width:205px;height:205px;right:7%;bottom:-24px}.ee-tile{min-height:132px}.ee-tile img{width:58px;height:58px}.ee-summary{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:520px){.ee-main{padding:12px 12px 18px}.ee-welcome{min-height:132px;padding:16px}.ee-welcome-copy{max-width:68%}.ee-welcome-copy:before{font-size:8px;letter-spacing:.13em}.ee-welcome-copy:after{font-size:10px;max-width:205px}.ee-welcome-bj{width:137px;height:137px;right:-2%;bottom:-8px}.ee-menu-title{margin-top:17px}.ee-mainmenu{gap:7px}.ee-tile{min-height:101px;padding:8px 3px}.ee-tile img{width:42px;height:42px}.ee-tile strong{font-size:10px}.ee-tile small{font-size:7px}.ee-summary{margin-top:13px}.ee-stat{padding:9px 10px}.ee-stat-value{font-size:15px}.ee-nav{padding-left:8px;padding-right:8px}.ee-nav-icon{font-size:19px}}
 @media(max-height:700px){.ee-welcome{min-height:112px}.ee-welcome-bj{width:118px;height:118px}.ee-welcome-copy:after{margin-top:4px}.ee-tile{min-height:86px}.ee-tile img{width:36px;height:36px}.ee-summary{margin-top:10px}}
@@ -10841,7 +10859,52 @@ async function renderHome(request, env) {
 .ee-tile small{font-size:7px}
 .ee-stat-label,.ee-stat-sub{font-size:8px}
 .ee-nav a,.ee-nav button{font-size:9px}
-}${EAGLEEYE_NAV_CSS}
+}
+/* Home v2: readable sizes, scrollable content, personal summary. Prefixed with
+   .ee-app so these win over the older compact media rules above. */
+.ee-app .ee-main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 24px}
+.ee-app .ee-welcome{min-height:118px;padding:16px}
+.ee-app .ee-welcome-copy:before{font-size:10px;letter-spacing:.14em;color:var(--ee-cyan)}
+.ee-app .ee-welcome-copy{max-width:72%}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
+.ee-app .ee-welcome-state{font-size:11px;padding:4px 9px}
+.ee-app .ee-welcome-bj{width:128px;height:128px}
+.ee-app .ee-menu-title{margin:16px 3px 8px}
+.ee-app .ee-menu-title b{font-size:15px}
+.ee-app .ee-menu-title span{font-size:11px;color:var(--ee-subtext)}
+.ee-app .ee-mainmenu{gap:8px}
+.ee-app .ee-tile{min-height:92px;padding:8px 4px;border-radius:15px}
+.ee-app .ee-tile img{width:40px;height:40px}
+.ee-app .ee-tile strong{font-size:13px}
+.ee-app .ee-tile small{font-size:10px;color:var(--ee-subtext)}
+.ee-home-me{margin-top:12px}
+.ee-me-card{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--ee-cyan) 35%,transparent);border-radius:16px;background:linear-gradient(135deg,var(--ee-panel-raised),var(--ee-panel));color:var(--ee-text);text-decoration:none}
+.ee-me-label{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-weight:900;letter-spacing:.06em;color:var(--ee-cyan)}
+.ee-me-label small{font-weight:600;letter-spacing:0;color:var(--ee-subtext)}
+.ee-me-name{font-size:17px;font-weight:900;line-height:1.35}
+.ee-me-cta .ee-me-name{font-size:13px;font-weight:700;color:var(--ee-subtext)}
+.ee-me-go{font-size:12px;font-weight:800;color:var(--ee-cyan)}
+.ee-me-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px}
+.ee-me-stats span{padding:7px 9px;border-radius:11px;background:var(--ee-panel-deep);border:1px solid var(--ee-border-soft)}
+.ee-me-stats i{display:block;font-style:normal;font-size:10px;color:var(--ee-subtext)}
+.ee-me-stats b{font-size:14px;white-space:nowrap}
+.ee-app .ee-summary{grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.ee-app .ee-stat{display:block;min-height:0;padding:11px 13px;color:var(--ee-text);text-decoration:none}
+.ee-app .ee-stat-label{font-size:11px;letter-spacing:0;color:var(--ee-subtext)}
+.ee-app .ee-stat-value{font-size:20px;margin-top:2px}
+.ee-app .ee-milestone-card{margin-top:10px;padding:12px 14px}
+.ee-app .ee-milestone-copy strong{font-size:14px}
+.ee-app .ee-milestone-copy small{font-size:11px;color:var(--ee-subtext)}
+.ee-app .ee-milestone-status{font-size:11px}
+.ee-changes .ee-menu-title{margin-top:18px}
+.ee-change-list{display:grid;gap:6px}
+.ee-change{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 13px;border:1px solid var(--ee-border-soft);border-radius:13px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none}
+.ee-change-who{font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ee-change-at{font-size:11px;color:var(--ee-subtext);text-align:right}
+.ee-change-what{grid-column:1/-1;font-size:12px;color:var(--ee-subtext)}
+.ee-change-what b{color:var(--ee-text)}.ee-change-what b.up{color:var(--ee-success,#22c55e)}.ee-change-what b.down{color:var(--ee-danger,#f87171)}
+.ee-change-empty{padding:14px;border:1px dashed var(--ee-border-soft);border-radius:13px;font-size:12px;color:var(--ee-subtext);text-align:center}
+@media(min-width:760px){.ee-app .ee-tile{min-height:120px}.ee-app .ee-tile img{width:54px;height:54px}.ee-app .ee-summary{grid-template-columns:repeat(2,1fr)}}
+${EAGLEEYE_NAV_CSS}
 </style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
@@ -10861,17 +10924,17 @@ async function renderHome(request, env) {
   <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
   <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><strong>マイKingShot</strong><small>自分のデータ</small></a>
 </section>
+<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a>'}</section>
 <section class="ee-summary">
-  <div class="ee-stat"><div class="ee-stat-label">PLAYER WATCH</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div><div class="ee-stat-sub">監視中のプレイヤー</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">KINGDOM WATCH</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div><div class="ee-stat-sub">監視中の王国</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">MY KINGSHOT</div><div class="ee-stat-value">DATA</div><div class="ee-stat-sub">登録データへ</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">EAGLEEYE</div><div class="ee-stat-value"><em>LIVE</em></div><div class="ee-stat-sub">観測システム稼働中</div></div>
+  <a class="ee-stat" href="/watchlist"><div class="ee-stat-label">ウォッチ中のプレイヤー</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div></a>
+  <a class="ee-stat" href="/kingdom-watchlist"><div class="ee-stat-label">ウォッチ中の王国</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div></a>
 </section>
-<a class="ee-milestone-card ee-kvk-card" href="/kvk">
+<a class="ee-milestone-card ee-kvk-card" href="/kvk" id="homeKvk">
   <span class="ee-milestone-icon" aria-hidden="true">⚔</span>
-  <span class="ee-milestone-copy"><strong>KvK</strong><small>対戦相手・スコア・日ごとの推移</small></span>
-  <span class="ee-milestone-status">ADVANCED以上</span>
+  <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
+  <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
+${session ? '<section class="ee-changes"><div class="ee-menu-title"><b>最近の変化</b><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
 <button class="ee-milestone-card" type="button" disabled aria-disabled="true">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>デイリー・累計目標と報酬</small></span>
@@ -10924,6 +10987,28 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     }catch(e){}
   }
   loadCounts();
+  function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function compact(v){var n=Number(v);if(!isFinite(n))return v==null?"-":String(v);var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/[.]0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/[.]0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/[.]0$/,"")+"K";return n.toLocaleString("ja-JP")}
+  function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<=34)return "Lv.30-"+(l-30);return "黄金"+(Math.floor((l-35)/5)+1)+"-"+(((l-35)%5)+1)}
+  function ago(t){var d=Math.max(0,Math.floor(Date.now()/1000)-Number(t||0));if(d<3600)return Math.max(1,Math.floor(d/60))+"分前";if(d<86400)return Math.floor(d/3600)+"時間前";return Math.floor(d/86400)+"日前"}
+  var FIELD={power:"戦力",town_center_level:"役場",vip:"VIP",x:"X座標",y:"Y座標",kills:"撃破数",alliance_aid:"同盟",alliance_name:"同盟",alliance_rank:"同盟ランク",alliance_power:"同盟戦力",alliance_count:"同盟人数"};
+  function val(field,v){if(v==null||v==="")return "-";if(field==="power"||field==="kills"||field==="alliance_power")return compact(v);if(field==="town_center_level")return tc(v);return String(v)}
+  async function loadSummary(){
+    var me=document.getElementById("homeMe"),list=document.getElementById("homeChanges");
+    if(!list)return;
+    var d;try{d=await fetch("/api/home/summary",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()})}catch(e){d=null}
+    if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
+    if(me){
+      if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+esc(tc(m.town_center_level))+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
+        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
+      else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
+    }
+    if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
+    var ch=d.changes||[];
+    if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
+    list.innerHTML=ch.map(function(c){var up=Number(c.to)>Number(c.from),down=Number(c.to)<Number(c.from);return '<a class="ee-change" href="/player?governor_id='+encodeURIComponent(c.governor_id)+'"><span class="ee-change-who">'+esc(c.name||("領主ID "+c.governor_id))+'</span><span class="ee-change-at">'+esc(ago(c.at))+'</span><span class="ee-change-what">'+esc(FIELD[c.field]||c.field)+' <b class="'+(up?"up":down?"down":"")+'">'+esc(val(c.field,c.from))+' → '+esc(val(c.field,c.to))+'</b></span></a>'}).join("")
+  }
+  loadSummary();
 })();
 </script></body></html>`;
 }

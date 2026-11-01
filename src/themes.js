@@ -8,18 +8,18 @@
 export const EAGLEEYE_THEMES = Object.freeze([
   { id: "navy", name: "ネイビー", description: "EagleEye標準", tokens: null },
   { id: "midnight", name: "ミッドナイトパープル", description: "落ち着いた紫",
-    tokens: { bg: "#120d1f", panel: "#1c1530", deep: "#150f26", raised: "#261d40", border: "#3d3163", soft: "#2a2247", text: "#efe9ff", subtext: "#b3a6d6", muted: "#8a7fae", accent: "#a78bfa" } },
+    tokens: { bg: "#120d1f", panel: "#1c1530", deep: "#150f26", raised: "#261d40", border: "#3d3163", soft: "#2a2247", text: "#efe9ff", subtext: "#b3a6d6", muted: "#8a7fae", accent: "#a78bfa", rival: "#fbbf24" } },
   { id: "sakura", name: "さくら", description: "やわらかいピンク",
-    tokens: { bg: "#1a0f14", panel: "#26161e", deep: "#1f1218", raised: "#331d28", border: "#5a3346", soft: "#3d2431", text: "#fff0f5", subtext: "#e0b3c6", muted: "#b58a9c", accent: "#f472b6" } },
+    tokens: { bg: "#1a0f14", panel: "#26161e", deep: "#1f1218", raised: "#331d28", border: "#5a3346", soft: "#3d2431", text: "#fff0f5", subtext: "#e0b3c6", muted: "#b58a9c", accent: "#f472b6", rival: "#60a5fa" } },
   { id: "forest", name: "フォレスト", description: "深い緑",
-    tokens: { bg: "#0c1712", panel: "#13241b", deep: "#0f1d16", raised: "#1a3125", border: "#2f5240", soft: "#213a2d", text: "#eafff3", subtext: "#a6cdb8", muted: "#7fa592", accent: "#34d399" } },
+    tokens: { bg: "#0c1712", panel: "#13241b", deep: "#0f1d16", raised: "#1a3125", border: "#2f5240", soft: "#213a2d", text: "#eafff3", subtext: "#a6cdb8", muted: "#7fa592", accent: "#34d399", rival: "#f87171" } },
   { id: "ember", name: "サンセット", description: "あたたかいオレンジ",
-    tokens: { bg: "#1a120a", panel: "#261a10", deep: "#1f150c", raised: "#33231a", border: "#5a3d24", soft: "#3d2a19", text: "#fff5eb", subtext: "#e3c3a3", muted: "#b8987a", accent: "#fb923c" } },
+    tokens: { bg: "#1a120a", panel: "#261a10", deep: "#1f150c", raised: "#33231a", border: "#5a3d24", soft: "#3d2a19", text: "#fff5eb", subtext: "#e3c3a3", muted: "#b8987a", accent: "#fb923c", rival: "#60a5fa" } },
   { id: "graphite", name: "グラファイト", description: "色を抑えたモノトーン",
-    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd" } }
+    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" } }
 ]);
 
-const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan" };
+const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan", rival: "--ee-rival" };
 const SAFE_ID = /^[a-z][a-z0-9-]{1,30}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 
