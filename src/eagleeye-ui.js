@@ -122,6 +122,7 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingshot", image: EAGLEEYE_BJNYAN.dashboard }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
   Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
+  Object.freeze({ key: "theme", href: "/settings/theme", label: "着せ替え", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "diagnostics", href: "/admin/diagnostics", label: "診断", image: EAGLEEYE_BJNYAN.system, minRole: "ADMIN" })
 ]);
 
@@ -388,12 +389,15 @@ const LEGACY_PALETTE = {
   "--ee-border-soft": ["1d344d", "203b55", "23415f", "1e3a5f"],
   "--ee-text": ["f8fafc", "e8f3ff", "f1f8ff", "edf6ff", "e2e8f0", "e7f7ff", "f0f8ff"],
   "--ee-subtext": ["94a3b8", "91a7bf", "9bb0c8", "91a9c0", "a9bed3", "cbd5e1"],
-  "--ee-muted": ["64748b", "7f9ab3", "71869e"]
+  "--ee-muted": ["64748b", "7f9ab3", "71869e"],
+  // EagleEye cyan accent: follows the chosen colour theme.
+  "--ee-cyan": ["22d3ee", "20d7f2", "20c8e8"]
 };
 const TOKEN_ROLE = {
   "--ee-bg": "surface", "--ee-panel": "surface", "--ee-panel-deep": "surface", "--ee-panel-raised": "surface",
   "--ee-border": "line", "--ee-border-soft": "line",
-  "--ee-text": "text", "--ee-subtext": "text", "--ee-muted": "text"
+  "--ee-text": "text", "--ee-subtext": "text", "--ee-muted": "text",
+  "--ee-cyan": "accent"
 };
 const LEGACY_TO_TOKEN = new Map(Object.entries(LEGACY_PALETTE).flatMap(([token, hexes]) => hexes.map(h => [h, token])));
 // A legacy colour inside a CSS colour declaration. Colours right after "," or "("
@@ -412,7 +416,7 @@ export function normalizeLegacyPalette(html) {
     // button ("color:#0f172a") must stay dark in the light theme too.
     const property = prefix.trim().split(":")[0].trim().toLowerCase();
     const role = TOKEN_ROLE[token];
-    const allowed = property.startsWith("background") ? role === "surface" : property.startsWith("border") || property.startsWith("outline") ? role === "line" : role === "text";
+    const allowed = role === "accent" ? true : property.startsWith("background") ? role === "surface" : property.startsWith("border") || property.startsWith("outline") ? role === "line" : role === "text";
     return allowed ? prefix + "var(" + token + ",#" + hex + ")" : match;
   });
 }
