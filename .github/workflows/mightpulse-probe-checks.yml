@@ -74,5 +74,7 @@ jobs:
         run: node --test tests/google-drive-restore.test.mjs
       - name: Session revocation tests
         run: node --test tests/session-revocation.test.mjs
+      - name: Status config rows tests
+        run: node --test tests/status-config-rows.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs

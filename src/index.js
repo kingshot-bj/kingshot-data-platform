@@ -10113,7 +10113,7 @@ async function renderPublicStatusPage(request, env) {
   const runtimeConfigRows = [
     ["Worker", "kingshot-data-platform", true],
     ["Worker Version ID", workerVersion?.id || "未取得", Boolean(workerVersion?.id)],
-    ["Worker Version Tag", workerVersion?.tag || "未取得", Boolean(workerVersion?.tag)],
+    ["Worker Version Tag", workerVersion?.tag || "タグなし（任意項目）", true],
     ["Worker Version Created", workerVersion?.timestamp ? new Date(workerVersion.timestamp).toLocaleString("ja-JP") : "未取得", Boolean(workerVersion?.timestamp)],
     ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
     ["DB Binding", "D1", Boolean(env.DB)],
@@ -10121,7 +10121,7 @@ async function renderPublicStatusPage(request, env) {
     ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
     ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
     ["Cloudflare Billing API", "Billing Read Token", Boolean(env.CLOUDFLARE_BILLING_TOKEN)],
-    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_API_BASE_URL)],
+    ["MightPulse", env.MIGHTPULSE_API_BASE_URL ? "Base URL（カスタム）" : "Base URL（既定値 api.mightpulse.com を使用）", true],
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
     ["Google Sheets Apps Script", "Web App / Spreadsheet", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
     ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
