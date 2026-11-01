@@ -2,6 +2,7 @@ import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archivePlayerHistoryBatch, listPlayerHistoryFromR2 } from "./r2-archive.js";
 import { recordDiagnostic } from "./diagnostics.js";
 import { enqueueHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
+import { archivePlayerBuild } from "./player-build-history.js";
 
 export async function getLatestPlayerObservation(db, governorId) {
   const row = await db.prepare(
@@ -32,6 +33,9 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
     throw new Error("MightPulse player payload is missing player data.");
   }
 
+  // History copies (R2 / emergency buffer / player_snapshots) never carry the
+  // stale activity fields.
+  const historyPlayer = stripStaleActivityFields(player);
   const alliance = player.alliance || {};
   const existing = existingPlayer !== undefined
     ? existingPlayer
@@ -59,9 +63,12 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
     y: value(player, "y", existing?.y),
     kills: value(player, "kills", existing?.kills),
     office: value(player, "office", existing?.office),
-    online: value(player, "online", existing?.online) ? 1 : 0,
-    last_active_at: value(player, "last_active_at", existing?.last_active_at),
-    last_login: value(player, "last_login", existing?.last_login),
+    // MightPulse marks online / last_active_at / last_login as stale (the game
+    // no longer sends activity). EagleEye must not use them, so they are never
+    // stored: online is written as 0 and the timestamps as NULL.
+    online: 0,
+    last_active_at: null,
+    last_login: null,
     avatar_url: value(player, "avatar_url", existing?.avatar_url),
     language: value(player, "language", existing?.language),
     shield_endtime: value(player, "shield_endtime", existing?.shield_endtime),
@@ -128,7 +135,7 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
         governorId,
         observationId: observation.observation_id,
         observedAt: observation.observed_at,
-        player
+        player: historyPlayer
       });
       if (!archive?.key) throw new Error("PLAYER_R2_ARCHIVE_FAILED");
       archived = archive;
@@ -152,6 +159,16 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
     }
   }
 
+  // Daily hero / governor gear build history (no extra API calls: only when
+  // this observation already carries heroes or gov_gear). Best effort.
+  if (archiveBucket) {
+    try {
+      await archivePlayerBuild(archiveBucket, { governorId, observedAt: observation.observed_at, payload: observation.payload });
+    } catch (error) {
+      console.error("player_build_history_archive_failed", { governorId, message: error?.message || String(error) });
+    }
+  }
+
   if (!archived && r2Only) {
     try {
       await enqueueHistoryEmergencyBuffer(db, {
@@ -160,7 +177,7 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
         observedAt: observation.observed_at,
         sourceObservedAt: observation.source_observed_at ?? null,
         sourceObservationId: observation.observation_id,
-        payload: { player }
+        payload: { player: historyPlayer }
       });
       emergencyBuffered = true;
       await recordDiagnostic(db, {
@@ -191,7 +208,7 @@ async function materializePlayerInternal(db, observation, existingPlayer = undef
       ) VALUES (?, ?, ?, ?, ?)`
     ).bind(
       crypto.randomUUID(), governorId, observation.observation_id,
-      observation.observed_at, JSON.stringify(player)
+      observation.observed_at, JSON.stringify(historyPlayer)
     ).run();
   } else if (r2Only && !archived && !emergencyBuffered) {
     throw new Error("HISTORY_EMERGENCY_BUFFER_NOT_AVAILABLE");
@@ -356,6 +373,17 @@ async function savePlayerIdentityHistory(db, previous, current, observation) {
     crypto.randomUUID(), governorId, currentName, observedAt, observedAt,
     observation?.observation_id ?? null, now
   ).run();
+}
+
+export const STALE_ACTIVITY_FIELDS = Object.freeze(["online", "last_active_at", "last_login"]);
+
+// Returns a shallow copy of a MightPulse player object without the stale
+// activity fields, so they never reach D1 or the R2 player history.
+export function stripStaleActivityFields(player) {
+  if (!player || typeof player !== "object") return player;
+  const copy = { ...player };
+  for (const key of STALE_ACTIVITY_FIELDS) delete copy[key];
+  return copy;
 }
 
 export async function savePlayerChangeEvents(db, previous, current, observation) {
