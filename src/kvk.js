@@ -16,6 +16,7 @@ import { withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archi
 import { buildKvkScoreNotifications, buildKvkMatchupNotifications, enqueueKvkNotifications, kvkPublicOrigin, KVK_CURRENT_KINGDOM_SQL, KVK_LINKS_FROM_SQL } from "./kvk-discord.js";
 
 export const KVK_MATCHUPS_INTERVAL_SECONDS = 6 * 3600;
+export const KVK_MATCHUPS_PREDICTION_INTERVAL_SECONDS = 3600;
 export const KVK_SCORE_ACTIVE_INTERVAL_SECONDS = 3600;
 export const KVK_SCORE_IDLE_INTERVAL_SECONDS = 6 * 3600;
 export const KVK_SCORE_ENDED_INTERVAL_SECONDS = 24 * 3600;
@@ -112,15 +113,19 @@ export function kvkScoreInterval(score, matchupState) {
   if (isKvkScoreActive(score, currentSeason)) return KVK_SCORE_ACTIVE_INTERVAL_SECONDS;
   const scoreSeason = Number(score?.season || 0);
   const stage = String(matchupState?.stage || "").toLowerCase();
-  // Matchups say a season has moved past prediction but scores have not switched yet.
-  if (currentSeason != null && scoreSeason < Number(currentSeason) && stage && stage !== "prediction") return KVK_SCORE_ACTIVE_INTERVAL_SECONDS;
+  // A new season is announced (or running) but this kingdom's scores are still from an older one:
+  // check hourly so the start of the match is picked up quickly.
+  if (currentSeason != null && score && scoreSeason < Number(currentSeason)) return KVK_SCORE_ACTIVE_INTERVAL_SECONDS;
   if (currentSeason != null && scoreSeason === Number(currentSeason)) return KVK_SCORE_ENDED_INTERVAL_SECONDS;
   return KVK_SCORE_IDLE_INTERVAL_SECONDS;
 }
 
 export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 1000), force = false, collect = collectMightyOnly } = {}) {
   const db = env.DB;
-  if (!force && !(await claimLock(db, "KVK_MATCHUPS", KVK_MATCHUPS_INTERVAL_SECONDS, now))) return { status: "SKIPPED", reason: "NOT_DUE" };
+  // While matchups are only announced ("prediction"), check hourly to catch the start of the match.
+  const known = await getState(db, "matchups");
+  const interval = String(known?.stage || "").toLowerCase() === "prediction" ? KVK_MATCHUPS_PREDICTION_INTERVAL_SECONDS : KVK_MATCHUPS_INTERVAL_SECONDS;
+  if (!force && !(await claimLock(db, "KVK_MATCHUPS", interval, now))) return { status: "SKIPPED", reason: "NOT_DUE" };
   const collected = await collect(env, { path: "/kvk/matchups", endpoint: "/kvk/matchups", targetType: "GLOBAL", targetId: "kvk_matchups", purpose: "KVK_MATCHUPS", timeoutMs: 15000, maxRetries: 1 });
   const payload = payloadOf(collected);
   const season = Number(payload.season);

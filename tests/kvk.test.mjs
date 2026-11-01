@@ -127,7 +127,7 @@ test("nothing is fetched when Mighty daily quota is low", async () => {
 test("score interval: hourly only while running, slower otherwise", () => {
   const state = { season: 23, stage: "prediction" };
   assert.equal(kvkScoreInterval({ season: 23, days: [{ status: "Ongoing" }] }, state), KVK_SCORE_ACTIVE_INTERVAL_SECONDS);
-  assert.equal(kvkScoreInterval({ season: 22, days: [{ status: "Ended" }] }, state), KVK_SCORE_IDLE_INTERVAL_SECONDS, "previous season, matchups only announced");
+  assert.equal(kvkScoreInterval({ season: 22, days: [{ status: "Ended" }] }, state), KVK_SCORE_ACTIVE_INTERVAL_SECONDS, "new season announced: watch hourly for the start");
   assert.equal(kvkScoreInterval({ season: 22, days: [{ status: "Ended" }] }, { season: 23, stage: "armament" }), KVK_SCORE_ACTIVE_INTERVAL_SECONDS, "new season started, waiting for scores");
   assert.ok(kvkScoreInterval({ season: 23, days: [{ status: "Ended" }] }, state) > KVK_SCORE_IDLE_INTERVAL_SECONDS, "finished season");
   assert.equal(kvkScoreInterval(null, null), KVK_SCORE_IDLE_INTERVAL_SECONDS);
@@ -283,4 +283,15 @@ test("Mystic Trial comparison removes board offsets and counts boards ahead", as
   assert.ok(html.includes("2項目中 <b>1項目で優勢</b>・1項目で劣勢"));
   assert.ok(html.includes("闘技場") && html.includes("溶岩要塞"));
   assert.ok(html.includes("494.5") && !html.includes("10,494.5"), "offset removed (top-10 average 494.5)");
+});
+
+test("matchups are rechecked hourly while only announced, every 6 hours once the match runs", async () => {
+  const { env } = setup();
+  let stage = "prediction";
+  const mp = fakeMightPulse({ "/kvk/matchups": () => matchups(23, stage), "/kingdoms/1524/kvk/scores": scores(1524, 1523), "/kingdoms/1523/kvk/scores": scores(1523, 1524) });
+  await runKvkCollection(env, { now: NOW, collect: mp.collect });
+  assert.equal((await runKvkCollection(env, { now: NOW + 3601, collect: mp.collect })).matchups.status, "UNCHANGED", "prediction: hourly");
+  stage = "armament";
+  assert.equal((await runKvkCollection(env, { now: NOW + 7202, collect: mp.collect })).matchups.status, "CHANGED", "stage change is picked up");
+  assert.equal((await runKvkCollection(env, { now: NOW + 7202 + 3601, collect: mp.collect })).matchups.status, "SKIPPED", "running: every 6 hours");
 });
