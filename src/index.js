@@ -1,6 +1,7 @@
 import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { renderHeroCatalogPage } from "./hero-catalog-page.js";
+import { renderPrivacyPolicyPage } from "./legal-pages.js";
 import { queueHeroIconCandidates, runHeroIconAssetWorker, getSavedHeroIconMap, serveHeroIconAsset } from "./hero-icon-store.js";
 import { PLAYER_COMPARE_ENHANCEMENTS } from "./player-compare-enhancements.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
@@ -4813,6 +4814,7 @@ export default {
     try {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
+      if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);

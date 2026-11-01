@@ -54,5 +54,7 @@ jobs:
         run: node --test tests/mightpulse-quota-activity.test.mjs
       - name: Run data retention safe-archive tests
         run: node --test tests/retention-safe-archive.test.mjs
+      - name: Run legal page tests
+        run: node --test tests/legal-pages.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
