@@ -175,6 +175,8 @@ function discordHeaders(env) {
   };
 }
 
+export { discordRequest as discordApiRequest };
+
 async function discordRequest(env, path, options = {}) {
   const response = await fetch(DISCORD_API_BASE + path, {
     ...options,

@@ -28,6 +28,7 @@ const PRIVACY_SECTIONS = [
 <li>プレイヤー・王国・ランキング・ウォッチリスト等の表示と、変化の記録</li>
 <li>提供されたAPIキーを使った、本サービス全体でのデータ取得（API Pool）</li>
 <li>お問い合わせへの対応。Discordでログインすると、お問い合わせ用のEagleEye SupportのDiscordサーバーに自動で参加します（Discordの<code>guilds.join</code>権限を使用。サーバーからはいつでも退出できます）</li>
+<li>KvK通知。EagleEye SupportのDiscordサーバー内で、登録した領主IDの王国のKvK通知スレッド（同じ王国の登録ユーザーと運営者だけが見られる非公開スレッド）に自動で追加します。王国の登録を解除すると、スレッドからも外れます</li>
 <li>障害の調査、不正利用の防止、サービスの改善</li>
 </ul>`
   },
