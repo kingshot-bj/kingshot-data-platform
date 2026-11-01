@@ -5354,11 +5354,9 @@ const EAGLEEYE_THEME_SCRIPT = `
 (function(){
   function applySavedTheme(){
     try {
-      var saved="";
-      try { saved=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) {}
-      var preferred=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark";
-      var theme=(saved==="light"||saved==="dark")?saved:preferred;
-      document.documentElement.setAttribute("data-eagle-theme",theme);
+      // EagleEye is designed dark. The light theme is not finished, so the OS
+      // light mode is ignored; colour variety comes from the 着せ替え themes.
+      document.documentElement.setAttribute("data-eagle-theme","dark");
     } catch(e) {}
   }
 
@@ -5494,87 +5492,6 @@ const EAGLEEYE_THEME_SCRIPT = `
     } catch(e) {}
   }
 
-  function installRoleBar(){
-    try {
-      if(!document.body) return null;
-      var roleBar=document.querySelector(".eagle-role-bar");
-      if(!roleBar){
-        roleBar=document.createElement("div");
-        roleBar.className="eagle-role-bar";
-        roleBar.setAttribute("aria-label","EagleEye ロール");
-        roleBar.innerHTML="<span class='eagle-role-bar-label'>ROLE</span><span class='eagle-role-item' data-role='BASIC'>BASIC</span><span class='eagle-role-item' data-role='ADVANCED'>ADVANCED</span><span class='eagle-role-item vip' data-role='VIP'>⚡ VIP</span><span class='eagle-role-item admin' data-role='ADMIN'>ADMIN</span><span class='eagle-role-item owner' data-role='OWNER'>OWNER</span>";
-        document.body.insertBefore(roleBar,document.body.firstChild);
-      }
-      if(!document.querySelector(".eagle-role-bar-spacer")){
-        var spacer=document.createElement("div");
-        spacer.className="eagle-role-bar-spacer";
-        document.body.insertBefore(spacer,document.body.children[1]||null);
-      }
-      return roleBar;
-    } catch(e) {
-      return null;
-    }
-  }
-
-  function paintRole(role){
-    try {
-      var roleBar=document.querySelector(".eagle-role-bar");
-      if(!roleBar) return;
-      role=String(role||"").toUpperCase();
-      roleBar.querySelectorAll("[data-role]").forEach(function(item){
-        item.classList.toggle("current",item.getAttribute("data-role")===role);
-      });
-    } catch(e) {}
-  }
-
-  function loadRole(){
-    try {
-      // Share the request started by the generic drawer, when present, so the
-      // shell does not issue duplicate role/eligibility API reads on page load.
-      var roleStatePromise=window.__eagleEyeRoleStatePromise;
-      if(!roleStatePromise){
-        roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
-          .then(function(r){return r.ok?r.json():null;})
-          .catch(function(){return null;});
-        window.__eagleEyeRoleStatePromise=roleStatePromise;
-      }
-      roleStatePromise.then(function(d){if(d&&d.ok)paintRole(d.role);});
-    } catch(e) {}
-  }
-
-  function installThemeToggle(){
-    try {
-      if(!document.body) return;
-      var existing=document.querySelector(".theme-toggle");
-      var btn=document.querySelector(".eagle-theme-toggle");
-      if(!btn){
-        btn=document.createElement("button");
-        btn.className="eagle-theme-toggle";
-        btn.type="button";
-        btn.setAttribute("aria-label","テーマ切替");
-        btn.setAttribute("title","ライト / ダーク切替");
-        document.body.appendChild(btn);
-      }
-      function paint(){
-        try {
-          var isLight=document.documentElement.getAttribute("data-eagle-theme")==="light";
-          btn.textContent=isLight?"☀️":"🌙";
-          btn.setAttribute("aria-label",isLight?"ダークモードに切替":"ライトモードに切替");
-          if(existing) existing.style.display="none";
-        } catch(e) {}
-      }
-      btn.onclick=function(){
-        try {
-          var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
-          document.documentElement.setAttribute("data-eagle-theme",next);
-          try { window.localStorage.setItem("eagleeye-theme",next); } catch(e) {}
-          paint();
-        } catch(e) {}
-      };
-      paint();
-    } catch(e) {}
-  }
-
   function setup(){
     // Each component is isolated so one Safari/WebKit restriction cannot
     // suppress the remaining global UI.
@@ -5582,9 +5499,8 @@ const EAGLEEYE_THEME_SCRIPT = `
     markEnvironment();
     installMutatingRequestGuard();
     installGlobalActionGuard();
-    installRoleBar();
-    installThemeToggle();
-    loadRole();
+    // The ROLE bar and the floating light/dark toggle are not shown: the role
+    // is on the profile chip, and there is no light theme to switch to.
   }
 
   try {

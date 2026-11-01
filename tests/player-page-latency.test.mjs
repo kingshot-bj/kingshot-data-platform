@@ -28,7 +28,8 @@ test("shared theme script and public status script are valid JavaScript (no brok
   const start = src.indexOf("const EAGLEEYE_THEME_SCRIPT = `");
   const theme = src.slice(start, src.indexOf("`;", start));
   assert.ok(!theme.includes('\\"'), "no escaped quote inside the theme script template");
-  const role = theme.match(/roleBar\.innerHTML="([^\n]*)";/);
-  assert.ok(role && !role[1].includes('"'), "role bar markup uses single quotes");
+  assert.ok(!theme.includes("installRoleBar") && !theme.includes("installThemeToggle"), "no ROLE bar / floating toggle");
+  assert.match(theme, /setAttribute\("data-eagle-theme","dark"\)/, "always dark (light theme unfinished)");
+  assert.ok(!theme.includes("prefers-color-scheme: light"), "OS light mode is not followed");
   assert.ok(!src.includes('"\\"":"&quot;"'), "status page escape map uses a single-quoted key");
 });
