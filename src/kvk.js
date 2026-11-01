@@ -20,6 +20,7 @@ export const KVK_SCORE_ENDED_INTERVAL_SECONDS = 24 * 3600;
 export const KVK_SCORE_MAX_PER_HOUR = 20;
 export const KVK_SCORE_MAX_PER_RUN = 2;
 export const KVK_MIGHTY_DAILY_RESERVE = 2000;
+export const KVK_SCORE_POINT_RETENTION_SECONDS = 60 * 86400;
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
 const MATCHUP_ROWS_PER_STATEMENT = 20;
 
@@ -38,6 +39,13 @@ export async function ensureKvkSchema(db) {
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_scores_fetched ON kvk_scores(fetched_at)").run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_state (
       key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)`).run();
+    await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_score_points (
+      kid INTEGER NOT NULL, season INTEGER NOT NULL, at INTEGER NOT NULL, score INTEGER, opponent_score INTEGER,
+      PRIMARY KEY (kid, season, at))`).run();
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_score_points_at ON kvk_score_points(at)").run();
+    await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_season_results (
+      kid INTEGER NOT NULL, season INTEGER NOT NULL, opponent INTEGER, score INTEGER, opponent_score INTEGER,
+      result TEXT, finalized_at INTEGER NOT NULL, PRIMARY KEY (kid, season))`).run();
   })().catch(error => { schemaPromise = null; throw error; });
   return schemaPromise;
 }
@@ -149,6 +157,29 @@ export async function getKvkScore(db, kid) {
   return parseScoreRow(await db.prepare("SELECT * FROM kvk_scores WHERE kid = ?").bind(Number(kid)).first());
 }
 
+export function kvkResultOf(score, opponentScore) {
+  const a = Number(score), b = Number(opponentScore);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return a > b ? "WIN" : a < b ? "LOSS" : "DRAW";
+}
+
+// Once every day of a season has ended, keep the final score per kingdom.
+// The opponent's mirrored row is added only if it has none of its own.
+async function recordSeasonResult(db, kid, row, days, now, { overwrite }) {
+  if (row.season == null || !days.length || days.some(d => String(d?.status || "").toLowerCase() !== "ended")) return;
+  const result = kvkResultOf(row.score, row.opponent_score);
+  if (!result) return;
+  const own = overwrite
+    ? "INSERT INTO kvk_season_results (kid, season, opponent, score, opponent_score, result, finalized_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(kid, season) DO UPDATE SET opponent = excluded.opponent, score = excluded.score, opponent_score = excluded.opponent_score, result = excluded.result, finalized_at = excluded.finalized_at"
+    : "INSERT OR IGNORE INTO kvk_season_results (kid, season, opponent, score, opponent_score, result, finalized_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+  const statements = [db.prepare(own).bind(kid, row.season, row.opponent, row.score, row.opponent_score, result, now)];
+  if (row.opponent != null) {
+    statements.push(db.prepare("INSERT OR IGNORE INTO kvk_season_results (kid, season, opponent, score, opponent_score, result, finalized_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(row.opponent, row.season, kid, row.opponent_score, row.score, kvkResultOf(row.opponent_score, row.score), now));
+  }
+  await db.batch(statements);
+}
+
 export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 1000), purpose = "KVK_SCORES", collect = collectMightyOnly } = {}) {
   const db = env.DB;
   const id = Number(kid);
@@ -177,6 +208,7 @@ export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 10
   const existing = await db.prepare("SELECT payload_sha FROM kvk_scores WHERE kid = ?").bind(id).first();
   if (existing?.payload_sha === sha) {
     await db.prepare("UPDATE kvk_scores SET fetched_at = ? WHERE kid = ?").bind(now, id).run();
+    await recordSeasonResult(db, id, row, days, now, { overwrite: false });
     return { status: "UNCHANGED", ...row, days };
   }
   if (env.ARCHIVE && row.season != null) {
@@ -189,6 +221,11 @@ export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 10
        opponent_score = excluded.opponent_score, days_json = excluded.days_json, source_updated_at = excluded.source_updated_at,
        payload_sha = excluded.payload_sha, fetched_at = excluded.fetched_at, changed_at = excluded.changed_at`
   ).bind(id, row.season, row.stage, row.opponent, row.score, row.opponent_score, JSON.stringify(days), row.source_updated_at, sha, now, now).run();
+  if (row.season != null && (row.score != null || row.opponent_score != null) && days.some(d => String(d?.status || "").toLowerCase() !== "ended")) {
+    // Point for the intraday trend chart; only written when the score changed.
+    await db.prepare("INSERT OR IGNORE INTO kvk_score_points (kid, season, at, score, opponent_score) VALUES (?, ?, ?, ?, ?)").bind(id, row.season, now, row.score, row.opponent_score).run();
+  }
+  await recordSeasonResult(db, id, row, days, now, { overwrite: true });
   return { status: "CHANGED", ...row, days };
 }
 
@@ -222,6 +259,10 @@ export async function runKvkCollection(env, { now = Math.floor(Date.now() / 1000
     await db.prepare("UPDATE api_request_locks SET lock_until = ? WHERE lock_key = 'KVK_MATCHUPS'").bind(now + 900).run().catch(() => {});
   }
 
+  if (summary.matchups?.status === "CHANGED" || summary.matchups?.status === "UNCHANGED") {
+    // Intraday points are only needed for the chart; drop them after 60 days (checked every 6 hours).
+    await db.prepare("DELETE FROM kvk_score_points WHERE at < ?").bind(now - KVK_SCORE_POINT_RETENTION_SECONDS).run().catch(() => {});
+  }
   const matchupState = await getState(db, "matchups");
   const usedThisHour = Number((await db.prepare("SELECT COUNT(*) AS c FROM kvk_scores WHERE fetched_at > ?").bind(now - 3600).first())?.c || 0);
   let budget = Math.min(KVK_SCORE_MAX_PER_RUN, Math.max(0, KVK_SCORE_MAX_PER_HOUR - usedThisHour));
@@ -288,6 +329,9 @@ h2{font-size:17px;margin:22px 0 8px}.days{display:grid;gap:8px}.day{padding:10px
 .find{display:flex;gap:8px;margin:12px 0}.find input{flex:1;min-width:0;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit}
 .find button,.btn{padding:10px 14px;border:1px solid #2a4664;border-radius:10px;background:#172a40;color:#e8f3ff;font-weight:800;text-decoration:none;font-size:13px}
 .mine{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.mine a{padding:6px 10px;border:1px solid #2a4664;border-radius:999px;color:#9eeeff;text-decoration:none;font-size:12px}.mine a.on{border-color:#22d3ee;background:#103047}
+.countdown{display:flex;flex-direction:column;align-items:center;gap:2px;margin:12px 0;padding:12px;border:1px solid rgba(246,200,75,.35);border-radius:14px;background:#1a1a12}.countdown small{color:#d6c48a;font-size:11px}.countdown strong{font-size:26px;color:#f6c84b;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.chart{padding:10px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.chart svg{display:block;width:100%;height:auto}.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px}.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle;border-radius:2px}
+.history{display:grid;gap:6px}.hist{display:grid;grid-template-columns:40px 1fr auto 40px;gap:8px;align-items:center;padding:9px 11px;border:1px solid #1d344d;border-radius:10px;background:#0f2035;font-size:13px}.hist a{color:#9eeeff;text-decoration:none}.hist em{font-style:normal;font-weight:800;text-align:right}.hist.win em{color:#22d3ee}.hist.loss em{color:#f87171}.hist span:nth-child(3){font-variant-numeric:tabular-nums;color:#c9d6e3}
 .table{display:grid;gap:4px;margin-top:8px}.table a{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:8px 10px;border:1px solid #1d344d;border-radius:9px;background:#0f2035;color:#e8f3ff;text-decoration:none;font-size:13px}
 .table a span:last-child{text-align:right}.table a b{color:#f6c84b;font-size:11px}.empty{padding:16px;border:1px dashed #2a4965;border-radius:12px;color:#91a7bf}
 </style></head><body>${body}</body></html>`;
@@ -353,10 +397,60 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   if (matchup) {
     body += `<h2>シーズン ${esc(season)} の対戦相手</h2><div class="vs"><div class="side"><small>あなたの王国</small><b><a href="/kingdom?kid=${kid}">${kid}</a></b><small>${esc(matchup.kingdom_name || "")}</small></div><div class="vs-mark">VS</div><div class="side opp"><small>対戦相手</small><b>${matchup.opponent != null ? `<a href="/kingdom?kid=${Number(matchup.opponent)}">${Number(matchup.opponent)}</a>` : "—"}</b><small>${esc(matchup.opponent_name || "")}</small></div></div>`;
   }
+  body += renderCountdown(score, now);
   body += renderScoreSection(kid, score, season);
+  if (score?.season != null) {
+    const points = (await db.prepare("SELECT at, score, opponent_score FROM kvk_score_points WHERE kid = ? AND season = ? ORDER BY at").bind(kid, Number(score.season)).all()).results || [];
+    body += renderTrendChart(kid, score, points);
+  }
+  const history = (await db.prepare("SELECT season, opponent, score, opponent_score, result FROM kvk_season_results WHERE kid = ? ORDER BY season DESC LIMIT 12").bind(kid).all()).results || [];
+  body += renderHistory(kid, history);
   if (isVip) body += await allMatchupsSection(db, season, url);
   body += `<p class="muted">データはMightPulseから取得しています。KvK期間中は1時間ごと、それ以外は数時間ごとに更新します。</p></main>`;
   return shell("KvK", body);
+}
+
+// Countdown to the end of the running day, or to the start of the next one.
+export function kvkCountdownTarget(days, now) {
+  const list = (Array.isArray(days) ? days : []).filter(d => Number.isFinite(Number(d?.end_ts)));
+  const running = list.find(d => Number(d.begin_ts) <= now && now < Number(d.end_ts) && String(d.status || "").toLowerCase() !== "ended");
+  if (running) return { kind: "END", at: Number(running.end_ts), name: running.name || ("Day " + (running.day ?? "")) };
+  const next = list.filter(d => Number(d.begin_ts) > now).sort((x, y) => Number(x.begin_ts) - Number(y.begin_ts))[0];
+  if (next) return { kind: "START", at: Number(next.begin_ts), name: next.name || ("Day " + (next.day ?? "")) };
+  return null;
+}
+
+function renderCountdown(score, now) {
+  const target = kvkCountdownTarget(score?.days, now);
+  if (!target) return "";
+  const label = target.kind === "END" ? `${esc(target.name)} の終了まで` : `${esc(target.name)} の開始まで`;
+  return `<div class="countdown"><small>${label}</small><strong id="kvk-countdown" data-at="${target.at}">—</strong><small>${esc(ts(target.at))}</small></div>
+<script>(function(){var el=document.getElementById("kvk-countdown");if(!el)return;var at=Number(el.getAttribute("data-at"))*1000;function pad(n){return String(n).padStart(2,"0")}function tick(){var s=Math.max(0,Math.floor((at-Date.now())/1000));var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;el.textContent=(d?d+"日 ":"")+pad(h)+":"+pad(m)+":"+pad(x);if(s>0)setTimeout(tick,1000)}tick()})();</script>`;
+}
+
+function renderTrendChart(kid, score, points) {
+  const series = points.filter(p => Number.isFinite(Number(p.score)) && Number.isFinite(Number(p.opponent_score)));
+  if (series.length < 2) {
+    return `<h2>時間ごとのスコア推移</h2><div class="empty">KvK期間中、1時間ごとのスコアがたまるとグラフを表示します。</div>`;
+  }
+  const W = 340, H = 160, P = 8;
+  const t0 = Number(series[0].at), t1 = Number(series[series.length - 1].at);
+  const max = Math.max(1, ...series.flatMap(p => [Number(p.score), Number(p.opponent_score)]));
+  const x = t => P + (t1 > t0 ? (Number(t) - t0) / (t1 - t0) : 0) * (W - P * 2);
+  const y = v => H - P - Number(v) / max * (H - P * 2);
+  const line = key => series.map((p, i) => (i ? "L" : "M") + x(p.at).toFixed(1) + " " + y(p[key]).toFixed(1)).join(" ");
+  return `<h2>時間ごとのスコア推移</h2><div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="王国 ${kid} と対戦相手のスコア推移">
+<line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#1d344d"/><path d="${line("score")}" fill="none" stroke="#22d3ee" stroke-width="2.5"/><path d="${line("opponent_score")}" fill="none" stroke="#f87171" stroke-width="2.5"/></svg>
+<div class="legend"><span><i style="background:#22d3ee"></i>王国 ${kid}</span><span><i style="background:#f87171"></i>王国 ${esc(score.opponent ?? "—")}</span><span class="muted">${esc(ts(t0))} 〜 ${esc(ts(t1))} · ${series.length}点</span></div></div>`;
+}
+
+function renderHistory(kid, rows) {
+  if (!rows.length) return `<h2>過去のKvK戦績</h2><div class="empty">シーズンが終わるごとに戦績がたまっていきます。</div>`;
+  const wins = rows.filter(r => r.result === "WIN").length, losses = rows.filter(r => r.result === "LOSS").length, draws = rows.filter(r => r.result === "DRAW").length;
+  return `<h2>過去のKvK戦績</h2><p class="muted">記録 ${rows.length}シーズン · ${wins}勝 ${losses}敗${draws ? " " + draws + "分" : ""}</p><div class="history">${rows.map(r => {
+    const label = r.result === "WIN" ? "勝利" : r.result === "LOSS" ? "敗北" : "引分";
+    return `<div class="hist ${r.result === "WIN" ? "win" : r.result === "LOSS" ? "loss" : ""}"><b>S${esc(r.season)}</b><span>vs ${r.opponent != null ? `<a href="/kvk?kid=${Number(r.opponent)}">王国 ${Number(r.opponent)}</a>` : "—"}</span><span>${esc(compact(r.score))} - ${esc(compact(r.opponent_score))}</span><em>${label}</em></div>`;
+  }).join("")}</div>`;
 }
 
 function renderScoreSection(kid, score, currentSeason) {
