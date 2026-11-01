@@ -343,23 +343,23 @@ function shell(title, body) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}${EAGLEEYE_THEME_BASE_CSS}
 body{margin:0;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .wrap{max-width:860px;margin:auto;padding:20px 14px 60px}.back{color:var(--ee-cyan,#22d3ee);text-decoration:none;font-size:13px}
-.eyebrow{margin-top:14px;color:#f87171;font-size:11px;font-weight:900;letter-spacing:2px}h1{margin:4px 0 6px;font-size:26px}
+.eyebrow{margin-top:14px;color:var(--ee-rival,#f87171);font-size:11px;font-weight:900;letter-spacing:2px}h1{margin:4px 0 6px;font-size:26px}
 .muted{color:var(--ee-subtext,#91a7bf);font-size:12px}.notice{margin:12px 0;padding:12px 14px;border:1px solid #2a4664;border-radius:12px;background:#0f2035;font-size:13px}
 .notice a{color:#22d3ee;font-weight:800;text-decoration:none}
 .vs{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin:14px 0;padding:16px;border:1px solid #2a4664;border-radius:16px;background:linear-gradient(135deg,var(--ee-panel-raised,#132a44),var(--ee-panel,#0d1b2d))}
 .side{text-align:center;min-width:0}.side a{color:#e8f3ff;text-decoration:none}.side small{display:block;color:#91a7bf;font-size:11px}.side b{display:block;font-size:22px;margin:2px 0}
-.side strong{display:block;font-size:18px;color:#22d3ee;font-variant-numeric:tabular-nums}.side.opp strong{color:#f87171}.vs-mark{font-weight:900;color:#f6c84b;font-size:18px}
-.bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:#1d344d;margin:4px 0 16px}.bar i{display:block;background:#22d3ee}.bar em{display:block;background:#f87171;flex:1}
+.side strong{display:block;font-size:18px;color:#22d3ee;font-variant-numeric:tabular-nums}.side.opp strong{color:var(--ee-rival,#f87171)}.vs-mark{font-weight:900;color:#f6c84b;font-size:18px}
+.bar{display:flex;height:10px;border-radius:999px;overflow:hidden;background:#1d344d;margin:4px 0 16px}.bar i{display:block;background:#22d3ee}.bar em{display:block;background:var(--ee-rival,#f87171);flex:1}
 h2{font-size:17px;margin:22px 0 8px}.days{display:grid;gap:8px}.day{padding:10px 12px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}
 .day-head{display:flex;justify-content:space-between;font-size:12px;color:#91a7bf;margin-bottom:6px}.day-row{display:grid;grid-template-columns:44px 1fr 72px;gap:8px;align-items:center;font-size:12px}
-.day-row span{white-space:nowrap;font-variant-numeric:tabular-nums}.day-row span:last-child{text-align:right;font-variant-numeric:tabular-nums}.track{height:8px;border-radius:999px;background:#13243a;overflow:hidden}.track i{display:block;height:100%;background:#22d3ee}.track.opp i{background:#f87171}
+.day-row span{white-space:nowrap;font-variant-numeric:tabular-nums}.day-row span:last-child{text-align:right;font-variant-numeric:tabular-nums}.track{height:8px;border-radius:999px;background:#13243a;overflow:hidden}.track i{display:block;height:100%;background:#22d3ee}.track.opp i{background:var(--ee-rival,#f87171)}
 .find{display:flex;gap:8px;margin:12px 0}.find input{flex:1;min-width:0;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit}
 .find button,.btn{padding:10px 14px;border:1px solid #2a4664;border-radius:10px;background:#172a40;color:#e8f3ff;font-weight:800;text-decoration:none;font-size:13px}
 .mine{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.mine a{padding:6px 10px;border:1px solid #2a4664;border-radius:999px;color:#9eeeff;text-decoration:none;font-size:12px}.mine a.on{border-color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#103047)}
 .countdown{display:flex;flex-direction:column;align-items:center;gap:2px;margin:12px 0;padding:12px;border:1px solid rgba(246,200,75,.35);border-radius:14px;background:#1a1a12}.countdown small{color:#d6c48a;font-size:11px}.countdown strong{font-size:26px;color:#f6c84b;font-variant-numeric:tabular-nums;letter-spacing:1px}
 .chart{padding:10px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.chart svg{display:block;width:100%;height:auto}.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px}.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle;border-radius:2px}
-.mystic{padding:10px 12px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.mystic-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px}.mystic-head em{font-style:normal;font-weight:800;font-size:12px}.mystic-head em.up{color:#22d3ee}.mystic-head em.down{color:#f87171}.mystic small{display:block;margin-top:4px;font-size:11px}
-.history{display:grid;gap:6px}.hist{display:grid;grid-template-columns:40px 1fr auto 40px;gap:8px;align-items:center;padding:9px 11px;border:1px solid #1d344d;border-radius:10px;background:#0f2035;font-size:13px}.hist a{color:#9eeeff;text-decoration:none}.hist em{font-style:normal;font-weight:800;text-align:right}.hist.win em{color:#22d3ee}.hist.loss em{color:#f87171}.hist span:nth-child(3){font-variant-numeric:tabular-nums;color:#c9d6e3}
+.mystic{padding:10px 12px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.mystic-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px}.mystic-head em{font-style:normal;font-weight:800;font-size:12px}.mystic-head em.up{color:#22d3ee}.mystic-head em.down{color:var(--ee-rival,#f87171)}.mystic small{display:block;margin-top:4px;font-size:11px}
+.history{display:grid;gap:6px}.hist{display:grid;grid-template-columns:40px 1fr auto 40px;gap:8px;align-items:center;padding:9px 11px;border:1px solid #1d344d;border-radius:10px;background:#0f2035;font-size:13px}.hist a{color:#9eeeff;text-decoration:none}.hist em{font-style:normal;font-weight:800;text-align:right}.hist.win em{color:#22d3ee}.hist.loss em{color:var(--ee-rival,#f87171)}.hist span:nth-child(3){font-variant-numeric:tabular-nums;color:#c9d6e3}
 .table{display:grid;gap:4px;margin-top:8px}.table a{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:8px 10px;border:1px solid #1d344d;border-radius:9px;background:#0f2035;color:#e8f3ff;text-decoration:none;font-size:13px}
 .table a span:last-child{text-align:right}.table a b{color:#f6c84b;font-size:11px}.empty{padding:16px;border:1px dashed #2a4965;border-radius:12px;color:#91a7bf}
 </style></head><body>${body}</body></html>`;
@@ -472,8 +472,8 @@ function renderTrendChart(kid, score, points) {
   const y = v => H - P - Number(v) / max * (H - P * 2);
   const line = key => series.map((p, i) => (i ? "L" : "M") + x(p.at).toFixed(1) + " " + y(p[key]).toFixed(1)).join(" ");
   return `<h2>時間ごとのスコア推移</h2><div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="王国 ${kid} と対戦相手のスコア推移">
-<line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#1d344d"/><path d="${line("score")}" fill="none" stroke="#22d3ee" stroke-width="2.5"/><path d="${line("opponent_score")}" fill="none" stroke="#f87171" stroke-width="2.5"/></svg>
-<div class="legend"><span><i style="background:#22d3ee"></i>王国 ${kid}</span><span><i style="background:#f87171"></i>王国 ${esc(score.opponent ?? "—")}</span><span class="muted">${esc(ts(t0))} 〜 ${esc(ts(t1))} · ${series.length}点</span></div></div>`;
+<line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#1d344d"/><path d="${line("score")}" fill="none" stroke="#22d3ee" stroke-width="2.5"/><path d="${line("opponent_score")}" fill="none" style="stroke:var(--ee-rival,#f87171)" stroke-width="2.5"/></svg>
+<div class="legend"><span><i style="background:#22d3ee"></i>王国 ${kid}</span><span><i style="background:var(--ee-rival,#f87171)"></i>王国 ${esc(score.opponent ?? "—")}</span><span class="muted">${esc(ts(t0))} 〜 ${esc(ts(t1))} · ${series.length}点</span></div></div>`;
 }
 
 function renderHistory(kid, rows) {

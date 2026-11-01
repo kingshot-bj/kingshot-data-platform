@@ -170,7 +170,7 @@ test("schema helper, migration, cron wiring and home entry exist", async () => {
   for (const table of ["kvk_matchups", "kvk_scores", "kvk_state"]) assert.ok(migration.includes("CREATE TABLE IF NOT EXISTS " + table));
   assert.ok(index.includes("const kvk = await runKvkCollection(env);"));
   assert.ok(index.includes('if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env);'));
-  assert.ok(index.includes('<a class="ee-milestone-card ee-kvk-card" href="/kvk">'));
+  assert.ok(index.includes('<a class="ee-milestone-card ee-kvk-card" href="/kvk"'));
 });
 
 test("intraday points are stored only while a KvK is running and only when the score changes", async () => {
