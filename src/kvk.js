@@ -378,10 +378,10 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   const signedIn = Boolean(auth && auth.status === "ACTIVE");
   const rank = ROLE_RANK[String(auth?.role || "BASIC").toUpperCase()] ?? 0;
   if (!signedIn) {
-    return shell("KvK", `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KVK</div><h1>KvK</h1><div class="notice">KvKの対戦相手やスコアを見るにはログインが必要です。 <a href="${esc(loginUrl)}">Discordでログイン →</a></div></main>`);
+    return shell("KvK", `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KvK</div><h1>KvK</h1><div class="notice">KvKの対戦相手やスコアを見るにはログインが必要です。 <a href="${esc(loginUrl)}">Discordでログイン →</a></div></main>`);
   }
   if (rank < ROLE_RANK.ADVANCED) {
-    return shell("KvK", `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KVK</div><h1>KvK</h1><div class="notice">KvKはADVANCED以上のロールで利用できます。マイKingShotでMightPulseのAPIキーを提供するとADVANCEDになれます。 <a href="/my-player">マイKingShotへ →</a></div></main>`);
+    return shell("KvK", `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KvK</div><h1>KvK</h1><div class="notice">KvKはADVANCED以上のロールで利用できます。マイKingShotでMightPulseのAPIキーを提供するとADVANCEDになれます。 <a href="/my-player">マイKingShotへ →</a></div></main>`);
   }
   await ensureKvkSchema(db);
   const isVip = rank >= ROLE_RANK.VIP;
@@ -394,7 +394,7 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   const matchupState = await getState(db, "matchups");
   const season = matchupState?.season ?? null;
 
-  const head = `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KVK</div><h1>KvK</h1><p class="muted">シーズン ${esc(season ?? "—")} · ${esc(kvkStageLabel(matchupState?.stage))}${matchupState?.checkedAt ? " · 組み合わせ確認 " + esc(ts(matchupState.checkedAt)) : ""}</p>`;
+  const head = `<main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">KvK</div><h1>KvK</h1><p class="muted">シーズン ${esc(season ?? "—")} · ${esc(kvkStageLabel(matchupState?.stage))}${matchupState?.checkedAt ? " · 組み合わせ確認 " + esc(ts(matchupState.checkedAt)) : ""}</p>`;
   const mineHtml = mine.length ? `<div class="mine">${mine.map(k => `<a href="/kvk?kid=${k}"${k === (requested || mine[0]) ? " class='on'" : ""}>王国 ${k}</a>`).join("")}</div>` : "";
   const finder = isVip ? `<form class="find" action="/kvk" method="get"><input name="kid" inputmode="numeric" pattern="[0-9]*" placeholder="王国番号で探す（VIP）" value="${Number.isInteger(requested) ? requested : ""}"><button type="submit">表示</button></form>` : "";
 
