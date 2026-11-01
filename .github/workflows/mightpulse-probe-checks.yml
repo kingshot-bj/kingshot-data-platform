@@ -70,5 +70,7 @@ jobs:
         run: node --test tests/kvk.test.mjs
       - name: KvK Discord tests
         run: node --test tests/kvk-discord.test.mjs
+      - name: Google Drive restore tests
+        run: node --test tests/google-drive-restore.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
