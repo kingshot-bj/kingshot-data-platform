@@ -169,3 +169,60 @@ test("schema helper, migration, cron wiring and home entry exist", async () => {
   assert.ok(index.includes('if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env);'));
   assert.ok(index.includes('<a class="ee-milestone-card ee-kvk-card" href="/kvk">'));
 });
+
+test("intraday points are stored only while a KvK is running and only when the score changes", async () => {
+  const { db, env } = setup();
+  let score = 600;
+  const live = () => ({ ...scores(1524, 1523), score });
+  const mp = fakeMightPulse({ "/kvk/matchups": matchups(23, "armament"), "/kingdoms/1524/kvk/scores": live, "/kingdoms/1523/kvk/scores": scores(1523, 1524) });
+  await runKvkCollection(env, { now: NOW, collect: mp.collect });
+  await runKvkCollection(env, { now: NOW + 3601, collect: mp.collect }); // unchanged
+  score = 900;
+  await runKvkCollection(env, { now: NOW + 7202, collect: mp.collect });
+  const points = db.sqlite.prepare("SELECT at, score FROM kvk_score_points WHERE kid = 1524 ORDER BY at").all();
+  assert.deepEqual(points.map(p => p.score), [600, 900]);
+  // Finished season: no new points.
+  const ended = fakeMightPulse({ "/kingdoms/1524/kvk/scores": scores(1524, 1523, { status: "Ended" }) });
+  const { fetchKvkScore } = await import("../src/kvk.js");
+  await fetchKvkScore(env, 1524, { now: NOW + 9000, collect: ended.collect });
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) c FROM kvk_score_points WHERE kid = 1524").get().c, 2);
+});
+
+test("final season results are kept for both kingdoms", async () => {
+  const { db, env } = setup();
+  const { fetchKvkScore } = await import("../src/kvk.js");
+  await ensureKvkSchema(db);
+  const mp = fakeMightPulse({ "/kingdoms/1524/kvk/scores": scores(1524, 1485, { season: 22, status: "Ended" }) });
+  await fetchKvkScore(env, 1524, { now: NOW, collect: mp.collect });
+  const rows = db.sqlite.prepare("SELECT kid, season, opponent, score, opponent_score, result FROM kvk_season_results ORDER BY kid").all();
+  assert.deepEqual(rows.map(r => [r.kid, r.opponent, r.result]), [[1485, 1524, "LOSS"], [1524, 1485, "WIN"]]);
+  // A running season is not recorded as a result.
+  const running = fakeMightPulse({ "/kingdoms/1524/kvk/scores": scores(1524, 1523, { season: 23 }) });
+  await fetchKvkScore(env, 1524, { now: NOW + 10, collect: running.collect });
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) c FROM kvk_season_results WHERE season = 23").get().c, 0);
+});
+
+test("countdown targets the running day's end, then the next day's start", async () => {
+  const { kvkCountdownTarget } = await import("../src/kvk.js");
+  const days = [{ day: 1, name: "I", status: "Ended", begin_ts: 100, end_ts: 200 }, { day: 2, name: "II", status: "Ongoing", begin_ts: 200, end_ts: 300 }, { day: 3, name: "III", status: "Upcoming", begin_ts: 300, end_ts: 400 }];
+  assert.deepEqual(kvkCountdownTarget(days, 250), { kind: "END", at: 300, name: "II" });
+  assert.deepEqual(kvkCountdownTarget(days.map(d => ({ ...d, status: d.day === 2 ? "Ended" : d.status })), 50), { kind: "START", at: 100, name: "I" });
+  assert.equal(kvkCountdownTarget(days.map(d => ({ ...d, status: "Ended" })), 500), null);
+});
+
+test("page shows countdown, trend chart and past results", async () => {
+  const { db, env } = setup();
+  const t = NOW;
+  const running = () => ({ ...scores(1524, 1523), days: [{ day: 1, name: "I", status: "Ongoing", kingdom_score: 1, opponent_score: 2, begin_ts: t - 100, end_ts: t + 5000 }] });
+  let n = 0;
+  const mp = fakeMightPulse({ "/kvk/matchups": matchups(23, "armament"), "/kingdoms/1524/kvk/scores": () => ({ ...running(), score: 600 + (n++) * 100 }), "/kingdoms/1523/kvk/scores": scores(1523, 1524) });
+  await runKvkCollection(env, { now: t, collect: mp.collect });
+  await runKvkCollection(env, { now: t + 3601, collect: mp.collect });
+  db.sqlite.prepare("INSERT INTO kvk_season_results VALUES (1524, 22, 1485, 1628386587, 4040581707, 'LOSS', ?)").run(t);
+  const html = await renderKvkPage(new Request("https://e.test/kvk"), env, { status: "ACTIVE", role: "ADVANCED", user_id: "u1" }, { collect: mp.collect, now: t + 3700 });
+  assert.ok(html.includes("I の終了まで") && html.includes(`data-at="${t + 5000}"`));
+  assert.ok(html.includes("時間ごとのスコア推移") && html.includes("<svg"));
+  assert.ok(html.includes("過去のKvK戦績") && html.includes("0勝 1敗") && html.includes("王国 1485"));
+  const migration = await readFile(new URL("../migrations/0067_kvk_history.sql", import.meta.url), "utf8");
+  assert.ok(migration.includes("CREATE TABLE IF NOT EXISTS kvk_score_points") && migration.includes("CREATE TABLE IF NOT EXISTS kvk_season_results"));
+});
