@@ -14,7 +14,8 @@ const A = "444444444444444441", B = "444444444444444442", C = "44444444444444444
 function d1() {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(`CREATE TABLE users (user_id TEXT, discord_id TEXT, status TEXT);
-    CREATE TABLE user_player_links (user_id TEXT, kingdom_id INTEGER, status TEXT, account_type TEXT);`);
+    CREATE TABLE user_player_links (user_id TEXT, kingdom_id INTEGER, status TEXT, account_type TEXT, governor_id TEXT);
+    CREATE TABLE players (governor_id TEXT PRIMARY KEY, kid INTEGER);`);
   const stmt = (sql, args = []) => ({ sql, bind: (...a) => stmt(sql, a), first: async () => sqlite.prepare(sql).get(...args) ?? null,
     all: async () => ({ results: sqlite.prepare(sql).all(...args) }), run: async () => ({ meta: { changes: Number(sqlite.prepare(sql).run(...args).changes) } }) });
   return { sqlite, prepare: sql => stmt(sql), batch: async l => { for (const s of l) await s.run(); return []; } };
@@ -44,7 +45,7 @@ function setup(links) {
   const db = d1();
   for (const [user, discord, kid] of links) {
     db.sqlite.prepare("INSERT INTO users VALUES (?, ?, 'ACTIVE')").run(user, discord);
-    db.sqlite.prepare("INSERT INTO user_player_links VALUES (?, ?, 'ACTIVE', 'MAIN')").run(user, kid);
+    db.sqlite.prepare("INSERT INTO user_player_links (user_id, kingdom_id, status, account_type) VALUES (?, ?, 'ACTIVE', 'MAIN')").run(user, kid);
   }
   const env = { DB: db, DISCORD_BOT_TOKEN: "token-SECRET", DISCORD_SUPPORT_GUILD_ID: GUILD, DISCORD_CLIENT_ID: BOT, DISCORD_SUPPORT_ROLE_ID: ROLE };
   return { db, env };
@@ -140,4 +141,19 @@ test("wired into Cron and the collector; migration exists", async () => {
   assert.ok(index.includes("const discord = await runKvkDiscordSync(env);"));
   assert.ok(kvk.includes("buildKvkScoreNotifications(id, previous,") && kvk.includes("buildKvkMatchupNotifications(season, stage, normalized, own,"));
   for (const t of ["kvk_discord_threads", "kvk_discord_members", "kvk_discord_outbox"]) assert.ok(migration.includes("CREATE TABLE IF NOT EXISTS " + t));
+});
+
+test("a transferred governor moves to the new kingdom's thread (governor ID stays the same)", async () => {
+  const { db, env } = setup([["u1", A, 1524]]);
+  db.sqlite.prepare("UPDATE user_player_links SET governor_id = 'G1' WHERE user_id = 'u1'").run();
+  db.sqlite.prepare("INSERT INTO players VALUES ('G1', 1524)").run();
+  await runKvkDiscordSync(env, { now: NOW, request: fakeDiscord().request });
+  db.sqlite.prepare("UPDATE players SET kid = 1530 WHERE governor_id = 'G1'").run();
+  const dc = fakeDiscord();
+  await runKvkDiscordSync(env, { now: NOW + 31 * 60, request: dc.request });
+  const old = db.sqlite.prepare("SELECT thread_id FROM kvk_discord_threads WHERE kid = 1524").get().thread_id;
+  const neu = db.sqlite.prepare("SELECT thread_id FROM kvk_discord_threads WHERE kid = 1530").get().thread_id;
+  assert.ok(dc.calls.some(c => c.method === "PUT" && c.path === `/channels/${neu}/thread-members/${A}`), "added to new kingdom");
+  assert.ok(dc.calls.some(c => c.method === "DELETE" && c.path === `/channels/${old}/thread-members/${A}`), "removed from old kingdom");
+  assert.equal(db.sqlite.prepare("SELECT kingdom_id FROM user_player_links WHERE user_id = 'u1'").get().kingdom_id, 1524, "registration itself is not rewritten");
 });

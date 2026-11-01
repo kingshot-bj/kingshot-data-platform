@@ -17,7 +17,8 @@ function d1() {
     CREATE TABLE api_request_locks (lock_key TEXT PRIMARY KEY, lock_token TEXT, lock_until INTEGER, updated_at INTEGER);
     CREATE TABLE api_pool_keys (key_id TEXT PRIMARY KEY, provider TEXT, status TEXT, mighty_capable INTEGER, mighty_check_status TEXT, quota_per_day INTEGER);
     CREATE TABLE api_pool_usage (key_id TEXT, used_at INTEGER, request_count INTEGER);
-    CREATE TABLE user_player_links (user_id TEXT, kingdom_id INTEGER, status TEXT, account_type TEXT);
+    CREATE TABLE user_player_links (user_id TEXT, kingdom_id INTEGER, status TEXT, account_type TEXT, governor_id TEXT);
+    CREATE TABLE players (governor_id TEXT PRIMARY KEY, kid INTEGER);
   `);
   let writes = 0;
   const stmt = (sql, args = []) => ({
@@ -66,7 +67,7 @@ function setup({ mightyUsed = 0, users = [["u1", 1524, "MAIN"]] } = {}) {
   const db = d1();
   db.sqlite.prepare("INSERT INTO api_pool_keys VALUES ('k1','MIGHTPULSE','AVAILABLE',1,'CONFIRMED',10000)").run();
   if (mightyUsed) db.sqlite.prepare("INSERT INTO api_pool_usage VALUES ('k1', ?, ?)").run(NOW - 10, mightyUsed);
-  for (const [u, k, t] of users) db.sqlite.prepare("INSERT INTO user_player_links VALUES (?, ?, 'ACTIVE', ?)").run(u, k, t);
+  for (const [u, k, t] of users) db.sqlite.prepare("INSERT INTO user_player_links (user_id, kingdom_id, status, account_type) VALUES (?, ?, 'ACTIVE', ?)").run(u, k, t);
   return { db, env: { DB: db, ARCHIVE: fakeR2() } };
 }
 
@@ -243,4 +244,16 @@ test("matchups listed once per pair (1523 -> 1524) are found from either side", 
   assert.ok(html.includes('<a href="/kingdom?kid=1523">1523</a>') && html.includes("Les gaulois"), "opponent and its name shown from 1524's side");
   const queued = db.sqlite.prepare("SELECT content FROM kvk_discord_outbox WHERE message_key = 'KVK:MATCHUP:23:1524'").get();
   assert.ok(queued && queued.content.includes("王国1524 vs 王国1523（Les gaulois）"));
+});
+
+test("KvK page follows a transferred governor and says so", async () => {
+  const { db, env } = setup();
+  db.sqlite.prepare("UPDATE user_player_links SET governor_id = 'G1' WHERE user_id = 'u1'").run();
+  db.sqlite.prepare("INSERT INTO players VALUES ('G1', 1523)").run();
+  const mp = fakeMightPulse({ "/kvk/matchups": matchups(), "/kingdoms/1523/kvk/scores": scores(1523, 1524), "/kingdoms/1524/kvk/scores": scores(1524, 1523) });
+  const run = await runKvkCollection(env, { now: NOW, collect: mp.collect });
+  assert.ok(run.scores.some(s => s.kid === 1523));
+  const html = await renderKvkPage(new Request("https://e.test/kvk"), env, { status: "ACTIVE", role: "ADVANCED", user_id: "u1" }, { collect: mp.collect, now: NOW + 60 });
+  assert.ok(html.includes("移民を検知しました：登録時 王国1524 → 現在 王国1523"));
+  assert.ok(html.includes('<a href="/kvk?kid=1523" class=\'on\'>王国 1523</a>'), "current kingdom is the default");
 });

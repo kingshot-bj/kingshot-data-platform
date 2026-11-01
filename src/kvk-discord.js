@@ -133,12 +133,17 @@ export async function enqueueKvkNotifications(db, items, now) {
   return items.length;
 }
 
-// Kingdom -> Discord ids of active EagleEye users who registered a governor there.
+// A governor keeps its ID when it transfers, so the latest observed kingdom
+// (players.kid) wins over the kingdom recorded at registration.
+export const KVK_CURRENT_KINGDOM_SQL = "CAST(COALESCE(p.kid, l.kingdom_id) AS INTEGER)";
+export const KVK_LINKS_FROM_SQL = "user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id";
+
+// Kingdom -> Discord ids of active EagleEye users whose governor is currently there.
 async function desiredMembers(db) {
   const rows = (await db.prepare(
-    `SELECT DISTINCT l.kingdom_id AS kid, u.discord_id
-     FROM user_player_links l JOIN users u ON u.user_id = l.user_id
-     WHERE l.status = 'ACTIVE' AND l.kingdom_id IS NOT NULL AND u.status = 'ACTIVE' AND u.discord_id IS NOT NULL`
+    `SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid, u.discord_id
+     FROM ${KVK_LINKS_FROM_SQL} JOIN users u ON u.user_id = l.user_id
+     WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL AND u.status = 'ACTIVE' AND u.discord_id IS NOT NULL`
   ).all()).results || [];
   const map = new Map();
   for (const r of rows) {
@@ -193,11 +198,13 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
     const threads = new Map(((await db.prepare("SELECT kid, thread_id, member_sync_at FROM kvk_discord_threads").all()).results || []).map(r => [Number(r.kid), r]));
 
     // 1) Threads for kingdoms that have users, oldest sync first.
-    const order = [...desired.keys()].sort((a, b) => Number(threads.get(a)?.member_sync_at || 0) - Number(threads.get(b)?.member_sync_at || 0));
+    // Kingdoms with users, plus existing threads whose users all left (their members must be removed).
+    const order = [...new Set([...desired.keys(), ...threads.keys()])].sort((a, b) => Number(threads.get(a)?.member_sync_at || 0) - Number(threads.get(b)?.member_sync_at || 0));
     for (const kid of order) {
       if (budget.calls >= maxCalls) break;
       let thread = threads.get(kid);
       if (thread && now - Number(thread.member_sync_at || 0) < KVK_THREAD_SYNC_INTERVAL_SECONDS) continue;
+      if (!thread && !desired.has(kid)) continue;
       if (!thread) {
         budget.calls++;
         const created = await request(env, `/channels/${parentId}/threads`, { method: "POST", body: JSON.stringify({ name: `王国 ${kid}`, type: 12, invitable: false, auto_archive_duration: 10080 }) });
@@ -206,7 +213,7 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
         summary.created++;
       }
       const current = new Set(((await db.prepare("SELECT discord_id FROM kvk_discord_members WHERE kid = ?").bind(kid).all()).results || []).map(r => r.discord_id));
-      const want = desired.get(kid);
+      const want = desired.get(kid) || new Set();
       let complete = true;
       for (const id of want) {
         if (current.has(id)) continue;

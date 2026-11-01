@@ -12,7 +12,7 @@
 
 import { collectMightyOnly } from "./data-collection-engine.js";
 import { EAGLEEYE_THEME_BASE_CSS } from "./eagleeye-ui.js";
-import { buildKvkScoreNotifications, buildKvkMatchupNotifications, enqueueKvkNotifications, kvkPublicOrigin } from "./kvk-discord.js";
+import { buildKvkScoreNotifications, buildKvkMatchupNotifications, enqueueKvkNotifications, kvkPublicOrigin, KVK_CURRENT_KINGDOM_SQL, KVK_LINKS_FROM_SQL } from "./kvk-discord.js";
 
 export const KVK_MATCHUPS_INTERVAL_SECONDS = 6 * 3600;
 export const KVK_SCORE_ACTIVE_INTERVAL_SECONDS = 3600;
@@ -146,7 +146,7 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   await db.batch(statements);
   await setState(db, "matchups", { sha, season, stage, count: normalized.length, changedAt: now, checkedAt: now }, now);
   if (Number(previous?.season) !== season) {
-    const own = ((await db.prepare("SELECT DISTINCT kingdom_id AS kid FROM user_player_links WHERE status = 'ACTIVE' AND kingdom_id IS NOT NULL").all()).results || []).map(r => Number(r.kid));
+    const own = ((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all()).results || []).map(r => Number(r.kid));
     await enqueueKvkNotifications(db, buildKvkMatchupNotifications(season, stage, normalized, own, kvkPublicOrigin(env)), now).catch(error => console.error("kvk_notify_enqueue_failed", error?.message || error));
   }
   return { status: "CHANGED", season, stage, count: normalized.length };
@@ -247,7 +247,7 @@ export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 10
 
 // Registered users' kingdoms plus their current opponents.
 export async function getKvkTargetKingdoms(db, season) {
-  const own = ((await db.prepare("SELECT DISTINCT kingdom_id AS kid FROM user_player_links WHERE status = 'ACTIVE' AND kingdom_id IS NOT NULL").all()).results || [])
+  const own = ((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all()).results || [])
     .map(r => Number(r.kid)).filter(Number.isInteger);
   const targets = new Set(own);
   if (season != null && own.length) {
@@ -376,8 +376,10 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   await ensureKvkSchema(db);
   const isVip = rank >= ROLE_RANK.VIP;
   const now = nowOverride ?? Math.floor(Date.now() / 1000);
-  const mine = ((await db.prepare("SELECT DISTINCT kingdom_id AS kid FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' AND kingdom_id IS NOT NULL ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, kingdom_id").bind(auth.user_id).all()).results || [])
-    .map(r => Number(r.kid)).filter(Number.isInteger);
+  const links = (await db.prepare(`SELECT l.kingdom_id AS registered, ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.user_id = ? AND l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.kingdom_id`).bind(auth.user_id).all()).results || [];
+  const mine = [...new Set(links.map(r => Number(r.kid)).filter(Number.isInteger))];
+  const moved = links.filter(r => r.registered != null && Number(r.registered) !== Number(r.kid));
+  const movedNote = moved.length ? `<div class="notice">移民を検知しました：${moved.map(r => `登録時 王国${Number(r.registered)} → 現在 王国${Number(r.kid)}`).join("、")}。KvKは現在の王国で表示します。</div>` : "";
   const requested = kidFromRequest(url);
   const matchupState = await getState(db, "matchups");
   const season = matchupState?.season ?? null;
@@ -411,7 +413,7 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   }
   const matchup = season != null ? kvkMatchupFrom(kid, await db.prepare("SELECT kid, opponent, kingdom_name, opponent_name FROM kvk_matchups WHERE season = ? AND (kid = ? OR opponent = ?) LIMIT 1").bind(season, kid, kid).first()) : null;
 
-  let body = head + mineHtml + finder + (fetchNote ? `<div class="notice">${esc(fetchNote)}</div>` : "");
+  let body = head + mineHtml + movedNote + finder + (fetchNote ? `<div class="notice">${esc(fetchNote)}</div>` : "");
   if (matchup) {
     body += `<h2>シーズン ${esc(season)} の対戦相手</h2><div class="vs"><div class="side"><small>あなたの王国</small><b><a href="/kingdom?kid=${kid}">${kid}</a></b><small>${esc(matchup.kingdom_name || "")}</small></div><div class="vs-mark">VS</div><div class="side opp"><small>対戦相手</small><b>${matchup.opponent != null ? `<a href="/kingdom?kid=${Number(matchup.opponent)}">${Number(matchup.opponent)}</a>` : "—"}</b><small>${esc(matchup.opponent_name || "")}</small></div></div>`;
   }
