@@ -379,3 +379,130 @@ export async function verifyGoogleDriveRefreshToken(env) {
   const data = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
   return { ok: true, sampleFolder: data.files?.[0] || null };
 }
+
+// ---------- Restore: Google Drive -> R2 ----------
+// Drive holds a verified copy of every archive object. If an R2 archive object
+// is lost, these functions copy it back. They never overwrite an existing R2
+// object, only touch keys under "archive/", and R2 verifies the bytes against
+// Drive's MD5 on write.
+
+const RESTORABLE_PREFIX = "archive/";
+
+function sourceKeyOf(file) {
+  try {
+    const key = decodeURIComponent(String(file?.appProperties?.eagleeyeSourceKey || ""));
+    return key || null;
+  } catch {
+    return null;
+  }
+}
+
+function isRestorableKey(key) {
+  return typeof key === "string" && key.startsWith(RESTORABLE_PREFIX) && key.endsWith(".ndjson.gz") && !key.includes("..");
+}
+
+export async function listGoogleDriveArchiveFiles(accessToken, folderId, { pageToken = null, pageSize = 50 } = {}) {
+  const params = new URLSearchParams({
+    q: ["trashed = false", "'" + String(folderId).replace(/'/g, "\\'") + "' in parents", "appProperties has { key = 'eagleeyeArchive' and value = '1' }"].join(" and "),
+    spaces: "drive",
+    pageSize: String(Math.min(Math.max(Number(pageSize) || 50, 1), 100)),
+    fields: "nextPageToken,files(id,name,size,md5Checksum,appProperties)"
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  const data = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
+  return { files: Array.isArray(data.files) ? data.files : [], nextPageToken: data.nextPageToken || null };
+}
+
+async function downloadDriveFile(accessToken, fileId) {
+  const response = await fetch(GOOGLE_DRIVE_API_URL + "/" + encodeURIComponent(fileId) + "?alt=media", { headers: { authorization: "Bearer " + accessToken } });
+  if (!response.ok) {
+    const error = new Error("GOOGLE_DRIVE_DOWNLOAD_FAILED");
+    error.code = "GOOGLE_DRIVE_DOWNLOAD_FAILED";
+    error.status = response.status;
+    throw error;
+  }
+  return response.arrayBuffer();
+}
+
+// Restore one Drive file (already looked up) to its R2 key.
+async function restoreDriveFileToR2(archiveBucket, accessToken, file, key) {
+  if (!isRestorableKey(key)) return { key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" };
+  if (await archiveBucket.head(key)) return { key, status: "ALREADY_IN_R2" };
+  const md5 = String(file.md5Checksum || "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(md5)) return { key, status: "SKIPPED", reason: "DRIVE_MD5_MISSING" };
+  const bytes = await downloadDriveFile(accessToken, file.id);
+  if (Number(file.size || 0) && bytes.byteLength !== Number(file.size)) return { key, status: "FAILED", reason: "DRIVE_SIZE_MISMATCH" };
+  // R2 rejects the write if the bytes do not match this MD5.
+  await archiveBucket.put(key, bytes, {
+    md5,
+    httpMetadata: { contentType: "application/x-ndjson", contentEncoding: "gzip" },
+    customMetadata: { restoredFromDriveFileId: String(file.id), restoredAt: String(Math.floor(Date.now() / 1000)) }
+  });
+  const head = await archiveBucket.head(key);
+  const ok = head && Number(head.size) === bytes.byteLength && r2EtagMd5(head.etag) === md5;
+  if (!ok) return { key, status: "FAILED", reason: "R2_VERIFICATION_FAILED" };
+  await restoreKingdomArchivePointer(archiveBucket, key);
+  return { key, status: "RESTORED", size: bytes.byteLength, driveFileId: file.id };
+}
+
+// Kingdom ranking archives are served through a latest.json pointer that is
+// not mirrored to Drive; recreate it so pages can read the restored rows.
+const KINGDOM_ARCHIVE_KEY_RE = /^archive\/v1\/kingdom_ranking_current\/kid\/(\d+)\/(\d+)\.ndjson\.gz$/;
+async function restoreKingdomArchivePointer(archiveBucket, key) {
+  const match = KINGDOM_ARCHIVE_KEY_RE.exec(key);
+  if (!match) return;
+  const [, kid, lastUpdatedAt] = match;
+  const pointerKey = `archive/v1/kingdom_ranking_current/kid/${kid}/latest.json`;
+  const existing = await archiveBucket.get(pointerKey);
+  if (existing) {
+    let pointer = null;
+    try { pointer = JSON.parse(await new Response(existing.body).text()); } catch {}
+    const pointedExists = pointer?.key ? await archiveBucket.head(pointer.key) : null;
+    if (pointedExists && Number(pointer.lastUpdatedAt || 0) >= Number(lastUpdatedAt)) return;
+  }
+  await archiveBucket.put(pointerKey, JSON.stringify({ kid: Number(kid), key, lastUpdatedAt: Number(lastUpdatedAt), archivedAt: Math.floor(Date.now() / 1000), restoredFromDrive: true }), {
+    httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" }
+  });
+}
+
+export async function restoreR2ObjectFromGoogleDrive(env, { archiveBucket, key, accessToken: providedAccessToken = null } = {}) {
+  if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!isRestorableKey(key)) return { key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" };
+  if (await archiveBucket.head(key)) return { key, status: "ALREADY_IN_R2" };
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  const { folderId } = await resolveArchiveFolderId(env, accessToken, archiveBucket);
+  const file = await findExistingArchive(accessToken, folderId, key);
+  if (!file?.id) return { key, status: "NOT_FOUND_ON_DRIVE" };
+  if (sourceKeyOf(file) !== key) return { key, status: "SKIPPED", reason: "DRIVE_KEY_MISMATCH" };
+  return restoreDriveFileToR2(archiveBucket, accessToken, file, key);
+}
+
+// Walk one page of Drive archive files and restore the ones missing from R2.
+export async function restoreMissingR2ObjectsFromGoogleDrive(env, { archiveBucket, pageToken = null, pageSize = 50, maxRestores = 10, accessToken: providedAccessToken = null } = {}) {
+  if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  const { folderId } = await resolveArchiveFolderId(env, accessToken, archiveBucket);
+  const page = await listGoogleDriveArchiveFiles(accessToken, folderId, { pageToken, pageSize });
+  const summary = { checked: 0, present: 0, restored: 0, skipped: 0, failed: 0, deferred: 0, results: [], nextPageToken: page.nextPageToken };
+  let restores = 0;
+  const deferredFiles = [];
+  for (const file of page.files) {
+    summary.checked++;
+    const key = sourceKeyOf(file);
+    if (!isRestorableKey(key)) { summary.skipped++; summary.results.push({ key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" }); continue; }
+    if (await archiveBucket.head(key)) { summary.present++; continue; }
+    if (restores >= maxRestores) { summary.deferred++; deferredFiles.push(file); continue; }
+    restores++;
+    try {
+      const result = await restoreDriveFileToR2(archiveBucket, accessToken, file, key);
+      if (result.status === "RESTORED") summary.restored++; else if (result.status === "ALREADY_IN_R2") summary.present++; else summary.failed++;
+      summary.results.push(result);
+    } catch (error) {
+      summary.failed++;
+      summary.results.push({ key, status: "FAILED", reason: String(error?.code || error?.message || "RESTORE_FAILED").slice(0, 80) });
+    }
+  }
+  // Missing files left on this page (per-request cap): the caller repeats the same page.
+  summary.repeatPage = deferredFiles.length > 0;
+  return summary;
+}
