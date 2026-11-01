@@ -132,9 +132,9 @@ test("player compare automatic and manual refresh requests have finite timeouts"
   assert.ok(indexSource.includes("timeoutMs||15000"));
 });
 
-test("growth comparison is collapsed by default and radar mode renders an SVG polygon chart", () => {
-  assert.ok(script.includes("document.createElement('details');panel.className='ee-build-compare'"));
-  assert.ok(script.includes("title.textContent='育成要素の比較（詳細）'"));
+test("duplicate build comparison panel is removed and radar mode renders an SVG polygon chart", () => {
+  assert.ok(!script.includes("ee-build-compare"));
+  assert.ok(!script.includes("育成要素の比較"));
   assert.ok(script.includes("svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));

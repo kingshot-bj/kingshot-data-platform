@@ -2,7 +2,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
 .power-showcase-wrap{display:none!important}
 .compare-metric[hidden]{display:none!important}
-.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>summary{font-size:13px;font-weight:700;cursor:pointer;list-style:none}.ee-build-compare>summary::-webkit-details-marker{display:none}.ee-build-compare[open]{display:grid;gap:8px}.ee-build-compare>summary:before{content:'＋';margin-right:6px}.ee-build-compare[open]>summary:before{content:'−'}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
@@ -57,22 +57,6 @@ function enhance(){
  document.querySelectorAll('.compare-metric').forEach(row=>{const label=safeText(row.querySelector('span'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))row.hidden=true});
  const table=document.querySelector('.table-wrap table');
  if(table){[...table.querySelectorAll('tr')].forEach(tr=>{const label=safeText(tr.querySelector('th,td'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))tr.hidden=true})}
- if(table&&!document.querySelector('.ee-build-compare')){
-  const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
-  if(rows.length){
-   const panel=document.createElement('details');panel.className='ee-build-compare';
-   const title=document.createElement('summary');title.textContent='育成要素の比較（詳細）';panel.appendChild(title);
-   const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
-   let lastGroup='';
-   rows.forEach(tr=>{const cells=[...tr.children];const rawLabel=safeText(cells[0]);const group=(rawLabel.match(/^(闘技場防衛編成|防衛編成装備|英雄スキル|専用装備|領主装備)：/)||[])[1]||'';if(group!==lastGroup){const sub=document.createElement('h3');sub.textContent=group;panel.appendChild(sub);lastGroup=group}const card=document.createElement('article');card.className='ee-build-row';
-    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=rawLabel.replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
-    const values=document.createElement('div');values.className='ee-build-values';
-    cells.slice(1).forEach((cell,i)=>{const item=document.createElement('div');item.className='ee-build-value';const who=document.createElement('span');who.textContent=headers[i]||('プレイヤー'+(i+1));const val=document.createElement('b');val.textContent=safeText(cell)||'—';item.append(who,val);values.appendChild(item)});
-    card.appendChild(values);panel.appendChild(card);
-   });
-   const sec=document.querySelector('.mystic-section');if(sec)sec.before(panel);else table.before(panel);
-  }
- }
 
  const sec=document.querySelector('.mystic-section');
  if(!sec||sec.dataset.eeEnhanced==='1')return;
