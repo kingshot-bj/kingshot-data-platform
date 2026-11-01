@@ -73,7 +73,7 @@ export async function collectMightPulseThroughGuards(env, {
       ? (userId
         ? leaseUserMightyApiKey(env.DB, { userId, purpose, targetType, targetId })
         : leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId }))
-      : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId })));
+      : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true })));
 
     if (!lease) {
       const availability = await withD1TransientRetry(() => getApiPoolAvailability(env.DB, {
@@ -106,8 +106,8 @@ export async function collectMightPulseThroughGuards(env, {
       targetId,
       purpose,
       httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
     }));
 
     return {

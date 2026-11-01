@@ -36,14 +36,14 @@ const METADATA_KEYS = Object.freeze({
   ],
   PLAYER_VIEW: [
     "source", "view_section", "kid", "power", "town_center_level", "vip", "alliance_aid",
-    "alliance_abbr", "alliance_name", "alliance_rank", "kills", "x", "y", "online",
+    "alliance_abbr", "alliance_name", "alliance_rank", "kills", "x", "y",
     "observed_at", "cached_at", "age_seconds"
   ],
   PLAYER_REFRESH: [
     "source", "refresh_reason", "previous_observed_at", "new_observed_at",
     "previous_source_observed_at", "new_source_observed_at", "upstream_fresh",
     "upstream_age_seconds", "kid", "power", "town_center_level", "vip", "alliance_aid",
-    "alliance_abbr", "alliance_name", "alliance_rank", "kills", "x", "y", "online",
+    "alliance_abbr", "alliance_name", "alliance_rank", "kills", "x", "y",
     "observed_at", "source_observed_at"
   ],
   PLAYER_HISTORY_VIEW: [
