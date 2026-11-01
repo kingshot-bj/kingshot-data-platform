@@ -82,11 +82,70 @@ const PRIVACY_SECTIONS = [
   }
 ];
 
-export function renderPrivacyPolicyPage() {
-  const sections = PRIVACY_SECTIONS.map(section =>
+export const TERMS_UPDATED_AT = "2026年11月1日";
+
+const TERMS_SECTIONS = [
+  {
+    title: "1. この規約について",
+    body: `<p>この利用規約（以下「本規約」）は、EagleEye（以下「本サービス」）の利用条件を定めるものです。本サービスを利用した時点で、本規約と<a href="/privacy">プライバシーポリシー</a>に同意したものとみなします。</p>`
+  },
+  {
+    title: "2. 本サービスの位置づけ",
+    body: `<p>本サービスは、ゲーム「KingShot」のデータを集約・分析するための非公式のファン向けサービスです。Century Games、KingShotの運営会社、MightPulseとは関係がなく、これらの会社が本サービスを提供・保証するものではありません。</p>`
+  },
+  {
+    title: "3. アカウントとロール",
+    body: `<ul>
+<li>本サービスはDiscordアカウントでログインして利用します。</li>
+<li>利用できる機能はロール（BASIC／ADVANCED／VIP／ADMIN／OWNER）によって異なります。ロールの条件や内容は、運営上の判断で変更することがあります。</li>
+<li>領主IDは、ご自身が管理するアカウントのものだけを登録してください。</li>
+</ul>`
+  },
+  {
+    title: "4. MightPulse APIキーの提供",
+    body: `<ul>
+<li>APIキーの提供は任意です。提供されたキーは、本サービス全体のデータ取得（API Pool）に使用します。提供した時点で、この使い方に同意したものとみなします。</li>
+<li>ご自身が正当に取得したキーのみを提供してください。</li>
+<li>キーの利用停止・削除を希望する場合は、<a href="/support">お問い合わせ</a>からご連絡ください。MightPulse側でキーを無効にすることでも、本サービスでの利用は止まります。</li>
+</ul>`
+  },
+  {
+    title: "5. 禁止事項",
+    body: `<ul>
+<li>他人の領主IDやアカウントを、本人の許可なく登録すること</li>
+<li>本サービスや外部サービスに過度な負荷をかける行為（自動化ツールによる大量アクセスなど）</li>
+<li>不正アクセス、脆弱性の悪用、他の利用者の情報を不正に取得する行為</li>
+<li>本サービスで得た情報を使った嫌がらせや、法令・公序良俗に反する行為</li>
+<li>その他、運営者が不適切と判断する行為</li>
+</ul>`
+  },
+  {
+    title: "6. 利用の制限・停止",
+    body: `<p>本規約に違反した場合や、運営上必要と判断した場合は、事前の通知なく、ロールの変更、利用の制限、アカウントの停止を行うことがあります。</p>`
+  },
+  {
+    title: "7. 免責事項",
+    body: `<ul>
+<li>表示するデータは外部サービスから取得したもので、正確さ・最新性・完全性を保証しません。最大で1時間程度前のデータを含みます。</li>
+<li>本サービスは予告なく内容の変更、一時停止、終了をすることがあります。</li>
+<li>本サービスの利用、または利用できなかったことによって生じた損害について、運営者は責任を負いません。</li>
+</ul>`
+  },
+  {
+    title: "8. 規約の変更",
+    body: `<p>本規約は、必要に応じて変更することがあります。重要な変更がある場合は、本サービス上でお知らせします。変更後に本サービスを利用した時点で、変更後の規約に同意したものとみなします。</p>`
+  },
+  {
+    title: "9. お問い合わせ",
+    body: `<p>本規約に関するお問い合わせは、<a href="/support">お問い合わせ</a>ページ（EagleEye SupportのDiscordサーバー）からお願いします。</p>`
+  }
+];
+
+function renderLegalPage({ title, description, updatedAt, sections, related }) {
+  const body = sections.map(section =>
     `<section class="legal-section"><h2>${section.title}</h2>${section.body}</section>`
   ).join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プライバシーポリシー | EagleEye</title><meta name="description" content="EagleEyeのプライバシーポリシー">
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -101,16 +160,38 @@ h1{font-size:24px;margin:4px 0 4px}
 .legal-section ul{margin:6px 0;padding-left:20px}
 .legal-section li{margin:4px 0}
 .legal-section code{background:#0b192b;border-radius:5px;padding:1px 5px;color:#f6c84b;font-size:13px}
-.legal-section a{color:#8fdcff}
+.legal-section a,.legal-related a{color:#8fdcff}
+.legal-related{margin-top:18px;font-size:13px;color:#91a7bf}
 html[data-eagle-theme="light"] body{background:#f3f6fb;color:#172033}
 html[data-eagle-theme="light"] .legal-section{background:#fff;border-color:#d6deea}
 html[data-eagle-theme="light"] .legal-section h2{color:#0e7490}
 html[data-eagle-theme="light"] .legal-section code{background:#f1f5f9;color:#92400e}
-html[data-eagle-theme="light"] .legal-back,html[data-eagle-theme="light"] .legal-section a{color:#0369a1}
+html[data-eagle-theme="light"] .legal-back,html[data-eagle-theme="light"] .legal-section a,html[data-eagle-theme="light"] .legal-related a{color:#0369a1}
 </style></head><body><main class="legal-wrap">
 <a class="legal-back" href="/">← EagleEye</a>
-<h1>プライバシーポリシー</h1>
-<p class="legal-updated">最終更新日：${PRIVACY_POLICY_UPDATED_AT}</p>
-${sections}
+<h1>${title}</h1>
+<p class="legal-updated">最終更新日：${updatedAt}</p>
+${body}
+<p class="legal-related">${related}</p>
 </main></body></html>`;
+}
+
+export function renderPrivacyPolicyPage() {
+  return renderLegalPage({
+    title: "プライバシーポリシー",
+    description: "EagleEyeのプライバシーポリシー",
+    updatedAt: PRIVACY_POLICY_UPDATED_AT,
+    sections: PRIVACY_SECTIONS,
+    related: '関連：<a href="/terms">利用規約</a>'
+  });
+}
+
+export function renderTermsPage() {
+  return renderLegalPage({
+    title: "利用規約",
+    description: "EagleEyeの利用規約",
+    updatedAt: TERMS_UPDATED_AT,
+    sections: TERMS_SECTIONS,
+    related: '関連：<a href="/privacy">プライバシーポリシー</a>'
+  });
 }
