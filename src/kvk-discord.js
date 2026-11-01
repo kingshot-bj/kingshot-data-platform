@@ -290,3 +290,28 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
   }
   return summary;
 }
+
+
+// Users Discord refused to add because they are not in the Support server (50001).
+export async function listKvkUsersNotInServer(db) {
+  await ensureKvkDiscordSchema(db);
+  return ((await db.prepare("SELECT DISTINCT discord_id FROM kvk_discord_member_skips WHERE error_code = 50001").all()).results || []).map(r => r.discord_id);
+}
+
+// After a sign-in (which re-runs the Support server join), retry this user's
+// KvK threads on the next sync instead of waiting for the back-off.
+export async function onKvkUserSignedIn(db, discordId) {
+  const id = normalizeId(discordId);
+  if (!db || !id) return;
+  try {
+    await ensureKvkDiscordSchema(db);
+    const kids = ((await db.prepare("SELECT kid FROM kvk_discord_member_skips WHERE discord_id = ?").bind(id).all()).results || []).map(r => Number(r.kid));
+    if (!kids.length) return;
+    await db.batch([
+      db.prepare("DELETE FROM kvk_discord_member_skips WHERE discord_id = ?").bind(id),
+      ...kids.map(kid => db.prepare("UPDATE kvk_discord_threads SET member_sync_at = 0 WHERE kid = ?").bind(kid))
+    ]);
+  } catch (error) {
+    console.error("kvk_signed_in_hook_failed", error?.message || error);
+  }
+}

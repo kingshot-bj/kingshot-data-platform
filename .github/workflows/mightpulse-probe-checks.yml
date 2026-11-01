@@ -72,5 +72,7 @@ jobs:
         run: node --test tests/kvk-discord.test.mjs
       - name: Google Drive restore tests
         run: node --test tests/google-drive-restore.test.mjs
+      - name: Session revocation tests
+        run: node --test tests/session-revocation.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
