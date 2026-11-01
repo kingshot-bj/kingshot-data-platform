@@ -1,6 +1,6 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { archiveD1RowsToR2 } from "./r2-archive.js";
-import { getGoogleDriveConnectionStatus, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
+import { getGoogleDriveConnectionStatus, getGoogleDriveAccessToken, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
 
 const RETENTION_TABLES = Object.freeze([
   { key: "api_observations_days", table: "api_observations", column: "observed_at", keepLatestPerTarget: true },
@@ -56,220 +56,199 @@ export async function updateRetentionSettings(db, values, updatedByUserId = null
   return getRetentionSettings(db);
 }
 
-async function runRetentionCleanupInternal(db, { batchSize = 1000, archiveBucket = null } = {}) {
-  // Bound each retention pass so caller-supplied values cannot create an
-  // unexpectedly large D1 read/archive/delete operation.
-  const safeBatchSize = Math.min(1000, Math.max(1, Number(batchSize) || 1000));
-  const settings = await getRetentionSettings(db);
-  const now = Math.floor(Date.now() / 1000);
-  const result = {};
-  const archived = {};
+// D1 allows at most 100 bound parameters per statement. Delete rowids in
+// chunks below that limit, all chunks in one atomic D1 batch.
+export const D1_DELETE_CHUNK = 90;
 
-  for (const item of RETENTION_TABLES) {
-    const days = Number(settings[item.key]);
-    if (!days) {
-      result[item.table] = 0;
-      archived[item.table] = 0;
-      continue;
+// Tables with a fixed retention that is not part of data_retention_settings.
+const FIXED_RETENTION_TABLES = Object.freeze([
+  { key: "diagnostic_events_fixed_30d", table: "diagnostic_events", column: "created_at", days: 30, keepLatestPerTarget: false }
+]);
+
+function chunk(values, size) {
+  const out = [];
+  for (let i = 0; i < values.length; i += size) out.push(values.slice(i, i + size));
+  return out;
+}
+
+export async function deleteRowidsInChunks(db, table, rowids) {
+  if (!rowids.length) return 0;
+  const statements = chunk(rowids, D1_DELETE_CHUNK).map(part =>
+    db.prepare(`DELETE FROM ${table} WHERE rowid IN (${part.map(() => "?").join(",")})`).bind(...part)
+  );
+  const results = await db.batch(statements);
+  return (results || []).reduce((sum, r) => sum + Number(r?.meta?.changes || 0), 0);
+}
+
+// Lazily created per invocation so one Google access token serves every batch.
+export function createDriveSession(env) {
+  let tokenPromise = null;
+  return {
+    env,
+    status: env ? null : { ready: false },
+    async ready() {
+      if (!this.env) return false;
+      if (!this.status) this.status = await getGoogleDriveConnectionStatus(this.env);
+      return Boolean(this.status.ready);
+    },
+    accessToken() {
+      if (!tokenPromise) tokenPromise = getGoogleDriveAccessToken(this.env);
+      return tokenPromise;
     }
+  };
+}
 
-    const cutoff = now - days * 86400;
-    const shouldArchive = archiveBucket && [
-      "api_observations",
-      "player_snapshots",
-      "ranking_snapshots",
-      "player_rank_snapshots",
-      "change_events",
-      "login_history",
-      "owner_audit_log",
-      "api_pool_usage",
-      "player_identity_history"
-    ].includes(item.table);
+/**
+ * Data-loss-safe archive of one batch of D1 rows:
+ *   1. write the rows to R2 (gzip NDJSON)
+ *   2. confirm the R2 object exists with the expected row count and size
+ *   3. upload the R2 object to Google Drive and confirm size + MD5
+ *   4. only then delete exactly those rows from D1
+ * Any failure or a disconnected Drive leaves the D1 rows untouched; the next
+ * run retries the same rows (same R2 key, Drive duplicate detection).
+ */
+export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, rows }) {
+  const base = { table, selected: rows.length, archived: 0, deleted: 0, archiveKey: null, driveFileId: null };
+  if (!rows.length) return { ...base, status: "NOTHING_TO_DO" };
+  if (!archiveBucket) return { ...base, status: "SKIPPED", reason: "R2_ARCHIVE_NOT_CONFIGURED" };
+  if (!drive || !(await drive.ready())) return { ...base, status: "SKIPPED", reason: "GOOGLE_DRIVE_NOT_READY" };
 
-    let selectSql;
-    if (item.keepLatestPerTarget && item.table === "api_observations") {
-      selectSql = `SELECT rowid, * FROM api_observations
-        WHERE observed_at < ?
-          AND EXISTS (
-            SELECT 1 FROM api_observations newer
-            WHERE newer.target_type = api_observations.target_type
-              AND newer.target_id = api_observations.target_id
-              AND newer.observed_at > api_observations.observed_at
-          )
-        ORDER BY observed_at ASC, rowid ASC
-        LIMIT ?`;
-    } else {
-      selectSql = `SELECT rowid, * FROM ${item.table}
-        WHERE ${item.column} < ?
-        ORDER BY ${item.column} ASC, rowid ASC
-        LIMIT ?`;
-    }
+  const rowids = rows.map(row => Number(row.rowid));
+  if (rowids.some(id => !Number.isFinite(id))) return { ...base, status: "FAILED", reason: "ROWID_MISSING" };
 
-    if (shouldArchive) {
-      const rows = (await db.prepare(selectSql).bind(cutoff, safeBatchSize).all()).results || [];
-      if (!rows.length) {
-        result[item.table] = 0;
-        archived[item.table] = 0;
-        continue;
-      }
+  const archive = await archiveD1RowsToR2(archiveBucket, { table, rows });
+  const head = await archiveBucket.head(archive.key);
+  const r2Ok = Boolean(head) &&
+    Number(head.size || 0) > 0 &&
+    (!archive.byteLength || Number(head.size) === Number(archive.byteLength)) &&
+    String(head.customMetadata?.rowCount || "") === String(rows.length);
+  if (!r2Ok) return { ...base, archiveKey: archive.key, status: "FAILED", reason: "R2_VERIFICATION_FAILED" };
 
-      const archiveResult = await archiveD1RowsToR2(archiveBucket, {
-        table: item.table,
-        rows
-      });
-
-      const rowids = rows.map(row => Number(row.rowid)).filter(Number.isFinite);
-      if (!rowids.length) throw new Error(`RETENTION_ARCHIVE_ROWID_MISSING:${item.table}`);
-
-      const placeholders = rowids.map(() => "?").join(",");
-      const deleted = await db.prepare(
-        `DELETE FROM ${item.table} WHERE rowid IN (${placeholders})`
-      ).bind(...rowids).run();
-
-      result[item.table] = Number(deleted?.meta?.changes || 0);
-      archived[item.table] = Number(archiveResult?.rowCount || rows.length);
-      continue;
-    }
-
-    let sql;
-    if (item.keepLatestPerTarget && item.table === "api_observations") {
-      sql = `DELETE FROM api_observations
-        WHERE rowid IN (
-          SELECT rowid FROM api_observations a
-          WHERE a.observed_at < ?
-            AND EXISTS (
-              SELECT 1 FROM api_observations newer
-              WHERE newer.target_type = a.target_type
-                AND newer.target_id = a.target_id
-                AND newer.observed_at > a.observed_at
-            )
-          ORDER BY a.observed_at ASC
-          LIMIT ?
-        )`;
-    } else {
-      sql = `DELETE FROM ${item.table}
-        WHERE rowid IN (
-          SELECT rowid FROM ${item.table}
-          WHERE ${item.column} < ?
-          ORDER BY ${item.column} ASC
-          LIMIT ?
-        )`;
-    }
-    const deleted = await db.prepare(sql).bind(cutoff, safeBatchSize).run();
-    result[item.table] = Number(deleted?.meta?.changes || 0);
-    archived[item.table] = 0;
+  let upload;
+  try {
+    upload = await uploadR2ObjectToGoogleDrive(drive.env, {
+      archiveBucket,
+      key: archive.key,
+      mimeType: "application/gzip",
+      accessToken: await drive.accessToken()
+    });
+  } catch (error) {
+    return { ...base, archiveKey: archive.key, archived: rows.length, status: "FAILED", reason: String(error?.code || error?.message || "GOOGLE_DRIVE_UPLOAD_FAILED").split(":")[0] };
+  }
+  if (!upload?.verified) {
+    return { ...base, archiveKey: archive.key, archived: rows.length, driveFileId: upload?.driveFileId || null, status: "FAILED", reason: "GOOGLE_DRIVE_VERIFICATION_FAILED" };
   }
 
-  return { settings, deleted: result, archived };
+  const deleted = await deleteRowidsInChunks(db, table, rowids);
+  return {
+    ...base,
+    archiveKey: archive.key,
+    archived: rows.length,
+    deleted,
+    driveFileId: upload.driveFileId || null,
+    driveDuplicate: Boolean(upload.duplicate),
+    md5Checked: Boolean(upload.md5Checked),
+    status: "ARCHIVED"
+  };
+}
+
+function selectExpiredRowsSql(item) {
+  if (item.keepLatestPerTarget && item.table === "api_observations") {
+    return `SELECT rowid, * FROM api_observations
+      WHERE observed_at < ?
+        AND EXISTS (
+          SELECT 1 FROM api_observations newer
+          WHERE newer.target_type = api_observations.target_type
+            AND newer.target_id = api_observations.target_id
+            AND newer.observed_at > api_observations.observed_at
+        )
+      ORDER BY observed_at ASC, rowid ASC
+      LIMIT ?`;
+  }
+  return `SELECT rowid, * FROM ${item.table}
+    WHERE ${item.column} < ?
+    ORDER BY ${item.column} ASC, rowid ASC
+    LIMIT ?`;
+}
+
+async function runRetentionCleanupInternal(db, { batchSize = 500, maxBatches = 2, archiveBucket = null, googleDriveEnv = null, drive = null } = {}) {
+  // Bound each pass: batch size and number of batches per invocation.
+  const safeBatchSize = Math.min(1000, Math.max(1, Number(batchSize) || 500));
+  let budget = Math.max(1, Math.min(10, Number(maxBatches) || 2));
+  const session = drive || createDriveSession(googleDriveEnv);
+  const settings = await getRetentionSettings(db);
+  const now = Math.floor(Date.now() / 1000);
+  const deleted = {};
+  const archived = {};
+  const batches = [];
+
+  const targets = [
+    ...RETENTION_TABLES.map(item => ({ ...item, days: Number(settings[item.key]) })),
+    ...FIXED_RETENTION_TABLES
+  ];
+  for (const item of targets) {
+    deleted[item.table] = 0;
+    archived[item.table] = 0;
+    if (!item.days || budget <= 0) continue;
+    const cutoff = now - item.days * 86400;
+    const rows = (await db.prepare(selectExpiredRowsSql(item)).bind(cutoff, safeBatchSize).all()).results || [];
+    if (!rows.length) continue;
+    budget--;
+    const result = await archiveBatchThenDelete(db, archiveBucket, session, { table: item.table, rows });
+    deleted[item.table] = result.deleted;
+    archived[item.table] = result.archived;
+    batches.push(result);
+    // Without a verified backup path nothing can be deleted; stop early.
+    if (result.status === "SKIPPED") break;
+  }
+
+  return { settings, deleted, archived, batches };
 }
 
 
 const SYSTEM_LOG_RETENTION_SECONDS = 24 * 60 * 60;
 
-async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000, googleDriveEnv = null) {
+async function archiveExpiredSystemEventLog(db, archiveBucket, batchSize = 1000, googleDriveEnv = null, { maxBatches = 1, drive = null } = {}) {
   if (!db || !archiveBucket) {
-    return { selected: 0, archived: 0, deleted: 0, pending: null, skipped: true };
+    return { selected: 0, archived: 0, deleted: 0, pending: null, skipped: true, reason: "R2_ARCHIVE_NOT_CONFIGURED" };
   }
 
   const cutoff = Math.floor(Date.now() / 1000) - SYSTEM_LOG_RETENTION_SECONDS;
   const safeBatchSize = Math.min(Math.max(Number(batchSize) || 1000, 1), 1000);
-  const rows = (await db.prepare(
-    `SELECT rowid, event_id, trace_id, parent_trace_id, event_type, service, feature,
-      operation, status, actor_type, actor_id, target_type, target_id,
-      http_method, http_path, http_status, started_at, completed_at, elapsed_ms,
-      error_code, message, metadata_json, created_at
-     FROM system_event_log
-     WHERE created_at < ?
-     ORDER BY created_at ASC, rowid ASC
-     LIMIT ?`
-  ).bind(cutoff, safeBatchSize).all()).results || [];
+  const session = drive || createDriveSession(googleDriveEnv);
+  const totals = { selected: 0, archived: 0, deleted: 0, batches: [], cutoff };
 
-  if (!rows.length) {
-    return { selected: 0, archived: 0, deleted: 0, pending: 0, cutoff };
-  }
-
-  // IMPORTANT: never delete before R2 confirms the object write.
-  const archiveResult = await archiveD1RowsToR2(archiveBucket, {
-    table: "system_event_log",
-    rows
-  });
-
-  // R2 remains the primary archive. When Google Drive OAuth is configured,
-  // mirror the exact R2 archive object to Drive before deleting D1 rows.
-  // Drive failure never causes data loss because the R2 copy is already
-  // confirmed; it is surfaced in the retention result/diagnostics instead.
-  let googleDrive = {
-    enabled: false,
-    uploaded: false,
-    verified: false,
-    skipped: true,
-    reason: "GOOGLE_DRIVE_NOT_CONFIGURED"
-  };
-  if (googleDriveEnv && archiveResult?.key) {
-    const driveStatus = await getGoogleDriveConnectionStatus(googleDriveEnv);
-    if (driveStatus.ready) {
-      try {
-        const upload = await uploadR2ObjectToGoogleDrive(googleDriveEnv, {
-          archiveBucket,
-          key: archiveResult.key,
-          mimeType: "application/gzip"
-        });
-        googleDrive = {
-          enabled: true,
-          uploaded: true,
-          verified: Boolean(upload?.verified),
-          duplicate: Boolean(upload?.duplicate),
-          driveFileId: upload?.driveFileId || null,
-          sourceKey: archiveResult.key,
-          sourceSize: Number(upload?.sourceSize || 0),
-          driveSize: Number(upload?.driveSize || 0),
-          skipped: false,
-          reason: null
-        };
-      } catch (error) {
-        googleDrive = {
-          enabled: true,
-          uploaded: false,
-          verified: false,
-          skipped: false,
-          sourceKey: archiveResult.key,
-          errorCode: String(error?.code || error?.message || "GOOGLE_DRIVE_ARCHIVE_FAILED").split(":")[0]
-        };
-      }
-    } else {
-      googleDrive = {
-        enabled: false,
-        uploaded: false,
-        verified: false,
-        skipped: true,
-        reason: "GOOGLE_DRIVE_NOT_READY"
-      };
+  for (let i = 0; i < Math.max(1, Math.min(10, Number(maxBatches) || 1)); i++) {
+    const rows = (await db.prepare(
+      `SELECT rowid, event_id, trace_id, parent_trace_id, event_type, service, feature,
+        operation, status, actor_type, actor_id, target_type, target_id,
+        http_method, http_path, http_status, started_at, completed_at, elapsed_ms,
+        error_code, message, metadata_json, created_at
+       FROM system_event_log
+       WHERE created_at < ?
+       ORDER BY created_at ASC, rowid ASC
+       LIMIT ?`
+    ).bind(cutoff, safeBatchSize).all()).results || [];
+    if (!rows.length) break;
+    const result = await archiveBatchThenDelete(db, archiveBucket, session, { table: "system_event_log", rows });
+    totals.selected += result.selected;
+    totals.archived += result.archived;
+    totals.deleted += result.deleted;
+    totals.batches.push(result);
+    if (result.status !== "ARCHIVED") {
+      totals.skipped = result.status === "SKIPPED";
+      totals.reason = result.reason;
+      break;
     }
   }
 
-  const rowids = rows.map(row => Number(row.rowid)).filter(Number.isFinite);
-  if (rowids.length !== rows.length) {
-    throw new Error("SYSTEM_LOG_ARCHIVE_ROWID_MISSING");
-  }
-
-  const placeholders = rowids.map(() => "?").join(",");
-  const deleted = await db.prepare(
-    `DELETE FROM system_event_log WHERE rowid IN (${placeholders})`
-  ).bind(...rowids).run();
-
+  // Bounded backlog indicator: never count more than 10,000 expired rows.
   const remaining = await db.prepare(
-    "SELECT COUNT(*) AS count FROM system_event_log WHERE created_at < ?"
+    "SELECT COUNT(*) AS count FROM (SELECT 1 FROM system_event_log WHERE created_at < ? LIMIT 10001)"
   ).bind(cutoff).first();
-
-  return {
-    selected: rows.length,
-    archived: Number(archiveResult?.rowCount || rows.length),
-    archiveKey: archiveResult?.key || null,
-    googleDrive,
-    deleted: Number(deleted?.meta?.changes || 0),
-    pending: Number(remaining?.count || 0),
-    cutoff
-  };
+  totals.pending = Number(remaining?.count || 0);
+  totals.pendingCapped = totals.pending > 10000;
+  return totals;
 }
 
 export async function archiveSystemEventLog(db, archiveBucket, options = {}) {
@@ -284,7 +263,8 @@ export async function archiveSystemEventLog(db, archiveBucket, options = {}) {
     db,
     archiveBucket,
     options.batchSize,
-    options.googleDriveEnv || null
+    options.googleDriveEnv || null,
+    { maxBatches: options.maxBatches, drive: options.drive || null }
   ));
 }
 

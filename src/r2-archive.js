@@ -9,7 +9,8 @@ const ARCHIVE_TABLES = new Set([
   "owner_audit_log",
   "api_pool_usage",
   "player_identity_history",
-  "system_event_log"
+  "system_event_log",
+  "diagnostic_events"
 ]);
 
 function archiveKey(table, rows) {
@@ -72,6 +73,7 @@ export async function archiveD1RowsToR2(bucket, { table, rows }) {
   return {
     key,
     rowCount: rows.length,
+    byteLength: Number(body?.byteLength || 0),
     firstRowid: Number(rows[0].rowid),
     lastRowid: Number(rows[rows.length - 1].rowid)
   };

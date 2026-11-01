@@ -29,7 +29,7 @@ import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
 import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, releaseApiLease, setApiPoolMightyMetadata, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
-import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
+import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup, createDriveSession } from "./retention.js";
 import { exportToGoogleSheet } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
@@ -234,70 +234,88 @@ async function runDiagnosticHealthChecks(env) {
   }
 }
 
-async function runDataRetentionJob(env) {
-  if (!env.DB) return;
-  await ensureDiagnosticSchema(env.DB);
+// Runs on every 5-minute Cron tick with a small, bounded amount of work.
+// Rows are deleted from D1 only after the R2 copy and the Google Drive copy
+// are both verified (see retention.js archiveBatchThenDelete).
+async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } = {}) {
+  if (!env?.DB) return;
+  // Diagnostics for "nothing could be deleted" states are written at most once
+  // per hour to avoid adding D1 writes on every tick.
+  const firstTickOfHour = Math.floor(now / 3600) !== Math.floor((now - 300) / 3600);
+  const drive = createDriveSession(env);
 
   try {
     const result = await runRetentionCleanup(env.DB, {
-      batchSize: 1000,
-      archiveBucket: env.ARCHIVE
+      batchSize: 500,
+      maxBatches: 2,
+      archiveBucket: env.ARCHIVE,
+      googleDriveEnv: env,
+      drive
     });
-    await recordDiagnostic(env.DB, {
-      service: "retention",
-      feature: "data_retention",
-      operation: "CLEANUP",
-      status: "SUCCESS",
-      message: "データ保持期間クリーンアップ成功",
-      metadata: {
-        deleted: result.deleted,
-        archived: result.archived
-      }
-    });
-    console.log("data_retention_cleanup_ok", result.deleted);
+    const batches = result.batches || [];
+    const failed = batches.filter(b => b.status === "FAILED");
+    const skipped = batches.filter(b => b.status === "SKIPPED");
+    const archivedBatches = batches.filter(b => b.status === "ARCHIVED");
+    if (failed.length || archivedBatches.length || (skipped.length && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "retention",
+        feature: "data_retention",
+        operation: "CLEANUP",
+        status: failed.length ? "FAILED" : skipped.length ? "WARNING" : "SUCCESS",
+        errorCode: failed[0]?.reason || skipped[0]?.reason || null,
+        message: failed.length
+          ? "保持期間を過ぎたデータの退避に失敗したため、D1からは削除していません。"
+          : skipped.length
+            ? "Google DriveまたはR2の準備ができていないため、D1からは削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、保持期間を過ぎたデータを削除しました。",
+        metadata: { deleted: result.deleted, archived: result.archived, batches }
+      });
+    }
   } catch (error) {
     await recordDiagnostic(env.DB, {
       service: "retention",
       feature: "data_retention",
       operation: "CLEANUP",
       status: "FAILED",
-      errorCode: String(error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
+      errorCode: String(error?.code || error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("data_retention_cleanup_failed", error?.message || error);
   }
 
-  // System Log retention is intentionally independent from the configurable
-  // data-retention tables. A failure in another retention target must not
-  // prevent the 24h System Log archive from running.
+  // System Log retention is independent from the configurable tables so a
+  // failure there never blocks the 24h System Log archive (and vice versa).
   try {
-    const systemLogArchive = await archiveSystemEventLog(
-      env.DB,
-      env.ARCHIVE,
-      { batchSize: 1000, googleDriveEnv: env }
-    );
-    await recordDiagnostic(env.DB, {
-      service: "system_log",
-      feature: "system_log_archive",
-      operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
-      status: systemLogArchive?.skipped || (systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded)
-        ? "WARNING"
-        : "SUCCESS",
-      message: systemLogArchive?.skipped
-        ? "System Log R2アーカイブを実行できませんでした。D1のイベントは削除していません。"
-        : systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded
-          ? "System LogのR2アーカイブは成功しましたが、Google Driveミラーは未完了です。"
-          : "System Logの24時間Retention処理成功",
-      metadata: systemLogArchive
+    const systemLogArchive = await archiveSystemEventLog(env.DB, env.ARCHIVE, {
+      batchSize: 1000,
+      maxBatches: 3,
+      googleDriveEnv: env,
+      drive
     });
-    console.log("system_log_archive_ok", systemLogArchive);
+    const failed = (systemLogArchive?.batches || []).some(b => b.status === "FAILED");
+    const worked = Number(systemLogArchive?.deleted || 0) > 0;
+    if (failed || worked || (systemLogArchive?.skipped && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "system_log",
+        feature: "system_log_archive",
+        operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
+        status: failed ? "FAILED" : systemLogArchive?.skipped ? "WARNING" : "SUCCESS",
+        errorCode: systemLogArchive?.reason || null,
+        message: failed
+          ? "System Logの退避に失敗したため、D1からは削除していません。"
+          : systemLogArchive?.skipped
+            ? "Google DriveまたはR2の準備ができていないため、System LogをD1から削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、24時間を過ぎたSystem Logを削除しました。",
+        metadata: systemLogArchive
+      });
+    }
   } catch (error) {
     await recordDiagnostic(env.DB, {
       service: "system_log",
       feature: "system_log_archive",
       operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
       status: "FAILED",
-      errorCode: String(error?.message || "SYSTEM_LOG_ARCHIVE_FAILED").split(":")[0],
+      errorCode: String(error?.code || error?.message || "SYSTEM_LOG_ARCHIVE_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("system_log_archive_failed", error?.message || error);
@@ -5000,6 +5018,11 @@ export default {
     } catch (error) {
       console.error("kingdom_discord_notifications_failed", error?.message || error);
     }
+    try {
+      await runDataRetentionJob(env);
+    } catch (error) {
+      console.error("data_retention_job_failed", error?.message || error);
+    }
   },
   async queue(batch, env) {
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
@@ -6702,7 +6725,7 @@ async function renderDataRetentionPage(request, env) {
   const field = (name,label,hint) => "<label><span>" + esc(label) + "</span><select name='" + name + "'>" + options(s[name]) + "</select><small>" + esc(hint) + "</small></label>";
   const updated = s.updated_at ? formatUnix(s.updated_at) : "-";
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ保存期間</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{display:inline-block;margin-top:8px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:760px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px}.card{padding:18px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}label{display:block;margin-top:14px}label span{display:block;font-weight:800;font-size:14px}select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}small{display:block;margin-top:5px;color:#94a3b8;line-height:1.5}button{margin-top:18px;padding:13px 17px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;width:100%}.danger{border-color:#7f1d1d}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><h1 class='title'>データ保存期間</h1><div class='card'><b>自動クリーンアップ</b><div class='hint'>毎時の定期処理で古い履歴を少しずつ削除します。現在値・最新状態は維持します。「永久保存」を選ぶと、そのデータ種別は自動削除しません。</div><div class='mono' style='margin-top:10px'>最終設定更新: " + esc(updated) + "</div></div><form method='post' action='/api/admin/data-retention'><div class='card'>" +
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ保存期間</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{display:inline-block;margin-top:8px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:760px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px}.card{padding:18px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}label{display:block;margin-top:14px}label span{display:block;font-weight:800;font-size:14px}select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}small{display:block;margin-top:5px;color:#94a3b8;line-height:1.5}button{margin-top:18px;padding:13px 17px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;width:100%}.danger{border-color:#7f1d1d}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><h1 class='title'>データ保存期間</h1><div class='card'><b>自動クリーンアップ</b><div class='hint'>5分ごとの定期処理で、保持期間を過ぎた履歴をR2とGoogle Driveに保存し、両方への保存を確認できたものだけをD1から削除します（Google Driveが未接続の間は削除しません）。現在値・最新状態は維持します。「永久保存」を選ぶと、そのデータ種別は自動削除しません。</div><div class='mono' style='margin-top:10px'>最終設定更新: " + esc(updated) + "</div></div><form method='post' action='/api/admin/data-retention'><div class='card'>" +
     field("api_observations_days","API観測データ","MightPulseの生レスポンス。容量が最も増えやすいデータです。最新の対象データは保持します。") +
     field("player_snapshots_days","プレイヤースナップショット","プレイヤー状態の時系列履歴。") +
     field("ranking_snapshots_days","ランキングスナップショット","王国ランキングの順位・スコア履歴。") +
