@@ -50,6 +50,7 @@ import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
 import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
+import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
 import { isSessionRevoked, revokeSessions } from "./session-revocation.js";
 import { runPlayerRoller } from "./player-roller.js";
@@ -4939,6 +4940,7 @@ export default {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());
+      if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage());
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
@@ -5211,12 +5213,13 @@ const EAGLEEYE_THEME_CSS = `
 :root{color-scheme:dark}
 ${EAGLEEYE_THEME_BASE_CSS}
 ${EAGLEEYE_LIGHT_TOKENS_CSS}
+${eagleEyeThemesCss()}
 
 /* Canonical dark-theme controls and navigation surfaces. Keep page layouts local. */
-html:not([data-eagle-theme="light"]) .ee-global-nav{background:rgba(10,20,36,.97)!important;border-color:var(--ee-border-soft,#1d344d)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav{background:var(--ee-bg,#0a1424)!important;border-color:var(--ee-border-soft,#1d344d)!important}
 html:not([data-eagle-theme="light"]) .ee-global-nav-drawer{background:rgba(3,12,23,.66)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,#10243a,#0a1728)!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:linear-gradient(180deg,#10243a,#10243a)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,var(--ee-panel-raised,#10243a),var(--ee-bg,#0a1728))!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
+html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:var(--ee-panel-raised,#10243a)!important}
 html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
 html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
 html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
@@ -5547,6 +5550,8 @@ function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
   // One palette for every page: legacy navy/grey colours become shared theme tokens.
   html = normalizeLegacyPalette(html);
+  // Apply the saved colour theme ("着せ替え") before the first paint.
+  if (!html.includes('id="eagleeye-skin-boot"')) html = html.includes("<head>") ? html.replace("<head>", "<head>" + EAGLEEYE_SKIN_BOOT_SCRIPT) : html.replace("</head>", EAGLEEYE_SKIN_BOOT_SCRIPT + "</head>");
   if (!html.includes('id="eagleeye-theme"')) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
   // Apply the shared navigation size contract after page-specific styles so
   // responsive page CSS cannot unexpectedly shrink navigation labels/icons.

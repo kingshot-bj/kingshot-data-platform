@@ -4,11 +4,11 @@ import { readFile, readdir } from "node:fs/promises";
 import { normalizeLegacyPalette, EAGLEEYE_LIGHT_TOKENS_CSS } from "../src/eagleeye-ui.js";
 
 test("legacy colours become shared tokens by role; accents, gradients and text are untouched", () => {
-  const out = normalizeLegacyPalette('<style>.a{background:#0f172a;border:1px solid #334155;color:#F8FAFC}.b{color:#22d3ee}.g{background:linear-gradient(135deg,#132a44,#0d1b2d)}.btn{background:#f59e0b;color:#0f172a}</style><p>#0f172a</p>');
+  const out = normalizeLegacyPalette('<style>.a{background:#0f172a;border:1px solid #334155;color:#F8FAFC}.b{color:#f6c84b}.g{background:linear-gradient(135deg,#132a44,#0d1b2d)}.btn{background:#f59e0b;color:#0f172a}</style><p>#0f172a</p>');
   assert.ok(out.includes("background:var(--ee-bg,#0f172a)"));
   assert.ok(out.includes("border:1px solid var(--ee-border,#334155)"));
   assert.ok(out.includes("color:var(--ee-text,#F8FAFC)"));
-  assert.ok(out.includes(".b{color:#22d3ee}"), "accent unchanged");
+  assert.ok(out.includes(".b{color:#f6c84b}"), "accents other than the theme cyan stay unchanged");
   assert.ok(out.includes("linear-gradient(135deg,#132a44,#0d1b2d)"), "gradient stops unchanged");
   assert.ok(out.includes(".btn{background:#f59e0b;color:#0f172a}"), "dark text on an accent button stays dark");
   assert.ok(out.includes("<p>#0f172a</p>"), "plain text unchanged");
