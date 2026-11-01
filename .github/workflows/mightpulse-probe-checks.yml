@@ -60,5 +60,7 @@ jobs:
         run: node --test tests/legal-pages.test.mjs
       - name: Run kingdom ranking archive tests
         run: node --test tests/kingdom-ranking-archive.test.mjs
+      - name: Run public endpoint safety tests
+        run: node --test tests/public-endpoint-safety.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs

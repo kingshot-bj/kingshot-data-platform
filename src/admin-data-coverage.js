@@ -49,6 +49,7 @@ export async function renderAdminDataCoveragePage(env, auth) {
 <div class="metric"><div class="metric-label">EagleEye登録アカウント</div><div class="metric-value">${formatCount(totalAccounts)}人</div><div class="metric-note">Discord認証で作成されたEagleEyeユーザーアカウント数。</div></div>
 <button class="metric role-card" type="button" data-role="OWNER" aria-pressed="false"><div class="metric-label">OWNER</div><div class="metric-value">${formatCount(accountByRole.get("OWNER") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
 <button class="metric role-card" type="button" data-role="ADMIN" aria-pressed="false"><div class="metric-label">ADMIN</div><div class="metric-value">${formatCount(accountByRole.get("ADMIN") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
+<button class="metric role-card" type="button" data-role="VIP" aria-pressed="false"><div class="metric-label">VIP</div><div class="metric-value">${formatCount(accountByRole.get("VIP") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
 <button class="metric role-card" type="button" data-role="ADVANCED" aria-pressed="false"><div class="metric-label">ADVANCED</div><div class="metric-value">${formatCount(accountByRole.get("ADVANCED") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
 <button class="metric role-card" type="button" data-role="BASIC" aria-pressed="false"><div class="metric-label">BASIC</div><div class="metric-value">${formatCount(accountByRole.get("BASIC") || 0)}人</div><div class="role-hint">ユーザー一覧を見る →</div></button>
 </div></div>

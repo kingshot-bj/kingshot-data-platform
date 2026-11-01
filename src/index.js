@@ -4946,7 +4946,7 @@ export default {
         if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
         const params = url.searchParams;
         const role = String(params.get("role") || "").toUpperCase();
-        if (!["OWNER", "ADMIN", "ADVANCED", "BASIC"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
+        if (!["OWNER", "ADMIN", "VIP", "ADVANCED", "BASIC"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
         const q = String(params.get("q") || "").trim().slice(0, 100);
         const like = "%" + q + "%";
         const limit = Math.min(Math.max(Number(params.get("limit") || 100), 1), 100);
@@ -4972,7 +4972,7 @@ export default {
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
-      if (url.pathname === "/alliance") return eagleEyeHtmlResponse(await renderAlliancePage(request, env));
+      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAlliancePage(request, env, auth)); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
       if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));

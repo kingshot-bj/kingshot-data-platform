@@ -37,15 +37,27 @@ function json(data, status = 200) {
   });
 }
 
+export function isSameOriginRequest(request) {
+  const host = new URL(request.url).host;
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+  if (fetchSite && !["same-origin", "none"].includes(fetchSite)) return false;
+  for (const header of ["Origin", "Referer"]) {
+    const value = request.headers.get(header);
+    if (!value) continue;
+    try { return new URL(value).host === host; } catch { return false; }
+  }
+  return false;
+}
+
 export async function handleClientTelemetry(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   if (!env?.DB) return json({ ok: false, error: "D1_UNAVAILABLE" }, 503);
-  const origin = request.headers.get("Origin");
-  if (origin) {
-    try {
-      if (new URL(origin).host !== new URL(request.url).host) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
-    } catch { return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); }
-  }
+  // Browsers send Origin on same-origin POST (fetch and sendBeacon). Requests
+  // without a same-origin Origin/Referer are not from EagleEye pages and are
+  // rejected so anonymous scripts cannot inflate D1 writes.
+  if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 64 * 1024) return json({ ok: false, error: "PAYLOAD_TOO_LARGE" }, 413);
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
   const incoming = Array.isArray(body?.events) ? body.events.slice(0, MAX_BATCH) : [];

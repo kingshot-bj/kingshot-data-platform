@@ -15,7 +15,21 @@ const BOARD_ORDER = [
 const BOARDS = BOARD_ORDER.map(board => [board, RANKING_BOARD_LABELS[board] || board]);
 
 function esc(v) {
-  return String(v ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+  // Attributes in this file use single quotes, so ' must be escaped too.
+  return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+// One on-demand MightPulse refresh per alliance per 10 minutes, shared by all
+// viewers and independent of whether the alliance is in alliance_catalog.
+const ALLIANCE_REFRESH_INTERVAL_SECONDS = 600;
+async function claimAllianceRefresh(db, kid, tag, now) {
+  const result = await db.prepare(
+    `INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at
+     WHERE api_request_locks.lock_until <= ?`
+  ).bind("ALLIANCE_REFRESH:" + Number(kid) + ":" + String(tag).slice(0, 64), crypto.randomUUID(), now + ALLIANCE_REFRESH_INTERVAL_SECONDS, now, now).run();
+  return Number(result?.meta?.changes || 0) === 1;
 }
 function num(v) {
   const n = Number(v);
@@ -153,7 +167,7 @@ export async function renderAllianceListPage(request, env) {
   return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><div class='list'>"+(body||"<div class='empty'>同盟ランキングデータがありません。</div>")+"</div></main>");
 }
 
-export async function renderAlliancePage(request, env) {
+export async function renderAlliancePage(request, env, auth = null) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const tag = String(url.searchParams.get("tag") || "").trim();
@@ -182,9 +196,12 @@ export async function renderAlliancePage(request, env) {
   let members = getMembers(payload);
   const now = Math.floor(Date.now()/1000);
   const lastAttempt = Number(row.updated_at || row.last_seen_at || 0);
-  const canFetch = Boolean(env.ARCHIVE) && now-lastAttempt>=600;
-  const shouldFetch = canFetch && (members.length===0 || requestedRefresh);
-  let statusMessage = requestedRefresh && !canFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
+  // Only signed-in users can trigger an upstream fetch; anonymous visitors see stored data.
+  const signedIn = Boolean(auth && auth.status === "ACTIVE");
+  const wantsFetch = Boolean(env.ARCHIVE) && signedIn && (members.length===0 || requestedRefresh) && now-lastAttempt>=ALLIANCE_REFRESH_INTERVAL_SECONDS;
+  const shouldFetch = wantsFetch && await claimAllianceRefresh(env.DB, kid, row.aid || row.abbr || tag, now).catch(() => false);
+  let statusMessage = requestedRefresh && !signedIn ? "最新情報の取得にはログインが必要です。"
+    : requestedRefresh && !shouldFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
   if (shouldFetch) {
     try {
       const collected = await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
@@ -479,17 +496,7 @@ export async function handleKingdomPortalApi(request, env) {
     "SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank,observed_at,source_observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
   ).bind(kid, board).all(), { filter: r => r.board === board, limit: 100 });
 
-  await recordSystemEvent(env.DB, {
-    traceId: systemTraceId("kingdom-portal"),
-    eventType: "COMPLETE",
-    service: "kingdom_portal",
-    feature: "ranking_explorer",
-    operation: "READ_CURRENT_RANKING",
-    status: "SUCCESS",
-    targetType: "KINGDOM",
-    targetId: String(kid),
-    metadata: { board, rowCount: rows.results?.length || 0 }
-  }).catch(() => {});
+  // Read-only and public: do not write a system-log row per request.
 
   return Response.json({
     ok: true,
