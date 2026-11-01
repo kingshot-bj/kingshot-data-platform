@@ -619,7 +619,7 @@ function normalizeMightPulseTimestamp(value) {
   }
   const text = String(value).trim();
   if (!text) return null;
-  if (/^\\d+(?:\\.\\d+)?$/.test(text)) {
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
     const n = Number(text);
     return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
   }
@@ -627,8 +627,20 @@ function normalizeMightPulseTimestamp(value) {
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
 }
 
+// MightPulse reports when it observed the data in different places depending on
+// the endpoint: cached_at (players), board.captured_at / boards[].captured_at (ranks).
 function getMightPulseSourceTimestamp(data) {
-  return normalizeMightPulseTimestamp(data?.cached_at);
+  if (!data || typeof data !== "object") return null;
+  const candidates = [
+    data.cached_at, data.captured_at, data.board?.captured_at,
+    ...(Array.isArray(data.boards) ? data.boards.map(board => board?.captured_at) : []),
+    data.data?.cached_at, data.data?.captured_at, data.data?.board?.captured_at
+  ];
+  for (const value of candidates) {
+    const ts = normalizeMightPulseTimestamp(value);
+    if (ts) return ts;
+  }
+  return null;
 }
 
 async function ensureKingdomWatchlistFreshnessSchema(db) {
