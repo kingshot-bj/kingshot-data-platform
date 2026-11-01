@@ -74,10 +74,9 @@ h1{margin:4px 0 6px;font-size:26px}.muted{color:var(--ee-subtext);font-size:13px
 </style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">着せ替え</div><h1>着せ替え</h1>
 <p class="muted">好きな色を選ぶと、すべてのページの色が切り替わります。選んだテーマはこの端末に保存されます。</p>
 <div class="grid">${EAGLEEYE_THEMES.map(swatch).join("")}</div>
-<div class="note">着せ替えはダークモードで使えます。画面右下の 🌙 / ☀️ でライトモードにしている場合は、ライトの色が優先されます。</div>
 </main><script>(function(){var ids=${JSON.stringify(EAGLEEYE_THEMES.map(t => t.id))};function current(){try{var s=localStorage.getItem("eagleeye-skin");return ids.indexOf(s)>=0?s:"navy"}catch(e){return "navy"}}
 function paint(){var c=current();document.querySelectorAll(".skin").forEach(function(b){b.classList.toggle("on",b.getAttribute("data-skin")===c)})}
 document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
 if(id==="navy")document.documentElement.removeAttribute("data-ee-skin");else document.documentElement.setAttribute("data-ee-skin",id);
-try{if(document.documentElement.getAttribute("data-eagle-theme")==="light"){document.documentElement.setAttribute("data-eagle-theme","dark");localStorage.setItem("eagleeye-theme","dark")}}catch(e){}paint()})});paint()})();</script></body></html>`;
+paint()})});paint()})();</script></body></html>`;
 }

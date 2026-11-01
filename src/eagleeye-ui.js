@@ -144,8 +144,8 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
   }
   if (auth && auth.role === "OWNER") {
     privileged.push(compact
-      ? '<a href="/owner" data-other-key="owner">Owner Control</a>'
-      : '<a href="/owner" data-other-key="owner"><img src="' + EAGLEEYE_BJNYAN.dashboard + '" alt=""><span>Owner Control</span></a>');
+      ? '<a href="/owner" data-other-key="owner">オーナー管理</a>'
+      : '<a href="/owner" data-other-key="owner"><img src="' + EAGLEEYE_BJNYAN.dashboard + '" alt=""><span>オーナー管理</span></a>');
   }
   if (includeAccount && auth) {
     privileged.push(compact
@@ -261,7 +261,7 @@ export const EAGLEEYE_DRAWER_INIT = `
         addLink("/admin/diagnostics","診断","diagnostics");
         addLink("/admin","管理","admin");
       }
-      if(state.role==="OWNER")addLink("/owner","Owner Control","owner");
+      if(state.role==="OWNER")addLink("/owner","オーナー管理","owner");
       addLink("/api/auth/logout","ログアウト","logout");
     }).catch(function(){});
   }
