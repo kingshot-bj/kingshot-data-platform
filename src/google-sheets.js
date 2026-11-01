@@ -1,4 +1,5 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
+import { getGoogleDriveAccessToken } from "./google-drive.js";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -78,8 +79,28 @@ async function getGoogleSheetsAccessToken(env) {
   return data.access_token;
 }
 
-async function googleSheetsRequest(env, path, options = {}) {
-  const token = await getGoogleSheetsAccessToken(env);
+function hasServiceAccount(env) {
+  return Boolean(String(env?.GOOGLE_SERVICE_ACCOUNT_EMAIL || "").trim() && String(env?.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "").trim());
+}
+
+function hasDriveOAuth(env) {
+  return Boolean(env?.GOOGLE_OAUTH_CLIENT_ID && env?.GOOGLE_OAUTH_CLIENT_SECRET && env?.GOOGLE_DRIVE_OAUTH_REDIRECT_URI && env?.GOOGLE_DRIVE_REFRESH_TOKEN);
+}
+
+// Which transport the export will use (for the status page).
+export function googleSheetsTransport(env) {
+  if (env?.GOOGLE_SHEETS_WEBAPP_URL && env?.GOOGLE_SHEETS_WEBAPP_SECRET && env?.GOOGLE_SHEETS_SPREADSHEET_ID) return "apps-script-webapp";
+  if (hasServiceAccount(env) && env?.GOOGLE_SHEETS_SPREADSHEET_ID) return "service-account";
+  // The Google Drive connection (drive.file) may create and edit its own spreadsheet.
+  if (hasDriveOAuth(env)) return "drive-oauth";
+  return null;
+}
+
+async function getSheetsToken(env, transport) {
+  return transport === "service-account" ? getGoogleSheetsAccessToken(env) : getGoogleDriveAccessToken(env);
+}
+
+async function googleSheetsRequest(token, path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("authorization", "Bearer " + token);
   if (options.body !== undefined) headers.set("content-type", "application/json");
@@ -94,9 +115,9 @@ async function googleSheetsRequest(env, path, options = {}) {
   return data;
 }
 
-async function ensureGoogleSheetTab(env, spreadsheetId, title) {
+async function ensureGoogleSheetTab(token, spreadsheetId, title) {
   const metadata = await googleSheetsRequest(
-    env,
+    token,
     "/" + encodeURIComponent(spreadsheetId) + "?fields=sheets(properties(sheetId,title))",
     { method: "GET" }
   );
@@ -104,6 +125,7 @@ async function ensureGoogleSheetTab(env, spreadsheetId, title) {
   if (existing) return { sheetId: existing.properties.sheetId, created: false };
 
   const result = await googleSheetsRequest(
+    token,
     "/" + encodeURIComponent(spreadsheetId) + ":batchUpdate",
     {
       method: "POST",
@@ -180,14 +202,15 @@ async function appendViaGoogleAppsScript(env, { sheetTitle, headers, rows }) {
   };
 }
 
-async function appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, rows) {
-  const tab = await ensureGoogleSheetTab(env, spreadsheetId, sheetTitle);
+async function appendGoogleSheetValues(token, spreadsheetId, sheetTitle, headers, rows) {
+  const tab = await ensureGoogleSheetTab(token, spreadsheetId, sheetTitle);
   const safeRows = Array.isArray(rows) ? rows : [];
   const headerRange = encodeURIComponent(sheetTitle + "!1:1");
 
   let headerValues = [];
   if (!tab.created) {
     const current = await googleSheetsRequest(
+      token,
       "/" + encodeURIComponent(spreadsheetId) + "/values/" + headerRange,
       { method: "GET" }
     );
@@ -202,6 +225,7 @@ async function appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, 
 
   const range = encodeURIComponent(sheetTitle + "!A1");
   const result = await googleSheetsRequest(
+    token,
     "/" + encodeURIComponent(spreadsheetId) + "/values/" + range + ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",
     {
       method: "POST",
@@ -219,24 +243,47 @@ async function appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, 
   };
 }
 
+const EXPORT_SPREADSHEET_CONFIG_KEY = "config/google-sheets-export.json";
+
+// Spreadsheet to write to: the configured one, else the one EagleEye created
+// earlier (remembered in R2), else a new "EagleEye Export" spreadsheet.
+async function resolveExportSpreadsheetId(env, token) {
+  const configured = String(env.GOOGLE_SHEETS_SPREADSHEET_ID || "").trim();
+  if (configured) return { spreadsheetId: configured, created: false };
+  try {
+    const saved = env.ARCHIVE ? await env.ARCHIVE.get(EXPORT_SPREADSHEET_CONFIG_KEY) : null;
+    const id = saved ? JSON.parse(await new Response(saved.body).text())?.spreadsheetId : null;
+    if (id) return { spreadsheetId: String(id), created: false };
+  } catch {}
+  const created = await googleSheetsRequest(token, "", { method: "POST", body: JSON.stringify({ properties: { title: "EagleEye Export" } }) });
+  if (!created?.spreadsheetId) {
+    const error = new Error("GOOGLE_SHEETS_CREATE_FAILED");
+    error.code = "GOOGLE_SHEETS_CREATE_FAILED";
+    throw error;
+  }
+  if (env.ARCHIVE) {
+    await env.ARCHIVE.put(EXPORT_SPREADSHEET_CONFIG_KEY, JSON.stringify({ spreadsheetId: created.spreadsheetId, createdAt: Math.floor(Date.now() / 1000) }), { httpMetadata: { contentType: "application/json" } });
+  }
+  return { spreadsheetId: created.spreadsheetId, created: true };
+}
+
 async function exportToGoogleSheetInternal(env, { sheetTitle, headers, rows }) {
-  const spreadsheetId = String(env.GOOGLE_SHEETS_SPREADSHEET_ID || "").trim();
-  if (!spreadsheetId) {
+  const transport = googleSheetsTransport(env);
+  if (!transport) {
     const error = new Error("GOOGLE_SHEETS_NOT_CONFIGURED");
     error.code = "GOOGLE_SHEETS_NOT_CONFIGURED";
     throw error;
   }
+  if (transport === "apps-script-webapp") return appendViaGoogleAppsScript(env, { sheetTitle, headers, rows });
 
-  if (env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET) {
-    return appendViaGoogleAppsScript(env, { sheetTitle, headers, rows });
-  }
-
-  const result = await appendGoogleSheetValues(env, spreadsheetId, sheetTitle, headers, rows);
+  const token = await getSheetsToken(env, transport);
+  const { spreadsheetId } = await resolveExportSpreadsheetId(env, token);
+  const result = await appendGoogleSheetValues(token, spreadsheetId, sheetTitle, headers, rows);
   return {
     ...result,
     spreadsheetId,
     url: "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(spreadsheetId) + "/edit",
-    transport: "google-sheets-api"
+    transport
   };
 }
 
