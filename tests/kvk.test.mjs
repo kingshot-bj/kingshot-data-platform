@@ -257,3 +257,30 @@ test("KvK page follows a transferred governor and says so", async () => {
   assert.ok(html.includes("移民を検知しました：登録時 王国1524 → 現在 王国1523"));
   assert.ok(html.includes('<a href="/kvk?kid=1523" class=\'on\'>王国 1523</a>'), "current kingdom is the default");
 });
+
+test("Mystic Trial comparison removes board offsets and counts boards ahead", async () => {
+  const { summarizeMysticBoards } = await import("../src/kvk.js");
+  const rows = [];
+  for (let rank = 1; rank <= 60; rank++) rows.push({ board: "coliseum", rank, score: 10000 + 600 - rank, target_type: "PLAYER" });
+  const s = summarizeMysticBoards(rows);
+  assert.equal(s.coliseum.best, 599);
+  assert.equal(s.coliseum.top10, 594.5);
+  assert.equal(s.coliseum.count, 50, "top 50 only");
+
+  const { db, env } = setup();
+  db.sqlite.exec("CREATE TABLE kingdom_ranking_current (kid INTEGER, board TEXT, rank INTEGER, score INTEGER, target_type TEXT, updated_at INTEGER)");
+  const put = db.sqlite.prepare("INSERT INTO kingdom_ranking_current VALUES (?, ?, ?, ?, 'PLAYER', ?)");
+  for (let rank = 1; rank <= 20; rank++) {
+    put.run(1524, "coliseum", rank, 10500 - rank, NOW);      // 1524 ahead
+    put.run(1523, "coliseum", rank, 10400 - rank, NOW);
+    put.run(1524, "molten_fort", rank, 50100 - rank, NOW);   // 1524 behind
+    put.run(1523, "molten_fort", rank, 50300 - rank, NOW);
+  }
+  const mp = fakeMightPulse({ "/kvk/matchups": matchups(), "/kingdoms/1524/kvk/scores": scores(1524, 1523), "/kingdoms/1523/kvk/scores": scores(1523, 1524) });
+  await runKvkCollection(env, { now: NOW, collect: mp.collect });
+  const html = await renderKvkPage(new Request("https://e.test/kvk"), env, { status: "ACTIVE", role: "ADVANCED", user_id: "u1" }, { collect: mp.collect, now: NOW + 60 });
+  assert.ok(html.includes("秘境の試練の比較"));
+  assert.ok(html.includes("2項目中 <b>1項目で優勢</b>・1項目で劣勢"));
+  assert.ok(html.includes("闘技場") && html.includes("溶岩要塞"));
+  assert.ok(html.includes("494.5") && !html.includes("10,494.5"), "offset removed (top-10 average 494.5)");
+});
