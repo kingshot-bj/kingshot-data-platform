@@ -84,5 +84,9 @@ jobs:
         run: node --test tests/diagnostic-health-checks.test.mjs
       - name: MightPulse source time tests
         run: node --test tests/mightpulse-source-time.test.mjs
+      - name: UI consistency tests
+        run: node --test tests/ui-consistency.test.mjs
+      - name: All tests (catches test files not listed above)
+        run: node --test tests/*.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
