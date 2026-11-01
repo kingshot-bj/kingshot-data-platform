@@ -53,7 +53,7 @@ import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
-import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
+import { registerUserMightPulseApiKey, normalizeMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
 import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
 import { handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
@@ -1598,7 +1598,7 @@ async function handleMyAdvancedApi(request, env) {
 
     if (request.method === "POST") {
       const body = await request.json().catch(() => null);
-      const apiKey = String(body?.api_key || "").trim();
+      const apiKey = normalizeMightPulseApiKey(body?.api_key);
       if (!apiKey) return json({ ok: false, error: "MIGHTPULSE_API_KEY_REQUIRED", message: "MightPulse APIキーを入力してください。" }, 400);
 
       await registerUserMightPulseApiKey(env.DB, {
@@ -1652,8 +1652,12 @@ async function handleMyAdvancedApi(request, env) {
       "MIGHTPULSE_PLAYER_MISMATCH",
       "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION",
       "MIGHTPULSE_API_KEY_ALREADY_REGISTERED",
-      "MIGHTPULSE_API_KEY_LIMIT_REACHED"
-    ].includes(code) ? 400 : 500;
+      "MIGHTPULSE_API_KEY_LIMIT_REACHED",
+      "MIGHTPULSE_API_KEY_VALIDATION_FAILED"
+    ].includes(code) ? 400
+      : code === "MIGHTPULSE_API_KEY_RATE_LIMITED" ? 429
+      : code === "MIGHTPULSE_API_TEMPORARY_ERROR" ? 503
+      : 500;
     return json({ ok: false, error: code, message: userMessage }, status);
   }
 }
@@ -1955,6 +1959,18 @@ body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,r
 .vip-card{border-color:rgba(246,200,75,.35);background:linear-gradient(145deg,rgba(37,34,27,.65),rgba(9,20,32,.98))}
 .vip-card h2{color:var(--ee-gold)!important}
 #msg,#key-msg,#mighty-msg{font-size:12px;line-height:1.7}
+.key-guide{margin:4px 0 14px;padding:12px;border:1px solid rgba(32,215,242,.28);border-radius:12px;background:rgba(32,215,242,.06)}
+.key-guide-title{display:block;font-size:13px;margin-bottom:6px;color:var(--ee-cyan)}
+.key-guide-steps{margin:0 0 8px;padding-left:20px;font-size:12px;line-height:1.8;color:#d7e7f5}
+.key-guide-steps code{padding:1px 5px;border-radius:5px;background:#0b192b;color:var(--ee-gold)}
+.key-guide-note{font-size:11px;line-height:1.7;color:#f9d66d;margin-bottom:10px}
+.key-guide-open{display:flex;text-align:center;text-decoration:none;margin-top:4px}
+.btn.ghost{background:#132a40;color:var(--ee-text);border-color:var(--ee-line)}
+.key-input-row{display:flex;gap:8px;align-items:stretch}
+.key-input-row .input{flex:1;min-width:0}
+.key-input-row .btn{flex:0 0 auto;width:auto;margin:0;padding-left:14px;padding-right:14px}
+.key-format{min-height:18px;margin:6px 0 4px;font-size:11px}
+.key-format.warn{color:#f9d66d}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px}
 /* Compact mobile-first sizing aligned with the home dashboard */
 .wrap{width:min(100%,720px);padding:14px 12px calc(34px + env(safe-area-inset-bottom))}
@@ -2124,7 +2140,16 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      '<details class="key-register-details"><summary>＋ MightPulse APIキーをPoolへ提供</summary><div class="key-register-body"><label class="label" for="mpkey">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div><div id="key-msg"></div></div></details></div></section>';
+      '<details class="key-register-details"'+(a.hasMightPulseKey?'':' open')+'><summary>＋ MightPulse APIキーをPoolへ提供</summary><div class="key-register-body">'+
+      '<div class="key-guide"><strong class="key-guide-title">APIキーの作り方（無料・約1分）</strong><ol class="key-guide-steps">'+
+      '<li>下の「MightPulseを開く」をタップ（英語のサイトが開きます）</li>'+
+      '<li><b>Continue with Discord</b>（Discordで続ける）をタップし、Discordの画面で<b>認証</b></li>'+
+      '<li><b>Create API key</b>（APIキーを作成）をタップ</li>'+
+      '<li>表示された <code>kss_</code> で始まるキーをコピーして、EagleEyeに戻る</li>'+
+      '<li>下の「貼り付け」→「APIキーをPoolへ提供する」</li></ol>'+
+      '<div class="key-guide-note">⚠ キーは作成時に<b>1回だけ</b>表示されます。閉じてしまった場合は、もう一度 Create API key で作り直せば大丈夫です（料金はかかりません）。</div>'+
+      '<a class="btn key-guide-open" id="open-mightpulse" href="https://api.mightpulse.com/" target="_blank" rel="noopener noreferrer">MightPulseを開く ↗</a></div>'+
+      '<label class="label" for="mpkey">MightPulse APIキー</label><div class="key-input-row"><input id="mpkey" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="kss_ で始まるキーを貼り付け"><button type="button" class="btn ghost" id="paste-key">貼り付け</button></div><div id="key-format" class="muted key-format"></div><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div><div id="key-msg"></div></div></details></div></section>';
     const v=d.vip||{};
     const mightyConnected=Boolean(v.hasMightyKey);
     const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
@@ -2139,6 +2164,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor,b));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
+    setupKeyGuide();
     const mightyButton=document.getElementById("mighty-check");
     if(mightyButton) mightyButton.onclick=checkMighty;
   }
@@ -2183,10 +2209,51 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       else {msg.className="warn";msg.textContent=d.message||"一時的に判定できませんでした。時間を置いて再確認してください。";button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
   }
+  function normalizeKeyInput(value){return String(value||"").replace(/^\\s*bearer\\s+/i,"").replace(/\\s+/g,"");}
+  function updateKeyFormat(){
+    const input=document.getElementById("mpkey"), out=document.getElementById("key-format");
+    if(!input||!out)return;
+    const key=normalizeKeyInput(input.value);
+    if(!key){out.className="muted key-format";out.textContent="";return;}
+    if(/^kss_[A-Za-z0-9_-]{8,}$/.test(key)){out.className="ok key-format";out.textContent="✓ MightPulse APIキーの形式です";}
+    else{out.className="warn key-format";out.textContent="kss_ で始まるキーではないようです。コピーした内容を確認してください。";}
+  }
+  function setupKeyGuide(){
+    const input=document.getElementById("mpkey"), paste=document.getElementById("paste-key"), open=document.getElementById("open-mightpulse"), msg=document.getElementById("key-msg");
+    if(!input)return;
+    input.addEventListener("input",updateKeyFormat);
+    if(paste)paste.onclick=async()=>{
+      try{
+        if(!navigator.clipboard||!navigator.clipboard.readText)throw new Error("clipboard unavailable");
+        const text=normalizeKeyInput(await navigator.clipboard.readText());
+        if(!text)throw new Error("empty");
+        input.value=text;updateKeyFormat();
+        if(msg){msg.className="muted";msg.textContent="貼り付けました。内容を確認して「APIキーをPoolへ提供する」をタップしてください。";}
+      }catch(e){
+        input.focus();
+        if(msg){msg.className="muted";msg.textContent="自動で貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。";}
+      }
+    };
+    if(open)open.addEventListener("click",()=>{try{sessionStorage.setItem("ee-mp-key-guide","1")}catch{}});
+    if(!window.__eeKeyGuideReturn){
+      window.__eeKeyGuideReturn=true;
+      document.addEventListener("visibilitychange",()=>{
+        if(document.visibilityState!=="visible")return;
+        let pending=false;try{pending=sessionStorage.getItem("ee-mp-key-guide")==="1";sessionStorage.removeItem("ee-mp-key-guide")}catch{}
+        const box=document.getElementById("mpkey");
+        if(!pending||!box||box.value)return;
+        const details=box.closest("details");if(details)details.open=true;
+        box.scrollIntoView({block:"center",behavior:"smooth"});
+        const note=document.getElementById("key-msg");
+        if(note){note.className="ok";note.textContent="おかえりなさい。コピーしたキーを「貼り付け」で入力してください。";}
+      });
+    }
+  }
   async function registerKey(){
     const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
-    const key=String(input?.value||"").trim();
+    const key=normalizeKeyInput(input?.value);
     if(!key){msg.className="error";msg.textContent="MightPulse APIキーを入力してください。";return;}
+    if(!/^kss_/.test(key)&&!confirm("kss_ で始まらないキーです。このまま確認を続けますか？")) return;
     if(!confirm("このAPIキーをEagleEyeのMightPulse API Poolへ提供しますか？")) return;
     button.disabled=true; msg.className="muted"; msg.textContent="登録しています…";
     try{

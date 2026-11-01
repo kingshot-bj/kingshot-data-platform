@@ -6,6 +6,12 @@ const ADVANCED_ROLE = "ADVANCED";
 const VIP_ROLE = "VIP";
 export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = Number.POSITIVE_INFINITY;
 
+// Accepts what users typically paste from the MightPulse portal: surrounding
+// whitespace, line breaks, or an "Authorization: Bearer" style prefix.
+export function normalizeMightPulseApiKey(value) {
+  return String(value ?? "").replace(/^\s*(authorization:\s*)?bearer\s+/i, "").replace(/\s+/g, "");
+}
+
 async function registerUserMightPulseApiKeyInternal(db, {
   env,
   userId,
@@ -25,7 +31,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
     throw error;
   }
 
-  const key = String(apiKey || "").trim();
+  const key = normalizeMightPulseApiKey(apiKey);
   if (!key) {
     const error = new Error("MIGHTPULSE_API_KEY_REQUIRED");
     error.code = "MIGHTPULSE_API_KEY_REQUIRED";
@@ -59,7 +65,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
       "MIGHTPULSE_API_KEY_VALIDATION_FAILED";
     wrapped.userMessage =
       wrapped.code === "MIGHTPULSE_API_KEY_INVALID"
-        ? "MightPulse APIキーが無効、または認証に失敗しました。キーを確認してください。"
+        ? "MightPulse APIキーが無効、または認証に失敗しました。コピーしたキー全体（kss_ から最後まで）を貼り付けたか確認してください。分からない場合は、MightPulseで新しいキーを作成して登録してください。"
         : wrapped.code === "MIGHTPULSE_API_KEY_RATE_LIMITED"
         ? "MightPulse APIがレート制限中です。少し時間を置いて再試行してください。"
         : "MightPulseへの疎通確認に失敗しました。APIキーは登録していません。しばらくしてから再試行してください。";
