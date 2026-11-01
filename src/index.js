@@ -50,6 +50,8 @@ import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
 import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
+import { findCoveringWatchlist } from "./watchlist-coverage.js";
+import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
 import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
 import { isSessionRevoked, revokeSessions } from "./session-revocation.js";
@@ -660,6 +662,7 @@ async function runKingdomWatchlistJobs(env) {
   let jobsAttempted = 0;
   let jobsCompleted = 0;
   let locksContended = 0;
+  let watchlistsCovered = 0;
   let capacityWaits = 0;
   let jobFailures = 0;
   await ensureKingdomWatchlistFreshnessSchema(env.DB);
@@ -679,7 +682,7 @@ async function runKingdomWatchlistJobs(env) {
     ).bind(cleanupBefore, KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH).run();
   }
   const rows = await env.DB.prepare(
-    "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.last_run_at, " +
+    "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.last_run_at, w.last_success_at, w.created_at, " +
     "(SELECT MIN(j.updated_at) FROM kingdom_watchlist_jobs j WHERE j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS')) AS active_job_updated_at " +
     "FROM kingdom_watchlists w WHERE w.enabled = 1 " +
     "ORDER BY CASE WHEN active_job_updated_at IS NULL THEN 1 ELSE 0 END, active_job_updated_at ASC, w.created_at ASC"
@@ -707,6 +710,19 @@ async function runKingdomWatchlistJobs(env) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     // Do not write a lock for an idle watchlist that is not due.
     if (!due && !activeWatchlistIds.has(String(row.watchlist_id))) continue;
+    // Another watchlist for the same kingdom that fetches at least as many
+    // players at least as often already refreshed the shared kingdom data:
+    // reuse its success instead of spending API Pool quota twice.
+    if (due && !activeWatchlistIds.has(String(row.watchlist_id))) {
+      const cover = findCoveringWatchlist(row, rows.results || [], now);
+      if (cover) {
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ? AND enabled = 1"
+        ).bind(now, Number(cover.last_success_at), now, row.watchlist_id).run();
+        watchlistsCovered++;
+        continue;
+      }
+    }
     // Let the API Pool lease/request path decide whether work can proceed.
     // Jobs are resumable, so capacity/quota failures are handled at the request
     // boundary instead of rejecting the whole job from an estimated budget.
@@ -832,6 +848,7 @@ async function runKingdomWatchlistJobs(env) {
     jobsAttempted,
     jobsCompleted,
     locksContended,
+    watchlistsCovered,
     capacityWaits,
     jobFailures
   });
@@ -852,6 +869,7 @@ async function runKingdomWatchlistJobs(env) {
       jobsAttempted,
       jobsCompleted,
       locksContended,
+      watchlistsCovered,
       capacityWaits,
       jobFailures
     }
@@ -1489,8 +1507,8 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
   const freshnessJob = await env.DB.prepare(
-    "SELECT status, source_first_at, source_last_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
-  ).bind(watchlistId).first();
+    "SELECT status, source_first_at, source_last_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? OR (kid = ? AND top_n >= ? AND status = 'COMPLETED') ORDER BY created_at DESC LIMIT 1"
+  ).bind(watchlistId, Number(watch.kid), Number(watch.top_n)).first();
 
   const board = url.searchParams.get("board");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
@@ -8179,7 +8197,26 @@ async function renderPlayerPage(request, env) {
       const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
       visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
     }
-    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER" ? "ADMIN" : auth.role === "VIP" ? "VIP" : false);
+    let buildHistoryHtml = "";
+    const buildVisible = {
+      heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
+      heroSkills: visibilityEnabled(visibilitySettings, "heroes_skills", auth.role),
+      heroExclusive: visibilityEnabled(visibilitySettings, "heroes_exclusive_gear", auth.role),
+      heroGear: visibilityEnabled(visibilitySettings, "heroes_gear", auth.role),
+      govGear: visibilityEnabled(visibilitySettings, "gov_gear_list", auth.role)
+    };
+    buildVisible.heroes = buildVisible.heroList || buildVisible.heroSkills || buildVisible.heroExclusive || buildVisible.heroGear;
+    if (env.ARCHIVE && (buildVisible.heroes || buildVisible.govGear)) {
+      try {
+        const buildHistory = await loadPlayerBuildHistory(env.ARCHIVE, governorId);
+        buildHistoryHtml = renderPlayerBuildHistorySection(buildHistory, buildVisible, {
+          heroName: localizeHeroName, heroSlot: localizeHeroGearSlot, govSlot: localizeGovernorGearSlot
+        });
+      } catch (error) {
+        console.error("player_build_history_load_failed", governorId, error?.message || error);
+      }
+    }
+    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER" ? "ADMIN" : auth.role === "VIP" ? "VIP" : false, buildHistoryHtml);
   } catch (error) {
     console.error("Player page error:", error);
     const code = String(error?.code || error?.message || "PLAYER_READ_FAILED");
@@ -8263,7 +8300,7 @@ function playerExportLinks(governorId, section, canExport, extraClass = "") {
   return html;
 }
 
-function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false) {
+function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false, buildHistoryHtml = "") {
   const p = player || {};
   const freshness = payload || {};
   const esc = escapeHtml;
@@ -8283,6 +8320,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     ${noticeHtml}
     ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
+    ${buildHistoryHtml}
     <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
@@ -8352,7 +8390,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   .ranking-settings-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
   .ranking-rest-panel .detail-row{border-left:3px solid var(--ee-cyan,#20d7f2)}
   @media(max-width:360px){.favorite-rankings-grid{gap:4px}.favorite-ranking-card{padding:7px 4px}.ranking-dashboard-actions button{font-size:11px;padding:7px 6px}}
-</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
+${PLAYER_BUILD_HISTORY_CSS}</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
 (function(){
   const btn=document.getElementById("player-watchlist-toggle");
   if(!btn)return;
