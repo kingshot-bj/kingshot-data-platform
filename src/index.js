@@ -50,6 +50,7 @@ import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
 import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
+import { runKvkDiscordSync } from "./kvk-discord.js";
 import { runPlayerRoller } from "./player-roller.js";
 import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
@@ -5074,6 +5075,12 @@ export default {
       if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
     } catch (error) {
       console.error("kvk_collection_failed", error?.message || error);
+    }
+    try {
+      const discord = await runKvkDiscordSync(env);
+      if (discord?.errors?.length) console.error("kvk_discord_sync_errors", JSON.stringify(discord.errors).slice(0, 500));
+    } catch (error) {
+      console.error("kvk_discord_sync_failed", error?.message || error);
     }
   },
   async queue(batch, env) {

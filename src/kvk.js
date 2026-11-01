@@ -12,6 +12,7 @@
 
 import { collectMightyOnly } from "./data-collection-engine.js";
 import { EAGLEEYE_THEME_BASE_CSS } from "./eagleeye-ui.js";
+import { buildKvkScoreNotifications, buildKvkMatchupNotifications, enqueueKvkNotifications, kvkPublicOrigin } from "./kvk-discord.js";
 
 export const KVK_MATCHUPS_INTERVAL_SECONDS = 6 * 3600;
 export const KVK_SCORE_ACTIVE_INTERVAL_SECONDS = 3600;
@@ -143,6 +144,10 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   }
   await db.batch(statements);
   await setState(db, "matchups", { sha, season, stage, count: normalized.length, changedAt: now, checkedAt: now }, now);
+  if (Number(previous?.season) !== season) {
+    const own = ((await db.prepare("SELECT DISTINCT kingdom_id AS kid FROM user_player_links WHERE status = 'ACTIVE' AND kingdom_id IS NOT NULL").all()).results || []).map(r => Number(r.kid));
+    await enqueueKvkNotifications(db, buildKvkMatchupNotifications(season, stage, normalized, own, kvkPublicOrigin(env)), now).catch(error => console.error("kvk_notify_enqueue_failed", error?.message || error));
+  }
   return { status: "CHANGED", season, stage, count: normalized.length };
 }
 
@@ -205,7 +210,7 @@ export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 10
     source_updated_at: payload.updated_at == null ? null : String(payload.updated_at)
   };
   const sha = await sha256Hex(JSON.stringify({ ...row, days }));
-  const existing = await db.prepare("SELECT payload_sha FROM kvk_scores WHERE kid = ?").bind(id).first();
+  const existing = await db.prepare("SELECT payload_sha, season, score, opponent_score, days_json FROM kvk_scores WHERE kid = ?").bind(id).first();
   if (existing?.payload_sha === sha) {
     await db.prepare("UPDATE kvk_scores SET fetched_at = ? WHERE kid = ?").bind(now, id).run();
     await recordSeasonResult(db, id, row, days, now, { overwrite: false });
@@ -226,6 +231,8 @@ export async function fetchKvkScore(env, kid, { now = Math.floor(Date.now() / 10
     await db.prepare("INSERT OR IGNORE INTO kvk_score_points (kid, season, at, score, opponent_score) VALUES (?, ?, ?, ?, ?)").bind(id, row.season, now, row.score, row.opponent_score).run();
   }
   await recordSeasonResult(db, id, row, days, now, { overwrite: true });
+  const previous = existing?.payload_sha ? parseScoreRow(existing) : null;
+  await enqueueKvkNotifications(db, buildKvkScoreNotifications(id, previous, { ...row, days }, now, kvkPublicOrigin(env)), now).catch(error => console.error("kvk_notify_enqueue_failed", error?.message || error));
   return { status: "CHANGED", ...row, days };
 }
 

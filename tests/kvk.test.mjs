@@ -6,6 +6,7 @@ import {
   runKvkCollection, renderKvkPage, ensureKvkSchema, resetKvkSchemaCache, kvkScoreInterval, getKvkScore,
   KVK_SCORE_MAX_PER_HOUR, KVK_SCORE_ACTIVE_INTERVAL_SECONDS, KVK_SCORE_IDLE_INTERVAL_SECONDS
 } from "../src/kvk.js";
+import { resetKvkDiscordSchemaCache } from "../src/kvk-discord.js";
 
 const NOW = 1793600000;
 
@@ -61,6 +62,7 @@ const scores = (kid, opp, { season = 23, status = "Ongoing" } = {}) => ({ ok: tr
 
 function setup({ mightyUsed = 0, users = [["u1", 1524, "MAIN"]] } = {}) {
   resetKvkSchemaCache();
+  resetKvkDiscordSchemaCache();
   const db = d1();
   db.sqlite.prepare("INSERT INTO api_pool_keys VALUES ('k1','MIGHTPULSE','AVAILABLE',1,'CONFIRMED',10000)").run();
   if (mightyUsed) db.sqlite.prepare("INSERT INTO api_pool_usage VALUES ('k1', ?, ?)").run(NOW - 10, mightyUsed);
