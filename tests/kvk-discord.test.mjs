@@ -107,14 +107,14 @@ test("outbox messages go to the kingdom's thread once, without mentions", async 
   await enqueueKvkNotifications(db, [{ key: "K1", kid: 1524, content: "dup" }], NOW);
   const dc = fakeDiscord();
   const r = await runKvkDiscordSync(env, { now: NOW, request: dc.request });
-  const posts = dc.calls.filter(c => c.method === "POST" && c.path.endsWith("/messages"));
+  const posts = dc.calls.filter(c => c.method === "POST" && c.path.startsWith("/channels/91") && c.path.endsWith("/messages"));
   assert.equal(posts.length, 1);
   assert.equal(posts[0].body.content, "hello @everyone");
   assert.deepEqual(posts[0].body.allowed_mentions, { parse: [] });
   assert.equal(r.dropped, 1, "kingdom without users is dropped");
   const second = fakeDiscord();
   await runKvkDiscordSync(env, { now: NOW + 60, request: second.request });
-  assert.equal(second.calls.filter(c => c.path.endsWith("/messages")).length, 0);
+  assert.equal(second.calls.filter(c => c.path.startsWith("/channels/91") && c.path.endsWith("/messages")).length, 0);
 });
 
 test("disabled when Discord is not configured", async () => {
@@ -210,4 +210,42 @@ test("users Discord refuses (50001) are retried only after 6 hours; a 429 does n
   db.sqlite.prepare("UPDATE kvk_discord_threads SET member_sync_at = 0").run();
   await runKvkDiscordSync(env, { now: NOW + 7 * 3600, request: make() });
   assert.ok(calls.some(c => c.endsWith("/" + B)));
+});
+
+test("newly added users get one welcome DM; closed DMs are just marked; existing members get one too", async () => {
+  const { db, env } = setup([["u1", A, 1524], ["u2", B, 1524]]);
+  const calls = [];
+  let n = 0;
+  const request = async (e, path, options = {}) => {
+    const method = options.method || "GET";
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ method, path, body });
+    if (method === "GET") return [];
+    if (path === `/guilds/${GUILD}/channels`) return { id: "900000000000000001" };
+    if (path.endsWith("/threads")) return { id: "91000000000000000" + (++n) };
+    if (path === "/users/@me/channels") {
+      if (body.recipient_id === B) { const err = new Error("Cannot send messages to this user"); err.status = 403; err.discord = { code: 50007 }; throw err; }
+      return { id: "dm-" + body.recipient_id };
+    }
+    return null;
+  };
+  await runKvkDiscordSync(env, { now: NOW, request, maxCalls: 50 });
+  const dm = calls.find(c => c.path === `/channels/dm-${A}/messages`);
+  assert.ok(dm && dm.body.content.includes("王国1524のKvK通知スレッドに追加されました") && dm.body.content.includes("https://discord.com/channels/" + GUILD + "/"));
+  assert.deepEqual(dm.body.allowed_mentions, { parse: [] });
+  const statuses = Object.fromEntries(db.sqlite.prepare("SELECT discord_id, status FROM kvk_discord_dm_queue").all().map(r => [r.discord_id, r.status]));
+  assert.deepEqual(statuses, { [A]: "SENT", [B]: "DM_CLOSED" });
+  calls.length = 0;
+  await runKvkDiscordSync(env, { now: NOW + 60, request, maxCalls: 50 });
+  assert.ok(!calls.some(c => c.path.includes("/users/@me/channels")), "no repeated DMs");
+});
+
+test("members added before DMs existed are queued once", async () => {
+  const { db } = setup([]);
+  const { ensureKvkDiscordSchema: ensure } = await import("../src/kvk-discord.js");
+  db.sqlite.exec(`CREATE TABLE kvk_discord_threads (kid INTEGER PRIMARY KEY, thread_id TEXT NOT NULL, created_at INTEGER NOT NULL, member_sync_at INTEGER);
+    CREATE TABLE kvk_discord_members (kid INTEGER NOT NULL, discord_id TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY (kid, discord_id));
+    INSERT INTO kvk_discord_threads VALUES (1524, 't1', 1, 1); INSERT INTO kvk_discord_members VALUES (1524, '${A}', 5);`);
+  await ensure(db);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) c FROM kvk_discord_dm_queue WHERE discord_id = ? AND sent_at IS NULL").get(A).c, 1);
 });
