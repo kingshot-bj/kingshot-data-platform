@@ -80,5 +80,7 @@ jobs:
         run: node --test tests/player-csv-export.test.mjs
       - name: Google Sheets Drive export tests
         run: node --test tests/google-sheets-drive-export.test.mjs
+      - name: Diagnostic health check tests
+        run: node --test tests/diagnostic-health-checks.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
