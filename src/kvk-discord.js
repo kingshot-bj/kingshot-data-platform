@@ -10,6 +10,7 @@
 // in small batches, so Discord rate limits or outages never block collection.
 
 import { discordApiRequest } from "./discord-support.js";
+import { recordDiagnostic } from "./diagnostics.js";
 
 export const KVK_PARENT_CHANNEL_NAME = "kvk-通知";
 export const KVK_DISCORD_MAX_CALLS_PER_RUN = 12;
@@ -187,9 +188,13 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
   await ensureKvkDiscordSchema(db);
   const budget = { calls: 0 };
   const summary = { enabled: true, created: 0, added: 0, removed: 0, sent: 0, dropped: 0, errors: [] };
-  const stop = error => {
-    summary.errors.push({ status: Number(error?.status || 0) || null, code: error?.discord?.code ?? null, message: String(error?.message || error).slice(0, 120) });
-    return Number(error?.status) === 429 || Number(error?.discord?.code) === 50013;
+  const note = (error, where) => {
+    if (summary.errors.length < 20) summary.errors.push({ where, status: Number(error?.status || 0) || null, code: error?.discord?.code ?? null, message: String(error?.message || error).slice(0, 120) });
+  };
+  // Only a rate limit or a channel-level permission problem stops the whole run.
+  const stop = (error, where) => {
+    note(error, where);
+    return Number(error?.status) === 429 || (where !== "add_member" && where !== "remove_member" && Number(error?.discord?.code) === 50013);
   };
 
   try {
@@ -224,8 +229,10 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
           await db.prepare("INSERT OR IGNORE INTO kvk_discord_members (kid, discord_id, added_at) VALUES (?, ?, ?)").bind(kid, id, now).run();
           summary.added++;
         } catch (error) {
-          // 10007 Unknown Member: not in the server (yet). Try again on the next sync.
-          if (Number(error?.discord?.code) !== 10007 && stop(error)) throw error;
+          // A user who cannot be added (e.g. not in the server yet) is skipped and retried on the next sync;
+          // it must not block the other users or kingdoms.
+          summary.skippedMembers = (summary.skippedMembers || 0) + 1;
+          if (stop(error, "add_member")) throw error;
         }
       }
       for (const id of current) {
@@ -233,7 +240,7 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
         if (budget.calls >= maxCalls) { complete = false; break; }
         budget.calls++;
         try { await request(env, `/channels/${thread.thread_id}/thread-members/${id}`, { method: "DELETE" }); }
-        catch (error) { if (Number(error?.status) !== 404 && stop(error)) throw error; }
+        catch (error) { if (Number(error?.status) !== 404 && stop(error, "remove_member")) throw error; }
         await db.prepare("DELETE FROM kvk_discord_members WHERE kid = ? AND discord_id = ?").bind(kid, id).run();
         summary.removed++;
       }
@@ -260,8 +267,17 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
       summary.sent++;
     }
   } catch (error) {
-    stop(error);
+    note(error, "run");
   }
   summary.calls = budget.calls;
+  if (summary.errors.length || summary.created || summary.added || summary.removed || summary.sent) {
+    await recordDiagnostic(db, {
+      service: "discord", feature: "kvk_threads", operation: "SYNC_KVK_THREADS",
+      status: summary.errors.some(e => e.where === "run") ? "FAILED" : summary.errors.length ? "WARNING" : "SUCCESS",
+      rowsSaved: summary.added + summary.sent,
+      message: "KvKスレッドの同期: 作成" + summary.created + " / 追加" + summary.added + " / 削除" + summary.removed + " / 送信" + summary.sent + (summary.skippedMembers ? " / 追加できなかったユーザー" + summary.skippedMembers : ""),
+      metadata: summary
+    }).catch(() => {});
+  }
   return summary;
 }

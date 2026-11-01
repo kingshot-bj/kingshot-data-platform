@@ -157,3 +157,24 @@ test("a transferred governor moves to the new kingdom's thread (governor ID stay
   assert.ok(dc.calls.some(c => c.method === "DELETE" && c.path === `/channels/${old}/thread-members/${A}`), "removed from old kingdom");
   assert.equal(db.sqlite.prepare("SELECT kingdom_id FROM user_player_links WHERE user_id = 'u1'").get().kingdom_id, 1524, "registration itself is not rewritten");
 });
+
+test("a user who cannot be added does not block other users or other kingdoms", async () => {
+  const D = "444444444444444444";
+  const { db, env } = setup([["u1", A, 1524], ["u2", B, 1524], ["u3", C, 1524], ["u4", D, 1001]]);
+  const calls = [];
+  let n = 0;
+  const request = async (e, path, options = {}) => {
+    const method = options.method || "GET";
+    calls.push(method + " " + path);
+    if (method === "GET") return [];
+    if (path === `/guilds/${GUILD}/channels`) return { id: "900000000000000001" };
+    if (path.endsWith("/threads")) return { id: "91000000000000000" + (++n) };
+    if (method === "PUT" && path.endsWith("/" + B)) { const err = new Error("Missing Permissions"); err.status = 403; err.discord = { code: 50013 }; throw err; }
+    return null;
+  };
+  const r = await runKvkDiscordSync(env, { now: NOW, request });
+  assert.equal(r.created, 2, "1001's thread is created too");
+  assert.deepEqual(db.sqlite.prepare("SELECT kid, discord_id FROM kvk_discord_members ORDER BY kid, discord_id").all().map(x => x.kid + ":" + x.discord_id), [`1001:${D}`, `1524:${A}`, `1524:${C}`]);
+  assert.equal(r.skippedMembers, 1);
+  assert.ok(db.sqlite.prepare("SELECT member_sync_at FROM kvk_discord_threads WHERE kid = 1524").get().member_sync_at, "sync completes; the skipped user is retried next time");
+});
