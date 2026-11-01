@@ -135,6 +135,72 @@ export async function getGoogleDriveConnectionStatus(env) {
   };
 }
 
+// drive.file can only reach folders this OAuth client created. If the
+// configured folder is not reachable (created by hand or under another
+// authorization), use an app-owned "EagleEye Archive" folder instead and
+// remember its ID in R2 so every run uses the same folder.
+export const DRIVE_FOLDER_CONFIG_KEY = "config/google-drive-archive-folder.json";
+const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
+let resolvedFolderCache = null;
+
+export function resetGoogleDriveFolderCache() {
+  resolvedFolderCache = null;
+}
+
+async function isReachableFolder(accessToken, folderId) {
+  if (!folderId) return false;
+  try {
+    const file = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "/" + encodeURIComponent(folderId) + "?fields=id,mimeType,trashed", { method: "GET" });
+    return Boolean(file?.id) && file.mimeType === DRIVE_FOLDER_MIME && !file.trashed;
+  } catch (error) {
+    if (error?.status === 404 || error?.status === 403) return false;
+    throw error;
+  }
+}
+
+export async function resolveArchiveFolderId(env, accessToken, archiveBucket = null) {
+  if (resolvedFolderCache) return resolvedFolderCache;
+  let savedId = null;
+  if (archiveBucket) {
+    const saved = await archiveBucket.get(DRIVE_FOLDER_CONFIG_KEY).catch(() => null);
+    if (saved) {
+      try { savedId = JSON.parse(await new Response(saved.body).text())?.folderId || null; } catch { savedId = null; }
+    }
+  }
+  const configuredId = String(env?.GOOGLE_DRIVE_FOLDER_ID || "").trim();
+  for (const [candidate, source] of [[savedId, "R2_CONFIG"], [configuredId, "ENV"]]) {
+    if (candidate && await isReachableFolder(accessToken, candidate)) {
+      resolvedFolderCache = { folderId: candidate, source };
+      return resolvedFolderCache;
+    }
+  }
+  const params = new URLSearchParams({
+    q: "trashed = false and mimeType = '" + DRIVE_FOLDER_MIME + "' and appProperties has { key = 'eagleeyeFolder' and value = 'archive' }",
+    spaces: "drive",
+    pageSize: "1",
+    fields: "files(id,name)"
+  });
+  const found = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
+  let folderId = found?.files?.[0]?.id || null;
+  let source = "APP_FOLDER";
+  if (!folderId) {
+    folderId = (await createGoogleDriveArchiveFolder(accessToken, "EagleEye Archive"))?.id || null;
+    source = "CREATED";
+  }
+  if (!folderId) {
+    const error = new Error("GOOGLE_DRIVE_FOLDER_UNAVAILABLE");
+    error.code = "GOOGLE_DRIVE_FOLDER_UNAVAILABLE";
+    throw error;
+  }
+  if (archiveBucket) {
+    await archiveBucket.put(DRIVE_FOLDER_CONFIG_KEY, JSON.stringify({ folderId, source, savedAt: Math.floor(Date.now() / 1000) }), {
+      httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" }
+    });
+  }
+  resolvedFolderCache = { folderId, source };
+  return resolvedFolderCache;
+}
+
 async function findExistingArchive(accessToken, folderId, sourceKey) {
   const escapedKey = encodeURIComponent(String(sourceKey).slice(0, 124));
   const q = [
@@ -186,9 +252,6 @@ export async function uploadR2ObjectToGoogleDrive(env, {
   if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!key) throw new Error("GOOGLE_DRIVE_SOURCE_KEY_REQUIRED");
 
-  const parentFolderId = String(folderId || env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
-  if (!parentFolderId) throw new Error("GOOGLE_DRIVE_FOLDER_NOT_CONFIGURED");
-
   const object = await archiveBucket.get(key);
   if (!object) {
     const error = new Error("R2_OBJECT_NOT_FOUND");
@@ -197,6 +260,15 @@ export async function uploadR2ObjectToGoogleDrive(env, {
   }
 
   const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  let parentFolderId = String(folderId || "").trim();
+  if (!parentFolderId) {
+    try {
+      parentFolderId = (await resolveArchiveFolderId(env, accessToken, archiveBucket)).folderId;
+    } catch (error) {
+      error.driveStep = error.driveStep || "RESOLVE_FOLDER";
+      throw error;
+    }
+  }
   let existing;
   try {
     existing = await findExistingArchive(accessToken, parentFolderId, key);

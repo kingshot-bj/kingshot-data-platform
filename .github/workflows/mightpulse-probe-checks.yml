@@ -33,6 +33,8 @@ jobs:
           node --check src/retention.js
           node --check src/google-drive.js
           node --check src/r2-archive.js
+          node --check src/kingdom-ranking-archive.js
+          node --check src/kingdom-portal.js
           bash -n scripts/check-probe-migration-history.sh
       - name: Run diagnostic telemetry regression tests
         run: node --test tests/diagnostic-telemetry-regression.test.mjs
@@ -56,5 +58,7 @@ jobs:
         run: node --test tests/retention-safe-archive.test.mjs
       - name: Run legal page tests
         run: node --test tests/legal-pages.test.mjs
+      - name: Run kingdom ranking archive tests
+        run: node --test tests/kingdom-ranking-archive.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs
