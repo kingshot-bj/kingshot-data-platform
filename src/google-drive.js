@@ -197,7 +197,13 @@ export async function uploadR2ObjectToGoogleDrive(env, {
   }
 
   const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
-  const existing = await findExistingArchive(accessToken, parentFolderId, key);
+  let existing;
+  try {
+    existing = await findExistingArchive(accessToken, parentFolderId, key);
+  } catch (error) {
+    error.driveStep = "FIND_EXISTING";
+    throw error;
+  }
   if (existing?.id) {
     const check = verifyDriveCopyMatchesR2({ sourceSize: object.size, sourceEtag: object.etag, driveSize: existing.size, driveMd5: existing.md5Checksum });
     return {
@@ -242,15 +248,21 @@ export async function uploadR2ObjectToGoogleDrive(env, {
   const suffix = encoder.encode("\r\n--" + boundary + "--\r\n");
   const body = new Blob([prefix, sourceBytes, suffix]);
 
-  const data = await driveRequest(
-    accessToken,
-    GOOGLE_DRIVE_UPLOAD_URL + "?uploadType=multipart&fields=id,name,mimeType,size,parents,webViewLink,appProperties,md5Checksum",
-    {
-      method: "POST",
-      headers: { "content-type": "multipart/related; boundary=" + boundary },
-      body
-    }
-  );
+  let data;
+  try {
+    data = await driveRequest(
+      accessToken,
+      GOOGLE_DRIVE_UPLOAD_URL + "?uploadType=multipart&fields=id,name,mimeType,size,parents,webViewLink,appProperties,md5Checksum",
+      {
+        method: "POST",
+        headers: { "content-type": "multipart/related; boundary=" + boundary },
+        body
+      }
+    );
+  } catch (error) {
+    error.driveStep = "UPLOAD";
+    throw error;
+  }
 
   const sourceSize = Number(object.size || sourceBytes.byteLength || 0);
   const driveSize = Number(data.size || 0);
