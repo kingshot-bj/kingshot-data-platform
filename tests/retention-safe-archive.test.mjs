@@ -184,3 +184,12 @@ test("retention job is scheduled, bounded, and never deletes without a backup pa
   assert.ok(retention.includes("SELECT COUNT(*) AS count FROM (SELECT 1 FROM system_event_log WHERE created_at < ? LIMIT 10001)"), "backlog count must be bounded");
   assert.ok(retention.includes('table: "diagnostic_events", column: "created_at", days: 30'));
 });
+
+test("Google Drive OAuth returns to the Drive callback, not the Discord login callback", async () => {
+  const wrangler = await readFile(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const uris = [...wrangler.matchAll(/"GOOGLE_DRIVE_OAUTH_REDIRECT_URI":\s*"([^"]+)"/g)].map(m => m[1]);
+  assert.ok(uris.length >= 2, "production and preview must both define the Drive redirect URI");
+  for (const uri of uris) assert.ok(uri.endsWith("/api/admin/google-drive/callback"), uri);
+  const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.ok(index.includes('url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);'));
+});
