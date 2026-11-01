@@ -169,7 +169,7 @@ html[data-eagle-theme="light"] .legal-section h2{color:#0e7490}
 html[data-eagle-theme="light"] .legal-section code{background:#f1f5f9;color:#92400e}
 html[data-eagle-theme="light"] .legal-back,html[data-eagle-theme="light"] .legal-section a,html[data-eagle-theme="light"] .legal-related a{color:#0369a1}
 </style></head><body><main class="legal-wrap">
-<a class="legal-back" href="/">← EagleEye</a>
+<a class="legal-back" href="/">← ホーム</a>
 <h1>${title}</h1>
 <p class="legal-updated">最終更新日：${updatedAt}</p>
 ${body}

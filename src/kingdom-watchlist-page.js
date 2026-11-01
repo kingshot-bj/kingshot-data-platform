@@ -15,7 +15,7 @@ main{max-width:760px;margin:0 auto}.top{display:flex;justify-content:space-betwe
 </style>
 </head>
 <body><main>
-<div class="top"><div><a class="back" href="/">← EagleEye HOME</a><h1>王国ウォッチリスト</h1><div class="muted small">登録・一覧・更新状態を独立して管理します。</div></div></div>
+<div class="top"><div><a class="back" href="/">← ホーム</a><h1>王国ウォッチリスト</h1><div class="muted small">登録・一覧・更新状態を独立して管理します。</div></div></div>
 <div id="status" class="status busy" role="status" aria-live="polite">画面を準備しています…</div>
 <section class="panel">
 <h2>王国を監視対象に追加</h2>

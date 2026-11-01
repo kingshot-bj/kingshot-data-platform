@@ -9,7 +9,8 @@ const indexSource = await readFile(new URL("../src/index.js", import.meta.url), 
 // interpolations removed, so we test the HTML/JS the browser actually gets.
 function renderMyPlayerTemplate() {
   const fnAt = indexSource.indexOf("async function renderMyPlayerPage");
-  const start = indexSource.indexOf("return `<!doctype html>", indexSource.indexOf("return `<!doctype html>", fnAt) + 1);
+  // The login screen is now the shared renderLoginRequiredPage, so the first template is the page itself.
+  const start = indexSource.indexOf("return `<!doctype html>", fnAt);
   const endMarker = "</script></body></html>`";
   const end = indexSource.indexOf(endMarker, start) + endMarker.length;
   const template = indexSource.slice(start + "return ".length, end);

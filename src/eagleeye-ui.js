@@ -373,3 +373,49 @@ html:not([data-eagle-theme="light"]) body{background-color:var(--ee-bg);color:va
   border-color:var(--ee-cyan)!important;
 }
 `;
+
+// ---------- Legacy palette normalisation ----------
+// Pages were written over time with ~30 slightly different navy/grey hex values.
+// Before a page is sent, colours from that legacy set that appear in CSS
+// declarations are mapped onto the shared theme tokens, so every page uses one
+// palette and follows the light/dark switch. Accent colours are left alone.
+const LEGACY_PALETTE = {
+  "--ee-bg": ["0f172a", "050b14", "0a1424", "0b1120"],
+  "--ee-panel": ["162238", "111c31", "111c30", "0f2035", "0d1b2d", "0c1c2d", "0b1b2c", "132238", "111827", "0d1d2f"],
+  "--ee-panel-deep": ["0b1220", "0b192b", "071525", "091625", "0b1626"],
+  "--ee-panel-raised": ["172a40", "12283d", "10243a", "1e293b", "12334b"],
+  "--ee-border": ["334155", "2a4664", "25415f", "294763", "2c4d69", "2a4965", "475569"],
+  "--ee-border-soft": ["1d344d", "203b55", "23415f", "1e3a5f"],
+  "--ee-text": ["f8fafc", "e8f3ff", "f1f8ff", "edf6ff", "e2e8f0", "e7f7ff", "f0f8ff"],
+  "--ee-subtext": ["94a3b8", "91a7bf", "9bb0c8", "91a9c0", "a9bed3", "cbd5e1"],
+  "--ee-muted": ["64748b", "7f9ab3", "71869e"]
+};
+const TOKEN_ROLE = {
+  "--ee-bg": "surface", "--ee-panel": "surface", "--ee-panel-deep": "surface", "--ee-panel-raised": "surface",
+  "--ee-border": "line", "--ee-border-soft": "line",
+  "--ee-text": "text", "--ee-subtext": "text", "--ee-muted": "text"
+};
+const LEGACY_TO_TOKEN = new Map(Object.entries(LEGACY_PALETTE).flatMap(([token, hexes]) => hexes.map(h => [h, token])));
+// A legacy colour inside a CSS colour declaration. Colours right after "," or "("
+// (gradient stops, or the fallback inside an already converted var()) are skipped,
+// so a page is never converted twice.
+const CSS_COLOR_DECL = /((?:background|background-color|color|border|border-color|border-(?:top|bottom|left|right)(?:-color)?|outline|outline-color)\s*:\s*[^;"'{}<>(,]*?)#([0-9a-fA-F]{6})\b/g;
+
+export function normalizeLegacyPalette(html) {
+  if (typeof html !== "string") return html;
+  // Pages intentionally designed in the light Apple style keep their own colours.
+  if (html.includes("background:#f5f5f7")) return html;
+  return html.replace(CSS_COLOR_DECL, (match, prefix, hex) => {
+    const token = LEGACY_TO_TOKEN.get(hex.toLowerCase());
+    if (!token) return match;
+    // Only map a colour onto a token of the same role, e.g. dark text on an amber
+    // button ("color:#0f172a") must stay dark in the light theme too.
+    const property = prefix.trim().split(":")[0].trim().toLowerCase();
+    const role = TOKEN_ROLE[token];
+    const allowed = property.startsWith("background") ? role === "surface" : property.startsWith("border") || property.startsWith("outline") ? role === "line" : role === "text";
+    return allowed ? prefix + "var(" + token + ",#" + hex + ")" : match;
+  });
+}
+
+// Light theme values for the shared tokens (dark values are the defaults in :root).
+export const EAGLEEYE_LIGHT_TOKENS_CSS = `html[data-eagle-theme="light"]{--ee-bg:#f3f6fb;--ee-panel:#ffffff;--ee-panel-deep:#f8fafc;--ee-panel-raised:#eef2f7;--ee-border:#cbd5e1;--ee-border-soft:#dbe3ee;--ee-text:#172033;--ee-subtext:#55657a;--ee-muted:#7b8899}`;
