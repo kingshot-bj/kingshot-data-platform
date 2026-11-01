@@ -38,6 +38,7 @@ export async function ensureKvkSchema(db) {
       kid INTEGER PRIMARY KEY, season INTEGER, stage TEXT, opponent INTEGER, score INTEGER, opponent_score INTEGER,
       days_json TEXT, source_updated_at TEXT, payload_sha TEXT, fetched_at INTEGER NOT NULL, changed_at INTEGER)`).run();
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_scores_fetched ON kvk_scores(fetched_at)").run();
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_matchups_opponent ON kvk_matchups(season, opponent)").run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_state (
       key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)`).run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_score_points (
@@ -158,6 +159,14 @@ function parseScoreRow(row) {
   return { ...row, days };
 }
 
+// The API lists each pair once; return the pair from `kid`'s point of view.
+export function kvkMatchupFrom(kid, row) {
+  if (!row) return null;
+  if (Number(row.kid) === Number(kid)) return { opponent: row.opponent == null ? null : Number(row.opponent), kingdom_name: row.kingdom_name ?? null, opponent_name: row.opponent_name ?? null };
+  if (Number(row.opponent) === Number(kid)) return { opponent: Number(row.kid), kingdom_name: row.opponent_name ?? null, opponent_name: row.kingdom_name ?? null };
+  return null;
+}
+
 export async function getKvkScore(db, kid) {
   return parseScoreRow(await db.prepare("SELECT * FROM kvk_scores WHERE kid = ?").bind(Number(kid)).first());
 }
@@ -242,10 +251,12 @@ export async function getKvkTargetKingdoms(db, season) {
     .map(r => Number(r.kid)).filter(Number.isInteger);
   const targets = new Set(own);
   if (season != null && own.length) {
-    for (let i = 0; i < own.length; i += 90) {
-      const chunk = own.slice(i, i + 90);
-      const rows = (await db.prepare(`SELECT opponent FROM kvk_matchups WHERE season = ? AND kid IN (${chunk.map(() => "?").join(",")})`).bind(Number(season), ...chunk).all()).results || [];
-      for (const r of rows) if (Number.isInteger(Number(r.opponent))) targets.add(Number(r.opponent));
+    // Each pair is listed once, so a kingdom can be on either side.
+    for (let i = 0; i < own.length; i += 45) {
+      const chunk = own.slice(i, i + 45);
+      const marks = chunk.map(() => "?").join(",");
+      const rows = (await db.prepare(`SELECT kid, opponent FROM kvk_matchups WHERE season = ? AND (kid IN (${marks}) OR opponent IN (${marks}))`).bind(Number(season), ...chunk, ...chunk).all()).results || [];
+      for (const r of rows) for (const v of [r.kid, r.opponent]) if (v != null && Number.isInteger(Number(v))) targets.add(Number(v));
     }
   }
   return [...targets].sort((a, b) => a - b);
@@ -398,7 +409,7 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
       fetchNote = "最新スコアの取得に失敗しました。保存済みのデータを表示しています。";
     }
   }
-  const matchup = season != null ? await db.prepare("SELECT opponent, kingdom_name, opponent_name FROM kvk_matchups WHERE season = ? AND kid = ?").bind(season, kid).first() : null;
+  const matchup = season != null ? kvkMatchupFrom(kid, await db.prepare("SELECT kid, opponent, kingdom_name, opponent_name FROM kvk_matchups WHERE season = ? AND (kid = ? OR opponent = ?) LIMIT 1").bind(season, kid, kid).first()) : null;
 
   let body = head + mineHtml + finder + (fetchNote ? `<div class="notice">${esc(fetchNote)}</div>` : "");
   if (matchup) {

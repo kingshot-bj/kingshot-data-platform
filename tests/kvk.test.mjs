@@ -228,3 +228,19 @@ test("page shows countdown, trend chart and past results", async () => {
   const migration = await readFile(new URL("../migrations/0067_kvk_history.sql", import.meta.url), "utf8");
   assert.ok(migration.includes("CREATE TABLE IF NOT EXISTS kvk_score_points") && migration.includes("CREATE TABLE IF NOT EXISTS kvk_season_results"));
 });
+
+test("matchups listed once per pair (1523 -> 1524) are found from either side", async () => {
+  const { db, env } = setup();
+  const oneWay = { ok: true, season: 23, stage: "prediction", count: 2, matchups: [
+    { kingdom: 1523, kingdom_name: "Les gaulois", opponent: 1524, opponent_name: null },
+    { kingdom: 2000, kingdom_name: null, opponent: null, opponent_name: null }
+  ] };
+  const mp = fakeMightPulse({ "/kvk/matchups": oneWay, "/kingdoms/1524/kvk/scores": scores(1524, 1523), "/kingdoms/1523/kvk/scores": scores(1523, 1524) });
+  const run = await runKvkCollection(env, { now: NOW, collect: mp.collect });
+  assert.deepEqual(run.scores.map(s => s.kid).sort(), [1523, 1524], "opponent found although 1524 is only on the right side");
+  const html = await renderKvkPage(new Request("https://e.test/kvk"), env, { status: "ACTIVE", role: "ADVANCED", user_id: "u1" }, { collect: mp.collect, now: NOW + 60 });
+  assert.ok(html.includes("シーズン 23 の対戦相手"));
+  assert.ok(html.includes('<a href="/kingdom?kid=1523">1523</a>') && html.includes("Les gaulois"), "opponent and its name shown from 1524's side");
+  const queued = db.sqlite.prepare("SELECT content FROM kvk_discord_outbox WHERE message_key = 'KVK:MATCHUP:23:1524'").get();
+  assert.ok(queued && queued.content.includes("王国1524 vs 王国1523（Les gaulois）"));
+});

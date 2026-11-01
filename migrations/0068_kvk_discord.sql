@@ -23,3 +23,5 @@ CREATE TABLE IF NOT EXISTS kvk_discord_outbox (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kvk_discord_outbox_pending ON kvk_discord_outbox(sent_at, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_kvk_matchups_opponent ON kvk_matchups(season, opponent);

@@ -106,14 +106,23 @@ export function buildKvkScoreNotifications(kid, previous, current, now, origin =
 }
 
 export function buildKvkMatchupNotifications(season, stage, matchups, kingdoms, origin = "") {
-  const wanted = new Set(kingdoms.map(Number));
-  return matchups.filter(m => wanted.has(Number(m.kid))).map(m => ({
-    key: `KVK:MATCHUP:${season}:${m.kid}`,
-    kid: Number(m.kid),
-    content: m.opponent == null
-      ? `**KvK シーズン${season} の組み合わせ**\n王国${m.kid} は今回は対戦なし（不戦）です。`
-      : `**KvK シーズン${season} の組み合わせが発表されました**\n王国${m.kid} vs 王国${m.opponent}${m.opponent_name ? "（" + m.opponent_name + "）" : ""}`+link(origin, m.kid)
-  }));
+  // Each pair is listed once (A -> B), so look a kingdom up on both sides.
+  const out = [];
+  for (const kid of new Set(kingdoms.map(Number))) {
+    const asLeft = matchups.find(m => Number(m.kid) === kid);
+    const asRight = asLeft ? null : matchups.find(m => m.opponent != null && Number(m.opponent) === kid);
+    if (!asLeft && !asRight) continue;
+    const opponent = asLeft ? asLeft.opponent : asRight.kid;
+    const opponentName = asLeft ? asLeft.opponent_name : asRight.kingdom_name;
+    out.push({
+      key: `KVK:MATCHUP:${season}:${kid}`,
+      kid,
+      content: opponent == null
+        ? `**KvK シーズン${season} の組み合わせ**\n王国${kid} は今回は対戦なし（不戦）です。`
+        : `**KvK シーズン${season} の組み合わせが発表されました**\n王国${kid} vs 王国${opponent}${opponentName ? "（" + opponentName + "）" : ""}`+link(origin, kid)
+    });
+  }
+  return out;
 }
 
 export async function enqueueKvkNotifications(db, items, now) {
