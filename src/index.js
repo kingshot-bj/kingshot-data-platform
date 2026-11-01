@@ -29,7 +29,7 @@ import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpu
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
-import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
+import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory, stripStaleActivityFields } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, releaseApiLease, setApiPoolMightyMetadata, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
 import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup, createDriveSession } from "./retention.js";
 import { exportToGoogleSheet, googleSheetsTransport } from "./google-sheets.js";
@@ -61,7 +61,8 @@ import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
-import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken, restoreR2ObjectFromGoogleDrive, restoreMissingR2ObjectsFromGoogleDrive } from "./google-drive.js";
+import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken, restoreR2ObjectFromGoogleDrive, restoreMissingR2ObjectsFromGoogleDrive, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
+import { countStaleActivity, readStaleBackupManifest, runStaleActivityBackup, runStaleActivityPurge, stalePurgeBlocker } from "./stale-activity-cleanup.js";
 import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, normalizeMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
 import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
@@ -1212,7 +1213,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
-        "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
+        "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(stripStaleActivityFields(raw)), job.observed_at
       ).run();
 
       const observation = {
@@ -4719,6 +4720,41 @@ async function handleKvkReloginMissingApi(request, env) {
   return json({ ok: true, revoked });
 }
 
+// OWNER only: back up the stale activity fields to Google Drive, then (as a
+// separate, explicitly confirmed step) remove them from D1.
+async function handleStaleActivityApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (!env.ARCHIVE) return json({ ok: false, error: "R2_ARCHIVE_NOT_CONFIGURED" }, 503);
+  try {
+    if (request.method === "GET") {
+      const counts = await countStaleActivity(env.DB);
+      const manifest = await readStaleBackupManifest(env.ARCHIVE);
+      return json({ ok: true, counts, manifest, purge_blocker: stalePurgeBlocker(manifest, counts) });
+    }
+    if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    const body = await request.json().catch(() => ({}));
+    if (body?.action === "backup") {
+      const manifest = await runStaleActivityBackup({
+        db: env.DB, bucket: env.ARCHIVE,
+        upload: (key, fileName) => uploadR2ObjectToGoogleDrive(env, { archiveBucket: env.ARCHIVE, key, fileName, mimeType: "application/gzip" })
+      });
+      await writeOwnerAuditLog(env, guard.auth, "STALE_ACTIVITY_BACKUP", null, null, { file: manifest.file_name, counts: manifest.counts }).catch(() => {});
+      return json({ ok: true, manifest });
+    }
+    if (body?.action === "purge") {
+      const result = await runStaleActivityPurge({ db: env.DB, bucket: env.ARCHIVE, confirm: body.confirm });
+      if (result.changed) await writeOwnerAuditLog(env, guard.auth, "STALE_ACTIVITY_PURGE", null, null, { file: result.manifest?.file_name, changed: result.changed, after: result.after }).catch(() => {});
+      return json({ ok: result.ok, error: result.error, before: result.before, after: result.after || null, changed: result.changed || null }, result.ok ? 200 : 409);
+    }
+    return json({ ok: false, error: "UNKNOWN_ACTION" }, 400);
+  } catch (error) {
+    console.error("stale_activity_api_failed", error?.code || error?.message || error);
+    return json({ ok: false, error: error?.code || "STALE_ACTIVITY_FAILED", step: error?.driveStep || null }, 500);
+  }
+}
+
 // OWNER only: copy archive objects missing from R2 back from Google Drive.
 // Never overwrites an existing R2 object; R2 verifies bytes against Drive's MD5.
 async function handleGoogleDriveRestoreApi(request, env) {
@@ -4801,6 +4837,17 @@ async function restoreCall(payload){const r=await fetch("/api/owner/google-drive
 async function restoreScan(){const btn=document.getElementById("restore-scan"),out=document.getElementById("restore-result");btn.disabled=true;let token=null,total={checked:0,present:0,restored:0,skipped:0,failed:0},pages=0;try{while(pages<200){const d=await restoreCall({pageToken:token});if(!d.ok){out.textContent="✕ "+(d.error||"復元に失敗しました");return}for(const k of Object.keys(total))total[k]+=Number(d[k]||0);pages++;out.textContent="照合中… 確認"+total.checked+"件 / R2にあり"+total.present+"件 / 復元"+total.restored+"件 / 失敗"+total.failed+"件";if(d.repeatPage)continue;if(!d.nextPageToken)break;token=d.nextPageToken}out.textContent="✓ 完了：確認"+total.checked+"件 / R2にあり"+total.present+"件 / 復元"+total.restored+"件 / 対象外"+total.skipped+"件 / 失敗"+total.failed+"件"}catch(e){out.textContent="✕ 通信に失敗しました"}finally{btn.disabled=false}}
 async function restoreOne(){const key=document.getElementById("restore-key").value.trim(),out=document.getElementById("restore-result");if(!key)return;out.textContent="復元中…";const d=await restoreCall({key});const labels={RESTORED:"復元しました",ALREADY_IN_R2:"R2に既にあります（変更なし）",NOT_FOUND_ON_DRIVE:"Driveに見つかりません",SKIPPED:"対象外のキーです"};out.textContent=d.ok?(labels[d.result.status]||d.result.status)+(d.result.reason?"（"+d.result.reason+"）":""):"✕ "+(d.error||"復元に失敗しました")}
 </script>
+${isOwner ? `<div class="card"><b>使用禁止データの退避と削除</b><div class="note">MightPulseが「古い値」としている online・最終アクティブ時刻・最終ログインが、過去のデータに残っています。① まずDriveへ退避（CSV、MD5照合）→ ② 中身を確認 → ③ 削除、の順に進みます。退避しても何も消えません。</div><div id="stale-status" class="note" style="white-space:pre-line">件数を確認中…</div><button id="stale-backup" type="button" onclick="staleBackup()">① Driveへ退避</button> <button id="stale-purge" type="button" onclick="stalePurge()" disabled>③ 削除する</button><div id="stale-result" class="note"></div></div>
+<script>
+async function staleCall(method,payload){const r=await fetch("/api/owner/stale-activity",{method,credentials:"same-origin",headers:{"content-type":"application/json"},body:payload?JSON.stringify(payload):undefined});return r.json().catch(()=>({ok:false,error:"INVALID_RESPONSE"}))}
+const STALE_LABEL={players:"プレイヤー",api_observations:"API生データ",player_snapshots:"プレイヤー履歴(D1)",history_emergency_buffer:"緊急バッファ"};
+function staleCounts(c){return Object.keys(STALE_LABEL).map(k=>STALE_LABEL[k]+" "+Number(c&&c[k]||0).toLocaleString("ja-JP")+"件").join(" / ")}
+let staleManifest=null;
+async function staleLoad(){const d=await staleCall("GET");const el=document.getElementById("stale-status");if(!d.ok){el.textContent="✕ "+(d.error||"取得失敗");return}staleManifest=d.manifest;let t="残っている件数："+staleCounts(d.counts);if(d.manifest)t+="\\n最新の退避："+new Date(d.manifest.created_at*1000).toLocaleString("ja-JP")+"「"+d.manifest.file_name+"」"+(d.manifest.drive_link?" ":"");el.textContent=t;if(d.manifest&&d.manifest.drive_link){const a=document.createElement("a");a.href=d.manifest.drive_link;a.target="_blank";a.rel="noopener";a.textContent="Driveで開く";el.appendChild(document.createElement("br"));el.appendChild(a)}document.getElementById("stale-purge").disabled=Boolean(d.purge_blocker)||!d.counts.total;const why={BACKUP_REQUIRED:"削除の前に①の退避が必要です。",BACKUP_TOO_OLD:"退避から7日以上たっています。もう一度①を実行してください。",DATA_CHANGED_SINCE_BACKUP:"退避後にデータが増えています。もう一度①を実行してください。"};if(d.purge_blocker&&d.counts.total)document.getElementById("stale-result").textContent=why[d.purge_blocker]||""}
+async function staleBackup(){const b=document.getElementById("stale-backup"),out=document.getElementById("stale-result");if(!confirm("使用禁止データをCSVにしてGoogle Driveへ退避します（削除はしません）。"))return;b.disabled=true;out.textContent="退避中…（数十秒かかることがあります）";try{const d=await staleCall("POST",{action:"backup"});out.textContent=d.ok?"✓ 退避しました："+d.manifest.file_name+"（"+Number(d.manifest.counts.total).toLocaleString("ja-JP")+"行、MD5照合済み）。Driveで中身を確認してから③へ進んでください。":"✕ 退避に失敗しました："+(d.error||"")+(d.step?"（"+d.step+"）":"")}finally{b.disabled=false;staleLoad()}}
+async function stalePurge(){const out=document.getElementById("stale-result");if(!staleManifest)return;const typed=prompt("削除します。元に戻すにはDriveのCSVが必要です。\\n確認のため退避ファイル名を入力してください：\\n"+staleManifest.file_name);if(typed===null)return;const b=document.getElementById("stale-purge");b.disabled=true;out.textContent="削除中…";try{const d=await staleCall("POST",{action:"purge",confirm:typed.trim()});const msg={CONFIRMATION_MISMATCH:"ファイル名が一致しません。",BACKUP_REQUIRED:"退避が必要です。",BACKUP_TOO_OLD:"退避が古すぎます。",DATA_CHANGED_SINCE_BACKUP:"退避後にデータが増えています。",PURGE_INCOMPLETE:"一部が残りました。もう一度実行してください。"};out.textContent=d.ok?"✓ 削除しました。残り0件。":"✕ "+(msg[d.error]||d.error||"失敗")}finally{staleLoad()}}
+staleLoad();
+</script>` : ''}
 <div class="card"><b>Google Drive接続検証</b><div class="note">Cloudflare SecretのRefresh TokenをGoogleへ交換し、Drive APIへ接続できるか確認します。Token自体は表示しません。</div><button id="verify-drive" class="btn" type="button" onclick="verifyDrive()">接続を検証</button><div id="verify-result" class="note"></div></div>
 <script>
 async function verifyDrive(){
@@ -4985,6 +5032,7 @@ export default {
       if (url.pathname === "/api/admin/google-drive/authorize") return await handleGoogleDriveAuthorizeApi(request, env);
       if (url.pathname === "/api/admin/google-drive/verify") return await handleGoogleDriveVerifyApi(request, env);
       if (url.pathname === "/api/owner/google-drive/restore") return await handleGoogleDriveRestoreApi(request, env);
+      if (url.pathname === "/api/owner/stale-activity") return await handleStaleActivityApi(request, env);
       if (url.pathname === "/api/owner/kvk/relogin-missing") return await handleKvkReloginMissingApi(request, env);
       if (url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);
       if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
