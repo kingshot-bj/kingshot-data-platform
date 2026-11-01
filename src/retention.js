@@ -133,7 +133,21 @@ export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, 
       accessToken: await drive.accessToken()
     });
   } catch (error) {
-    return { ...base, archiveKey: archive.key, archived: rows.length, status: "FAILED", reason: String(error?.code || error?.message || "GOOGLE_DRIVE_UPLOAD_FAILED").split(":")[0] };
+    return {
+      ...base,
+      archiveKey: archive.key,
+      archived: rows.length,
+      status: "FAILED",
+      reason: String(error?.code || error?.message || "GOOGLE_DRIVE_UPLOAD_FAILED").split(":")[0],
+      // Google error details for troubleshooting. Google error bodies never
+      // contain the OAuth tokens; only status, reason and message are kept.
+      driveError: {
+        step: error?.driveStep || null,
+        httpStatus: Number(error?.status || 0) || null,
+        googleReason: error?.googleError?.errors?.[0]?.reason || error?.googleError?.status || null,
+        message: String(error?.message || "").slice(0, 300)
+      }
+    };
   }
   if (!upload?.verified) {
     return { ...base, archiveKey: archive.key, archived: rows.length, driveFileId: upload?.driveFileId || null, status: "FAILED", reason: "GOOGLE_DRIVE_VERIFICATION_FAILED" };

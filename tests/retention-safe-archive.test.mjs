@@ -135,6 +135,10 @@ test("Drive upload failure keeps the D1 rows", async () => {
     assert.equal(result.status, "FAILED");
     assert.equal(result.deleted, 0);
     assert.equal(db.deletes.length, 0);
+    assert.equal(result.driveError.step, "UPLOAD");
+    assert.equal(result.driveError.httpStatus, 500);
+    assert.equal(result.driveError.message, "backend error");
+    assert.ok(!JSON.stringify(result).includes("SECRET"));
   } finally { drive.restore(); }
 });
 
