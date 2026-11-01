@@ -29,7 +29,7 @@ test("shared theme script and public status script are valid JavaScript (no brok
   const theme = src.slice(start, src.indexOf("`;", start));
   assert.ok(!theme.includes('\\"'), "no escaped quote inside the theme script template");
   assert.ok(!theme.includes("installRoleBar") && !theme.includes("installThemeToggle"), "no ROLE bar / floating toggle");
-  assert.match(theme, /setAttribute\("data-eagle-theme","dark"\)/, "always dark (light theme unfinished)");
-  assert.ok(!theme.includes("prefers-color-scheme: light"), "OS light mode is not followed");
+  assert.match(theme, /mode==="light"\|\|mode==="dark"/, "explicit light/dark choice from the 着せ替え page");
+  assert.match(theme, /prefers-color-scheme: light/, "auto follows the device setting");
   assert.ok(!src.includes('"\\"":"&quot;"'), "status page escape map uses a single-quoted key");
 });

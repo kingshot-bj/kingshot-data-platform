@@ -335,7 +335,7 @@ export const EAGLEEYE_THEME_BASE_CSS = `
   --ee-radius-md:13px;
   --ee-radius-lg:17px;
 }
-html:not([data-eagle-theme="light"]) body{background-color:var(--ee-bg);color:var(--ee-text)}
+body{background-color:var(--ee-bg);color:var(--ee-text)}
 /* Shared surface hierarchy: avoid pure-black canvases and inconsistent page cards. */
 :where(.ee-page,.wrap,.page-shell){color:var(--ee-text)}
 :where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div){
@@ -455,12 +455,102 @@ function normalizeRgbaInCss(css) {
   });
 }
 
+// Generic colour roles by lightness (beyond the fixed legacy list): inside a
+// CSS rule, near-white text becomes --ee-text, mid greys --ee-subtext, very
+// dark blue/grey backgrounds the surface tokens and dark blue/grey borders the
+// border tokens. Rules painted on a saturated accent background (buttons,
+// badges) keep their own text colour. Already converted values are skipped.
+function hexInfo(hex) {
+  const h = hex.length === 3 ? hex.split("").map(c => c + c).join("") : hex;
+  const n = parseInt(h, 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  return { r, g, b, lum, sat: max ? (max - min) / max : 0 };
+}
+function roleToken(kind, hex) {
+  // The curated legacy list wins when its token has the matching role.
+  const legacy = hex.length === 6 ? LEGACY_TO_TOKEN.get(hex.toLowerCase()) : null;
+  if (legacy) {
+    const role = TOKEN_ROLE[legacy];
+    if (role === "accent" || (kind === "bg" && role === "surface") || (kind === "line" && role === "line") || (kind === "text" && role === "text")) return legacy;
+  }
+  const c = hexInfo(hex);
+  const coolOrGrey = c.b >= c.r - 6;
+  if (kind === "text") {
+    // Light cyan accent text (#75e6f5, #8be9f8, ...) follows the theme accent.
+    if (c.g > c.r + 40 && c.b > c.r + 40 && c.sat > 0.3 && c.lum > 0.3) return "--ee-cyan";
+    if (c.lum > 0.72 && c.sat < 0.22) return "--ee-text";
+    if (c.lum > 0.2 && c.lum <= 0.72 && c.sat < 0.4 && coolOrGrey) return "--ee-subtext";
+    return null;
+  }
+  if (kind === "bg") {
+    if (!coolOrGrey || c.lum >= 0.1) return null;
+    return c.lum < 0.006 ? "--ee-bg" : c.lum < 0.012 ? "--ee-panel-deep" : c.lum < 0.025 ? "--ee-panel" : "--ee-panel-raised";
+  }
+  if (kind === "line") {
+    if (!coolOrGrey || c.lum < 0.012 || c.lum > 0.16 || c.sat > 0.75) return null;
+    return c.lum < 0.04 ? "--ee-border-soft" : "--ee-border";
+  }
+  return null;
+}
+const CSS_RULE = /([^{}]+)\{([^{}]*)\}/g;
+const DECL_IN_RULE = /(^|;)(\s*)(color|background|background-color|background-image|border|border-color|border-(?:top|bottom|left|right)(?:-color)?|outline|outline-color)(\s*:\s*)([^;]*)/gi;
+const BARE_HEX = /(?<!var\(--[a-z0-9-]+,)#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+function accentBackground(body) {
+  const m = body.match(/background(?:-color)?\s*:[^;]*?#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/i);
+  if (!m) return false;
+  const c = hexInfo(m[1]);
+  return c.sat > 0.45 && c.lum > 0.08;
+}
+// Page-local colour variables (e.g. :root{--bg:#050b14;--text:#eff8ff}) are
+// tied to the shared tokens by their name and lightness.
+const ROOT_VAR = /(^|;)(\s*)(--(?!ee-)[a-z0-9-]+)(\s*:\s*)#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b(?=\s*(?:;|$))/gi;
+function rootVarToken(name, hex) {
+  const n = name.toLowerCase();
+  const c = hexInfo(hex);
+  if (/cyan|accent|primary|brand/.test(n)) return c.b > c.r && c.g > c.r && c.sat > 0.4 ? "--ee-cyan" : null;
+  if (/line|border|stroke|divider/.test(n)) return roleToken("line", hex);
+  if (/text|fg|ink|sub|muted|dim|label|soft-text/.test(n)) return roleToken("text", hex);
+  if (/bg|panel|card|surface|base|deep|raised|back/.test(n)) return roleToken("bg", hex);
+  return null;
+}
+function normalizeRootVars(body) {
+  return body.replace(ROOT_VAR, (decl, sep, ws, name, colon, hex) => {
+    const token = rootVarToken(name, hex);
+    return token ? sep + ws + name + colon + "var(" + token + ",#" + hex + ")" : decl;
+  });
+}
+function normalizeRuleColors(css) {
+  return css.replace(CSS_RULE, (rule, selector, body) => {
+    if (/^\s*:root\s*$/.test(selector) || /^\s*html\s*$/.test(selector)) {
+      const vars = normalizeRootVars(body);
+      if (vars !== body) body = vars; else if (/^\s*:root\s*$/.test(selector)) return rule;
+      if (/^\s*:root\s*$/.test(selector)) return selector + "{" + body + "}";
+    }
+    if (/^\s*@|:root|data-eagle-theme|data-ee-skin/.test(selector)) return rule;
+    const onAccent = accentBackground(body);
+    const next = body.replace(DECL_IN_RULE, (decl, sep, ws, prop, colon, value) => {
+      const p = prop.toLowerCase();
+      const kind = p === "color" ? "text" : p.startsWith("background") ? "bg" : "line";
+      if (kind === "text" && onAccent) return decl;
+      const v = value.replace(BARE_HEX, (m, hex) => {
+        const token = roleToken(kind, hex);
+        return token ? "var(" + token + ",#" + hex + ")" : m;
+      });
+      return v === value ? decl : sep + ws + prop + colon + v;
+    });
+    return next === body ? rule : selector + "{" + next + "}";
+  });
+}
+
 export function normalizeLegacyPalette(html) {
   if (typeof html !== "string") return html;
   // Pages intentionally designed in the light Apple style keep their own colours.
   if (html.includes("background:#f5f5f7")) return html;
   html = html.replace(STYLE_BLOCK, (block, css) => {
-    let next = normalizeRadiiInCss(css);
+    let next = normalizeRuleColors(normalizeRadiiInCss(css));
     if (next.includes("rgba(")) next = normalizeRgbaInCss(next);
     return next === css ? block : block.replace(css, () => next);
   });
@@ -477,4 +567,4 @@ export function normalizeLegacyPalette(html) {
 }
 
 // Light theme values for the shared tokens (dark values are the defaults in :root).
-export const EAGLEEYE_LIGHT_TOKENS_CSS = `html[data-eagle-theme="light"]{--ee-bg:#f3f6fb;--ee-panel:#ffffff;--ee-panel-deep:#f8fafc;--ee-panel-raised:#eef2f7;--ee-border:#cbd5e1;--ee-border-soft:#dbe3ee;--ee-text:#172033;--ee-subtext:#55657a;--ee-muted:#7b8899}`;
+export const EAGLEEYE_LIGHT_TOKENS_CSS = `html[data-eagle-theme="light"]{--ee-bg:#f3f6fb;--ee-panel:#ffffff;--ee-panel-deep:#f8fafc;--ee-panel-raised:#eef2f7;--ee-border:#cbd5e1;--ee-border-soft:#dbe3ee;--ee-text:#172033;--ee-subtext:#55657a;--ee-muted:#7b8899;--ee-cyan:#0891b2;--ee-cyan-strong:#0e7490;--ee-on-accent:#ffffff;--ee-success:#15803d;--ee-warning:#b45309;--ee-danger:#dc2626;--ee-rival:#dc2626}`;
