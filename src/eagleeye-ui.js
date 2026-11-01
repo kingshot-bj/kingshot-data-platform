@@ -421,6 +421,22 @@ const RGBA_TOKEN = { accent: "--ee-cyan", bg: "--ee-bg", deep: "--ee-panel-deep"
 const STYLE_BLOCK = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
 const CSS_DECL = /(^|[{;\s])(--[a-z0-9-]+|[a-z-]+)\s*:\s*([^;{}]*)/gi;
 const RGBA = /rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0?\.\d+|1(?:\.0+)?|0)\s*\)/g;
+// Corner radii: pages used ~20 slightly different values. Single px values
+// are snapped to the three shared radius tokens (pills / circles / tiny radii
+// and multi-value shorthands are left alone).
+const RADIUS_DECL = /(^|[{;\s])border-radius\s*:\s*(\d{1,2})px(\s*!important)?(?=\s*[;}])/g;
+function radiusToken(px) {
+  if (px >= 8 && px <= 11) return "var(--ee-radius-sm,9px)";
+  if (px >= 12 && px <= 15) return "var(--ee-radius-md,13px)";
+  if (px >= 16 && px <= 28) return "var(--ee-radius-lg,17px)";
+  return null;
+}
+function normalizeRadiiInCss(css) {
+  return css.replace(RADIUS_DECL, (match, lead, px, important) => {
+    const token = radiusToken(Number(px));
+    return token ? lead + "border-radius:" + token + (important || "") : match;
+  });
+}
 function normalizeRgbaInCss(css) {
   return css.replace(CSS_DECL, (match, lead, property, value) => {
     if (!value.includes("rgba(")) return match;
@@ -443,7 +459,11 @@ export function normalizeLegacyPalette(html) {
   if (typeof html !== "string") return html;
   // Pages intentionally designed in the light Apple style keep their own colours.
   if (html.includes("background:#f5f5f7")) return html;
-  if (html.includes("rgba(")) html = html.replace(STYLE_BLOCK, (block, css) => block.replace(css, normalizeRgbaInCss(css)));
+  html = html.replace(STYLE_BLOCK, (block, css) => {
+    let next = normalizeRadiiInCss(css);
+    if (next.includes("rgba(")) next = normalizeRgbaInCss(next);
+    return next === css ? block : block.replace(css, () => next);
+  });
   return html.replace(CSS_COLOR_DECL, (match, prefix, hex) => {
     const token = LEGACY_TO_TOKEN.get(hex.toLowerCase());
     if (!token) return match;

@@ -71,7 +71,7 @@ h1{margin:4px 0 6px;font-size:26px}.muted{color:var(--ee-subtext);font-size:13px
 .skin-check{display:none;position:absolute;top:8px;right:10px;font-size:11px;font-weight:800;color:#fff;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:999px}
 .skin.on{outline:3px solid var(--ee-cyan);outline-offset:2px}.skin.on .skin-check{display:block}
 .note{margin-top:16px;padding:12px 14px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);font-size:12px;color:var(--ee-subtext);line-height:1.6}
-</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">THEME</div><h1>着せ替え</h1>
+</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">着せ替え</div><h1>着せ替え</h1>
 <p class="muted">好きな色を選ぶと、すべてのページの色が切り替わります。選んだテーマはこの端末に保存されます。</p>
 <div class="grid">${EAGLEEYE_THEMES.map(swatch).join("")}</div>
 <div class="note">着せ替えはダークモードで使えます。画面右下の 🌙 / ☀️ でライトモードにしている場合は、ライトの色が優先されます。</div>
