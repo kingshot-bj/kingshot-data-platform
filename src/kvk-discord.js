@@ -16,6 +16,8 @@ export const KVK_PARENT_CHANNEL_NAME = "kvk-通知";
 export const KVK_DISCORD_MAX_CALLS_PER_RUN = 12;
 export const KVK_THREAD_SYNC_INTERVAL_SECONDS = 30 * 60;
 export const KVK_OUTBOX_MAX_AGE_SECONDS = 24 * 3600;
+// A user Discord refuses to add (e.g. 50001: not in the server) is retried after this long.
+export const KVK_MEMBER_RETRY_SECONDS = 6 * 3600;
 
 // Discord permission bits.
 const P = {
@@ -62,6 +64,8 @@ async function createKvkDiscordSchema(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_outbox (
     message_key TEXT PRIMARY KEY, kid INTEGER NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, sent_at INTEGER, status TEXT)`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_discord_outbox_pending ON kvk_discord_outbox(sent_at, created_at)").run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_member_skips (
+    kid INTEGER NOT NULL, discord_id TEXT NOT NULL, retry_after INTEGER NOT NULL, error_code INTEGER, PRIMARY KEY (kid, discord_id))`).run();
 }
 
 function compactScore(v) {
@@ -219,20 +223,25 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
       }
       const current = new Set(((await db.prepare("SELECT discord_id FROM kvk_discord_members WHERE kid = ?").bind(kid).all()).results || []).map(r => r.discord_id));
       const want = desired.get(kid) || new Set();
+      const skipped = new Set(((await db.prepare("SELECT discord_id FROM kvk_discord_member_skips WHERE kid = ? AND retry_after > ?").bind(kid, now).all()).results || []).map(r => r.discord_id));
       let complete = true;
       for (const id of want) {
-        if (current.has(id)) continue;
+        if (current.has(id) || skipped.has(id)) continue;
         if (budget.calls >= maxCalls) { complete = false; break; }
         budget.calls++;
         try {
           await request(env, `/channels/${thread.thread_id}/thread-members/${id}`, { method: "PUT" });
           await db.prepare("INSERT OR IGNORE INTO kvk_discord_members (kid, discord_id, added_at) VALUES (?, ?, ?)").bind(kid, id, now).run();
+          await db.prepare("DELETE FROM kvk_discord_member_skips WHERE kid = ? AND discord_id = ?").bind(kid, id).run();
           summary.added++;
         } catch (error) {
-          // A user who cannot be added (e.g. not in the server yet) is skipped and retried on the next sync;
-          // it must not block the other users or kingdoms.
+          if (Number(error?.status) === 429) { complete = false; stop(error, "add_member"); break; }
+          // A user who cannot be added (e.g. 50001: not in the server yet) is skipped for a while
+          // so the same failures do not use up every run; other users and kingdoms continue.
           summary.skippedMembers = (summary.skippedMembers || 0) + 1;
-          if (stop(error, "add_member")) throw error;
+          note(error, "add_member");
+          await db.prepare("INSERT INTO kvk_discord_member_skips (kid, discord_id, retry_after, error_code) VALUES (?, ?, ?, ?) ON CONFLICT(kid, discord_id) DO UPDATE SET retry_after = excluded.retry_after, error_code = excluded.error_code")
+            .bind(kid, id, now + KVK_MEMBER_RETRY_SECONDS, Number(error?.discord?.code) || null).run();
         }
       }
       for (const id of current) {

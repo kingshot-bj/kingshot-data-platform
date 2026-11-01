@@ -88,7 +88,9 @@ test("users who leave the kingdom are removed; users not in the server are retri
   await runKvkDiscordSync(env, { now: NOW + 31 * 60, request: dc.request });
   const t = db.sqlite.prepare("SELECT thread_id FROM kvk_discord_threads WHERE kid = 1524").get().thread_id;
   assert.ok(dc.calls.some(c => c.method === "DELETE" && c.path === `/channels/${t}/thread-members/${A}`));
-  assert.ok(dc.calls.some(c => c.method === "PUT" && c.path === `/channels/${t}/thread-members/${B}`), "retried");
+  const later = fakeDiscord();
+  await runKvkDiscordSync(env, { now: NOW + 7 * 3600, request: later.request });
+  assert.ok(later.calls.some(c => c.method === "PUT" && c.path === `/channels/${t}/thread-members/${B}`), "retried after the back-off");
 });
 
 test("API calls per run are capped", async () => {
@@ -177,4 +179,35 @@ test("a user who cannot be added does not block other users or other kingdoms", 
   assert.deepEqual(db.sqlite.prepare("SELECT kid, discord_id FROM kvk_discord_members ORDER BY kid, discord_id").all().map(x => x.kid + ":" + x.discord_id), [`1001:${D}`, `1524:${A}`, `1524:${C}`]);
   assert.equal(r.skippedMembers, 1);
   assert.ok(db.sqlite.prepare("SELECT member_sync_at FROM kvk_discord_threads WHERE kid = 1524").get().member_sync_at, "sync completes; the skipped user is retried next time");
+});
+
+test("users Discord refuses (50001) are retried only after 6 hours; a 429 does not stop other kingdoms", async () => {
+  const D = "444444444444444444";
+  const { db, env } = setup([["u1", A, 1524], ["u2", B, 1524], ["u3", C, 1524], ["u4", D, 1001]]);
+  let n = 0;
+  const calls = [];
+  const make = ({ rateLimitC = false } = {}) => async (e, path, options = {}) => {
+    const method = options.method || "GET";
+    calls.push(method + " " + path);
+    if (method === "GET") return [];
+    if (path === `/guilds/${GUILD}/channels`) return { id: "900000000000000001" };
+    if (path.endsWith("/threads")) return { id: "91000000000000000" + (++n) };
+    if (method === "PUT" && path.endsWith("/" + B)) { const err = new Error("Missing Access"); err.status = 403; err.discord = { code: 50001 }; throw err; }
+    if (method === "PUT" && path.endsWith("/" + C) && rateLimitC) { const err = new Error("rate limited"); err.status = 429; err.discord = { retry_after: 3 }; throw err; }
+    return null;
+  };
+  const r1 = await runKvkDiscordSync(env, { now: NOW, request: make({ rateLimitC: true }) });
+  assert.equal(r1.created, 2, "1001 still gets its thread after a 429 in 1524");
+  assert.ok(db.sqlite.prepare("SELECT 1 FROM kvk_discord_members WHERE kid = 1001").get());
+  assert.equal(db.sqlite.prepare("SELECT error_code FROM kvk_discord_member_skips WHERE discord_id = ?").get(B).error_code, 50001);
+  // Next sync: C is added, B is not retried yet.
+  calls.length = 0;
+  await runKvkDiscordSync(env, { now: NOW + 31 * 60, request: make() });
+  assert.ok(calls.some(c => c.endsWith("/" + C)));
+  assert.ok(!calls.some(c => c.endsWith("/" + B)), "skipped user is not retried within 6 hours");
+  // After 6 hours B is tried again.
+  calls.length = 0;
+  db.sqlite.prepare("UPDATE kvk_discord_threads SET member_sync_at = 0").run();
+  await runKvkDiscordSync(env, { now: NOW + 7 * 3600, request: make() });
+  assert.ok(calls.some(c => c.endsWith("/" + B)));
 });
