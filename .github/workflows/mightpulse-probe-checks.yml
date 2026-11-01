@@ -66,5 +66,7 @@ jobs:
         run: node --test tests/login-return.test.mjs
       - name: Alliance history fallback tests
         run: node --test tests/alliance-history-fallback.test.mjs
+      - name: KvK tests
+        run: node --test tests/kvk.test.mjs
       - name: Run player compare enhancement tests
         run: node --test tests/player-compare-enhancements.test.mjs

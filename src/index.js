@@ -48,7 +48,8 @@ import { verifyKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill-ve
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
-import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath } from "./login-return.js";
+import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
+import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { runPlayerRoller } from "./player-roller.js";
 import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
@@ -4975,6 +4976,7 @@ export default {
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAlliancePage(request, env, auth)); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
+      if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
       if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));
       if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
@@ -5066,6 +5068,12 @@ export default {
       await runDataRetentionJob(env);
     } catch (error) {
       console.error("data_retention_job_failed", error?.message || error);
+    }
+    try {
+      const kvk = await runKvkCollection(env);
+      if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
+    } catch (error) {
+      console.error("kvk_collection_failed", error?.message || error);
     }
   },
   async queue(batch, env) {
@@ -10425,6 +10433,7 @@ async function renderHome(request, env) {
 .ee-tile{min-height:112px;padding:10px 5px;border-radius:17px;background:linear-gradient(155deg,rgba(13,34,54,.98),rgba(6,18,31,.98));border-color:rgba(43,77,107,.68);transition:transform .16s,border-color .16s,background .16s}.ee-tile.primary{border-color:rgba(32,215,242,.5);background:linear-gradient(155deg,rgba(10,45,65,.98),rgba(6,20,34,.98))}.ee-tile:active{transform:scale(.965);background:#102b43}.ee-tile img{width:48px;height:48px}.ee-tile strong{font-size:11px}.ee-tile small{font-size:8px;color:#89a1b8}.ee-tile .badge{right:8px;top:8px;min-width:18px;height:18px;box-shadow:0 0 15px rgba(32,215,242,.18)}
 .ee-summary{gap:8px;margin-top:17px}.ee-stat{padding:11px 12px;border-radius:15px;background:linear-gradient(150deg,rgba(10,25,41,.95),rgba(6,16,28,.95));border-color:rgba(35,65,95,.62)}.ee-stat-label{font-size:8px;letter-spacing:.08em}.ee-stat-value{font-size:17px}.ee-stat-sub{font-size:8px;color:#7892aa}.ee-more{display:none}
 .ee-milestone-card{width:100%;display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 15px;text-align:left;border:1px solid rgba(246,200,75,.25);border-radius:16px;background:linear-gradient(110deg,rgba(48,39,18,.52),rgba(8,22,37,.92));color:#e7edf5;opacity:.78;cursor:not-allowed}
+.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
 .ee-milestone-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(246,200,75,.35);border-radius:12px;color:#f6c84b;font-size:24px}
 .ee-milestone-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.ee-milestone-copy strong{font-size:12px;font-weight:950}.ee-milestone-copy small{font-size:9px;color:#8da2b8}.ee-milestone-status{flex:0 0 auto;padding:6px 8px;border:1px solid rgba(246,200,75,.24);border-radius:999px;color:#f6d98b;font-size:9px;font-weight:900;white-space:nowrap}
 .ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
@@ -10679,6 +10688,11 @@ async function renderHome(request, env) {
   <div class="ee-stat"><div class="ee-stat-label">MY KINGSHOT</div><div class="ee-stat-value">DATA</div><div class="ee-stat-sub">登録データへ</div></div>
   <div class="ee-stat"><div class="ee-stat-label">EAGLEEYE</div><div class="ee-stat-value"><em>LIVE</em></div><div class="ee-stat-sub">観測システム稼働中</div></div>
 </section>
+<a class="ee-milestone-card ee-kvk-card" href="/kvk">
+  <span class="ee-milestone-icon" aria-hidden="true">⚔</span>
+  <span class="ee-milestone-copy"><strong>KvK</strong><small>対戦相手・スコア・日ごとの推移</small></span>
+  <span class="ee-milestone-status">ADVANCED以上</span>
+</a>
 <button class="ee-milestone-card" type="button" disabled aria-disabled="true">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>デイリー・累計目標と報酬</small></span>
