@@ -74,6 +74,11 @@ export async function exchangeGoogleDriveOAuthCode(env, code) {
   });
 }
 
+// One access token can be reused for every upload in a Worker invocation.
+export async function getGoogleDriveAccessToken(env) {
+  return refreshGoogleDriveAccessToken(env);
+}
+
 async function refreshGoogleDriveAccessToken(env) {
   const { clientId, clientSecret } = googleConfig(env);
   const refreshToken = requireRefreshToken(env);
@@ -147,19 +152,36 @@ async function findExistingArchive(accessToken, folderId, sourceKey) {
   return Array.isArray(data.files) ? data.files[0] || null : null;
 }
 
+// R2 ETags of single-part uploads are the MD5 of the object; Drive reports
+// md5Checksum for uploaded binary files. Comparing both proves byte equality.
+function r2EtagMd5(etag) {
+  const value = String(etag || "").replace(/"/g, "").trim().toLowerCase();
+  return /^[0-9a-f]{32}$/.test(value) ? value : null;
+}
+
+export function verifyDriveCopyMatchesR2({ sourceSize, sourceEtag, driveSize, driveMd5 }) {
+  const sizeMatches = Number(sourceSize) > 0 && Number(sourceSize) === Number(driveSize);
+  const sourceMd5 = r2EtagMd5(sourceEtag);
+  const md5 = String(driveMd5 || "").trim().toLowerCase();
+  const md5Checked = Boolean(sourceMd5 && md5);
+  const md5Matches = md5Checked ? sourceMd5 === md5 : null;
+  return { verified: sizeMatches && md5Matches !== false, sizeMatches, md5Checked, md5Matches };
+}
+
 /**
  * Upload one R2 object to the EagleEye folder in the personal Google Drive.
  * Authentication uses a user OAuth refresh token, not a Service Account.
- *
- * This remains an explicit transport/verification primitive. It is not wired
- * to cron, retention, or automatic R2 deletion.
+ * The result's `verified` is true only when size (and MD5, when both sides
+ * expose it) match the R2 object; callers must not delete source data unless
+ * `verified` is true.
  */
 export async function uploadR2ObjectToGoogleDrive(env, {
   archiveBucket,
   key,
   fileName = null,
   mimeType = "application/gzip",
-  folderId = null
+  folderId = null,
+  accessToken: providedAccessToken = null
 } = {}) {
   if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!key) throw new Error("GOOGLE_DRIVE_SOURCE_KEY_REQUIRED");
@@ -174,10 +196,12 @@ export async function uploadR2ObjectToGoogleDrive(env, {
     throw error;
   }
 
-  const accessToken = await refreshGoogleDriveAccessToken(env);
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
   const existing = await findExistingArchive(accessToken, parentFolderId, key);
   if (existing?.id) {
+    const check = verifyDriveCopyMatchesR2({ sourceSize: object.size, sourceEtag: object.etag, driveSize: existing.size, driveMd5: existing.md5Checksum });
     return {
+      ...check,
       sourceKey: key,
       driveFileId: existing.id,
       name: existing.name || null,
@@ -186,7 +210,6 @@ export async function uploadR2ObjectToGoogleDrive(env, {
       parents: existing.parents || [],
       webViewLink: existing.webViewLink || null,
       duplicate: true,
-      verified: Number(existing.size || 0) === Number(object.size || 0),
       sourceSize: Number(object.size || 0),
       driveSize: Number(existing.size || 0),
       sourceEtag: object.etag || null,
@@ -231,15 +254,16 @@ export async function uploadR2ObjectToGoogleDrive(env, {
 
   const sourceSize = Number(object.size || sourceBytes.byteLength || 0);
   const driveSize = Number(data.size || 0);
-  const verified = sourceSize === driveSize;
-  if (!verified) {
-    const error = new Error("GOOGLE_DRIVE_SIZE_VERIFICATION_FAILED");
-    error.code = "GOOGLE_DRIVE_SIZE_VERIFICATION_FAILED";
-    error.details = { sourceSize, driveSize, driveFileId: data.id };
+  const check = verifyDriveCopyMatchesR2({ sourceSize, sourceEtag: object.etag, driveSize, driveMd5: data.md5Checksum });
+  if (!check.verified) {
+    const error = new Error("GOOGLE_DRIVE_VERIFICATION_FAILED");
+    error.code = "GOOGLE_DRIVE_VERIFICATION_FAILED";
+    error.details = { sourceSize, driveSize, md5Matches: check.md5Matches, driveFileId: data.id };
     throw error;
   }
 
   return {
+    ...check,
     sourceKey: key,
     driveFileId: data.id,
     name: data.name,
@@ -248,7 +272,6 @@ export async function uploadR2ObjectToGoogleDrive(env, {
     parents: data.parents || [],
     webViewLink: data.webViewLink || null,
     duplicate: false,
-    verified: true,
     sourceSize,
     driveSize,
     sourceEtag: object.etag || null,
