@@ -13,6 +13,10 @@ import { discordApiRequest } from "./discord-support.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
 export const KVK_PARENT_CHANNEL_NAME = "kvk-通知";
+
+export function kvkWelcomeDmText(kid, guildId, threadId) {
+  return `**EagleEye：王国${Number(kid)}のKvK通知スレッドに追加されました**\nEagleEye Supportサーバーの #${KVK_PARENT_CHANNEL_NAME} の中にある「王国 ${Number(kid)}」スレッドで、組み合わせ発表・各日の結果・優勢/劣勢の入れ替わりをお知らせします。\nhttps://discord.com/channels/${guildId}/${threadId}`;
+}
 export const KVK_DISCORD_MAX_CALLS_PER_RUN = 12;
 export const KVK_THREAD_SYNC_INTERVAL_SECONDS = 30 * 60;
 export const KVK_OUTBOX_MAX_AGE_SECONDS = 24 * 3600;
@@ -64,6 +68,12 @@ async function createKvkDiscordSchema(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_outbox (
     message_key TEXT PRIMARY KEY, kid INTEGER NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, sent_at INTEGER, status TEXT)`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_discord_outbox_pending ON kvk_discord_outbox(sent_at, created_at)").run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_dm_queue (
+    kid INTEGER NOT NULL, discord_id TEXT NOT NULL, thread_id TEXT NOT NULL, created_at INTEGER NOT NULL, sent_at INTEGER, status TEXT,
+    PRIMARY KEY (kid, discord_id))`).run();
+  // One welcome DM for members added before DMs existed (primary key keeps it to one per member).
+  await db.prepare(`INSERT OR IGNORE INTO kvk_discord_dm_queue (kid, discord_id, thread_id, created_at)
+    SELECT m.kid, m.discord_id, t.thread_id, m.added_at FROM kvk_discord_members m JOIN kvk_discord_threads t ON t.kid = m.kid`).run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_member_skips (
     kid INTEGER NOT NULL, discord_id TEXT NOT NULL, retry_after INTEGER NOT NULL, error_code INTEGER, PRIMARY KEY (kid, discord_id))`).run();
 }
@@ -234,6 +244,9 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
           await db.prepare("INSERT OR IGNORE INTO kvk_discord_members (kid, discord_id, added_at) VALUES (?, ?, ?)").bind(kid, id, now).run();
           await db.prepare("DELETE FROM kvk_discord_member_skips WHERE kid = ? AND discord_id = ?").bind(kid, id).run();
           summary.added++;
+          // Tell only the added user (by DM) where the thread is; no message in the thread.
+          await db.prepare("INSERT INTO kvk_discord_dm_queue (kid, discord_id, thread_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(kid, discord_id) DO UPDATE SET thread_id = excluded.thread_id, created_at = excluded.created_at, sent_at = NULL, status = NULL")
+            .bind(kid, id, thread.thread_id, now).run();
         } catch (error) {
           if (Number(error?.status) === 429) { complete = false; stop(error, "add_member"); break; }
           // A user who cannot be added (e.g. 50001: not in the server yet) is skipped for a while
@@ -257,7 +270,30 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
       threads.set(kid, { ...thread, member_sync_at: complete ? now : thread.member_sync_at });
     }
 
-    // 2) Outbox: drop stale messages and those for kingdoms without a thread, send the rest.
+    // 2) Welcome DMs for newly added users (best effort: closed DMs are just marked).
+    const dms = (await db.prepare("SELECT kid, discord_id, thread_id FROM kvk_discord_dm_queue WHERE sent_at IS NULL ORDER BY created_at LIMIT 5").all()).results || [];
+    for (const dm of dms) {
+      if (budget.calls + 2 > maxCalls) break;
+      let status = "SENT";
+      try {
+        budget.calls++;
+        const channel = await request(env, "/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: dm.discord_id }) });
+        budget.calls++;
+        await request(env, `/channels/${channel.id}/messages`, { method: "POST", body: JSON.stringify({
+          content: kvkWelcomeDmText(dm.kid, guildId, dm.thread_id),
+          allowed_mentions: { parse: [] }
+        }) });
+        summary.dms = (summary.dms || 0) + 1;
+      } catch (error) {
+        if (Number(error?.status) === 429) { note(error, "dm"); break; }
+        // 50007: the user does not accept DMs from server members. Nothing else to do.
+        status = Number(error?.discord?.code) === 50007 ? "DM_CLOSED" : "FAILED";
+        note(error, "dm");
+      }
+      await db.prepare("UPDATE kvk_discord_dm_queue SET sent_at = ?, status = ? WHERE kid = ? AND discord_id = ?").bind(now, status, dm.kid, dm.discord_id).run();
+    }
+
+    // 3) Outbox: drop stale messages and those for kingdoms without a thread, send the rest.
     await db.prepare("UPDATE kvk_discord_outbox SET sent_at = ?, status = 'DROPPED' WHERE sent_at IS NULL AND created_at < ?").bind(now, now - KVK_OUTBOX_MAX_AGE_SECONDS).run();
     const pending = (await db.prepare("SELECT message_key, kid, content FROM kvk_discord_outbox WHERE sent_at IS NULL ORDER BY created_at, message_key LIMIT 20").all()).results || [];
     for (const item of pending) {
