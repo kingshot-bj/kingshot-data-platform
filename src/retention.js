@@ -107,7 +107,7 @@ export function createDriveSession(env) {
  * Any failure or a disconnected Drive leaves the D1 rows untouched; the next
  * run retries the same rows (same R2 key, Drive duplicate detection).
  */
-export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, rows }) {
+export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, rows, key = null, beforeDelete = null }) {
   const base = { table, selected: rows.length, archived: 0, deleted: 0, archiveKey: null, driveFileId: null };
   if (!rows.length) return { ...base, status: "NOTHING_TO_DO" };
   if (!archiveBucket) return { ...base, status: "SKIPPED", reason: "R2_ARCHIVE_NOT_CONFIGURED" };
@@ -116,7 +116,7 @@ export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, 
   const rowids = rows.map(row => Number(row.rowid));
   if (rowids.some(id => !Number.isFinite(id))) return { ...base, status: "FAILED", reason: "ROWID_MISSING" };
 
-  const archive = await archiveD1RowsToR2(archiveBucket, { table, rows });
+  const archive = await archiveD1RowsToR2(archiveBucket, { table, rows, key });
   const head = await archiveBucket.head(archive.key);
   const r2Ok = Boolean(head) &&
     Number(head.size || 0) > 0 &&
@@ -153,6 +153,13 @@ export async function archiveBatchThenDelete(db, archiveBucket, drive, { table, 
     return { ...base, archiveKey: archive.key, archived: rows.length, driveFileId: upload?.driveFileId || null, status: "FAILED", reason: "GOOGLE_DRIVE_VERIFICATION_FAILED" };
   }
 
+  if (beforeDelete) {
+    try {
+      await beforeDelete({ archiveKey: archive.key, driveFileId: upload.driveFileId || null });
+    } catch (error) {
+      return { ...base, archiveKey: archive.key, archived: rows.length, driveFileId: upload.driveFileId || null, status: "FAILED", reason: "BEFORE_DELETE_FAILED" };
+    }
+  }
   const deleted = await deleteRowidsInChunks(db, table, rowids);
   return {
     ...base,

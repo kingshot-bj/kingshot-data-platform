@@ -2,6 +2,7 @@ import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { renderHeroCatalogPage } from "./hero-catalog-page.js";
 import { renderPrivacyPolicyPage, renderTermsPage } from "./legal-pages.js";
+import { archiveStaleKingdomRankings, restoreArchivedKingdomRankingsIfMissing, withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { queueHeroIconCandidates, runHeroIconAssetWorker, getSavedHeroIconMap, serveHeroIconAsset } from "./hero-icon-store.js";
 import { PLAYER_COMPARE_ENHANCEMENTS } from "./player-compare-enhancements.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
@@ -320,6 +321,38 @@ async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } 
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("system_log_archive_failed", error?.message || error);
+  }
+
+  // Stale, unfollowed kingdom rankings: same verified R2 + Drive backup
+  // before D1 delete; pages read the R2 copy afterwards.
+  try {
+    const kingdomArchive = await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now });
+    const failed = (kingdomArchive.batches || []).some(b => b.status === "FAILED");
+    if (failed || kingdomArchive.archivedKingdoms > 0 || (kingdomArchive.skipped && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "retention",
+        feature: "kingdom_ranking_archive",
+        operation: "ARCHIVE_STALE_KINGDOM_RANKINGS",
+        status: failed ? "FAILED" : kingdomArchive.skipped ? "WARNING" : "SUCCESS",
+        errorCode: kingdomArchive.reason || null,
+        message: failed
+          ? "王国ランキングの退避に失敗したため、D1からは削除していません。"
+          : kingdomArchive.skipped
+            ? "Google DriveまたはR2の準備ができていないため、王国ランキングをD1から削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、更新の止まった王国ランキングをD1から削除しました。",
+        metadata: kingdomArchive
+      });
+    }
+  } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "retention",
+      feature: "kingdom_ranking_archive",
+      operation: "ARCHIVE_STALE_KINGDOM_RANKINGS",
+      status: "FAILED",
+      errorCode: String(error?.code || error?.message || "KINGDOM_RANKING_ARCHIVE_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000)
+    });
+    console.error("kingdom_ranking_archive_failed", error?.message || error);
   }
 }
 
@@ -677,6 +710,13 @@ async function runKingdomWatchlistJobs(env) {
 
       let job = active;
       if (!job) {
+        // A kingdom whose rankings were archived gets its last snapshot back
+        // before the first fetch, so changes are detected against real ranks.
+        try {
+          await restoreArchivedKingdomRankingsIfMissing(env, row.kid);
+        } catch (error) {
+          console.error("kingdom_ranking_archive_restore_failed", row.kid, error?.message || error);
+        }
         const jobId = crypto.randomUUID();
         await env.DB.prepare(
           "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'OPERATOR', ?, ?)"
@@ -7498,11 +7538,15 @@ async function handlePlayerCompareApi(request, env) {
           const allianceClause = allianceTargetIds.length
             ? " OR (target_type = 'ALLIANCE' AND target_id IN (" + allianceTargetIds.map(() => "?").join(",") + "))"
             : "";
-          const stored = await env.DB.prepare(
+          const stored = await withArchivedRankings(env, raw.kid, await env.DB.prepare(
             "SELECT board, target_type, target_id, rank, score, observed_at, source_observed_at " +
             "FROM kingdom_ranking_current WHERE kid = ? AND board IN (" + boardPlaceholders + ") AND " +
             "((target_type = 'PLAYER' AND target_id IN (" + playerPlaceholders + "))" + allianceClause + ")"
-          ).bind(Number(raw.kid), ...queryBoards, ...playerTargetIds, ...allianceTargetIds).all();
+          ).bind(Number(raw.kid), ...queryBoards, ...playerTargetIds, ...allianceTargetIds).all(), {
+            filter: row => queryBoards.includes(row.board) && (
+              (row.target_type === "PLAYER" && playerTargetIds.map(String).includes(String(row.target_id))) ||
+              (row.target_type === "ALLIANCE" && allianceTargetIds.map(String).includes(String(row.target_id))))
+          });
           const knownBoards = new Set(leaderboardData.map(normalizeBoardKey));
           for (const row of stored.results || []) {
             if (row.score == null || row.score === "") continue;
@@ -7801,7 +7845,7 @@ async function handlePlayerSectionExport(request, env) {
 
     if (visibilityEnabled(visibilitySettings, "hero_rankings", guard.auth.role)) {
       const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
+      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
     }
 
     const exportedAt = new Date().toISOString();
@@ -7954,11 +7998,13 @@ async function renderPlayerPage(request, env) {
       const normalizedGovernorId = normalizeGovernorId(governorId);
       if (kid !== undefined && kid !== null && normalizedGovernorId) {
         const placeholders = rankBoards.map(() => "?").join(",");
-        const storedRanks = await env.DB.prepare(
+        const storedRanks = await withArchivedRankings(env, kid, await env.DB.prepare(
           "SELECT board, rank FROM kingdom_ranking_current " +
           "WHERE kid = ? AND target_type = 'PLAYER' AND (governor_id = ? OR target_id = ?) " +
           "AND board IN (" + placeholders + ")"
-        ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all();
+        ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all(), {
+          filter: row => row.target_type === "PLAYER" && (String(row.governor_id) === String(normalizedGovernorId) || String(row.target_id) === String(normalizedGovernorId)) && rankBoards.includes(row.board)
+        });
         const rankByBoard = new Map((storedRanks.results || []).map(row => [String(row.board), row.rank]));
         const boardAliases = {
           "Coliseum": "coliseum",
@@ -7991,7 +8037,7 @@ async function renderPlayerPage(request, env) {
     }
     if (visibilityEnabled(visibilitySettings, "hero_rankings", auth.role)) {
       const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
+      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
     }
     return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER");
   } catch (error) {
@@ -8332,7 +8378,8 @@ function localizeLeaderboardLabel(board) {
   return candidates[0] || "ランキング";
 }
 
-async function getLatestPlayerHeroRankings(db, kid, governorId) {
+async function getLatestPlayerHeroRankings(env, kid, governorId) {
+  const db = env?.DB;
   if (!db || kid === undefined || kid === null || !governorId) return [];
   const result = await db.prepare(
     `SELECT board, rank, score, observed_at
@@ -8349,7 +8396,13 @@ async function getLatestPlayerHeroRankings(db, kid, governorId) {
        ELSE 99
      END`
   ).bind(Number(kid), String(governorId)).all();
-  return result.results || [];
+  const heroBoards = ["single_hero", "hero_total", "hero_no_equip", "hero_equip"];
+  const resolved = await withArchivedRankings(env, kid, result, {
+    filter: row => row.target_type === "PLAYER" && String(row.target_id) === String(governorId) && heroBoards.includes(row.board)
+  });
+  return resolved.results
+    .map(row => ({ board: row.board, rank: row.rank, score: row.score, observed_at: row.observed_at, archived_at: resolved.archived?.archivedAt ?? null }))
+    .sort((a, b) => heroBoards.indexOf(a.board) - heroBoards.indexOf(b.board));
 }
 
 function localizeGemLevel(gem) {

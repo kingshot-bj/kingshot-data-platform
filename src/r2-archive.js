@@ -10,7 +10,8 @@ const ARCHIVE_TABLES = new Set([
   "api_pool_usage",
   "player_identity_history",
   "system_event_log",
-  "diagnostic_events"
+  "diagnostic_events",
+  "kingdom_ranking_current"
 ]);
 
 function archiveKey(table, rows) {
@@ -43,7 +44,7 @@ async function gzipText(text) {
   return await new Response(compressed).arrayBuffer();
 }
 
-export async function archiveD1RowsToR2(bucket, { table, rows }) {
+export async function archiveD1RowsToR2(bucket, { table, rows, key: providedKey = null }) {
   if (!bucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!ARCHIVE_TABLES.has(table)) throw new Error("R2_ARCHIVE_TABLE_NOT_ALLOWED");
   if (!Array.isArray(rows) || rows.length === 0) return null;
@@ -54,7 +55,7 @@ export async function archiveD1RowsToR2(bucket, { table, rows }) {
     ...row
   }));
   const body = await gzipText(lines.join("\n") + "\n");
-  const key = archiveKey(table, rows);
+  const key = providedKey || archiveKey(table, rows);
 
   await bucket.put(key, body, {
     httpMetadata: {

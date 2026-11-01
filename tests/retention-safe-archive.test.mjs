@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { archiveBatchThenDelete, createDriveSession, deleteRowidsInChunks, D1_DELETE_CHUNK } from "../src/retention.js";
+import { resetGoogleDriveFolderCache, DRIVE_FOLDER_CONFIG_KEY } from "../src/google-drive.js";
 
 const driveEnv = {
   GOOGLE_OAUTH_CLIENT_ID: "client-id",
@@ -71,22 +72,31 @@ function installDrive(mode, r2) {
     const u = String(url);
     calls.push(u);
     if (u.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "access-SECRET" });
+    if (u.startsWith("https://www.googleapis.com/drive/v3/files/")) {
+      if (mode === "folder-missing") return Response.json({ error: { message: "File not found: .", errors: [{ reason: "notFound" }] } }, { status: 404 });
+      return Response.json({ id: "folder-1", mimeType: "application/vnd.google-apps.folder", trashed: false });
+    }
+    if (u.startsWith("https://www.googleapis.com/drive/v3/files") && (init.method || "GET") === "POST") {
+      return Response.json({ id: "created-folder", name: "EagleEye Archive" });
+    }
     if (u.startsWith("https://www.googleapis.com/drive/v3/files?")) {
       if (mode === "duplicate-ok") {
-        const [key, o] = [...r2.objects.entries()].at(-1);
+        const [key, o] = [...r2.objects.entries()].filter(([k]) => k.endsWith(".ndjson.gz")).at(-1);
         return Response.json({ files: [{ id: "dup-1", size: String(o.bytes.length), md5Checksum: o.etag, appProperties: { eagleeyeSourceKey: encodeURIComponent(key) } }] });
       }
       return Response.json({ files: [] });
     }
     if (u.startsWith("https://www.googleapis.com/upload/drive/v3/files")) {
       if (mode === "upload-500") return Response.json({ error: { message: "backend error" } }, { status: 500 });
-      const o = [...r2.objects.values()].at(-1);
+      const o = [...r2.objects.entries()].filter(([k]) => k.endsWith(".ndjson.gz")).at(-1)[1];
       return Response.json({ id: "file-1", size: String(o.bytes.length), md5Checksum: mode === "md5-mismatch" ? "0".repeat(32) : o.etag });
     }
     throw new Error("unexpected fetch " + u);
   };
   return { calls, restore: () => { globalThis.fetch = original; } };
 }
+
+test.beforeEach(() => resetGoogleDriveFolderCache());
 
 test("deletes in chunks below the D1 100-parameter limit, in one atomic batch", async () => {
   const db = fakeDb();
@@ -196,4 +206,24 @@ test("Google Drive OAuth returns to the Drive callback, not the Discord login ca
   for (const uri of uris) assert.ok(uri.endsWith("/api/admin/google-drive/callback"), uri);
   const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
   assert.ok(index.includes('url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);'));
+});
+
+test("unreachable configured Drive folder is replaced by an app-owned folder saved in R2", async () => {
+  const db = fakeDb(); const r2 = fakeR2();
+  const uploads = [];
+  const drive = installDrive("folder-missing", r2);
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).startsWith("https://www.googleapis.com/upload/")) uploads.push(String(init.body ? await new Response(init.body).text() : ""));
+    return inner(url, init);
+  };
+  try {
+    const result = await archiveBatchThenDelete(db, r2, createDriveSession(driveEnv), { table: "system_event_log", rows: makeRows(5) });
+    assert.equal(result.status, "ARCHIVED", JSON.stringify(result));
+    assert.equal(db.deletes.length, 5);
+    const saved = JSON.parse(r2.objects.get(DRIVE_FOLDER_CONFIG_KEY).bytes.toString());
+    assert.equal(saved.folderId, "created-folder");
+    assert.equal(saved.source, "CREATED");
+    assert.ok(uploads[0].includes('"parents":["created-folder"]'), "upload goes into the app-owned folder");
+  } finally { drive.restore(); }
 });
