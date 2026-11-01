@@ -5908,6 +5908,14 @@ async function handleMightPulsePlayerTest(request, env) {
 }
 
 
+async function requireVipOrAbove(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
+  if (!["VIP", "ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) return { error: json({ ok: false, error: "VIP_REQUIRED", message: "CSV出力はVIP以上で利用できます。" }, 403) };
+  if (!env.DB) return { error: json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503) };
+  return { auth };
+}
+
 async function requireAdmin(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
@@ -7856,7 +7864,9 @@ function renderHistoryShell(message, governorId, cards = "") {
 }
 
 function csvEscape(value) {
-  const raw = value === null || value === undefined ? "" : String(value);
+  let raw = value === null || value === undefined ? "" : String(value);
+  // Spreadsheet apps run cells starting with = + - @ as formulas; neutralise text (not plain numbers).
+  if (/^[=+\-@\t\r]/.test(raw) && !/^-?\d+(\.\d+)?$/.test(raw)) raw = "'" + raw;
   return '"' + raw.replace(/"/g, '""') + '"';
 }
 
@@ -7885,10 +7895,12 @@ function flattenCsvValue(value) {
 
 
 async function handlePlayerSectionExport(request, env) {
-  const guard = await requireAdmin(request, env);
+  const url = new URL(request.url);
+  // CSV download: VIP and above. Shared Google Sheet: ADMIN / OWNER only.
+  const wantsCsv = url.searchParams.get("format") === "csv";
+  const guard = wantsCsv ? await requireVipOrAbove(request, env) : await requireAdmin(request, env);
   if (guard.error) return guard.error;
 
-  const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   const section = String(url.searchParams.get("section") || "").trim().toLowerCase();
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
@@ -7980,6 +7992,13 @@ async function handlePlayerSectionExport(request, env) {
       }));
     }
 
+    if (wantsCsv) {
+      await trackServiceUsage(env, guard.auth, "PLAYER_EXPORT", {
+        targetType: "PLAYER", targetId: governorId,
+        metadata: { format: "csv", section, row_count: rows.length, column_count: headers.length, target_player_count: 1, success: true }
+      });
+      return csvResponse("eagleeye-" + governorId + "-" + section + ".csv", headers, rows);
+    }
     const result = await exportToGoogleSheet(env, { sheetTitle, headers, rows });
     await recordDiagnostic(env.DB, {
       service: "google_sheets", feature: "player_export", operation: "EXPORT", status: "SUCCESS",
@@ -8101,7 +8120,7 @@ async function renderPlayerPage(request, env) {
       const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
       visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
     }
-    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER");
+    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER" ? "ADMIN" : auth.role === "VIP" ? "VIP" : false);
   } catch (error) {
     console.error("Player page error:", error);
     const code = String(error?.code || error?.message || "PLAYER_READ_FAILED");
@@ -8175,6 +8194,16 @@ function filterPlayerForRole(player, role, payload = null, settings = null) {
   return visible;
 }
 
+// canExport: "ADMIN" (CSV + shared Google Sheet), "VIP" (CSV only) or false.
+function playerExportLinks(governorId, section, canExport, extraClass = "") {
+  if (!canExport || !governorId) return "";
+  const base = "/api/admin/player-export?governor_id=" + encodeURIComponent(governorId) + "&section=" + encodeURIComponent(section);
+  const cls = "section-export" + (extraClass ? " " + extraClass : "");
+  let html = '<a class="' + cls + '" href="' + base + '&format=csv" download>CSV出力</a>';
+  if (canExport === "ADMIN") html += '<a class="' + cls + '" href="' + base + '">スプレッドシート出力</a>';
+  return html;
+}
+
 function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false) {
   const p = player || {};
   const freshness = payload || {};
@@ -8183,7 +8212,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   const avatarRoleAttr = avatarRole ? ` data-role="${avatarRole}"` : "";
   const noticeHtml = notice ? '<div class="notice">' + esc(notice) + '</div>' : "";
   const content = player ? `
-    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
+    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${playerExportLinks(governorId, "profile", canExport, "hero-export")}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
       ${card("役場", formatTownCenterLevel(p.town_center_level))}
@@ -8566,9 +8595,7 @@ function renderPlayerOptionalAssets(assets, canExport = false) {
 }
 
 function renderPlayerAdvancedSections(profile, governorId = "", canExport = false) {
-  const exportButton = (section) => canExport && governorId
-    ? '<a class="section-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=' + encodeURIComponent(section) + '">スプレッドシート出力</a>'
-    : "";
+  const exportButton = (section) => playerExportLinks(governorId, section, canExport);
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
