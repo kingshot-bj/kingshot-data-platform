@@ -48,6 +48,7 @@ import { verifyKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill-ve
 import { runKingdomSeeder } from "./kingdom-seeder.js";
 import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
 import { runAllianceRoller } from "./alliance-catalog.js";
+import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath } from "./login-return.js";
 import { runPlayerRoller } from "./player-roller.js";
 import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
@@ -5502,13 +5503,12 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      "Location": authorize.toString(),
-      "Cache-Control": "no-store"
-    }
-  });
+  const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
+  const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
+  headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
+    maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+  }));
+  return new Response(null, { status: 302, headers });
 }
 
 async function handleDiscordCallback(request, env) {
@@ -5622,10 +5622,13 @@ async function handleDiscordCallback(request, env) {
 
   const session = await signPayload(sessionPayload, config.sessionSecret);
 
+  let returnPath = null;
+  try { returnPath = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
   const responseHeaders = new Headers({
-    Location: new URL("/", request.url).toString(),
+    Location: new URL(returnPath || "/", request.url).toString(),
     "Cache-Control": "no-store"
   });
+  responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
