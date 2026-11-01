@@ -5502,7 +5502,7 @@ const EAGLEEYE_THEME_SCRIPT = `
         roleBar=document.createElement("div");
         roleBar.className="eagle-role-bar";
         roleBar.setAttribute("aria-label","EagleEye ロール");
-        roleBar.innerHTML="<span class=\"eagle-role-bar-label\">ROLE</span><span class=\"eagle-role-item\" data-role=\"BASIC\">BASIC</span><span class=\"eagle-role-item\" data-role=\"ADVANCED\">ADVANCED</span><span class=\"eagle-role-item vip\" data-role=\"VIP\">⚡ VIP</span><span class=\"eagle-role-item admin\" data-role=\"ADMIN\">ADMIN</span><span class=\"eagle-role-item owner\" data-role=\"OWNER\">OWNER</span>";
+        roleBar.innerHTML="<span class='eagle-role-bar-label'>ROLE</span><span class='eagle-role-item' data-role='BASIC'>BASIC</span><span class='eagle-role-item' data-role='ADVANCED'>ADVANCED</span><span class='eagle-role-item vip' data-role='VIP'>⚡ VIP</span><span class='eagle-role-item admin' data-role='ADMIN'>ADMIN</span><span class='eagle-role-item owner' data-role='OWNER'>OWNER</span>";
         document.body.insertBefore(roleBar,document.body.firstChild);
       }
       if(!document.querySelector(".eagle-role-bar-spacer")){
@@ -8167,17 +8167,22 @@ async function renderPlayerPage(request, env) {
     const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
     const fetchRich = rich || refresh;
 
+    // First visit of a player EagleEye has never stored: answer at once with a
+    // page that fetches in the background (MightPulse can wait up to 90 s for
+    // an upstream update), instead of holding the whole page load open.
+    if (!observation && !refresh && !rich) {
+      return renderPlayerFetchingPage(governorId);
+    }
     if (!observation || refresh || (rich && needsRichProfile)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
 
-    let player = await getPlayer(env.DB, governorId);
+    let [player, visibilitySettings] = await Promise.all([getPlayer(env.DB, governorId), getPlayerVisibilitySettings(env.DB)]);
     if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     }
 
-    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
     const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
     // Supplement missing leaderboard ranks from the already-collected kingdom current table.
@@ -8222,13 +8227,10 @@ async function renderPlayerPage(request, env) {
       }
     }
     visibleProfile.optional_assets = extractOptionalPlayerAssets(observation.payload);
-    if (visibilityEnabled(visibilitySettings, "base_identity", auth.role)) {
-      visibleProfile.name_history = await getPlayerNameHistory(env.DB, governorId);
-    }
-    if (visibilityEnabled(visibilitySettings, "hero_rankings", auth.role)) {
-      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
-    }
+    // Independent reads run in parallel (name history, hero rankings, build history).
+    const heroKid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
+    const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
+    const heroRankingsPromise = visibilityEnabled(visibilitySettings, "hero_rankings", auth.role) ? getLatestPlayerHeroRankings(env, heroKid, governorId) : null;
     let buildHistoryHtml = "";
     const buildVisible = {
       heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
@@ -8238,15 +8240,16 @@ async function renderPlayerPage(request, env) {
       govGear: visibilityEnabled(visibilitySettings, "gov_gear_list", auth.role)
     };
     buildVisible.heroes = buildVisible.heroList || buildVisible.heroSkills || buildVisible.heroExclusive || buildVisible.heroGear;
-    if (env.ARCHIVE && (buildVisible.heroes || buildVisible.govGear)) {
-      try {
-        const buildHistory = await loadPlayerBuildHistory(env.ARCHIVE, governorId);
-        buildHistoryHtml = renderPlayerBuildHistorySection(buildHistory, buildVisible, {
-          heroName: localizeHeroName, heroSlot: localizeHeroGearSlot, govSlot: localizeGovernorGearSlot
-        });
-      } catch (error) {
-        console.error("player_build_history_load_failed", governorId, error?.message || error);
-      }
+    const buildHistoryPromise = env.ARCHIVE && (buildVisible.heroes || buildVisible.govGear)
+      ? loadPlayerBuildHistory(env.ARCHIVE, governorId).catch(error => { console.error("player_build_history_load_failed", governorId, error?.message || error); return null; })
+      : null;
+    const [nameHistory, heroRankings, buildHistory] = await Promise.all([nameHistoryPromise, heroRankingsPromise, buildHistoryPromise]);
+    if (nameHistoryPromise) visibleProfile.name_history = nameHistory;
+    if (heroRankingsPromise) visibleProfile.hero_rankings = heroRankings;
+    if (buildHistory) {
+      buildHistoryHtml = renderPlayerBuildHistorySection(buildHistory, buildVisible, {
+        heroName: localizeHeroName, heroSlot: localizeHeroGearSlot, govSlot: localizeGovernorGearSlot
+      });
     }
     return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER" ? "ADMIN" : auth.role === "VIP" ? "VIP" : false, buildHistoryHtml);
   } catch (error) {
@@ -8332,6 +8335,20 @@ function playerExportLinks(governorId, section, canExport, extraClass = "") {
   return html;
 }
 
+function renderPlayerFetchingPage(governorId) {
+  const gid = JSON.stringify(String(governorId)).replace(/</g, "\\u003c");
+  const html = renderPlayerShell("プレイヤー情報をMightPulseから取得しています…", governorId);
+  const script = '<script>(function(){var gid=' + gid + ',t0=Date.now();' +
+    'var p=document.createElement("p");p.id="player-fetch-wait";p.className="notice";p.setAttribute("role","status");(document.querySelector("main")||document.body).appendChild(p);' +
+    'var paint=function(){p.textContent="取得中… "+Math.floor((Date.now()-t0)/1000)+"秒（初めて見るプレイヤーは、MightPulse側の更新待ちで最大90秒ほどかかります）"};paint();var timer=setInterval(paint,1000);' +
+    'fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json().then(function(d){return {r:r,d:d}},function(){return {r:r,d:{}}})}).then(function(x){clearInterval(timer);' +
+    'if(x.r.status===401){location.href="/api/auth/discord";return}if(x.r.ok&&x.d.ok){location.replace("/player?governor_id="+encodeURIComponent(gid));return}' +
+    'p.textContent=x.d.error==="PLAYER_NOT_FOUND"?"該当するプレイヤーが見つかりませんでした。":x.d.error==="NO_API_POOL_KEY_AVAILABLE"?"APIキーが混み合っています。少し待ってから再読み込みしてください。":"取得に失敗しました（"+(x.d.error||x.r.status)+"）。再読み込みしてください。"})' +
+    '.catch(function(){clearInterval(timer);p.textContent="通信に失敗しました。再読み込みしてください。"})})();</script>';
+  if (html instanceof Response) return html;
+  return String(html).replace("</body>", script + "</body>");
+}
+
 function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false, buildHistoryHtml = "") {
   const p = player || {};
   const freshness = payload || {};
@@ -8353,7 +8370,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
     ${buildHistoryHtml}
-    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
+    <div class="actions"><a class="action primary" id="player-refresh" data-governor-id="${esc(governorId)}" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
       <div><b>データ状態</b> ${freshness.fresh === true ? "最新" : "キャッシュ"}</div>
@@ -8423,6 +8440,34 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   .ranking-rest-panel .detail-row{border-left:3px solid var(--ee-cyan,#20d7f2)}
   @media(max-width:360px){.favorite-rankings-grid{gap:4px}.favorite-ranking-card{padding:7px 4px}.ranking-dashboard-actions button{font-size:11px;padding:7px 6px}}
 ${PLAYER_BUILD_HISTORY_CSS}</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
+(function(){
+  // 詳細情報の取得はページ遷移せずバックグラウンドで行う。MightPulseは古い項目の
+  // 更新を最大90秒待つため、その間も保存済みのデータを見られるようにする。
+  const link=document.getElementById("player-refresh");
+  if(!link)return;
+  const gid=link.dataset.governorId;
+  link.addEventListener("click",async e=>{
+    e.preventDefault();
+    if(link.dataset.busy==="1")return;
+    link.dataset.busy="1";
+    let box=document.getElementById("player-refresh-status");
+    if(!box){box=document.createElement("div");box.id="player-refresh-status";box.className="notice";box.setAttribute("role","status");link.parentNode.insertAdjacentElement("afterend",box)}
+    const started=Date.now();
+    const paint=()=>{box.textContent="MightPulseから最新データを取得中… "+Math.floor((Date.now()-started)/1000)+"秒（データが古いとMightPulse側の更新待ちで最大90秒ほどかかります。このまま下の保存済みデータを見られます）"};
+    paint();const timer=setInterval(paint,1000);
+    link.textContent="取得中…";
+    try{
+      const r=await fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base,heroes,ranks,gov_gear",{credentials:"same-origin",cache:"no-store"});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===401){location.href="/api/auth/discord";return}
+      if(!r.ok||!d.ok)throw new Error(d.error==="NO_API_POOL_KEY_AVAILABLE"?"APIキーが混み合っています。少し待ってからもう一度お試しください。":(d.message||d.error||"取得に失敗しました"));
+      clearInterval(timer);box.textContent="取得しました。表示を更新します…";
+      location.replace("/player?governor_id="+encodeURIComponent(gid));
+    }catch(err){
+      clearInterval(timer);box.textContent="✕ "+(err.message||"取得に失敗しました");link.textContent="詳細情報を取得";link.dataset.busy="";
+    }
+  });
+})();
 (function(){
   const btn=document.getElementById("player-watchlist-toggle");
   if(!btn)return;
@@ -10517,7 +10562,7 @@ ${canViewDetailedUsage ? `<script>
   // This script runs in the browser; server-side helpers are not in scope here.
   function escapeHtml(value){
     return String(value == null ? "" : value).replace(/[&<>"']/g,function(char){
-      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char];
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char];
     });
   }
   function formatBytes(value){
