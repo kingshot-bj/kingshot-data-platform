@@ -41,6 +41,9 @@ export function summarizeKingdomGrowth(row) {
     const n = Number(value);
     if (value != null && value !== "" && Number.isFinite(n)) out[key] = n;
   }
+  // Kingdom age for the kingdom timeline (not shown in the growth table).
+  const age = Number(row.age_days);
+  if (row.age_days != null && row.age_days !== "" && Number.isFinite(age) && age >= 0) out.age_days = Math.floor(age);
   return Object.keys(out).length ? out : null;
 }
 

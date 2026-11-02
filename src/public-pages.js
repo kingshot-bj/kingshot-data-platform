@@ -9,6 +9,8 @@
 
 import { loadKingdomGrowthHistory, KINGDOM_GROWTH_FIELDS } from "./kingdom-growth-history.js";
 import { loginUrlFor } from "./login-return.js";
+import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
+import { readR2Json } from "./kingdom-portal.js";
 
 export const PUBLIC_CACHE_SECONDS = 300;
 
@@ -58,6 +60,8 @@ h2{margin:22px 0 8px;font-size:17px}
 .kvk{padding:14px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel);font-size:14px}.kvk a{color:var(--ee-cyan)}
 .search{display:flex;gap:8px;margin:10px 0 16px}.search input{flex:1;min-width:0;padding:12px;border:1px solid var(--ee-border);border-radius:12px;font:inherit;background:var(--ee-panel-deep);color:var(--ee-text)}.search button{padding:12px 16px;border:0;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font-weight:900}
 .range h2{font-size:14px;color:var(--ee-subtext)}.grid{display:flex;flex-wrap:wrap;gap:6px}.grid a{min-width:52px;padding:7px 8px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-align:center;text-decoration:none;font-size:13px;font-variant-numeric:tabular-nums}
+.kingdom-timeline h2{margin:22px 0 8px;font-size:17px}
+${KINGDOM_TIMELINE_CSS}
 .note{margin-top:20px;font-size:11px;color:var(--ee-subtext);line-height:1.6}
 </style></head><body><main class="wrap">${body}</main></body></html>`;
 }
@@ -74,7 +78,7 @@ const fmtDate = at => new Date(Number(at) * 1000).toISOString().slice(0, 10);
 export async function loadPublicKingdom(env, kid) {
   const db = env.DB;
   const [catalog, players, alliances, matchup, score, growth] = await Promise.all([
-    db.prepare("SELECT kid, name, status, region, language, last_seen_at FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
+    db.prepare("SELECT kid, name, status, region, language, last_seen_at, r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT rank, nick_name, score, aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT rank, abbr, name, score FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT season, opponent, opponent_name FROM kvk_matchups WHERE kid = ? ORDER BY season DESC LIMIT 1").bind(kid).first().catch(() => null),
@@ -89,7 +93,17 @@ export async function loadPublicKingdom(env, kid) {
     const byAid = new Map((tags?.results || []).map(t => [norm(t.aid), String(t.abbr)]));
     playerRows = playerRows.map(p => p.abbr || !p.aid ? p : { ...p, abbr: byAid.get(norm(p.aid)) || null });
   }
-  return { catalog, players: playerRows, alliances: alliances?.results || [], matchup, score, growth };
+  // Kingdom age: daily growth record first, else the last stored kingdom snapshot.
+  let age = null;
+  if (growth?.latest?.age_days != null) age = currentKingdomAge(growth.latest.age_days, growth.latest.observed_at);
+  else if (env.ARCHIVE && catalog?.r2_latest_key) {
+    try {
+      const snap = await readR2Json(env.ARCHIVE, catalog.r2_latest_key);
+      const detail = snap?.payload?.data && typeof snap.payload.data === "object" ? snap.payload.data : snap?.payload;
+      age = currentKingdomAge(detail?.age_days, snap?.observed_at);
+    } catch { age = null; }
+  }
+  return { catalog, players: playerRows, alliances: alliances?.results || [], matchup, score, growth, age };
 }
 
 export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = false } = {}) {
@@ -100,7 +114,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   const name = catalog?.name && String(catalog.name) !== String(kid) ? `（${catalog.name}）` : "";
   const title = `王国${kid}${name}の戦力・ランキング・KvK情報｜EagleEye`;
   const powerText = latest?.power != null ? `総戦力${compactNumber(latest.power)}` : "";
-  const description = `KingShot 王国${kid}の${[powerText, latest?.power_gain_7d != null ? "7日間の戦力増加" + compactNumber(latest.power_gain_7d) : "", players.length ? "戦力ランキング上位" : "", matchup?.opponent ? `KvKシーズン${matchup.season}の対戦相手は王国${matchup.opponent}` : ""].filter(Boolean).join("、")}。毎日更新のKingShot王国データ。`;
+  const description = `KingShot 王国${kid}の${[powerText, latest?.power_gain_7d != null ? "7日間の戦力増加" + compactNumber(latest.power_gain_7d) : "", players.length ? "戦力ランキング上位" : "", matchup?.opponent ? `KvKシーズン${matchup.season}の対戦相手は王国${matchup.opponent}` : "", data.age != null ? `開設${data.age}日目` : ""].filter(Boolean).join("、")}。毎日更新のKingShot王国データ。`;
 
   const stat = (label, key, rank = false) => {
     if (!latest || latest[key] == null) return "";
@@ -129,6 +143,7 @@ ${stats}
 <h2>戦力ランキング（上位10人）</h2>${playerRows}
 ${allianceRows ? `<h2>同盟ランキング（上位5）</h2>${allianceRows}` : ""}
 ${kvk}
+${data.age != null ? renderKingdomTimelineSection(data.age, { kid }) : ""}
 ${loginCta(kid, signedIn)}
 <p class="note">データ提供：MightPulse。ゲーム内の公開情報をもとに集計しています。KingShotの公式サイトではありません。</p>`;
 
