@@ -4,8 +4,8 @@
 // TG6–8 additionally need the refined material (英語版 Tempered Truegold).
 
 export const GOLD_NAME = "黄金";
-// Japanese in-game name of Tempered Truegold (provisional until confirmed in game).
-export const REFINED_GOLD_NAME = "精錬黄金";
+// Japanese in-game name of Tempered Truegold (confirmed in game by the operator).
+export const REFINED_GOLD_NAME = "精製黄金";
 export const MAX_TG = 8;
 
 // [gold, refined] for TG1..TG8. null = no cost recorded (War Academy has no TG1).

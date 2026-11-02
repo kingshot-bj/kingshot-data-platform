@@ -41,7 +41,7 @@ test("page uses the Japanese in-game name 黄金 and runs in the browser", () =>
   const store = {};
   new Function("document", "localStorage", script)(doc, { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } });
   assert.match(els.gtotal.innerHTML, /黄金 合計 <b>29,927<\/b>/, "every building TG0→TG8");
-  assert.match(els.gtotal.innerHTML, /精錬黄金 合計 <b>908<\/b>/);
+  assert.match(els.gtotal.innerHTML, /精製黄金 合計 <b>908<\/b>/);
 });
 
 test("wired into route, sitemap, menu; timeline says 黄金", () => {
@@ -51,4 +51,10 @@ test("wired into route, sitemap, menu; timeline says 黄金", () => {
   assert.match(renderEagleEyeOtherMenu({}), /href="\/tools\/gold"/);
   assert.ok(!JSON.stringify(KINGDOM_TIMELINE).includes("トゥルーゴールド"));
   assert.ok(JSON.stringify(KINGDOM_TIMELINE).includes("黄金解放"));
+});
+
+test("refined material uses the in-game name 精製黄金", () => {
+  assert.equal(REFINED_GOLD_NAME, "精製黄金");
+  assert.ok(!renderGoldCalculatorPage().includes("精錬黄金"));
+  assert.ok(JSON.stringify(KINGDOM_TIMELINE).includes("精製黄金"));
 });
