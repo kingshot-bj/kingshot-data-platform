@@ -70,3 +70,21 @@ export async function buildHomeSummary(db, auth, deps) {
   }
   return summary;
 }
+
+// ホームを開いたとき、自分の領主データが古ければ裏で取り直す（MightPulse 1回）。
+// 同じ領主への再試行は同じ isolate 内で10分空ける（失敗時の連打防止、D1書き込みなし）。
+export const ME_AUTO_REFRESH_AFTER_SECONDS = 3 * 3600;
+export const ME_AUTO_REFRESH_RETRY_MS = 10 * 60 * 1000;
+const meRefreshAttempts = new Map();
+
+export function claimMeAutoRefresh(me, { now = Math.floor(Date.now() / 1000), nowMs = Date.now(), attempts = meRefreshAttempts } = {}) {
+  if (!me?.governor_id) return false;
+  const observedAt = Number(me.observed_at) || 0;
+  if (observedAt && now - observedAt < ME_AUTO_REFRESH_AFTER_SECONDS) return false;
+  const key = String(me.governor_id);
+  const last = attempts.get(key) || 0;
+  if (nowMs - last < ME_AUTO_REFRESH_RETRY_MS) return false;
+  if (attempts.size > 500) attempts.clear();
+  attempts.set(key, nowMs);
+  return true;
+}

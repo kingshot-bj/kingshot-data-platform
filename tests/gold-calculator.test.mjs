@@ -26,7 +26,7 @@ test("goldBetween sums the levels after the current one", () => {
 test("page uses the Japanese in-game name 黄金 and runs in the browser", () => {
   const html = renderGoldCalculatorPage({ origin: "https://eagleeye-ks.com" });
   assert.equal(GOLD_NAME, "黄金");
-  assert.match(html, /<title>キングショット 黄金 必要数計算ツール（TG1〜TG8） \| EagleEye<\/title>/);
+  assert.match(html, /<title>キングショット 黄金 必要数計算ツール（G1〜G8） \| EagleEye<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/tools\/gold">/);
   assert.doesNotMatch(html, /トゥルーゴールド|Truegold/i);
   assert.ok(html.includes(REFINED_GOLD_NAME));
@@ -64,4 +64,12 @@ test("item icons: 黄金 / 精製黄金 / 黄金微粒子 on the orange item til
   const a = goldIconSvg(20, "gold"), b = goldIconSvg(20, "refined"), c = goldIconSvg(20, "dust");
   assert.notEqual(a, b); assert.notEqual(b, c);
   for (const svg of [a, b, c]) { assert.match(svg, /url\(#gtile\)/); assert.doesNotMatch(svg, /#[0-9a-f]{6}/i); }
+});
+
+test("画面の表記は日本の呼び方（G1〜G8）。TGは検索用の説明文に1回だけ", () => {
+  const html = renderGoldCalculatorPage({ origin: "https://eagleeye-ks.com" });
+  const body = html.replace(/<meta name="description"[^>]*>/, "");
+  assert.doesNotMatch(body, /TG\d|TGなし|（TG）/);
+  assert.match(html, />G8<\/option>/);
+  assert.match(html, />なし<\/option>/);
 });
