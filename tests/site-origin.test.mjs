@@ -54,3 +54,17 @@ test("index.js wiring", () => {
   // A custom domain must not get the preview banner.
   assert.match(src, /isPreviewHost=host!==productionHost&&\(host\.slice\(-12\)===".workers.dev"/);
 });
+
+test("www goes to the bare domain; production config points at eagleeye-ks.com", () => {
+  const r = legacyHostRedirect(new Request("https://www.eagleeye-ks.com/k/1?x=1"), ENV_ON);
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get("Location"), "https://eagleeye-ks.com/k/1?x=1");
+  const conf = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const prod = conf.slice(0, conf.indexOf('"previews"'));
+  assert.match(prod, /"PUBLIC_ORIGIN": "https:\/\/eagleeye-ks\.com"/);
+  assert.match(prod, /"DISCORD_REDIRECT_URI": "https:\/\/eagleeye-ks\.com\/api\/auth\/callback"/);
+  assert.match(prod, /"LEGACY_REDIRECT": "30[12]"/);
+  // Google Drive callback and previews stay on the legacy host for now.
+  assert.match(prod, /"GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https:\/\/kingshot-data-platform\.black-jack-kingshot\.workers\.dev\//);
+  assert.doesNotMatch(conf.slice(conf.indexOf('"previews"')), /PUBLIC_ORIGIN|LEGACY_REDIRECT/);
+});

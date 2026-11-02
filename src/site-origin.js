@@ -49,8 +49,11 @@ export function legacyHostRedirect(request, env) {
   if (method !== "GET" && method !== "HEAD") return null;
   let url;
   try { url = new URL(request.url); } catch { return null; }
+  const targetHost = new URL(target).hostname;
+  // www.<domain> always goes to the bare domain (nothing external is registered there).
+  if (url.hostname === "www." + targetHost) return new Response(null, { status, headers: { Location: target + url.pathname + url.search, "Cache-Control": status === 301 ? "public, max-age=3600" : "no-store" } });
   if (url.hostname !== LEGACY_HOST) return null;
-  if (new URL(target).hostname === LEGACY_HOST) return null;
+  if (targetHost === LEGACY_HOST) return null;
   if (NEVER_REDIRECT.some(re => re.test(url.pathname))) return null;
   return new Response(null, { status, headers: { Location: target + url.pathname + url.search, "Cache-Control": status === 301 ? "public, max-age=3600" : "no-store" } });
 }
