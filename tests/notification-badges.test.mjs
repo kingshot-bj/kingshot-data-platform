@@ -50,7 +50,7 @@ test("announcements can be created, listed and deleted; the news page escapes co
   assert.match(html, /&lt;b&gt;新機能&lt;\/b&gt;/);
   assert.match(html, /1行目<br>2行目/);
   assert.match(html, /news-new/);
-  assert.ok(!html.includes("news-submit"), "only OWNER sees the post form");
+  assert.ok(!html.includes("news-submit"), "only ADMIN / OWNER see the post form");
   assert.ok(renderNewsPage(items, { canPost: true }).includes("news-submit"));
   assert.equal(await deleteAnnouncement(db, a.id), true);
 });
@@ -65,6 +65,7 @@ test("navigation badges are hidden by default and filled from /api/badges, not t
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /url\.pathname === "\/watchlist" \|\| url\.pathname === "\/player-watchlist"\) await markWatchBadgeSeen/);
   assert.match(index, /await markBadgeSeen\(env\.DB, auth\.discord_id, "news"\)/);
-  assert.match(index, /url\.pathname === "\/api\/owner\/announcements"\) return await handleAnnouncementsApi/);
-  assert.match(index, /async function handleAnnouncementsApi[\s\S]*?requireOwner\(request, env\)/);
+  assert.match(index, /url\.pathname === "\/api\/admin\/announcements" \|\| url\.pathname === "\/api\/owner\/announcements"\) return await handleAnnouncementsApi/);
+  assert.match(index, /async function handleAnnouncementsApi[\s\S]*?requireAdmin\(request, env\)/);
+  assert.match(index, /canPost: auth\.role === "OWNER" \|\| auth\.role === "ADMIN"/);
 });

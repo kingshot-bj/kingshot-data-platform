@@ -4998,7 +4998,7 @@ export default {
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
-      if (url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
+      if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
       if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
@@ -10580,11 +10580,12 @@ async function renderNewsRoute(request, env) {
   const state = await env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null);
   const items = await listAnnouncements(env.DB, 50);
   await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
-  return renderNewsPage(items, { canPost: auth.role === "OWNER", unreadSince: state?.news_seen_at ?? null });
+  return renderNewsPage(items, { canPost: auth.role === "OWNER" || auth.role === "ADMIN", unreadSince: state?.news_seen_at ?? null });
 }
 
 async function handleAnnouncementsApi(request, env) {
-  const guard = await requireOwner(request, env);
+  // ADMIN and OWNER may post and delete お知らせ.
+  const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   const body = await request.json().catch(() => ({}));
