@@ -73,3 +73,9 @@ test("collector: breaker stops after repeated responses without Mystic boards; d
   assert.equal(capped.reason, "DAILY_CAP");
   assert.equal(called, 0);
 });
+
+test("summaries keep the top 10 records so the login view can show 2位以降", () => {
+  const s = summarizeKingdomBoards({ boards: [{ key: "radiant_spire", entries: [{ governor_id: 1, score: 60010 }, { governor_id: 2, score: 60030 }, { governor_id: 3, score: 60020 }] }] });
+  assert.deepEqual(s.radiant_spire.top, [30, 20, 10]);
+  assert.equal(s.radiant_spire.best, 30);
+});

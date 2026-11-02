@@ -56,7 +56,8 @@ export function summarizeKingdomBoards(payload) {
     const values = rowsOf(w).filter(r => r && (r.governor_id != null || r.uid != null || r.nick_name != null))
       .map(r => Number(r.score ?? r.value) - offset).filter(v => Number.isFinite(v) && v >= 0).slice(0, 10);
     if (!values.length) continue;
-    out[key] = { top10: Math.round(values.reduce((a, b) => a + b, 0) / values.length * 10) / 10, best: Math.max(...values), count: values.length };
+    const top = [...values].sort((a, b) => b - a);
+    out[key] = { top10: Math.round(values.reduce((a, b) => a + b, 0) / values.length * 10) / 10, best: top[0], count: values.length, top };
   }
   return out;
 }

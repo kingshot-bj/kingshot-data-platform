@@ -51,7 +51,7 @@ test("matchups: pairs once, Mystic tally decides order; no KvK scores, no total-
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/kvk\/s23">/);
   assert.ok(html.indexOf('data-kid="3"') < html.indexOf('data-kid="1"'), "6-0 before 4-1");
   assert.match(html, /<span class="w">4<\/span>-<span class="">1<\/span>/);
-  assert.match(html, /href="\/kvk\?kid=1">内訳<\/a>/, "stage detail behind login");
+  assert.match(html, /href="\/kvk\?kid=1">2位以降を見る<\/a>/, "stage detail behind login");
   assert.doesNotMatch(html, /大差|やや差あり/, "no verdicts from total power");
   assert.match(html, /総戦力 .*（参考）/);
   assert.match(html, /不戦/);

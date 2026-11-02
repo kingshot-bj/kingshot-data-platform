@@ -77,7 +77,7 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
   const cards = sorted.map(p => {
     const m = p.mystic && p.mystic.stages.length ? p.mystic : null;
     const aUp = m && m.wins > m.losses, bUp = m && m.losses > m.wins;
-    const mid = !p.b ? "—" : m ? `<b class="tally"><span class="${aUp ? "w" : ""}">${m.wins}</span>-<span class="${bUp ? "w" : ""}">${m.losses}</span></b><small>${m.stages.length}ステージ中</small><a class="more" href="/kvk?kid=${p.a.kid}">内訳</a>` : '<small>集計中</small>';
+    const mid = !p.b ? "—" : m ? `<b class="tally"><span class="${aUp ? "w" : ""}">${m.wins}</span>-<span class="${bUp ? "w" : ""}">${m.losses}</span></b><small>${m.stages.length}ステージ中</small><a class="more" href="/kvk?kid=${p.a.kid}">2位以降を見る</a>` : '<small>集計中</small>';
     const l = lead(p);
     return `<li class="pair" data-k=" ${p.a.kid} ${p.b?.kid ?? ""} " data-lead="${l == null ? -1 : Math.abs(l)}" data-kid="${p.a.kid}">${side(p.a, aUp)}<div class="vs"><span>VS</span>${mid}</div>${side(p.b, bUp)}</li>`;
   }).join("");
@@ -98,7 +98,7 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 <div class="facts"><span>組み合わせ <b>${pairs.length}</b>組</span><span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
-<p class="note">ステージごとの1位の記録と上位10人の平均、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「内訳」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+<p class="note">ステージごとの1位の記録と上位10人の平均、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「2位以降を見る」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
 <script>(function(){var q=document.getElementById("q"),s=document.getElementById("sort"),l=document.getElementById("list");if(!l)return;var items=[].slice.call(l.children);function apply(){var v=q.value.trim(),m=s.value;items.sort(function(a,b){var x=+a.dataset.lead,y=+b.dataset.lead;if(m==="kid")return a.dataset.kid-b.dataset.kid;if(m==="even"){if(x<0)return 1;if(y<0)return -1;return x-y}return y-x});items.forEach(function(it){it.style.display=!v||it.dataset.k.indexOf(" "+v)>=0?"":"none";l.appendChild(it)})}q.addEventListener("input",apply);s.addEventListener("change",apply)})();</script>
 </main></body></html>`;
 }
