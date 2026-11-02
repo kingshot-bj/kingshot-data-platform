@@ -523,7 +523,11 @@ async function renderMysticComparison(env, kid, opponent) {
   let mine, theirs;
   try { [mine, theirs] = await Promise.all([loadMysticRows(env, kid), loadMysticRows(env, opponent)]); }
   catch (error) { console.error("kvk_mystic_read_failed", kid, opponent, error?.message || error); return ""; }
-  const a = summarizeMysticBoards(mine.rows), b = summarizeMysticBoards(theirs.rows);
+  let a = summarizeMysticBoards(mine.rows), b = summarizeMysticBoards(theirs.rows);
+  // Kingdoms outside the ranking watch: use the season's KvK Mystic summary (top 10).
+  const fromSummary = async kid => { try { const r = await env.DB.prepare("SELECT boards_json, fetched_at FROM kvk_mystic_summary WHERE kid = ? AND status = 'OK' ORDER BY season DESC LIMIT 1").bind(kid).first(); return r ? { boards: JSON.parse(r.boards_json), at: Number(r.fetched_at) } : null; } catch { return null; } };
+  if (!Object.keys(a).length) { const f = await fromSummary(kid); if (f) { a = f.boards; mine.updated = f.at; } }
+  if (!Object.keys(b).length) { const f = await fromSummary(opponent); if (f) { b = f.boards; theirs.updated = f.at; } }
   const boards = KVK_MYSTIC_BOARDS.filter(board => a[board.key] && b[board.key]);
   if (!boards.length) return `<h2>秘境の試練の比較</h2><div class="empty">両方の王国の秘境の試練ランキングがそろうと比較を表示します。</div>`;
   const fmt = v => (Math.round(v * 10) / 10).toLocaleString("ja-JP");
@@ -536,7 +540,7 @@ async function renderMysticComparison(env, kid, opponent) {
     return `<div class="mystic"><div class="mystic-head"><b>${esc(board.label)}</b><em class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff > 0 ? "優勢" : diff < 0 ? "劣勢" : "互角"}</em></div>
 <div class="day-row"><span>${kid}</span><div class="track"><i style="width:${Math.round(x.top10 / max * 100)}%"></i></div><span>${esc(fmt(x.top10))}</span></div>
 <div class="day-row"><span>${opponent}</span><div class="track opp"><i style="width:${Math.round(y.top10 / max * 100)}%"></i></div><span>${esc(fmt(y.top10))}</span></div>
-<small class="muted">1位 ${esc(fmt(x.best))} 対 ${esc(fmt(y.best))} · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}</small></div>`;
+<small class="muted">1位 ${esc(fmt(x.best))} 対 ${esc(fmt(y.best))}${x.top50 != null && y.top50 != null ? ` · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}` : ""}</small></div>`;
   }).join("");
   const dateNote = side => side.archived ? formatArchiveDate(side.updated) + "（アーカイブ）" : ts(side.updated);
   return `<h2>秘境の試練の比較</h2><p class="muted">上位10人の平均で比較 · ${boards.length}項目中 <b>${wins}項目で優勢</b>${losses ? "・" + losses + "項目で劣勢" : ""}<br>データ：王国${kid} ${esc(dateNote(mine))} ／ 王国${opponent} ${esc(dateNote(theirs))}</p><div class="days">${rowsHtml}</div>`;

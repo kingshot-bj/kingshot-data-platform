@@ -53,6 +53,7 @@ import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
+import { runKvkMysticCollection } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
 import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
@@ -5251,6 +5252,12 @@ export default {
       if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
     } catch (error) {
       console.error("kvk_collection_failed", error?.message || error);
+    }
+    try {
+      const mystic = await runKvkMysticCollection(env);
+      if (mystic?.failed || mystic?.reason === "BREAKER_OPEN") console.error("kvk_mystic_collection", JSON.stringify(mystic));
+    } catch (error) {
+      console.error("kvk_mystic_collection_failed", error?.message || error);
     }
     try {
       const announce = await runAnnouncementDiscordSync(env);
