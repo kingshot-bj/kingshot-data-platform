@@ -14,7 +14,7 @@ const data = {
 
 test("public kingdom page: SEO tags, escaped content, KvK link and a login call to action", () => {
   const html = renderPublicKingdomPage(1524, data, { origin: "https://eagleeye-ks.com" });
-  assert.match(html, /<title>王国1524の戦力・ランキング・KvK情報｜EagleEye<\/title>/);
+  assert.match(html, /<title>王国1524の戦力・ランキング・KvK情報 \| EagleEye<\/title>/);
   assert.match(html, /<meta name="description" content="KingShot 王国1524の総戦力123B/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/k\/1524">/);
   assert.match(html, /application\/ld\+json[\s\S]*BreadcrumbList/);
