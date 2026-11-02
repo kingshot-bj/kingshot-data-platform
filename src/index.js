@@ -1,7 +1,7 @@
 import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { renderHeroCatalogPage } from "./hero-catalog-page.js";
-import { renderPrivacyPolicyPage, renderTermsPage } from "./legal-pages.js";
+import { renderPrivacyPolicyPage, renderTermsPage, renderAboutPage } from "./legal-pages.js";
 import { archiveStaleKingdomRankings, restoreArchivedKingdomRankingsIfMissing, withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { queueHeroIconCandidates, runHeroIconAssetWorker, getSavedHeroIconMap, serveHeroIconAsset } from "./hero-icon-store.js";
 import { PLAYER_COMPARE_ENHANCEMENTS } from "./player-compare-enhancements.js";
@@ -50,7 +50,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
 import { renderHeroShardPage } from "./hero-shards.js";
-import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
@@ -4999,9 +4999,11 @@ export default {
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
       if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }));
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn })); } }
-      if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());
+      if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
+      if (url.pathname === "/about") return eagleEyeHtmlResponse(renderAboutPage(publicOrigin(request, env)));
+      if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
-      if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage());
+      if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
@@ -5122,7 +5124,7 @@ export default {
           console.error("hero_icon_catalog_lookup_failed", error?.message || error);
         }
         // Shared theme, colour themes and bottom navigation like every other page.
-        return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName).text());
+        return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName, { origin: publicOrigin(request, env) }).text());
       }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }

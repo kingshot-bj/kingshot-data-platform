@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { renderPrivacyPolicyPage, renderTermsPage } from "../src/legal-pages.js";
+import { renderPrivacyPolicyPage, renderTermsPage, renderAboutPage } from "../src/legal-pages.js";
+import { renderAdsTxt, renderSitemapXml } from "../src/public-pages.js";
+import { renderHeroCatalogPage } from "../src/hero-catalog-page.js";
 import { renderEagleEyeOtherMenu } from "../src/eagleeye-ui.js";
 
 const html = renderPrivacyPolicyPage();
@@ -32,7 +34,7 @@ test("privacy policy matches actual data handling", async () => {
 
 test("privacy policy is public and linked from the other menu", async () => {
   const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
-  const route = 'if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());';
+  const route = 'if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));';
   assert.ok(index.includes(route));
   assert.ok(index.indexOf(route) < index.indexOf('if (url.pathname === "/api/auth/discord")'), "must be served without login");
   assert.ok(renderEagleEyeOtherMenu({ auth: null, compact: true }).includes('href="/privacy"'));
@@ -48,8 +50,40 @@ test("terms page is public, complete and cross-linked", async () => {
   assert.ok(terms.includes('href="/privacy"'));
   assert.ok(html.includes('href="/terms"'));
   const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
-  const route = 'if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage());';
+  const route = 'if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));';
   assert.ok(index.includes(route));
   assert.ok(index.indexOf(route) < index.indexOf('if (url.pathname === "/api/auth/discord")'));
   assert.ok(renderEagleEyeOtherMenu({ auth: null, compact: true }).includes('href="/terms"'));
+});
+
+test("AdSense readiness: ad / external-transmission disclosure, about page, ads.txt", async () => {
+  // Privacy policy discloses third-party ad cookies, opt-out and external transmission.
+  for (const text of ["Google AdSense", "第三者配信事業者", "adssettings.google.com", "policies.google.com/technologies/ads", "外部送信", "Google LLC"]) {
+    assert.ok(html.includes(text), "privacy policy must mention " + text);
+  }
+  assert.ok(!html.includes("広告やトラッキングを目的としたCookieは使用しません"), "outdated no-ads sentence removed");
+  assert.match(html, /<h2>1\. このポリシーについて<\/h2>/);
+  assert.match(renderPrivacyPolicyPage("https://eagleeye-ks.com"), /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/privacy">/);
+  // About page: operator and contact.
+  const about = renderAboutPage("https://eagleeye-ks.com");
+  assert.match(about, /<title>運営者情報 \| EagleEye<\/title>/);
+  assert.match(about, /運営者<\/b>：BJ/);
+  assert.match(about, /href="\/support"/);
+  assert.match(about, /関係がありません/);
+  assert.match(about, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/about">/);
+  assert.ok(renderEagleEyeOtherMenu({ auth: null, compact: true }).includes('href="/about"'));
+  // ads.txt only with a valid publisher id.
+  assert.equal(renderAdsTxt(""), null);
+  assert.equal(renderAdsTxt("ca-pub-123"), null);
+  assert.equal(renderAdsTxt("pub-1234567890123456"), "google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0\n");
+  const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  const aboutRoute = 'if (url.pathname === "/about") return eagleEyeHtmlResponse(renderAboutPage(publicOrigin(request, env)));';
+  assert.ok(index.includes(aboutRoute));
+  assert.ok(index.indexOf(aboutRoute) < index.indexOf('if (url.pathname === "/api/auth/discord")'), "about must be public");
+  assert.ok(index.includes('const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID)'));
+  // Sitemap and hero catalog SEO.
+  assert.match(renderSitemapXml("https://x", []), /<loc>https:\/\/x\/about<\/loc>/);
+  const catalog = await renderHeroCatalogPage({}, { origin: "https://eagleeye-ks.com" }).text();
+  assert.match(catalog, /<meta name="description" content="KingShotの英雄のスキル一覧/);
+  assert.match(catalog, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/hero-catalog">/);
 });
