@@ -49,7 +49,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
-import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, createAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
+import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
 import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
@@ -4998,7 +4998,7 @@ export default {
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
-      if (url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
+      if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
       if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
@@ -10578,30 +10578,38 @@ async function renderNewsRoute(request, env) {
   if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お知らせ", "お知らせを見るにはログインしてください。");
   await ensureBadgeSchema(env.DB);
   const state = await env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null);
-  const items = await listAnnouncements(env.DB, 50);
+  const canPost = auth.role === "OWNER" || auth.role === "ADMIN";
+  const [items, queued] = await Promise.all([listAnnouncements(env.DB, 50), canPost ? listQueuedAnnouncements(env.DB, auth) : []]);
   await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
-  return renderNewsPage(items, { canPost: auth.role === "OWNER", unreadSince: state?.news_seen_at ?? null });
+  return renderNewsPage(items, { canPost, isOwner: auth.role === "OWNER", queued, viewerId: auth.discord_id, unreadSince: state?.news_seen_at ?? null });
 }
 
 async function handleAnnouncementsApi(request, env) {
-  const guard = await requireOwner(request, env);
+  // ADMIN and OWNER may post and delete お知らせ.
+  const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
   if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   const body = await request.json().catch(() => ({}));
   try {
     if (body?.action === "create") {
-      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null });
-      await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title }).catch(() => {});
+      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null });
+      await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title, status: item.status, publish_at: item.publish_at }).catch(() => {});
       return json({ ok: true, item });
     }
+    if (body?.action === "approve" || body?.action === "reject") {
+      if (guard.auth?.role !== "OWNER") return json({ ok: false, error: "OWNER_REQUIRED" }, 403);
+      const done = await reviewAnnouncement(env.DB, { id: body.id, approve: body.action === "approve", reviewer: guard.auth.discord_id || null });
+      if (done) await writeOwnerAuditLog(env, guard.auth, body.action === "approve" ? "ANNOUNCEMENT_APPROVE" : "ANNOUNCEMENT_REJECT", null, null, { id: String(body.id) }).catch(() => {});
+      return json({ ok: done, error: done ? null : "NOT_PENDING" }, done ? 200 : 409);
+    }
     if (body?.action === "delete") {
-      const deleted = await deleteAnnouncement(env.DB, body.id);
+      const deleted = await deleteAnnouncement(env.DB, body.id, guard.auth);
       if (deleted) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_DELETE", null, null, { id: String(body.id) }).catch(() => {});
       return json({ ok: deleted, error: deleted ? null : "NOT_FOUND" }, deleted ? 200 : 404);
     }
     return json({ ok: false, error: "UNKNOWN_ACTION" }, 400);
   } catch (error) {
-    return json({ ok: false, error: error?.code || "ANNOUNCEMENT_FAILED" }, error?.code === "TITLE_AND_BODY_REQUIRED" ? 400 : 500);
+    return json({ ok: false, error: error?.code || "ANNOUNCEMENT_FAILED" }, ["TITLE_AND_BODY_REQUIRED", "PUBLISH_AT_INVALID", "PUBLISH_AT_TOO_FAR"].includes(error?.code) ? 400 : 500);
   }
 }
 
