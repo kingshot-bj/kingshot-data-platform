@@ -51,6 +51,7 @@ import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
+import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
@@ -4988,14 +4989,16 @@ export default {
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
+    // Custom domain move: page views on the legacy host go to PUBLIC_ORIGIN (off until LEGACY_REDIRECT is set).
+    { const moved = legacyHostRedirect(request, env); if (moved) return moved; }
     try {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
-      if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request)), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
-      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request), await loadPublicKingdomIds(env.DB)), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
+      if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
+      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB)), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
-      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request) }));
-      { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request), signedIn })); } }
+      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }));
+      { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn })); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage());
@@ -5364,8 +5367,11 @@ const EAGLEEYE_THEME_SCRIPT = `
 
   function markEnvironment(){
     try {
+      // Preview deployments live on other *.workers.dev hosts; the production
+      // workers.dev host and any custom domain are production.
       var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
-      var isPreviewHost=window.location.hostname!==productionHost;
+      var host=window.location.hostname;
+      var isPreviewHost=host!==productionHost&&(host.slice(-12)===".workers.dev"||host==="localhost"||host==="127.0.0.1");
       document.documentElement.setAttribute("data-eagleeye-env",isPreviewHost?"preview":"production");
       if(isPreviewHost){
         document.documentElement.setAttribute("data-eagle-preview","1");
@@ -5576,7 +5582,7 @@ async function servePublicCached(request, executionContext, build, maxAge = PUBL
 
 // 英雄の欠片 計算: public calculator; signed-in users also get their own heroes.
 async function renderHeroShardRoute(request, env, executionContext) {
-  const origin = publicOrigin(request);
+  const origin = publicOrigin(request, env);
   const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
   const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
   // Saved hero icons are the same for every viewer, so the public page stays cacheable.

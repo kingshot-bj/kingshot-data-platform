@@ -11,6 +11,7 @@ import { loadKingdomGrowthHistory, KINGDOM_GROWTH_FIELDS } from "./kingdom-growt
 import { loginUrlFor } from "./login-return.js";
 import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
 import { readR2Json } from "./kingdom-portal.js";
+import { siteOrigin } from "./site-origin.js";
 
 export const PUBLIC_CACHE_SECONDS = 300;
 
@@ -36,8 +37,9 @@ function signed(value, formatter = compactNumber) {
   return (n > 0 ? "+" : "−") + formatter(Math.abs(n));
 }
 
-export function publicOrigin(request) {
-  try { return new URL(request.url).origin; } catch { return ""; }
+// Canonical origin: PUBLIC_ORIGIN when configured, otherwise the request URL.
+export function publicOrigin(request, env = null) {
+  return siteOrigin(request, env);
 }
 
 function shell({ title, description, canonical, body, jsonLd = null, origin = "" }) {
@@ -181,7 +183,9 @@ ${sections || '<div class="empty">王国データを読み込めませんでし�
   return shell({ title: "KingShot 王国一覧・戦力ランキング | EagleEye", description: `KingShotの全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin });
 }
 
-export function renderRobotsTxt(origin) {
+export function renderRobotsTxt(origin, { preview = false } = {}) {
+  // Preview deployments must never be indexed.
+  if (preview) return "User-agent: *\nDisallow: /\n";
   return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
