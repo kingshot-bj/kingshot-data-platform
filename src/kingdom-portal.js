@@ -1,3 +1,4 @@
+import { townCenterBadgeHtml } from "./town-center-level.js";
 import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
 import { loadKingdomGrowthHistory, renderKingdomGrowthSection, KINGDOM_GROWTH_CSS } from "./kingdom-growth-history.js";
 import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly, collectAllianceDetail } from "./data-collection-engine.js";
@@ -348,16 +349,8 @@ export async function renderAlliancePage(request, env, auth = null) {
     const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
     return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + unit[1];
   };
-  const townCenterDisplay = value => {
-    if (value === null || value === undefined || value === "") return "—";
-    const level = Number(value);
-    if (!Number.isFinite(level)) return String(value);
-    if (level <= 30) return "Lv." + level;
-    if (level < 35) return "Lv.30<small>（" + (level - 30) + "/5）</small>";
-    const goldLevel = Math.floor((level - 35) / 5) + 1;
-    const step = (level - 35) % 5;
-    return "<span class='tc-gold'>黄金" + goldLevel + (step ? "<small>（" + step + "/5）</small>" : "") + "</span>";
-  };
+  const townCenterDisplay = townCenterBadgeHtml;
+
   const bucketSize = 100_000_000;
   const buckets = [
     { min: 0, max: bucketSize, label: "100M未満", count: 0 },

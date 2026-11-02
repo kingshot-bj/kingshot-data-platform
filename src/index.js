@@ -1,3 +1,4 @@
+import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
 import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { renderHeroCatalogPage } from "./hero-catalog-page.js";
@@ -8380,7 +8381,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
     <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">プレイヤー</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${playerExportLinks(governorId, "profile", canExport, "hero-export")}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
-      ${card("役場", formatTownCenterLevel(p.town_center_level))}
+      <div class="card"><div class="label">役場</div><div class="value">${townCenterBadgeHtml(p.town_center_level)}</div></div>
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
       ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
@@ -8981,18 +8982,6 @@ function card(label, value) {
   return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
 }
 
-function formatTownCenterLevel(value) {
-  if (value === null || value === undefined || value === "") return "-";
-  const level = Number(value);
-  if (!Number.isFinite(level)) return String(value);
-  if (level <= 30) return `Lv.${level}`;
-  // ゲーム内は「30」の次が黄金バッジ1〜。API値は35=黄金1、40=黄金2…と5刻みで、
-  // 間の値（31〜34、36〜39…）はゲームの5マスの進行バーの途中なので「（3/5）」で表す。
-  if (level < 35) return level === 30 ? "Lv.30" : `Lv.30（${level - 30}/5）`;
-  const goldLevel = Math.floor((level - 35) / 5) + 1;
-  const step = (level - 35) % 5;
-  return step ? `黄金${goldLevel}（${step}/5）` : `黄金${goldLevel}`;
-}
 
 function formatRelativeActivity(lastActiveAt, fallback = null) {
   if (lastActiveAt !== null && lastActiveAt !== undefined && lastActiveAt !== "") {
@@ -10751,6 +10740,9 @@ async function handleHomeSummary(request, env) {
   }
 }
 
+// ホームのクライアントスクリプトへ役場バッジ関数を埋め込む（バンドラの __name 対策の shim 付き）。
+const TC_BADGE_CLIENT_SOURCE = "(function(){var __name=function(f){return f};return " + townCenterBadgeHtml.toString() + "})()";
+
 async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
@@ -11152,6 +11144,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function compact(v){var n=Number(v);if(!isFinite(n))return v==null?"-":String(v);var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/[.]0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/[.]0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/[.]0$/,"")+"K";return n.toLocaleString("ja-JP")}
   function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<35)return "Lv.30（"+(l-30)+"/5）";var g=Math.floor((l-35)/5)+1,st=(l-35)%5;return "黄金"+g+(st?"（"+st+"/5）":"")}
+  var tcBadge=${TC_BADGE_CLIENT_SOURCE};
   function ago(t){var d=Math.max(0,Math.floor(Date.now()/1000)-Number(t||0));if(d<3600)return Math.max(1,Math.floor(d/60))+"分前";if(d<86400)return Math.floor(d/3600)+"時間前";return Math.floor(d/86400)+"日前"}
   var FIELD={power:"戦力",town_center_level:"役場",vip:"VIP",x:"X座標",y:"Y座標",kills:"撃破数",alliance_aid:"同盟",alliance_name:"同盟",alliance_rank:"同盟ランク",alliance_power:"同盟戦力",alliance_count:"同盟人数"};
   function val(field,v){if(v==null||v==="")return "-";if(field==="power"||field==="kills"||field==="alliance_power")return compact(v);if(field==="town_center_level")return tc(v);return String(v)}
@@ -11161,14 +11154,14 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     var d;try{d=await fetch("/api/home/summary",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()})}catch(e){d=null}
     if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
     if(me){
-      if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+esc(tc(m.town_center_level))+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
+      if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+tcBadge(m.town_center_level)+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
         me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
       else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
     }
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
     var ch=d.changes||[];
     if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
-    list.innerHTML=ch.map(function(c){var up=Number(c.to)>Number(c.from),down=Number(c.to)<Number(c.from);return '<a class="ee-change" href="/player?governor_id='+encodeURIComponent(c.governor_id)+'"><span class="ee-change-who">'+esc(c.name||("領主ID "+c.governor_id))+'</span><span class="ee-change-at">'+esc(ago(c.at))+'</span><span class="ee-change-what">'+esc(FIELD[c.field]||c.field)+' <b class="'+(up?"up":down?"down":"")+'">'+esc(val(c.field,c.from))+' → '+esc(val(c.field,c.to))+'</b></span></a>'}).join("")
+    list.innerHTML=ch.map(function(c){var up=Number(c.to)>Number(c.from),down=Number(c.to)<Number(c.from);return '<a class="ee-change" href="/player?governor_id='+encodeURIComponent(c.governor_id)+'"><span class="ee-change-who">'+esc(c.name||("領主ID "+c.governor_id))+'</span><span class="ee-change-at">'+esc(ago(c.at))+'</span><span class="ee-change-what">'+esc(FIELD[c.field]||c.field)+' <b class="'+(up?"up":down?"down":"")+'">'+(c.field==="town_center_level"?tcBadge(c.from)+' → '+tcBadge(c.to):esc(val(c.field,c.from))+' → '+esc(val(c.field,c.to)))+'</b></span></a>'}).join("")
   }
   loadSummary();
 })();
