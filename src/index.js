@@ -8987,11 +8987,11 @@ function formatTownCenterLevel(value) {
   if (!Number.isFinite(level)) return String(value);
   if (level <= 30) return `Lv.${level}`;
   // ゲーム内は「30」の次が黄金バッジ1〜。API値は35=黄金1、40=黄金2…と5刻みで、
-  // 間の値（31〜34、36〜39…）は次の黄金レベルへの途中段階なので「+n」で表す。
-  if (level < 35) return level === 30 ? "Lv.30" : `Lv.30+${level - 30}`;
+  // 間の値（31〜34、36〜39…）はゲームの5マスの進行バーの途中なので「（3/5）」で表す。
+  if (level < 35) return level === 30 ? "Lv.30" : `Lv.30（${level - 30}/5）`;
   const goldLevel = Math.floor((level - 35) / 5) + 1;
   const step = (level - 35) % 5;
-  return step ? `黄金${goldLevel}+${step}` : `黄金${goldLevel}`;
+  return step ? `黄金${goldLevel}（${step}/5）` : `黄金${goldLevel}`;
 }
 
 function formatRelativeActivity(lastActiveAt, fallback = null) {
@@ -11151,7 +11151,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   loadCounts();
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function compact(v){var n=Number(v);if(!isFinite(n))return v==null?"-":String(v);var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/[.]0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/[.]0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/[.]0$/,"")+"K";return n.toLocaleString("ja-JP")}
-  function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<35)return "Lv.30+"+(l-30);var g=Math.floor((l-35)/5)+1,st=(l-35)%5;return "黄金"+g+(st?"+"+st:"")}
+  function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<35)return "Lv.30（"+(l-30)+"/5）";var g=Math.floor((l-35)/5)+1,st=(l-35)%5;return "黄金"+g+(st?"（"+st+"/5）":"")}
   function ago(t){var d=Math.max(0,Math.floor(Date.now()/1000)-Number(t||0));if(d<3600)return Math.max(1,Math.floor(d/60))+"分前";if(d<86400)return Math.floor(d/3600)+"時間前";return Math.floor(d/86400)+"日前"}
   var FIELD={power:"戦力",town_center_level:"役場",vip:"VIP",x:"X座標",y:"Y座標",kills:"撃破数",alliance_aid:"同盟",alliance_name:"同盟",alliance_rank:"同盟ランク",alliance_power:"同盟戦力",alliance_count:"同盟人数"};
   function val(field,v){if(v==null||v==="")return "-";if(field==="power"||field==="kills"||field==="alliance_power")return compact(v);if(field==="town_center_level")return tc(v);return String(v)}
