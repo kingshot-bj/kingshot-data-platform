@@ -60,6 +60,11 @@ async function catalogRow(db, kid) {
   ).bind(Number(kid)).first();
 }
 
+// Alliance ids are stored as "153300015" or "153300015.0" depending on source.
+export function normalizeAllianceId(value) {
+  return String(value ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+}
+
 export async function renderKingdomDetailPage(request, env) {
   const url = new URL(request.url);
   const kidText = String(url.searchParams.get("kid") || "").trim();
@@ -142,6 +147,16 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
   const available = (boards.results||[]).map(x=>x.board);
   const board = available.includes(selected) ? selected : (available.includes(selectedBoards[0]) ? selectedBoards[0] : (available[0]||selected));
   const rows = await withArchivedRankings(env, kid, await env.DB.prepare("SELECT r.rank,r.target_type,r.target_id,r.governor_id,r.nick_name,r.score,r.aid,r.abbr,r.name,r.previous_rank,p.avatar_url,p.alliance_abbr,p.alliance_rank,p.alliance_rank_label FROM kingdom_ranking_current r LEFT JOIN players p ON p.governor_id = COALESCE(NULLIF(r.governor_id,''),r.target_id) WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT 100").bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
+  // Personal boards carry only the alliance id. Resolve its tag from this
+  // kingdom's alliance boards so players never show a bare number like
+  // [153300015.0]; when no tag is known the tag is simply not shown.
+  const abbrByAid = new Map();
+  if ((rows.results || []).some(r => !r.alliance_abbr && !r.abbr && r.aid)) {
+    try {
+      const allianceRows = await env.DB.prepare("SELECT aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'ALLIANCE' AND abbr IS NOT NULL AND abbr <> '' AND aid IS NOT NULL").bind(kid).all();
+      for (const a of allianceRows.results || []) abbrByAid.set(normalizeAllianceId(a.aid), String(a.abbr));
+    } catch (error) { console.error("ranking_alliance_abbr_lookup_failed", kid, error?.message || error); }
+  }
   const archiveNotice = rows.archived ? "<div class='empty'>このランキングは " + esc(formatArchiveDate(rows.archived.lastUpdatedAt)) + " 時点のデータ（アーカイブ）です。最新の順位は、王国ウォッチリストに登録すると自動で取得されます。</div>" : "";
   const label=BOARDS.find(x=>x[0]===board)?.[1]||board;
   const boardSelectOptions=BOARDS.filter(([b])=>!storedBoards.length||storedBoards.includes(b)).map(([b,l])=>({key:b,label:l}));
@@ -151,7 +166,7 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
     const rankNumber=Number(r.rank);
     const rankClass=rankNumber===1?"rank-gold":rankNumber===2?"rank-silver":rankNumber===3?"rank-bronze":"";
     const star=player?" <button class='star' type='button' aria-label='ウォッチリストに追加' aria-pressed='false' data-g='"+esc(r.governor_id||r.target_id)+"'>☆</button>":"";
-    const playerName=String(r.nick_name||r.name||r.abbr||r.target_id||"");const role=player?normalizeAllianceRole(r.alliance_rank,r.alliance_rank_label):null;const roleAttr=role? " data-role='"+role+"'":"";const avatar=r.avatar_url?"<img class='rank-avatar ee-role-avatar'"+roleAttr+" src='"+esc(r.avatar_url)+"' alt='' loading='lazy' decoding='async' referrerpolicy='no-referrer'>":"<span class='rank-avatar ee-role-avatar rank-avatar-fallback'"+roleAttr+" aria-hidden='true'>"+esc(playerName.slice(0,1)||"？")+"</span>";const allianceTag=String(r.alliance_abbr||r.abbr||r.aid||"");const allianceHref="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(allianceTag);const alliance=player&&allianceTag?"<a class='rank-alliance' href='"+allianceHref+"' aria-label='同盟 "+esc(allianceTag)+" の詳細'>["+esc(allianceTag)+"]</a>":"";return "<article class='rank-row "+rankClass+"'><div class='rank-position'><span>"+esc(r.rank)+"</span><small>位</small></div><div class='rank-player'><a class='rank-player-link' href='"+href+"'>"+avatar+"<span class='rank-player-name'>"+esc(playerName)+"</span></a>"+alliance+"</div><div class='rank-score'><small>スコア</small><strong>"+num(r.score)+"</strong></div><div class='rank-change'>"+rankDelta(r.previous_rank,r.rank)+"</div>"+star+"</article>";
+    const playerName=String(r.nick_name||r.name||r.abbr||r.target_id||"");const role=player?normalizeAllianceRole(r.alliance_rank,r.alliance_rank_label):null;const roleAttr=role? " data-role='"+role+"'":"";const avatar=r.avatar_url?"<img class='rank-avatar ee-role-avatar'"+roleAttr+" src='"+esc(r.avatar_url)+"' alt='' loading='lazy' decoding='async' referrerpolicy='no-referrer'>":"<span class='rank-avatar ee-role-avatar rank-avatar-fallback'"+roleAttr+" aria-hidden='true'>"+esc(playerName.slice(0,1)||"？")+"</span>";const allianceTag=String(r.alliance_abbr||r.abbr||(r.aid?abbrByAid.get(normalizeAllianceId(r.aid)):"")||"");const allianceHref="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(allianceTag);const alliance=player&&allianceTag?"<a class='rank-alliance' href='"+allianceHref+"' aria-label='同盟 "+esc(allianceTag)+" の詳細'>["+esc(allianceTag)+"]</a>":"";return "<article class='rank-row "+rankClass+"'><div class='rank-position'><span>"+esc(r.rank)+"</span><small>位</small></div><div class='rank-player'><a class='rank-player-link' href='"+href+"'>"+avatar+"<span class='rank-player-name'>"+esc(playerName)+"</span></a>"+alliance+"</div><div class='rank-score'><small>スコア</small><strong>"+num(r.score)+"</strong></div><div class='rank-change'>"+rankDelta(r.previous_rank,r.rank)+"</div>"+star+"</article>";
   }).join("");
   const options=BOARDS.map(([b,l])=>"<label class='board-option'><input type='checkbox' name='boards' value='"+esc(b)+"' "+(selectedBoards.includes(b)?"checked":"")+"><span>"+esc(l)+"</span></label>").join("");
   const settings="<div class='rank-settings' id='rank-settings' hidden><div class='settings-title'>表示対象ランキング</div><form id='rank-pref-form'><label>王国ID<input name='kid' type='number' min='1' value='"+kid+"' required></label><div class='board-options'>"+options+"</div><button type='submit'>設定を保存</button><span id='pref-status' role='status'></span></form></div>";
