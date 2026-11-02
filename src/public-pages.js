@@ -112,7 +112,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   const week = (growth?.comparisons || []).find(c => c.label === "7日前")?.snapshot || null;
   const canonical = origin + "/k/" + kid;
   const name = catalog?.name && String(catalog.name) !== String(kid) ? `（${catalog.name}）` : "";
-  const title = `王国${kid}${name}の戦力・ランキング・KvK情報｜EagleEye`;
+  const title = `王国${kid}${name}の戦力・ランキング・KvK情報 | EagleEye`;
   const powerText = latest?.power != null ? `総戦力${compactNumber(latest.power)}` : "";
   const description = `KingShot 王国${kid}の${[powerText, latest?.power_gain_7d != null ? "7日間の戦力増加" + compactNumber(latest.power_gain_7d) : "", players.length ? "戦力ランキング上位" : "", matchup?.opponent ? `KvKシーズン${matchup.season}の対戦相手は王国${matchup.opponent}` : "", data.age != null ? `開設${data.age}日目` : ""].filter(Boolean).join("、")}。毎日更新のKingShot王国データ。`;
 
@@ -178,7 +178,7 @@ export function renderPublicKingdomsIndex(kids, { origin = "" } = {}) {
 <form class="search" action="/kingdoms" method="get" onsubmit="var v=this.kid.value.trim();if(/^\\d+$/.test(v)){location.href='/k/'+v;return false}"><input name="kid" inputmode="numeric" placeholder="王国番号（例：1524）"><button type="submit">表示</button></form>
 ${sections || '<div class="empty">王国データを読み込めませんでした。</div>'}
 <p class="note">データ提供：MightPulse。KingShotの公式サイトではありません。</p>`;
-  return shell({ title: "KingShot 王国一覧・戦力ランキング｜EagleEye", description: `KingShotの全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin });
+  return shell({ title: "KingShot 王国一覧・戦力ランキング | EagleEye", description: `KingShotの全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin });
 }
 
 export function renderRobotsTxt(origin) {
@@ -186,7 +186,7 @@ export function renderRobotsTxt(origin) {
 }
 
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10)) {
-  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, ...kids.map(k => `${origin}/k/${k}`)];
+  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, ...kids.map(k => `${origin}/k/${k}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
 }
 

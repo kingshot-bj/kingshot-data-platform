@@ -49,6 +49,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
+import { renderHeroShardPage } from "./hero-shards.js";
 import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
@@ -4992,6 +4993,7 @@ export default {
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request)), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
       if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request), await loadPublicKingdomIds(env.DB)), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
+      if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
       if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request) }));
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request), signedIn })); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage());
@@ -5570,6 +5572,40 @@ async function servePublicCached(request, executionContext, build, maxAge = PUBL
     if (executionContext?.waitUntil) executionContext.waitUntil(put); else await put;
   }
   return response;
+}
+
+// 英雄の欠片 計算: public calculator; signed-in users also get their own heroes.
+async function renderHeroShardRoute(request, env, executionContext) {
+  const origin = publicOrigin(request);
+  const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+  const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+  if (auth?.status !== "ACTIVE") {
+    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards") })));
+  }
+  let heroes = null, heroesNote = "";
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    if (!visibilityEnabled(settings, "heroes_list", auth.role)) {
+      heroesNote = "現在の権限では英雄の一覧は表示されません。";
+    } else {
+      const link = await env.DB.prepare("SELECT governor_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(auth.user_id).first();
+      if (!link) heroesNote = "マイKingShotで領主IDを登録すると、あなたの英雄が表示されます。";
+      else {
+        const observation = await getLatestPlayerObservation(env.DB, link.governor_id);
+        const payload = observation?.payload || {};
+        const list = Array.isArray(payload.heroes) ? payload.heroes : Array.isArray(payload.player?.heroes) ? payload.player.heroes : null;
+        if (!list) heroesNote = "英雄データがまだありません。プレイヤー詳細で「詳細情報を取得」すると表示されます。";
+        else {
+          heroes = list.filter(h => h && h.name != null).map(h => ({ name: String(h.name), displayName: localizeHeroName(h.name), steps: Number(h.star) || 0 }));
+          heroesNote = observation?.observed_at ? new Date(observation.observed_at * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) + " 時点のデータです。" : "";
+        }
+      }
+    }
+  } catch (error) {
+    console.error("hero_shard_heroes_failed", error?.message || error);
+    heroesNote = "英雄データを読み込めませんでした。";
+  }
+  return eagleEyeHtmlResponse(renderHeroShardPage({ origin, signedIn: true, heroes, heroesNote }));
 }
 
 async function servePublicPage(request, env, executionContext, render) {
