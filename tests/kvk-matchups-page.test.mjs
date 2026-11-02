@@ -37,7 +37,7 @@ test("matchups: pairs once, Mystic tally decides order; no KvK scores, no total-
     { kid: 3, opponent: 4, p1: 50e9, p2: 100e9 },
     { kid: 5, opponent: null, p1: 10e9 }
   ];
-  const S = (v) => JSON.stringify({ coliseum: { top10: v[0] }, forest_of_life: { top10: v[1] }, crystal_cave: { top10: v[2] }, knowledge_nexus: { top10: v[3] }, molten_fort: { top10: v[4] }, radiant_spire: { top10: v[5] } });
+  const S = (v) => JSON.stringify({ coliseum: { best: v[0] }, forest_of_life: { best: v[1] }, crystal_cave: { best: v[2] }, knowledge_nexus: { best: v[3] }, molten_fort: { best: v[4] }, radiant_spire: { best: v[5] } });
   const mystic = [{ kid: 1, boards_json: S([5, 5, 5, 5, 5, 5]) }, { kid: 2, boards_json: S([4, 6, 5, 4, 4, 4]) }, { kid: 3, boards_json: S([9, 9, 9, 9, 9, 9]) }, { kid: 4, boards_json: S([1, 1, 1, 1, 1, 1]) }];
   const db = { prepare(sql) { return { bind() { return this; }, run: async () => ({}), all: async () => ({ results: /kvk_mystic_summary/.test(sql) ? mystic : rows }) }; } };
   resetKingdomStatsSchemaCache();

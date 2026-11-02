@@ -62,11 +62,12 @@ export function summarizeKingdomBoards(payload) {
 }
 
 // Stage-by-stage comparison: { wins, losses, even, stages: [{ key, label, a, b }] }.
-export function compareMystic(a, b) {
+// metric "best" (1位, default: rally leaders decide KvK) or "top10" (上位10人平均).
+export function compareMystic(a, b, { metric = "best" } = {}) {
   const stages = [];
   let wins = 0, losses = 0, even = 0;
   for (const key of MYSTIC_STAGE_KEYS) {
-    const x = a?.[key]?.top10, y = b?.[key]?.top10;
+    const x = a?.[key]?.[metric], y = b?.[key]?.[metric];
     if (x == null || y == null) continue;
     if (x > y) wins++; else if (x < y) losses++; else even++;
     stages.push({ key, label: LABELS[key] || key, a: x, b: y });

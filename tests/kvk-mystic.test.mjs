@@ -16,8 +16,12 @@ test("summarize: top-10 average per Mystic stage, offsets removed, shapes tolera
 });
 
 test("compare counts stages each side leads", () => {
-  const r = compareMystic({ coliseum: { top10: 5 }, radiant_spire: { top10: 3 }, crystal_cave: { top10: 2 } }, { coliseum: { top10: 4 }, radiant_spire: { top10: 3 }, crystal_cave: { top10: 9 } });
-  assert.deepEqual([r.wins, r.losses, r.even, r.stages.length], [1, 1, 1, 3]);
+  const a = { coliseum: { top10: 5, best: 9 }, radiant_spire: { top10: 3, best: 3 }, crystal_cave: { top10: 2, best: 9 } };
+  const b = { coliseum: { top10: 4, best: 7 }, radiant_spire: { top10: 3, best: 3 }, crystal_cave: { top10: 9, best: 8 } };
+  const r = compareMystic(a, b);
+  assert.deepEqual([r.wins, r.losses, r.even, r.stages.length], [2, 0, 1, 3], "default: each stage's 1位");
+  const t = compareMystic(a, b, { metric: "top10" });
+  assert.deepEqual([t.wins, t.losses, t.even], [1, 1, 1]);
 });
 
 function fakeDb(state) {

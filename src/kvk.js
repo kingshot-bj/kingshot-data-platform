@@ -534,16 +534,16 @@ async function renderMysticComparison(env, kid, opponent) {
   let wins = 0, losses = 0;
   const rowsHtml = boards.map(board => {
     const x = a[board.key], y = b[board.key];
-    const diff = x.top10 - y.top10;
+    const diff = x.best - y.best;
     if (diff > 0) wins++; else if (diff < 0) losses++;
-    const max = Math.max(x.top10, y.top10, 1);
+    const max = Math.max(x.best, y.best, 1);
     return `<div class="mystic"><div class="mystic-head"><b>${esc(board.label)}</b><em class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff > 0 ? "優勢" : diff < 0 ? "劣勢" : "互角"}</em></div>
-<div class="day-row"><span>${kid}</span><div class="track"><i style="width:${Math.round(x.top10 / max * 100)}%"></i></div><span>${esc(fmt(x.top10))}</span></div>
-<div class="day-row"><span>${opponent}</span><div class="track opp"><i style="width:${Math.round(y.top10 / max * 100)}%"></i></div><span>${esc(fmt(y.top10))}</span></div>
-<small class="muted">1位 ${esc(fmt(x.best))} 対 ${esc(fmt(y.best))}${x.top50 != null && y.top50 != null ? ` · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}` : ""}</small></div>`;
+<div class="day-row"><span>${kid}</span><div class="track"><i style="width:${Math.round(x.best / max * 100)}%"></i></div><span>${esc(fmt(x.best))}</span></div>
+<div class="day-row"><span>${opponent}</span><div class="track opp"><i style="width:${Math.round(y.best / max * 100)}%"></i></div><span>${esc(fmt(y.best))}</span></div>
+<small class="muted">上位10人平均 ${esc(fmt(x.top10))} 対 ${esc(fmt(y.top10))}${x.top50 != null && y.top50 != null ? ` · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}` : ""}</small></div>`;
   }).join("");
   const dateNote = side => side.archived ? formatArchiveDate(side.updated) + "（アーカイブ）" : ts(side.updated);
-  return `<h2>秘境の試練の比較</h2><p class="muted">上位10人の平均で比較 · ${boards.length}項目中 <b>${wins}項目で優勢</b>${losses ? "・" + losses + "項目で劣勢" : ""}<br>データ：王国${kid} ${esc(dateNote(mine))} ／ 王国${opponent} ${esc(dateNote(theirs))}</p><div class="days">${rowsHtml}</div>`;
+  return `<h2>秘境の試練の比較</h2><p class="muted">各ステージの1位の記録で比較 · ${boards.length}項目中 <b>${wins}項目で優勢</b>${losses ? "・" + losses + "項目で劣勢" : ""}<br>データ：王国${kid} ${esc(dateNote(mine))} ／ 王国${opponent} ${esc(dateNote(theirs))}</p><div class="days">${rowsHtml}</div>`;
 }
 
 function renderScoreSection(kid, score, currentSeason) {

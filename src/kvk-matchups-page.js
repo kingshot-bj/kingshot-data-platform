@@ -1,7 +1,7 @@
 // Public KvK matchup list: /kvk/s{season}.
 // Players judge KvK opponents by 秘境の試練 stages, not total power (troop count
 // inflates power while march capacity limits who fights). Each pair shows the
-// stage tally ("A 4 / B 2") publicly; the stage-by-stage detail is behind login
+// stage tally by each stage's 1位 ("A 4 / B 2") publicly; the stage-by-stage detail is behind login
 // on /kvk. Total power is shown only as a reference. No KvK scores here.
 
 import { ensureKingdomStatsSchema } from "./kingdom-stats.js";
@@ -82,7 +82,7 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
     return `<li class="pair" data-k=" ${p.a.kid} ${p.b?.kid ?? ""} " data-lead="${l == null ? -1 : Math.abs(l)}" data-kid="${p.a.kid}">${side(p.a, aUp)}<div class="vs"><span>VS</span>${mid}</div>${side(p.b, bUp)}</li>`;
   }).join("");
   const title = `キングショット KvK S${season} 組み合わせ一覧（秘境の試練で比較） | EagleEye`;
-  const description = `キングショット（KingShot）KvK シーズン${season}の全${pairs.length}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の上位10人で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
+  const description = `キングショット（KingShot）KvK シーズン${season}の全${pairs.length}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の1位の記録で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み合わせ`, `/kvk/s${season}`]]) : ""}
@@ -94,11 +94,11 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 .note{font-size:11px;color:var(--ee-subtext);line-height:1.6;margin-top:12px}.empty{padding:20px;text-align:center;color:var(--ee-subtext)}</style></head><body><main class="wrap">
 <nav class="crumbs"><a href="/">EagleEye</a> › KvK 組み合わせ</nav>
 <h1>KvK シーズン${esc(season)} 組み合わせ</h1>
-<p class="lead">キングショットのKvK（王国対抗戦）シーズン${esc(season)}の全組み合わせです。総戦力は兵士の数で大きく変わり、実際の戦闘力とは一致しないため、秘境の試練の6ステージ（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）の上位10人の平均で比べています。真ん中の「4-2」は、それぞれが上回っているステージの数です。</p>
+<p class="lead">キングショットのKvK（王国対抗戦）シーズン${esc(season)}の全組み合わせです。総戦力は兵士の数で大きく変わり、実際の戦闘力とは一致しないため、秘境の試練の6ステージ（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）の1位の記録で比べています。KvKは集結を主催するトップ層の強さで決まりやすいためです。真ん中の「4-2」は、それぞれが上回っているステージの数です。</p>
 <div class="facts"><span>組み合わせ <b>${pairs.length}</b>組</span><span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
-<p class="note">ステージごとの上位10人の平均と1位の記録、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「内訳」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+<p class="note">ステージごとの1位の記録と上位10人の平均、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「内訳」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
 <script>(function(){var q=document.getElementById("q"),s=document.getElementById("sort"),l=document.getElementById("list");if(!l)return;var items=[].slice.call(l.children);function apply(){var v=q.value.trim(),m=s.value;items.sort(function(a,b){var x=+a.dataset.lead,y=+b.dataset.lead;if(m==="kid")return a.dataset.kid-b.dataset.kid;if(m==="even"){if(x<0)return 1;if(y<0)return -1;return x-y}return y-x});items.forEach(function(it){it.style.display=!v||it.dataset.k.indexOf(" "+v)>=0?"":"none";l.appendChild(it)})}q.addEventListener("input",apply);s.addEventListener("change",apply)})();</script>
 </main></body></html>`;
 }
