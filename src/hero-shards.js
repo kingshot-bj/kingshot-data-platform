@@ -146,6 +146,11 @@ function shardClient(cfg) {
   var saved = load();
   var list = (saved || mine).map(norm).filter(function (e) { return e.n; });
   function find(n) { for (var i = 0; i < list.length; i++) if (list[i].n === n) return i; return -1; }
+  // Coming from a hero page (?hero=名前): put that hero at the top of the list.
+  try {
+    var wanted = new URLSearchParams(location.search).get("hero");
+    if (wanted && byName[wanted]) { var at = find(wanted); var entry = at >= 0 ? list.splice(at, 1)[0] : norm({ n: wanted, s: 0, t: 5 }); list.unshift(entry); save(); }
+  } catch (e) {}
   function opts(from, to, sel, label) { var o = ""; for (var i = from; i <= to; i++) o += '<option value="' + i + '"' + (i === sel ? " selected" : "") + ">" + label(i) + "</option>"; return o; }
   function result(e) {
     var to = e.t * 6;
