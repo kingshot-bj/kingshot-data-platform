@@ -26,7 +26,7 @@ test("goldBetween sums the levels after the current one", () => {
 test("page uses the Japanese in-game name 黄金 and runs in the browser", () => {
   const html = renderGoldCalculatorPage({ origin: "https://eagleeye-ks.com" });
   assert.equal(GOLD_NAME, "黄金");
-  assert.match(html, /<title>黄金 必要数計算ツール（TG1〜TG8） \| EagleEye<\/title>/);
+  assert.match(html, /<title>キングショット 黄金 必要数計算ツール（TG1〜TG8） \| EagleEye<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/tools\/gold">/);
   assert.doesNotMatch(html, /トゥルーゴールド|Truegold/i);
   assert.ok(html.includes(REFINED_GOLD_NAME));

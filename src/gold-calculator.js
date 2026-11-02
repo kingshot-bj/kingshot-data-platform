@@ -3,6 +3,8 @@
 // table's total row; Town Center TG1–5 also match kingshotguide.org).
 // TG6–8 additionally need the refined material (英語版 Tempered Truegold).
 
+import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+
 export const GOLD_NAME = "黄金";
 // Japanese in-game name of Tempered Truegold (confirmed in game by the operator).
 export const REFINED_GOLD_NAME = "精製黄金";
@@ -110,7 +112,7 @@ export function renderGoldCalculatorPage({ origin = "" } = {}) {
 <p class="note"><a href="/tools/gold-tech">黄金テクノロジー研究（T11）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>・<a href="/hero-catalog">英雄カタログ</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${goldClient.toString()})(${cfgJson});</script>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${GOLD_NAME} 必要数計算ツール（TG1〜TG8） | EagleEye</title><meta name="description" content="KingShotの${GOLD_NAME}（TG）の必要数を建物ごとに計算。役場・兵舎・大使館・指揮所・病院・戦争学院のTG1〜TG8に必要な${GOLD_NAME}と${REFINED_GOLD_NAME}、手持ちからの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">
+<title>キングショット ${GOLD_NAME} 必要数計算ツール（TG1〜TG8） | EagleEye</title><meta name="description" content="キングショット（KingShot）の${GOLD_NAME}（TG）の必要数を建物ごとに計算。役場・兵舎・大使館・指揮所・病院・戦争学院のTG1〜TG8に必要な${GOLD_NAME}と${REFINED_GOLD_NAME}、手持ちからの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/gold", name: GOLD_NAME + " 必要数計算ツール", description: "キングショットの建物ごとの黄金（TG）の必要数を計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], [GOLD_NAME + "計算", "/tools/gold"]]) : ""}
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${GOLD_NAME} 必要数計算ツール | EagleEye"><meta property="og:url" content="${esc(canonical)}">
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a,.note a{color:var(--ee-cyan);text-decoration:none}h1{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:26px}.lead{margin:0 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6}h2{margin:22px 0 8px;font-size:17px}.gold-ico{flex:none;vertical-align:middle}
 .panel{padding:12px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel);display:grid;gap:10px}.all,.have{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:grid;gap:4px;font-size:12px;color:var(--ee-subtext)}select,input{width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--ee-border);border-radius:11px;font:inherit;font-size:15px;background:var(--ee-panel-deep);color:var(--ee-text)}

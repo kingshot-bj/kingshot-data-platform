@@ -26,7 +26,7 @@ test("techBetween: dust and coins (table coins are thousands)", () => {
 
 test("page: names from the game, branches, wiring", () => {
   const html = renderGoldTechPage({ origin: "https://eagleeye-ks.com" });
-  assert.match(html, /<title>黄金テクノロジー研究（T11）計算ツール \| EagleEye<\/title>/);
+  assert.match(html, /<title>キングショット 黄金テクノロジー研究（T11）計算ツール \| EagleEye<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/tools\/gold-tech">/);
   for (const t of ["黄金微粒子", "コイン", "黄金軍団", "黄金〇兵治療", "data-br=\"cavalry\"", "Pandafather"]) assert.ok(html.includes(t), t);
   assert.doesNotMatch(html, /#[0-9a-f]{6}"/i);

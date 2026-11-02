@@ -4,6 +4,7 @@
 // Resources: 黄金微粒子 (dust) and コイン (the table lists coins in thousands).
 
 import { goldIconSvg } from "./gold-calculator.js";
+import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
 
 export const DUST_NAME = "黄金微粒子";
 export const COIN_NAME = "コイン";
@@ -103,7 +104,7 @@ export function renderGoldTechPage({ origin = "" } = {}) {
 <p class="note"><a href="/tools/gold">黄金（TG）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${techClient.toString()})(${cfgJson});</script>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>黄金テクノロジー研究（T11）計算ツール | EagleEye</title><meta name="description" content="KingShotの黄金テクノロジー研究（T11）に必要な${DUST_NAME}と${COIN_NAME}を、歩兵・騎兵・弓兵の研究ごとに計算。黄金軍団や黄金歩兵の解放、治療・訓練・救急のレベル別必要数と研究時間がわかります。"><link rel="canonical" href="${esc(canonical)}">
+<title>キングショット 黄金テクノロジー研究（T11）計算ツール | EagleEye</title><meta name="description" content="キングショット（KingShot）の黄金テクノロジー研究（T11）に必要な${DUST_NAME}と${COIN_NAME}を、歩兵・騎兵・弓兵の研究ごとに計算。黄金軍団や黄金歩兵の解放、治療・訓練・救急のレベル別必要数と研究時間がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/gold-tech", name: "黄金テクノロジー研究（T11）計算ツール", description: "キングショットの黄金テクノロジー研究に必要な黄金微粒子とコインを計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], ["黄金テクノロジー研究", "/tools/gold-tech"]]) : ""}
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="黄金テクノロジー研究（T11）計算 | EagleEye"><meta property="og:url" content="${esc(canonical)}">
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a,.note a{color:var(--ee-cyan);text-decoration:none}h1{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:24px}.lead{margin:0 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6}h2{margin:22px 0 8px;font-size:17px}.gold-ico{flex:none;vertical-align:middle}
 .panel{padding:12px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel);display:grid;gap:10px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.tabs button{padding:10px;border:1px solid var(--ee-border);border-radius:11px;background:var(--ee-panel-deep);color:var(--ee-text);font:inherit;font-weight:800;cursor:pointer}.tabs button[aria-pressed="true"]{background:var(--ee-cyan);border-color:var(--ee-cyan);color:var(--ee-on-accent,#062033)}

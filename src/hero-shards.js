@@ -4,6 +4,7 @@
 // (all agree; total 1,065 to max) and confirmed in game by the operator.
 
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
+import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
 
 export const SHARD_STEP_COSTS = Object.freeze([
   Object.freeze([1, 1, 2, 2, 2, 2]),        // ★1 (10)
@@ -253,7 +254,7 @@ ${cta}
 <script>var __name=function(f){return f};(${shardClient.toString()})(${cfgJson});</script>`;
 
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>英雄の欠片 計算ツール（段階ごとの必要数） | EagleEye</title><meta name="description" content="KingShotの英雄の星上げに必要な欠片の数を計算。好きな英雄を選んで★1〜★5の段階ごとの必要数（★5まで合計1,065個）と、持っている欠片からの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">
+<title>キングショット 英雄の欠片 計算ツール（段階ごとの必要数） | EagleEye</title><meta name="description" content="キングショット（KingShot）の英雄の星上げに必要な欠片の数を計算。好きな英雄を選んで★1〜★5の段階ごとの必要数（★5まで合計1,065個）と、持っている欠片からの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/hero-shards", name: "英雄の欠片 計算ツール", description: "キングショットの英雄の星上げに必要な欠片の数を計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], ["英雄カタログ", "/hero-catalog"], ["欠片計算", "/tools/hero-shards"]]) : ""}
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="英雄の欠片 計算ツール | EagleEye"><meta property="og:url" content="${esc(canonical)}">
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a{color:var(--ee-cyan);text-decoration:none}h1{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:26px}.lead{margin:0 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6}h2{margin:22px 0 8px;font-size:17px}
 .shard-ico{flex:none;vertical-align:middle}.acct{display:grid;gap:6px;margin-bottom:12px}.btn{padding:11px 14px;border:0;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font:inherit;font-weight:900;cursor:pointer}.btn.ghost{margin-top:10px;background:transparent;border:1px solid var(--ee-border);color:var(--ee-subtext);font-weight:700;font-size:12px;padding:8px 12px}
