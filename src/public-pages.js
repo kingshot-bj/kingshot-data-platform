@@ -193,7 +193,7 @@ export function renderRobotsTxt(origin, { preview = false } = {}) {
 // ads.txt for Google AdSense. ADSENSE_PUBLISHER_ID (pub-…) is set after approval;
 // until then /ads.txt is a 404 so no unauthorised seller line is ever published.
 export function renderAdsTxt(publisherId) {
-  const id = String(publisherId || "").trim();
+  const id = String(publisherId || "").trim().replace(/^ca-/, "");
   if (!/^pub-\d{10,20}$/.test(id)) return null;
   return `google.com, ${id}, DIRECT, f08c47fec0942fa0\n`;
 }

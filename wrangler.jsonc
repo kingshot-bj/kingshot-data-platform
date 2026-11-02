@@ -11,6 +11,7 @@
     "EAGLEEYE_ENV": "production",
     "PUBLIC_ORIGIN": "https://eagleeye-ks.com",
     "LEGACY_REDIRECT": "302",
+    "ADSENSE_PUBLISHER_ID": "pub-5575661392086210",
     "DISCORD_CLIENT_ID": "1554817307988205618",
     "DISCORD_REDIRECT_URI": "https://eagleeye-ks.com/api/auth/callback",
     "CLOUDFLARE_ACCOUNT_ID": "991e65e37de26f2e996fe296ab0d1a3a",
