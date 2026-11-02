@@ -49,7 +49,7 @@ import { verifyKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill-ve
 import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
-import { buildHomeSummary } from "./home-summary.js";
+import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -5023,7 +5023,7 @@ export default {
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
-      if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env);
+      if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
@@ -10724,7 +10724,7 @@ async function handleAnnouncementsApi(request, env) {
   }
 }
 
-async function handleHomeSummary(request, env) {
+async function handleHomeSummary(request, env, executionContext) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   try {
@@ -10733,6 +10733,19 @@ async function handleHomeSummary(request, env) {
       visible: key => visibilityEnabled(settings, key, auth.role),
       changeVisible: change => isChangeVisibleForRole(change, auth.role, settings)
     });
+    // 自分の領主データが3時間より古ければ裏で取り直す。画面側は少し待って再取得する。
+    if (summary.me && executionContext?.waitUntil && claimMeAutoRefresh(summary.me)) {
+      const governorId = summary.me.governor_id;
+      summary.me.refreshing = true;
+      executionContext.waitUntil((async () => {
+        try {
+          const fetched = await fetchPlayerThroughApiPool(env, governorId, "HOME_AUTO_REFRESH", "base");
+          await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+        } catch (error) {
+          console.warn("home_me_auto_refresh_failed", error?.code || error?.message || "unknown");
+        }
+      })());
+    }
     return json({ ok: true, ...summary });
   } catch (error) {
     console.error("home_summary_failed", error?.message || error);
@@ -11148,6 +11161,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   function ago(t){var d=Math.max(0,Math.floor(Date.now()/1000)-Number(t||0));if(d<3600)return Math.max(1,Math.floor(d/60))+"分前";if(d<86400)return Math.floor(d/3600)+"時間前";return Math.floor(d/86400)+"日前"}
   var FIELD={power:"戦力",town_center_level:"役場",vip:"VIP",x:"X座標",y:"Y座標",kills:"撃破数",alliance_aid:"同盟",alliance_name:"同盟",alliance_rank:"同盟ランク",alliance_power:"同盟戦力",alliance_count:"同盟人数"};
   function val(field,v){if(v==null||v==="")return "-";if(field==="power"||field==="kills"||field==="alliance_power")return compact(v);if(field==="town_center_level")return tc(v);return String(v)}
+  var homeMeRetried=false;
   async function loadSummary(){
     var me=document.getElementById("homeMe"),list=document.getElementById("homeChanges");
     if(!list)return;
@@ -11155,9 +11169,10 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
     if(me){
       if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+tcBadge(m.town_center_level)+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
-        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
+        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
       else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
     }
+    if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
     var ch=d.changes||[];
     if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
