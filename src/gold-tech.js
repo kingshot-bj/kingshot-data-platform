@@ -101,7 +101,7 @@ export function renderGoldTechPage({ origin = "" } = {}) {
 <h2>研究ごとの合計（1兵種あたり）</h2><div class="tbl"><table><thead><tr>${head}</tr></thead><tbody>${table}<tr class="sum"><th>合計</th><td></td><td>${fmt(sumDust)}</td><td>${fmt(sumCoin)}</td><td></td></tr></tbody></table></div>
 <details class="lvs"><summary>レベルごとの必要数を見る（${DUST_NAME} / ${COIN_NAME}）</summary><div class="tbl"><table><tbody>${levels}</tbody></table></div></details>
 <p class="note">${DUST_NAME}は黄金テクノロジー研究画面の「交換」で${COIN_NAME}から交換できます（例：5,000${COIN_NAME}で1個、回数は週ごとにリセット）。研究時間は加速なしの合計です。数値はコミュニティ資料「T11 COST」（作成：Pandafather）によるもので、各研究の合計は資料の合計行と一致しています。3兵種とも同じコストとして計算しています。ゲーム内で名前が表示されない研究は、ツリー上の位置で表記しています。</p>
-<p class="note"><a href="/tools/gold">黄金（TG）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>もどうぞ。</p>
+<p class="note"><a href="/tools/gold">黄金（G）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${techClient.toString()})(${cfgJson});</script>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>キングショット 黄金テクノロジー研究（T11）計算ツール | EagleEye</title><meta name="description" content="キングショット（KingShot）の黄金テクノロジー研究（T11）に必要な${DUST_NAME}と${COIN_NAME}を、歩兵・騎兵・弓兵の研究ごとに計算。黄金軍団や黄金歩兵の解放、治療・訓練・救急のレベル別必要数と研究時間がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/gold-tech", name: "黄金テクノロジー研究（T11）計算ツール", description: "キングショットの黄金テクノロジー研究に必要な黄金微粒子とコインを計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], ["黄金テクノロジー研究", "/tools/gold-tech"]]) : ""}

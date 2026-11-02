@@ -93,26 +93,26 @@ function goldClient(cfg) {
 export function renderGoldCalculatorPage({ origin = "" } = {}) {
   const canonical = origin + "/tools/gold";
   const opts = (sel, label) => Array.from({ length: MAX_TG + 1 }, (_, n) => `<option value="${n}"${n === sel ? " selected" : ""}>${label(n)}</option>`).join("");
-  const tgLabel = n => n === 0 ? "TGなし" : "TG" + n;
+  const tgLabel = n => n === 0 ? "なし" : "G" + n;
   const rows = Object.entries(GOLD_COSTS).map(([key, b]) => `<div class="gold-row" data-b="${key}"><b class="bn">${esc(b.label)}</b><label>今<select data-k="c">${opts(0, tgLabel)}</select></label><label>目標<select data-k="t">${opts(8, tgLabel)}</select></label><div class="need"></div></div>`).join("");
-  const head = Array.from({ length: MAX_TG }, (_, i) => `<th>TG${i + 1}</th>`).join("");
+  const head = Array.from({ length: MAX_TG }, (_, i) => `<th>G${i + 1}</th>`).join("");
   const table = Object.values(GOLD_COSTS).map(b => `<tr><th>${esc(b.label)}</th>${b.costs.map(c => `<td>${c ? fmt(c[0]) + (c[1] ? `<small>+${fmt(c[1])}</small>` : "") : "—"}</td>`).join("")}</tr>`).join("")
     + `<tr class="sum"><th>合計</th>${GOLD_TOTALS.map(c => `<td>${fmt(c[0])}${c[1] ? `<small>+${fmt(c[1])}</small>` : ""}</td>`).join("")}</tr>`;
   const cfg = { costs: GOLD_COSTS, g: goldIconSvg(16), r: goldIconSvg(16, "refined"), gLg: goldIconSvg(34), rLg: goldIconSvg(34, "refined"), gName: GOLD_NAME, rName: REFINED_GOLD_NAME };
   const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c");
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › ツール › ${GOLD_NAME}計算</nav>
 <h1>${goldIconSvg(28)} ${GOLD_NAME} 必要数計算</h1>
-<p class="lead">KingShotの建物を${GOLD_NAME}（TG）で強化するのに必要な数を計算します。建物ごとに今のTGと目標を選ぶと、必要な${GOLD_NAME}と${REFINED_GOLD_NAME}（TG6〜8で必要）の合計が出ます。入力はこの端末に保存されます。</p>
+<p class="lead">KingShotの建物を${GOLD_NAME}（G1〜G8）で強化するのに必要な数を計算します。建物ごとに今のGと目標を選ぶと、必要な${GOLD_NAME}と${REFINED_GOLD_NAME}（G6〜8で必要）の合計が出ます。入力はこの端末に保存されます。</p>
 <section class="panel"><div class="all"><label>全部の「今」をまとめて<select id="allc">${opts(0, tgLabel)}</select></label><label>全部の「目標」をまとめて<select id="allt">${opts(8, tgLabel)}</select></label></div>
 <div class="gold-rows">${rows}</div>
 <div class="have"><label>手持ちの${GOLD_NAME}<input id="hg" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>手持ちの${REFINED_GOLD_NAME}<input id="hr" type="number" min="0" inputmode="numeric" placeholder="0"></label></div>
 <div id="gtotal" class="total" aria-live="polite"></div></section>
-<h2>TGごとの必要数</h2><div class="tbl"><table><thead><tr><th></th>${head}</tr></thead><tbody>${table}</tbody></table></div>
-<p class="note">数字は${GOLD_NAME}の必要数で、「+」は${REFINED_GOLD_NAME}です。戦争学院はTG2から。各列の合計は表の合計行と一致し、役場のTG1〜5は外部の資料（kingshotguide.org）とも一致しています。TG6〜8はコミュニティ資料の値です。ゲームの更新で変わる場合があります。</p>
+<h2>Gごとの必要数</h2><div class="tbl"><table><thead><tr><th></th>${head}</tr></thead><tbody>${table}</tbody></table></div>
+<p class="note">数字は${GOLD_NAME}の必要数で、「+」は${REFINED_GOLD_NAME}です。戦争学院はG2から。各列の合計は表の合計行と一致し、役場のG1〜5は外部の資料（kingshotguide.org）とも一致しています。G6〜8はコミュニティ資料の値です。ゲームの更新で変わる場合があります。</p>
 <p class="note"><a href="/tools/gold-tech">黄金テクノロジー研究（T11）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>・<a href="/hero-catalog">英雄カタログ</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${goldClient.toString()})(${cfgJson});</script>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>キングショット ${GOLD_NAME} 必要数計算ツール（TG1〜TG8） | EagleEye</title><meta name="description" content="キングショット（KingShot）の${GOLD_NAME}（TG）の必要数を建物ごとに計算。役場・兵舎・大使館・指揮所・病院・戦争学院のTG1〜TG8に必要な${GOLD_NAME}と${REFINED_GOLD_NAME}、手持ちからの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/gold", name: GOLD_NAME + " 必要数計算ツール", description: "キングショットの建物ごとの黄金（TG）の必要数を計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], [GOLD_NAME + "計算", "/tools/gold"]]) : ""}
+<title>キングショット ${GOLD_NAME} 必要数計算ツール（G1〜G8） | EagleEye</title><meta name="description" content="キングショット（KingShot）の${GOLD_NAME}（G・英語版のTG）の必要数を建物ごとに計算。役場・兵舎・大使館・指揮所・病院・戦争学院のG1〜G8に必要な${GOLD_NAME}と${REFINED_GOLD_NAME}、手持ちからの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">${origin ? webAppJsonLd({ origin, path: "/tools/gold", name: GOLD_NAME + " 必要数計算ツール", description: "キングショットの建物ごとの黄金（G1〜G8）の必要数を計算" }) + breadcrumbJsonLd(origin, [["EagleEye", "/"], [GOLD_NAME + "計算", "/tools/gold"]]) : ""}
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${GOLD_NAME} 必要数計算ツール | EagleEye"><meta property="og:url" content="${esc(canonical)}">
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a,.note a{color:var(--ee-cyan);text-decoration:none}h1{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:26px}.lead{margin:0 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6}h2{margin:22px 0 8px;font-size:17px}.gold-ico{flex:none;vertical-align:middle}
 .panel{padding:12px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel);display:grid;gap:10px}.all,.have{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:grid;gap:4px;font-size:12px;color:var(--ee-subtext)}select,input{width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--ee-border);border-radius:11px;font:inherit;font-size:15px;background:var(--ee-panel-deep);color:var(--ee-text)}
