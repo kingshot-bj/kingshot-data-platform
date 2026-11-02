@@ -87,3 +87,10 @@ test("AdSense readiness: ad / external-transmission disclosure, about page, ads.
   assert.match(catalog, /<meta name="description" content="KingShotの英雄のスキル一覧/);
   assert.match(catalog, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/hero-catalog">/);
 });
+
+test("every page carries a footer with policy / operator / contact links", async () => {
+  const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /const EAGLEEYE_SITE_FOOTER = '<footer id="ee-site-footer"/);
+  for (const href of ["/terms", "/privacy", "/about", "/support"]) assert.ok(index.includes('<a href="' + href + '">'), href);
+  assert.match(index, /if \(!html\.includes\('id="ee-site-footer"'\)\)/);
+});
