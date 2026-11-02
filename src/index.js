@@ -49,6 +49,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
+import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
 import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
@@ -5225,6 +5226,12 @@ export default {
       if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
     } catch (error) {
       console.error("kvk_collection_failed", error?.message || error);
+    }
+    try {
+      const announce = await runAnnouncementDiscordSync(env);
+      if (announce?.errors?.length) console.error("announcement_discord_errors", JSON.stringify(announce.errors).slice(0, 500));
+    } catch (error) {
+      console.error("announcement_discord_failed", error?.message || error);
     }
     try {
       const discord = await runKvkDiscordSync(env);
@@ -10592,14 +10599,18 @@ async function handleAnnouncementsApi(request, env) {
   const body = await request.json().catch(() => ({}));
   try {
     if (body?.action === "create") {
+      await ensureAnnouncementDiscordSchema(env.DB);
       const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null });
       await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title, status: item.status, publish_at: item.publish_at }).catch(() => {});
+      // ADMIN post → DM every OWNER (sent from the cron queue).
+      if (item.status === "PENDING") await enqueueApprovalRequestDms(env, { ...item, created_by: guard.auth?.discord_id || null }).catch(error => console.error("announcement_dm_enqueue_failed", error?.message || error));
       return json({ ok: true, item });
     }
     if (body?.action === "approve" || body?.action === "reject") {
       if (guard.auth?.role !== "OWNER") return json({ ok: false, error: "OWNER_REQUIRED" }, 403);
       const done = await reviewAnnouncement(env.DB, { id: body.id, approve: body.action === "approve", reviewer: guard.auth.discord_id || null });
       if (done) await writeOwnerAuditLog(env, guard.auth, body.action === "approve" ? "ANNOUNCEMENT_APPROVE" : "ANNOUNCEMENT_REJECT", null, null, { id: String(body.id) }).catch(() => {});
+      if (done) await enqueueReviewResultDm(env, body.id, body.action === "approve").catch(error => console.error("announcement_review_dm_failed", error?.message || error));
       return json({ ok: done, error: done ? null : "NOT_PENDING" }, done ? 200 : 409);
     }
     if (body?.action === "delete") {
