@@ -5265,67 +5265,44 @@ ${EAGLEEYE_THEME_BASE_CSS}
 ${EAGLEEYE_LIGHT_TOKENS_CSS}
 ${eagleEyeThemesCss()}
 
-/* Canonical dark-theme controls and navigation surfaces. Keep page layouts local. */
-html:not([data-eagle-theme="light"]) .ee-global-nav{background:var(--ee-bg,#0a1424)!important;border-color:var(--ee-border-soft,#1d344d)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-drawer{background:rgba(3,12,23,.66)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,var(--ee-panel-raised,#10243a),var(--ee-bg,#0a1728))!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:var(--ee-panel-raised,#10243a)!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+/* Canonical controls and navigation surfaces (token based: dark and light). Keep page layouts local. */
+.ee-global-nav{background:var(--ee-bg,#0a1424)!important;border-color:var(--ee-border-soft,#1d344d)!important}
+.ee-global-nav-drawer{background:color-mix(in srgb,var(--ee-bg) 55%,rgba(0,0,0,.45))!important}
+.ee-global-nav-panel{background:linear-gradient(180deg,var(--ee-panel-raised,#10243a),var(--ee-bg,#0a1728))!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
+.ee-global-nav-panel-head{background:var(--ee-panel-raised,#10243a)!important}
+:where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:var(--ee-on-accent,#062033)!important}
+:where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
+:where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 
 /* Shared component surfaces win over legacy page-local color declarations. */
-html:not([data-eagle-theme="light"]) :where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.search-panel,.player-result,.player-lookup,.search-intro,.search-state,.account,.account-summary,.action-card,.vip-card,.watch-option,.watch-hub,.hero,.notice,.detail-row,.favorite-ranking-card,.ranking-setting-option,.name-history-row,.user-card,.user-stats,.audit,.service,.event,.details-grid,.link,.links a,.choice,.result,.discord-config-row,.collector-row,.facts,.user-list){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
-html:not([data-eagle-theme="light"]) :where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
-html:not([data-eagle-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
-html:not([data-eagle-theme="light"]) :where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
-html:not([data-eagle-theme="light"]) :where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+:where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.search-panel,.player-result,.player-lookup,.search-intro,.search-state,.account,.account-summary,.action-card,.vip-card,.watch-option,.watch-hub,.hero,.notice,.detail-row,.favorite-ranking-card,.ranking-setting-option,.name-history-row,.user-card,.user-stats,.audit,.service,.event,.details-grid,.link,.links a,.choice,.result,.discord-config-row,.collector-row,.facts,.user-list){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
+:where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
+:where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
+:where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
+:where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:var(--ee-on-accent,#062033)!important}
 html[data-eagle-theme="light"]{color-scheme:light}
-html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
-html[data-eagle-theme="light"] a{color:#475569}
-html[data-eagle-theme="light"] input,html[data-eagle-theme="light"] select,html[data-eagle-theme="light"] textarea{background:#fff !important;color:#172033 !important;border-color:#cbd5e1 !important}
-html[data-eagle-theme="light"] button{color:#172033}
-html[data-eagle-theme="light"] .card,
-html[data-eagle-theme="light"] .profile-section,
-html[data-eagle-theme="light"] .hero,
-html[data-eagle-theme="light"] .message,
-html[data-eagle-theme="light"] .meta,
-html[data-eagle-theme="light"] .mini-card,
-html[data-eagle-theme="light"] .hero-card,
-html[data-eagle-theme="light"] .gear-card,
-html[data-eagle-theme="light"] .detail-row,
-html[data-eagle-theme="light"] .notice,
-html[data-eagle-theme="light"] .account,
-html[data-eagle-theme="light"] .pool-error{background:#fff !important;color:#172033 !important;border-color:#d6deea !important;box-shadow:0 8px 22px rgba(15,23,42,.06)}
-html[data-eagle-theme="light"] .meta,
-html[data-eagle-theme="light"] .gear-stat,
-html[data-eagle-theme="light"] .gear-gems{background:#f8fafc !important}
-html[data-eagle-theme="light"] .label,
-html[data-eagle-theme="light"] .sub,
-html[data-eagle-theme="light"] .hero-meta,
-html[data-eagle-theme="light"] .detail-row span,
-html[data-eagle-theme="light"] .muted,
-html[data-eagle-theme="light"] .hint,
-html[data-eagle-theme="light"] .gear-name,
-html[data-eagle-theme="light"] .gear-stat,
-html[data-eagle-theme="light"] .gear-gems{color:#64748b !important}
-html[data-eagle-theme="light"] .value,
-html[data-eagle-theme="light"] .mini-card b,
-html[data-eagle-theme="light"] .hero-title strong,
-html[data-eagle-theme="light"] .gear-card strong,
-html[data-eagle-theme="light"] .detail-row b{color:#172033 !important}
-html[data-eagle-theme="light"] .action{background:#fff !important;color:#334155 !important;border-color:#cbd5e1 !important}
-html[data-eagle-theme="light"] .action.primary,
-html[data-eagle-theme="light"] button{background:#22d3ee !important;border-color:#22d3ee !important;color:#062033 !important}
-html[data-eagle-theme="light"] .search input{background:#fff !important;color:#172033 !important}
-html[data-eagle-theme="light"] .table-wrap{border-color:#d6deea !important}
-html[data-eagle-theme="light"] th,html[data-eagle-theme="light"] td{border-color:#e2e8f0 !important;color:#172033 !important}
-html[data-eagle-theme="light"] th{color:#64748b !important}
-html[data-eagle-theme="light"] .field label{color:#334155 !important}
-html[data-eagle-theme="light"] .status{background:#ecfdf3 !important;color:#15803d !important}
-html[data-eagle-theme="light"] .error{background:#fef2f2 !important;color:#b91c1c !important}
-html[data-eagle-theme="light"] .btn.secondary{background:#e2e8f0 !important;color:#172033 !important}
-html[data-eagle-theme="light"] .badge{background:#fff7ed !important;color:#b45309 !important}
+/* Light mode: surfaces come from the light token values; only parts that are
+   not token based are adjusted here (shadows instead of dark borders, the
+   bottom navigation, chips). */
+html[data-eagle-theme="light"] :where(.ee-card,.card,.item,.panel,.profile-section,.hero-card,.mini-card,.stat,.ee-tile,.ee-stat,.ee-me-card,.ee-change,.ee-milestone-card,.collector-row,.service){box-shadow:0 1px 2px rgba(15,23,42,.05),0 6px 18px rgba(15,23,42,.05)}
+html[data-eagle-theme="light"] .ee-global-nav,html[data-eagle-theme="light"] .ee-nav{background:color-mix(in srgb,var(--ee-panel) 94%,transparent)!important;border-color:var(--ee-border-soft)!important;box-shadow:0 -4px 18px rgba(15,23,42,.06)}
+html[data-eagle-theme="light"] .ee-global-nav a,html[data-eagle-theme="light"] .ee-global-nav button,html[data-eagle-theme="light"] .ee-nav a,html[data-eagle-theme="light"] .ee-nav button{color:var(--ee-subtext)!important;background:transparent!important}
+html[data-eagle-theme="light"] .ee-global-nav a.active,html[data-eagle-theme="light"] .ee-nav a.active{color:var(--ee-cyan)!important;background:color-mix(in srgb,var(--ee-cyan) 10%,transparent)!important}
+html[data-eagle-theme="light"] .ee-global-nav-panel,html[data-eagle-theme="light"] .ee-drawer-panel{box-shadow:0 -12px 40px rgba(15,23,42,.18)}
+html[data-eagle-theme="light"] .ee-top{background:color-mix(in srgb,var(--ee-panel) 92%,transparent)!important;border-color:var(--ee-border-soft)!important}
+html[data-eagle-theme="light"] .ee-welcome{background:linear-gradient(135deg,color-mix(in srgb,var(--ee-cyan) 14%,var(--ee-panel)),var(--ee-panel))!important}
+html[data-eagle-theme="light"] .ee-kvk-card{background:linear-gradient(110deg,#fff1f2,var(--ee-panel))!important}
+html[data-eagle-theme="light"] .ee-kvk-card strong{color:var(--ee-text)!important}
+html[data-eagle-theme="light"] .ee-milestone-card:not(.ee-kvk-card){background:linear-gradient(110deg,#fffbeb,var(--ee-panel))!important;color:var(--ee-text)!important}
+html[data-eagle-theme="light"] .ee-milestone-status{color:#b45309!important}
+html[data-eagle-theme="light"] .ee-kvk-card .ee-milestone-status{color:#be123c!important}
+html[data-eagle-theme="light"] .ee-milestone-copy small{color:var(--ee-subtext)!important}
+html[data-eagle-theme="light"] .eagle-preview-banner{background:#fffbeb;color:#92400e}
+html[data-eagle-theme="light"] :where(.ee-global-nav-links a,.ee-global-nav-links button,.ee-drawer-grid a,.ee-drawer-grid button){background:var(--ee-panel)!important;border-color:var(--ee-border-soft)!important;color:var(--ee-text)!important;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+html[data-eagle-theme="light"] :where(.ee-global-nav-links small,.ee-drawer-grid small){color:var(--ee-subtext)!important}
+html[data-eagle-theme="light"] :where(.ee-global-nav-panel-head button,.ee-drawer-head button,[data-close]){background:var(--ee-panel-raised)!important;color:var(--ee-text)!important;border-color:var(--ee-border-soft)!important}
+html[data-eagle-theme="light"] .ee-welcome-state{color:#15803d!important;background:#ecfdf3!important;border-color:#bbf7d0!important}
+html[data-eagle-theme="light"] .ee-welcome-copy:before{color:var(--ee-cyan)!important}
 
 .eagle-preview-banner{display:none;position:fixed;left:12px;top:42px;z-index:10000;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;background:rgba(68,39,0,.96);color:#fde68a;font-size:11px;font-weight:900;letter-spacing:.04em;box-shadow:0 8px 22px rgba(0,0,0,.25);backdrop-filter:blur(8px)}html[data-eagle-preview="1"] .eagle-preview-banner{display:block}.eagle-theme-toggle{position:fixed;right:14px;top:42px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
 html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033;border-color:#cbd5e1}
@@ -5354,9 +5331,14 @@ const EAGLEEYE_THEME_SCRIPT = `
 (function(){
   function applySavedTheme(){
     try {
-      // EagleEye is designed dark. The light theme is not finished, so the OS
-      // light mode is ignored; colour variety comes from the 着せ替え themes.
-      document.documentElement.setAttribute("data-eagle-theme","dark");
+      // 表示モード: "light" / "dark" are explicit choices (着せ替え page);
+      // anything else follows the device setting and tracks its changes.
+      var mode="";
+      try { mode=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) {}
+      var mq=window.matchMedia?window.matchMedia("(prefers-color-scheme: light)"):null;
+      var apply=function(){var m=(mode==="light"||mode==="dark")?mode:(mq&&mq.matches?"light":"dark");document.documentElement.setAttribute("data-eagle-theme",m);};
+      apply();
+      if(mq&&mode!=="light"&&mode!=="dark"){try{mq.addEventListener("change",apply);}catch(e){try{mq.addListener(apply);}catch(_){}}}
     } catch(e) {}
   }
 
@@ -5499,8 +5481,8 @@ const EAGLEEYE_THEME_SCRIPT = `
     markEnvironment();
     installMutatingRequestGuard();
     installGlobalActionGuard();
-    // The ROLE bar and the floating light/dark toggle are not shown: the role
-    // is on the profile chip, and there is no light theme to switch to.
+    // The ROLE bar and a floating light/dark toggle are not shown: the role is
+    // on the profile chip and the display mode is chosen on the 着せ替え page.
   }
 
   try {

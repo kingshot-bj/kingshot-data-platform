@@ -6,17 +6,17 @@
 // To add a theme: add one entry below (id, name, description, tokens).
 
 export const EAGLEEYE_THEMES = Object.freeze([
-  { id: "navy", name: "ネイビー", description: "EagleEye標準", tokens: null },
+  { id: "navy", name: "ネイビー", description: "EagleEye標準", tokens: null, light: "#0891b2" },
   { id: "midnight", name: "ミッドナイトパープル", description: "落ち着いた紫",
-    tokens: { bg: "#120d1f", panel: "#1c1530", deep: "#150f26", raised: "#261d40", border: "#3d3163", soft: "#2a2247", text: "#efe9ff", subtext: "#b3a6d6", muted: "#8a7fae", accent: "#a78bfa", rival: "#fbbf24" } },
+    tokens: { bg: "#120d1f", panel: "#1c1530", deep: "#150f26", raised: "#261d40", border: "#3d3163", soft: "#2a2247", text: "#efe9ff", subtext: "#b3a6d6", muted: "#8a7fae", accent: "#a78bfa", rival: "#fbbf24" }, light: "#7c3aed" },
   { id: "sakura", name: "さくら", description: "やわらかいピンク",
-    tokens: { bg: "#1a0f14", panel: "#26161e", deep: "#1f1218", raised: "#331d28", border: "#5a3346", soft: "#3d2431", text: "#fff0f5", subtext: "#e0b3c6", muted: "#b58a9c", accent: "#f472b6", rival: "#60a5fa" } },
+    tokens: { bg: "#1a0f14", panel: "#26161e", deep: "#1f1218", raised: "#331d28", border: "#5a3346", soft: "#3d2431", text: "#fff0f5", subtext: "#e0b3c6", muted: "#b58a9c", accent: "#f472b6", rival: "#60a5fa" }, light: "#db2777" },
   { id: "forest", name: "フォレスト", description: "深い緑",
-    tokens: { bg: "#0c1712", panel: "#13241b", deep: "#0f1d16", raised: "#1a3125", border: "#2f5240", soft: "#213a2d", text: "#eafff3", subtext: "#a6cdb8", muted: "#7fa592", accent: "#34d399", rival: "#f87171" } },
+    tokens: { bg: "#0c1712", panel: "#13241b", deep: "#0f1d16", raised: "#1a3125", border: "#2f5240", soft: "#213a2d", text: "#eafff3", subtext: "#a6cdb8", muted: "#7fa592", accent: "#34d399", rival: "#f87171" }, light: "#059669" },
   { id: "ember", name: "サンセット", description: "あたたかいオレンジ",
-    tokens: { bg: "#1a120a", panel: "#261a10", deep: "#1f150c", raised: "#33231a", border: "#5a3d24", soft: "#3d2a19", text: "#fff5eb", subtext: "#e3c3a3", muted: "#b8987a", accent: "#fb923c", rival: "#60a5fa" } },
+    tokens: { bg: "#1a120a", panel: "#261a10", deep: "#1f150c", raised: "#33231a", border: "#5a3d24", soft: "#3d2a19", text: "#fff5eb", subtext: "#e3c3a3", muted: "#b8987a", accent: "#fb923c", rival: "#60a5fa" }, light: "#ea580c" },
   { id: "graphite", name: "グラファイト", description: "色を抑えたモノトーン",
-    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" } }
+    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" }, light: "#2563eb" }
 ]);
 
 const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan", rival: "--ee-rival" };
@@ -30,11 +30,17 @@ export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
       .map(([key, cssVar]) => `${cssVar}:${t.tokens[key]}`);
     if (t.tokens.accent && SAFE_COLOR.test(t.tokens.accent)) decls.push(`--ee-cyan-strong:${t.tokens.accent}`);
     return `html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"]){${decls.join(";")}}`;
-  }).join("\n");
+  }).concat(themes.filter(t => t.tokens && SAFE_ID.test(t.id) && SAFE_COLOR.test(String(t.light || ""))).map(t => {
+    // Light mode keeps light surfaces with a faint tint of the theme colour.
+    const a = t.light;
+    // KvK opponent colour, darkened for light backgrounds.
+    const rival = { "#60a5fa": "#2563eb", "#fbbf24": "#d97706" }[String(t.tokens.rival || "").toLowerCase()] || "#dc2626";
+    return `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]{--ee-rival:${rival};--ee-cyan:${a};--ee-cyan-strong:${a};--ee-bg:color-mix(in srgb,${a} 5%,#f5f7fb);--ee-panel-raised:color-mix(in srgb,${a} 7%,#ffffff);--ee-border-soft:color-mix(in srgb,${a} 14%,#e2e8f0);--ee-border:color-mix(in srgb,${a} 22%,#cbd5e1)}`;
+  })).join("\n");
 }
 
 // Runs in <head> before the page paints, so there is no flash of the default colours.
-export const EAGLEEYE_SKIN_BOOT_SCRIPT = `<script id="eagleeye-skin-boot">try{var s=localStorage.getItem("eagleeye-skin");if(s&&/^[a-z][a-z0-9-]{1,30}$/.test(s))document.documentElement.setAttribute("data-ee-skin",s)}catch(e){}</script>`;
+export const EAGLEEYE_SKIN_BOOT_SCRIPT = `<script id="eagleeye-skin-boot">try{var d=document.documentElement,s=localStorage.getItem("eagleeye-skin");if(s&&/^[a-z][a-z0-9-]{1,30}$/.test(s))d.setAttribute("data-ee-skin",s);var m=localStorage.getItem("eagleeye-theme");if(m!=="light"&&m!=="dark")m=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";d.setAttribute("data-eagle-theme",m)}catch(e){}</script>`;
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -70,12 +76,20 @@ h1{margin:4px 0 6px;font-size:26px}.muted{color:var(--ee-subtext);font-size:13px
 .skin-bar{display:flex;gap:6px}.skin-bar em{flex:1;height:8px;border-radius:4px}
 .skin-check{display:none;position:absolute;top:8px;right:10px;font-size:11px;font-weight:800;color:#fff;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:999px}
 .skin.on{outline:3px solid var(--ee-cyan);outline-offset:2px}.skin.on .skin-check{display:block}
+.sec{margin:20px 0 8px;font-size:15px}.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.mode{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border:2px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);color:var(--ee-text);font:inherit;font-weight:800;font-size:14px;cursor:pointer}.mode small{font-size:10px;font-weight:600;color:var(--ee-subtext)}.mode.on{border-color:var(--ee-cyan);background:color-mix(in srgb,var(--ee-cyan) 12%,var(--ee-panel))}
 .note{margin-top:16px;padding:12px 14px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);font-size:12px;color:var(--ee-subtext);line-height:1.6}
 </style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">着せ替え</div><h1>着せ替え</h1>
 <p class="muted">好きな色を選ぶと、すべてのページの色が切り替わります。選んだテーマはこの端末に保存されます。</p>
+<h2 class="sec">表示モード</h2>
+<div class="modes" role="radiogroup" aria-label="表示モード"><button type="button" class="mode" data-mode="auto" role="radio">自動<small>端末に合わせる</small></button><button type="button" class="mode" data-mode="light" role="radio">☀️ ライト</button><button type="button" class="mode" data-mode="dark" role="radio">🌙 ダーク</button></div>
+<h2 class="sec">カラー</h2>
 <div class="grid">${EAGLEEYE_THEMES.map(swatch).join("")}</div>
+<p class="muted">ライトモードでは、選んだカラーがアクセント色と背景のほんのりした色味になります。</p>
 </main><script>(function(){var ids=${JSON.stringify(EAGLEEYE_THEMES.map(t => t.id))};function current(){try{var s=localStorage.getItem("eagleeye-skin");return ids.indexOf(s)>=0?s:"navy"}catch(e){return "navy"}}
 function paint(){var c=current();document.querySelectorAll(".skin").forEach(function(b){b.classList.toggle("on",b.getAttribute("data-skin")===c)})}
+function curMode(){try{var m=localStorage.getItem("eagleeye-theme");return m==="light"||m==="dark"?m:"auto"}catch(e){return "auto"}}
+function applyMode(){var m=curMode(),eff=m==="auto"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;document.documentElement.setAttribute("data-eagle-theme",eff);document.querySelectorAll(".mode").forEach(function(b){var on=b.getAttribute("data-mode")===m;b.classList.toggle("on",on);b.setAttribute("aria-checked",on?"true":"false")})}
+document.querySelectorAll(".mode").forEach(function(b){b.addEventListener("click",function(){var m=b.getAttribute("data-mode");try{if(m==="auto")localStorage.removeItem("eagleeye-theme");else localStorage.setItem("eagleeye-theme",m)}catch(e){}applyMode()})});applyMode();
 document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
 if(id==="navy")document.documentElement.removeAttribute("data-ee-skin");else document.documentElement.setAttribute("data-ee-skin",id);
 paint()})});paint()})();</script></body></html>`;
