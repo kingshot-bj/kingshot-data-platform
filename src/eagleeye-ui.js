@@ -127,6 +127,7 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "heroCatalog", href: "/hero-catalog", label: "英雄カタログ", image: EAGLEEYE_BJNYAN.player }),
   Object.freeze({ key: "heroShards", href: "/tools/hero-shards", label: "欠片計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "goldCalc", href: "/tools/gold", label: "黄金計算", image: EAGLEEYE_BJNYAN.success }),
+  Object.freeze({ key: "goldTech", href: "/tools/gold-tech", label: "黄金研究計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingShot", image: EAGLEEYE_BJNYAN.dashboard }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
   Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),
