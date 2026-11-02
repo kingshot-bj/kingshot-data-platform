@@ -248,6 +248,7 @@ ${account}
 <details class="picker" open><summary>＋ 英雄を追加 <small>（タップで追加・もう一度で外す）</small></summary><div id="pgrid" class="pgrid"></div><button type="button" id="clear" class="btn ghost">すべて外す</button></details></section>
 ${cta}
 <h2>段階ごとの必要数</h2><div class="tbl"><table><thead><tr><th></th><th>段階1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>合計</th></tr></thead><tbody>${table}</tbody></table></div>
+<p class="note"><a href="/tools/gold" style="color:var(--ee-cyan)">黄金（TG）の必要数計算</a>もあります。</p>
 <p class="note">★5まで合計1,065個。英雄の解放には別途10個（アマデウス20個・チェンコ40個との情報あり）。共通の欠片は同じレア度の英雄にだけ使えます（レジェンド＝金・エピック＝紫・レア＝青）。必要数の表はどのレア度も同じです。アマデウスとヘルガは専用の欠片のみ使用できます。数値とレア度はコミュニティ資料（kingshot.net・kingshotdata.com・kingshotguide.com・kingshotmastery.com）で照合し、ゲーム内で確認したものです。</p>
 <script>var __name=function(f){return f};(${shardClient.toString()})(${cfgJson});</script>`;
 

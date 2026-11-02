@@ -14,26 +14,26 @@ export const KINGDOM_TIMELINE = Object.freeze([
   [0, 0, "hero", "第1世代 SSR英雄", "アマデウス・ヘルガ・ジェベル・サロ（ほか SR・R 英雄）"],
   [40, 50, "hero", "第2世代 SSR英雄", "ゾーイ・ヒルデ・マーリン"],
   [55, 60, "pet", "第1世代ペット", "グレイウルフ・リンクス・バイソン"],
-  [70, 70, "truegold", "トゥルーゴールド解放（TG1〜3）", "トゥルーゴールドの時代"],
+  [70, 70, "truegold", "黄金解放（TG1〜3）", "黄金の時代"],
   [70, 80, "event", "王国の力（Kingdom of Power）", "参加資格の目安"],
   [75, 80, "pet", "第2世代ペット", "チーター・ムース"],
   [95, 115, "hero", "マスター", "パン・ヴァローラ・カシア・ローマン"],
   [105, 115, "pet", "第3世代ペット", "ライオン・グリズリー"],
   [105, 120, "hero", "第3世代 SSR英雄", "エリック・ペーラ・イェーガー"],
-  [150, 150, "truegold", "トゥルーゴールド TG4・TG5", "トゥルーゴールド坩堝"],
+  [150, 150, "truegold", "黄金 TG4・TG5", "黄金の坩堝"],
   [190, 200, "hero", "第4世代 SSR英雄", "アルカ・マーゴ・ローザ"],
   [195, 200, "pet", "第4世代ペット", "ジャイアントライノ・マイティバイソン"],
   [220, 220, "truegold", "戦争学院 T11", "T11兵士の研究が解放"],
   [270, 280, "hero", "第5世代 SSR英雄", "龍飛・スルード・ビビアン"],
   [280, 280, "pet", "第5世代ペット", "グレートムース・アルファブラックパンサー"],
-  [315, 315, "truegold", "TG6・TG7・TG8（精錬トゥルーゴールド）", "超精錬"],
+  [315, 315, "truegold", "TG6・TG7・TG8（精錬黄金）", "超精錬"],
   [350, 350, "pet", "第6世代ペット", "アイアンクラッド戦象・リーガルホワイトライオン"],
   [350, 360, "hero", "第6世代 SSR英雄", "トリトン・ソフィア・ヤン"],
   [440, 440, "hero", "第7世代 SSR英雄", "チャールズ・エヴァ・レン&ロン"],
   [440, 440, "pet", "第7世代ペット", "アイアンクラッド戦熊"]
 ].map(([from, to, category, title, detail]) => Object.freeze({ from, to, category, title, detail })));
 
-const CATEGORY_LABEL = { hero: "英雄", pet: "ペット", truegold: "TG・研究", event: "イベント" };
+const CATEGORY_LABEL = { hero: "英雄", pet: "ペット", truegold: "黄金・研究", event: "イベント" };
 
 // Current age in days, advanced from the recorded value.
 export function currentKingdomAge(ageDays, recordedAt, now = Math.floor(Date.now() / 1000)) {
