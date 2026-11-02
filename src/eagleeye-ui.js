@@ -124,6 +124,7 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "news", href: "/news", label: "お知らせ", image: EAGLEEYE_BJNYAN.success, badge: "news" }),
   Object.freeze({ key: "kingdomWatch", href: "/kingdom-watchlist", label: "王国ウォッチ", image: EAGLEEYE_BJNYAN.watchlist }),
   Object.freeze({ key: "kingdomCatalog", href: "/kingdom-catalog", label: "王国カタログ", image: EAGLEEYE_BJNYAN.kingdom }),
+  Object.freeze({ key: "heroCatalog", href: "/hero-catalog", label: "英雄カタログ", image: EAGLEEYE_BJNYAN.player }),
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingShot", image: EAGLEEYE_BJNYAN.dashboard }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
   Object.freeze({ key: "status", href: "/status", label: "システム状況", image: EAGLEEYE_BJNYAN.system }),

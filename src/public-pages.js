@@ -171,7 +171,7 @@ export function renderRobotsTxt(origin) {
 }
 
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10)) {
-  const urls = [`${origin}/`, `${origin}/kingdoms`, ...kids.map(k => `${origin}/k/${k}`)];
+  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, ...kids.map(k => `${origin}/k/${k}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
 }
 

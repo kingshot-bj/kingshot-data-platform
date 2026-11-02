@@ -5116,7 +5116,8 @@ export default {
         } catch (error) {
           console.error("hero_icon_catalog_lookup_failed", error?.message || error);
         }
-        return await renderHeroCatalogPage(iconByName);
+        // Shared theme, colour themes and bottom navigation like every other page.
+        return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName).text());
       }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
