@@ -73,3 +73,10 @@ test("画面の表記は日本の呼び方（G1〜G8）。TGは検索用の説�
   assert.match(html, />G8<\/option>/);
   assert.match(html, />なし<\/option>/);
 });
+
+test("ホームのツール一覧もG表記で、見出しに「ログイン不要」を付けない", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /<b>黄金計算<\/b><small>建物ごとのG1〜8<\/small>/);
+  assert.doesNotMatch(src, /TG1〜8|黄金（TG）|無料ツール（ログイン不要）/);
+});
