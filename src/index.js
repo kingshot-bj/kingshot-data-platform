@@ -5579,8 +5579,10 @@ async function renderHeroShardRoute(request, env, executionContext) {
   const origin = publicOrigin(request);
   const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
   const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+  // Saved hero icons are the same for every viewer, so the public page stays cacheable.
+  const loadIcons = async () => { try { return await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_shard_icons_failed", error?.message || error); return {}; } };
   if (auth?.status !== "ACTIVE") {
-    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards") })));
+    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards"), iconByName: await loadIcons() })));
   }
   let heroes = null, heroesNote = "";
   try {
@@ -5605,7 +5607,7 @@ async function renderHeroShardRoute(request, env, executionContext) {
     console.error("hero_shard_heroes_failed", error?.message || error);
     heroesNote = "英雄データを読み込めませんでした。";
   }
-  return eagleEyeHtmlResponse(renderHeroShardPage({ origin, signedIn: true, heroes, heroesNote }));
+  return eagleEyeHtmlResponse(renderHeroShardPage({ origin, signedIn: true, heroes, heroesNote, iconByName: await loadIcons() }));
 }
 
 async function servePublicPage(request, env, executionContext, render) {
