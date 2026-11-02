@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { shardsBetween, heroShardPlan, describeProgress, SHARD_STEPS, renderHeroShardPage, shardHeroList, canonicalHeroName, isDedicatedShardHero } from "../src/hero-shards.js";
+import { shardsBetween, heroShardPlan, describeProgress, SHARD_STEPS, renderHeroShardPage, shardHeroList, canonicalHeroName, isDedicatedShardHero, heroRarity, EPIC_HEROES, RARE_HEROES } from "../src/hero-shards.js";
 import { renderEagleEyeOtherMenu } from "../src/eagleeye-ui.js";
 
 test("per-step costs (confirmed in game) add up to 1,065", () => {
@@ -45,6 +45,20 @@ test("free picker: every hero, aliases unified, icons only from saved hashes", (
   assert.ok(isDedicatedShardHero("アマデウス") && isDedicatedShardHero("Helga") && !isDedicatedShardHero("ゾーイ"));
 });
 
+test("rarity: epic / rare rosters (kingshotmastery.com), everyone else legendary", () => {
+  assert.equal(EPIC_HEROES.length, 8);
+  assert.equal(RARE_HEROES.length, 4);
+  assert.equal(heroRarity("ファハド"), "E");
+  assert.equal(heroRarity("セス"), "R", "Seth is スミス in the Japanese game");
+  assert.equal(heroRarity("ゾーイ"), "M");
+  const list = shardHeroList({ "セス": "c".repeat(64) + ".png" });
+  assert.ok(!list.some(h => h.n === "セス"));
+  const smith = list.find(h => h.n === "スミス");
+  assert.equal(smith.r, "R");
+  assert.equal(smith.i, "c".repeat(64) + ".png", "icon saved under the MightPulse name still shows");
+  for (const n of [...EPIC_HEROES, ...RARE_HEROES]) assert.ok(list.some(h => h.n === n), n + " is pickable");
+});
+
 test("page: same for every anonymous viewer, login CTA, shard illustration", () => {
   const anon = renderHeroShardPage({ origin: "https://x", iconByName: { "ゾーイ": "b".repeat(64) + ".png" } });
   assert.match(anon, /<title>英雄の欠片 計算ツール/);
@@ -77,12 +91,16 @@ test("client script runs: add heroes, compute, save to localStorage", async () =
   const ctx = { document: { getElementById: id => els[id] || null }, localStorage: { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } }, confirm: () => true };
   new Function("document", "localStorage", "confirm", script)(ctx.document, ctx.localStorage, ctx.confirm);
   assert.match(els.hlist.innerHTML, /ゾーイ/, "prefilled from the arena team");
-  assert.match(els.total.innerHTML, /合計 <b>600<\/b>/);
+  assert.match(els.total.innerHTML, /レジェンド共通（金） <b>600<\/b>/);
   // Add Amadeus (dedicated) from the picker.
   els.pgrid.listeners.click({ target: { closest: () => ({ dataset: { n: "アマデウス" } }) } });
   const saved = JSON.parse(store["eagleeye-shard-plan-v1"]);
   assert.deepEqual(saved.list.map(e => e.n), ["ゾーイ", "アマデウス"]);
-  assert.match(els.total.innerHTML, /合計 <b>600<\/b>/, "dedicated heroes are not in the general total");
+  assert.match(els.total.innerHTML, /レジェンド共通（金） <b>600<\/b>/, "dedicated heroes are not in the general total");
+  // An epic hero is totalled separately (purple shards).
+  els.pgrid.listeners.click({ target: { closest: () => ({ dataset: { n: "ファハド" } }) } });
+  assert.match(els.total.innerHTML, /エピック共通（紫） <b>1,065<\/b>/);
+  assert.match(els.total.innerHTML, /レジェンド共通（金） <b>600<\/b>/);
   assert.match(els.total.innerHTML, /専用欠片の英雄（1人）/);
 });
 

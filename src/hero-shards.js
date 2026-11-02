@@ -52,8 +52,18 @@ function esc(value) {
 // ---- Hero list for the free picker -------------------------------------
 // Names follow the in-game Japanese names used by the player data (HERO_NAME_JA
 // in index.js). The skill catalog spells a couple of them differently.
-export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "アイヴァ": "エヴァ" });
-const EXTRA_HEROES = ["セス"];
+export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "アイヴァ": "エヴァ", "セス": "スミス" });
+const EXTRA_HEROES = [];
+// Rarity decides which general shards a hero takes (gold / purple / blue). Every
+// rarity uses the same per-step table. Roster checked against kingshotmastery.com
+// (Epic 8 / Rare 4) and kingshotguide.com; everything else is gold (legendary).
+export const EPIC_HEROES = Object.freeze(["ハワード", "ゴードン", "クイン", "チェンコ", "ダイアナ", "あまね", "インウー", "ファハド"]);
+export const RARE_HEROES = Object.freeze(["フォルスト", "スミス", "エドウィン", "オリーブ"]);
+export function heroRarity(name) {
+  const n = canonicalHeroName(name);
+  return EPIC_HEROES.includes(n) ? "E" : RARE_HEROES.includes(n) ? "R" : "M";
+}
+export const RARITY_LABEL = Object.freeze({ M: "レジェンド共通（金）", E: "エピック共通（紫）", R: "レア共通（青）" });
 const ICON_FILE = /^[a-f0-9]{64}\.(?:png|jpg|webp|gif|avif)$/;
 
 export function canonicalHeroName(name) {
@@ -76,7 +86,7 @@ export function shardHeroList(iconByName = {}) {
     if (!n || seen.has(n)) continue;
     seen.add(n);
     const file = [iconByName?.[n], iconByName?.[raw], iconByName?.[reverse[n]]].find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
-    out.push({ n, i: file, d: isDedicatedShardHero(n) });
+    out.push({ n, i: file, d: isDedicatedShardHero(n), r: heroRarity(n) });
   }
   return out;
 }
@@ -86,15 +96,27 @@ export function shardHeroList(iconByName = {}) {
 // alone). Gradients live once per page in shardDefsSvg().
 export const PUZZLE_PATH = "M4 6H8.6C8.6 5 7.8 4.6 7.8 3.4A3.2 3.2 0 0 1 14.2 3.4C14.2 4.6 13.4 5 13.4 6H18V10.6C19 10.6 19.4 9.8 20.6 9.8A3.2 3.2 0 0 1 20.6 16.2C19.4 16.2 19 15.4 18 15.4V20H13.4C13.4 21 14.2 21.4 14.2 22.6A3.2 3.2 0 0 1 7.8 22.6C7.8 21.4 8.6 21 8.6 20H4V15.4C5 15.4 5.4 16.2 6.6 16.2A3.2 3.2 0 0 0 6.6 9.8C5.4 9.8 5 10.6 4 10.6Z";
 export const PIECE_TRANSFORM = "translate(2.4 2.6) rotate(-22 13.5 13.5)";
+const RARITY_ART = {
+  M: { tile: ["rgb(226,128,30)", "rgb(252,196,110)"], tileLine: "rgb(240,170,80)", piece: ["rgb(255,218,140)", "rgb(226,150,58)"], side: "rgb(184,100,30)", line: "rgb(160,84,22)", text: "rgb(110,50,8)" },
+  E: { tile: ["rgb(124,92,230)", "rgb(176,156,250)"], tileLine: "rgb(160,140,250)", piece: ["rgb(214,190,255)", "rgb(150,110,240)"], side: "rgb(98,64,190)", line: "rgb(84,52,170)", text: "rgb(60,30,130)" },
+  R: { tile: ["rgb(40,120,220)", "rgb(120,186,250)"], tileLine: "rgb(110,170,240)", piece: ["rgb(190,226,255)", "rgb(90,160,240)"], side: "rgb(30,90,180)", line: "rgb(24,76,160)", text: "rgb(14,50,120)" }
+};
 export function shardDefsSvg() {
-  return `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="sh-tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(226,128,30)"/><stop offset="1" stop-color="rgb(252,196,110)"/></linearGradient><linearGradient id="sh-piece" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(255,218,140)"/><stop offset="1" stop-color="rgb(226,150,58)"/></linearGradient></defs></svg>`;
+  const grad = (id, [a, b]) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`;
+  return `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${Object.entries(RARITY_ART).map(([r, a]) => grad("sh-tile-" + r, a.tile) + grad("sh-piece-" + r, a.piece)).join("")}</defs></svg>`;
 }
-export function shardPieceSvg() {
-  return `<g transform="${PIECE_TRANSFORM}"><path d="${PUZZLE_PATH}" transform="translate(.3 1.3)" fill="rgb(184,100,30)" stroke="rgb(150,76,18)" stroke-width="1.3" stroke-linejoin="round"/><path d="${PUZZLE_PATH}" fill="url(#sh-piece)" stroke="rgb(160,84,22)" stroke-width="1.3" stroke-linejoin="round"/></g>`;
+export function shardTileSvg(r = "M") {
+  const a = RARITY_ART[r] || RARITY_ART.M;
+  return `<rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#sh-tile-${r})" stroke="${a.tileLine}" stroke-width="1.2"/>`;
 }
-export function shardIconSvg(size = 22) {
-  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#sh-tile)" stroke="rgb(240,170,80)" stroke-width="1.2"/>${shardPieceSvg()}<g transform="${PIECE_TRANSFORM}"><path d="M6.2 8.2H10.2" stroke="rgb(255,244,205)" stroke-width="1.2" stroke-linecap="round" opacity=".85"/><circle cx="11" cy="3.6" r="1" fill="rgb(255,244,205)" opacity=".85"/></g></svg>`;
+export function shardPieceSvg(r = "M") {
+  const a = RARITY_ART[r] || RARITY_ART.M;
+  return `<g transform="${PIECE_TRANSFORM}"><path d="${PUZZLE_PATH}" transform="translate(.3 1.3)" fill="${a.side}" stroke="${a.line}" stroke-width="1.3" stroke-linejoin="round"/><path d="${PUZZLE_PATH}" fill="url(#sh-piece-${r})" stroke="${a.line}" stroke-width="1.3" stroke-linejoin="round"/></g>`;
 }
+export function shardIconSvg(size = 22, r = "M") {
+  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true">${shardTileSvg(r)}${shardPieceSvg(r)}<g transform="${PIECE_TRANSFORM}"><path d="M6.2 8.2H10.2" stroke="rgb(255,250,230)" stroke-width="1.2" stroke-linecap="round" opacity=".85"/><circle cx="11" cy="3.6" r="1" fill="rgb(255,250,230)" opacity=".85"/></g></svg>`;
+}
+const RARITY_TEXT = Object.fromEntries(Object.entries(RARITY_ART).map(([r, a]) => [r, a.text]));
 
 // Client side of the calculator. Serialized with toString(), so it must not
 // reference anything outside its own body.
@@ -111,13 +133,14 @@ function shardClient(cfg) {
   function load() { try { var v = JSON.parse(localStorage.getItem(KEY) || "null"); if (v && Array.isArray(v.list)) return v.list; } catch (e) {} return null; }
   function save() { try { localStorage.setItem(KEY, JSON.stringify({ list: list })); } catch (e) {} }
   function dedicated(n) { return byName[n] ? byName[n].d : false; }
+  function rarity(n) { return byName[n] && byName[n].r || "M"; }
   var clipSeq = 0;
   function avatar(n) {
-    var h = byName[n], id = "shc" + (++clipSeq);
+    var h = byName[n], id = "shc" + (++clipSeq), r = rarity(n);
     var face = h && h.i
       ? '<clipPath id="' + id + '"><path d="' + cfg.path + '" transform="' + cfg.pieceTf + ' translate(13.5 13.5) scale(.86) translate(-13.5 -13.5)"/></clipPath><image href="/hero-icons/assets/' + esc(h.i) + '" x="2" y="2" width="28" height="28" preserveAspectRatio="xMidYMid slice" clip-path="url(#' + id + ')"/>'
-      : '<text x="16" y="21" text-anchor="middle" font-size="13" font-weight="900" fill="rgb(110,50,8)" stroke="rgb(255,240,200)" stroke-width="2.4" paint-order="stroke" stroke-linejoin="round">' + esc(n.charAt(0)) + "</text>";
-    return '<svg class="av" viewBox="0 0 32 32" aria-hidden="true"><rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#sh-tile)" stroke="rgb(240,170,80)" stroke-width="1.2"/>' + cfg.piece + face + "</svg>";
+      : '<text x="16" y="21" text-anchor="middle" font-size="13" font-weight="900" fill="' + cfg.text[r] + '" stroke="rgb(255,240,200)" stroke-width="2.4" paint-order="stroke" stroke-linejoin="round">' + esc(n.charAt(0)) + "</text>";
+    return '<svg class="av" viewBox="0 0 32 32" aria-hidden="true">' + cfg.tiles[r] + cfg.pieces[r] + face + "</svg>";
   }
   var mine = (cfg.mine || []).map(norm).filter(function (e) { return e.n; });
   var saved = load();
@@ -138,12 +161,16 @@ function shardClient(cfg) {
       '<label>段階<select data-k="cp"' + (cs >= 5 ? " disabled" : "") + ">" + opts(0, 5, cp, function (n) { return "段階" + n; }) + "</select></label>" +
       '<label>目標<select data-k="t">' + opts(1, 5, e.t, function (n) { return "★" + n; }) + "</select></label>" +
       '<label>持っている欠片<input data-k="h" type="number" min="0" inputmode="numeric" placeholder="0" value="' + (e.h || "") + '"></label></div>' +
-      '<div class="hres">' + cfg.icon + "<span>" + result(e) + "</span></div></div>";
+      '<div class="hres">' + cfg.icons[rarity(e.n)] + "<span>" + result(e) + "</span></div></div>";
   }
   function totals() {
-    var n = 0, rest = 0, ded = 0;
-    list.forEach(function (e) { var x = need(e.s, Math.max(e.s, e.t * 6)); if (dedicated(e.n)) { ded++; return; } n += x; rest += Math.max(0, x - e.h); });
-    $("total").innerHTML = list.length ? cfg.iconLg + '<div><div>汎用の欠片 合計 <b>' + fmt(n) + "</b> 個</div>" + (rest !== n ? '<div>持っている分を引くと あと <b>' + fmt(rest) + "</b> 個</div>" : "") + (ded ? '<small>専用欠片の英雄（' + ded + "人）は合計に含めていません</small>" : "") + "</div>" : "";
+    var sum = { M: [0, 0], E: [0, 0], R: [0, 0] }, ded = 0;
+    list.forEach(function (e) { var x = need(e.s, Math.max(e.s, e.t * 6)); if (dedicated(e.n)) { ded++; return; } var t = sum[rarity(e.n)]; t[0] += x; t[1] += Math.max(0, x - e.h); });
+    var rows = ["M", "E", "R"].filter(function (r) { return sum[r][0] > 0 || list.some(function (e) { return !dedicated(e.n) && rarity(e.n) === r; }); }).map(function (r) {
+      var t = sum[r];
+      return '<div class="trow">' + cfg.iconsLg[r] + '<div><div>' + cfg.labels[r] + ' <b>' + fmt(t[0]) + "</b> 個</div>" + (t[1] !== t[0] ? '<div class="tsub">持っている分を引くと あと <b>' + fmt(t[1]) + "</b> 個</div>" : "") + "</div></div>";
+    }).join("");
+    $("total").innerHTML = list.length ? '<div class="ttl">必要な共通の欠片</div>' + (rows || '<div class="tsub">共通の欠片は不要です</div>') + (ded ? '<small>専用欠片の英雄（' + ded + "人）は合計に含めていません</small>" : "") : "";
   }
   function picker() {
     $("pgrid").innerHTML = H.map(function (h) {
@@ -202,7 +229,9 @@ export function renderHeroShardPage({ origin = "", signedIn = false, heroes = nu
   }
   const cta = signedIn ? "" : `<section class="cta"><h2>ログインすると自分の英雄を読み込めます</h2><p>EagleEyeに領主IDを登録すると、あなたの英雄の今の★と段階を読み取り、そのまま計算に使えます。</p><a class="cta-btn" href="${esc(loginHref)}">Discordでログイン</a></section>`;
 
-  const cfg = { steps: SHARD_STEPS, heroes: heroList, mine, icon: shardIconSvg(20), iconLg: shardIconSvg(44), path: PUZZLE_PATH, pieceTf: PIECE_TRANSFORM, piece: shardPieceSvg() };
+  const rar = ["M", "E", "R"];
+  const byR = fn => Object.fromEntries(rar.map(r => [r, fn(r)]));
+  const cfg = { steps: SHARD_STEPS, heroes: heroList, mine, icons: byR(r => shardIconSvg(20, r)), iconsLg: byR(r => shardIconSvg(36, r)), tiles: byR(shardTileSvg), pieces: byR(shardPieceSvg), text: RARITY_TEXT, labels: RARITY_LABEL, path: PUZZLE_PATH, pieceTf: PIECE_TRANSFORM };
   const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c").replace(/\u2028|\u2029/g, "");
 
   const body = `${shardDefsSvg()}<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/hero-catalog">英雄カタログ</a> › 欠片計算</nav>
@@ -214,7 +243,7 @@ ${account}
 <details class="picker" open><summary>＋ 英雄を追加 <small>（タップで追加・もう一度で外す）</small></summary><div id="pgrid" class="pgrid"></div><button type="button" id="clear" class="btn ghost">すべて外す</button></details></section>
 ${cta}
 <h2>段階ごとの必要数</h2><div class="tbl"><table><thead><tr><th></th><th>段階1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>合計</th></tr></thead><tbody>${table}</tbody></table></div>
-<p class="note">★5まで合計1,065個。英雄の解放には別途10個（アマデウス20個・チェンコ40個との情報あり）。アマデウスとヘルガは専用の欠片のみ使用できます。数値はコミュニティ資料（kingshot.net・kingshotdata.com ほか）で照合し、ゲーム内で確認したものです。</p>
+<p class="note">★5まで合計1,065個。英雄の解放には別途10個（アマデウス20個・チェンコ40個との情報あり）。共通の欠片は同じレア度の英雄にだけ使えます（レジェンド＝金・エピック＝紫・レア＝青）。必要数の表はどのレア度も同じです。アマデウスとヘルガは専用の欠片のみ使用できます。数値とレア度はコミュニティ資料（kingshot.net・kingshotdata.com・kingshotguide.com・kingshotmastery.com）で照合し、ゲーム内で確認したものです。</p>
 <script>var __name=function(f){return f};(${shardClient.toString()})(${cfgJson});</script>`;
 
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -226,7 +255,7 @@ ${cta}
 .av{flex:none;width:46px;height:46px;filter:drop-shadow(0 1px 1px rgb(0 0 0 / .25))}
 .hgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:grid;gap:4px;font-size:12px;color:var(--ee-subtext)}select,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--ee-border);border-radius:11px;font:inherit;font-size:15px;background:var(--ee-panel-deep);color:var(--ee-text)}select:disabled{opacity:.45}
 .hres{display:flex;align-items:center;gap:8px;margin-top:8px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ee-cyan) 10%,var(--ee-panel));font-size:14px}.hres b{font-size:20px;color:var(--ee-cyan)}.hres b.rest{color:var(--ee-warning,#f59e0b)}.ok{color:var(--ee-success,#22c55e);font-weight:800}.ded{padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;color:var(--ee-warning,#f59e0b);border:1px solid currentColor}
-.total{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:14px;border-color:color-mix(in srgb,var(--ee-cyan) 45%,transparent)}.total:empty{display:none}.total b{font-size:22px;color:var(--ee-cyan)}.total small{display:block;margin-top:2px;font-size:11px;color:var(--ee-subtext)}
+.total{display:grid;gap:8px;margin-top:10px;font-size:14px;border-color:color-mix(in srgb,var(--ee-cyan) 45%,transparent)}.total:empty{display:none}.total b{font-size:22px;color:var(--ee-cyan)}.total small{display:block;font-size:11px;color:var(--ee-subtext)}.ttl{font-size:12px;font-weight:800;color:var(--ee-subtext)}.trow{display:flex;align-items:center;gap:10px}.tsub{font-size:13px;color:var(--ee-subtext)}.tsub b{font-size:16px}
 .picker{margin-top:12px}.picker summary{cursor:pointer;font-weight:900;color:var(--ee-cyan)}.picker summary small{font-weight:400;color:var(--ee-subtext)}.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-top:10px}.pk{display:grid;justify-items:center;gap:4px;padding:8px 4px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel-deep);color:var(--ee-text);font:inherit;font-size:11px;cursor:pointer}.pk .av{width:52px;height:52px}.pk.on{border-color:var(--ee-cyan);background:color-mix(in srgb,var(--ee-cyan) 16%,var(--ee-panel))}
 .tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 6px;border-bottom:1px solid var(--ee-border-soft);text-align:right;white-space:nowrap}th:first-child{text-align:left}thead th{font-size:11px;color:var(--ee-subtext)}.hint,.note{font-size:11px;color:var(--ee-subtext);line-height:1.6}.empty{font-size:13px;color:var(--ee-subtext);padding:8px 2px}
 .cta{margin-top:14px;border-color:color-mix(in srgb,var(--ee-cyan) 40%,transparent)}.cta p{font-size:13px;line-height:1.6}.cta-btn{display:inline-block;padding:11px 16px;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font-weight:900;text-decoration:none}</style></head><body><main class="wrap">${body}</main></body></html>`;
