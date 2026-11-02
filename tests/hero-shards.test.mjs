@@ -61,7 +61,7 @@ test("rarity: epic / rare rosters (kingshotmastery.com), everyone else legendary
 
 test("page: same for every anonymous viewer, login CTA, shard illustration", () => {
   const anon = renderHeroShardPage({ origin: "https://x", iconByName: { "ゾーイ": "b".repeat(64) + ".png" } });
-  assert.match(anon, /<title>英雄の欠片 計算ツール/);
+  assert.match(anon, /<title>キングショット 英雄の欠片 計算ツール/);
   assert.match(anon, /Discordでログイン/);
   assert.match(anon, /1,065/);
   assert.match(anon, /class="shard-ico"/);

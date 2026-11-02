@@ -84,7 +84,7 @@ test("AdSense readiness: ad / external-transmission disclosure, about page, ads.
   // Sitemap and hero catalog SEO.
   assert.match(renderSitemapXml("https://x", []), /<loc>https:\/\/x\/about<\/loc>/);
   const catalog = await renderHeroCatalogPage({}, { origin: "https://eagleeye-ks.com" }).text();
-  assert.match(catalog, /<meta name="description" content="KingShotの英雄のスキル一覧/);
+  assert.match(catalog, /<meta name="description" content="キングショット（KingShot）の英雄のスキル一覧/);
   assert.match(catalog, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/hero-catalog">/);
 });
 

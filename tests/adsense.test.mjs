@@ -32,6 +32,6 @@ test("production config and wiring", () => {
   assert.doesNotMatch(conf.slice(conf.indexOf('"previews"')), /ADSENSE_PUBLISHER_ID/, "previews never load ads");
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /configureAdsense\(env\);/);
-  assert.match(src, /const themed = injectAdsense\(applyEagleEyeTheme\(html\)\);/);
+  assert.match(src, /const themed = injectAdsense\(enhanceSeo\(applyEagleEyeTheme\(html\)\)\);/);
   assert.match(src, /<link rel="canonical" href="\$\{publicOrigin\(request, env\)\}\/">/, "home page is public (AdSense checks it)");
 });

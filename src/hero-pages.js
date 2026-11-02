@@ -95,7 +95,7 @@ ${groups.map(g => `<section class="skill-group"><h2>${esc(g.type)}<small>${(g.sk
 ${peers.length ? `<section class="related"><h2>同じ世代の英雄</h2><div class="chips">${peers.map(heroLink).join("")}</div></section>` : ""}
 ${sameTroop.length ? `<section class="related"><h2>同じ兵種の${esc(rarity)}英雄</h2><div class="chips">${sameTroop.map(heroLink).join("")}</div></section>` : ""}
 <p class="back"><a href="/hero-catalog">← 英雄カタログで全英雄を見る</a></p>`;
-  const title = `${display}のスキルと性能｜KingShot英雄 | EagleEye`;
+  const title = `${display}のスキルと性能｜キングショット英雄 | EagleEye`;
   const description = `${heroSummary(name)}討伐・遠征・専用装備のスキル${skillTotal}個の効果と初期値・最大値を日本語でまとめています。`.slice(0, 160);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
