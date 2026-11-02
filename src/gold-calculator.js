@@ -107,7 +107,7 @@ export function renderGoldCalculatorPage({ origin = "" } = {}) {
 <div id="gtotal" class="total" aria-live="polite"></div></section>
 <h2>TGごとの必要数</h2><div class="tbl"><table><thead><tr><th></th>${head}</tr></thead><tbody>${table}</tbody></table></div>
 <p class="note">数字は${GOLD_NAME}の必要数で、「+」は${REFINED_GOLD_NAME}です。戦争学院はTG2から。各列の合計は表の合計行と一致し、役場のTG1〜5は外部の資料（kingshotguide.org）とも一致しています。TG6〜8はコミュニティ資料の値です。ゲームの更新で変わる場合があります。</p>
-<p class="note"><a href="/tools/hero-shards">英雄の欠片計算</a>・<a href="/hero-catalog">英雄カタログ</a>もどうぞ。</p>
+<p class="note"><a href="/tools/gold-tech">黄金テクノロジー研究（T11）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>・<a href="/hero-catalog">英雄カタログ</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${goldClient.toString()})(${cfgJson});</script>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${GOLD_NAME} 必要数計算ツール（TG1〜TG8） | EagleEye</title><meta name="description" content="KingShotの${GOLD_NAME}（TG）の必要数を建物ごとに計算。役場・兵舎・大使館・指揮所・病院・戦争学院のTG1〜TG8に必要な${GOLD_NAME}と${REFINED_GOLD_NAME}、手持ちからの残り数がわかります。"><link rel="canonical" href="${esc(canonical)}">
