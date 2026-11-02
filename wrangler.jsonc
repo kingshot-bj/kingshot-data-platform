@@ -9,8 +9,10 @@
   },
   "vars": {
     "EAGLEEYE_ENV": "production",
+    "PUBLIC_ORIGIN": "https://eagleeye-ks.com",
+    "LEGACY_REDIRECT": "302",
     "DISCORD_CLIENT_ID": "1554817307988205618",
-    "DISCORD_REDIRECT_URI": "https://kingshot-data-platform.black-jack-kingshot.workers.dev/api/auth/callback",
+    "DISCORD_REDIRECT_URI": "https://eagleeye-ks.com/api/auth/callback",
     "CLOUDFLARE_ACCOUNT_ID": "991e65e37de26f2e996fe296ab0d1a3a",
     "CLOUDFLARE_D1_DATABASE_ID": "0024b5df-4dcf-45f7-b9a7-6fa621cbb80a",
     "HISTORY_STORAGE_MODE": "R2_ONLY",
