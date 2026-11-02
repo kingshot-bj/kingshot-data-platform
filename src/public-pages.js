@@ -136,7 +136,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   let kvk = "";
   if (matchup?.opponent) {
     const live = score && Number(score.season) === Number(matchup.season) && Number(score.opponent) === Number(matchup.opponent);
-    kvk = `<h2>KvK</h2><div class="kvk">シーズン${esc(matchup.season)}の対戦相手：<a href="/k/${encodeURIComponent(matchup.opponent)}">王国 ${esc(matchup.opponent)}</a>${live && score.score != null ? `<br>スコア ${esc(compactNumber(score.score))} : ${esc(compactNumber(score.opponent_score))}` : ""}</div>`;
+    kvk = `<h2>KvK</h2><div class="kvk">シーズン${esc(matchup.season)}の対戦相手：<a href="/k/${encodeURIComponent(matchup.opponent)}">王国 ${esc(matchup.opponent)}</a>（<a href="/kvk/s${encodeURIComponent(matchup.season)}">全組み合わせと戦力差</a>）${live && score.score != null ? `<br>スコア ${esc(compactNumber(score.score))} : ${esc(compactNumber(score.opponent_score))}` : ""}</div>`;
   }
 
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a> › 王国 ${esc(kid)}</nav>
@@ -198,8 +198,8 @@ export function renderAdsTxt(publisherId) {
   return `google.com, ${id}, DIRECT, f08c47fec0942fa0\n`;
 }
 
-export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10)) {
-  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/tools/gold`, `${origin}/tools/gold-tech`, `${origin}/about`, ...heroPagePaths().map(p => origin + p), ...kids.map(k => `${origin}/k/${k}`)];
+export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
+  const urls = [...extraPaths.map(p => origin + p), `${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/tools/gold`, `${origin}/tools/gold-tech`, `${origin}/about`, ...heroPagePaths().map(p => origin + p), ...kids.map(k => `${origin}/k/${k}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
 }
 

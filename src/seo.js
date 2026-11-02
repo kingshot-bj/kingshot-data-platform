@@ -11,7 +11,7 @@ const OG_BY_PATH = [
   [/^\/tools\/gold-tech/, "/assets/og/goldtech.jpg"],
   [/^\/tools\/gold/, "/assets/og/gold.jpg"],
   [/^\/(hero-catalog|heroes\/)/, "/assets/og/heroes.jpg"],
-  [/^\/(kingdoms|k\/)/, "/assets/og/kingdoms.jpg"]
+  [/^\/(kingdoms|k\/|kvk\/)/, "/assets/og/kingdoms.jpg"]
 ];
 export function ogImagePath(pathname) {
   const hit = OG_BY_PATH.find(([re]) => re.test(String(pathname || "")));
