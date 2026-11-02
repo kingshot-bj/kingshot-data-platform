@@ -81,11 +81,11 @@ export function shardHeroList(iconByName = {}) {
   return out;
 }
 
-// Shard illustration: a jigsaw piece like the in-game hero shard (inline SVG;
-// rgb() so the theme normalizer leaves it alone).
-const PUZZLE_PATH = "M3 7H8.2C8.2 6 7.4 5.6 7.4 4.4A3.1 3.1 0 0 1 13.6 4.4C13.6 5.6 12.8 6 12.8 7H18V12.2C19 12.2 19.4 11.4 20.6 11.4A3.1 3.1 0 0 1 20.6 17.6C19.4 17.6 19 16.8 18 16.8V22H12.8C12.8 21 13.6 20.6 13.6 19.4A3.1 3.1 0 0 0 7.4 19.4C7.4 20.6 8.2 21 8.2 22H3V16.8C4 16.8 4.4 17.6 5.6 17.6A3.1 3.1 0 0 0 5.6 11.4C4.4 11.4 4 12.2 3 12.2Z";
+// Shard illustration: a tilted orange jigsaw piece like the in-game hero shard
+// (inline SVG; rgb() so the theme normalizer leaves it alone).
+const PUZZLE_PATH = "M4 6H8.6C8.6 5 7.8 4.6 7.8 3.4A3.2 3.2 0 0 1 14.2 3.4C14.2 4.6 13.4 5 13.4 6H18V10.6C19 10.6 19.4 9.8 20.6 9.8A3.2 3.2 0 0 1 20.6 16.2C19.4 16.2 19 15.4 18 15.4V20H13.4C13.4 21 14.2 21.4 14.2 22.6A3.2 3.2 0 0 1 7.8 22.6C7.8 21.4 8.6 21 8.6 20H4V15.4C5 15.4 5.4 16.2 6.6 16.2A3.2 3.2 0 0 0 6.6 9.8C5.4 9.8 5 10.6 4 10.6Z";
 export function shardIconSvg(size = 22) {
-  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="1.8 .6 22.6 22.6" aria-hidden="true"><defs><linearGradient id="shg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgb(255,232,150)"/><stop offset=".55" stop-color="rgb(246,170,40)"/><stop offset="1" stop-color="rgb(196,100,12)"/></linearGradient></defs><path d="${PUZZLE_PATH}" fill="url(#shg)" stroke="rgb(128,64,8)" stroke-width="1.1" stroke-linejoin="round"/><path d="M5 9.2H9.6M5 9.2V12" stroke="rgb(255,250,225)" stroke-width="1.3" stroke-linecap="round" opacity=".7"/><circle cx="10.5" cy="4.2" r="1" fill="rgb(255,250,225)" opacity=".7"/></svg>`;
+  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="-1.5 -1 30 30" aria-hidden="true"><defs><linearGradient id="shg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(255,206,92)"/><stop offset="1" stop-color="rgb(246,142,24)"/></linearGradient></defs><g transform="rotate(-22 13.5 13.5)"><path d="${PUZZLE_PATH}" transform="translate(.4 1.6)" fill="rgb(176,78,8)" stroke="rgb(140,58,6)" stroke-width="1.4" stroke-linejoin="round"/><path d="${PUZZLE_PATH}" fill="url(#shg)" stroke="rgb(176,78,8)" stroke-width="1.4" stroke-linejoin="round"/><path d="M6 8.2H10.4M15.6 8.2H16.4" stroke="rgb(255,240,190)" stroke-width="1.2" stroke-linecap="round" opacity=".8"/><circle cx="11" cy="3.6" r="1.1" fill="rgb(255,240,190)" opacity=".8"/></g></svg>`;
 }
 
 // Client side of the calculator. Serialized with toString(), so it must not
