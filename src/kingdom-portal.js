@@ -353,10 +353,10 @@ export async function renderAlliancePage(request, env, auth = null) {
     const level = Number(value);
     if (!Number.isFinite(level)) return String(value);
     if (level <= 30) return "Lv." + level;
-    if (level <= 34) return "Lv.30-" + (level - 30);
+    if (level < 35) return "Lv.30+" + (level - 30);
     const goldLevel = Math.floor((level - 35) / 5) + 1;
-    const stage = ((level - 35) % 5) + 1;
-    return "<span class='tc-gold'>黄金" + goldLevel + "<small> " + stage + "/5</small></span>";
+    const step = (level - 35) % 5;
+    return "<span class='tc-gold'>黄金" + goldLevel + (step ? "<small>+" + step + "</small>" : "") + "</span>";
   };
   const bucketSize = 100_000_000;
   const buckets = [
