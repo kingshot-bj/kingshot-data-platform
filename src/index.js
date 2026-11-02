@@ -49,6 +49,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary } from "./home-summary.js";
+import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, createAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
 import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
@@ -4996,9 +4997,13 @@ export default {
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env);
+      if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
+      if (url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
+      if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
+      if (url.pathname === "/news") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, requestTraceId);
@@ -10545,6 +10550,61 @@ function renderInitial(){var p=catalog.find(function(x){return x.key===state.cat
 boot();})();</script></body></html>`;
 }
 
+// Notification-style navigation badges (new watched-player changes, unread お知らせ).
+async function handleBadgesApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const counts = await getBadgeCounts(env.DB, auth, { changeVisible: change => isChangeVisibleForRole(change, auth.role, settings) });
+    return json({ ok: true, ...counts });
+  } catch (error) {
+    console.error("badges_failed", error?.message || error);
+    return json({ ok: false, error: "BADGES_FAILED" }, 500);
+  }
+}
+
+async function markWatchBadgeSeen(request, env) {
+  try {
+    const auth = await getAuthenticatedUser(request, env);
+    if (auth?.status === "ACTIVE" && auth.discord_id) await markBadgeSeen(env.DB, auth.discord_id, "watch");
+  } catch (error) {
+    console.error("watch_badge_seen_failed", error?.message || error);
+  }
+}
+
+async function renderNewsRoute(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お知らせ", "お知らせを見るにはログインしてください。");
+  await ensureBadgeSchema(env.DB);
+  const state = await env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null);
+  const items = await listAnnouncements(env.DB, 50);
+  await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
+  return renderNewsPage(items, { canPost: auth.role === "OWNER", unreadSince: state?.news_seen_at ?? null });
+}
+
+async function handleAnnouncementsApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const body = await request.json().catch(() => ({}));
+  try {
+    if (body?.action === "create") {
+      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null });
+      await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title }).catch(() => {});
+      return json({ ok: true, item });
+    }
+    if (body?.action === "delete") {
+      const deleted = await deleteAnnouncement(env.DB, body.id);
+      if (deleted) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_DELETE", null, null, { id: String(body.id) }).catch(() => {});
+      return json({ ok: deleted, error: deleted ? null : "NOT_FOUND" }, deleted ? 200 : 404);
+    }
+    return json({ ok: false, error: "UNKNOWN_ACTION" }, 400);
+  } catch (error) {
+    return json({ ok: false, error: error?.code || "ANNOUNCEMENT_FAILED" }, error?.code === "TITLE_AND_BODY_REQUIRED" ? 400 : 500);
+  }
+}
+
 async function handleHomeSummary(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -10876,6 +10936,7 @@ async function renderHome(request, env) {
 .ee-change-what{grid-column:1/-1;font-size:12px;color:var(--ee-subtext)}
 .ee-change-what b{color:var(--ee-text)}.ee-change-what b.up{color:var(--ee-success,#22c55e)}.ee-change-what b.down{color:var(--ee-danger,#f87171)}
 .ee-change-empty{padding:14px;border:1px dashed var(--ee-border-soft);border-radius:13px;font-size:12px;color:var(--ee-subtext);text-align:center}
+.ee-app .ee-tile .badge{background:#ef4444!important;color:#fff!important;border:0}
 @media(min-width:760px){.ee-app .ee-tile{min-height:120px}.ee-app .ee-tile img{width:54px;height:54px}.ee-app .ee-summary{grid-template-columns:repeat(2,1fr)}}
 ${EAGLEEYE_NAV_CSS}
 </style></head><body>
@@ -10891,7 +10952,7 @@ ${EAGLEEYE_NAV_CSS}
 <div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
-  <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge">0</b></a>
+  <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge" data-badge="watch" hidden>0</b></a>
   <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
   <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
   <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
@@ -10949,8 +11010,6 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     try{
       var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
-      if(pBadge)pBadge.textContent=pc;
-      if(nBadge)nBadge.textContent=pc;
       if(pCount)countUp(pCount,pc,700);
     }catch(e){}
     try{

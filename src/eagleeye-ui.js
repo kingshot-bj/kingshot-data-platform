@@ -105,6 +105,10 @@ export const EAGLEEYE_NAV_CSS = `
   font-size:9px!important;
 }
 .ee-global-nav-badge[hidden],.ee-nav-badge[hidden]{display:none!important}
+.ee-global-nav button .ee-global-nav-badge,.ee-nav button .ee-nav-badge{position:absolute;top:1px;left:calc(50% + 6px);margin-left:0;display:grid;place-items:center;padding:0 4px;border-radius:99px;background:#ef4444;color:#fff;font-weight:800}
+.ee-global-nav-links a,.ee-drawer-grid a{position:relative}
+.ee-menu-badge{position:absolute;top:6px;right:8px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:#ef4444;color:#fff;font-size:10px;font-weight:900;display:grid;place-items:center}
+[data-badge][hidden]{display:none!important}
 @media(max-width:600px){
   .ee-nav-icon,.ee-global-nav .ee-global-nav-icon{font-size:24px!important}
 }
@@ -117,6 +121,7 @@ export const EAGLEEYE_NAV_CSS = `
  * Privileged actions are supplied by the caller only after its existing auth check.
  */
 export const EAGLEEYE_OTHER_MENU = Object.freeze([
+  Object.freeze({ key: "news", href: "/news", label: "お知らせ", image: EAGLEEYE_BJNYAN.success, badge: "news" }),
   Object.freeze({ key: "kingdomWatch", href: "/kingdom-watchlist", label: "王国ウォッチ", image: EAGLEEYE_BJNYAN.watchlist }),
   Object.freeze({ key: "kingdomCatalog", href: "/kingdom-catalog", label: "王国カタログ", image: EAGLEEYE_BJNYAN.kingdom }),
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingShot", image: EAGLEEYE_BJNYAN.dashboard }),
@@ -134,7 +139,7 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
   const currentRank = auth ? (roleRank[auth.role] ?? 0) : 0;
   const links = EAGLEEYE_OTHER_MENU.filter(item => !item.minRole || currentRank >= (roleRank[item.minRole] ?? 99)).map(item => compact
     ? `<a href="${item.href}" data-other-key="${item.key}">${esc(item.label)}</a>`
-    : `<a href="${item.href}" data-other-key="${item.key}"><img src="${item.image}" alt=""><span>${esc(item.label)}</span></a>`
+    : `<a href="${item.href}" data-other-key="${item.key}"><img src="${item.image}" alt=""><span>${esc(item.label)}</span>${item.badge ? '<b class="ee-menu-badge" data-badge="' + item.badge + '" hidden>0</b>' : ""}</a>`
   ).join("");
   const privileged = [];
   if (auth && (auth.role === "ADMIN" || auth.role === "OWNER")) {
@@ -176,9 +181,9 @@ export function renderEagleEyeNavigation({ active = "", badgeId = "globalNavBadg
     items.map(item => '<a href="' + item.href + '" data-nav-path="' + item.href + '"' +
       (active === item.key ? ' class="active" aria-current="page"' : '') +
       ' aria-label="' + item.label + '"><span class="' + iconClass + '">' + item.icon + '</span><span>' + item.label + '</span>' +
-      (item.key === "watch" ? '<span class="' + badgeClass + '" id="' + badgeId + '" aria-label="監視中のプレイヤー数">0</span>' : '') +
+      (item.key === "watch" ? '<span class="' + badgeClass + '" id="' + badgeId + '" data-badge="watch" aria-label="ウォッチ中のプレイヤーの新しい変化" hidden>0</span>' : '') +
       '</a>').join("") +
-    '<button id="' + (home ? "navMore" : "globalNavMore") + '" type="button" class="' + (home ? "" : "ee-global-nav-more") + '" aria-haspopup="dialog" aria-expanded="false"><span class="' + iconClass + '">☰</span><span>その他</span></button></nav>';
+    '<button id="' + (home ? "navMore" : "globalNavMore") + '" type="button" class="' + (home ? "" : "ee-global-nav-more") + '" aria-haspopup="dialog" aria-expanded="false"><span class="' + iconClass + '">☰</span><span>その他</span><span class="' + badgeClass + '" data-badge="news" aria-label="未読のお知らせ" hidden>0</span></button></nav>';
 }
 
 
@@ -215,36 +220,25 @@ export const EAGLEEYE_DRAWER_INIT = `
       .catch(function(){return null;});
     window.__eagleEyeRoleStatePromise=roleStatePromise;
   }
-  // Reuse page-owned watchlist data when a page already fetches this endpoint.
-  // Do not add a second D1-backed request on the player-watchlist or player detail pages.
-  function setPlayerWatchlistBadgeCount(count){
-    if(count===null||count===undefined||!Number.isFinite(Number(count))){
-      window.__eagleEyePlayerWatchlistCount=null;
-      ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){var badge=document.getElementById(id);if(badge)badge.hidden=true;});
-      return;
-    }
-    count=Math.max(0,Number(count));
-    window.__eagleEyePlayerWatchlistCount=count;
-    ["globalNavBadge","navBadge","playerBadge"].forEach(function(id){
-      var badge=document.getElementById(id);if(!badge)return;
-      badge.textContent=count>99?"99+":String(count);badge.hidden=false;
+  // Badges work like notifications: only what is new since the user last
+  // looked (watched players' changes / unread お知らせ), hidden when zero.
+  function paintBadges(counts){
+    document.querySelectorAll("[data-badge]").forEach(function(badge){
+      var n=Number(counts&&counts[badge.getAttribute("data-badge")]||0);
+      badge.textContent=n>99?"99+":String(n);
+      badge.hidden=!(n>0);
     });
   }
-  window.__eagleEyeSetPlayerWatchlistCount=setPlayerWatchlistBadgeCount;
-  if(typeof window.__eagleEyePlayerWatchlistCount==="number")setPlayerWatchlistBadgeCount(window.__eagleEyePlayerWatchlistCount);
-  else if(window.__eagleEyePlayerWatchlistCount===null)setPlayerWatchlistBadgeCount(null);
-  var pageLoadsPlayerWatchlist=path==="/player-watchlist"||(path==="/player"&&Boolean(document.getElementById("player-watchlist-toggle")));
-  if(!document.getElementById("playerCount")&&!pageLoadsPlayerWatchlist&&typeof window.__eagleEyePlayerWatchlistCount!=="number"){
-    roleStatePromise.then(function(state){
-      if(!state||!state.ok){setPlayerWatchlistBadgeCount(null);return;}
-      return fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"})
-        .then(function(response){if(!response.ok)throw new Error("watchlist_count_unavailable");return response.json();})
-        .then(function(data){
-          if(!data||data.ok===false)throw new Error("watchlist_count_unavailable");
-          setPlayerWatchlistBadgeCount((data.watchlist||[]).filter(function(item){return item.enabled!==false;}).length);
-        });
-    }).catch(function(){setPlayerWatchlistBadgeCount(null);});
-  }
+  window.__eagleEyePaintBadges=paintBadges;
+  // Pages that used to push the watchlist size into the badge keep working; the
+  // size is no longer shown as a badge.
+  window.__eagleEyeSetPlayerWatchlistCount=function(){};
+  roleStatePromise.then(function(state){
+    if(!state||!state.ok){paintBadges(null);return;}
+    return fetch("/api/badges",{credentials:"same-origin",cache:"no-store"})
+      .then(function(response){return response.ok?response.json():null;})
+      .then(function(data){paintBadges(data&&data.ok?data:null);});
+  }).catch(function(){paintBadges(null);});
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic
   // page drawers need the extra auth-state request.
