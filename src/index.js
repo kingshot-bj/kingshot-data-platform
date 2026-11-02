@@ -55,6 +55,7 @@ import { renderGoldTechPage } from "./gold-tech.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
 import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
+import { configureAdsense, injectAdsense } from "./adsense.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
@@ -4992,6 +4993,7 @@ export default {
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
+    configureAdsense(env);
     // Custom domain move: page views on the legacy host go to PUBLIC_ORIGIN (off until LEGACY_REDIRECT is set).
     { const moved = legacyHostRedirect(request, env); if (moved) return moved; }
     try {
@@ -5645,7 +5647,7 @@ async function servePublicPage(request, env, executionContext, render) {
 }
 
 function eagleEyeHtmlResponse(html, status = 200) {
-  const themed = applyEagleEyeTheme(html);
+  const themed = injectAdsense(applyEagleEyeTheme(html));
   const telemetry = clientTelemetryScript();
   const instrumented = themed.includes("</body>")
     ? themed.replace("</body>", telemetry + "</body>")
@@ -10754,7 +10756,7 @@ async function renderHome(request, env) {
   const loginBlock = session
     ? `<a class="ee-profile" href="/my-player" aria-label="マイKingShotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>KingShot 王国・プレイヤー観測ツール | EagleEye</title><meta name="description" content="KingShotの王国・同盟・プレイヤーのデータを集めて、ランキングの推移、KvKの戦況、英雄の育成に役立つ情報を見やすくまとめる非公式ファンサービス。欠片計算・黄金計算などのツールも無料で使えます。"><link rel="canonical" href="${publicOrigin(request, env)}/"><style>
 :root{color-scheme:dark;--bg:var(--ee-bg,#050b14);--panel:var(--ee-panel,#0a1728);--panel2:var(--ee-panel-raised,#0d2035);--line:var(--ee-border,#23415f);--text:var(--ee-text,#eff8ff);--sub:var(--ee-subtext,#8098b0);--cyan:var(--ee-cyan,#20d7f2);--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,var(--ee-bg,#06101d),color-mix(in srgb,var(--ee-bg,#06101d) 80%,#000) 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
 .ee-app{height:100dvh;min-height:0;display:grid;grid-template-rows:60px minmax(0,1fr) 72px;overflow:hidden}.ee-top{display:flex;align-items:center;justify-content:space-between;padding:0 max(18px,calc((100vw - 1100px)/2));border-bottom:1px solid rgba(35,65,95,.7);background:rgba(4,10,18,.86);backdrop-filter:blur(18px);z-index:10}.ee-brand{font-weight:950;letter-spacing:.09em;font-size:16px}.ee-brand span{color:var(--cyan)}.ee-brand b{color:#7189a2;font-size:11px;margin-left:7px}.ee-profile{display:flex;align-items:center;gap:8px}.ee-avatar{width:35px;height:35px;border:1px solid #31516f;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#0b1c2e;color:var(--gold);font-weight:950;font-size:10px}.ee-avatar img{width:100%;height:100%;object-fit:cover}.ee-profile-copy{display:grid;line-height:1.05}.ee-profile-copy b{font-size:13px}.ee-profile-copy small{margin-top:4px;color:var(--gold);font-size:10px;font-weight:900;letter-spacing:.08em}
