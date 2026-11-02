@@ -5522,6 +5522,9 @@ const EAGLEEYE_THEME_SCRIPT = `
 })();
 </script>`;
 
+const EAGLEEYE_SITE_FOOTER = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="サイト情報"><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a><a href="/about">運営者情報</a><a href="/support">お問い合わせ</a></nav><p>EagleEye（KingShot非公式ファンサービス）</p></footer>'
+  + '<style id="ee-site-footer-css">.ee-site-footer{margin:28px auto 0;padding:14px 16px 8px;max-width:820px;text-align:center;font-size:12px;color:var(--ee-subtext,#94a3b8);border-top:1px solid var(--ee-border-soft,#1d344d)}.ee-site-footer nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}.ee-site-footer a{color:var(--ee-subtext,#94a3b8);text-decoration:underline;text-underline-offset:2px}.ee-site-footer p{margin:6px 0 0;font-size:11px}</style>';
+
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
   // One palette for every page: legacy navy/grey colours become shared theme tokens.
@@ -5541,6 +5544,11 @@ function applyEagleEyeTheme(html) {
   // Keep the explicit login prompt as a clean standalone screen.
   // Only the dedicated login screen hides the navigation; pages that merely offer a login link keep it.
   const isLoginRequiredPage = html.includes('<meta name="ee-page" content="login-required">');
+  // Site footer: policy / operator / contact links on every page (visible without opening a menu).
+  if (!html.includes('id="ee-site-footer"')) {
+    const lastMain = html.lastIndexOf("</main>");
+    html = lastMain >= 0 ? html.slice(0, lastMain) + EAGLEEYE_SITE_FOOTER + html.slice(lastMain) : html.replace("</body>", EAGLEEYE_SITE_FOOTER + "</body>");
+  }
   if (!isLoginRequiredPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
     const sharedNav = `
 ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
