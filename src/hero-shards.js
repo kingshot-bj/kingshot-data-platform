@@ -81,9 +81,19 @@ export function shardHeroList(iconByName = {}) {
   return out;
 }
 
-// Shard illustration (inline SVG; rgb() so the theme normalizer leaves it alone).
+// Shard illustration: a tilted golden jigsaw piece on an orange item tile, like
+// the in-game hero shard (inline SVG; rgb() so the theme normalizer leaves it
+// alone). Gradients live once per page in shardDefsSvg().
+export const PUZZLE_PATH = "M4 6H8.6C8.6 5 7.8 4.6 7.8 3.4A3.2 3.2 0 0 1 14.2 3.4C14.2 4.6 13.4 5 13.4 6H18V10.6C19 10.6 19.4 9.8 20.6 9.8A3.2 3.2 0 0 1 20.6 16.2C19.4 16.2 19 15.4 18 15.4V20H13.4C13.4 21 14.2 21.4 14.2 22.6A3.2 3.2 0 0 1 7.8 22.6C7.8 21.4 8.6 21 8.6 20H4V15.4C5 15.4 5.4 16.2 6.6 16.2A3.2 3.2 0 0 0 6.6 9.8C5.4 9.8 5 10.6 4 10.6Z";
+export const PIECE_TRANSFORM = "translate(2.4 2.6) rotate(-22 13.5 13.5)";
+export function shardDefsSvg() {
+  return `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="sh-tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(226,128,30)"/><stop offset="1" stop-color="rgb(252,196,110)"/></linearGradient><linearGradient id="sh-piece" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(255,218,140)"/><stop offset="1" stop-color="rgb(226,150,58)"/></linearGradient></defs></svg>`;
+}
+export function shardPieceSvg() {
+  return `<g transform="${PIECE_TRANSFORM}"><path d="${PUZZLE_PATH}" transform="translate(.3 1.3)" fill="rgb(184,100,30)" stroke="rgb(150,76,18)" stroke-width="1.3" stroke-linejoin="round"/><path d="${PUZZLE_PATH}" fill="url(#sh-piece)" stroke="rgb(160,84,22)" stroke-width="1.3" stroke-linejoin="round"/></g>`;
+}
 export function shardIconSvg(size = 22) {
-  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="shg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgb(255,226,140)"/><stop offset=".5" stop-color="rgb(245,166,35)"/><stop offset="1" stop-color="rgb(180,92,10)"/></linearGradient></defs><path d="M12 1.5 19 8.5 15.5 22.5h-7L5 8.5Z" fill="url(#shg)" stroke="rgb(120,60,8)" stroke-width="1" stroke-linejoin="round"/><path d="M12 1.5 9.5 8.5 12 22.5 14.5 8.5Z" fill="rgb(255,244,200)" opacity=".45"/><path d="M5 8.5h14" stroke="rgb(120,60,8)" stroke-width=".8" opacity=".6"/></svg>`;
+  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#sh-tile)" stroke="rgb(240,170,80)" stroke-width="1.2"/>${shardPieceSvg()}<g transform="${PIECE_TRANSFORM}"><path d="M6.2 8.2H10.2" stroke="rgb(255,244,205)" stroke-width="1.2" stroke-linecap="round" opacity=".85"/><circle cx="11" cy="3.6" r="1" fill="rgb(255,244,205)" opacity=".85"/></g></svg>`;
 }
 
 // Client side of the calculator. Serialized with toString(), so it must not
@@ -101,9 +111,13 @@ function shardClient(cfg) {
   function load() { try { var v = JSON.parse(localStorage.getItem(KEY) || "null"); if (v && Array.isArray(v.list)) return v.list; } catch (e) {} return null; }
   function save() { try { localStorage.setItem(KEY, JSON.stringify({ list: list })); } catch (e) {} }
   function dedicated(n) { return byName[n] ? byName[n].d : false; }
+  var clipSeq = 0;
   function avatar(n) {
-    var h = byName[n];
-    return h && h.i ? '<img class="av" src="/hero-icons/assets/' + esc(h.i) + '" alt="" loading="lazy">' : '<span class="av av-txt">' + esc(n.charAt(0)) + "</span>";
+    var h = byName[n], id = "shc" + (++clipSeq);
+    var face = h && h.i
+      ? '<clipPath id="' + id + '"><path d="' + cfg.path + '" transform="' + cfg.pieceTf + ' translate(13.5 13.5) scale(.86) translate(-13.5 -13.5)"/></clipPath><image href="/hero-icons/assets/' + esc(h.i) + '" x="2" y="2" width="28" height="28" preserveAspectRatio="xMidYMid slice" clip-path="url(#' + id + ')"/>'
+      : '<text x="16" y="21" text-anchor="middle" font-size="13" font-weight="900" fill="rgb(110,50,8)" stroke="rgb(255,240,200)" stroke-width="2.4" paint-order="stroke" stroke-linejoin="round">' + esc(n.charAt(0)) + "</text>";
+    return '<svg class="av" viewBox="0 0 32 32" aria-hidden="true"><rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#sh-tile)" stroke="rgb(240,170,80)" stroke-width="1.2"/>' + cfg.piece + face + "</svg>";
   }
   var mine = (cfg.mine || []).map(norm).filter(function (e) { return e.n; });
   var saved = load();
@@ -188,10 +202,10 @@ export function renderHeroShardPage({ origin = "", signedIn = false, heroes = nu
   }
   const cta = signedIn ? "" : `<section class="cta"><h2>ログインすると自分の英雄を読み込めます</h2><p>EagleEyeに領主IDを登録すると、あなたの英雄の今の★と段階を読み取り、そのまま計算に使えます。</p><a class="cta-btn" href="${esc(loginHref)}">Discordでログイン</a></section>`;
 
-  const cfg = { steps: SHARD_STEPS, heroes: heroList, mine, icon: shardIconSvg(18), iconLg: shardIconSvg(40) };
+  const cfg = { steps: SHARD_STEPS, heroes: heroList, mine, icon: shardIconSvg(20), iconLg: shardIconSvg(44), path: PUZZLE_PATH, pieceTf: PIECE_TRANSFORM, piece: shardPieceSvg() };
   const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c").replace(/\u2028|\u2029/g, "");
 
-  const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/hero-catalog">英雄カタログ</a> › 欠片計算</nav>
+  const body = `${shardDefsSvg()}<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/hero-catalog">英雄カタログ</a> › 欠片計算</nav>
 <h1>${shardIconSvg(26)} 英雄の欠片 計算</h1>
 <p class="lead">KingShotの英雄の星上げに必要な欠片の数を計算します。好きな英雄を選んで、今の★・段階と目標を入れてください。★は1つにつき6段階あり、段階ごとに必要数が違います。選んだ英雄はこの端末に保存されます。</p>
 ${account}
@@ -209,11 +223,11 @@ ${cta}
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a{color:var(--ee-cyan);text-decoration:none}h1{display:flex;align-items:center;gap:8px;margin:6px 0 4px;font-size:26px}.lead{margin:0 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6}h2{margin:22px 0 8px;font-size:17px}
 .shard-ico{flex:none;vertical-align:middle}.acct{display:grid;gap:6px;margin-bottom:12px}.btn{padding:11px 14px;border:0;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font:inherit;font-weight:900;cursor:pointer}.btn.ghost{margin-top:10px;background:transparent;border:1px solid var(--ee-border);color:var(--ee-subtext);font-weight:700;font-size:12px;padding:8px 12px}
 .hlist{display:grid;gap:10px}.hcard,.cta,.total,.picker{padding:12px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel)}.hhead{display:flex;align-items:center;gap:10px;margin-bottom:8px}.hn{font-size:16px}.rm{margin-left:auto;width:32px;height:32px;border:1px solid var(--ee-border);border-radius:50%;background:transparent;color:var(--ee-subtext);font-size:18px;line-height:1;cursor:pointer}
-.av{flex:none;width:40px;height:40px;border-radius:50%;object-fit:cover;background:var(--ee-panel-raised);border:2px solid var(--ee-border)}.av-txt{display:grid;place-items:center;font-weight:900;color:var(--ee-cyan)}
+.av{flex:none;width:46px;height:46px;filter:drop-shadow(0 1px 1px rgb(0 0 0 / .25))}
 .hgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:grid;gap:4px;font-size:12px;color:var(--ee-subtext)}select,input{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--ee-border);border-radius:11px;font:inherit;font-size:15px;background:var(--ee-panel-deep);color:var(--ee-text)}select:disabled{opacity:.45}
 .hres{display:flex;align-items:center;gap:8px;margin-top:8px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ee-cyan) 10%,var(--ee-panel));font-size:14px}.hres b{font-size:20px;color:var(--ee-cyan)}.hres b.rest{color:var(--ee-warning,#f59e0b)}.ok{color:var(--ee-success,#22c55e);font-weight:800}.ded{padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;color:var(--ee-warning,#f59e0b);border:1px solid currentColor}
 .total{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:14px;border-color:color-mix(in srgb,var(--ee-cyan) 45%,transparent)}.total:empty{display:none}.total b{font-size:22px;color:var(--ee-cyan)}.total small{display:block;margin-top:2px;font-size:11px;color:var(--ee-subtext)}
-.picker{margin-top:12px}.picker summary{cursor:pointer;font-weight:900;color:var(--ee-cyan)}.picker summary small{font-weight:400;color:var(--ee-subtext)}.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-top:10px}.pk{display:grid;justify-items:center;gap:4px;padding:8px 4px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel-deep);color:var(--ee-text);font:inherit;font-size:11px;cursor:pointer}.pk .av{width:44px;height:44px}.pk.on{border-color:var(--ee-cyan);background:color-mix(in srgb,var(--ee-cyan) 16%,var(--ee-panel))}.pk.on .av{border-color:var(--ee-cyan)}
+.picker{margin-top:12px}.picker summary{cursor:pointer;font-weight:900;color:var(--ee-cyan)}.picker summary small{font-weight:400;color:var(--ee-subtext)}.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-top:10px}.pk{display:grid;justify-items:center;gap:4px;padding:8px 4px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel-deep);color:var(--ee-text);font:inherit;font-size:11px;cursor:pointer}.pk .av{width:52px;height:52px}.pk.on{border-color:var(--ee-cyan);background:color-mix(in srgb,var(--ee-cyan) 16%,var(--ee-panel))}
 .tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 6px;border-bottom:1px solid var(--ee-border-soft);text-align:right;white-space:nowrap}th:first-child{text-align:left}thead th{font-size:11px;color:var(--ee-subtext)}.hint,.note{font-size:11px;color:var(--ee-subtext);line-height:1.6}.empty{font-size:13px;color:var(--ee-subtext);padding:8px 2px}
 .cta{margin-top:14px;border-color:color-mix(in srgb,var(--ee-cyan) 40%,transparent)}.cta p{font-size:13px;line-height:1.6}.cta-btn{display:inline-block;padding:11px 16px;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font-weight:900;text-decoration:none}</style></head><body><main class="wrap">${body}</main></body></html>`;
 }
