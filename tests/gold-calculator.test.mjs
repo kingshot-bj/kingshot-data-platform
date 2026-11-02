@@ -58,3 +58,10 @@ test("refined material uses the in-game name 精製黄金", () => {
   assert.ok(!renderGoldCalculatorPage().includes("精錬黄金"));
   assert.ok(JSON.stringify(KINGDOM_TIMELINE).includes("精製黄金"));
 });
+
+test("item icons: 黄金 / 精製黄金 / 黄金微粒子 on the orange item tile", async () => {
+  const { goldIconSvg } = await import("../src/gold-calculator.js");
+  const a = goldIconSvg(20, "gold"), b = goldIconSvg(20, "refined"), c = goldIconSvg(20, "dust");
+  assert.notEqual(a, b); assert.notEqual(b, c);
+  for (const svg of [a, b, c]) { assert.match(svg, /url\(#gtile\)/); assert.doesNotMatch(svg, /#[0-9a-f]{6}/i); }
+});

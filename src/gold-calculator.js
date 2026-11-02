@@ -41,11 +41,18 @@ function esc(value) {
 }
 const fmt = n => Number(n).toLocaleString("ja-JP");
 
-// Gold nugget / refined ingot illustrations (rgb() so the theme normalizer leaves them alone).
-export function goldIconSvg(size = 22, refined = false) {
-  return refined
-    ? `<svg class="gold-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><path d="M5 20 11 9h14l2 11-6 5H9Z" fill="rgb(245,190,60)" stroke="rgb(150,90,10)" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 9 9 25M25 9l-4 16M7 17h20" stroke="rgb(170,105,15)" stroke-width="1" opacity=".7"/><path d="M13 12h6" stroke="rgb(255,248,210)" stroke-width="1.6" stroke-linecap="round"/></svg>`
-    : `<svg class="gold-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 19 9 10l9-3 8 6-1 9-9 4-9-3Z" fill="rgb(222,170,85)" stroke="rgb(130,85,30)" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 10l7 6 10-3M16 16l0 10" stroke="rgb(150,100,40)" stroke-width="1" opacity=".7"/><path d="M11 12l3-1" stroke="rgb(255,240,200)" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+// Item icons drawn after the in-game ones (orange item tile): 黄金 = pale gold
+// rock, 精製黄金 = yellow cube with bronze corner studs, 黄金微粒子 = gold dust
+// on a wooden tray. rgb() so the theme normalizer leaves the colours alone.
+const GOLD_TILE = '<defs><linearGradient id="gtile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(226,128,30)"/><stop offset="1" stop-color="rgb(252,196,110)"/></linearGradient></defs><rect x=".8" y=".8" width="30.4" height="30.4" rx="7" fill="url(#gtile)" stroke="rgb(240,170,80)" stroke-width="1.2"/>';
+const GOLD_ART = {
+  gold: '<g stroke="rgb(85,62,35)" stroke-width="1.1" stroke-linejoin="round"><path d="M6.5 20.5 9 17l3 1.5-.5 4.5-3.5 1Z" fill="rgb(214,180,100)"/><path d="M9.5 11 15 7.5l8 1 3 4.5-1 9-6.5 4-8.5-2-2-6Z" fill="rgb(226,192,108)"/><path d="M9.5 11 15 7.5l8 1 3 4.5-8 1Z" fill="rgb(250,232,160)"/><path d="M18 14l8-1-1 9-6.5 4Z" fill="rgb(192,150,68)"/><path d="M21 22.5 24.5 21l2 3-3 2Z" fill="rgb(206,168,88)"/></g><path d="M12.5 10.2l4-2" stroke="rgb(255,250,230)" stroke-width="1.2" stroke-linecap="round"/><path d="M11 15.5l5 .8M12 19.5l4-1" stroke="rgb(170,140,85)" stroke-width=".8"/>',
+  refined: '<g stroke="rgb(95,52,20)" stroke-width="1" stroke-linejoin="round"><path d="M8 12h14v13H8Z" fill="rgb(250,212,55)"/><path d="M8 12l4.5-4.5h14L22 12Z" fill="rgb(255,238,140)"/><path d="M22 12l4.5-4.5v13L22 25Z" fill="rgb(222,165,25)"/></g><path d="M10 15h6" stroke="rgb(255,250,215)" stroke-width="1.4" stroke-linecap="round"/><g fill="rgb(120,66,28)" stroke="rgb(70,38,14)" stroke-width=".7" stroke-linejoin="round"><path d="M6 10.5 9.5 11 8.5 14Z"/><path d="M24 10.5 20.5 11.2 22.5 14Z"/><path d="M6 26.5 9.5 25.5 8.5 22.5Z"/><path d="M23.5 26.8 20.8 25 23 22.8Z"/><path d="M11 5.5 14 8l-3 1.5Z"/><path d="M28.5 5.5 25 7.5l3 2Z"/><path d="M28.3 22 25.5 20.5l2.5-2.5Z"/></g>',
+  dust: '<path d="M5.5 22Q9 13 13 9.5Q16 7 19 9.5Q23 13 26.5 22Z" fill="rgb(245,212,100)" stroke="rgb(175,130,40)" stroke-width="1" stroke-linejoin="round"/><path d="M12 12.5Q16 9 20 12.5" stroke="rgb(255,238,170)" stroke-width="1.2" fill="none" stroke-linecap="round"/><g fill="rgb(255,240,175)"><circle cx="14" cy="13" r=".9"/><circle cx="17.5" cy="16" r=".8"/><circle cx="12" cy="18" r=".8"/><circle cx="19.5" cy="19.5" r=".8"/><circle cx="15.5" cy="10" r=".7"/></g><g fill="rgb(205,160,60)"><circle cx="16" cy="19" r=".6"/><circle cx="11" cy="20.5" r=".6"/><circle cx="20.5" cy="14.5" r=".6"/></g><path d="M4 21.5h24l-2 5.5H6Z" fill="rgb(78,56,38)" stroke="rgb(40,28,18)" stroke-width="1" stroke-linejoin="round"/><path d="M6 23.5h20" stroke="rgb(120,90,60)" stroke-width=".8"/><rect x="3" y="22.5" width="2.6" height="2" rx=".6" fill="rgb(110,80,52)" stroke="rgb(40,28,18)" stroke-width=".6"/>'
+};
+export function goldIconSvg(size = 22, kind = "gold") {
+  const art = GOLD_ART[kind === true ? "refined" : kind] || GOLD_ART.gold;
+  return `<svg class="gold-ico" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true">${GOLD_TILE}${art}</svg>`;
 }
 
 function goldClient(cfg) {
@@ -89,7 +96,7 @@ export function renderGoldCalculatorPage({ origin = "" } = {}) {
   const head = Array.from({ length: MAX_TG }, (_, i) => `<th>TG${i + 1}</th>`).join("");
   const table = Object.values(GOLD_COSTS).map(b => `<tr><th>${esc(b.label)}</th>${b.costs.map(c => `<td>${c ? fmt(c[0]) + (c[1] ? `<small>+${fmt(c[1])}</small>` : "") : "—"}</td>`).join("")}</tr>`).join("")
     + `<tr class="sum"><th>合計</th>${GOLD_TOTALS.map(c => `<td>${fmt(c[0])}${c[1] ? `<small>+${fmt(c[1])}</small>` : ""}</td>`).join("")}</tr>`;
-  const cfg = { costs: GOLD_COSTS, g: goldIconSvg(16), r: goldIconSvg(16, true), gLg: goldIconSvg(34), rLg: goldIconSvg(34, true), gName: GOLD_NAME, rName: REFINED_GOLD_NAME };
+  const cfg = { costs: GOLD_COSTS, g: goldIconSvg(16), r: goldIconSvg(16, "refined"), gLg: goldIconSvg(34), rLg: goldIconSvg(34, "refined"), gName: GOLD_NAME, rName: REFINED_GOLD_NAME };
   const cfgJson = JSON.stringify(cfg).replace(/</g, "\\u003c");
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › ツール › ${GOLD_NAME}計算</nav>
 <h1>${goldIconSvg(28)} ${GOLD_NAME} 必要数計算</h1>
