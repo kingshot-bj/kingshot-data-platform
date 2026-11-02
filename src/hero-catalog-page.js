@@ -1,4 +1,5 @@
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
+import { HERO_SLUGS as HERO_PAGE_SLUGS } from "./hero-slugs.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -8,7 +9,7 @@ function heroInitial(name) {
   return [...String(name || "")].slice(0, 2).join("");
 }
 
-const HERO_TROOPS_JA = {
+export const HERO_TROOPS_JA = {
   "アルカ": "歩兵", "アマデウス": "歩兵", "エリック": "歩兵", "チャールズ": "歩兵",
   "レン&ロン": "弓兵", "ヘルガ": "歩兵", "ジェベル": "騎兵", "ゾーイ": "歩兵",
   "ヒルデ": "騎兵", "マリン": "弓兵", "イェーガー": "弓兵", "マーゴ": "騎兵",
@@ -26,7 +27,7 @@ function troopBadge(name) {
   return '<span class="catalog-troop" aria-label="兵種：' + esc(troop) + '"><img src="/assets/eagleeye/hero-troop/' + icon + '" alt="" loading="lazy"><span>' + esc(troop) + '</span></span>';
 }
 
-function skillCard(skill) {
+export function skillCard(skill) {
   return '<article class="skill-card">' +
     // Long values (e.g. "与ダメージ+25%、対象攻撃力-5%") go on their own row so the
     // skill name keeps its width instead of wrapping one character per line.
@@ -48,6 +49,7 @@ export function renderHeroCatalogPage(iconByName = {}, { origin = "" } = {}) {
       ? '<img class="hero-avatar hero-avatar-large hero-avatar-image" src="/hero-icons/assets/' + esc(iconPath) + '" alt="' + esc(name) + '" loading="lazy">'
       : '<div class="hero-avatar hero-avatar-large">' + esc(heroInitial(name)) + '</div>';
     const detail = '<div class="hero-detail-head">' + detailAvatar + '<div><p class="eyebrow">英雄</p><h2>' + esc(name) + '</h2><p class="hero-source"><a href="' + esc(data.source) + '" target="_blank" rel="noopener noreferrer">' + esc(data.sourceName || "出典ページ") + ' ↗</a><span>確認日 ' + esc(data.checkedAt || "未記録") + '</span></p></div></div>' +
+      (HERO_PAGE_SLUGS[name] ? '<p class="hero-page-link"><a href="/heroes/' + HERO_PAGE_SLUGS[name] + '">' + esc(name) + 'の個別ページ（世代・欠片・同じ兵種の英雄） →</a></p>' : '') +
       '<p class="data-note">公開資料をもとにしたスキル情報です。全項目がゲーム内で実機確認済みという意味ではありません。</p>' +
       groups.map(group => '<section class="skill-group"><div class="group-heading"><h3>' + esc(group.type) + '</h3><span>' + (group.skills || []).length + ' SKILLS</span></div><div class="skill-grid">' +
         (group.skills || []).map(skill => skillCard({ ...skill, heroSource: data.source })).join("") + '</div></section>').join("");
