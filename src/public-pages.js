@@ -189,8 +189,16 @@ export function renderRobotsTxt(origin, { preview = false } = {}) {
   return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
+// ads.txt for Google AdSense. ADSENSE_PUBLISHER_ID (pub-…) is set after approval;
+// until then /ads.txt is a 404 so no unauthorised seller line is ever published.
+export function renderAdsTxt(publisherId) {
+  const id = String(publisherId || "").trim();
+  if (!/^pub-\d{10,20}$/.test(id)) return null;
+  return `google.com, ${id}, DIRECT, f08c47fec0942fa0\n`;
+}
+
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10)) {
-  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, ...kids.map(k => `${origin}/k/${k}`)];
+  const urls = [`${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/news`, `${origin}/about`, ...kids.map(k => `${origin}/k/${k}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
 }
 
