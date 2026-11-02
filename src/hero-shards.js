@@ -81,9 +81,11 @@ export function shardHeroList(iconByName = {}) {
   return out;
 }
 
-// Shard illustration (inline SVG; rgb() so the theme normalizer leaves it alone).
+// Shard illustration: a jigsaw piece like the in-game hero shard (inline SVG;
+// rgb() so the theme normalizer leaves it alone).
+const PUZZLE_PATH = "M3 7H8.2C8.2 6 7.4 5.6 7.4 4.4A3.1 3.1 0 0 1 13.6 4.4C13.6 5.6 12.8 6 12.8 7H18V12.2C19 12.2 19.4 11.4 20.6 11.4A3.1 3.1 0 0 1 20.6 17.6C19.4 17.6 19 16.8 18 16.8V22H12.8C12.8 21 13.6 20.6 13.6 19.4A3.1 3.1 0 0 0 7.4 19.4C7.4 20.6 8.2 21 8.2 22H3V16.8C4 16.8 4.4 17.6 5.6 17.6A3.1 3.1 0 0 0 5.6 11.4C4.4 11.4 4 12.2 3 12.2Z";
 export function shardIconSvg(size = 22) {
-  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="shg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgb(255,226,140)"/><stop offset=".5" stop-color="rgb(245,166,35)"/><stop offset="1" stop-color="rgb(180,92,10)"/></linearGradient></defs><path d="M12 1.5 19 8.5 15.5 22.5h-7L5 8.5Z" fill="url(#shg)" stroke="rgb(120,60,8)" stroke-width="1" stroke-linejoin="round"/><path d="M12 1.5 9.5 8.5 12 22.5 14.5 8.5Z" fill="rgb(255,244,200)" opacity=".45"/><path d="M5 8.5h14" stroke="rgb(120,60,8)" stroke-width=".8" opacity=".6"/></svg>`;
+  return `<svg class="shard-ico" width="${size}" height="${size}" viewBox="1.8 .6 22.6 22.6" aria-hidden="true"><defs><linearGradient id="shg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgb(255,232,150)"/><stop offset=".55" stop-color="rgb(246,170,40)"/><stop offset="1" stop-color="rgb(196,100,12)"/></linearGradient></defs><path d="${PUZZLE_PATH}" fill="url(#shg)" stroke="rgb(128,64,8)" stroke-width="1.1" stroke-linejoin="round"/><path d="M5 9.2H9.6M5 9.2V12" stroke="rgb(255,250,225)" stroke-width="1.3" stroke-linecap="round" opacity=".7"/><circle cx="10.5" cy="4.2" r="1" fill="rgb(255,250,225)" opacity=".7"/></svg>`;
 }
 
 // Client side of the calculator. Serialized with toString(), so it must not
