@@ -4,7 +4,19 @@
 // - Pages without a canonical link (signed-in tools, login prompts, admin) get
 //   noindex, so thin login screens never compete with the public pages.
 
-export const OG_IMAGE_PATH = "/assets/eagleeye/bjnyan/hero_bjnyan.png";
+export const OG_IMAGE_PATH = "/assets/og/common.jpg";
+// Share card (1200×630) per section; BJにゃん art by the operator.
+const OG_BY_PATH = [
+  [/^\/tools\/hero-shards/, "/assets/og/shards.jpg"],
+  [/^\/tools\/gold-tech/, "/assets/og/goldtech.jpg"],
+  [/^\/tools\/gold/, "/assets/og/gold.jpg"],
+  [/^\/(hero-catalog|heroes\/)/, "/assets/og/heroes.jpg"],
+  [/^\/(kingdoms|k\/)/, "/assets/og/kingdoms.jpg"]
+];
+export function ogImagePath(pathname) {
+  const hit = OG_BY_PATH.find(([re]) => re.test(String(pathname || "")));
+  return hit ? hit[1] : OG_IMAGE_PATH;
+}
 
 function attr(html, re) { const m = html.match(re); return m ? m[1] : ""; }
 
@@ -15,8 +27,8 @@ export function enhanceSeo(html) {
     if (/<meta name="robots"/.test(html)) return html;
     return html.replace("</head>", '<meta name="robots" content="noindex"></head>');
   }
-  let origin = "";
-  try { origin = new URL(canonical).origin; } catch { return html; }
+  let origin = "", pathname = "/";
+  try { const u = new URL(canonical); origin = u.origin; pathname = u.pathname; } catch { return html; }
   const title = attr(html, /<title>([^<]*)<\/title>/);
   const description = attr(html, /<meta name="description" content="([^"]*)"/);
   const add = [];
@@ -25,9 +37,9 @@ export function enhanceSeo(html) {
   if (!html.includes('property="og:url"')) add.push(`<meta property="og:url" content="${canonical}">`);
   if (!html.includes('property="og:type"')) add.push('<meta property="og:type" content="website">');
   if (!html.includes('property="og:site_name"')) add.push('<meta property="og:site_name" content="EagleEye">');
-  if (!html.includes('property="og:image"')) add.push(`<meta property="og:image" content="${origin}${OG_IMAGE_PATH}">`);
+  if (!html.includes('property="og:image"')) add.push(`<meta property="og:image" content="${origin}${ogImagePath(pathname)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`);
   if (!html.includes('property="og:locale"')) add.push('<meta property="og:locale" content="ja_JP">');
-  if (!html.includes('name="twitter:card"')) add.push('<meta name="twitter:card" content="summary">');
+  if (!html.includes('name="twitter:card"')) add.push('<meta name="twitter:card" content="summary_large_image">');
   return add.length ? html.replace("</head>", add.join("") + "</head>") : html;
 }
 

@@ -46,7 +46,7 @@ export function publicOrigin(request, env = null) {
 function shell({ title, description, canonical, body, jsonLd = null, origin = "" }) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
-<meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}"><meta property="og:image" content="${esc(origin)}/assets/eagleeye/bjnyan/hero_bjnyan.png"><meta name="twitter:card" content="summary">
+<meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}">
 ${jsonLd ? '<script type="application/ld+json">' + JSON.stringify(jsonLd).replace(/</g, "\\u003c") + "</script>" : ""}
 <style>
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
