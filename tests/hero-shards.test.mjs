@@ -112,3 +112,14 @@ test("routes and entry points", () => {
   assert.match(renderEagleEyeOtherMenu({}), /href="\/tools\/hero-shards"/);
   assert.match(readFileSync(new URL("../src/hero-catalog-page.js", import.meta.url), "utf8"), /href="\/tools\/hero-shards"/);
 });
+
+test("Seth is shown as スミス everywhere; icons saved as セス still resolve", async () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /Seth: "スミス"/);
+  assert.doesNotMatch(src, /Seth: "セス"/);
+  const { getSavedHeroIconMap } = await import("../src/hero-icon-store.js");
+  const key = "heroes/" + "d".repeat(64) + ".png";
+  const db = { prepare: () => ({ all: async () => ({ results: [{ hero_name: "セス", object_key: key }] }) }) };
+  const map = await getSavedHeroIconMap(db);
+  assert.ok(map["スミス"], "legacy name maps to スミス");
+});

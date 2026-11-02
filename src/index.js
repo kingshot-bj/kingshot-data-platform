@@ -8536,7 +8536,7 @@ const HERO_NAME_JA = {
   "Wee & Woo": "レン&ロン", Yeonwoo: "インウー", Amane: "あまね",
   Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
   Fahd: "ファハド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
-  Edwin: "エドウィン", Seth: "セス", Diego: "ディエゴ", Liz: "リズ", Luna: "ルナ"
+  Edwin: "エドウィン", Seth: "スミス", Diego: "ディエゴ", Liz: "リズ", Luna: "ルナ"
 };
 const HERO_GEAR_SLOT_JA = {
   helmet: "兜", helm: "兜", head: "兜",
