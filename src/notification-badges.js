@@ -162,7 +162,7 @@ export function renderNewsPage(items, { canPost = false, isOwner = false, queued
       (isOwner && item.status === "PENDING" ? '<button type="button" class="news-approve action primary" data-id="' + escapeHtml(item.id) + '">承認</button><button type="button" class="news-reject" data-id="' + escapeHtml(item.id) + '">却下</button>' : "") +
       (canDelete(item) ? '<button type="button" class="news-delete" data-id="' + escapeHtml(item.id) + '">削除</button>' : "") + '</div></article>').join("") + '</section>' : "";
   const form = canPost ? '<section class="news-post"><h2>お知らせを投稿（管理者）</h2><input id="news-title" maxlength="120" placeholder="タイトル"><textarea id="news-body" rows="5" maxlength="4000" placeholder="本文"></textarea><label class="news-label">公開日時（空欄なら今すぐ）<input id="news-at" type="datetime-local"></label>' +
-    (isOwner ? '' : '<p class="news-note">ADMINの投稿はOWNERの承認後に公開されます。</p>') +
+    (isOwner ? '<p class="news-note">公開されるとDiscordの #📢お知らせ にも流れます。</p>' : '<p class="news-note">ADMINの投稿はOWNERの承認後に公開されます（OWNERにDiscordで通知が届きます）。公開されるとDiscordの #📢お知らせ にも流れます。</p>') +
     '<button type="button" id="news-submit" class="action primary">' + (isOwner ? "投稿する" : "承認を依頼する") + '</button><div id="news-msg" class="news-msg"></div></section>' : "";
   const script = canPost ? '<script>(function(){var msg=document.getElementById("news-msg");function call(p){return fetch("/api/admin/announcements",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().catch(function(){return {ok:false}})})}' +
     'var ERR={PUBLISH_AT_TOO_FAR:"公開日時は1年以内にしてください。",PUBLISH_AT_INVALID:"公開日時が正しくありません。",TITLE_AND_BODY_REQUIRED:"タイトルと本文を入力してください。"};' +
