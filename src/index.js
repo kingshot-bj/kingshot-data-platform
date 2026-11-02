@@ -52,6 +52,8 @@ import { buildHomeSummary } from "./home-summary.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
+import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
+import { runKvkMysticCollection } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
 import { loadPublicKingdom, renderPublicKingdomPage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
@@ -5001,8 +5003,10 @@ export default {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
-      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB)), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
+      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => [])), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
+      if (url.pathname === "/kvk/matchups") { const season = await currentKvkSeason(env.DB); return Response.redirect(new URL(season ? "/kvk/s" + season : "/kvk", url).toString(), 302); }
+      { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }); } }
       if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })));
       if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })));
       if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }));
@@ -5248,6 +5252,12 @@ export default {
       if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
     } catch (error) {
       console.error("kvk_collection_failed", error?.message || error);
+    }
+    try {
+      const mystic = await runKvkMysticCollection(env);
+      if (mystic?.failed || mystic?.reason === "BREAKER_OPEN") console.error("kvk_mystic_collection", JSON.stringify(mystic));
+    } catch (error) {
+      console.error("kvk_mystic_collection_failed", error?.message || error);
     }
     try {
       const announce = await runAnnouncementDiscordSync(env);
@@ -11077,7 +11087,7 @@ ${EAGLEEYE_NAV_CSS}
   <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
   <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><strong>マイKingShot</strong><small>自分のデータ</small></a>
 </section>
-<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section><section class="ee-home-tools" aria-label="無料ツール"><h2>無料ツール（ログイン不要）</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><b>英雄の欠片計算</b><small>★5までの必要数</small></a><a href="/tools/gold"><b>黄金（TG）計算</b><small>建物ごとのTG1〜8</small></a><a href="/tools/gold-tech"><b>黄金テクノロジー研究</b><small>T11研究の必要数</small></a><a href="/hero-catalog"><b>英雄カタログ</b><small>全英雄のスキル</small></a><a href="/kingdoms"><b>王国一覧</b><small>戦力・成長・KvK</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
+<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section><section class="ee-home-tools" aria-label="無料ツール"><h2>無料ツール（ログイン不要）</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><b>英雄の欠片計算</b><small>★5までの必要数</small></a><a href="/tools/gold"><b>黄金（TG）計算</b><small>建物ごとのTG1〜8</small></a><a href="/tools/gold-tech"><b>黄金テクノロジー研究</b><small>T11研究の必要数</small></a><a href="/hero-catalog"><b>英雄カタログ</b><small>全英雄のスキル</small></a><a href="/kingdoms"><b>王国一覧</b><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><b>KvK組み合わせ</b><small>今シーズンの戦力差</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
 <section class="ee-summary">
   <a class="ee-stat" href="/watchlist"><div class="ee-stat-label">ウォッチ中のプレイヤー</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div></a>
   <a class="ee-stat" href="/kingdom-watchlist"><div class="ee-stat-label">ウォッチ中の王国</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div></a>

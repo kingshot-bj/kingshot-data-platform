@@ -1,4 +1,5 @@
 import { archiveKingdomGrowthRows } from "./kingdom-growth-history.js";
+import { saveKingdomStats } from "./kingdom-stats.js";
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
@@ -167,6 +168,9 @@ export async function runKingdomCatalogDiscovery(env, {
     if (statements.length) await env.DB.batch(statements);
     // Daily growth history from the same list response (no extra API calls).
     const growthWritten = env.ARCHIVE ? await archiveKingdomGrowthRows(env.ARCHIVE, uniqueCandidates, now) : 0;
+    // Latest headline stats for KvK matchup comparisons (same response; never blocks the crawl).
+    let statsWritten = 0;
+    try { statsWritten = await saveKingdomStats(env.DB, uniqueCandidates, now); } catch (error) { console.error("kingdom_stats_save_failed", error?.message || error); }
 
     const rowsSaved = statements.length;
     const newKingdoms = inserts.length;
@@ -187,7 +191,7 @@ export async function runKingdomCatalogDiscovery(env, {
       rowsReceived: rows.length,
       rowsSaved,
       message: "王国Catalogの1ページ取得が完了しました。",
-      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms, updatedKingdoms, growthWritten, existingKingdoms: uniqueCandidates.length - newKingdoms - updatedKingdoms }
+      metadata: { page: targetPage, pageSize: safePageSize, nextPage, newKingdoms, updatedKingdoms, growthWritten, statsWritten, existingKingdoms: uniqueCandidates.length - newKingdoms - updatedKingdoms }
     });
     await recordSystemEvent(env.DB, {
       traceId,

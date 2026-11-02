@@ -358,7 +358,7 @@ h2{font-size:17px;margin:22px 0 8px}.days{display:grid;gap:8px}.day{padding:10px
 .mine{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}.mine a{padding:6px 10px;border:1px solid #2a4664;border-radius:999px;color:#9eeeff;text-decoration:none;font-size:12px}.mine a.on{border-color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#103047)}
 .countdown{display:flex;flex-direction:column;align-items:center;gap:2px;margin:12px 0;padding:12px;border:1px solid rgba(246,200,75,.35);border-radius:14px;background:#1a1a12}.countdown small{color:#d6c48a;font-size:11px}.countdown strong{font-size:26px;color:#f6c84b;font-variant-numeric:tabular-nums;letter-spacing:1px}
 .chart{padding:10px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.chart svg{display:block;width:100%;height:auto}.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:11px}.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle;border-radius:2px}
-.mystic{padding:10px 12px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.mystic-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px}.mystic-head em{font-style:normal;font-weight:800;font-size:12px}.mystic-head em.up{color:#22d3ee}.mystic-head em.down{color:var(--ee-rival,#f87171)}.mystic small{display:block;margin-top:4px;font-size:11px}
+.ranks{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin:6px 0 2px;font-size:11px;color:#94a3b8}.ranks span:first-child{grid-row:1/3;align-self:center;font-weight:700}.ranks span{overflow-wrap:anywhere}.mystic{padding:10px 12px;border:1px solid #1d344d;border-radius:12px;background:#0f2035}.mystic-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:13px}.mystic-head em{font-style:normal;font-weight:800;font-size:12px}.mystic-head em.up{color:#22d3ee}.mystic-head em.down{color:var(--ee-rival,#f87171)}.mystic small{display:block;margin-top:4px;font-size:11px}
 .history{display:grid;gap:6px}.hist{display:grid;grid-template-columns:40px 1fr auto 40px;gap:8px;align-items:center;padding:9px 11px;border:1px solid #1d344d;border-radius:10px;background:#0f2035;font-size:13px}.hist a{color:#9eeeff;text-decoration:none}.hist em{font-style:normal;font-weight:800;text-align:right}.hist.win em{color:#22d3ee}.hist.loss em{color:var(--ee-rival,#f87171)}.hist span:nth-child(3){font-variant-numeric:tabular-nums;color:#c9d6e3}
 .table{display:grid;gap:4px;margin-top:8px}.table a{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;padding:8px 10px;border:1px solid #1d344d;border-radius:9px;background:#0f2035;color:#e8f3ff;text-decoration:none;font-size:13px}
 .table a span:last-child{text-align:right}.table a b{color:#f6c84b;font-size:11px}.empty{padding:16px;border:1px dashed #2a4965;border-radius:12px;color:#91a7bf}
@@ -506,7 +506,7 @@ export function summarizeMysticBoards(rows) {
       .map(r => Number(r.score) - board.offset).filter(v => Number.isFinite(v) && v >= 0);
     if (!values.length) continue;
     const avg = list => list.reduce((x, y) => x + y, 0) / list.length;
-    out[board.key] = { best: Math.max(...values), top10: avg(values.slice(0, 10)), top50: avg(values), count: values.length };
+    out[board.key] = { best: Math.max(...values), top10: avg(values.slice(0, 10)), top50: avg(values), count: values.length, top: [...values].sort((x, y) => y - x).slice(0, 10) };
   }
   return out;
 }
@@ -523,23 +523,27 @@ async function renderMysticComparison(env, kid, opponent) {
   let mine, theirs;
   try { [mine, theirs] = await Promise.all([loadMysticRows(env, kid), loadMysticRows(env, opponent)]); }
   catch (error) { console.error("kvk_mystic_read_failed", kid, opponent, error?.message || error); return ""; }
-  const a = summarizeMysticBoards(mine.rows), b = summarizeMysticBoards(theirs.rows);
+  let a = summarizeMysticBoards(mine.rows), b = summarizeMysticBoards(theirs.rows);
+  // Kingdoms outside the ranking watch: use the season's KvK Mystic summary (top 10).
+  const fromSummary = async kid => { try { const r = await env.DB.prepare("SELECT boards_json, fetched_at FROM kvk_mystic_summary WHERE kid = ? AND status = 'OK' ORDER BY season DESC LIMIT 1").bind(kid).first(); return r ? { boards: JSON.parse(r.boards_json), at: Number(r.fetched_at) } : null; } catch { return null; } };
+  if (!Object.keys(a).length) { const f = await fromSummary(kid); if (f) { a = f.boards; mine.updated = f.at; } }
+  if (!Object.keys(b).length) { const f = await fromSummary(opponent); if (f) { b = f.boards; theirs.updated = f.at; } }
   const boards = KVK_MYSTIC_BOARDS.filter(board => a[board.key] && b[board.key]);
   if (!boards.length) return `<h2>秘境の試練の比較</h2><div class="empty">両方の王国の秘境の試練ランキングがそろうと比較を表示します。</div>`;
   const fmt = v => (Math.round(v * 10) / 10).toLocaleString("ja-JP");
   let wins = 0, losses = 0;
   const rowsHtml = boards.map(board => {
     const x = a[board.key], y = b[board.key];
-    const diff = x.top10 - y.top10;
+    const diff = x.best - y.best;
     if (diff > 0) wins++; else if (diff < 0) losses++;
-    const max = Math.max(x.top10, y.top10, 1);
+    const max = Math.max(x.best, y.best, 1);
     return `<div class="mystic"><div class="mystic-head"><b>${esc(board.label)}</b><em class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff > 0 ? "優勢" : diff < 0 ? "劣勢" : "互角"}</em></div>
-<div class="day-row"><span>${kid}</span><div class="track"><i style="width:${Math.round(x.top10 / max * 100)}%"></i></div><span>${esc(fmt(x.top10))}</span></div>
-<div class="day-row"><span>${opponent}</span><div class="track opp"><i style="width:${Math.round(y.top10 / max * 100)}%"></i></div><span>${esc(fmt(y.top10))}</span></div>
-<small class="muted">1位 ${esc(fmt(x.best))} 対 ${esc(fmt(y.best))} · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}</small></div>`;
+<div class="day-row"><span>${kid}</span><div class="track"><i style="width:${Math.round(x.best / max * 100)}%"></i></div><span>${esc(fmt(x.best))}</span></div>
+<div class="day-row"><span>${opponent}</span><div class="track opp"><i style="width:${Math.round(y.best / max * 100)}%"></i></div><span>${esc(fmt(y.best))}</span></div>
+${Array.isArray(x.top) && Array.isArray(y.top) && (x.top.length > 1 || y.top.length > 1) ? `<div class="ranks"><span>2〜10位</span><span>${esc(x.top.slice(1, 10).map(fmt).join(" / ") || "—")}</span><span>${esc(y.top.slice(1, 10).map(fmt).join(" / ") || "—")}</span></div>` : ""}<small class="muted">上位10人平均 ${esc(fmt(x.top10))} 対 ${esc(fmt(y.top10))}${x.top50 != null && y.top50 != null ? ` · 上位${MYSTIC_TOP}人平均 ${esc(fmt(x.top50))} 対 ${esc(fmt(y.top50))}` : ""}</small></div>`;
   }).join("");
   const dateNote = side => side.archived ? formatArchiveDate(side.updated) + "（アーカイブ）" : ts(side.updated);
-  return `<h2>秘境の試練の比較</h2><p class="muted">上位10人の平均で比較 · ${boards.length}項目中 <b>${wins}項目で優勢</b>${losses ? "・" + losses + "項目で劣勢" : ""}<br>データ：王国${kid} ${esc(dateNote(mine))} ／ 王国${opponent} ${esc(dateNote(theirs))}</p><div class="days">${rowsHtml}</div>`;
+  return `<h2>秘境の試練の比較</h2><p class="muted">各ステージの1位の記録で比較 · ${boards.length}項目中 <b>${wins}項目で優勢</b>${losses ? "・" + losses + "項目で劣勢" : ""}<br>データ：王国${kid} ${esc(dateNote(mine))} ／ 王国${opponent} ${esc(dateNote(theirs))}</p><div class="days">${rowsHtml}</div>`;
 }
 
 function renderScoreSection(kid, score, currentSeason) {
