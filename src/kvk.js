@@ -11,6 +11,7 @@
 // full matchup table. Viewing a stale kingdom fetches it once per hour at most.
 
 import { collectMightyOnly } from "./data-collection-engine.js";
+import { stageLabelFromValue } from "./kvk-mystic.js";
 import { EAGLEEYE_THEME_BASE_CSS } from "./eagleeye-ui.js";
 import { withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { buildKvkScoreNotifications, buildKvkMatchupNotifications, enqueueKvkNotifications, kvkPublicOrigin, KVK_CURRENT_KINGDOM_SQL, KVK_LINKS_FROM_SQL } from "./kvk-discord.js";
@@ -534,7 +535,7 @@ async function renderMysticComparison(env, kid, opponent) {
   const boards = KVK_MYSTIC_BOARDS.filter(board => a[board.key] && b[board.key]);
   if (!boards.length) return `<h2>秘境の試練の比較</h2><div class="empty">両方の王国の秘境の試練ランキングがそろうと比較を表示します。</div>`;
   const fmt = v => (Math.round(v * 10) / 10).toLocaleString("ja-JP");
-  const stage = (side, i) => (Array.isArray(side.labels) && side.labels[i]) || fmt(i === 0 ? side.best : side.top[i]);
+  const stage = (side, i) => (Array.isArray(side.labels) && side.labels[i]) || stageLabelFromValue(i === 0 ? side.best : side.top[i]) || fmt(i === 0 ? side.best : side.top[i]);
   let wins = 0, losses = 0;
   const rowsHtml = boards.map(board => {
     const x = a[board.key], y = b[board.key];

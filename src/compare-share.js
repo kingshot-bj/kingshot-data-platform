@@ -73,7 +73,10 @@ export function compareShareClient(cfg) {
         var v = b.value != null ? b.value : b.score != null ? b.score : b.rank_value;
         var num = Number(v);
         if (v == null || v === "" || !isFinite(num)) return;
-        out[hit] = { v: num, label: b.value_label ? String(b.value_label) : null };
+        var off = { coliseum: 10000, forest_of_life: 20000, crystal_cave: 30000, knowledge_nexus: 40000, molten_fort: 50000, radiant_spire: 60000 }[hit];
+        var st = num > off ? num - off : num, n = Math.round(st);
+        // ラベルが無い時は「章-ステージ」を計算（1章10ステージ、APIラベルと一致を確認済み）
+        out[hit] = { v: num, label: b.value_label ? String(b.value_label) : (n >= 1 ? (Math.floor((n - 1) / 10) + 1) + "-" + ((n - 1) % 10 + 1) : null) };
       });
     });
     return out;

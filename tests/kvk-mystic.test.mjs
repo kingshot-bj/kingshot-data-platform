@@ -93,17 +93,39 @@ test("ゲームと同じ「60-7」表記のラベルを、並べ替え後の順�
   assert.equal(n.coliseum.labels, undefined, "ラベルが無ければ持たない（数値表示のまま）");
 });
 
-test("取得順：ユーザー・ウォッチ中の王国とその対戦相手を先に", async () => {
+test("取得順：対戦の両側の王国を取り、ユーザー・ウォッチ中の王国の対戦を先に", async () => {
   const { KVK_MYSTIC_TODO_SQL } = await import("../src/kvk-mystic.js");
   assert.match(KVK_MYSTIC_TODO_SQL, /FROM user_player_links l .* WHERE l\.status = 'ACTIVE'/);
   assert.match(KVK_MYSTIC_TODO_SQL, /UNION SELECT kid FROM kingdom_watchlists WHERE enabled = 1/);
-  assert.match(KVK_MYSTIC_TODO_SQL, /ORDER BY CASE WHEN m\.kid IN \(SELECT kid FROM pk\) OR m\.opponent IN \(SELECT kid FROM pk\) THEN 0 ELSE 1 END, m\.kid LIMIT \?/);
-  assert.equal((KVK_MYSTIC_TODO_SQL.match(/\?/g) || []).length, 2, "season と件数の2つだけ");
+  assert.match(KVK_MYSTIC_TODO_SQL, /UNION ALL SELECT m\.opponent, m\.kid,/, "1対戦1行なので相手側（opponent）も対象にする");
+  assert.match(KVK_MYSTIC_TODO_SQL, /ORDER BY MIN\(x\.prio\), MIN\(x\.pair\), x\.kid LIMIT \?2/, "同じ対戦の2王国を続けて取る");
+  assert.doesNotMatch(KVK_MYSTIC_TODO_SQL.replace(/\?[12]/g, ""), /\?/, "season(?1) と件数(?2) だけ");
 });
 
 test("KvK画面はラベルがあれば「60-7」で表示する", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../src/kvk.js", import.meta.url), "utf8");
-  assert.match(src, /const stage = \(side, i\) => \(Array\.isArray\(side\.labels\) && side\.labels\[i\]\) \|\| fmt/);
+  assert.match(src, /const stage = \(side, i\) => \(Array\.isArray\(side\.labels\) && side\.labels\[i\]\) \|\| stageLabelFromValue\(/);
   assert.match(src, /hasLabels\(sa\.boards\)/);
+});
+
+test("取得順のSQLを実際のSQLiteで実行：相手側も取り、ユーザーの対戦が先・同じ対戦は続けて", async t => {
+  let DatabaseSync;
+  try { ({ DatabaseSync } = await import("node:sqlite")); } catch { t.skip("node:sqlite がない環境"); return; }
+  const { KVK_MYSTIC_TODO_SQL } = await import("../src/kvk-mystic.js");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE user_player_links(user_id, governor_id, kingdom_id, status); CREATE TABLE players(governor_id, kid); CREATE TABLE kingdom_watchlists(kid, enabled); CREATE TABLE kvk_matchups(season, kid, opponent); CREATE TABLE kvk_mystic_summary(season, kid, status);");
+  db.exec("INSERT INTO user_player_links VALUES (1, 'g', 1524, 'ACTIVE'); INSERT INTO players VALUES ('g', 1524);");
+  db.exec("INSERT INTO kvk_matchups VALUES (23, 1, 118), (23, 2, 189), (23, 1523, 1524), (23, 5, NULL), (22, 7, 8);");
+  db.exec("INSERT INTO kvk_mystic_summary VALUES (23, 1, 'OK'), (23, 1523, 'OK');");
+  const kids = db.prepare(KVK_MYSTIC_TODO_SQL).all(23, 10).map(r => r.kid);
+  assert.deepEqual(kids, [1524, 118, 2, 189, 5]);
+  assert.deepEqual(db.prepare(KVK_MYSTIC_TODO_SQL).all(23, 2).map(r => r.kid), [1524, 118]);
+});
+
+test("数値から「章-ステージ」：1章10ステージ（APIラベルと一致）", async () => {
+  const { stageLabelFromValue } = await import("../src/kvk-mystic.js");
+  for (const [v, l] of [[605, "61-5"], [520, "52-10"], [496, "50-6"], [573, "58-3"], [256, "26-6"], [597, "60-7"], [1, "1-1"], [10, "1-10"]]) assert.equal(stageLabelFromValue(v), l, String(v));
+  assert.equal(stageLabelFromValue(0), null);
+  assert.equal(stageLabelFromValue(null), null);
 });
