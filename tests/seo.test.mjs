@@ -44,3 +44,10 @@ test("share card image per section (BJにゃん cards)", async () => {
     assert.ok(existsSync(new URL(`../public/assets/og/${name}.jpg`, import.meta.url)), name + ".jpg exists");
   }
 });
+
+test("ホームに本物のH1がある（CSSの疑似要素の文字は検索エンジンに見えない）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /<h1 class="ee-welcome-h1">キングショット 観測ダッシュボード<\/h1>/);
+  assert.match(src, /\.ee-welcome-copy:before\{content:none!important/);
+});
