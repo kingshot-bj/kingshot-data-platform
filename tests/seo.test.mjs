@@ -27,9 +27,9 @@ test("Japanese search term キングショット in titles; structured data on t
   assert.match(renderHeroShardPage({ origin: "https://x" }), /"@type":"BreadcrumbList"/);
   assert.match(websiteJsonLd("https://x"), /"@type":"WebSite"/);
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(src, /<title>キングショット（KingShot）王国・プレイヤー観測と計算ツール \| EagleEye<\/title>/);
+  assert.match(src, /<title>キングショット（KingShot）分析・攻略ツール｜王国・プレイヤー観測 \| EagleEye<\/title>/);
   assert.match(src, /class="ee-home-tools"/, "home links the free tools");
-  for (const href of ["/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/hero-catalog"]) assert.ok(src.includes('<a href="' + href + '"><b>'), href);
+  for (const href of ["/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/hero-catalog"]) assert.ok(src.includes('<a href="' + href + '"><h3 class="ee-h"><b>'), href);
 });
 
 test("sitemap lists only public (canonical) pages", () => {
@@ -51,7 +51,7 @@ test("share card image per section (BJにゃん cards)", async () => {
 test("ホームに本物のH1がある（CSSの疑似要素の文字は検索エンジンに見えない）", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(src, /<h1 class="ee-welcome-h1">キングショット 観測ダッシュボード<\/h1>/);
+  assert.match(src, /<h1 class="ee-welcome-h1">キングショット 分析・攻略ダッシュボード<\/h1>/);
   assert.match(src, /\.ee-welcome-copy:before\{content:none!important/);
 });
 
@@ -73,4 +73,12 @@ test("王国一覧：日本語H1と構造化データ（パンくず）", async 
   const html = renderPublicKingdomsIndex([1, 2, 1524], { origin: "https://eagleeye-ks.com" });
   assert.match(html, /<h1>キングショット 王国一覧<\/h1>/);
   assert.match(html, /"@type":"BreadcrumbList"/);
+});
+
+test("ホームの見出し構造：H1→H2（主要メニュー・ツール）→H3（各メニュー・各ツール）、分析・攻略のキーワード", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /<h2 class="ee-h"><b>主要メニュー<\/b><\/h2>/);
+  assert.equal((src.match(/<h3 class="ee-h"><strong>/g) || []).length, 6, "主要メニュー6つ");
+  assert.match(src, /<a href="\/tools\/gold"><h3 class="ee-h"><b>黄金計算<\/b><\/h3>/);
+  assert.match(src, /content="キングショット（KingShot）の分析・攻略に役立つ/);
 });

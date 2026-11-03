@@ -62,7 +62,7 @@ test("wiring: routes, sitemap, links, share card", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /url\.pathname === "\/kvk\/matchups"/);
   assert.match(src, /url\.pathname\.match\(\/\^\\\/kvk\\\/s\(\\d\{1,4\}\)\\\/\?\$\/\)/);
-  assert.match(src, /<a href="\/kvk\/matchups"><b>KvK組み合わせ<\/b>/);
+  assert.match(src, /<a href="\/kvk\/matchups"><h3 class="ee-h"><b>KvK組み合わせ<\/b>/);
   assert.match(readFileSync(new URL("../src/kingdom-catalog.js", import.meta.url), "utf8"), /saveKingdomStats\(env\.DB, uniqueCandidates, now\)/);
   assert.match(renderSitemapXml("https://x", [], undefined, ["/kvk/s23"]), /<loc>https:\/\/x\/kvk\/s23<\/loc>/);
   assert.equal(ogImagePath("/kvk/s23"), "/assets/og/kingdoms.jpg");
