@@ -13,6 +13,13 @@ import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 export const MYSTIC_STAGE_KEYS = Object.freeze(["coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
 export const KVK_MYSTIC_PER_RUN = 2;
 export const KVK_MYSTIC_DAILY_CAP = 600;
+export const KVK_MYSTIC_TODO_SQL =
+  "WITH pk(kid) AS (" +
+  "SELECT CAST(COALESCE(p.kid, l.kingdom_id) AS INTEGER) FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id WHERE l.status = 'ACTIVE' " +
+  "UNION SELECT kid FROM kingdom_watchlists WHERE enabled = 1) " +
+  "SELECT m.kid FROM kvk_matchups m LEFT JOIN kvk_mystic_summary s ON s.season = m.season AND s.kid = m.kid " +
+  "WHERE m.season = ? AND s.kid IS NULL " +
+  "ORDER BY CASE WHEN m.kid IN (SELECT kid FROM pk) OR m.opponent IN (SELECT kid FROM pk) THEN 0 ELSE 1 END, m.kid LIMIT ?";
 const BREAKER_LIMIT = 5;
 // Same offsets / labels as KVK_MYSTIC_BOARDS in kvk.js (kept here to avoid a circular import).
 const OFFSETS = { mystic_trial: 0, coliseum: 10000, forest_of_life: 20000, crystal_cave: 30000, knowledge_nexus: 40000, molten_fort: 50000, radiant_spire: 60000 };
@@ -43,6 +50,15 @@ function rowsOf(wrapper) {
   return [];
 }
 
+// 「最高クリアステージ」の表示用ラベル（例 "60-7"）。章ごとにステージ数が違うので数値からは作れない。
+export function stageLabelOf(row) {
+  for (const k of ["value_label", "score_label", "display_value", "display_score", "stage_label"]) {
+    const v = row?.[k];
+    if (typeof v === "string" && /^\d{1,3}\s*-\s*\d{1,3}$/.test(v.trim())) return v.trim().replace(/\s+/g, "");
+  }
+  return null;
+}
+
 // boards: { coliseum: { top10, best, count }, ... } from a kingdom ?include=boards payload.
 export function summarizeKingdomBoards(payload) {
   const root = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
@@ -53,11 +69,15 @@ export function summarizeKingdomBoards(payload) {
     const key = boardKeyOf(w);
     if (!key || out[key]) continue;
     const offset = OFFSETS[key] || 0;
-    const values = rowsOf(w).filter(r => r && (r.governor_id != null || r.uid != null || r.nick_name != null))
-      .map(r => Number(r.score ?? r.value) - offset).filter(v => Number.isFinite(v) && v >= 0).slice(0, 10);
-    if (!values.length) continue;
-    const top = [...values].sort((a, b) => b - a);
+    const items = rowsOf(w).filter(r => r && (r.governor_id != null || r.uid != null || r.nick_name != null))
+      .map(r => ({ v: Number(r.score ?? r.value) - offset, label: stageLabelOf(r) })).filter(x => Number.isFinite(x.v) && x.v >= 0).slice(0, 10);
+    if (!items.length) continue;
+    const values = items.map(x => x.v);
+    const sorted = [...items].sort((a, b) => b.v - a.v);
+    const top = sorted.map(x => x.v);
     out[key] = { top10: Math.round(values.reduce((a, b) => a + b, 0) / values.length * 10) / 10, best: top[0], count: values.length, top };
+    // ゲームと同じ「60-7」表記（API が表示用ラベルを返す時だけ）。並びは top と同じ。
+    if (sorted.some(x => x.label)) out[key].labels = sorted.map(x => x.label || null);
   }
   return out;
 }
@@ -91,7 +111,8 @@ export async function runKvkMysticCollection(env, { now = Math.floor(Date.now() 
   if (breaker?.season === season && breaker?.open) return { skipped: true, reason: "BREAKER_OPEN", season };
   const today = await db.prepare("SELECT COUNT(*) AS n FROM kvk_mystic_summary WHERE fetched_at > ?").bind(now - 86400).first();
   if (Number(today?.n || 0) >= KVK_MYSTIC_DAILY_CAP) return { skipped: true, reason: "DAILY_CAP", season };
-  const todo = (await db.prepare("SELECT m.kid FROM kvk_matchups m LEFT JOIN kvk_mystic_summary s ON s.season = m.season AND s.kid = m.kid WHERE m.season = ? AND s.kid IS NULL ORDER BY m.kid LIMIT ?").bind(season, perRun).all())?.results || [];
+  // EagleEye ユーザーの王国・ウォッチ中の王国と、その対戦相手を先に取る（使われている比較から先に出す）。
+  const todo = (await db.prepare(KVK_MYSTIC_TODO_SQL).bind(season, perRun).all())?.results || [];
   const summary = { season, fetched: 0, empty: 0, failed: 0 };
   let emptyStreak = Number(breaker?.season === season ? breaker.emptyStreak || 0 : 0);
   for (const { kid } of todo) {
