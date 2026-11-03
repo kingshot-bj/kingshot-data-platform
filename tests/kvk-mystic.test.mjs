@@ -79,3 +79,31 @@ test("summaries keep the top 10 records so the login view can show 2位以降", 
   assert.deepEqual(s.radiant_spire.top, [30, 20, 10]);
   assert.equal(s.radiant_spire.best, 30);
 });
+
+test("ゲームと同じ「60-7」表記のラベルを、並べ替え後の順で保存する", async () => {
+  const { stageLabelOf } = await import("../src/kvk-mystic.js");
+  assert.equal(stageLabelOf({ value_label: "60-7" }), "60-7");
+  assert.equal(stageLabelOf({ score_label: " 53 - 9 " }), "53-9");
+  assert.equal(stageLabelOf({ value_label: "593" }), null);
+  assert.equal(stageLabelOf({}), null);
+  const s = summarizeKingdomBoards({ boards: [{ key: "coliseum", entries: [{ governor_id: 1, score: 10529, value_label: "53-9" }, { governor_id: 2, score: 10597, value_label: "60-7" }] }] });
+  assert.deepEqual(s.coliseum.top, [597, 529]);
+  assert.deepEqual(s.coliseum.labels, ["60-7", "53-9"]);
+  const n = summarizeKingdomBoards({ boards: [{ key: "coliseum", entries: [{ governor_id: 1, score: 10529 }] }] });
+  assert.equal(n.coliseum.labels, undefined, "ラベルが無ければ持たない（数値表示のまま）");
+});
+
+test("取得順：ユーザー・ウォッチ中の王国とその対戦相手を先に", async () => {
+  const { KVK_MYSTIC_TODO_SQL } = await import("../src/kvk-mystic.js");
+  assert.match(KVK_MYSTIC_TODO_SQL, /FROM user_player_links l .* WHERE l\.status = 'ACTIVE'/);
+  assert.match(KVK_MYSTIC_TODO_SQL, /UNION SELECT kid FROM kingdom_watchlists WHERE enabled = 1/);
+  assert.match(KVK_MYSTIC_TODO_SQL, /ORDER BY CASE WHEN m\.kid IN \(SELECT kid FROM pk\) OR m\.opponent IN \(SELECT kid FROM pk\) THEN 0 ELSE 1 END, m\.kid LIMIT \?/);
+  assert.equal((KVK_MYSTIC_TODO_SQL.match(/\?/g) || []).length, 2, "season と件数の2つだけ");
+});
+
+test("KvK画面はラベルがあれば「60-7」で表示する", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/kvk.js", import.meta.url), "utf8");
+  assert.match(src, /const stage = \(side, i\) => \(Array\.isArray\(side\.labels\) && side\.labels\[i\]\) \|\| fmt/);
+  assert.match(src, /hasLabels\(sa\.boards\)/);
+});
