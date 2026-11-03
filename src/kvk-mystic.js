@@ -13,13 +13,18 @@ import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
 export const MYSTIC_STAGE_KEYS = Object.freeze(["coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
 export const KVK_MYSTIC_PER_RUN = 2;
 export const KVK_MYSTIC_DAILY_CAP = 600;
+// kvk_matchups は1対戦1行（kid < opponent）なので、両側の王国を対象にする。
+// 同じ対戦の2王国を続けて取り、比較がそろった組から順に出るようにする。
+// EagleEye ユーザーの王国・ウォッチ中の王国がいる対戦を先に。?1 = season, ?2 = 件数。
 export const KVK_MYSTIC_TODO_SQL =
   "WITH pk(kid) AS (" +
   "SELECT CAST(COALESCE(p.kid, l.kingdom_id) AS INTEGER) FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id WHERE l.status = 'ACTIVE' " +
-  "UNION SELECT kid FROM kingdom_watchlists WHERE enabled = 1) " +
-  "SELECT m.kid FROM kvk_matchups m LEFT JOIN kvk_mystic_summary s ON s.season = m.season AND s.kid = m.kid " +
-  "WHERE m.season = ? AND s.kid IS NULL " +
-  "ORDER BY CASE WHEN m.kid IN (SELECT kid FROM pk) OR m.opponent IN (SELECT kid FROM pk) THEN 0 ELSE 1 END, m.kid LIMIT ?";
+  "UNION SELECT kid FROM kingdom_watchlists WHERE enabled = 1), " +
+  "sides(kid, pair, prio) AS (" +
+  "SELECT m.kid, m.kid, CASE WHEN m.kid IN (SELECT kid FROM pk) OR m.opponent IN (SELECT kid FROM pk) THEN 0 ELSE 1 END FROM kvk_matchups m WHERE m.season = ?1 " +
+  "UNION ALL SELECT m.opponent, m.kid, CASE WHEN m.kid IN (SELECT kid FROM pk) OR m.opponent IN (SELECT kid FROM pk) THEN 0 ELSE 1 END FROM kvk_matchups m WHERE m.season = ?1 AND m.opponent IS NOT NULL) " +
+  "SELECT x.kid FROM sides x LEFT JOIN kvk_mystic_summary s ON s.season = ?1 AND s.kid = x.kid " +
+  "WHERE s.kid IS NULL GROUP BY x.kid ORDER BY MIN(x.prio), MIN(x.pair), x.kid LIMIT ?2";
 const BREAKER_LIMIT = 5;
 // Same offsets / labels as KVK_MYSTIC_BOARDS in kvk.js (kept here to avoid a circular import).
 const OFFSETS = { mystic_trial: 0, coliseum: 10000, forest_of_life: 20000, crystal_cave: 30000, knowledge_nexus: 40000, molten_fort: 50000, radiant_spire: 60000 };
@@ -57,6 +62,13 @@ export function stageLabelOf(row) {
     if (typeof v === "string" && /^\d{1,3}\s*-\s*\d{1,3}$/.test(v.trim())) return v.trim().replace(/\s+/g, "");
   }
   return null;
+}
+
+// 数値（オフセット除去後）→「章-ステージ」。1章10ステージ（API の value_label と一致を確認：605→61-5、520→52-10）。
+export function stageLabelFromValue(v) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 1) return null;
+  return (Math.floor((n - 1) / 10) + 1) + "-" + ((n - 1) % 10 + 1);
 }
 
 // boards: { coliseum: { top10, best, count }, ... } from a kingdom ?include=boards payload.
