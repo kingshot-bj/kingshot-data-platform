@@ -2723,7 +2723,7 @@ async function renderPlayerWatchlistPage(request, env) {
 <style>
 body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
-.list{display:grid;gap:12px}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
+.list{display:grid;gap:12px}.kingdom-group{display:grid;gap:10px;margin-bottom:8px}.kingdom-list{display:grid;gap:12px}.kingdom-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:6px 2px 0;font-size:16px}.kingdom-head span{font-size:11px;font-weight:600;color:var(--ee-subtext,#94a3b8)}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:14px;overflow-wrap:anywhere}
 .change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.ranking-changes{display:grid;gap:6px;margin-top:8px}.ranking-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#0f172a;border:1px solid #273449;font-size:11px}.ranking-row .label{color:#cbd5e1;min-width:0;overflow-wrap:anywhere}.ranking-row .value{font-weight:900;text-align:right;white-space:nowrap}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
 .compare-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid #334155;border-radius:14px;background:#111c31}.compare-toolbar span{display:block;margin-top:3px;color:#94a3b8;font-size:11px}.compare-check{display:inline-flex;align-items:center;gap:6px;color:#cbd5e1;font-size:12px;font-weight:800}.compare-check input{accent-color:var(--ee-cyan,#22d3ee)}.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:var(--ee-cyan,#22d3ee);color:#062033;border-color:var(--ee-cyan,#22d3ee)}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
@@ -2921,7 +2921,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
       window.__eagleEyePlayerWatchlistCount=(d.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
       if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(window.__eagleEyePlayerWatchlistCount);
       if(!(d.watchlist||[]).length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
-      root.innerHTML=d.watchlist.map(x=>{
+      const card=x=>{
         const s=x.summary||{};
         const powerChange=powerChangeText(s);
         const rankingChanges=Array.isArray(s.ranking_changes)?s.ranking_changes:[];
@@ -2951,7 +2951,14 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
             '</div>'+
             '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
           '</details></article>';
-      }).join("");
+      };
+      // 王国ごとに分け、王国内は「秘境の試練」の王国内順位が高い順（順位が無い人は後ろで戦力順）。
+      const mysticRank=x=>{const r=((x.summary||{}).ranking_changes||[]).find(v=>v.board==="mystic_trial");return r&&r.current!=null?Number(r.current):null;};
+      const groups=new Map();
+      d.watchlist.forEach(x=>{const k=x.kid==null?"?":String(x.kid);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
+      const byStrength=(a,b)=>{const ra=mysticRank(a),rb=mysticRank(b);if(ra!=null&&rb!=null&&ra!==rb)return ra-rb;if(ra!=null&&rb==null)return -1;if(ra==null&&rb!=null)return 1;return (Number(b.power)||0)-(Number(a.power)||0);};
+      const kingdomOrder=[...groups.keys()].sort((a,b)=>(groups.get(b).length-groups.get(a).length)||(a==="?"?1:b==="?"?-1:Number(a)-Number(b)));
+      root.innerHTML=kingdomOrder.map(k=>{const list=groups.get(k).slice().sort(byStrength);return '<section class="kingdom-group"><h2 class="kingdom-head">'+(k==="?"?"王国不明":"王国 "+esc(k))+'<span>'+list.length+'人・秘境の試練の王国内順位順</span></h2><div class="kingdom-list">'+list.map(card).join("")+'</div></section>';}).join("");
       const compareChecks=[...root.querySelectorAll(".compare-player")];
       const compareCount=document.getElementById("compare-count");
       const compareOpen=document.getElementById("compare-open");
