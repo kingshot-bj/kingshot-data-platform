@@ -15,7 +15,10 @@ test("public pages get share cards; pages without canonical get noindex", () => 
   const priv = "<html><head><title>x</title></head><body></body></html>";
   assert.match(enhanceSeo(priv), /<meta name="robots" content="noindex"><\/head>/);
   const own = '<html><head><meta name="robots" content="noindex,nofollow"></head></html>';
-  assert.equal(enhanceSeo(own), own);
+  const ownOut = enhanceSeo(own);
+  assert.equal((ownOut.match(/name="robots"/g) || []).length, 1, "既存のrobots指定は変えない");
+  assert.match(ownOut, /content="noindex,nofollow"/);
+  assert.equal(enhanceSeo(ownOut), ownOut, "idempotent");
 });
 
 test("Japanese search term キングショット in titles; structured data on tools and home", () => {
@@ -50,4 +53,24 @@ test("ホームに本物のH1がある（CSSの疑似要素の文字は検索エ
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /<h1 class="ee-welcome-h1">キングショット 観測ダッシュボード<\/h1>/);
   assert.match(src, /\.ee-welcome-copy:before\{content:none!important/);
+});
+
+test("全ページにファビコン・ホーム画面アイコン・theme-color（既にあれば足さない）", async () => {
+  const { existsSync } = await import("node:fs");
+  const out = enhanceSeo("<html><head><title>x</title></head><body></body></html>");
+  assert.match(out, /<link rel="icon" href="\/favicon\.ico" sizes="48x48">/);
+  assert.match(out, /<link rel="apple-touch-icon" href="\/apple-touch-icon\.png">/);
+  assert.match(out, /<meta name="theme-color" content="#0b1424">/);
+  const has = '<html><head><link rel="icon" href="/x.png"><meta name="theme-color" content="#fff"><link rel="canonical" href="https://eagleeye-ks.com/"></head></html>';
+  const o2 = enhanceSeo(has);
+  assert.equal((o2.match(/rel="icon"/g) || []).length, 1);
+  assert.equal((o2.match(/theme-color/g) || []).length, 1);
+  for (const f of ["favicon.ico", "apple-touch-icon.png", "assets/eagleeye/icons/icon-192.png", "assets/eagleeye/icons/favicon-48.png"]) assert.ok(existsSync(new URL("../public/" + f, import.meta.url)), f);
+});
+
+test("王国一覧：日本語H1と構造化データ（パンくず）", async () => {
+  const { renderPublicKingdomsIndex } = await import("../src/public-pages.js");
+  const html = renderPublicKingdomsIndex([1, 2, 1524], { origin: "https://eagleeye-ks.com" });
+  assert.match(html, /<h1>キングショット 王国一覧<\/h1>/);
+  assert.match(html, /"@type":"BreadcrumbList"/);
 });

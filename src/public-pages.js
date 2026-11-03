@@ -176,12 +176,12 @@ export function renderPublicKingdomsIndex(kids, { origin = "" } = {}) {
   }
   const sections = [...groups.entries()].map(([start, list]) => `<section class="range"><h2>王国 ${start}〜${start + 99}</h2><div class="grid">${list.map(k => `<a href="/k/${k}">${k}</a>`).join("")}</div></section>`).join("");
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › 王国一覧</nav>
-<h1>KingShot 王国一覧</h1>
+<h1>キングショット 王国一覧</h1>
 <p class="lead">KingShotの全${kids.length.toLocaleString("ja-JP")}王国の戦力・成長・ランキング・KvK情報。王国番号を選ぶか、検索してください。</p>
 <form class="search" action="/kingdoms" method="get" onsubmit="var v=this.kid.value.trim();if(/^\\d+$/.test(v)){location.href='/k/'+v;return false}"><input name="kid" inputmode="numeric" placeholder="王国番号（例：1524）"><button type="submit">表示</button></form>
 ${sections || '<div class="empty">王国データを読み込めませんでした。</div>'}
 <p class="note">データ提供：MightPulse。KingShotの公式サイトではありません。</p>`;
-  return shell({ title: "キングショット 王国一覧・戦力ランキング | EagleEye", description: `キングショット（KingShot）の全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin });
+  return shell({ title: "キングショット 王国一覧・戦力ランキング | EagleEye", description: `キングショット（KingShot）の全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin, jsonLd: origin ? { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "王国一覧", item: origin + "/kingdoms" }] } : null });
 }
 
 export function renderRobotsTxt(origin, { preview = false } = {}) {
