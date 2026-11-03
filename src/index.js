@@ -11051,7 +11051,7 @@ async function renderHome(request, env) {
 .ee-app .ee-main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 24px}
 .ee-app .ee-welcome{min-height:118px;padding:16px}
 .ee-app .ee-welcome-copy:before{font-size:10px;letter-spacing:.14em;color:var(--ee-cyan)}
-.ee-app .ee-welcome-copy{max-width:72%}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
+.ee-app .ee-welcome-copy{max-width:72%}.ee-welcome-copy:before{content:none!important;display:none!important}.ee-welcome .ee-welcome-h1{display:block!important;margin:0 0 8px!important;padding:0!important;color:var(--ee-cyan,#66e7f6)!important;font-size:11px!important;font-weight:950!important;letter-spacing:.14em!important;line-height:1.4!important;white-space:nowrap}@media(max-width:520px){.ee-welcome .ee-welcome-h1{margin-bottom:5px!important;font-size:10px!important;letter-spacing:.1em!important}}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
 .ee-app .ee-welcome-state{font-size:11px;padding:4px 9px}
 .ee-app .ee-welcome-bj{width:128px;height:128px}
 .ee-app .ee-menu-title{margin:16px 3px 8px}
@@ -11098,6 +11098,7 @@ ${EAGLEEYE_NAV_CSS}
 <main class="ee-main"><div class="ee-screen">
 <a class="ee-welcome-link" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
   <div class="ee-welcome-copy">
+    <h1 class="ee-welcome-h1">キングショット 観測ダッシュボード</h1>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
