@@ -6,6 +6,8 @@ import { normalizeLegacyPalette } from "../src/eagleeye-ui.js";
 
 test("each colour theme sets the shared tokens in dark mode only", () => {
   const css = eagleEyeThemesCss();
+  assert.ok(EAGLEEYE_THEMES.length >= 6);
+  assert.equal(new Set(EAGLEEYE_THEMES.map(t => t.id)).size, EAGLEEYE_THEMES.length, "unique ids");
   for (const t of EAGLEEYE_THEMES.filter(t => t.tokens)) {
     assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-stat{background:var(--ee-panel`), t.id + " light gear surface");
     assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-stat b{color:var(--ee-text`), t.id + " light gear value");
