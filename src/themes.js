@@ -36,6 +36,9 @@ export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
     // KvK opponent colour, darkened for light backgrounds.
     const rival = { "#60a5fa": "#2563eb", "#fbbf24": "#d97706" }[String(t.tokens.rival || "").toLowerCase()] || "#dc2626";
     return `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]{--ee-rival:${rival};--ee-cyan:${a};--ee-cyan-strong:${a};--ee-bg:color-mix(in srgb,${a} 5%,#f5f7fb);--ee-panel-raised:color-mix(in srgb,${a} 7%,#ffffff);--ee-border-soft:color-mix(in srgb,${a} 14%,#e2e8f0);--ee-border:color-mix(in srgb,${a} 22%,#cbd5e1)}`;
+  })).concat(themes.filter(t => t.tokens && SAFE_ID.test(t.id)).map(t => {
+    // Skin-scoped contrast overrides for governor gear cards only.
+    return `html[data-ee-skin="${t.id}"] .gear-stat{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}html[data-ee-skin="${t.id}"] .gear-stat b{color:var(--ee-text,#f2f3f5)}html[data-ee-skin="${t.id}"] .gear-gems{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}html[data-ee-skin="${t.id}"] .gear-gems b{color:var(--ee-text,#f2f3f5)}`;
   })).join("\n");
 }
 
