@@ -8378,7 +8378,7 @@ function renderPlayerFetchingPage(governorId) {
   const script = '<script>(function(){var gid=' + gid + ',t0=Date.now();' +
     'var p=document.createElement("p");p.id="player-fetch-wait";p.className="notice";p.setAttribute("role","status");(document.querySelector("main")||document.body).appendChild(p);' +
     'var paint=function(){p.textContent="取得中… "+Math.floor((Date.now()-t0)/1000)+"秒（初めて見るプレイヤーは、MightPulse側の更新待ちで最大90秒ほどかかります）"};paint();var timer=setInterval(paint,1000);' +
-    'fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json().then(function(d){return {r:r,d:d}},function(){return {r:r,d:{}}})}).then(function(x){clearInterval(timer);' +
+    'fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base%2Cheroes%2Cranks%2Cgov_gear",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json().then(function(d){return {r:r,d:d}},function(){return {r:r,d:{}}})}).then(function(x){clearInterval(timer);' +
     'if(x.r.status===401){location.href="/api/auth/discord";return}if(x.r.ok&&x.d.ok){location.replace("/player?governor_id="+encodeURIComponent(gid));return}' +
     'p.textContent=x.d.error==="PLAYER_NOT_FOUND"?"該当するプレイヤーが見つかりませんでした。":x.d.error==="NO_API_POOL_KEY_AVAILABLE"?"APIキーが混み合っています。少し待ってから再読み込みしてください。":"取得に失敗しました（"+(x.d.error||x.r.status)+"）。再読み込みしてください。"})' +
     '.catch(function(){clearInterval(timer);p.textContent="通信に失敗しました。再読み込みしてください。"})})();</script>';
