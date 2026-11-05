@@ -9,7 +9,7 @@ test("a never-stored player gets an instant page that fetches in the background"
   const firstVisit = page.indexOf("return renderPlayerFetchingPage(governorId);");
   assert.ok(firstVisit > 0);
   assert.ok(firstVisit < page.indexOf("await fetchPlayerThroughApiPool("), "returned before any blocking MightPulse call");
-  assert.match(src, /function renderPlayerFetchingPage\(governorId\)[\s\S]*?\/api\/player\/refresh\?governor_id="\+encodeURIComponent\(gid\)\+"&include=base"/);
+  assert.match(src, /function renderPlayerFetchingPage\(governorId\)[\s\S]*?\/api\/player\/refresh\?governor_id="\+encodeURIComponent\(gid\)\+"&include=base(?:%2C|,)heroes(?:%2C|,)ranks(?:%2C|,)gov_gear"/);
 });
 
 test("'詳細情報を取得' refreshes in the background instead of a blocking page load", () => {
