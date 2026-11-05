@@ -36,6 +36,11 @@ export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
     // KvK opponent colour, darkened for light backgrounds.
     const rival = { "#60a5fa": "#2563eb", "#fbbf24": "#d97706" }[String(t.tokens.rival || "").toLowerCase()] || "#dc2626";
     return `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]{--ee-rival:${rival};--ee-cyan:${a};--ee-cyan-strong:${a};--ee-bg:color-mix(in srgb,${a} 5%,#f5f7fb);--ee-panel-raised:color-mix(in srgb,${a} 7%,#ffffff);--ee-border-soft:color-mix(in srgb,${a} 14%,#e2e8f0);--ee-border:color-mix(in srgb,${a} 22%,#cbd5e1)}`;
+  })).concat(themes.filter(t => t.tokens && SAFE_ID.test(t.id)).map(t => {
+    // Dark mode keeps the theme surface; light mode matches the shared light card palette.
+    const dark = `html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`;
+    const light = `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]`;
+    return `${dark} .gear-stat{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-stat b{color:var(--ee-text,#f2f3f5)}${dark} .gear-gems{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-gems b{color:var(--ee-text,#f2f3f5)}${light} .gear-stat{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-stat b{color:var(--ee-text,#172033)}${light} .gear-gems{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-gems b{color:var(--ee-text,#172033)}`;
   })).join("\n");
 }
 

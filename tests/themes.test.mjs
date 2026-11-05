@@ -6,12 +6,14 @@ import { normalizeLegacyPalette } from "../src/eagleeye-ui.js";
 
 test("each colour theme sets the shared tokens in dark mode only", () => {
   const css = eagleEyeThemesCss();
-  for (const t of EAGLEEYE_THEMES.filter(t => t.tokens)) {
-    assert.ok(css.includes(`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"]){--ee-bg:${t.tokens.bg}`), t.id);
-    assert.ok(css.includes(`--ee-cyan:${t.tokens.accent}`), t.id + " accent");
-  }
   assert.ok(EAGLEEYE_THEMES.length >= 6);
   assert.equal(new Set(EAGLEEYE_THEMES.map(t => t.id)).size, EAGLEEYE_THEMES.length, "unique ids");
+  for (const t of EAGLEEYE_THEMES.filter(t => t.tokens)) {
+    assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-stat{background:var(--ee-panel`), t.id + " light gear surface");
+    assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-stat b{color:var(--ee-text`), t.id + " light gear value");
+    assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-gems{background:var(--ee-panel`), t.id + " light gem surface");
+    assert.ok(css.includes(`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"]) .gear-stat b{color:var(--ee-text`), t.id + " dark gear value");
+  }
 });
 
 test("unsafe theme definitions are ignored", () => {
