@@ -11,7 +11,8 @@ test("each colour theme sets the shared tokens in dark mode only", () => {
     assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-stat b{color:var(--ee-text`), t.id + " light gear value");
     assert.ok(css.includes(`html[data-ee-skin="${t.id}"][data-eagle-theme="light"] .gear-gems{background:var(--ee-panel`), t.id + " light gem surface");
     assert.ok(css.includes(`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"]) .gear-stat b{color:var(--ee-text`), t.id + " dark gear value");
-  }});
+  }
+});
 
 test("unsafe theme definitions are ignored", () => {
   const css = eagleEyeThemesCss([{ id: "bad\"]{}x", tokens: { bg: "#000000" } }, { id: "ok", tokens: { bg: "red;}body{x", text: "#ffffff" } }]);
