@@ -12,6 +12,11 @@ test("each colour theme sets the shared tokens in dark mode only", () => {
   }
   assert.ok(EAGLEEYE_THEMES.length >= 6);
   assert.equal(new Set(EAGLEEYE_THEMES.map(t => t.id)).size, EAGLEEYE_THEMES.length, "unique ids");
+  for (const t of EAGLEEYE_THEMES.filter(t => t.tokens)) {
+    assert.ok(css.includes('html[data-ee-skin="' + t.id + '" ] .gear-stat b{color:var(--ee-text'.replace('" ]','"')), t.id + " gear value contrast");
+    assert.ok(css.includes('html[data-ee-skin="' + t.id + '" ] .gear-stat{background:var(--ee-panel-raised'.replace('" ]','"')), t.id + " gear card surface");
+    assert.ok(css.includes('html[data-ee-skin="' + t.id + '" ] .gear-gems b{color:var(--ee-text'.replace('" ]','"')), t.id + " gem value contrast");
+  }
 });
 
 test("unsafe theme definitions are ignored", () => {
