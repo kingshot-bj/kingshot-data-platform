@@ -2471,55 +2471,32 @@ async function handlePlayerWatchlistApi(request, env) {
       `
     ).bind(auth.discord_id).all();
 
-    const playerChangeResult = await env.DB.prepare(`
-      WITH ranked AS (
-        SELECT ce.target_id AS governor_id,
-               ce.change_type,
-               ce.field_name,
-               ce.old_value_json,
-               ce.new_value_json,
-               ce.detected_at,
-               ce.created_at,
-               ROW_NUMBER() OVER (
-                 PARTITION BY ce.target_id, ce.change_type
-                 ORDER BY ce.detected_at DESC, ce.created_at DESC
-               ) AS rn
-        FROM change_events ce
-        INNER JOIN player_watchlists w
-          ON w.governor_id = ce.target_id
-         AND w.discord_id = ?
-        WHERE w.enabled = 1
-          AND ce.target_type = 'PLAYER'
-          AND ce.change_type IN ('TOWN_CENTER_CHANGED','ALLIANCE_CHANGED')
-      )
-      SELECT governor_id, change_type, field_name, old_value_json, new_value_json, detected_at
-      FROM ranked
-      WHERE rn = 1
-    `).bind(auth.discord_id).all();
-
-    const powerChangeResult = await env.DB.prepare(`
-      WITH ranked AS (
-        SELECT ce.target_id AS governor_id,
-               ce.old_value_json,
-               ce.new_value_json,
-               ce.detected_at,
-               ce.created_at,
-               ROW_NUMBER() OVER (
-                 PARTITION BY ce.target_id
-                 ORDER BY ce.detected_at DESC, ce.created_at DESC
-               ) AS rn
-        FROM change_events ce
-        INNER JOIN player_watchlists w
-          ON w.governor_id = ce.target_id
-         AND w.discord_id = ?
-        WHERE w.enabled = 1
-          AND ce.target_type = 'PLAYER'
-          AND ce.field_name = 'power'
-      )
-      SELECT governor_id, old_value_json, new_value_json, detected_at
-      FROM ranked
-      WHERE rn = 1
-    `).bind(auth.discord_id).all();
+    // 各ウォッチ対象の「最新の変化」（戦力・役場・同盟）を1本で取る。
+    // 以前は change_events を player_watchlists と JOIN + ROW_NUMBER で引いており、
+    // 索引が効かず1回で約85万行×2本（ウォッチリスト・ホームを開くたび）読んでいた。
+    // target_id IN (…) と相関サブクエリの MAX(detected_at) で idx_change_events_player_type_time を使う
+    // （本番で同結果・3,838行）。
+    const latestChangeResult = await env.DB.prepare(
+      "SELECT c.target_id AS governor_id, c.change_type, c.field_name, c.old_value_json, c.new_value_json, c.detected_at, c.created_at " +
+      "FROM change_events c WHERE c.target_type = 'PLAYER' AND c.change_type IN ('POWER_CHANGED','TOWN_CENTER_CHANGED','ALLIANCE_CHANGED') " +
+      "AND c.target_id IN (SELECT governor_id FROM player_watchlists WHERE discord_id = ? AND enabled = 1) " +
+      "AND c.detected_at = (SELECT MAX(c2.detected_at) FROM change_events c2 WHERE c2.target_type = 'PLAYER' AND c2.target_id = c.target_id AND c2.change_type = c.change_type) " +
+      "ORDER BY c.created_at DESC"
+    ).bind(auth.discord_id).all();
+    const latestRows = latestChangeResult.results || [];
+    // 同時刻の同盟変化は aid と名前の2行になるので、名前を優先して1件にする。
+    const pickLatest = (rows) => {
+      const out = new Map();
+      for (const row of rows) {
+        const key = String(row.governor_id) + "|" + row.change_type;
+        const prev = out.get(key);
+        if (!prev || (row.change_type === "ALLIANCE_CHANGED" && row.field_name === "alliance_name" && prev.field_name !== "alliance_name")) out.set(key, row);
+      }
+      return [...out.values()];
+    };
+    const latest = pickLatest(latestRows);
+    const playerChangeResult = { results: latest.filter(r => r.change_type === "TOWN_CENTER_CHANGED" || r.change_type === "ALLIANCE_CHANGED") };
+    const powerChangeResult = { results: latest.filter(r => r.change_type === "POWER_CHANGED") };
 
     const playerChangeByGovernor = new Map();
     for (const row of playerChangeResult.results || []) {
