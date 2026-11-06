@@ -65,6 +65,15 @@ test("www goes to the bare domain; production config points at eagleeye-ks.com",
   assert.match(prod, /"DISCORD_REDIRECT_URI": "https:\/\/eagleeye-ks\.com\/api\/auth\/callback"/);
   assert.match(prod, /"LEGACY_REDIRECT": "30[12]"/);
   // Google Drive callback and previews stay on the legacy host for now.
-  assert.match(prod, /"GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https:\/\/kingshot-data-platform\.black-jack-kingshot\.workers\.dev\//);
+  assert.match(prod, /"GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https:\/\/eagleeye-ks\.com\/api\/admin\/google-drive\/callback"/, "11/5に新ドメインへ移行（Google Cloudに新URIを登録済み）");
   assert.doesNotMatch(conf.slice(conf.indexOf('"previews"')), /PUBLIC_ORIGIN|LEGACY_REDIRECT/);
+});
+
+test("本番設定：旧URLは301で新ドメインへ、Google Driveの戻り先も新ドメイン（プレビューは従来のまま）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const cfg = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  const [prod, preview] = cfg.split('"previews"');
+  assert.match(prod, /"LEGACY_REDIRECT": "301"/);
+  assert.match(prod, /"GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https:\/\/eagleeye-ks\.com\/api\/admin\/google-drive\/callback"/);
+  assert.match(preview, /"GOOGLE_DRIVE_OAUTH_REDIRECT_URI": "https:\/\/kingshot-data-platform\.black-jack-kingshot\.workers\.dev\//);
 });
