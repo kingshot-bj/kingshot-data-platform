@@ -30,12 +30,12 @@ function fakeDb(state) {
       const st = { sql, args: [], bind(...a) { this.args = a; return this; } };
       st.run = async () => {
         if (/INSERT OR REPLACE INTO kvk_mystic_summary/.test(sql)) state.saved.push(st.args);
-        if (/INSERT INTO kvk_mystic_state/.test(sql)) state.breaker = JSON.parse(st.args[1]);
+        if (/INSERT INTO kvk_mystic_state/.test(sql)) { if (st.args[0] === "breaker") state.breaker = JSON.parse(st.args[1]); else (state.kv ||= {})[st.args[0]] = JSON.parse(st.args[1]); }
         return {};
       };
       st.first = async () => {
         if (/FROM kvk_state/.test(sql)) return { value: JSON.stringify({ season: 23 }) };
-        if (/FROM kvk_mystic_state/.test(sql)) return state.breaker ? { value: JSON.stringify(state.breaker) } : null;
+        if (/FROM kvk_mystic_state/.test(sql)) { const v = st.args[0] === "breaker" ? state.breaker : state.kv?.[st.args[0]]; return v ? { value: JSON.stringify(v) } : null; }
         if (/COUNT\(\*\)/.test(sql)) return { n: state.today || 0 };
         return null;
       };
@@ -128,4 +128,17 @@ test("数値から「章-ステージ」：1章10ステージ（APIラベルと�
   for (const [v, l] of [[605, "61-5"], [520, "52-10"], [496, "50-6"], [573, "58-3"], [256, "26-6"], [597, "60-7"], [1, "1-1"], [10, "1-10"]]) assert.equal(stageLabelFromValue(v), l, String(v));
   assert.equal(stageLabelFromValue(0), null);
   assert.equal(stageLabelFromValue(null), null);
+});
+
+test("今季の全王国を取り終えたら、次のシーズンまで残りの確認もしない", async () => {
+  resetKvkMysticSchemaCache();
+  const state = { saved: [], todo: [] };
+  let called = 0;
+  const r1 = await runKvkMysticCollection({ DB: fakeDb(state) }, { collect: async () => { called++; }, now: 100 });
+  assert.equal(r1.reason, "SEASON_COMPLETE");
+  assert.deepEqual(state.kv.complete, { season: 23 });
+  state.todo = [1];
+  const r2 = await runKvkMysticCollection({ DB: fakeDb(state) }, { collect: async () => { called++; }, now: 200 });
+  assert.equal(r2.reason, "SEASON_COMPLETE");
+  assert.equal(called, 0);
 });
