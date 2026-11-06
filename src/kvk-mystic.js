@@ -119,12 +119,16 @@ export async function runKvkMysticCollection(env, { now = Math.floor(Date.now() 
   let season = null;
   try { season = Number(JSON.parse(matchupState?.value || "null")?.season); } catch {}
   if (!Number.isFinite(season)) return { skipped: true, reason: "NO_SEASON" };
+  // 今季の全王国を取り終えたら、次のシーズンまで残りの確認（1回約7,000行）もしない。
+  const complete = await getState(db, "complete");
+  if (complete?.season === season) return { skipped: true, reason: "SEASON_COMPLETE", season };
   const breaker = await getState(db, "breaker");
   if (breaker?.season === season && breaker?.open) return { skipped: true, reason: "BREAKER_OPEN", season };
   const today = await db.prepare("SELECT COUNT(*) AS n FROM kvk_mystic_summary WHERE fetched_at > ?").bind(now - 86400).first();
   if (Number(today?.n || 0) >= KVK_MYSTIC_DAILY_CAP) return { skipped: true, reason: "DAILY_CAP", season };
   // EagleEye ユーザーの王国・ウォッチ中の王国と、その対戦相手を先に取る（使われている比較から先に出す）。
   const todo = (await db.prepare(KVK_MYSTIC_TODO_SQL).bind(season, perRun).all())?.results || [];
+  if (!todo.length) { await setState(db, "complete", { season }, now); return { skipped: true, reason: "SEASON_COMPLETE", season }; }
   const summary = { season, fetched: 0, empty: 0, failed: 0 };
   let emptyStreak = Number(breaker?.season === season ? breaker.emptyStreak || 0 : 0);
   for (const { kid } of todo) {

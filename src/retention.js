@@ -192,7 +192,7 @@ function selectExpiredRowsSql(item) {
     LIMIT ?`;
 }
 
-async function runRetentionCleanupInternal(db, { batchSize = 500, maxBatches = 2, archiveBucket = null, googleDriveEnv = null, drive = null } = {}) {
+async function runRetentionCleanupInternal(db, { batchSize = 500, maxBatches = 2, archiveBucket = null, googleDriveEnv = null, drive = null, skipTables = [] } = {}) {
   // Bound each pass: batch size and number of batches per invocation.
   const safeBatchSize = Math.min(1000, Math.max(1, Number(batchSize) || 500));
   let budget = Math.max(1, Math.min(10, Number(maxBatches) || 2));
@@ -211,6 +211,7 @@ async function runRetentionCleanupInternal(db, { batchSize = 500, maxBatches = 2
     deleted[item.table] = 0;
     archived[item.table] = 0;
     if (!item.days || budget <= 0) continue;
+    if (skipTables.includes(item.table)) continue;
     const cutoff = now - item.days * 86400;
     const rows = (await db.prepare(selectExpiredRowsSql(item)).bind(cutoff, safeBatchSize).all()).results || [];
     if (!rows.length) continue;

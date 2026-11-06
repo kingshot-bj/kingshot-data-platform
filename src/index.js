@@ -281,6 +281,9 @@ async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } 
     const result = await runRetentionCleanup(env.DB, {
       batchSize: 500,
       maxBatches: 2,
+      // api_observations は「対象ごとの最新」を残すため、期限切れでも消せない行が多く、
+      // 毎回約2.5万行を読んで何も消さずに終わっていた（5分ごと→1日約720万行）。1時間に1回にする。
+      skipTables: firstTickOfHour ? [] : ["api_observations"],
       archiveBucket: env.ARCHIVE,
       googleDriveEnv: env,
       drive
@@ -2413,6 +2416,12 @@ async function handlePlayerWatchlistApi(request, env) {
 
   await ensurePlayerWatchlistSchema(env.DB);
   const url = new URL(request.url);
+
+  if (request.method === "GET" && url.searchParams.get("view") === "ids") {
+    // ホームの人数表示・プレイヤー画面のウォッチ状態用。ランキング・変化は付けない軽い版（索引1回）。
+    const ids = await env.DB.prepare("SELECT governor_id, enabled FROM player_watchlists WHERE discord_id = ?").bind(auth.discord_id).all();
+    return json({ ok: true, watchlist: (ids.results || []).map(r => ({ governor_id: String(r.governor_id), enabled: Number(r.enabled) === 1 })) });
+  }
 
   if (request.method === "GET") {
     const rows = await env.DB.prepare(`
@@ -8496,7 +8505,7 @@ ${PLAYER_BUILD_HISTORY_CSS}</style></head><body><main class="wrap"><a class="bac
   const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function sync(){
     try{
-      const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
+      const r=await fetch("/api/player-watchlist?view=ids",{cache:"no-store"});const d=await r.json();
       if(!r.ok||!d.ok){
         window.__eagleEyePlayerWatchlistCount=null;
         if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(null);
@@ -11146,7 +11155,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   }
   async function loadCounts(){
     try{
-      var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
+      var p=await fetch("/api/player-watchlist?view=ids",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
       if(pCount)countUp(pCount,pc,700);
     }catch(e){}
