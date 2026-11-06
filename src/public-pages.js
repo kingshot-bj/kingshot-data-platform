@@ -187,7 +187,7 @@ ${sections || '<div class="empty">王国データを読み込めませんでし�
 export function renderRobotsTxt(origin, { preview = false } = {}) {
   // Preview deployments must never be indexed.
   if (preview) return "User-agent: *\nDisallow: /\n";
-  return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\n\nSitemap: ${origin}/sitemap.xml\n`;
+  return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\nDisallow: /kingdom/changes\n\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
 // ads.txt for Google AdSense. ADSENSE_PUBLISHER_ID (pub-…) is set after approval;
