@@ -777,6 +777,28 @@ export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
   return page("Watchlist Analytics","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国ウォッチリスト</a><h1>Watchlist Analytics</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国ウォッチリストはありません。</div>")+"</div></main>");
 }
 
+// この王国・このボードに載っている対象だけの変化を、最後のチェック以降で取る。
+// 以前は target_type と時刻だけで change_events 全体を新しい順に読んでおり（全王国が対象・
+// 1回で約85万行）、D1の読み取りのほぼすべてを占めていた。target_id を絞って
+// idx_change_events_target_time を使う。D1のbind上限（100）に合わせて分割する。
+export const BOARD_CHANGE_ID_CHUNK = 90;
+export async function loadBoardChangeEvents(db, kid, board, targetType, targetIds) {
+  const ids = [...new Set((targetIds || []).filter(v => v != null && v !== "").map(String))].slice(0, 100);
+  if (!ids.length) return { results: [] };
+  const state = await db.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
+  const since = Number(state?.last_checked_at || 0);
+  const rows = [];
+  for (let i = 0; i < ids.length; i += BOARD_CHANGE_ID_CHUNK) {
+    const chunk = ids.slice(i, i + BOARD_CHANGE_ID_CHUNK);
+    const r = await db.prepare(
+      "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type = ? AND target_id IN (" + chunk.map(() => "?").join(",") + ") AND detected_at >= ? ORDER BY detected_at DESC LIMIT 100"
+    ).bind(targetType, ...chunk, since).all();
+    rows.push(...(r?.results || []));
+  }
+  rows.sort((a, b) => Number(b.detected_at) - Number(a.detected_at));
+  return { results: rows.slice(0, 100) };
+}
+
 export async function renderKingdomChangesPage(request, env) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
@@ -786,9 +808,7 @@ export async function renderKingdomChangesPage(request, env) {
     "SELECT rank,target_type,target_id,governor_id,nick_name,score,abbr,name,previous_rank,observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
   ).bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
   const targetType = ["alliance_power","alliance_kills"].includes(board) ? "ALLIANCE" : "PLAYER";
-  const events = await env.DB.prepare(
-    "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type=? AND detected_at >= (SELECT COALESCE(last_checked_at,0) FROM kingdom_ranking_board_state WHERE kid=? AND board=?) ORDER BY detected_at DESC LIMIT 100"
-  ).bind(targetType,kid,board).all();
+  const events = await loadBoardChangeEvents(env.DB, kid, board, targetType, (current.results || []).map(r => r.target_id));
   const eventMap = new Map((events.results||[]).map(r=>[String(r.target_id),r]));
   const rows=(current.results||[]).map(r=>{
     const d=Number(r.previous_rank)-Number(r.rank);
