@@ -1,3 +1,4 @@
+import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
 import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
@@ -5089,8 +5090,8 @@ export default {
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        const [active, cf] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 })]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf }));
+        const [active, cf, d1] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null)]);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1 }));
       }
       if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
       if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
@@ -5252,6 +5253,12 @@ export default {
       if (mystic?.failed || mystic?.reason === "BREAKER_OPEN") console.error("kvk_mystic_collection", JSON.stringify(mystic));
     } catch (error) {
       console.error("kvk_mystic_collection_failed", error?.message || error);
+    }
+    try {
+      // D1読み取り量の見張り（1時間に1回、目安超えでオーナーへDM。DMは下のアナウンス同期で送られる）。
+      await runD1UsageAlert(env);
+    } catch (error) {
+      console.error("d1_usage_alert_failed", error?.message || error);
     }
     try {
       const announce = await runAnnouncementDiscordSync(env);
