@@ -234,6 +234,19 @@ export const EAGLEEYE_DRAWER_INIT = `
     });
   }
   window.__eagleEyePaintBadges=paintBadges;
+  // 未登録・未昇格（BASIC）の人へ、全ページ上部に細い案内帯。閉じたら3日間は出さない。
+  function paintOnboarding(step){
+    if(!step||document.getElementById("eeOnboardBar")||location.pathname==="/my-player")return;
+    var key="ee-onboard-hide-"+step;
+    try{var until=Number(localStorage.getItem(key)||0);if(until>Date.now())return;}catch(e){}
+    var text=step==="link"?"まず領主IDを登録しよう（30秒）":"あと1ステップでADVANCED：APIキーを登録";
+    var bar=document.createElement("div");bar.id="eeOnboardBar";bar.setAttribute("role","note");
+    bar.style.cssText="position:relative;z-index:50;display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(90deg,#facc15,#fde68a);color:#1f1300;font:700 12px/1.4 system-ui,-apple-system,sans-serif";
+    var a=document.createElement("a");a.href="/my-player";a.textContent=text+" →";a.style.cssText="flex:1;color:inherit;text-decoration:none";
+    var x=document.createElement("button");x.type="button";x.setAttribute("aria-label","閉じる");x.textContent="×";x.style.cssText="border:0;background:transparent;color:inherit;font-size:16px;font-weight:900;padding:0 4px;cursor:pointer";
+    x.onclick=function(){try{localStorage.setItem(key,String(Date.now()+3*86400000));}catch(e){}bar.remove();};
+    bar.appendChild(a);bar.appendChild(x);document.body.insertBefore(bar,document.body.firstChild);
+  }
   // Pages that used to push the watchlist size into the badge keep working; the
   // size is no longer shown as a badge.
   window.__eagleEyeSetPlayerWatchlistCount=function(){};
@@ -241,7 +254,7 @@ export const EAGLEEYE_DRAWER_INIT = `
     if(!state||!state.ok){paintBadges(null);return;}
     return fetch("/api/badges",{credentials:"same-origin",cache:"no-store"})
       .then(function(response){return response.ok?response.json():null;})
-      .then(function(data){paintBadges(data&&data.ok?data:null);});
+      .then(function(data){paintBadges(data&&data.ok?data:null);if(data&&data.ok)paintOnboarding(data.onboarding);});
   }).catch(function(){paintBadges(null);});
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic

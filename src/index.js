@@ -1,3 +1,4 @@
+import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
@@ -2071,6 +2072,7 @@ body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,r
 .wrap{width:min(100%,760px);margin:0 auto;padding:18px 16px calc(44px + env(safe-area-inset-bottom))}
 .back{display:inline-flex;align-items:center;gap:7px;color:#8fa9c1;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.04em;padding:8px 0}
 .back:hover{color:var(--ee-cyan)}
+.ee-benefits{margin:10px 0 12px;padding:12px 14px;border:1px solid rgba(250,204,21,.35);border-radius:14px;background:rgba(250,204,21,.06)}.ee-benefits b{display:block;font-size:13px;color:#fde68a;margin-bottom:6px}.ee-benefits ul{margin:0;padding-left:1.2em;font-size:13px;line-height:1.7}
 .eyebrow{margin-top:23px;color:var(--ee-cyan);font-size:10px;font-weight:950;letter-spacing:.22em}
 .title{font-size:clamp(28px,6vw,36px);line-height:1.12;letter-spacing:-.04em;margin:7px 0 10px;font-weight:900}
 .sub{color:#9cb1c7;line-height:1.75;font-size:13px;margin:0;max-width:620px}
@@ -2275,7 +2277,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
     let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
     if(keyRows.length) keyHtml+='<details class="key-list-details"><summary><span>登録済みキーの内訳</span><span class="muted">'+esc(keyRows.length)+'本を表示　⌄</span></summary><div class="key-list-rows">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="key-list-row"><span>キー '+(i+1)+(prefix?'<small>'+esc(prefix)+'</small>':'')+'</span><strong class="'+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty':'✓ 提供済み')+'</strong></div>';}).join('')+'</div></details>';
-    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">利用権限</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
+    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">利用権限</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+(promoted?'':'<div class="ee-benefits"><b>ADVANCEDになると増えること</b><ul><li>英雄スキル・英雄専用装備・英雄の装備</li><li>領主装備・宝石</li><li>プレイヤーの座標</li><li>KvK画面（対戦相手・スコア推移・秘境の試練のステージ別比較）</li><li>ウォッチリスト：プレイヤー3人 → 20人、王国1 → 3</li></ul></div>')+
       '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
       '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
       '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
@@ -8257,6 +8259,7 @@ async function renderPlayerPage(request, env) {
       }
     }
     visibleProfile.optional_assets = extractOptionalPlayerAssets(observation.payload);
+    visibleProfile.locked_advanced = lockedAdvancedItems(visibilitySettings, auth.role, visibilityEnabled);
     // Independent reads run in parallel (name history, hero rankings, build history).
     const heroKid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
     const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
@@ -8393,12 +8396,14 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       <div class="card"><div class="label">役場</div><div class="value">${townCenterBadgeHtml(p.town_center_level)}</div></div>
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
-      ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
+      ${(profile?.locked_advanced || []).some(i => i.key === "base_coordinates") ? '<div class="card"><div class="label">座標</div><div class="value">' + lockedInlineValue() + '</div></div>' : card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("同盟", p.alliance_name || "-")}
     </div>
     ${noticeHtml}
     ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
+    ${(profile?.locked_advanced || []).length ? "<style>" + LOCKED_CSS + "</style>" : ""}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
+    ${renderLockedSection(profile?.locked_advanced || [])}
     ${buildHistoryHtml}
     <div class="actions"><a class="action primary" id="player-refresh" data-governor-id="${esc(governorId)}" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
@@ -10675,7 +10680,13 @@ async function handleBadgesApi(request, env) {
   try {
     const settings = await getPlayerVisibilitySettings(env.DB);
     const counts = await getBadgeCounts(env.DB, auth, { changeVisible: change => isChangeVisibleForRole(change, auth.role, settings) });
-    return json({ ok: true, ...counts });
+    // 全ページ上部の案内帯用（BASICのみ。領主ID登録の有無だけ確認、索引1回）。
+    let onboarding = null;
+    if (String(auth.role || "").toUpperCase() === "BASIC") {
+      const link = await env.DB.prepare("SELECT 1 AS ok FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1").bind(auth.user_id).first().catch(() => null);
+      onboarding = onboardingStep({ role: auth.role, linked: Boolean(link) });
+    }
+    return json({ ok: true, ...counts, onboarding });
   } catch (error) {
     console.error("badges_failed", error?.message || error);
     return json({ ok: false, error: "BADGES_FAILED" }, 500);
@@ -11044,7 +11055,7 @@ async function renderHome(request, env) {
 .ee-app .ee-main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 24px}
 .ee-app .ee-welcome{min-height:118px;padding:16px}
 .ee-app .ee-welcome-copy:before{font-size:10px;letter-spacing:.14em;color:var(--ee-cyan)}
-.ee-app .ee-welcome-copy{max-width:72%}.ee-h{margin:0!important;padding:0!important;font:inherit!important;line-height:inherit!important;color:inherit!important;letter-spacing:inherit!important;text-transform:none!important}.ee-welcome-copy:before{content:none!important;display:none!important}.ee-welcome .ee-welcome-h1{display:block!important;margin:0 0 8px!important;padding:0!important;color:var(--ee-cyan,#66e7f6)!important;font-size:11px!important;font-weight:950!important;letter-spacing:.14em!important;line-height:1.4!important;white-space:nowrap}@media(max-width:520px){.ee-welcome .ee-welcome-h1{margin-bottom:5px!important;font-size:10px!important;letter-spacing:.1em!important}}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
+.ee-app .ee-welcome-copy{max-width:72%}.ee-onboard{display:grid;gap:4px;margin:12px 0 4px;padding:14px 16px;border-radius:18px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(135deg,rgba(250,204,21,.16),rgba(34,211,238,.10));color:inherit;text-decoration:none}.ee-onboard[hidden]{display:none}.ee-onboard b{font-size:16px}.ee-onboard span{font-size:12px;opacity:.85;line-height:1.6}.ee-onboard em{font-style:normal;font-weight:900;font-size:13px;color:#b45309}.ee-h{margin:0!important;padding:0!important;font:inherit!important;line-height:inherit!important;color:inherit!important;letter-spacing:inherit!important;text-transform:none!important}.ee-welcome-copy:before{content:none!important;display:none!important}.ee-welcome .ee-welcome-h1{display:block!important;margin:0 0 8px!important;padding:0!important;color:var(--ee-cyan,#66e7f6)!important;font-size:11px!important;font-weight:950!important;letter-spacing:.14em!important;line-height:1.4!important;white-space:nowrap}@media(max-width:520px){.ee-welcome .ee-welcome-h1{margin-bottom:5px!important;font-size:10px!important;letter-spacing:.1em!important}}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
 .ee-app .ee-welcome-state{font-size:11px;padding:4px 9px}
 .ee-app .ee-welcome-bj{width:128px;height:128px}
 .ee-app .ee-menu-title{margin:16px 3px 8px}
@@ -11096,6 +11107,7 @@ ${EAGLEEYE_NAV_CSS}
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
+<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><h3 class="ee-h"><strong>ランキング</strong></h3><small>王国・順位を確認</small></a>
@@ -11185,6 +11197,8 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
       else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
     }
     if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
+    var ob=document.getElementById("homeOnboard"),obCopy=${JSON.stringify({ link: onboardingCopy("link"), key: onboardingCopy("key") })}[d.onboarding||""]
+    if(ob){if(obCopy){document.getElementById("homeOnboardTitle").textContent=obCopy.title;document.getElementById("homeOnboardBody").textContent=obCopy.body;document.getElementById("homeOnboardCta").textContent=obCopy.cta+" →";ob.hidden=false}else ob.hidden=true}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
     var ch=d.changes||[];
     if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
