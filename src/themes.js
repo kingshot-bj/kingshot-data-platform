@@ -22,6 +22,14 @@ export const EAGLEEYE_THEMES = Object.freeze([
     tokens: { bg: "#17130a", panel: "#241c0e", deep: "#1d160b", raised: "#2f2512", border: "#6b5420", soft: "#3d311a", text: "#fff8e6", subtext: "#e6cf98", muted: "#b39c66", accent: "#fbbf24", rival: "#60a5fa" }, light: "#b45309" }
 ]);
 
+// 共有カード（canvas）用の色。使っている着せ替えの色で画像を作る（ライトモードでも画像は濃い色）。
+export function shareCardPalettes(themes = EAGLEEYE_THEMES) {
+  const out = { navy: { bg: "#0b1424", panel: "#0f1f36", raised: "#13263d", border: "#1d344d", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee", name: "ネイビー" } };
+  for (const t of themes) if (t.tokens && SAFE_ID_SHARE.test(t.id)) out[t.id] = { bg: t.tokens.bg, panel: t.tokens.panel, raised: t.tokens.raised, border: t.tokens.border, text: t.tokens.text, subtext: t.tokens.subtext, accent: t.tokens.accent, name: t.name, reward: t.reward || null };
+  return out;
+}
+const SAFE_ID_SHARE = /^[a-z][a-z0-9-]{1,30}$/;
+
 const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan", rival: "--ee-rival" };
 const SAFE_ID = /^[a-z][a-z0-9-]{1,30}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
