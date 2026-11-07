@@ -8106,13 +8106,12 @@ async function renderPlayerHistoryPage(request, env) {
   if (!governorId) return renderHistoryShell("領主IDを指定してください。", "");
   if (!env.DB) return renderHistoryShell("データベースが設定されていません。", governorId);
   try {
-    const result = await env.DB.prepare(
-      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT 100'
-    ).bind(governorId).all();
+    // 履歴は R2（HISTORY_STORAGE_MODE=R2_ONLY）に保存されているので、D1だけでなく R2 も読む共通の関数を使う。
+    const history = await getPlayerHistory(env.DB, governorId, 50, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
-    const rows = (result.results || []).map(row => {
+    const rows = (history || []).map(row => {
       let p = {};
-      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role, JSON.parse(row.payload_json), visibilitySettings); } catch {}
+      try { p = filterPlayerForRole(row.player || {}, auth.role, row.profile || row.player || {}, visibilitySettings); } catch {}
       return { ...row, player: p };
     });
     if (!rows.length) return renderHistoryShell("このプレイヤーの履歴はまだありません。", governorId);
