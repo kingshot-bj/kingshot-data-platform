@@ -39,7 +39,7 @@ test("kingdom portal escapes single quotes used in attributes", async () => {
 test("alliance page fetches upstream only for signed-in users, throttled per alliance", async () => {
   const portal = await read("kingdom-portal.js");
   const index = await read("index.js");
-  assert.ok(index.includes('if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAlliancePage(request, env, auth)); }'));
+  assert.ok(index.includes('if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }'));
   assert.ok(portal.includes('const signedIn = Boolean(auth && auth.status === "ACTIVE");'));
   assert.ok(portal.includes("await claimAllianceRefresh(env.DB, kid, row.aid || row.abbr || tag, now)"));
   assert.ok(portal.includes("WHERE api_request_locks.lock_until <= ?"));
