@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { seasonOf, isReferralCode, randomReferralCode, getOrCreateReferralCode, attributeReferral, markReferralQualified, loadMyReferrals, loadReferralRanking, resetReferralSchemaCache, INVITE_TITLES } from "../src/referrals.js";
+import { seasonOf, isReferralCode, randomReferralCode, getOrCreateReferralCode, attributeReferral, markReferralQualified, loadMyReferrals, getWatchBonus, inviterNameForCode, resetReferralSchemaCache, INVITE_TITLES, INVITE_BONUS } from "../src/referrals.js";
 import { evaluateMilestones } from "../src/milestones.js";
 
 test("シーズンは日本時間の月", () => {
@@ -18,22 +18,26 @@ test("コードは8文字・紛らわしい文字なし、share などは招待�
 });
 
 function fakeDb() {
-  const t = { codes: new Map(), refs: new Map(), roles: new Map(), names: new Map() };
+  const t = { codes: new Map(), refs: new Map(), roles: new Map(), names: new Map(), bonus: new Map() };
   const stmt = (sql, a = []) => ({
     bind: (...x) => stmt(sql, x),
     async run() {
       if (sql.startsWith("INSERT OR IGNORE INTO referral_codes")) { if (t.codes.has(a[0]) || [...t.codes.values()].includes(a[1])) return { meta: { changes: 0 } }; t.codes.set(a[0], a[1]); return { meta: { changes: 1 } }; }
       if (sql.startsWith("INSERT OR IGNORE INTO referrals")) { if (t.refs.has(a[0])) return { meta: { changes: 0 } }; t.refs.set(a[0], { invitee_user_id: a[0], inviter_user_id: a[1], code: a[2], created_at: a[3], qualified_at: null, season: null }); return { meta: { changes: 1 } }; }
       if (sql.startsWith("UPDATE referrals SET qualified_at = ?, season = ? WHERE invitee_user_id")) { const r = t.refs.get(a[2]); if (!r || r.qualified_at != null) return { meta: { changes: 0 } }; r.qualified_at = a[0]; r.season = a[1]; return { meta: { changes: 1 } }; }
-      if (sql.startsWith("UPDATE referrals SET qualified_at = ?, season = ? WHERE inviter_user_id")) { let n = 0; for (const r of t.refs.values()) if (r.inviter_user_id === a[2] && r.qualified_at == null && ["ADVANCED", "VIP", "ADMIN", "OWNER"].includes(t.roles.get(r.invitee_user_id))) { r.qualified_at = a[0]; r.season = a[1]; n++; } return { meta: { changes: n } }; }
+      if (sql.startsWith("INSERT OR IGNORE INTO user_watch_bonus")) { const k = a[0] + "|" + a[1]; if (t.bonus.has(k)) return { meta: { changes: 0 } }; t.bonus.set(k, a[2]); return { meta: { changes: 1 } }; }
       return { meta: { changes: 0 } };
     },
     async first() {
       if (sql.startsWith("SELECT code FROM referral_codes")) return t.codes.has(a[0]) ? { code: t.codes.get(a[0]) } : null;
       if (sql.startsWith("SELECT user_id FROM referral_codes")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u }; return null; }
+      if (sql.startsWith("SELECT inviter_user_id FROM referrals")) return t.refs.get(a[0]) || null;
+      if (sql.startsWith("SELECT COALESCE(SUM(amount)")) { let n = 0; for (const [k, v] of t.bonus) if (k.startsWith(a[0] + "|")) n += v; return { n }; }
+      if (sql.startsWith("SELECT c.user_id")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, nick_name: t.names.get(u) || null }; return null; }
       return null;
     },
     async all() {
+      if (sql.includes("r.qualified_at IS NULL AND u.role IN")) return { results: [...t.refs.values()].filter(r => r.inviter_user_id === a[0] && r.qualified_at == null && ["ADVANCED", "VIP", "ADMIN", "OWNER"].includes(t.roles.get(r.invitee_user_id))).map(r => ({ invitee_user_id: r.invitee_user_id })) };
       if (sql.includes("WHERE r.inviter_user_id = ?")) return { results: [...t.refs.values()].filter(r => r.inviter_user_id === a[0]).map(r => ({ ...r, nick_name: t.names.get(r.invitee_user_id) || null })) };
       if (sql.includes("WHERE r.season = ?")) {
         const m = new Map();
@@ -75,9 +79,17 @@ test("ADVANCEDで達成→その月に数える、昇格の呼び出し漏れも
   assert.equal(mine.thisSeason, 2);
   assert.equal(mine.season, "2026-11");
   assert.deepEqual(mine.invitees.map(i => [i.name, i.qualified]).sort(), [["ねこ", true], [null, false], [null, true]].sort());
-  const rank = await loadReferralRanking(db, "2026-11");
-  assert.deepEqual(rank.map(r => [r.rank, r.name, r.count]), [[1, "怪盗BJにゃん", 2]]);
-  assert.deepEqual(await loadReferralRanking(db, "2026-12"), []);
+  // 特典：B・CはログインとADVANCEDで +2+5、Dはログインの +2、招待したAは2人分 +5×2
+  assert.equal(await getWatchBonus(db, "B"), INVITE_BONUS.invitedSignup + INVITE_BONUS.invitedAdvanced);
+  assert.equal(await getWatchBonus(db, "C"), 7);
+  assert.equal(await getWatchBonus(db, "D"), INVITE_BONUS.invitedSignup);
+  assert.equal(await getWatchBonus(db, "A"), INVITE_BONUS.perQualifiedInvite * 2);
+  assert.equal(mine.bonus, 10);
+  await loadMyReferrals(db, "A", { now: nov + 200 });
+  assert.equal(await getWatchBonus(db, "A"), 10, "2回目に開いても増えない");
+  assert.deepEqual(await inviterNameForCode(db, code), { name: "怪盗BJにゃん" });
+  assert.equal(await inviterNameForCode(db, "zzzzzzzz"), null);
+  assert.equal(await inviterNameForCode(db, "share"), null);
 });
 
 test("招待編の称号：1・3・5・10人", () => {
@@ -102,8 +114,12 @@ test("配線：招待リンクのCookie、初回ログインでの結びつけ�
   assert.match(index, /<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="\/invite">/);
   const ui = readFileSync(new URL("../src/eagleeye-ui.js", import.meta.url), "utf8");
   assert.match(ui, /key: "invite", href: "\/invite", label: "友だち招待"/);
-  assert.match(index, /me: r\.user_id === String\(auth\.user_id\)/, "ランキングは user_id を出さない");
-  assert.doesNotMatch(index, /ranking: await loadReferralRanking/);
+  assert.doesNotMatch(index, /loadReferralRanking/, "ランキングは外した");
+  // ウォッチ上限：上限のあるロールにだけ招待の特典を足す（追加とPATCHの両方）
+  assert.equal((index.match(/roleLimit > 0 \? roleLimit \+ await getWatchBonus\(env\.DB, auth\.user_id\) : roleLimit/g) || []).length, 2);
+  // 未ログインで招待コードがあるときだけ招待者の名前を出す（ホームはno-storeなので他人に混ざらない）
+  assert.match(index, /const refCode = !session \? parseCookie/);
+  assert.match(index, /\$\{inviteBanner\}<a class="ee-onboard"/);
   const elig = readFileSync(new URL("../src/user-eligibility.js", import.meta.url), "utf8");
   assert.equal((elig.match(/await markReferralQualified\(db, normalizedUserId, now\)\.catch/g) || []).length, 2);
   const legal = readFileSync(new URL("../src/legal-pages.js", import.meta.url), "utf8");
@@ -117,5 +133,6 @@ test("招待ページ：ログイン前はログイン案内、共有ボタン�
   assert.match(html, /<title>友だち招待 \| EagleEye<\/title>/);
   assert.match(html, /fetch\("\/api\/invite"/);
   assert.match(html, /next=%2Finvite/);
-  assert.match(html, /報酬は後日お知らせします/);
+  assert.match(html, /招待の特典/);
+  assert.doesNotMatch(html, /ランキング/);
 });

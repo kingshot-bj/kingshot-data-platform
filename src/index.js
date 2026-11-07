@@ -55,7 +55,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
-import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, loadReferralRanking, renderInvitePage } from "./referrals.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -2594,7 +2594,9 @@ async function handlePlayerWatchlistApi(request, env) {
 
     const limits = await getWatchlistLimits(env.DB);
     const role = String(auth.role || "BASIC").toUpperCase();
-    const playerLimit = getRoleWatchlistLimit(limits, role, "player");
+    const roleLimit = getRoleWatchlistLimit(limits, role, "player");
+    // 0 は無制限。招待の特典（ウォッチ枠の上乗せ）は上限があるロールにだけ足す。
+    const playerLimit = roleLimit > 0 ? roleLimit + await getWatchBonus(env.DB, auth.user_id) : roleLimit;
     const existing = await env.DB.prepare(
       "SELECT enabled FROM player_watchlists WHERE discord_id = ? AND governor_id = ? LIMIT 1"
     ).bind(auth.discord_id, governorId).first();
@@ -2643,7 +2645,8 @@ async function handlePlayerWatchlistApi(request, env) {
     if (enabled) {
         const limits = await getWatchlistLimits(env.DB);
       const role = String(auth.role || "BASIC").toUpperCase();
-      const limit = getRoleWatchlistLimit(limits, role, "player");
+      const roleLimit = getRoleWatchlistLimit(limits, role, "player");
+      const limit = roleLimit > 0 ? roleLimit + await getWatchBonus(env.DB, auth.user_id) : roleLimit;
       const usage = await env.DB.prepare(
         "SELECT COUNT(*) AS count FROM player_watchlists WHERE discord_id = ? AND enabled = 1 AND governor_id <> ?"
       ).bind(auth.discord_id, governorId).first();
@@ -10777,14 +10780,13 @@ async function handleMilestonesApi(request, env, url) {
   }
 }
 
-// 友だち招待（ログインした全員。マイルストーンの公開状態とは関係なし）。ランキングに user_id は出さない。
+// 友だち招待（ログインした全員。マイルストーンの公開状態とは関係なし）。
 async function handleInviteApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   try {
     const mine = await loadMyReferrals(env.DB, auth.user_id);
-    const ranking = (await loadReferralRanking(env.DB, mine.season)).map(r => ({ rank: r.rank, name: r.name, kid: r.kid, count: r.count, me: r.user_id === String(auth.user_id) }));
-    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, ranking });
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, rewards: INVITE_BONUS });
   } catch (error) {
     console.error("invite_failed", error?.message || error);
     return json({ ok: false, error: "INVITE_FAILED" }, 500);
@@ -10834,6 +10836,10 @@ async function renderHome(request, env) {
   // Only an ACTIVE database-backed user may receive role-gated drawer links.
   const menuAuth = auth?.status === "ACTIVE" ? auth : (session ? { role: "BASIC" } : null);
   const role = menuAuth?.role || "BASIC";
+  // 招待リンクから来た未ログインの人へ、招待者の名前と特典を案内（コードがあるときだけ1行読む）。
+  const refCode = !session ? parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE] : null;
+  const inviter = refCode && isReferralCode(refCode) ? await inviterNameForCode(env.DB, refCode) : null;
+  const inviteBanner = inviter ? '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a><style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}</style>' : "";
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar
@@ -11154,7 +11160,7 @@ ${EAGLEEYE_NAV_CSS}
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
-<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
+${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
 ${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
 <section class="ee-mainmenu" data-menu="signed-in">
