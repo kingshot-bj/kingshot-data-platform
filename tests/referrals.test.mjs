@@ -217,3 +217,12 @@ test("ゴールドは色だけでなく金属の仕上げ（ダークモード�
   assert.match(css, /linear-gradient\(135deg,#fff3c4,#c8961c 28%,#6e4f0e 50%,#f5c542 72%,#fff3c4\) border-box/);
   assert.doesNotMatch(css, /data-ee-skin="sakura"\]:not\(\[data-eagle-theme="light"\]\) body\{background:radial/, "ほかの着せ替えには付けない");
 });
+
+test("ゴールドはライトモードにも専用の仕上げ（濃い金の文字・シャンパン色の背景）", async () => {
+  const { eagleEyeThemesCss } = await import("../src/themes.js");
+  const css = eagleEyeThemesCss();
+  assert.match(css, /html\[data-ee-skin="gold"\]\[data-eagle-theme="light"\] body\{background:radial-gradient\(rgba\(184,134,11/);
+  assert.match(css, /html\[data-ee-skin="gold"\]\[data-eagle-theme="light"\] :is\(h1,/);
+  assert.match(css, /linear-gradient\(100deg,#7a4f00 0%/);
+  assert.doesNotMatch(css, /data-ee-skin="sakura"\]\[data-eagle-theme="light"\] body\{background:radial/);
+});
