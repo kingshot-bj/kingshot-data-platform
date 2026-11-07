@@ -1,3 +1,4 @@
+import { isDiscordUserId } from "./google-auth.js";
 // お知らせ ↔ Discord (EagleEye Support server).
 //
 // - Published announcements are posted to a read-only #お知らせ channel when
@@ -155,6 +156,11 @@ export async function runAnnouncementDiscordSync(env, { now = Math.floor(Date.no
   for (const dm of dms) {
     if (budget.calls + 2 > maxCalls) break;
     let status = "SENT";
+    // 仮のID（Googleログインの人）にはDiscordのDMを送れない。送らずに印だけ付ける。
+    if (!isDiscordUserId(dm.discord_id)) {
+      await db.prepare("UPDATE announcement_dm_queue SET sent_at = ?, status = ? WHERE message_key = ?").bind(now, "NOT_DISCORD", dm.message_key).run().catch(() => {});
+      continue;
+    }
     try {
       budget.calls++;
       const channel = await request(env, "/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: dm.discord_id }) });

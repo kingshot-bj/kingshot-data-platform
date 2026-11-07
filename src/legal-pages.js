@@ -13,6 +13,7 @@ const PRIVACY_SECTIONS = [
     title: "取得する情報",
     body: `<ul>
 <li><b>Discordアカウント情報</b>：Discordでログインした際の、DiscordユーザーID・ユーザー名・表示名・アバター。ログイン日時の履歴。</li>
+<li><b>Googleアカウント情報</b>：Googleでログインした場合の、Googleアカウントの識別番号と表示名。メールアドレスは取得しません。</li>
 <li><b>登録した領主ID</b>：マイKingShotで登録したKingShotの領主ID・王国・区分（メイン／サブ）。</li>
 <li><b>提供されたMightPulse APIキー</b>：利用者が任意で提供したキー。暗号化して保存し、画面には照合用の先頭部分のみ表示します。</li>
 <li><b>KingShotの公開データ</b>：MightPulse API経由で取得するプレイヤー・王国・同盟・ランキング等のゲーム内公開情報と、その変化の履歴。</li>

@@ -1,6 +1,7 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
 import { recordFunnel, loadFunnel } from "./funnel.js";
+import { googleConfigured, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
@@ -5056,6 +5057,14 @@ export default {
         return json({ authenticated: active, role: active ? auth.role : null });
       }
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === "/login") {
+        const next = sanitizeLoginReturnPath(url.searchParams.get("next"));
+        // Googleが未設定なら、今までどおりDiscordへ直行。
+        if (!googleConfigured(env)) return Response.redirect(new URL("/api/auth/discord?direct=1" + (next ? "&next=" + encodeURIComponent(next) : ""), url).toString(), 302);
+        return eagleEyeHtmlResponse(renderLoginChooserPage({ next: next || "" }));
+      }
+      if (url.pathname === "/api/auth/google") return await startGoogleLogin(request, env);
+      if (url.pathname === GOOGLE_CALLBACK_PATH) return await handleGoogleCallback(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/admin/google-drive/authorize") return await handleGoogleDriveAuthorizeApi(request, env);
@@ -5714,6 +5723,8 @@ async function startDiscordLogin(request, env) {
   if (!config.clientId || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
+  // Googleログインが使えるときは、まずログイン方法を選ぶ画面へ（選んだ後は direct=1 で来る）。
+  { const u = new URL(request.url); if (googleConfigured(env) && !u.searchParams.get("direct")) { const next = sanitizeLoginReturnPath(u.searchParams.get("next")); return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), u).toString(), 302); } }
 
   const redirectUri = config.redirectUri;
   const state = await createStateToken(config.sessionSecret);
@@ -5874,6 +5885,57 @@ async function handleDiscordCallback(request, env) {
     headers: responseHeaders
   });
 }
+// Googleログイン（A案：Googleの人は users.discord_id に仮のID「google:…」を持つ。Discord専用の処理は isDiscordUserId で除外）。
+async function startGoogleLogin(request, env) {
+  if (!googleConfigured(env)) return json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" }, 503);
+  const url = new URL(request.url);
+  const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
+  if (env.DB) await recordFunnel(env.DB, "google_start");
+  const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
+  const returnPath = sanitizeLoginReturnPath(url.searchParams.get("next"));
+  headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", { maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleGoogleCallback(request, env) {
+  if (!googleConfigured(env)) return json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" }, 503);
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  let returnPath = null;
+  try { returnPath = sanitizeLoginReturnPath(cookies[LOGIN_RETURN_COOKIE]); } catch {}
+  const clearReturn = h => h.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (url.searchParams.get("error") && !code) {
+    if (env.DB) await recordFunnel(env.DB, "login_cancelled");
+    const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
+    clearReturn(h);
+    return new Response(null, { status: 302, headers: h });
+  }
+  if (!code || !state || !(await verifyStateToken(state, env.EAGLEEYE_SESSION_SECRET))) return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+  let googleUser;
+  try {
+    googleUser = await fetchGoogleUser(env, { code, redirectUri: googleRedirectUri(env, request.url) });
+  } catch (error) {
+    if (env.DB) await recordDiagnostic(env.DB, { service: "google", feature: "oauth", operation: "LOGIN", status: "FAILED", errorCode: String(error?.code || "GOOGLE_LOGIN_FAILED"), message: "Google login failed", metadata: { httpStatus: Number(error?.httpStatus || 0) || null } });
+    console.error("google_login_failed", error?.code || "GOOGLE_LOGIN_FAILED");
+    return json({ ok: false, error: String(error?.code || "GOOGLE_LOGIN_FAILED") }, 502);
+  }
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  const now = Math.floor(Date.now() / 1000);
+  const result = await upsertGoogleUser(env.DB, googleUser, now);
+  if (result?.status === "DISABLED") return json({ ok: false, error: "USER_DISABLED" }, 403);
+  await recordFunnel(env.DB, result.isNew ? "login_new" : "login_returning");
+  const refCode = cookies[REF_COOKIE];
+  if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
+  const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
+  const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
+  clearReturn(h);
+  if (refCode) h.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, { maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  return new Response(null, { status: 302, headers: h });
+}
+
 async function upsertUser(db, discordUser, now) {
   const discordId = String(discordUser.id);
   const existing = await db.prepare(
