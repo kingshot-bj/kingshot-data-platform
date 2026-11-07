@@ -1,3 +1,4 @@
+import { renderFunnelCard } from "./funnel.js";
 // オーナー用「アクセス状況」。
 // - ログインユーザー：1人1日1行だけ D1 に記録（同じ isolate 内はメモで2回目以降を書かない）。90日で削除。
 // - 全訪問者：Cloudflare の集計（GraphQL Analytics API）から読む。D1 には何も書かない。
@@ -137,7 +138,7 @@ function bars(rows, key) {
   return rows.map(r => `<div class="bar"><span>${esc(String(r.day || r.date).slice(5))}</span><i style="width:${Math.round((Number(r[key]) || 0) / max * 100)}%"></i><b>${num(r[key])}</b></div>`).join("");
 }
 
-export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null } = {}) {
+export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null, funnel = undefined } = {}) {
   const activeRows = active.map(d => ({ ...d, roleText: ROLES.filter(r => d.roles[r]).map(r => r + " " + d.roles[r]).join("・") }));
   const activeHtml = `<div class="bars">${bars(activeRows, "total")}</div><table><thead><tr><th>日付（日本時間）</th><th>人数</th><th>ロール内訳</th></tr></thead><tbody>${activeRows.map(d => `<tr><td>${esc(d.day)}</td><td>${num(d.total)}</td><td>${esc(d.roleText || "—")}</td></tr>`).join("")}</tbody></table>`;
   let cfHtml;
@@ -153,6 +154,6 @@ export function renderOwnerTrafficPage({ active = [], cf = { configured: false }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>アクセス状況 | EagleEye</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px 96px}a{color:#38bdf8}.card{background:#111c33;border:1px solid #1e2b47;border-radius:16px;padding:16px;margin:14px 0}h1{font-size:22px;margin:8px 0}h2{font-size:17px;margin:0 0 10px}h3{font-size:14px;margin:16px 0 8px;color:#cbd5e1}.bars{display:grid;gap:4px;margin:6px 0 12px}.bar{display:grid;grid-template-columns:3.2em 1fr 4em;gap:8px;align-items:center;font-size:12px}.bar i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,#0ea5e9,#22d3ee);min-width:2px}.bar b{text-align:right;font-weight:700}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 4px;border-bottom:1px solid #1e2b47;text-align:left}td:nth-child(n+2),th:nth-child(n+2){text-align:right}td:last-child{text-align:right}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.err{color:#fca5a5;font-size:12px}code{background:#0b1222;padding:1px 4px;border-radius:4px}</style></head>
 <body><main class="wrap"><a href="/owner">← OWNER管理</a><h1>アクセス状況</h1>
-${renderD1Card(d1)}${renderApiPoolCard(apiPool)}<div class="card"><h2>ログインして使った人（1日あたり）</h2>${activeHtml}<p class="muted">1人1日1回だけ数えます。記録は90日で消えます。</p></div>
+${funnel === undefined ? "" : renderFunnelCard(funnel)}${renderD1Card(d1)}${renderApiPoolCard(apiPool)}<div class="card"><h2>ログインして使った人（1日あたり）</h2>${activeHtml}<p class="muted">1人1日1回だけ数えます。記録は90日で消えます。</p></div>
 <div class="card"><h2>訪問者（Cloudflareの集計）</h2>${cfHtml}</div></main></body></html>`;
 }
