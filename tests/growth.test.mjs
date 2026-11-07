@@ -104,7 +104,7 @@ test("ブラウザ側のスクリプト：1ページ1回・個人IDは送らな�
   assert.doesNotMatch(s, /user_id|discord|Math\.random/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\);/);
-  assert.match(index, /url\.pathname === "\/api\/pv"\) return await handlePageViewBeacon\(request, env, \{ isSameOrigin: isSameOriginRequest \}\)/);
+  assert.match(index, /url\.pathname === "\/api\/pv"\) return await handlePageViewBeacon\(request, env, \{ isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView\(request, env, path\) \}\)/);
 });
 
 test("集計：PV・訪問者・再訪、管理画面は PV から除く、ページ別", () => {

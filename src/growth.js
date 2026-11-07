@@ -104,7 +104,8 @@ export async function recordPageView(db, input, { nowMs = Date.now() } = {}) {
 
 const pvJson = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=UTF-8", "cache-control": "no-store" } });
 
-export async function handlePageViewBeacon(request, env, { isSameOrigin, nowMs = Date.now() } = {}) {
+// onView(path, signedIn)：記録のついでに呼ぶ（今日の作戦）。失敗してもPVの記録は成功扱い。
+export async function handlePageViewBeacon(request, env, { isSameOrigin, nowMs = Date.now(), onView = null } = {}) {
   if (request.method !== "POST") return pvJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   if (!env?.DB) return pvJson({ ok: false }, 503);
   if (!isSameOrigin(request)) return pvJson({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
@@ -120,6 +121,7 @@ export async function handlePageViewBeacon(request, env, { isSameOrigin, nowMs =
   const flags = { v: f.v === 1, w: f.w === 1, m: f.m === 1, s: f.s === 1, r: Number.isFinite(Number(f.r)) ? Math.max(-1, Math.min(9999, Math.floor(Number(f.r)))) : -1 };
   try {
     await recordPageView(env.DB, { path, signedIn, ads: body?.a === 1, flags, staff: body?.st === 1 }, { nowMs });
+    if (onView && signedIn) await Promise.resolve(onView(path)).catch(error => console.warn("pv_on_view_failed", error?.message || error));
     return pvJson({ ok: true });
   } catch (error) {
     console.warn("pv_record_failed", error?.message || error);
@@ -388,7 +390,7 @@ ${kpi("いまのPVとの差", sim.gapRatio ? "×" + fixed(sim.gapRatio, 0) : "�
 ${base ? `<p class="muted">基準「${esc(base.label)}」（${esc(jstDay(base.created_at * 1000))} 保存）と、いまの直近7日平均を並べます。差は施策の効果とは限りません（季節・イベント・告知などの影響も入ります）。</p><div class="scroll"><table><thead><tr><th>指標</th><th>基準</th><th>いま</th><th>差</th></tr></thead><tbody>${COMPARE_KEYS.map(([k, t, d]) => { const b = base.summary?.[k], c = h[k]; const diff = b != null && c != null && Number.isFinite(b) && Number.isFinite(c) ? c - b : null; return `<tr><td>${esc(t)}</td><td>${fmt(b, d)}</td><td>${fmt(c, d)}</td><td class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff == null ? "—" : (diff > 0 ? "+" : "") + fmt(diff, d)}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">まだ基準がありません。施策を出す前に保存しておくと、あとで前後を比べられます。</p>`}
 <form method="post" action="/api/owner/growth/baseline" id="bl"><input name="label" maxlength="60" placeholder="名前（例：作戦リリース前）" style="flex:1"><button>いまの値を基準に保存</button></form>
 ${growth.baselines.length > 1 ? `<p class="muted">これまでの基準：${growth.baselines.map(b => esc(b.label)).join("・")}</p>` : ""}</div>
-<div class="card"><h2>作戦（ミッション）の達成</h2><p class="muted">「今日の作戦」を出したあとに、ここへ達成率を表示します。</p></div>
+<div class="card"><h2>今日の作戦（14日）</h2>${(growth.missions || []).length ? `<table><thead><tr><th>日付</th><th>使った人</th><th>3つ全部達成</th><th>達成率</th></tr></thead><tbody>${growth.missions.map(m => `<tr><td>${esc(m.day.slice(5))}</td><td>${num(m.users)}</td><td>${num(m.cleared)}</td><td>${pct(m.cleared, m.users)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}<p class="muted">公開前はオーナーだけが対象です。</p></div>
 <script>
 (function(){
   function send(form,url,pick){form.addEventListener("submit",function(e){e.preventDefault();var b=form.querySelector("button");b.disabled=true;fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(pick()),credentials:"same-origin"}).then(function(r){return r.json()}).then(function(x){if(x&&x.ok)location.reload();else{alert("保存できませんでした："+(x&&x.error||""));b.disabled=false}}).catch(function(){alert("保存できませんでした");b.disabled=false})})}
