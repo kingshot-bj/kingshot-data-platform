@@ -81,3 +81,12 @@ test("プレイヤー比較の共有：ページで選んだ項目（表示中�
   assert.equal(scoreOf("61-5"), 6105);
   assert.equal(scoreOf("伝説★2"), null);
 });
+
+test("プレイヤー比較：英雄ごとの行（英雄スキル・専用装備・防衛編成）は最初はチェックなし、前の保存からも外す", () => {
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /const selectedCompareItems=new Set\(itemLabels\.filter\(label=>recommendedItems\.has\(label\)\)\);/);
+  assert.match(index, /localStorage\.getItem\(\\"eagleeye-player-compare-items-v2\\"\)/);
+  assert.match(index, /if\(Array\.isArray\(old\)\)saved=old\.filter\(label=>!isHeroItem\(label\)\)/);
+  assert.doesNotMatch(index, /localStorage\.setItem\(\\"eagleeye-player-compare-items-v1\\"/);
+  assert.doesNotMatch(index, /\.forEach\(label=>selectedCompareItems\.add\(label\)\);\}\}\}catch\{\}/.source.includes("isHeroItem") ? /x^/ : /itemLabels\.filter\(label=>label\.startsWith\(\\"闘技場防衛編成：\\"\)[^;]*\.forEach\(label=>selectedCompareItems\.add/);
+});
