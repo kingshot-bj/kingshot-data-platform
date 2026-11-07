@@ -60,7 +60,7 @@ test("共有カードは使っている着せ替えの色で作る（限定カ�
   const { shareCardPalettes } = await import("../src/themes.js");
   const pal = shareCardPalettes();
   assert.equal(pal.navy.accent, "#22d3ee");
-  assert.equal(pal.gold.accent, "#fbbf24");
+  assert.equal(pal.gold.accent, "#f5c542");
   assert.equal(pal.gold.reward, "theme_gold");
   const { kingdomShareEmbed } = await import("../src/kingdom-compare-share.js");
   const html = kingdomShareEmbed([{ kid: 1, v: { power: 1 } }, { kid: 2, v: { power: 2 } }], "");
