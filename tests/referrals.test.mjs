@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { getUserRewards, OWNER_INVITE_BONUS, INVITE_BONUS_CAP } from "../src/referrals.js";
 import { seasonOf, isReferralCode, randomReferralCode, getOrCreateReferralCode, attributeReferral, markReferralQualified, loadMyReferrals, getWatchBonus, inviterNameForCode, resetReferralSchemaCache, INVITE_TITLES, INVITE_BONUS } from "../src/referrals.js";
 import { evaluateMilestones } from "../src/milestones.js";
 
@@ -25,18 +26,22 @@ function fakeDb() {
       if (sql.startsWith("INSERT OR IGNORE INTO referral_codes")) { if (t.codes.has(a[0]) || [...t.codes.values()].includes(a[1])) return { meta: { changes: 0 } }; t.codes.set(a[0], a[1]); return { meta: { changes: 1 } }; }
       if (sql.startsWith("INSERT OR IGNORE INTO referrals")) { if (t.refs.has(a[0])) return { meta: { changes: 0 } }; t.refs.set(a[0], { invitee_user_id: a[0], inviter_user_id: a[1], code: a[2], created_at: a[3], qualified_at: null, season: null }); return { meta: { changes: 1 } }; }
       if (sql.startsWith("UPDATE referrals SET qualified_at = ?, season = ? WHERE invitee_user_id")) { const r = t.refs.get(a[2]); if (!r || r.qualified_at != null) return { meta: { changes: 0 } }; r.qualified_at = a[0]; r.season = a[1]; return { meta: { changes: 1 } }; }
+      if (sql.startsWith("INSERT OR IGNORE INTO user_rewards")) { t.rewards = t.rewards || new Map(); t.rewards.set(a[0] + "|" + a[1], a[2]); return { meta: { changes: 1 } }; }
       if (sql.startsWith("INSERT OR IGNORE INTO user_watch_bonus")) { const k = a[0] + "|" + a[1]; if (t.bonus.has(k)) return { meta: { changes: 0 } }; t.bonus.set(k, a[2]); return { meta: { changes: 1 } }; }
       return { meta: { changes: 0 } };
     },
     async first() {
       if (sql.startsWith("SELECT code FROM referral_codes")) return t.codes.has(a[0]) ? { code: t.codes.get(a[0]) } : null;
-      if (sql.startsWith("SELECT user_id FROM referral_codes")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u }; return null; }
-      if (sql.startsWith("SELECT inviter_user_id FROM referrals")) return t.refs.get(a[0]) || null;
-      if (sql.startsWith("SELECT COALESCE(SUM(amount)")) { let n = 0; for (const [k, v] of t.bonus) if (k.startsWith(a[0] + "|")) n += v; return { n }; }
+      if (sql.startsWith("SELECT c.user_id, u.role FROM referral_codes")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, role: t.roles.get(u) || "BASIC" }; return null; }
+      if (sql.startsWith("SELECT r.inviter_user_id, u.role FROM referrals")) { const r = t.refs.get(a[0]); return r ? { inviter_user_id: r.inviter_user_id, role: t.roles.get(r.inviter_user_id) || "BASIC" } : null; }
+      if (sql.startsWith("SELECT reward FROM user_rewards")) return null;
+      if (sql.startsWith("SELECT COALESCE(SUM(CASE")) { let n = 0, special = 0; for (const [k, v] of t.bonus) if (k.startsWith(a[0] + "|")) { if (k.slice(a[0].length + 1).startsWith("owner_")) special += v; else n += v; } return { n, special }; }
+      if (sql.startsWith("SELECT c.user_id, (SELECT role")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, role: t.roles.get(u) || "BASIC", nick_name: t.names.get(u) || null }; return null; }
       if (sql.startsWith("SELECT c.user_id")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, nick_name: t.names.get(u) || null }; return null; }
       return null;
     },
     async all() {
+      if (sql.startsWith("SELECT reward FROM user_rewards")) return { results: [...(t.rewards || new Map())].filter(([k]) => k.startsWith(a[0] + "|")).map(([k]) => ({ reward: k.split("|")[1] })) };
       if (sql.includes("r.qualified_at IS NULL AND u.role IN")) return { results: [...t.refs.values()].filter(r => r.inviter_user_id === a[0] && r.qualified_at == null && ["ADVANCED", "VIP", "ADMIN", "OWNER"].includes(t.roles.get(r.invitee_user_id))).map(r => ({ invitee_user_id: r.invitee_user_id })) };
       if (sql.includes("WHERE r.inviter_user_id = ?")) return { results: [...t.refs.values()].filter(r => r.inviter_user_id === a[0]).map(r => ({ ...r, nick_name: t.names.get(r.invitee_user_id) || null })) };
       if (sql.includes("WHERE r.season = ?")) {
@@ -87,7 +92,7 @@ test("ADVANCEDで達成→その月に数える、昇格の呼び出し漏れも
   assert.equal(mine.bonus, 10);
   await loadMyReferrals(db, "A", { now: nov + 200 });
   assert.equal(await getWatchBonus(db, "A"), 10, "2回目に開いても増えない");
-  assert.deepEqual(await inviterNameForCode(db, code), { name: "怪盗BJにゃん" });
+  assert.deepEqual(await inviterNameForCode(db, code), { name: "怪盗BJにゃん", special: false });
   assert.equal(await inviterNameForCode(db, "zzzzzzzz"), null);
   assert.equal(await inviterNameForCode(db, "share"), null);
 });
@@ -135,4 +140,36 @@ test("招待ページ：ログイン前はログイン案内、共有ボタン�
   assert.match(html, /next=%2Finvite/);
   assert.match(html, /招待の特典/);
   assert.doesNotMatch(html, /ランキング/);
+});
+
+test("運営（オーナー）の招待：特典が大きく上限の外、限定の着せ替え・バッジ、運営側には付けない", async () => {
+  resetReferralSchemaCache();
+  const db = fakeDb();
+  db.t.roles.set("OWN", "OWNER");
+  const code = await getOrCreateReferralCode(db, "OWN", 1, () => "pwnercdz");
+  const r = await attributeReferral(db, { inviteeUserId: "N", code, isNewUser: true, now: 10 });
+  assert.equal(r.special, true);
+  assert.equal(await getWatchBonus(db, "N"), OWNER_INVITE_BONUS.invitedSignup);
+  assert.deepEqual((await getUserRewards(db, "N")).sort(), ["badge_owner_invite", "theme_gold"]);
+  await markReferralQualified(db, "N", 20);
+  assert.equal(await getWatchBonus(db, "N"), OWNER_INVITE_BONUS.invitedSignup + OWNER_INVITE_BONUS.invitedAdvanced);
+  assert.equal(await getWatchBonus(db, "OWN"), 0, "運営側には付けない");
+  // 上限の外：通常の上乗せが上限いっぱいでも運営の分は足される
+  for (let i = 0; i < 10; i++) db.t.bonus.set("N|x" + i, 5);
+  assert.equal(await getWatchBonus(db, "N"), INVITE_BONUS_CAP + 15);
+  assert.deepEqual(await inviterNameForCode(db, code), { name: null, special: true });
+});
+
+test("限定の着せ替え・特別招待の表示", async () => {
+  const { EAGLEEYE_THEMES, renderThemePickerPage } = await import("../src/themes.js");
+  const gold = EAGLEEYE_THEMES.find(t => t.id === "gold");
+  assert.equal(gold.reward, "theme_gold");
+  const html = renderThemePickerPage();
+  assert.match(html, /class="skin locked" data-skin="gold" data-reward="theme_gold"/);
+  assert.match(html, /fetch\("\/api\/rewards"/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /👑 EagleEye運営からの特別招待/);
+  assert.match(index, /url\.pathname === "\/api\/rewards"/);
+  const page = (await import("../src/referrals.js")).renderInvitePage();
+  assert.match(page, /運営の特別招待リンクです/);
 });
