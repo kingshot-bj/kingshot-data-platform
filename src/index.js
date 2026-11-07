@@ -54,6 +54,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
+import { loadMilestones, recordMilestone, renderMilestonesPage } from "./milestones.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -5022,6 +5023,8 @@ export default {
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
+      if (url.pathname === "/milestones") return eagleEyeHtmlResponse(renderMilestonesPage());
+      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
@@ -10746,6 +10749,24 @@ async function handleAnnouncementsApi(request, env) {
   }
 }
 
+// マイルストーン（表示時判定・D1にある値だけ）。share は比較画像を作れたときに画面から呼ばれる。
+async function handleMilestonesApi(request, env, url) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    if (url.pathname === "/api/milestones/share") {
+      if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+      return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
+    }
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const result = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role), markSeen: url.searchParams.get("seen") === "1" });
+    return json({ ok: true, ...result });
+  } catch (error) {
+    console.error("milestones_failed", error?.message || error);
+    return json({ ok: false, error: "MILESTONES_FAILED" }, 500);
+  }
+}
+
 async function handleHomeSummary(request, env, executionContext) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -10755,6 +10776,8 @@ async function handleHomeSummary(request, env, executionContext) {
       visible: key => visibilityEnabled(settings, key, auth.role),
       changeVisible: change => isChangeVisibleForRole(change, auth.role, settings)
     });
+    const ms = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role) }).catch(error => { console.warn("home_milestones_failed", error?.message || error); return null; });
+    if (ms) summary.milestones = { achieved: ms.achieved, total: ms.total, unseen: ms.unseen };
     // 自分の領主データが3時間より古ければ裏で取り直す。画面側は少し待って再取得する。
     if (summary.me && executionContext?.waitUntil && claimMeAutoRefresh(summary.me)) {
       const governorId = summary.me.governor_id;
@@ -10820,7 +10843,7 @@ async function renderHome(request, env) {
 .ee-tile{min-height:112px;padding:10px 5px;border-radius:17px;background:linear-gradient(155deg,rgba(13,34,54,.98),rgba(6,18,31,.98));border-color:rgba(43,77,107,.68);transition:transform .16s,border-color .16s,background .16s}.ee-tile.primary{border-color:rgba(32,215,242,.5);background:linear-gradient(155deg,rgba(10,45,65,.98),rgba(6,20,34,.98))}.ee-tile:active{transform:scale(.965);background:#102b43}.ee-tile img{width:48px;height:48px}.ee-tile strong{font-size:11px}.ee-tile small{font-size:8px;color:#89a1b8}.ee-tile .badge{right:8px;top:8px;min-width:18px;height:18px;box-shadow:0 0 15px rgba(32,215,242,.18)}
 .ee-summary{gap:8px;margin-top:17px}.ee-stat{padding:11px 12px;border-radius:15px;background:linear-gradient(150deg,rgba(10,25,41,.95),rgba(6,16,28,.95));border-color:rgba(35,65,95,.62)}.ee-stat-label{font-size:8px;letter-spacing:.08em}.ee-stat-value{font-size:17px}.ee-stat-sub{font-size:8px;color:#7892aa}.ee-more{display:none}
 .ee-milestone-card{width:100%;display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 15px;text-align:left;border:1px solid rgba(246,200,75,.25);border-radius:16px;background:linear-gradient(110deg,rgba(48,39,18,.52),rgba(8,22,37,.92));color:#e7edf5;opacity:.78;cursor:not-allowed}
-.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
+.ee-milestone-live{opacity:1;cursor:pointer;text-decoration:none}.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
 .ee-milestone-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(246,200,75,.35);border-radius:12px;color:#f6c84b;font-size:24px}
 .ee-milestone-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.ee-milestone-copy strong{font-size:12px;font-weight:950}.ee-milestone-copy small{font-size:9px;color:#8da2b8}.ee-milestone-status{flex:0 0 auto;padding:6px 8px;border:1px solid rgba(246,200,75,.24);border-radius:999px;color:#f6d98b;font-size:9px;font-weight:900;white-space:nowrap}
 .ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
@@ -11128,11 +11151,11 @@ ${EAGLEEYE_NAV_CSS}
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
-<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
+<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
-  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>デイリー・累計目標と報酬</small></span>
-  <span class="ee-milestone-status">近日公開予定</span>
-</button>
+  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
+  <span class="ee-milestone-status" id="homeMilestoneStatus">NEW</span>
+</a>
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
@@ -11199,6 +11222,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
     var ob=document.getElementById("homeOnboard"),obCopy=${JSON.stringify({ link: onboardingCopy("link"), key: onboardingCopy("key") })}[d.onboarding||""]
     if(ob){if(obCopy){document.getElementById("homeOnboardTitle").textContent=obCopy.title;document.getElementById("homeOnboardBody").textContent=obCopy.body;document.getElementById("homeOnboardCta").textContent=obCopy.cta+" →";ob.hidden=false}else ob.hidden=true}
+    if(d.milestones){var mt=document.getElementById("homeMilestoneText"),ms=document.getElementById("homeMilestoneStatus"),mu=d.milestones.unseen||[];if(ms)ms.textContent=d.milestones.achieved+" / "+d.milestones.total+" 達成";if(mt&&mu.length)mt.textContent="🎉 達成："+mu.slice(0,2).map(function(u){return u.title}).join("、")+(mu.length>2?" ほか"+(mu.length-2)+"件":"")}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
     var ch=d.changes||[];
     if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
