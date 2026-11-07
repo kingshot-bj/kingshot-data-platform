@@ -50,7 +50,9 @@ export async function collectMightPulseThroughGuards(env, {
   timeoutMs,
   maxRetries,
   mightyOnly = false,
-  userId = null
+  userId = null,
+  // 裏の収集は、ユーザー操作のために reserveKeys 本の空きを残す（足りなければキーを借りずに見送る）。
+  reserveKeys = 0
 } = {}) {
   if (!env?.DB) throw new Error("DB_NOT_CONFIGURED");
   if (!path) throw new Error("MIGHTPULSE_PATH_REQUIRED");
@@ -73,7 +75,9 @@ export async function collectMightPulseThroughGuards(env, {
       ? (userId
         ? leaseUserMightyApiKey(env.DB, { userId, purpose, targetType, targetId })
         : leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId }))
-      : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true })));
+      : (reserveKeys > 0
+        ? leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true, reserveAvailableKeys: Math.floor(reserveKeys) })
+        : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true }))));
 
     if (!lease) {
       const availability = await withD1TransientRetry(() => getApiPoolAvailability(env.DB, {

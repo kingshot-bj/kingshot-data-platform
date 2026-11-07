@@ -1,6 +1,7 @@
 import { archiveKingdomGrowthRows } from "./kingdom-growth-history.js";
 import { saveKingdomStats } from "./kingdom-stats.js";
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
+import { BACKGROUND_KEY_RESERVE } from "./api-pool-pressure.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
@@ -92,7 +93,8 @@ export async function runKingdomCatalogDiscovery(env, {
       targetType: "CATALOG",
       targetId: String(targetPage),
       purpose: "KINGDOM_CATALOG_DISCOVERY",
-      query: { page: targetPage, size: safePageSize }
+      query: { page: targetPage, size: safePageSize },
+      reserveKeys: BACKGROUND_KEY_RESERVE
     });
     const payload = fetched.result?.data;
     const rows = extractKingdoms(payload);

@@ -64,5 +64,5 @@ test("オーナー用ページに今日の読み取りと目安を表示、cron�
   assert.match(html, /を超えています/);
   assert.match(d1AlertMessage({ day: "d", rowsRead: 1, threshold: 2, origin: "https://x" }), /https:\/\/x\/owner\/traffic/);
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(src, /await runD1UsageAlert\(env\);\n[\s\S]{0,200}const announce = await runAnnouncementDiscordSync/);
+  assert.match(src, /await runD1UsageAlert\(env\);\n[\s\S]{0,200}await runApiPoolUsageAlert\(env\);\n[\s\S]{0,200}const announce = await runAnnouncementDiscordSync/, "DMは直後のアナウンス同期で送られる");
 });

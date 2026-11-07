@@ -9,6 +9,7 @@
 // unexpected response shape never burns API quota.
 
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
+import { BACKGROUND_KEY_RESERVE } from "./api-pool-pressure.js";
 import { kvkMysticEmbed } from "./discord-embeds.js";
 import { enqueueKvkNotifications, kvkPublicOrigin, KVK_CURRENT_KINGDOM_SQL, KVK_LINKS_FROM_SQL } from "./kvk-discord.js";
 
@@ -136,7 +137,7 @@ export async function runKvkMysticCollection(env, { now = Math.floor(Date.now() 
   for (const { kid } of todo) {
     let status = "OK", boards = null;
     try {
-      const collected = await collect(env, { path: `/kingdoms/${encodeURIComponent(kid)}`, endpoint: "/kingdoms/:kid?include=boards", targetType: "KINGDOM", targetId: String(kid), purpose: "KVK_MYSTIC_BOARDS", query: { include: "boards", limit: 10 }, timeoutMs: 15000, maxRetries: 1 });
+      const collected = await collect(env, { path: `/kingdoms/${encodeURIComponent(kid)}`, endpoint: "/kingdoms/:kid?include=boards", targetType: "KINGDOM", targetId: String(kid), purpose: "KVK_MYSTIC_BOARDS", reserveKeys: BACKGROUND_KEY_RESERVE, query: { include: "boards", limit: 10 }, timeoutMs: 15000, maxRetries: 1 });
       const payload = collected?.result?.data ?? collected?.result ?? collected;
       boards = summarizeKingdomBoards(payload);
       if (!MYSTIC_STAGE_KEYS.some(k => boards[k])) { status = "EMPTY"; summary.empty++; emptyStreak++; }
