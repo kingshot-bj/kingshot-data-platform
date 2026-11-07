@@ -28,3 +28,15 @@ test("4王国そろったら追加欄の代わりに案内、英語のラベル�
   assert.match(html, /比較できるのは4王国までです/);
   assert.doesNotMatch(html, /詳細payload|Provider観測/);
 });
+
+test("比較の数字は毎日の集計（kingdom_stats_current）から出し、表で良い方に色を付ける", async () => {
+  const stats = [{ kid: 1523, power: 79228615776, power_gain_7d: 5604704559, power_rank: 38, age_days: 300, player_count: 4747, observed_at: 1794024346 }, { kid: 1524, power: 61332674138, power_gain_7d: 5241979188, power_rank: 2392, age_days: 300, player_count: 1935, observed_at: 1794024346 }];
+  const db2 = { prepare: sql => ({ bind: () => ({ first: async () => null, all: async () => ({ results: sql.includes("kingdom_stats_current") ? stats : [] }) }), first: async () => null }) };
+  const html = await renderKingdomComparePage(new Request("https://eagleeye-ks.com/kingdom/compare?kid=1524&kid=1523"), { DB: db2 });
+  assert.match(html, /<th>総戦力<\/th><td>613億<\/td><td class='best'>792億<\/td>/);
+  assert.match(html, /<th>戦力順位（全王国）<\/th><td>2,392位<\/td><td class='best'>38位<\/td>/);
+  assert.match(html, /<th>1人あたりの戦力<\/th><td class='best'>3,170万<\/td>/);
+  assert.match(html, /<th>開設からの日数<\/th><td>300<\/td><td>300<\/td>/, "優劣のない項目は色を付けない");
+  assert.doesNotMatch(html, /<th>英雄戦力<\/th>/, "どの王国にも値の無い項目は出さない");
+  assert.doesNotMatch(html, /名称未取得/);
+});
