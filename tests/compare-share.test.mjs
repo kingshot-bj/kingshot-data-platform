@@ -60,11 +60,12 @@ test("プレイヤー比較の共有：ページで選んだ項目（表示中�
   assert.match(src, /document\.querySelectorAll\("\.compare-player-card"\)/, "スマホはプレイヤーごとのカードから読む");
   assert.match(src, /document\.getElementById\("eeCompareTableData"\)/, "表にしかない項目（英雄スキルなど）は控えから読む");
   assert.match(src, /window\.__eeCompareShown/, "表示するかはページの選択（項目＋グループ）に合わせる");
-  assert.match(src, /\(!r\.visible && !custom\[label\]\)/, "選んでいない項目は載せない。追加ランキングで選んだものは載せる");
+  assert.match(src, /if \(skip\[label\] \|\| !r\.visible \|\|/, "チェックしていない項目は載せない");
+  assert.match(src, /add\(label, shown \? shown\(label\) : !m\.hidden,/, "カードの行もページの選択で決める");
+  assert.doesNotMatch(src, /custom\[label\]/, "追加ランキング（グラフ用）の選択で項目を足さない");
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /tableData\.id=\\"eeCompareTableData\\";tableData\.innerHTML=h;box\.appendChild\(tableData\);/);
   assert.match(index, /window\.__eeCompareShown=function\(label\)\{const g=compareGroupForLabel\(label\);/);
-  assert.match(src, /\[data-ee-custom-board\]/);
   assert.match(src, /"戦力": 1, "役場レベル": 1/, "上で描く基本項目は重ねない");
   assert.match(src, /"EagleEye取得": 1, "元データ時刻": 1/);
   assert.match(src, /rows: out\.slice\(0, 100\)/, "iPhoneで作れる大きさに抑える");
@@ -79,4 +80,13 @@ test("プレイヤー比較の共有：ページで選んだ項目（表示中�
   assert.equal(scoreOf("5.2億"), 5.2e8);
   assert.equal(scoreOf("61-5"), 6105);
   assert.equal(scoreOf("伝説★2"), null);
+});
+
+test("プレイヤー比較：英雄ごとの行（英雄スキル・専用装備・防衛編成）は最初はチェックなし、前の保存からも外す", () => {
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /const selectedCompareItems=new Set\(itemLabels\.filter\(label=>recommendedItems\.has\(label\)\)\);/);
+  assert.match(index, /localStorage\.getItem\(\\"eagleeye-player-compare-items-v2\\"\)/);
+  assert.match(index, /if\(Array\.isArray\(old\)\)saved=old\.filter\(label=>!isHeroItem\(label\)\)/);
+  assert.doesNotMatch(index, /localStorage\.setItem\(\\"eagleeye-player-compare-items-v1\\"/);
+  assert.doesNotMatch(index, /\.forEach\(label=>selectedCompareItems\.add\(label\)\);\}\}\}catch\{\}/.source.includes("isHeroItem") ? /x^/ : /itemLabels\.filter\(label=>label\.startsWith\(\\"闘技場防衛編成：\\"\)[^;]*\.forEach\(label=>selectedCompareItems\.add/);
 });
