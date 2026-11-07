@@ -55,6 +55,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, loadReferralRanking, DEFAULT_SEASON_REWARDS } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -4999,6 +5000,8 @@ export default {
     configureAdsense(env);
     // Custom domain move: page views on the legacy host go to PUBLIC_ORIGIN (off until LEGACY_REDIRECT is set).
     { const moved = legacyHostRedirect(request, env); if (moved) return moved; }
+    // 招待リンク（/?ref=コード）：コードを30日だけCookieに覚えて、きれいなURLへ。DBは読まない。
+    { const ref = url.searchParams.get("ref"); if (request.method === "GET" && isReferralCode(ref) && !url.pathname.startsWith("/api/")) { const clean = new URL(url); clean.searchParams.delete("ref"); const h = new Headers({ Location: clean.pathname + clean.search, "Cache-Control": "no-store" }); h.append("Set-Cookie", serializeCookie(REF_COOKIE, ref, { maxAge: REF_COOKIE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" })); return new Response(null, { status: 302, headers: h }); } }
     try {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
@@ -5024,7 +5027,7 @@ export default {
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
       if (url.pathname === "/milestones") return eagleEyeHtmlResponse(renderMilestonesPage());
-      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
+      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share" || url.pathname === "/api/milestones/invite") return await handleMilestonesApi(request, env, url);
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
@@ -5811,6 +5814,9 @@ async function handleDiscordCallback(request, env) {
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
+      // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
+      const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
+      if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
     } catch (error) {
       // Keep Discord authentication usable during a temporary D1 outage.
       // The signed session is safe to issue, while DB-backed roles remain unavailable.
@@ -5832,6 +5838,7 @@ async function handleDiscordCallback(request, env) {
     "Cache-Control": "no-store"
   });
   responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
@@ -5878,7 +5885,7 @@ async function upsertUser(db, discordUser, now) {
      VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(crypto.randomUUID(), userId, discordId, discordUser.username || null, discordUser.global_name || null, now).run();
 
-  return { status: "ACTIVE", user_id: userId };
+  return { status: "ACTIVE", user_id: userId, isNew: !existing };
 }
 
 function logout(request) {
@@ -10759,6 +10766,12 @@ async function handleMilestonesApi(request, env, url) {
       return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
     }
     if (!milestonesAvailableFor(auth.role)) return json({ ok: false, error: "COMING_SOON" }, 403);
+    if (url.pathname === "/api/milestones/invite") {
+      const mine = await loadMyReferrals(env.DB, auth.user_id);
+      const season = mine.season;
+      const ranking = (await loadReferralRanking(env.DB, season)).map(r => ({ rank: r.rank, name: r.name, kid: r.kid, count: r.count, me: r.user_id === String(auth.user_id) }));
+      return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season, this_season: mine.thisSeason, rewards: DEFAULT_SEASON_REWARDS, ranking });
+    }
     const settings = await getPlayerVisibilitySettings(env.DB);
     const result = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role), markSeen: url.searchParams.get("seen") === "1" });
     return json({ ok: true, ...result });

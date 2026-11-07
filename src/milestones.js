@@ -3,6 +3,8 @@
 // MightPulse への新しい呼び出しはしない。一度達成したら記録（user_milestones）に残り、戦力が下がっても消えない。
 // 読み取りは1回あたり数十行（主キー・索引で引く）。
 
+import { INVITE_TITLES, ensureReferralSchema } from "./referrals.js";
+
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
 // 公開前はオーナーだけが見られる（ユーザーには「準備中」）。公開するときは true にする。
 export const MILESTONES_PUBLIC = false;
@@ -55,12 +57,17 @@ export const MILESTONES = Object.freeze([
     }
   })),
   { key: "kingdom_top10", group: "growth", icon: "👑", title: "王国の十傑", desc: "自分の王国で個人戦力TOP10に入る", needsPlayer: true, sensitive: "ranks_core",
-    check: c => ({ done: Number(c.powerRank) > 0 && Number(c.powerRank) <= 10, label: Number(c.powerRank) > 0 ? `いま 王国内${c.powerRank}位` : "" }) }
+    check: c => ({ done: Number(c.powerRank) > 0 && Number(c.powerRank) <= 10, label: Number(c.powerRank) > 0 ? `いま 王国内${c.powerRank}位` : "" }) },
+  ...INVITE_TITLES.map(t => ({
+    key: t.key, group: "invite", icon: t.icon, title: t.title, desc: `招待した${t.n}人がADVANCEDになる`,
+    check: c => ({ done: Number(c.invites) >= t.n, now: Math.min(Number(c.invites) || 0, t.n), goal: t.n, label: `いま ${Number(c.invites) || 0}人` })
+  }))
 ]);
 
 export const MILESTONE_GROUPS = Object.freeze([
   { key: "eagleeye", title: "EagleEye編", lead: "EagleEyeを使いこなす5つの一歩" },
-  { key: "growth", title: "成長編", lead: "ゲーム内の到達点（記録されたデータで自動判定）" }
+  { key: "growth", title: "成長編", lead: "ゲーム内の到達点（記録されたデータで自動判定）" },
+  { key: "invite", title: "招待編", lead: "招待リンクから登録した人がADVANCEDになると1人" }
 ]);
 
 // 純粋関数：ctx から各マイルストーンの判定結果を作る。stored は達成済みの記録（Map key -> {achieved_at, seen}）。
@@ -111,16 +118,17 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
   if (!db || !auth?.user_id) return null;
   await ensureMilestoneSchema(db);
   const userId = String(auth.user_id);
-  const [storedRows, link, watch] = await Promise.all([
+  const [storedRows, link, watch, invited] = await Promise.all([
     db.prepare("SELECT key, achieved_at, seen FROM user_milestones WHERE user_id = ?").bind(userId).all(),
     db.prepare(
       "SELECT l.governor_id, l.kingdom_id, p.kid, p.power, p.town_center_level FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
       "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
     ).bind(userId).first(),
-    auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 })
+    auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 }),
+    ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 }))
   ]);
   const stored = new Map((storedRows?.results || []).map(r => [String(r.key), { achieved_at: Number(r.achieved_at), seen: Number(r.seen) }]));
-  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
+  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
   const kid = Number(link?.kid ?? link?.kingdom_id) || null;
   if (link && link.power != null) ctx.player = { power: link.power, town_center_level: link.town_center_level };
   if (link && kid) {
@@ -155,6 +163,25 @@ function milestonesClient(cfg) {
     var cls = "ms-card" + (i.done ? " done" : "") + (i.fresh ? " fresh" : "");
     return i.href && !i.done ? '<a class="' + cls + '" href="' + esc(i.href) + '">' + inner + '</a>' : '<div class="' + cls + '">' + inner + '</div>';
   }
+  function loadInvite() {
+    var box = document.getElementById("msInvite");
+    fetch("/api/milestones/invite", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.ok) throw new Error("x");
+      var month = String(d.season).split("-")[1].replace(/^0/, "") + "月";
+      var h = '<h2>招待リンクと' + esc(month) + 'のランキング</h2>' +
+        '<div class="ms-link"><input readonly value="' + esc(d.link) + '" aria-label="あなたの招待リンク"><button type="button" id="msCopy">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
+        '<p class="ms-lead">このリンクから初めてログインした人が、APIキーを登録してADVANCEDになると1人に数えます（リンクを開いてから30日以内のログインが対象）。</p>' +
+        '<div class="ms-sub"><b>' + esc(month) + 'の報酬（今シーズン）</b><ul>' + d.rewards.map(function (r) { return '<li>' + r.n + '人：' + esc(r.text) + (d.this_season >= r.n ? ' ✓' : '') + '</li>'; }).join("") + '</ul><small>' + esc(month) + 'の達成：' + d.this_season + '人／累計：' + d.lifetime + '人</small></div>' +
+        '<div class="ms-sub"><b>招待した人</b>' + (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="ms-lead">まだいません。リンクを共有してみましょう。</p>') + '</div>' +
+        '<div class="ms-sub"><b>' + esc(month) + 'の招待ランキング</b>' + (d.ranking.length ? '<ol class="ms-rank">' + d.ranking.map(function (r) { return '<li' + (r.me ? ' class="me"' : '') + '><span>' + r.rank + '</span><b>' + esc(r.name) + '</b><small>' + (r.kid ? '王国' + esc(r.kid) : '') + '</small><em>' + r.count + '人</em></li>'; }).join("") + '</ol>' : '<p class="ms-lead">今月はまだ誰も達成していません。</p>') + '</div>';
+      box.innerHTML = h;
+      document.getElementById("msCopy").onclick = function () {
+        var text = "KingShotの分析・攻略ツール EagleEye（無料）";
+        if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }
+        var btn = this; (navigator.clipboard ? navigator.clipboard.writeText(d.link) : Promise.reject()).then(function () { btn.textContent = "コピーしました"; }).catch(function () { box.querySelector("input").select(); });
+      };
+    }).catch(function () { box.innerHTML = '<h2>招待リンク</h2><p class="ms-lead">読み込めませんでした。</p>'; });
+  }
   fetch("/api/milestones?seen=1", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); }).then(function (x) {
     if (x.s === 403) { root.innerHTML = '<div class="ms-login"><p>🛠️ マイルストーンは準備中です。公開までもう少しお待ちください。</p></div>'; return; }
     if (x.s === 401) { root.innerHTML = '<div class="ms-login"><p>マイルストーンはログインすると記録されます。</p><a href="/api/auth/discord?next=%2Fmilestones">Discordでログイン →</a></div>'; return; }
@@ -168,7 +195,9 @@ function milestonesClient(cfg) {
       var n = items.filter(function (i) { return i.done; }).length;
       html += '<section class="ms-group"><h2>' + esc(g.title) + ' <small>' + n + ' / ' + items.length + '</small></h2><p class="ms-lead">' + esc(g.lead) + '</p><div class="ms-list">' + items.map(card).join("") + '</div></section>';
     });
+    html += '<section class="ms-group" id="msInvite"><h2>招待リンクと今月のランキング</h2><p class="ms-lead">読み込み中…</p></section>';
     root.innerHTML = html;
+    loadInvite();
   }).catch(function () { root.innerHTML = '<p class="ms-lead">読み込めませんでした。時間をおいて開き直してください。</p>'; });
 }
 
@@ -187,6 +216,9 @@ export function renderMilestonesPage() {
 .ms-copy{flex:1;min-width:0;display:grid;gap:3px}.ms-copy b{font-size:14px}.ms-copy small{font-size:12px;color:var(--ee-subtext)}.ms-copy em{font-style:normal;font-size:11px;color:var(--ee-cyan)}
 .ms-bar{display:block;height:6px;border-radius:3px;background:rgba(148,163,184,.25);overflow:hidden}.ms-bar i{display:block;height:100%;background:linear-gradient(90deg,#f6c84b,#facc15)}
 .ms-state{flex:0 0 auto;text-align:right;font-size:12px;font-weight:900;color:var(--ee-subtext)}.done .ms-state{color:#f6c84b;font-size:18px}.ms-state small{display:block;font-size:10px;font-weight:700;color:var(--ee-subtext)}
+.ms-link{display:flex;gap:8px;margin:8px 0}.ms-link input{flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--ee-border-soft);background:var(--ee-panel);color:var(--ee-text);font-size:13px}.ms-link button{padding:10px 16px;border:0;border-radius:10px;background:#facc15;color:#1f1300;font-weight:900}
+.ms-sub{margin:10px 0;padding:12px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);font-size:13px}.ms-sub b{display:block;margin-bottom:6px}.ms-sub ul{margin:0;padding-left:1.2em;line-height:1.8}.ms-sub small{color:var(--ee-subtext)}.ok{color:#22c55e;font-weight:800}.wait{color:var(--ee-subtext)}
+.ms-rank{list-style:none;margin:0;padding:0;display:grid;gap:6px}.ms-rank li{display:grid;grid-template-columns:2em 1fr auto auto;gap:8px;align-items:center;padding:6px 8px;border-radius:10px;background:rgba(148,163,184,.08)}.ms-rank li.me{outline:2px solid rgba(250,204,21,.6)}.ms-rank span{font-weight:900;color:#f6c84b}.ms-rank small{color:var(--ee-subtext)}.ms-rank em{font-style:normal;font-weight:900}
 .ms-login{padding:16px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel)}.ms-login a{display:inline-block;margin-top:6px;padding:9px 16px;border-radius:999px;background:#5865f2;color:#fff;font-weight:900;text-decoration:none}</style></head>
 <body><main class="wrap"><nav class="crumbs"><a href="/">EagleEye</a> › マイルストーン</nav>
 <h1>✦ マイルストーン</h1><p class="lead">EagleEyeの使い方とゲーム内の成長で、バッジが増えていきます。判定はEagleEyeに記録されたデータで自動で行います（一度達成したら消えません）。</p>

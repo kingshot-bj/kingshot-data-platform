@@ -1,3 +1,4 @@
+import { markReferralQualified } from "./referrals.js";
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { addApiPoolKey, decryptSecret, leaseApiKeyForHealthCheck, releaseApiLease, recordApiPoolSuccess, recordApiPoolFailure, setApiPoolMightyMetadata } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
@@ -259,6 +260,8 @@ async function evaluateAdvancedEligibilityInternal(db, userId) {
     "UPDATE users SET role = ?, updated_at = ? WHERE user_id = ? AND role = 'BASIC' AND status = 'ACTIVE'"
   ).bind(ADVANCED_ROLE, now, normalizedUserId).run();
 
+  // 招待された人なら、ADVANCEDになったこの月の招待として数える（失敗しても昇格は止めない）。
+  if (result?.meta?.changes === 1) await markReferralQualified(db, normalizedUserId, now).catch(error => console.warn("referral_qualify_failed", error?.message || error));
   return {
     ...eligibility,
     role: result?.meta?.changes === 1 ? ADVANCED_ROLE : eligibility.role,
@@ -335,6 +338,7 @@ export async function evaluateVipEligibility(db, { userId } = {}) {
     const result = await db.prepare(
       "UPDATE users SET role=?, updated_at=? WHERE user_id=? AND role IN ('BASIC','ADVANCED') AND status='ACTIVE'"
     ).bind(VIP_ROLE, now, normalizedUserId).run();
+    if (result?.meta?.changes === 1) await markReferralQualified(db, normalizedUserId, now).catch(error => console.warn("referral_qualify_failed", error?.message || error));
     return { ...eligibility, role: result?.meta?.changes === 1 ? VIP_ROLE : eligibility.role, changed: result?.meta?.changes === 1, promoted: result?.meta?.changes === 1, demoted: false, featureEligible: true };
   }
 
