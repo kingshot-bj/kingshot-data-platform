@@ -130,7 +130,10 @@ export async function renderKingdomDetailPage(request, env) {
   return page("王国 "+kid, html);
 }
 
-export async function renderKingdomRankingsPage(request, env, auth = null) {
+// 王国ウォッチに登録されていない王国でもランキングを見られるように、開いたときに足りない／古い1ボードだけ取りに行く。
+// onDemand(kid, board) は index.js から渡される（APIキー1回）。ログインした人のときだけ動かす（ボットに全王国を取らせない）。
+export const RANKING_ON_DEMAND_STALE_SECONDS = 24 * 3600;
+export async function renderKingdomRankingsPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url = new URL(request.url);
   let pref = null, linked = null;
   if (auth?.status === "ACTIVE" && env.DB) {
@@ -149,7 +152,7 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
   }
   const row = await catalogRow(env.DB,kid);
   if (!row) return page("王国ランキング","<main class='wrap'><h1>王国ランキング</h1><div class='empty'>王国が見つかりません。王国IDを確認してください。</div><a href='/kingdom-catalog'>王国カタログ</a></main>");
-  const boards = await env.DB.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
+  const boards = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
   const available = (boards.results||[]).map(x=>x.board);
   const board = available.includes(selected) ? selected : (available.includes(selectedBoards[0]) ? selectedBoards[0] : (available[0]||selected));
   const rows = await withArchivedRankings(env, kid, await env.DB.prepare("SELECT r.rank,r.target_type,r.target_id,r.governor_id,r.nick_name,r.score,r.aid,r.abbr,r.name,r.previous_rank,p.avatar_url,p.alliance_abbr,p.alliance_rank,p.alliance_rank_label FROM kingdom_ranking_current r LEFT JOIN players p ON p.governor_id = COALESCE(NULLIF(r.governor_id,''),r.target_id) WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT 100").bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
@@ -163,7 +166,26 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
       for (const a of allianceRows.results || []) abbrByAid.set(normalizeAllianceId(a.aid), String(a.abbr));
     } catch (error) { console.error("ranking_alliance_abbr_lookup_failed", kid, error?.message || error); }
   }
-  const archiveNotice = rows.archived ? "<div class='empty'>このランキングは " + esc(formatArchiveDate(rows.archived.lastUpdatedAt)) + " 時点のデータ（アーカイブ）です。最新の順位は、王国ウォッチリストに登録すると自動で取得されます。</div>" : "";
+  // 足りない・古いボードは、ログインしている人が開いたときに裏で取り直す（そのあと自動で再読み込み）。
+  const validBoard = BOARDS.some(x => x[0] === board);
+  const checkedAt = Number((boards.results || []).find(x => x.board === board)?.last_checked_at || 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const needsFetch = validBoard && (!(rows.results || []).length || rows.archived || nowSec - checkedAt > RANKING_ON_DEMAND_STALE_SECONDS);
+  const alreadyTried = url.searchParams.get("fetched") === "1";
+  let fetchNotice = "";
+  if (needsFetch && !alreadyTried) {
+    if (auth?.status === "ACTIVE" && typeof onDemand === "function") {
+      const job = Promise.resolve().then(() => onDemand(kid, board)).catch(error => console.warn("ranking_on_demand_failed", kid, board, error?.code || error?.message || error));
+      if (typeof waitUntil === "function") waitUntil(job);
+      const again = new URL(url); again.searchParams.set("board", board); again.searchParams.set("fetched", "1");
+      fetchNotice = "<div class='empty fetch-notice'>⏳ このランキングの最新データを取得しています。数秒後に自動で更新します。</div><script>setTimeout(function(){location.replace(" + JSON.stringify(again.pathname + again.search) + ")},6000)</script>";
+    } else if (!auth) {
+      fetchNotice = "<div class='empty fetch-notice'>" + ((rows.results || []).length ? "表示中のランキングは古い可能性があります。" : "この王国のランキングはまだ取得されていません。") + " <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン</a>すると、開いたときに最新のランキングを取得します。</div>";
+    }
+  } else if (needsFetch && alreadyTried && !(rows.results || []).length) {
+    fetchNotice = "<div class='empty fetch-notice'>このランキングは今は取得できませんでした（ゲーム内でまだ開放されていない項目の可能性があります）。時間をおいてもう一度開いてください。</div>";
+  }
+  const archiveNotice = fetchNotice ? fetchNotice : rows.archived ? "<div class='empty'>このランキングは " + esc(formatArchiveDate(rows.archived.lastUpdatedAt)) + " 時点のデータ（アーカイブ）です。最新の順位は、王国ウォッチリストに登録すると自動で取得されます。</div>" : "";
   const label=BOARDS.find(x=>x[0]===board)?.[1]||board;
   const boardSelectOptions=BOARDS.filter(([b])=>!storedBoards.length||storedBoards.includes(b)).map(([b,l])=>({key:b,label:l}));
   const body=(rows.results||[]).map(r=>{

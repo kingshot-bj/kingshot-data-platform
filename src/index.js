@@ -5171,7 +5171,7 @@ export default {
         return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName, { origin: publicOrigin(request, env) }).text());
       }
       if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
-      if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
+      if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAlliancePage(request, env, auth)); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
@@ -7311,6 +7311,31 @@ async function fetchThroughWatchlistApiPool(env, {
     }
     throw error;
   }
+}
+
+// 王国ウォッチに入っていない王国のランキングを、開かれたときに1ボードだけ取る（APIキー1回）。
+// 同じ王国・ボードは6時間に1回まで（D1の最終確認時刻）＋同じisolate内で10分に1回まで（失敗の連打防止）。
+const RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS = 6 * 3600;
+const rankingOnDemandAttempts = new Map();
+async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now() } = {}) {
+  if (!env?.DB || !Number.isInteger(kid) || kid < 1 || !KINGDOM_RANKING_BOARDS.includes(board)) return { skipped: true, reason: "INVALID" };
+  const key = kid + ":" + board;
+  const last = rankingOnDemandAttempts.get(key) || 0;
+  if (nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
+  rankingOnDemandAttempts.set(key, nowMs);
+  if (rankingOnDemandAttempts.size > 2000) rankingOnDemandAttempts.clear();
+  const now = Math.floor(nowMs / 1000);
+  const state = await env.DB.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
+  if (state?.last_checked_at && now - Number(state.last_checked_at) < RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS) return { skipped: true, reason: "FRESH" };
+  const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_RANKING_ON_DEMAND");
+  const payload = fetched.result?.data;
+  const entries = extractKingdomRankingEntries(payload).slice(0, WATCHLIST_RANKING_LIMIT);
+  if (!entries.length) return { saved: false, reason: "RANKING_ENTRIES_EMPTY" };
+  await ensureKingdomWatchlistFreshnessSchema(env.DB);
+  const sourceObservedAt = getMightPulseSourceTimestamp(payload);
+  const comparison = await getKingdomRankingChanges(env.DB, { kid, board, entries, observedAt: now });
+  const rows = await saveKingdomRankingBoard(env.DB, { kid, board, entries: comparison.changedEntries, removedTargets: comparison.removedTargets, entriesAlreadyFiltered: true, observedAt: now, sourceObservedAt, checkedAt: now, archiveBucket: env.ARCHIVE, historyMode: env.HISTORY_STORAGE_MODE });
+  return { saved: true, rows };
 }
 
 async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING", correlation = {}) {
