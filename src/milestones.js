@@ -3,6 +3,8 @@
 // MightPulse への新しい呼び出しはしない。一度達成したら記録（user_milestones）に残り、戦力が下がっても消えない。
 // 読み取りは1回あたり数十行（主キー・索引で引く）。
 
+import { INVITE_TITLES, ensureReferralSchema } from "./referrals.js";
+
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
 // 公開前はオーナーだけが見られる（ユーザーには「準備中」）。公開するときは true にする。
 export const MILESTONES_PUBLIC = false;
@@ -55,12 +57,17 @@ export const MILESTONES = Object.freeze([
     }
   })),
   { key: "kingdom_top10", group: "growth", icon: "👑", title: "王国の十傑", desc: "自分の王国で個人戦力TOP10に入る", needsPlayer: true, sensitive: "ranks_core",
-    check: c => ({ done: Number(c.powerRank) > 0 && Number(c.powerRank) <= 10, label: Number(c.powerRank) > 0 ? `いま 王国内${c.powerRank}位` : "" }) }
+    check: c => ({ done: Number(c.powerRank) > 0 && Number(c.powerRank) <= 10, label: Number(c.powerRank) > 0 ? `いま 王国内${c.powerRank}位` : "" }) },
+  ...INVITE_TITLES.map(t => ({
+    key: t.key, group: "invite", icon: t.icon, title: t.title, desc: `招待した${t.n}人がADVANCEDになる`,
+    check: c => ({ done: Number(c.invites) >= t.n, now: Math.min(Number(c.invites) || 0, t.n), goal: t.n, label: `いま ${Number(c.invites) || 0}人` })
+  }))
 ]);
 
 export const MILESTONE_GROUPS = Object.freeze([
   { key: "eagleeye", title: "EagleEye編", lead: "EagleEyeを使いこなす5つの一歩" },
-  { key: "growth", title: "成長編", lead: "ゲーム内の到達点（記録されたデータで自動判定）" }
+  { key: "growth", title: "成長編", lead: "ゲーム内の到達点（記録されたデータで自動判定）" },
+  { key: "invite", title: "招待編", lead: "招待リンクから登録した人がADVANCEDになると1人" }
 ]);
 
 // 純粋関数：ctx から各マイルストーンの判定結果を作る。stored は達成済みの記録（Map key -> {achieved_at, seen}）。
@@ -111,16 +118,17 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
   if (!db || !auth?.user_id) return null;
   await ensureMilestoneSchema(db);
   const userId = String(auth.user_id);
-  const [storedRows, link, watch] = await Promise.all([
+  const [storedRows, link, watch, invited] = await Promise.all([
     db.prepare("SELECT key, achieved_at, seen FROM user_milestones WHERE user_id = ?").bind(userId).all(),
     db.prepare(
       "SELECT l.governor_id, l.kingdom_id, p.kid, p.power, p.town_center_level FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
       "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
     ).bind(userId).first(),
-    auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 })
+    auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 }),
+    ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 }))
   ]);
   const stored = new Map((storedRows?.results || []).map(r => [String(r.key), { achieved_at: Number(r.achieved_at), seen: Number(r.seen) }]));
-  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
+  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
   const kid = Number(link?.kid ?? link?.kingdom_id) || null;
   if (link && link.power != null) ctx.player = { power: link.power, town_center_level: link.town_center_level };
   if (link && kid) {
@@ -168,6 +176,7 @@ function milestonesClient(cfg) {
       var n = items.filter(function (i) { return i.done; }).length;
       html += '<section class="ms-group"><h2>' + esc(g.title) + ' <small>' + n + ' / ' + items.length + '</small></h2><p class="ms-lead">' + esc(g.lead) + '</p><div class="ms-list">' + items.map(card).join("") + '</div></section>';
     });
+    html += '<a class="ms-card" href="/invite"><span class="ms-icon" aria-hidden="true">📨</span><span class="ms-copy"><b>招待リンクと今月のランキング</b><small>友だち招待のページへ</small></span><span class="ms-state">→</span></a>';
     root.innerHTML = html;
   }).catch(function () { root.innerHTML = '<p class="ms-lead">読み込めませんでした。時間をおいて開き直してください。</p>'; });
 }

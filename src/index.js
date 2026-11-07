@@ -55,6 +55,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, loadReferralRanking, renderInvitePage } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -4999,6 +5000,8 @@ export default {
     configureAdsense(env);
     // Custom domain move: page views on the legacy host go to PUBLIC_ORIGIN (off until LEGACY_REDIRECT is set).
     { const moved = legacyHostRedirect(request, env); if (moved) return moved; }
+    // 招待リンク（/?ref=コード）：コードを30日だけCookieに覚えて、きれいなURLへ。DBは読まない。
+    { const ref = url.searchParams.get("ref"); if (request.method === "GET" && isReferralCode(ref) && !url.pathname.startsWith("/api/")) { const clean = new URL(url); clean.searchParams.delete("ref"); const h = new Headers({ Location: clean.pathname + clean.search, "Cache-Control": "no-store" }); h.append("Set-Cookie", serializeCookie(REF_COOKIE, ref, { maxAge: REF_COOKIE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" })); return new Response(null, { status: 302, headers: h }); } }
     try {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
@@ -5025,6 +5028,8 @@ export default {
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
       if (url.pathname === "/milestones") return eagleEyeHtmlResponse(renderMilestonesPage());
       if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
+      if (url.pathname === "/invite") return eagleEyeHtmlResponse(renderInvitePage());
+      if (url.pathname === "/api/invite") return await handleInviteApi(request, env);
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
@@ -5811,6 +5816,9 @@ async function handleDiscordCallback(request, env) {
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
+      // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
+      const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
+      if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
     } catch (error) {
       // Keep Discord authentication usable during a temporary D1 outage.
       // The signed session is safe to issue, while DB-backed roles remain unavailable.
@@ -5832,6 +5840,7 @@ async function handleDiscordCallback(request, env) {
     "Cache-Control": "no-store"
   });
   responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
@@ -5878,7 +5887,7 @@ async function upsertUser(db, discordUser, now) {
      VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(crypto.randomUUID(), userId, discordId, discordUser.username || null, discordUser.global_name || null, now).run();
 
-  return { status: "ACTIVE", user_id: userId };
+  return { status: "ACTIVE", user_id: userId, isNew: !existing };
 }
 
 function logout(request) {
@@ -10768,6 +10777,20 @@ async function handleMilestonesApi(request, env, url) {
   }
 }
 
+// 友だち招待（ログインした全員。マイルストーンの公開状態とは関係なし）。ランキングに user_id は出さない。
+async function handleInviteApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const mine = await loadMyReferrals(env.DB, auth.user_id);
+    const ranking = (await loadReferralRanking(env.DB, mine.season)).map(r => ({ rank: r.rank, name: r.name, kid: r.kid, count: r.count, me: r.user_id === String(auth.user_id) }));
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, ranking });
+  } catch (error) {
+    console.error("invite_failed", error?.message || error);
+    return json({ ok: false, error: "INVITE_FAILED" }, 500);
+  }
+}
+
 async function handleHomeSummary(request, env, executionContext) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
@@ -11160,6 +11183,7 @@ ${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-m
   <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
+${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
 ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
