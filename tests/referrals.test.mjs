@@ -94,7 +94,14 @@ test("配線：招待リンクのCookie、初回ログインでの結びつけ�
   assert.match(index, /isReferralCode\(ref\) && !url\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(index, /if \(refCode && userResult\?\.isNew\) await attributeReferral/);
   assert.match(index, /return \{ status: "ACTIVE", user_id: userId, isNew: !existing \};/);
-  assert.match(index, /url\.pathname === "\/api\/milestones\/invite"/);
+  assert.match(index, /url\.pathname === "\/invite"\) return eagleEyeHtmlResponse\(renderInvitePage\(\)\)/);
+  assert.match(index, /url\.pathname === "\/api\/invite"\) return await handleInviteApi/);
+  // 招待はマイルストーンの公開状態と関係なく、ログインした全員が使える
+  const inviteApi = index.slice(index.indexOf("async function handleInviteApi"), index.indexOf("async function handleHomeSummary"));
+  assert.doesNotMatch(inviteApi, /milestonesAvailableFor/);
+  assert.match(index, /<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="\/invite">/);
+  const ui = readFileSync(new URL("../src/eagleeye-ui.js", import.meta.url), "utf8");
+  assert.match(ui, /key: "invite", href: "\/invite", label: "友だち招待"/);
   assert.match(index, /me: r\.user_id === String\(auth\.user_id\)/, "ランキングは user_id を出さない");
   assert.doesNotMatch(index, /ranking: await loadReferralRanking/);
   const elig = readFileSync(new URL("../src/user-eligibility.js", import.meta.url), "utf8");
@@ -102,4 +109,13 @@ test("配線：招待リンクのCookie、初回ログインでの結びつけ�
   const legal = readFileSync(new URL("../src/legal-pages.js", import.meta.url), "utf8");
   assert.match(legal, /<b>招待の記録<\/b>/);
   assert.match(legal, /<code>ee_ref<\/code>/);
+});
+
+test("招待ページ：ログイン前はログイン案内、共有ボタン、報酬は後日", async () => {
+  const { renderInvitePage } = await import("../src/referrals.js");
+  const html = renderInvitePage();
+  assert.match(html, /<title>友だち招待 \| EagleEye<\/title>/);
+  assert.match(html, /fetch\("\/api\/invite"/);
+  assert.match(html, /next=%2Finvite/);
+  assert.match(html, /報酬は後日お知らせします/);
 });

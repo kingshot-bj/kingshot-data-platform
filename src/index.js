@@ -55,7 +55,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
-import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, loadReferralRanking, DEFAULT_SEASON_REWARDS } from "./referrals.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, loadReferralRanking, renderInvitePage } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -5027,7 +5027,9 @@ export default {
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
       if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
       if (url.pathname === "/milestones") return eagleEyeHtmlResponse(renderMilestonesPage());
-      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share" || url.pathname === "/api/milestones/invite") return await handleMilestonesApi(request, env, url);
+      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
+      if (url.pathname === "/invite") return eagleEyeHtmlResponse(renderInvitePage());
+      if (url.pathname === "/api/invite") return await handleInviteApi(request, env);
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
@@ -10766,18 +10768,26 @@ async function handleMilestonesApi(request, env, url) {
       return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
     }
     if (!milestonesAvailableFor(auth.role)) return json({ ok: false, error: "COMING_SOON" }, 403);
-    if (url.pathname === "/api/milestones/invite") {
-      const mine = await loadMyReferrals(env.DB, auth.user_id);
-      const season = mine.season;
-      const ranking = (await loadReferralRanking(env.DB, season)).map(r => ({ rank: r.rank, name: r.name, kid: r.kid, count: r.count, me: r.user_id === String(auth.user_id) }));
-      return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season, this_season: mine.thisSeason, rewards: DEFAULT_SEASON_REWARDS, ranking });
-    }
     const settings = await getPlayerVisibilitySettings(env.DB);
     const result = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role), markSeen: url.searchParams.get("seen") === "1" });
     return json({ ok: true, ...result });
   } catch (error) {
     console.error("milestones_failed", error?.message || error);
     return json({ ok: false, error: "MILESTONES_FAILED" }, 500);
+  }
+}
+
+// 友だち招待（ログインした全員。マイルストーンの公開状態とは関係なし）。ランキングに user_id は出さない。
+async function handleInviteApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const mine = await loadMyReferrals(env.DB, auth.user_id);
+    const ranking = (await loadReferralRanking(env.DB, mine.season)).map(r => ({ rank: r.rank, name: r.name, kid: r.kid, count: r.count, me: r.user_id === String(auth.user_id) }));
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, ranking });
+  } catch (error) {
+    console.error("invite_failed", error?.message || error);
+    return json({ ok: false, error: "INVITE_FAILED" }, 500);
   }
 }
 
@@ -11173,6 +11183,7 @@ ${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-m
   <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
+${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
 ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>

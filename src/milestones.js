@@ -163,25 +163,6 @@ function milestonesClient(cfg) {
     var cls = "ms-card" + (i.done ? " done" : "") + (i.fresh ? " fresh" : "");
     return i.href && !i.done ? '<a class="' + cls + '" href="' + esc(i.href) + '">' + inner + '</a>' : '<div class="' + cls + '">' + inner + '</div>';
   }
-  function loadInvite() {
-    var box = document.getElementById("msInvite");
-    fetch("/api/milestones/invite", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
-      if (!d || !d.ok) throw new Error("x");
-      var month = String(d.season).split("-")[1].replace(/^0/, "") + "月";
-      var h = '<h2>招待リンクと' + esc(month) + 'のランキング</h2>' +
-        '<div class="ms-link"><input readonly value="' + esc(d.link) + '" aria-label="あなたの招待リンク"><button type="button" id="msCopy">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
-        '<p class="ms-lead">このリンクから初めてログインした人が、APIキーを登録してADVANCEDになると1人に数えます（リンクを開いてから30日以内のログインが対象）。</p>' +
-        '<div class="ms-sub"><b>' + esc(month) + 'の報酬（今シーズン）</b><ul>' + d.rewards.map(function (r) { return '<li>' + r.n + '人：' + esc(r.text) + (d.this_season >= r.n ? ' ✓' : '') + '</li>'; }).join("") + '</ul><small>' + esc(month) + 'の達成：' + d.this_season + '人／累計：' + d.lifetime + '人</small></div>' +
-        '<div class="ms-sub"><b>招待した人</b>' + (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="ms-lead">まだいません。リンクを共有してみましょう。</p>') + '</div>' +
-        '<div class="ms-sub"><b>' + esc(month) + 'の招待ランキング</b>' + (d.ranking.length ? '<ol class="ms-rank">' + d.ranking.map(function (r) { return '<li' + (r.me ? ' class="me"' : '') + '><span>' + r.rank + '</span><b>' + esc(r.name) + '</b><small>' + (r.kid ? '王国' + esc(r.kid) : '') + '</small><em>' + r.count + '人</em></li>'; }).join("") + '</ol>' : '<p class="ms-lead">今月はまだ誰も達成していません。</p>') + '</div>';
-      box.innerHTML = h;
-      document.getElementById("msCopy").onclick = function () {
-        var text = "KingShotの分析・攻略ツール EagleEye（無料）";
-        if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }
-        var btn = this; (navigator.clipboard ? navigator.clipboard.writeText(d.link) : Promise.reject()).then(function () { btn.textContent = "コピーしました"; }).catch(function () { box.querySelector("input").select(); });
-      };
-    }).catch(function () { box.innerHTML = '<h2>招待リンク</h2><p class="ms-lead">読み込めませんでした。</p>'; });
-  }
   fetch("/api/milestones?seen=1", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); }).then(function (x) {
     if (x.s === 403) { root.innerHTML = '<div class="ms-login"><p>🛠️ マイルストーンは準備中です。公開までもう少しお待ちください。</p></div>'; return; }
     if (x.s === 401) { root.innerHTML = '<div class="ms-login"><p>マイルストーンはログインすると記録されます。</p><a href="/api/auth/discord?next=%2Fmilestones">Discordでログイン →</a></div>'; return; }
@@ -195,9 +176,8 @@ function milestonesClient(cfg) {
       var n = items.filter(function (i) { return i.done; }).length;
       html += '<section class="ms-group"><h2>' + esc(g.title) + ' <small>' + n + ' / ' + items.length + '</small></h2><p class="ms-lead">' + esc(g.lead) + '</p><div class="ms-list">' + items.map(card).join("") + '</div></section>';
     });
-    html += '<section class="ms-group" id="msInvite"><h2>招待リンクと今月のランキング</h2><p class="ms-lead">読み込み中…</p></section>';
+    html += '<a class="ms-card" href="/invite"><span class="ms-icon" aria-hidden="true">📨</span><span class="ms-copy"><b>招待リンクと今月のランキング</b><small>友だち招待のページへ</small></span><span class="ms-state">→</span></a>';
     root.innerHTML = html;
-    loadInvite();
   }).catch(function () { root.innerHTML = '<p class="ms-lead">読み込めませんでした。時間をおいて開き直してください。</p>'; });
 }
 
@@ -216,9 +196,6 @@ export function renderMilestonesPage() {
 .ms-copy{flex:1;min-width:0;display:grid;gap:3px}.ms-copy b{font-size:14px}.ms-copy small{font-size:12px;color:var(--ee-subtext)}.ms-copy em{font-style:normal;font-size:11px;color:var(--ee-cyan)}
 .ms-bar{display:block;height:6px;border-radius:3px;background:rgba(148,163,184,.25);overflow:hidden}.ms-bar i{display:block;height:100%;background:linear-gradient(90deg,#f6c84b,#facc15)}
 .ms-state{flex:0 0 auto;text-align:right;font-size:12px;font-weight:900;color:var(--ee-subtext)}.done .ms-state{color:#f6c84b;font-size:18px}.ms-state small{display:block;font-size:10px;font-weight:700;color:var(--ee-subtext)}
-.ms-link{display:flex;gap:8px;margin:8px 0}.ms-link input{flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--ee-border-soft);background:var(--ee-panel);color:var(--ee-text);font-size:13px}.ms-link button{padding:10px 16px;border:0;border-radius:10px;background:#facc15;color:#1f1300;font-weight:900}
-.ms-sub{margin:10px 0;padding:12px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);font-size:13px}.ms-sub b{display:block;margin-bottom:6px}.ms-sub ul{margin:0;padding-left:1.2em;line-height:1.8}.ms-sub small{color:var(--ee-subtext)}.ok{color:#22c55e;font-weight:800}.wait{color:var(--ee-subtext)}
-.ms-rank{list-style:none;margin:0;padding:0;display:grid;gap:6px}.ms-rank li{display:grid;grid-template-columns:2em 1fr auto auto;gap:8px;align-items:center;padding:6px 8px;border-radius:10px;background:rgba(148,163,184,.08)}.ms-rank li.me{outline:2px solid rgba(250,204,21,.6)}.ms-rank span{font-weight:900;color:#f6c84b}.ms-rank small{color:var(--ee-subtext)}.ms-rank em{font-style:normal;font-weight:900}
 .ms-login{padding:16px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel)}.ms-login a{display:inline-block;margin-top:6px;padding:9px 16px;border-radius:999px;background:#5865f2;color:#fff;font-weight:900;text-decoration:none}</style></head>
 <body><main class="wrap"><nav class="crumbs"><a href="/">EagleEye</a> › マイルストーン</nav>
 <h1>✦ マイルストーン</h1><p class="lead">EagleEyeの使い方とゲーム内の成長で、バッジが増えていきます。判定はEagleEyeに記録されたデータで自動で行います（一度達成したら消えません）。</p>

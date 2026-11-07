@@ -119,3 +119,43 @@ export async function loadReferralRanking(db, season, limit = 10) {
   ).bind(String(season), Math.max(1, Math.min(50, Number(limit) || 10))).all())?.results || [];
   return rows.map((r, i) => ({ rank: i + 1, user_id: String(r.inviter_user_id), name: r.nick_name || "（領主未登録）", kid: r.kid ?? null, count: Number(r.n) }));
 }
+
+// 招待ページ（ログインした全員が使える。マイルストーンとは独立）。
+function inviteClient() {
+  var root = document.getElementById("invRoot");
+  function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  fetch("/api/invite", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); }).then(function (x) {
+    if (x.s === 401) { root.innerHTML = '<div class="inv-box"><p>招待リンクはログインすると作られます。</p><a class="inv-login" href="/api/auth/discord?next=%2Finvite">Discordでログイン →</a></div>'; return; }
+    var d = x.d; if (!d || !d.ok) throw new Error("x");
+    var month = String(d.season).split("-")[1].replace(/^0/, "") + "月";
+    root.innerHTML =
+      '<div class="inv-link"><input readonly value="' + esc(d.link) + '" aria-label="あなたの招待リンク"><button type="button" id="invCopy">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
+      '<p class="inv-lead">このリンクから<b>初めて</b>ログインした人が、APIキーを登録してADVANCEDになると1人に数えます（リンクを開いてから30日以内のログインが対象）。</p>' +
+      '<div class="inv-box"><b>あなたの招待</b><div class="inv-nums"><span><em>' + d.this_season + '</em>' + esc(month) + '</span><span><em>' + d.lifetime + '</em>累計</span></div>' +
+      (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="inv-lead">まだいません。同盟やDiscordでリンクを共有してみましょう。</p>') + '</div>' +
+      '<div class="inv-box"><b>' + esc(month) + 'の招待ランキング</b>' + (d.ranking.length ? '<ol class="inv-rank">' + d.ranking.map(function (r) { return '<li' + (r.me ? ' class="me"' : '') + '><span>' + r.rank + '</span><b>' + esc(r.name) + '</b><small>' + (r.kid ? '王国' + esc(r.kid) : '') + '</small><em>' + r.count + '人</em></li>'; }).join("") + '</ol>' : '<p class="inv-lead">今月はまだ誰もいません。1人目になろう。</p>') +
+      '<small class="inv-note">毎月1日（日本時間）にリセット。報酬は後日お知らせします。</small></div>';
+    document.getElementById("invCopy").onclick = function () {
+      var text = "KingShotの分析・攻略ツール EagleEye（無料）";
+      if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }
+      var btn = this; (navigator.clipboard ? navigator.clipboard.writeText(d.link) : Promise.reject()).then(function () { btn.textContent = "コピーしました"; }).catch(function () { root.querySelector("input").select(); });
+    };
+  }).catch(function () { root.innerHTML = '<p class="inv-lead">読み込めませんでした。時間をおいて開き直してください。</p>'; });
+}
+
+export function renderInvitePage() {
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>友だち招待 | EagleEye</title><meta name="robots" content="noindex">
+<style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:18px 16px calc(96px + env(safe-area-inset-bottom))}
+.crumbs{font-size:12px;color:var(--ee-subtext)}.crumbs a{color:var(--ee-cyan);text-decoration:none}h1{font-size:22px;margin:8px 0 4px}.inv-lead{font-size:13px;color:var(--ee-subtext);margin:6px 0 10px}
+.inv-link{display:flex;gap:8px;margin:12px 0 4px}.inv-link input{flex:1;min-width:0;padding:11px;border-radius:12px;border:1px solid var(--ee-border-soft);background:var(--ee-panel);color:var(--ee-text);font-size:13px}.inv-link button{padding:11px 18px;border:0;border-radius:12px;background:#facc15;color:#1f1300;font-weight:900;font-size:14px}
+.inv-box{margin:12px 0;padding:14px;border:1px solid var(--ee-border-soft);border-radius:16px;background:var(--ee-panel);font-size:13px}.inv-box>b{display:block;margin-bottom:8px;font-size:14px}.inv-box ul{margin:8px 0 0;padding-left:1.2em;line-height:1.8}
+.inv-nums{display:flex;gap:10px}.inv-nums span{flex:1;display:grid;justify-items:center;padding:8px;border-radius:12px;background:rgba(148,163,184,.08);color:var(--ee-subtext);font-size:12px}.inv-nums em{font-style:normal;font-size:24px;font-weight:900;color:#f6c84b}
+.ok{color:#22c55e;font-weight:800}.wait{color:var(--ee-subtext)}.inv-note{display:block;margin-top:8px;color:var(--ee-subtext);font-size:11px}
+.inv-rank{list-style:none;margin:0;padding:0;display:grid;gap:6px}.inv-rank li{display:grid;grid-template-columns:2em 1fr auto auto;gap:8px;align-items:center;padding:7px 9px;border-radius:10px;background:rgba(148,163,184,.08)}.inv-rank li.me{outline:2px solid rgba(250,204,21,.6)}.inv-rank span{font-weight:900;color:#f6c84b}.inv-rank small{color:var(--ee-subtext)}.inv-rank em{font-style:normal;font-weight:900}
+.inv-login{display:inline-block;margin-top:6px;padding:9px 16px;border-radius:999px;background:#5865f2;color:#fff;font-weight:900;text-decoration:none}</style></head>
+<body><main class="wrap"><nav class="crumbs"><a href="/">EagleEye</a> › 友だち招待</nav>
+<h1>📨 友だち招待</h1><p class="inv-lead">あなた専用の招待リンクで、同盟の仲間やフレンドをEagleEyeに招待しよう。</p>
+<div id="invRoot"><p class="inv-lead">読み込み中…</p></div>
+</main><script>var __name=function(f){return f};(${inviteClient.toString()})();</script></body></html>`;
+}
