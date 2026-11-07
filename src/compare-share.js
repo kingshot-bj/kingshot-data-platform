@@ -105,6 +105,38 @@ export function compareShareClient(cfg) {
   }
   function tcText(l) { l = Number(l); if (!isFinite(l)) return null; if (l <= 30) return "Lv." + l; if (l < 35) return "Lv.30（" + (l - 30) + "/5）"; return null; }
 
+  // 「1.2M」「#12」「3,456」「61-5」などを比べるための数字に。比べられないものは null。
+  function scoreOf(t) {
+    var s = String(t == null ? "" : t).trim().replace(/,/g, "").replace(/^Lv\.?\s*/i, "");
+    var m = s.match(/^#?(-?\d+(?:\.\d+)?)\s*([KMB億万]?)(?:位)?$/);
+    if (m) { var n = Number(m[1]); return n * ({ K: 1e3, M: 1e6, B: 1e9, "億": 1e8, "万": 1e4 }[m[2]] || 1); }
+    var st = s.match(/^(\d+)-(\d+)$/); if (st) return Number(st[1]) * 100 + Number(st[2]);
+    return null;
+  }
+  // 比較ページで「いま表示している」行（＝選んだ項目と表示中のグループ）＋追加ランキングで選んだ項目。
+  // 上の基本4項目と、秘境の試練の章（上で描く）は重ねない。多すぎるとiPhoneで画像が作れないので100行まで。
+  function pickedRows(d, hasMys) {
+    var table = document.querySelector(".compare-table"); if (!table) return { rows: [], more: 0 };
+    var all = d.players || [], keep = []; all.forEach(function (p, i) { if (!p.missing && p.player && keep.length < 4) keep.push(i); });
+    var custom = {}; document.querySelectorAll("[data-ee-custom-board]").forEach(function (el) { custom[el.getAttribute("data-ee-custom-board")] = 1; });
+    var skip = { "比較項目": 1, "戦力": 1, "役場レベル": 1, "役場": 1, "VIP": 1, "撃破数": 1, "王国": 1 };
+    var stageNames = STAGES.map(function (s) { return "ランキング：" + s[1]; });
+    var out = [], seen = {};
+    table.querySelectorAll("tbody tr").forEach(function (tr) {
+      var th = tr.querySelector("th"); var label = th ? th.textContent.replace(/\s+/g, " ").trim() : "";
+      if (!label || skip[label] || seen[label]) return;
+      if (tr.hidden && !custom[label]) return;
+      if (hasMys && stageNames.some(function (n) { return label.indexOf(n) === 0; })) return;
+      var tds = tr.querySelectorAll("td");
+      var vals = keep.map(function (i) { var td = tds[i]; if (!td) return "—"; var v = td.querySelector(".value"); return ((v || td).textContent || "").replace(/\s+/g, " ").trim() || "—"; });
+      if (vals.every(function (v) { return v === "—" || v === "データなし"; })) return;
+      seen[label] = 1; out.push({ label: label, values: vals });
+    });
+    return { rows: out.slice(0, 100), more: Math.max(0, out.length - 100) };
+  }
+  window.__eeComparePicked = pickedRows;
+  window.__eeCompareBuild = function (d) { return build(d); };
+
   async function build(d) {
     P = currentPalette();
     var ps = (d.players || []).filter(function (p) { return !p.missing && p.player; }).slice(0, 4);
@@ -118,7 +150,8 @@ export function compareShareClient(cfg) {
       ["VIP", ps.map(function (p) { return p.player.vip == null ? null : Number(p.player.vip); }), function (v) { return v == null ? "—" : String(v); }, true],
       ["撃破数", ps.map(function (p) { return Number(p.player.kills); }), function (v) { return compact(v); }, true]
     ];
-    var ROW = 74, GAP = 8, H = PAD + 70 + 250 + rows.length * (ROW + GAP) + (hasMys ? 50 + 6 * (ROW + GAP) + 600 : 0) + 230;
+    var picked = pickedRows(d, hasMys);
+    var ROW = 74, GAP = 8, H = PAD + 70 + 250 + rows.length * (ROW + GAP) + (hasMys ? 50 + 6 * (ROW + GAP) + 600 : 0) + (picked.rows.length ? 60 + picked.rows.length * (ROW + GAP) + (picked.more ? 40 : 0) : 0) + 230;
     var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var c = cv.getContext("2d");
     var bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, P.panel); bg.addColorStop(1, P.bg); c.fillStyle = bg; c.fillRect(0, 0, W, H);
@@ -153,6 +186,24 @@ export function compareShareClient(cfg) {
       });
       c.textBaseline = "alphabetic"; y += ROW + GAP;
     }
+    // 文字のまま並べる行（比較ページで選んだ項目）。数字として比べられるときだけトップを光らせる。
+    function drawTextRow(label, texts) {
+      c.textBaseline = "middle"; c.textAlign = "left"; c.fillStyle = P.subtext;
+      var ll = wrap(c, label, LBL - 14, 2); c.font = "700 " + (ll.length > 1 || label.length > 7 ? 19 : 24) + "px " + FONT; ll = wrap(c, label, LBL - 14, 2);
+      ll.forEach(function (t, k) { c.fillText(t, PAD + 8, y + ROW / 2 + (k - (ll.length - 1) / 2) * 23); });
+      var nums = texts.map(scoreOf), ok = nums.filter(function (v) { return v != null; });
+      var isRank = texts.some(function (t) { return /^#|位$/.test(String(t || "").trim()); });
+      var best = ok.length >= 2 ? (isRank ? Math.min.apply(null, ok) : Math.max.apply(null, ok)) : null;
+      var unique = best != null && ok.filter(function (v) { return v === best; }).length === 1;
+      texts.forEach(function (t, i) {
+        var x = PAD + LBL + colW * i, isBest = unique && nums[i] === best;
+        c.save(); rr(c, x + 3, y, colW - 6, ROW, 14); c.fillStyle = P.raised; c.fill(); if (isBest) { c.fillStyle = alpha(P.accent, .3); c.fill(); c.lineWidth = 2.5; c.strokeStyle = P.accent; c.stroke(); } c.restore();
+        c.fillStyle = P.text; c.textAlign = "center"; c.font = "800 26px " + FONT;
+        var lines = wrap(c, t || "—", colW - 20, 2); if (lines.length > 1) { c.font = "800 21px " + FONT; lines = wrap(c, t || "—", colW - 20, 2); }
+        lines.forEach(function (line, k) { c.fillText(line, x + colW / 2, y + ROW / 2 + (k - (lines.length - 1) / 2) * 25); });
+      });
+      c.textBaseline = "alphabetic"; y += ROW + GAP;
+    }
     rows.forEach(function (r) { drawRow(r[0], r[1], r[2], r[3]); });
     if (hasMys) {
       y += 14; c.textAlign = "left"; c.fillStyle = "rgb(253,230,138)"; c.font = "800 24px " + FONT; c.fillText("秘境の試練（最高クリアステージ）", PAD + 8, y + 22); y += 36;
@@ -181,6 +232,11 @@ export function compareShareClient(cfg) {
       ps.forEach(function (p, j) { var yy = ly + 46 + j * 44; c.fillStyle = COLORS[j]; c.fillRect(lx, yy - 12, 28, 10); c.fillStyle = P.text; c.font = "700 23px " + FONT; c.fillText(wrap(c, p.player.nick_name || p.governor_id, W - PAD - lx - 44, 1)[0], lx + 40, yy - 2); });
       c.fillStyle = P.subtext; c.font = "500 18px " + FONT; wrap(c, "比べた中の最高を外周、最低を内側にしています", W - PAD - lx - 10, 3).forEach(function (t, k) { c.fillText(t, lx, ly + 66 + ps.length * 44 + k * 26); });
       y += 560;
+    }
+    if (picked.rows.length) {
+      y += 14; c.textAlign = "left"; c.fillStyle = "rgb(253,230,138)"; c.font = "800 24px " + FONT; c.fillText("選んだ比較項目", PAD + 8, y + 22); y += 46;
+      picked.rows.forEach(function (r) { drawTextRow(r.label, r.values); });
+      if (picked.more) { c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "600 20px " + FONT; c.fillText("ほか " + picked.more + " 項目はページで見られます", PAD + 8, y + 24); y += 40; }
     }
     y += 26; c.strokeStyle = P.border; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 22;
     var imgs = await Promise.all([loadImg(cfg.bj), loadImg(cfg.qr)]);

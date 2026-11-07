@@ -52,3 +52,25 @@ test("比較画面に組み込まれ、/api/avatar がつながり、QR画像が
   assert.ok(existsSync(qr));
   assert.match(readFileSync(qr, "utf8"), /^<svg width="236" height="236"/);
 });
+
+test("プレイヤー比較の共有：ページで選んだ項目（表示中の行・追加ランキング）を画像に載せる", async () => {
+  const { compareShareClient } = await import("../src/compare-share.js");
+  const src = compareShareClient.toString();
+  assert.match(src, /function pickedRows\(d, hasMys\)/);
+  assert.match(src, /document\.querySelector\("\.compare-table"\)/);
+  assert.match(src, /if \(tr\.hidden && !custom\[label\]\) return;/, "選んでいない（隠れている）行は載せない。追加ランキングで選んだものは載せる");
+  assert.match(src, /\[data-ee-custom-board\]/);
+  assert.match(src, /"戦力": 1, "役場レベル": 1/, "上で描く基本項目は重ねない");
+  assert.match(src, /rows: out\.slice\(0, 100\)/, "iPhoneで作れる大きさに抑える");
+  assert.match(src, /選んだ比較項目/);
+  // 数字として比べる（順位は小さい方、Lv・億/万・M・章-ステージ）
+  const scoreSrc = src.slice(src.indexOf("function scoreOf"), src.indexOf("function pickedRows"));
+  const scoreOf = new Function(scoreSrc + "; return scoreOf;")();
+  assert.equal(scoreOf("1.2M"), 1.2e6);
+  assert.equal(scoreOf("#12"), 12);
+  assert.equal(scoreOf("Lv.10"), 10);
+  assert.equal(scoreOf("3,456"), 3456);
+  assert.equal(scoreOf("5.2億"), 5.2e8);
+  assert.equal(scoreOf("61-5"), 6105);
+  assert.equal(scoreOf("伝説★2"), null);
+});
