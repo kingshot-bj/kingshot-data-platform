@@ -8,6 +8,7 @@ import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
 import { withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { loginUrlFor } from "./login-return.js";
+import { kingdomShareEmbed } from "./kingdom-compare-share.js";
 import { EAGLEEYE_THEME_BASE_CSS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
 
 const BOARD_ORDER = [
@@ -585,6 +586,7 @@ export async function renderKingdomComparePage(request, env) {
   const newest = Math.max(0, ...details.map(d => Number(d.observedAt) || 0));
   const cards = tableRows
     ? "<div class='cmp-table-wrap'><table class='cmp-table'><thead>" + head + "</thead><tbody>" + tableRows + "</tbody></table></div>" +
+      kingdomShareEmbed(details, newest ? ts(newest) : "") +
       "<p class='cmp-note'>色付きの数字がその項目でいちばん良い王国です。" + (newest ? "データ：" + esc(ts(newest)) + "（毎日更新）" : "") + "</p>" +
       "<style>.cmp-table-wrap{overflow-x:auto;border:1px solid var(--ee-border);border-radius:14px;background:var(--ee-panel)}.cmp-table{width:100%;border-collapse:collapse;font-size:13px}.cmp-table th,.cmp-table td{padding:10px 8px;border-bottom:1px solid var(--ee-border-soft);text-align:right;white-space:nowrap}.cmp-table tr:last-child th,.cmp-table tr:last-child td{border-bottom:0}.cmp-table tbody th{text-align:left;color:var(--ee-subtext);font-weight:700;white-space:normal;min-width:7.5em}.cmp-table thead th{font-size:14px}.cmp-table thead a{color:var(--ee-text,#e8f3ff);text-decoration:none}.cmp-table thead small{display:block;color:var(--ee-subtext);font-weight:400}.cmp-table td.best{color:var(--ee-cyan,#22d3ee);font-weight:900}.cmp-note{color:var(--ee-subtext);font-size:12px}</style>"
     : "";
