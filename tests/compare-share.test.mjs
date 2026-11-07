@@ -60,11 +60,12 @@ test("プレイヤー比較の共有：ページで選んだ項目（表示中�
   assert.match(src, /document\.querySelectorAll\("\.compare-player-card"\)/, "スマホはプレイヤーごとのカードから読む");
   assert.match(src, /document\.getElementById\("eeCompareTableData"\)/, "表にしかない項目（英雄スキルなど）は控えから読む");
   assert.match(src, /window\.__eeCompareShown/, "表示するかはページの選択（項目＋グループ）に合わせる");
-  assert.match(src, /\(!r\.visible && !custom\[label\]\)/, "選んでいない項目は載せない。追加ランキングで選んだものは載せる");
+  assert.match(src, /if \(skip\[label\] \|\| !r\.visible \|\|/, "チェックしていない項目は載せない");
+  assert.match(src, /add\(label, shown \? shown\(label\) : !m\.hidden,/, "カードの行もページの選択で決める");
+  assert.doesNotMatch(src, /custom\[label\]/, "追加ランキング（グラフ用）の選択で項目を足さない");
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /tableData\.id=\\"eeCompareTableData\\";tableData\.innerHTML=h;box\.appendChild\(tableData\);/);
   assert.match(index, /window\.__eeCompareShown=function\(label\)\{const g=compareGroupForLabel\(label\);/);
-  assert.match(src, /\[data-ee-custom-board\]/);
   assert.match(src, /"戦力": 1, "役場レベル": 1/, "上で描く基本項目は重ねない");
   assert.match(src, /"EagleEye取得": 1, "元データ時刻": 1/);
   assert.match(src, /rows: out\.slice\(0, 100\)/, "iPhoneで作れる大きさに抑える");

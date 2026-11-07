@@ -113,11 +113,10 @@ export function compareShareClient(cfg) {
     var st = s.match(/^(\d+)-(\d+)$/); if (st) return Number(st[1]) * 100 + Number(st[2]);
     return null;
   }
-  // 比較ページで「いま表示している」行（＝選んだ項目と表示中のグループ）＋追加ランキングで選んだ項目。
+  // 比較ページの「比較項目を選択」でチェックしている項目だけ（グループのON/OFFも反映）。追加ランキング（グラフ用）の選択は使わない。
   // 上の基本4項目と、秘境の試練の章（上で描く）は重ねない。多すぎるとiPhoneで画像が作れないので100行まで。
   function pickedRows(d, hasMys) {
     var all = d.players || [], keep = []; all.forEach(function (p, i) { if (!p.missing && p.player && keep.length < 4) keep.push(i); });
-    var custom = {}; document.querySelectorAll("[data-ee-custom-board]").forEach(function (el) { custom[el.getAttribute("data-ee-custom-board")] = 1; });
     var skip = { "比較項目": 1, "戦力": 1, "役場レベル": 1, "役場": 1, "VIP": 1, "撃破数": 1, "王国": 1, "EagleEye取得": 1, "元データ時刻": 1 };
     var stageNames = STAGES.map(function (s) { return s[1]; }).concat(STAGES.map(function (s) { return s[0]; }));
     var isStage = function (label) { var x = label.replace(/^ランキング：/, ""); return label.indexOf("ランキング：") === 0 && stageNames.indexOf(x) >= 0; };
@@ -133,7 +132,7 @@ export function compareShareClient(cfg) {
       if (col != null && byLabel[label].values[col] == null) byLabel[label].values[col] = value;
     }
     document.querySelectorAll(".compare-player-card").forEach(function (card, col) {
-      card.querySelectorAll(".compare-metric").forEach(function (m) { var label = m.getAttribute("data-compare-label") || clean(m.querySelector("span")); var exact = Number(m.getAttribute("data-rank-score")); add(label, shown ? shown(label) || !m.hidden : !m.hidden, col, m.getAttribute("data-rank-score") != null && isFinite(exact) ? exact.toLocaleString("ja-JP") : clean(m.querySelector("strong")) || "—"); });
+      card.querySelectorAll(".compare-metric").forEach(function (m) { var label = m.getAttribute("data-compare-label") || clean(m.querySelector("span")); var exact = Number(m.getAttribute("data-rank-score")); add(label, shown ? shown(label) : !m.hidden, col, m.getAttribute("data-rank-score") != null && isFinite(exact) ? exact.toLocaleString("ja-JP") : clean(m.querySelector("strong")) || "—"); });
     });
     // 英雄スキル・専用装備・防衛編成などは表にしかない。表は画面に出していないので、ページが残した控え（template）から読む。
     var tpl = document.getElementById("eeCompareTableData");
@@ -146,7 +145,7 @@ export function compareShareClient(cfg) {
     var out = [];
     order.forEach(function (label) {
       var r = byLabel[label];
-      if (skip[label] || (!r.visible && !custom[label]) || (hasMys && isStage(label))) return;
+      if (skip[label] || !r.visible || (hasMys && isStage(label))) return;
       var vals = keep.map(function (i) { var v = r.values[i]; return v == null || v === "" ? "—" : v; });
       if (vals.every(function (v) { return v === "—" || v === "データなし"; })) return;
       out.push({ label: label.replace(/^ランキング：/, ""), values: vals });
