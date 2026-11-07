@@ -211,6 +211,7 @@ export function compareShareClient(cfg) {
       var blob = await new Promise(function (ok) { cv.toBlob(ok, "image/png"); });
       if (!blob) throw new Error("画像を作れませんでした");
       var file = new File([blob], "eagleeye-compare.png", { type: "image/png" });
+      try { fetch("/api/milestones/share", { method: "POST", credentials: "same-origin" }).catch(function () {}); } catch (e) {}
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         say("");
         try { await navigator.share({ files: [file], text: shareText }); } catch (e) { if (e && e.name !== "AbortError") preview(blob); }

@@ -165,8 +165,8 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
     ? '<a href="/terms" data-other-key="terms">利用規約</a><a href="/privacy" data-other-key="privacy">プライバシーポリシー</a><a href="/about" data-other-key="about">運営者情報</a>'
     : '<a href="/terms" data-other-key="terms"><span>利用規約</span></a><a href="/privacy" data-other-key="privacy"><span>プライバシーポリシー</span></a><a href="/about" data-other-key="about"><span>運営者情報</span></a>';
   return links + privileged.join("") + privacy + (compact
-    ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>近日公開予定</small></button>'
-    : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>近日公開予定</small></span></button>');
+    ? '<a href="/milestones" data-other-key="milestones">マイルストーン</a>'
+    : '<a href="/milestones" data-other-key="milestones"><img src="' + EAGLEEYE_BJNYAN.success + '" alt=""><span>マイルストーン</span></a>');
 }
 
 
