@@ -1,3 +1,4 @@
+import { isDiscordUserId } from "./google-auth.js";
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
@@ -202,6 +203,8 @@ async function discordRequest(env, path, options = {}) {
 }
 
 async function getGuildMember(env, guildId, discordUserId) {
+  // Googleなどでログインした人（仮のID）はDiscordのサーバーにいない。Discordには問い合わせない。
+  if (!isDiscordUserId(discordUserId)) return null;
   try {
     return await discordRequest(env, `/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`);
   } catch (error) {

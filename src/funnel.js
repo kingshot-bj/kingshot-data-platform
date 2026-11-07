@@ -4,7 +4,8 @@
 // 個人を特定する情報は記録しない（日ごとの回数だけ）。
 
 export const FUNNEL_STEPS = Object.freeze([
-  { key: "login_start", label: "ログインボタン" },
+  { key: "login_start", label: "Discordへ" },
+  { key: "google_start", label: "Googleへ" },
   { key: "login_cancelled", label: "Discordで取消" },
   { key: "login_new", label: "新規ログイン" },
   { key: "login_returning", label: "再ログイン" }
@@ -72,8 +73,8 @@ export function renderFunnelCard(f) {
   if (!f) return `<div class="card"><h2>登録までの流れ</h2><p class="muted">読み込めませんでした。</p></div>`;
   const t = f.totals, c = f.cohort;
   const steps = [
-    ["ログインボタンを押した", t.login_start, ""],
-    ["新しくログインした", t.login_new, pct(t.login_new, t.login_start)],
+    ["ログインに進んだ（Discord＋Google）", t.login_start + t.google_start, ""],
+    ["新しくログインした", t.login_new, pct(t.login_new, t.login_start + t.google_start)],
     ["領主IDを登録", c.linked, pct(c.linked, c.users)],
     ["APIキーを登録", c.keyed, pct(c.keyed, c.users)],
     ["ADVANCED以上", c.advanced, pct(c.advanced, c.users)]
