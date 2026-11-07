@@ -3,7 +3,7 @@
 // MightPulse への新しい呼び出しはしない。一度達成したら記録（user_milestones）に残り、戦力が下がっても消えない。
 // 読み取りは1回あたり数十行（主キー・索引で引く）。
 
-import { INVITE_TITLES, ensureReferralSchema } from "./referrals.js";
+import { INVITE_TITLES, ensureReferralSchema, getUserRewards } from "./referrals.js";
 
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
 // 公開前はオーナーだけが見られる（ユーザーには「準備中」）。公開するときは true にする。
@@ -33,6 +33,8 @@ export const MILESTONES = Object.freeze([
   { key: "governor_link", group: "eagleeye", icon: "🪪", title: "領主の証", desc: "マイKingShotで自分の領主IDを登録する", href: "/my-player", check: c => ({ done: Boolean(c.linked) }) },
   { key: "observer", group: "eagleeye", icon: "🔭", title: "観測者", desc: "APIキーを登録してADVANCEDになる", href: "/my-player", check: c => ({ done: (ROLE_RANK[String(c.role || "").toUpperCase()] ?? 0) >= ROLE_RANK.ADVANCED }) },
   { key: "watcher", group: "eagleeye", icon: "👀", title: "見張り番", desc: "プレイヤーを3人ウォッチする", href: "/players", check: c => ({ done: Number(c.watchCount) >= 3, now: Math.min(3, Number(c.watchCount) || 0), goal: 3, label: `${Math.min(3, Number(c.watchCount) || 0)} / 3人` }) },
+  // 運営（オーナー）の招待で来た人だけの限定バッジ。持っていない人には表示しない。
+  { key: "owner_invite", group: "eagleeye", icon: "👑", title: "運営招待", desc: "EagleEye運営からの特別招待で参加した", hiddenUntilDone: true, check: c => ({ done: (c.rewards || []).includes("badge_owner_invite") }) },
   { key: "herald", group: "eagleeye", icon: "📣", title: "伝令", desc: "比較の画像（プレイヤー・王国）を作って共有する", href: "/players", check: c => ({ done: Boolean(c.shared) }) },
   ...[1, 5, 8].map(g => ({
     key: "gold_" + g, group: "growth", icon: "🏅", title: `黄金${g}`, desc: `役場を黄金${g}にする`, needsPlayer: true, sensitive: "base_power",
@@ -80,7 +82,7 @@ export function evaluateMilestones(ctx, stored = new Map()) {
     if (r.goal && !out.done) out.progress = Math.max(0, Math.min(1, Number(r.now) / r.goal));
     if (m.sensitive && !visible(m.sensitive) && ctx.player) { out.label = ""; delete out.progress; }
     return out;
-  });
+  }).filter((item, i) => !MILESTONES[i].hiddenUntilDone || item.done);
 }
 
 // 秘境のステージ系ボードの値（オフセット込み）から、到達した章（一番進んでいるもの）を返す。
@@ -118,17 +120,18 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
   if (!db || !auth?.user_id) return null;
   await ensureMilestoneSchema(db);
   const userId = String(auth.user_id);
-  const [storedRows, link, watch, invited] = await Promise.all([
+  const [storedRows, link, watch, invited, rewards] = await Promise.all([
     db.prepare("SELECT key, achieved_at, seen FROM user_milestones WHERE user_id = ?").bind(userId).all(),
     db.prepare(
       "SELECT l.governor_id, l.kingdom_id, p.kid, p.power, p.town_center_level FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
       "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
     ).bind(userId).first(),
     auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 }),
-    ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 }))
+    ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 })),
+    getUserRewards(db, userId)
   ]);
   const stored = new Map((storedRows?.results || []).map(r => [String(r.key), { achieved_at: Number(r.achieved_at), seen: Number(r.seen) }]));
-  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
+  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, rewards, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
   const kid = Number(link?.kid ?? link?.kingdom_id) || null;
   if (link && link.power != null) ctx.player = { power: link.power, town_center_level: link.town_center_level };
   if (link && kid) {

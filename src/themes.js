@@ -16,7 +16,10 @@ export const EAGLEEYE_THEMES = Object.freeze([
   { id: "ember", name: "サンセット", description: "あたたかいオレンジ",
     tokens: { bg: "#1a120a", panel: "#261a10", deep: "#1f150c", raised: "#33231a", border: "#5a3d24", soft: "#3d2a19", text: "#fff5eb", subtext: "#e3c3a3", muted: "#b8987a", accent: "#fb923c", rival: "#60a5fa" }, light: "#ea580c" },
   { id: "graphite", name: "グラファイト", description: "色を抑えたモノトーン",
-    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" }, light: "#2563eb" }
+    tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" }, light: "#2563eb" },
+  // 限定：運営（オーナー）の招待で来た人だけが選べる（user_rewards の theme_gold）。
+  { id: "gold", name: "ゴールド", description: "運営招待の限定カラー", reward: "theme_gold",
+    tokens: { bg: "#17130a", panel: "#241c0e", deep: "#1d160b", raised: "#2f2512", border: "#6b5420", soft: "#3d311a", text: "#fff8e6", subtext: "#e6cf98", muted: "#b39c66", accent: "#fbbf24", rival: "#60a5fa" }, light: "#b45309" }
 ]);
 
 const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan", rival: "--ee-rival" };
@@ -62,10 +65,11 @@ export function renderThemePickerPage() {
   const swatch = t => {
     const raw = t.tokens || { bg: "#0a1424", panel: "#0f2035", raised: "#172a40", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee", border: "#2a4664" };
     const k = Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, rgb(value)]));
-    return `<button type="button" class="skin" data-skin="${escapeHtml(t.id)}" style="background:${k.bg};border-color:${k.border}">
+    const lock = t.reward ? ` data-reward="${escapeHtml(t.reward)}"` : "";
+    return `<button type="button" class="skin${t.reward ? " locked" : ""}" data-skin="${escapeHtml(t.id)}"${lock} style="background:${k.bg};border-color:${k.border}">
 <span class="skin-card" style="background:${k.panel}"><i style="background:${k.accent}"></i><b style="color:${k.text}">${escapeHtml(t.name)}</b><small style="color:${k.subtext}">${escapeHtml(t.description)}</small></span>
 <span class="skin-bar"><em style="background:${k.accent}"></em><em style="background:${k.raised}"></em><em style="background:${k.subtext}"></em></span>
-<span class="skin-check">✓ 使用中</span></button>`;
+<span class="skin-check">✓ 使用中</span>${t.reward ? '<span class="skin-lock">🔒 運営からの招待で解放</span>' : ""}</button>`;
   };
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>着せ替え | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -81,6 +85,7 @@ h1{margin:4px 0 6px;font-size:26px}.muted{color:var(--ee-subtext);font-size:13px
 .skin-bar{display:flex;gap:6px}.skin-bar em{flex:1;height:8px;border-radius:4px}
 .skin-check{display:none;position:absolute;top:8px;right:10px;font-size:11px;font-weight:800;color:#fff;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:999px}
 .skin.on{outline:3px solid var(--ee-cyan);outline-offset:2px}.skin.on .skin-check{display:block}
+.skin-lock{display:none;font-size:11px;font-weight:800;color:#fde68a}.skin.locked .skin-lock{display:block}.skin.locked .skin-card,.skin.locked .skin-bar{opacity:.45;filter:grayscale(.4)}.skin[data-reward]:not(.locked){box-shadow:0 0 0 2px rgba(251,191,36,.55),0 0 18px rgba(251,191,36,.35)}
 .sec{margin:20px 0 8px;font-size:15px}.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.mode{display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 6px;border:2px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);color:var(--ee-text);font:inherit;font-weight:800;font-size:14px;cursor:pointer}.mode small{font-size:10px;font-weight:600;color:var(--ee-subtext)}.mode.on{border-color:var(--ee-cyan);background:color-mix(in srgb,var(--ee-cyan) 12%,var(--ee-panel))}
 .note{margin-top:16px;padding:12px 14px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);font-size:12px;color:var(--ee-subtext);line-height:1.6}
 </style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">着せ替え</div><h1>着せ替え</h1>
@@ -95,7 +100,8 @@ function paint(){var c=current();document.querySelectorAll(".skin").forEach(func
 function curMode(){try{var m=localStorage.getItem("eagleeye-theme");return m==="light"||m==="dark"?m:"auto"}catch(e){return "auto"}}
 function applyMode(){var m=curMode(),eff=m==="auto"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;document.documentElement.setAttribute("data-eagle-theme",eff);document.querySelectorAll(".mode").forEach(function(b){var on=b.getAttribute("data-mode")===m;b.classList.toggle("on",on);b.setAttribute("aria-checked",on?"true":"false")})}
 document.querySelectorAll(".mode").forEach(function(b){b.addEventListener("click",function(){var m=b.getAttribute("data-mode");try{if(m==="auto")localStorage.removeItem("eagleeye-theme");else localStorage.setItem("eagleeye-theme",m)}catch(e){}applyMode()})});applyMode();
-document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
+fetch("/api/rewards",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){var got=(d&&d.rewards)||[];document.querySelectorAll(".skin[data-reward]").forEach(function(b){if(got.indexOf(b.getAttribute("data-reward"))>=0)b.classList.remove("locked")})}).catch(function(){});
+document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){if(b.classList.contains("locked")){alert("この着せ替えは、EagleEye運営からの招待リンクで登録した人だけが使える限定カラーです。");return}var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
 if(id==="navy")document.documentElement.removeAttribute("data-ee-skin");else document.documentElement.setAttribute("data-ee-skin",id);
 paint()})});paint()})();</script></body></html>`;
 }

@@ -78,7 +78,7 @@ test("loadMilestones：新しい達成を記録し、ホームでは未読、画
   resetMilestoneSchemaCache();
   const db = fakeDb({ link: { governor_id: "9", kingdom_id: 1524, kid: 1524, power: 1.2e8, town_center_level: 36 }, watch: 3, ranks: [{ board: "personal_power", rank: 4, score: 1.2e8 }] });
   const home = await loadMilestones(db, { user_id: "u1", discord_id: "d1", role: "BASIC" }, { now: 500 });
-  assert.equal(home.total, MILESTONES.length);
+  assert.equal(home.total, MILESTONES.filter(m => !m.hiddenUntilDone).length, "持っていない限定バッジは数に入れない");
   const unseen = home.unseen.map(u => u.key).sort();
   assert.deepEqual(unseen, ["gold_1", "governor_link", "kingdom_top10", "power_1e8", "watcher"].sort());
   assert.equal(db.rows.get("first_step").seen, 1); // ログインだけでは「新しく達成」に出さない

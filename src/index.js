@@ -58,7 +58,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
-import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP } from "./referrals.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP, OWNER_INVITE_BONUS, getUserRewards } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -5039,6 +5039,7 @@ export default {
       if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
       if (url.pathname === "/invite") return eagleEyeHtmlResponse(renderInvitePage());
       if (url.pathname === "/api/invite") return await handleInviteApi(request, env);
+      if (url.pathname === "/api/rewards") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: true, rewards: [] }); return json({ ok: true, rewards: await getUserRewards(env.DB, auth.user_id) }); }
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
@@ -10900,7 +10901,9 @@ async function handleInviteApi(request, env) {
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   try {
     const mine = await loadMyReferrals(env.DB, auth.user_id);
-    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: INVITE_BONUS });
+    // オーナーの招待リンクは「運営の特別招待」：招待された人の特典が大きく、限定の着せ替えとバッジが付く。
+    const special = String(auth.role || "").toUpperCase() === "OWNER";
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: special ? { invitedSignup: OWNER_INVITE_BONUS.invitedSignup, invitedAdvanced: OWNER_INVITE_BONUS.invitedAdvanced, perQualifiedInvite: 0 } : INVITE_BONUS, special });
   } catch (error) {
     console.error("invite_failed", error?.message || error);
     return json({ ok: false, error: "INVITE_FAILED" }, 500);
@@ -10941,6 +10944,8 @@ async function handleHomeSummary(request, env, executionContext) {
 // ホームのクライアントスクリプトへ役場バッジ関数を埋め込む（バンドラの __name 対策の shim 付き）。
 const TC_BADGE_CLIENT_SOURCE = "(function(){var __name=function(f){return f};return " + townCenterBadgeHtml.toString() + "})()";
 
+const INVITE_BANNER_CSS = "<style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}.ee-invited-special{border-color:rgba(251,191,36,.9);background:linear-gradient(110deg,#5a410c,#2a1e07)!important;color:#fff8e6!important;box-shadow:0 0 22px rgba(251,191,36,.3)}.ee-invited-special b{color:#fde68a}.ee-invited-special span{color:#f3e2b3!important}.ee-invited-special em{color:#fbbf24!important}</style>";
+
 async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
@@ -10953,7 +10958,9 @@ async function renderHome(request, env) {
   // 招待リンクから来た未ログインの人へ、招待者の名前と特典を案内（コードがあるときだけ1行読む）。
   const refCode = !session ? parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE] : null;
   const inviter = refCode && isReferralCode(refCode) ? await inviterNameForCode(env.DB, refCode) : null;
-  const inviteBanner = inviter ? '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a><style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}</style>' : "";
+  const inviteBanner = !inviter ? "" : inviter.special
+    ? '<a class="ee-invited ee-invited-special" href="/api/auth/discord"><b>👑 EagleEye運営からの特別招待</b><span>ログインするとウォッチ枠 +' + OWNER_INVITE_BONUS.invitedSignup + '・限定の着せ替え「ゴールド」・運営招待バッジ。ADVANCEDになるとさらにウォッチ枠 +' + OWNER_INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS
+    : '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS;
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar

@@ -24,6 +24,12 @@ export const INVITE_BONUS = Object.freeze({ invitedSignup: 2, invitedAdvanced: 5
 // 招待でもらえるウォッチ枠の合計の上限（サブ垢の量産で増やしすぎないように）。
 export const INVITE_BONUS_CAP = 30;
 
+// オーナー（運営）の招待リンクから来た人への特別な特典。ウォッチ枠は上限（INVITE_BONUS_CAP）の外。
+// 限定の着せ替え「ゴールド」と「運営招待」バッジも付く（user_rewards）。
+export const OWNER_INVITE_BONUS = Object.freeze({ invitedSignup: 5, invitedAdvanced: 10 });
+export const OWNER_INVITE_REWARDS = Object.freeze(["theme_gold", "badge_owner_invite"]);
+const OWNER_SOURCE_PREFIX = "owner_";
+
 // 日本時間の「年-月」（シーズン）。
 export function seasonOf(unixSeconds) {
   const d = new Date((Number(unixSeconds) + 9 * 3600) * 1000);
@@ -46,6 +52,7 @@ export async function ensureReferralSchema(db) {
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referrals(inviter_user_id, qualified_at)").run();
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_referrals_season ON referrals(season, inviter_user_id)").run();
       await db.prepare("CREATE TABLE IF NOT EXISTS user_watch_bonus (user_id TEXT NOT NULL, source TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, source))").run();
+      await db.prepare("CREATE TABLE IF NOT EXISTS user_rewards (user_id TEXT NOT NULL, reward TEXT NOT NULL, source TEXT, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, reward))").run();
     })().catch(error => { schemaReady = null; throw error; });
   }
   return schemaReady;
@@ -69,13 +76,21 @@ export async function getOrCreateReferralCode(db, userId, now = Math.floor(Date.
 export async function attributeReferral(db, { inviteeUserId, code, isNewUser, now = Math.floor(Date.now() / 1000) }) {
   if (!db || !isNewUser || !inviteeUserId || !isReferralCode(code)) return { attributed: false };
   await ensureReferralSchema(db);
-  const owner = await db.prepare("SELECT user_id FROM referral_codes WHERE code = ?").bind(code).first();
+  const owner = await db.prepare("SELECT c.user_id, u.role FROM referral_codes c LEFT JOIN users u ON u.user_id = c.user_id WHERE c.code = ?").bind(code).first();
   if (!owner?.user_id || String(owner.user_id) === String(inviteeUserId)) return { attributed: false };
   const r = await db.prepare("INSERT OR IGNORE INTO referrals (invitee_user_id, inviter_user_id, code, created_at) VALUES (?, ?, ?, ?)")
     .bind(String(inviteeUserId), String(owner.user_id), code, now).run();
   const attributed = Boolean(r?.meta?.changes);
-  if (attributed) await grantWatchBonus(db, inviteeUserId, "invited_signup", INVITE_BONUS.invitedSignup, now);
-  return { attributed, inviterUserId: String(owner.user_id) };
+  const special = String(owner.role || "").toUpperCase() === "OWNER";
+  if (attributed) {
+    if (special) {
+      await grantWatchBonus(db, inviteeUserId, OWNER_SOURCE_PREFIX + "invited_signup", OWNER_INVITE_BONUS.invitedSignup, now);
+      for (const reward of OWNER_INVITE_REWARDS) await grantReward(db, inviteeUserId, reward, "owner_invite", now);
+    } else {
+      await grantWatchBonus(db, inviteeUserId, "invited_signup", INVITE_BONUS.invitedSignup, now);
+    }
+  }
+  return { attributed, inviterUserId: String(owner.user_id), special };
 }
 
 // ADVANCED 以上になったときに呼ぶ（昇格処理から）。招待された人でなければ何も起きない（主キー1行）。
@@ -85,10 +100,28 @@ export async function markReferralQualified(db, inviteeUserId, now = Math.floor(
   const r = await db.prepare("UPDATE referrals SET qualified_at = ?, season = ? WHERE invitee_user_id = ? AND qualified_at IS NULL")
     .bind(now, seasonOf(now), String(inviteeUserId)).run();
   if (!r?.meta?.changes) return false;
-  const ref = await db.prepare("SELECT inviter_user_id FROM referrals WHERE invitee_user_id = ?").bind(String(inviteeUserId)).first();
+  const ref = await db.prepare("SELECT r.inviter_user_id, u.role FROM referrals r LEFT JOIN users u ON u.user_id = r.inviter_user_id WHERE r.invitee_user_id = ?").bind(String(inviteeUserId)).first();
+  if (String(ref?.role || "").toUpperCase() === "OWNER") {
+    // 運営の招待：招待された人に大きめの特典（上限の外）。運営側には付けない。
+    await grantWatchBonus(db, inviteeUserId, OWNER_SOURCE_PREFIX + "invited_advanced", OWNER_INVITE_BONUS.invitedAdvanced, now);
+    return true;
+  }
   await grantWatchBonus(db, inviteeUserId, "invited_advanced", INVITE_BONUS.invitedAdvanced, now);
   if (ref?.inviter_user_id) await grantWatchBonus(db, ref.inviter_user_id, "invite:" + String(inviteeUserId), INVITE_BONUS.perQualifiedInvite, now);
   return true;
+}
+
+// 限定の着せ替えやバッジ（同じものは1回だけ）。
+async function grantReward(db, userId, reward, source, now) {
+  await db.prepare("INSERT OR IGNORE INTO user_rewards (user_id, reward, source, created_at) VALUES (?, ?, ?, ?)").bind(String(userId), String(reward), source, now).run();
+}
+
+export async function getUserRewards(db, userId) {
+  if (!db || !userId) return [];
+  try {
+    await ensureReferralSchema(db);
+    return ((await db.prepare("SELECT reward FROM user_rewards WHERE user_id = ?").bind(String(userId)).all())?.results || []).map(r => String(r.reward));
+  } catch { return []; }
 }
 
 // 同じ理由（source）では1回だけ。
@@ -101,8 +134,9 @@ export async function getWatchBonus(db, userId) {
   if (!db || !userId) return 0;
   try {
     await ensureReferralSchema(db);
-    const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS n FROM user_watch_bonus WHERE user_id = ?").bind(String(userId)).first();
-    return Math.min(INVITE_BONUS_CAP, Math.max(0, Number(row?.n) || 0));
+    // 運営の招待の特典（owner_ で始まる）は上限の外。
+    const row = await db.prepare("SELECT COALESCE(SUM(CASE WHEN source LIKE 'owner\\_%' ESCAPE '\\' THEN 0 ELSE amount END), 0) AS n, COALESCE(SUM(CASE WHEN source LIKE 'owner\\_%' ESCAPE '\\' THEN amount ELSE 0 END), 0) AS special FROM user_watch_bonus WHERE user_id = ?").bind(String(userId)).first();
+    return Math.min(INVITE_BONUS_CAP, Math.max(0, Number(row?.n) || 0)) + Math.max(0, Number(row?.special) || 0);
   } catch { return 0; }
 }
 
@@ -111,9 +145,9 @@ export async function inviterNameForCode(db, code) {
   if (!db || !isReferralCode(code)) return null;
   try {
     const row = await db.prepare(
-      "SELECT c.user_id, (SELECT p.nick_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = c.user_id AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END LIMIT 1) AS nick_name FROM referral_codes c WHERE c.code = ?"
+      "SELECT c.user_id, (SELECT role FROM users u WHERE u.user_id = c.user_id) AS role, (SELECT p.nick_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = c.user_id AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END LIMIT 1) AS nick_name FROM referral_codes c WHERE c.code = ?"
     ).bind(code).first();
-    return row?.user_id ? { name: row.nick_name || null } : null;
+    return row?.user_id ? { name: row.nick_name || null, special: String(row.role || "").toUpperCase() === "OWNER" } : null;
   } catch { return null; }
 }
 
@@ -155,7 +189,8 @@ function inviteClient() {
       '<p class="inv-lead">このリンクから<b>初めて</b>ログインした人が対象です（リンクを開いてから30日以内）。APIキーを登録してADVANCEDになると1人に数えます。</p>' +
       '<div class="inv-box"><b>あなたの招待</b><div class="inv-nums"><span><em>' + d.this_season + '</em>' + esc(month) + '</span><span><em>' + d.lifetime + '</em>累計</span></div>' +
       (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="inv-lead">まだいません。同盟やDiscordでリンクを共有してみましょう。</p>') + '</div>' +
-      '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul><small class="inv-note">いまのあなたの上乗せ：ウォッチ枠 +' + d.bonus + '（招待での上乗せは合計 +' + d.bonus_cap + ' まで）</small></div>';
+      (d.special ? '<div class="inv-box inv-special"><b>👑 運営の特別招待リンクです</b><ul><li>招待された人：ログインでウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>・限定の着せ替え「ゴールド」・運営招待バッジ</li><li>ADVANCEDになるとさらにウォッチ枠 <b class="hl">+' + d.rewards.invitedAdvanced + '</b>（通常の招待の上限とは別）</li></ul>' : '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul>') +
+      '<small class="inv-note">いまのあなたの上乗せ：ウォッチ枠 +' + d.bonus + '（招待での上乗せは合計 +' + d.bonus_cap + ' まで）</small></div>';
     document.getElementById("invCopy").onclick = function () {
       var text = "KingShotの分析・攻略ツール EagleEye（無料）";
       if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }
@@ -173,7 +208,7 @@ export function renderInvitePage() {
 .inv-box{margin:12px 0;padding:14px;border:1px solid var(--ee-border-soft);border-radius:16px;background:var(--ee-panel);font-size:13px}.inv-box>b{display:block;margin-bottom:8px;font-size:14px}.inv-box ul{margin:8px 0 0;padding-left:1.2em;line-height:1.8}
 .inv-nums{display:flex;gap:10px}.inv-nums span{flex:1;display:grid;justify-items:center;padding:8px;border-radius:12px;background:rgba(148,163,184,.08);color:var(--ee-subtext);font-size:12px}.inv-nums em{font-style:normal;font-size:24px;font-weight:900;color:#f6c84b}
 .ok{color:#22c55e;font-weight:800}.wait{color:var(--ee-subtext)}.inv-note{display:block;margin-top:8px;color:var(--ee-subtext);font-size:11px}
-.hl{display:inline!important;color:#f6c84b}
+.hl{display:inline!important;color:#f6c84b}.inv-special{border-color:rgba(251,191,36,.7);background:linear-gradient(110deg,rgba(251,191,36,.18),var(--ee-panel))}
 .inv-login{display:inline-block;margin-top:6px;padding:9px 16px;border-radius:999px;background:#5865f2;color:#fff;font-weight:900;text-decoration:none}</style></head>
 <body><main class="wrap"><nav class="crumbs"><a href="/">EagleEye</a> › 友だち招待</nav>
 <h1>📨 友だち招待</h1><p class="inv-lead">あなた専用の招待リンクで、同盟の仲間やフレンドをEagleEyeに招待しよう。</p>
