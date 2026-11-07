@@ -1,3 +1,4 @@
+import { shareCardPalettes } from "./themes.js";
 // プレイヤー比較を1枚の画像にして共有する（画像で共有／リンクをコピー）。
 // 画像は端末内の canvas で作り、iPhone の共有メニュー（Discord・LINE・X など）へ渡す。
 // アバターは別ドメイン（CORSなし）なので /api/avatar 経由で同一オリジンにして canvas を汚さない。
@@ -35,6 +36,11 @@ export async function handleAvatarProxy(request, { fetchImpl = fetch, cache = gl
 // ---- client (serialized with toString; must not reference outer variables) ----
 export function compareShareClient(cfg) {
   var STAGES = [["coliseum", "闘技場", 21], ["forest_of_life", "生命の森", 22], ["crystal_cave", "水晶鉱山", 23], ["knowledge_nexus", "知識の枢軸", 24], ["molten_fort", "溶岩要塞", 25], ["radiant_spire", "輝光の塔", 26]];
+  var PALS = cfg.palettes || {};
+  // 使っている着せ替えの色（画像を作る瞬間に読む）。
+  function currentPalette() { var id = document.documentElement.getAttribute("data-ee-skin") || "navy"; return PALS[id] || PALS.navy || { bg: "#0b1424", panel: "#0f1f36", raised: "#13263d", border: "#1d344d", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee" }; }
+  var P = currentPalette();
+  function alpha(hex, a) { var n = parseInt(String(hex).slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
   var COLORS = ["rgb(34,211,238)", "rgb(251,191,36)", "rgb(244,114,182)", "rgb(163,230,53)"];
   var FONT = '-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif';
   var head = document.querySelector(".head") || document.querySelector("main");
@@ -100,6 +106,7 @@ export function compareShareClient(cfg) {
   function tcText(l) { l = Number(l); if (!isFinite(l)) return null; if (l <= 30) return "Lv." + l; if (l < 35) return "Lv.30（" + (l - 30) + "/5）"; return null; }
 
   async function build(d) {
+    P = currentPalette();
     var ps = (d.players || []).filter(function (p) { return !p.missing && p.player; }).slice(0, 4);
     if (ps.length < 2) throw new Error("比較できるプレイヤーが2人以上必要です");
     var n = ps.length, W = 1080, PAD = 44, LBL = 190, colW = (W - PAD * 2 - LBL) / n;
@@ -114,34 +121,34 @@ export function compareShareClient(cfg) {
     var ROW = 74, GAP = 8, H = PAD + 70 + 250 + rows.length * (ROW + GAP) + (hasMys ? 50 + 6 * (ROW + GAP) + 600 : 0) + 230;
     var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var c = cv.getContext("2d");
-    var bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "rgb(15,31,54)"); bg.addColorStop(1, "rgb(11,20,36)"); c.fillStyle = bg; c.fillRect(0, 0, W, H);
-    var glow = c.createRadialGradient(W * .85, 0, 0, W * .85, 0, W * .5); glow.addColorStop(0, "rgba(34,211,238,.18)"); glow.addColorStop(1, "rgba(34,211,238,0)"); c.fillStyle = glow; c.fillRect(0, 0, W, H);
-    c.textBaseline = "alphabetic"; c.fillStyle = "rgb(232,243,255)"; c.font = "900 40px " + FONT; c.textAlign = "left"; c.fillText("プレイヤー比較", PAD, PAD + 40);
-    c.fillStyle = "rgb(125,211,252)"; c.font = "700 22px " + FONT; c.textAlign = "right"; c.fillText("キングショット", W - PAD, PAD + 36);
+    var bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, P.panel); bg.addColorStop(1, P.bg); c.fillStyle = bg; c.fillRect(0, 0, W, H);
+    var glow = c.createRadialGradient(W * .85, 0, 0, W * .85, 0, W * .5); glow.addColorStop(0, alpha(P.accent, .18)); glow.addColorStop(1, alpha(P.accent, 0)); c.fillStyle = glow; c.fillRect(0, 0, W, H);
+    c.textBaseline = "alphabetic"; c.fillStyle = P.text; c.font = "900 40px " + FONT; c.textAlign = "left"; c.fillText("プレイヤー比較", PAD, PAD + 40);
+    c.fillStyle = P.accent; c.font = "700 22px " + FONT; c.textAlign = "right"; c.fillText("キングショット", W - PAD, PAD + 36);
     var y = PAD + 70;
     var avatars = await Promise.all(ps.map(function (p) { return loadImg(p.player.avatar_url ? cfg.avatar + encodeURIComponent(p.player.avatar_url) : null); }));
     ps.forEach(function (p, i) {
       var cx = PAD + LBL + colW * i + colW / 2;
-      c.save(); rr(c, cx - 55, y, 110, 110, 24); c.fillStyle = "rgb(19,38,61)"; c.fill(); if (avatars[i]) { c.clip(); c.drawImage(avatars[i], cx - 55, y, 110, 110); } c.restore();
+      c.save(); rr(c, cx - 55, y, 110, 110, 24); c.fillStyle = P.raised; c.fill(); if (avatars[i]) { c.clip(); c.drawImage(avatars[i], cx - 55, y, 110, 110); } c.restore();
       c.save(); rr(c, cx - 55, y, 110, 110, 24); c.lineWidth = 3; c.strokeStyle = COLORS[i]; c.stroke(); c.restore();
-      c.textAlign = "center"; c.fillStyle = "rgb(232,243,255)"; c.font = "800 25px " + FONT;
+      c.textAlign = "center"; c.fillStyle = P.text; c.font = "800 25px " + FONT;
       var lines = wrap(c, p.player.nick_name || ("ID " + p.governor_id), colW - 12, 2);
       lines.forEach(function (t, k) { c.fillText(t, cx, y + 145 + k * 31); });
-      c.fillStyle = "rgb(145,167,191)"; c.font = "700 20px " + FONT;
+      c.fillStyle = P.subtext; c.font = "700 20px " + FONT;
       c.fillText("王国" + (p.player.kid != null ? p.player.kid : "—") + (p.player.alliance_abbr ? "・" + p.player.alliance_abbr : ""), cx, y + 145 + lines.length * 31 + 2);
     });
     y += 250;
     function drawRow(label, vals, fmt, higher, labels) {
-      c.textAlign = "left"; c.fillStyle = "rgb(145,167,191)"; c.font = "700 24px " + FONT; c.textBaseline = "middle"; c.fillText(label, PAD + 8, y + ROW / 2);
+      c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "700 24px " + FONT; c.textBaseline = "middle"; c.fillText(label, PAD + 8, y + ROW / 2);
       var ok = vals.filter(function (v) { return v != null && isFinite(v); });
       var best = higher && ok.length ? Math.max.apply(null, ok) : null;
       var unique = best != null && ok.filter(function (v) { return v === best; }).length === 1;
       vals.forEach(function (v, i) {
         var x = PAD + LBL + colW * i, isBest = unique && v === best;
-        c.save(); rr(c, x + 3, y, colW - 6, ROW, 14); c.fillStyle = isBest ? "rgb(14,81,96)" : "rgb(19,38,61)"; c.fill(); if (isBest) { c.lineWidth = 2.5; c.strokeStyle = "rgb(34,211,238)"; c.stroke(); } c.restore();
+        c.save(); rr(c, x + 3, y, colW - 6, ROW, 14); c.fillStyle = P.raised; c.fill(); if (isBest) { c.fillStyle = alpha(P.accent, .3); c.fill(); c.lineWidth = 2.5; c.strokeStyle = P.accent; c.stroke(); } c.restore();
         var cx = x + colW / 2;
-        if (fmt === null) { var t = tcText(v); if (t || !isFinite(v)) { c.fillStyle = "rgb(232,243,255)"; c.font = "800 28px " + FONT; c.textAlign = "center"; c.fillText(t || "—", cx, y + ROW / 2); } else { var g = Math.floor((v - 35) / 5) + 1, st = (v - 35) % 5; badge(c, st ? cx - 34 : cx, y + ROW / 2, 24, g); if (st) { for (var k = 0; k < 5; k++) { c.fillStyle = k < st ? "rgb(250,214,60)" : "rgba(150,130,100,.5)"; c.fillRect(cx - 4 + k * 10, y + ROW / 2 - 6, 8, 12); } } } return; }
-        c.fillStyle = isBest ? "rgb(165,243,252)" : "rgb(232,243,255)"; c.font = "800 30px " + FONT; c.textAlign = "center";
+        if (fmt === null) { var t = tcText(v); if (t || !isFinite(v)) { c.fillStyle = P.text; c.font = "800 28px " + FONT; c.textAlign = "center"; c.fillText(t || "—", cx, y + ROW / 2); } else { var g = Math.floor((v - 35) / 5) + 1, st = (v - 35) % 5; badge(c, st ? cx - 34 : cx, y + ROW / 2, 24, g); if (st) { for (var k = 0; k < 5; k++) { c.fillStyle = k < st ? "rgb(250,214,60)" : "rgba(150,130,100,.5)"; c.fillRect(cx - 4 + k * 10, y + ROW / 2 - 6, 8, 12); } } } return; }
+        c.fillStyle = P.text; c.font = "800 30px " + FONT; c.textAlign = "center";
         c.fillText(labels && labels[i] ? labels[i] : fmt(v), cx, y + ROW / 2);
       });
       c.textBaseline = "alphabetic"; y += ROW + GAP;
@@ -153,14 +160,14 @@ export function compareShareClient(cfg) {
         drawRow(s[1], mys.map(function (m) { return m[s[0]] ? m[s[0]].v : null; }), function (v) { return v == null ? "—" : String(Math.round(v)); }, true, mys.map(function (m) { return m[s[0]] ? (m[s[0]].label || null) : null; }));
       });
       // radar
-      y += 14; c.save(); rr(c, PAD, y, W - PAD * 2, 560, 20); c.fillStyle = "rgba(19,38,61,.6)"; c.fill(); c.strokeStyle = "rgb(29,52,77)"; c.lineWidth = 1.5; c.stroke(); c.restore();
+      y += 14; c.save(); rr(c, PAD, y, W - PAD * 2, 560, 20); c.fillStyle = alpha(P.raised, .6); c.fill(); c.strokeStyle = P.border; c.lineWidth = 1.5; c.stroke(); c.restore();
       var cx0 = PAD + 300, cy0 = y + 280, R = 190;
       var maxes = STAGES.map(function (s) { return Math.max.apply(null, [1].concat(mys.map(function (m) { return m[s[0]] ? m[s[0]].v : 0; }))); });
       var mins = STAGES.map(function (s) { var v = mys.map(function (m) { return m[s[0]] ? m[s[0]].v : null; }).filter(function (x) { return x != null; }); return v.length ? Math.min.apply(null, v) : 0; });
       var pt = function (i, r) { var a = -Math.PI / 2 + i * Math.PI / 3; return [cx0 + r * Math.cos(a), cy0 + r * Math.sin(a)]; };
-      c.strokeStyle = "rgb(40,64,92)"; c.lineWidth = 2;
+      c.strokeStyle = P.border; c.lineWidth = 2;
       [.25, .5, .75, 1].forEach(function (f) { c.beginPath(); for (var i = 0; i < 6; i++) { var q = pt(i, R * f); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.closePath(); c.stroke(); });
-      c.font = "700 24px " + FONT; c.fillStyle = "rgb(203,213,225)"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.font = "700 24px " + FONT; c.fillStyle = P.subtext; c.textAlign = "center"; c.textBaseline = "middle";
       for (var i = 0; i < 6; i++) { var e = pt(i, R); c.beginPath(); c.moveTo(cx0, cy0); c.lineTo(e[0], e[1]); c.stroke(); var lp = pt(i, R + 44); c.fillText(STAGES[i][1], lp[0], lp[1]); }
       mys.forEach(function (m, j) {
         // 比べた中の最低を内側20%、最高を外周に（差が見えやすいように）
@@ -171,19 +178,19 @@ export function compareShareClient(cfg) {
       });
       c.textAlign = "left"; c.textBaseline = "alphabetic"; var lx = PAD + 610, ly = y + 150;
       c.fillStyle = "rgb(253,230,138)"; c.font = "800 26px " + FONT; c.fillText("秘境の試練バランス", lx, ly);
-      ps.forEach(function (p, j) { var yy = ly + 46 + j * 44; c.fillStyle = COLORS[j]; c.fillRect(lx, yy - 12, 28, 10); c.fillStyle = "rgb(232,243,255)"; c.font = "700 23px " + FONT; c.fillText(wrap(c, p.player.nick_name || p.governor_id, W - PAD - lx - 44, 1)[0], lx + 40, yy - 2); });
-      c.fillStyle = "rgb(145,167,191)"; c.font = "500 18px " + FONT; wrap(c, "比べた中の最高を外周、最低を内側にしています", W - PAD - lx - 10, 3).forEach(function (t, k) { c.fillText(t, lx, ly + 66 + ps.length * 44 + k * 26); });
+      ps.forEach(function (p, j) { var yy = ly + 46 + j * 44; c.fillStyle = COLORS[j]; c.fillRect(lx, yy - 12, 28, 10); c.fillStyle = P.text; c.font = "700 23px " + FONT; c.fillText(wrap(c, p.player.nick_name || p.governor_id, W - PAD - lx - 44, 1)[0], lx + 40, yy - 2); });
+      c.fillStyle = P.subtext; c.font = "500 18px " + FONT; wrap(c, "比べた中の最高を外周、最低を内側にしています", W - PAD - lx - 10, 3).forEach(function (t, k) { c.fillText(t, lx, ly + 66 + ps.length * 44 + k * 26); });
       y += 560;
     }
-    y += 26; c.strokeStyle = "rgb(29,52,77)"; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 22;
+    y += 26; c.strokeStyle = P.border; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 22;
     var imgs = await Promise.all([loadImg(cfg.bj), loadImg(cfg.qr)]);
     if (imgs[0]) c.drawImage(imgs[0], PAD, y, 130, 130 * imgs[0].height / imgs[0].width);
-    c.textAlign = "left"; c.fillStyle = "rgb(232,243,255)"; c.font = "900 36px " + FONT; c.fillText("EagleEye", PAD + 150, y + 48);
-    c.fillStyle = "rgb(125,211,252)"; c.font = "700 24px " + FONT; c.fillText(location.host, PAD + 150, y + 84);
+    c.textAlign = "left"; c.fillStyle = P.text; c.font = "900 36px " + FONT; c.fillText("EagleEye", PAD + 150, y + 48);
+    c.fillStyle = P.accent; c.font = "700 24px " + FONT; c.fillText(location.host, PAD + 150, y + 84);
     var at = ps.map(function (p) { return Number(p.player.observed_at) || 0; }).filter(Boolean);
     var when = at.length ? new Date(Math.min.apply(null, at) * 1000) : new Date();
     var pad2 = function (v) { return (v < 10 ? "0" : "") + v; };
-    c.fillStyle = "rgb(145,167,191)"; c.font = "500 19px " + FONT;
+    c.fillStyle = P.subtext; c.font = "500 19px " + FONT;
     c.fillText(when.getFullYear() + "/" + pad2(when.getMonth() + 1) + "/" + pad2(when.getDate()) + " " + pad2(when.getHours()) + ":" + pad2(when.getMinutes()) + " 取得・明るい枠はその項目のトップ", PAD + 150, y + 118);
     if (imgs[1]) { c.fillStyle = "#fff"; rr(c, W - PAD - 150, y - 6, 150, 150, 12); c.fill(); c.drawImage(imgs[1], W - PAD - 140, y + 4, 130, 130); }
     return cv;
@@ -222,6 +229,6 @@ export function compareShareClient(cfg) {
 }
 
 export function compareShareScript() {
-  const cfg = { landing: SHARE_LANDING_PATH, avatar: "/api/avatar?u=", bj: "/assets/eagleeye/bjnyan/poses/common.webp", qr: "/assets/eagleeye/qr-share.svg" };
+  const cfg = { landing: SHARE_LANDING_PATH, avatar: "/api/avatar?u=", bj: "/assets/eagleeye/bjnyan/poses/common.webp", qr: "/assets/eagleeye/qr-share.svg", palettes: shareCardPalettes() };
   return `<script>var __name=function(f){return f};(${compareShareClient.toString()})(${JSON.stringify(cfg)});</script>`;
 }

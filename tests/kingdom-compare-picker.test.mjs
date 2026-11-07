@@ -55,3 +55,20 @@ test("比較を画像で共有：ボタン・埋め込みデータ・招待コ�
   const one = await renderKingdomComparePage(new Request("https://eagleeye-ks.com/kingdom/compare?kid=1524"), { DB: db2 });
   assert.doesNotMatch(one, /id='kcmpShare'/);
 });
+
+test("共有カードは使っている着せ替えの色で作る（限定カラーは EDITION 表示）", async () => {
+  const { shareCardPalettes } = await import("../src/themes.js");
+  const pal = shareCardPalettes();
+  assert.equal(pal.navy.accent, "#22d3ee");
+  assert.equal(pal.gold.accent, "#fbbf24");
+  assert.equal(pal.gold.reward, "theme_gold");
+  const { kingdomShareEmbed } = await import("../src/kingdom-compare-share.js");
+  const html = kingdomShareEmbed([{ kid: 1, v: { power: 1 } }, { kid: 2, v: { power: 2 } }], "");
+  assert.match(html, /"palettes":\{"navy":/);
+  assert.match(html, /P = currentPalette\(\); COLORS\[0\] = P\.accent;/, "画像を作る瞬間の着せ替えを読む");
+  assert.match(html, / EDITION"/);
+  const { compareShareScript } = await import("../src/compare-share.js");
+  const p = compareShareScript();
+  assert.match(p, /"palettes":\{"navy":/);
+  assert.match(p, /async function build\(d\) \{\n\s+P = currentPalette\(\);/);
+});
