@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { getUserRewards, OWNER_INVITE_BONUS, INVITE_BONUS_CAP } from "../src/referrals.js";
+import { getUserRewards, OWNER_INVITE_BONUS, INVITE_BONUS_CAP, getOrCreateSpecialInviteCode } from "../src/referrals.js";
 import { seasonOf, isReferralCode, randomReferralCode, getOrCreateReferralCode, attributeReferral, markReferralQualified, loadMyReferrals, getWatchBonus, inviterNameForCode, resetReferralSchemaCache, INVITE_TITLES, INVITE_BONUS } from "../src/referrals.js";
 import { evaluateMilestones } from "../src/milestones.js";
 
@@ -19,11 +19,12 @@ test("コードは8文字・紛らわしい文字なし、share などは招待�
 });
 
 function fakeDb() {
-  const t = { codes: new Map(), refs: new Map(), roles: new Map(), names: new Map(), bonus: new Map() };
+  const t = { codes: new Map(), special: new Map(), refs: new Map(), roles: new Map(), names: new Map(), bonus: new Map() };
   const stmt = (sql, a = []) => ({
     bind: (...x) => stmt(sql, x),
     async run() {
       if (sql.startsWith("INSERT OR IGNORE INTO referral_codes")) { if (t.codes.has(a[0]) || [...t.codes.values()].includes(a[1])) return { meta: { changes: 0 } }; t.codes.set(a[0], a[1]); return { meta: { changes: 1 } }; }
+      if (sql.startsWith("INSERT OR IGNORE INTO special_invite_codes")) { if (t.special.has(a[0]) || [...t.special.values()].includes(a[1])) return { meta: { changes: 0 } }; t.special.set(a[0], a[1]); return { meta: { changes: 1 } }; }
       if (sql.startsWith("INSERT OR IGNORE INTO referrals")) { if (t.refs.has(a[0])) return { meta: { changes: 0 } }; t.refs.set(a[0], { invitee_user_id: a[0], inviter_user_id: a[1], code: a[2], created_at: a[3], qualified_at: null, season: null }); return { meta: { changes: 1 } }; }
       if (sql.startsWith("UPDATE referrals SET qualified_at = ?, season = ? WHERE invitee_user_id")) { const r = t.refs.get(a[2]); if (!r || r.qualified_at != null) return { meta: { changes: 0 } }; r.qualified_at = a[0]; r.season = a[1]; return { meta: { changes: 1 } }; }
       if (sql.startsWith("INSERT OR IGNORE INTO user_rewards")) { t.rewards = t.rewards || new Map(); t.rewards.set(a[0] + "|" + a[1], a[2]); return { meta: { changes: 1 } }; }
@@ -32,8 +33,12 @@ function fakeDb() {
     },
     async first() {
       if (sql.startsWith("SELECT code FROM referral_codes")) return t.codes.has(a[0]) ? { code: t.codes.get(a[0]) } : null;
-      if (sql.startsWith("SELECT c.user_id, u.role FROM referral_codes")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, role: t.roles.get(u) || "BASIC" }; return null; }
-      if (sql.startsWith("SELECT r.inviter_user_id, u.role FROM referrals")) { const r = t.refs.get(a[0]); return r ? { inviter_user_id: r.inviter_user_id, role: t.roles.get(r.inviter_user_id) || "BASIC" } : null; }
+      if (sql.startsWith("SELECT user_id FROM referral_codes WHERE code")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u }; return null; }
+      if (sql.startsWith("SELECT 1 AS x FROM referral_codes")) { return [...t.codes.values()].includes(a[0]) ? { x: 1 } : null; }
+      if (sql.startsWith("SELECT code FROM special_invite_codes")) { for (const [c, u] of t.special) if (u === a[0]) return { code: c }; return null; }
+      if (sql.startsWith("SELECT s.user_id, u.role FROM special_invite_codes")) { const u = t.special.get(a[0]); return u ? { user_id: u, role: t.roles.get(u) || "BASIC" } : null; }
+      if (sql.startsWith("SELECT p.nick_name FROM user_player_links")) return t.names.has(a[0]) ? { nick_name: t.names.get(a[0]) } : null;
+      if (sql.startsWith("SELECT r.inviter_user_id, u.role, (SELECT 1 FROM special_invite_codes")) { const r = t.refs.get(a[0]); return r ? { inviter_user_id: r.inviter_user_id, role: t.roles.get(r.inviter_user_id) || "BASIC", via_special: t.special.has(r.code) ? 1 : null } : null; }
       if (sql.startsWith("SELECT reward FROM user_rewards")) return null;
       if (sql.startsWith("SELECT COALESCE(SUM(CASE")) { let n = 0, special = 0; for (const [k, v] of t.bonus) if (k.startsWith(a[0] + "|")) { if (k.slice(a[0].length + 1).startsWith("owner_")) special += v; else n += v; } return { n, special }; }
       if (sql.startsWith("SELECT c.user_id, (SELECT role")) { for (const [u, c] of t.codes) if (c === a[0]) return { user_id: u, role: t.roles.get(u) || "BASIC", nick_name: t.names.get(u) || null }; return null; }
@@ -146,7 +151,16 @@ test("運営（オーナー）の招待：特典が大きく上限の外、限�
   resetReferralSchemaCache();
   const db = fakeDb();
   db.t.roles.set("OWN", "OWNER");
-  const code = await getOrCreateReferralCode(db, "OWN", 1, () => "pwnercdz");
+  // オーナーの個人の招待リンクは通常の招待
+  const personal = await getOrCreateReferralCode(db, "OWN", 1, () => "pwnercdz");
+  const p = await attributeReferral(db, { inviteeUserId: "P", code: personal, isNewUser: true, now: 10 });
+  assert.equal(p.special, false);
+  assert.equal(await getWatchBonus(db, "P"), INVITE_BONUS.invitedSignup);
+  assert.deepEqual(await getUserRewards(db, "P"), []);
+  assert.deepEqual(await inviterNameForCode(db, personal), { name: null, special: false });
+  // 特別招待リンクから来た人だけ特別
+  const code = await getOrCreateSpecialInviteCode(db, "OWN", 1, () => "spcdwxyz");
+  assert.equal(await getOrCreateSpecialInviteCode(db, "OWN", 2, () => "zzzzzzzz"), "spcdwxyz", "1人1つ");
   const r = await attributeReferral(db, { inviteeUserId: "N", code, isNewUser: true, now: 10 });
   assert.equal(r.special, true);
   assert.equal(await getWatchBonus(db, "N"), OWNER_INVITE_BONUS.invitedSignup);
@@ -158,6 +172,9 @@ test("運営（オーナー）の招待：特典が大きく上限の外、限�
   for (let i = 0; i < 10; i++) db.t.bonus.set("N|x" + i, 5);
   assert.equal(await getWatchBonus(db, "N"), INVITE_BONUS_CAP + 15);
   assert.deepEqual(await inviterNameForCode(db, code), { name: null, special: true });
+  // オーナーでなくなったら、特別招待のコードも通常扱い
+  db.t.roles.set("OWN", "ADMIN");
+  assert.deepEqual(await inviterNameForCode(db, code), { name: null, special: false });
 });
 
 test("限定の着せ替え・特別招待の表示", async () => {
@@ -171,7 +188,9 @@ test("限定の着せ替え・特別招待の表示", async () => {
   assert.match(index, /👑 EagleEye運営からの特別招待/);
   assert.match(index, /url\.pathname === "\/api\/rewards"/);
   const page = (await import("../src/referrals.js")).renderInvitePage();
-  assert.match(page, /運営の特別招待リンクです/);
+  assert.match(page, /運営の特別招待リンク（オーナーだけ）/);
+  assert.match(page, /d\.special_link/);
+  assert.match(index, /const specialCode = isOwner \? await getOrCreateSpecialInviteCode\(env\.DB, auth\.user_id\) : null;/);
 });
 
 test("オーナーは限定の着せ替えもすべて使える（/api/rewards）", async () => {
