@@ -446,8 +446,10 @@ export async function renderKingdomComparePage(request, env) {
       .filter(value => Number.isInteger(value) && value > 0)
   )].slice(0, 4);
 
+  // 王国を選ぶ部分（2王国未満でも、比較結果の上でも同じものを出す）。
+  const picker = await renderComparePicker(env.DB, kids);
   if (kids.length < 2) {
-    return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p>URLに ?kid=1&kid=2 のように2王国以上を指定してください。</p></main>");
+    return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p class='cmp-lead'>最大4つの王国を並べて、戦力や成長を比較できます。比べたい王国の番号を追加してください。</p>" + picker + "</main>");
   }
 
   const placeholders = kids.map(() => "?").join(",");
@@ -470,31 +472,63 @@ export async function renderKingdomComparePage(request, env) {
   const cards = details.map(row => {
     const d = row.detail || {};
     const metrics = [
-      ["Power", d.power],
-      ["平均Power", d.avg_power],
+      ["総戦力", d.power],
+      ["平均戦力", d.avg_power],
       ["領主数", d.player_count],
-      ["Active 7d", d.active_7d],
-      ["Active 30d", d.active_30d],
-      ["Power Gain 7d", d.power_gain_7d],
-      ["TC Pushers 7d", d.tc_pushers_7d],
-      ["Health", d.health],
+      ["7日間の活動者", d.active_7d],
+      ["30日間の活動者", d.active_30d],
+      ["7日間の戦力の伸び", d.power_gain_7d],
+      ["7日間で役場を上げた人", d.tc_pushers_7d],
+      ["健全度", d.health],
       ["同盟数", d.alliance_count],
-      ["Hero Power", d.hero_power],
-      ["Troop Power", d.troop_power],
-      ["Research Power", d.research_power]
+      ["英雄戦力", d.hero_power],
+      ["兵士戦力", d.troop_power],
+      ["研究戦力", d.research_power]
     ];
     return "<article class='compare'><h2>王国 " + esc(row.kid) + "</h2><p>" + esc(row.name || d.name || "名称未取得") + "</p>" +
-      "<div class='compare-meta'>最終取得 " + esc(ts(row.last_seen_at)) + " / Provider観測 " + esc(ts(row.source_observed_at || d.source_observed_at)) + "</div>" +
+      "<div class='compare-meta'>データ取得 " + esc(ts(row.source_observed_at || d.source_observed_at || row.last_seen_at)) + "</div>" +
       "<div class='compare-metrics'>" + metrics.map(([label,value]) =>
         "<div><small>" + esc(label) + "</small><strong>" + esc(num(value)) + "</strong></div>"
       ).join("") + "</div></article>";
   }).join("");
 
   return page("王国比較",
-    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p>最大4王国。現在値と7日成長指標を比較します。詳細payloadは選択した王国だけR2から読み込みます。</p><div class='comparegrid'>" +
+    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p class='cmp-lead'>最大4王国。今の数値と、この7日間の伸びを並べて比較します。</p>" + picker + "<div class='comparegrid'>" +
     (cards || "<div class='empty'>比較対象がありません。</div>") +
     "</div></main>"
   );
+}
+
+const COMPARE_MAX = 4;
+const compareHref = list => "/kingdom/compare?" + list.map(k => "kid=" + encodeURIComponent(k)).join("&");
+const PICKER_CSS = "<style>.cmp-lead{color:var(--ee-subtext);font-size:14px}.cmp-pick{margin:14px 0 18px;padding:14px;border:1px solid var(--ee-border);border-radius:14px;background:var(--ee-panel)}.cmp-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.cmp-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:var(--ee-panel-raised);border:1px solid var(--ee-border);font-weight:800}.cmp-chip a{color:var(--ee-subtext);text-decoration:none;font-size:15px;line-height:1}.cmp-form{display:flex;gap:8px}.cmp-form input{flex:1;min-width:0;padding:11px;border-radius:10px;border:1px solid var(--ee-border);background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-size:16px}.cmp-pick .cmp-form button{padding:11px 16px;border:0!important;border-radius:10px;background:var(--ee-cyan,#22d3ee)!important;color:#04121f!important;font-weight:900;font-size:15px}.cmp-sug{margin-top:12px}.cmp-sug small{display:block;color:var(--ee-subtext);margin-bottom:6px}.cmp-sug a{display:inline-block;margin:0 6px 6px 0;padding:7px 11px;border-radius:999px;border:1px solid var(--ee-border);color:var(--ee-text,#e8f3ff);text-decoration:none;font-size:13px}.cmp-sug a b{color:var(--ee-cyan)}.cmp-go{display:block;margin-top:12px;padding:12px;border-radius:12px;background:#facc15;color:#1f1300;text-align:center;font-weight:900;text-decoration:none}.cmp-hint{margin-top:10px;color:var(--ee-subtext);font-size:12px}</style>";
+
+// 比較する王国の選択：選んだ王国（×で外す）、番号を追加するフォーム、おすすめ（今季のKvK相手・番号が近い王国）。
+// D1は主キーでの数行だけ（KvK相手は (season,kid) と (season,opponent) の索引）。
+async function renderComparePicker(db, kids) {
+  const chips = kids.map(k => "<span class='cmp-chip'>王国 " + esc(k) + (kids.length > 0 ? "<a href='" + esc(compareHref(kids.filter(x => x !== k))) + "' aria-label='王国" + esc(k) + "を外す'>×</a>" : "") + "</span>").join("");
+  const full = kids.length >= COMPARE_MAX;
+  const form = full ? "<p class='cmp-hint'>比較できるのは4王国までです。入れ替えるときは×で外してください。</p>" :
+    "<form class='cmp-form' method='get' action='/kingdom/compare'>" + kids.map(k => "<input type='hidden' name='kid' value='" + esc(k) + "'>").join("") +
+    "<input type='number' name='kid' inputmode='numeric' min='1' max='99999' placeholder='王国の番号（例：1524）' aria-label='追加する王国の番号' required><button type='submit'>追加</button></form>";
+  let sug = "";
+  if (!full && kids.length > 0 && db) {
+    const base = kids[0];
+    const list = [];
+    try {
+      const st = await db.prepare("SELECT value FROM kvk_state WHERE key = 'matchups'").first();
+      const season = Number(JSON.parse(st?.value || "null")?.season);
+      if (Number.isFinite(season)) {
+        const m = await db.prepare("SELECT kid, opponent FROM kvk_matchups WHERE season = ? AND (kid = ? OR opponent = ?) LIMIT 1").bind(season, base, base).first();
+        const opp = m ? (Number(m.kid) === base ? Number(m.opponent) : Number(m.kid)) : null;
+        if (opp && !kids.includes(opp)) list.push({ kid: opp, why: "今季のKvK相手" });
+      }
+    } catch {}
+    for (const k of [base - 1, base + 1, base - 2, base + 2]) if (k > 0 && !kids.includes(k) && !list.some(x => x.kid === k)) list.push({ kid: k, why: "番号が近い" });
+    sug = "<div class='cmp-sug'><small>王国 " + esc(base) + " と比べるなら</small>" + list.slice(0, 5).map(x => "<a href='" + esc(compareHref([...kids, x.kid])) + "'><b>+ 王国 " + esc(x.kid) + "</b>　" + esc(x.why) + "</a>").join("") + "</div>";
+  }
+  const go = kids.length === 1 ? "<p class='cmp-hint'>もう1つ王国を追加すると比較が表示されます。</p>" : "";
+  return PICKER_CSS + "<section class='cmp-pick' aria-label='比較する王国'>" + (chips ? "<div class='cmp-chips'>" + chips + "</div>" : "") + form + sug + go + "</section>";
 }
 
 export async function handleKingdomPortalApi(request, env) {
