@@ -58,7 +58,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
-import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP, OWNER_INVITE_BONUS, getUserRewards } from "./referrals.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP, OWNER_INVITE_BONUS, getUserRewards, getOrCreateSpecialInviteCode } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -10908,9 +10908,11 @@ async function handleInviteApi(request, env) {
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   try {
     const mine = await loadMyReferrals(env.DB, auth.user_id);
-    // オーナーの招待リンクは「運営の特別招待」：招待された人の特典が大きく、限定の着せ替えとバッジが付く。
-    const special = String(auth.role || "").toUpperCase() === "OWNER";
-    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: special ? { invitedSignup: OWNER_INVITE_BONUS.invitedSignup, invitedAdvanced: OWNER_INVITE_BONUS.invitedAdvanced, perQualifiedInvite: 0 } : INVITE_BONUS, special });
+    // オーナーは「個人の招待リンク」（通常）に加えて「運営の特別招待リンク」も持ち、相手によって使い分ける。
+    const isOwner = String(auth.role || "").toUpperCase() === "OWNER";
+    const specialCode = isOwner ? await getOrCreateSpecialInviteCode(env.DB, auth.user_id) : null;
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: INVITE_BONUS,
+      special_link: specialCode ? publicOrigin(request, env) + "/?ref=" + specialCode : null, special_rewards: specialCode ? OWNER_INVITE_BONUS : null });
   } catch (error) {
     console.error("invite_failed", error?.message || error);
     return json({ ok: false, error: "INVITE_FAILED" }, 500);

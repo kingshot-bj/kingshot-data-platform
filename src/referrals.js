@@ -24,7 +24,7 @@ export const INVITE_BONUS = Object.freeze({ invitedSignup: 2, invitedAdvanced: 5
 // 招待でもらえるウォッチ枠の合計の上限（サブ垢の量産で増やしすぎないように）。
 export const INVITE_BONUS_CAP = 30;
 
-// オーナー（運営）の招待リンクから来た人への特別な特典。ウォッチ枠は上限（INVITE_BONUS_CAP）の外。
+// オーナー（運営）の「特別招待リンク」から来た人への特別な特典（オーナーの個人の招待リンクは通常の招待）。ウォッチ枠は上限（INVITE_BONUS_CAP）の外。
 // 限定の着せ替え「ゴールド」と「運営招待」バッジも付く（user_rewards）。
 export const OWNER_INVITE_BONUS = Object.freeze({ invitedSignup: 5, invitedAdvanced: 10 });
 export const OWNER_INVITE_REWARDS = Object.freeze(["theme_gold", "badge_owner_invite"]);
@@ -52,6 +52,7 @@ export async function ensureReferralSchema(db) {
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referrals(inviter_user_id, qualified_at)").run();
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_referrals_season ON referrals(season, inviter_user_id)").run();
       await db.prepare("CREATE TABLE IF NOT EXISTS user_watch_bonus (user_id TEXT NOT NULL, source TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, source))").run();
+      await db.prepare("CREATE TABLE IF NOT EXISTS special_invite_codes (code TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL)").run();
       await db.prepare("CREATE TABLE IF NOT EXISTS user_rewards (user_id TEXT NOT NULL, reward TEXT NOT NULL, source TEXT, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, reward))").run();
     })().catch(error => { schemaReady = null; throw error; });
   }
@@ -72,16 +73,42 @@ export async function getOrCreateReferralCode(db, userId, now = Math.floor(Date.
   throw new Error("REFERRAL_CODE_FAILED");
 }
 
+// オーナー用の「運営の特別招待」コード（個人の招待コードとは別。1人1つ）。
+export async function getOrCreateSpecialInviteCode(db, userId, now = Math.floor(Date.now() / 1000), makeCode = randomReferralCode) {
+  await ensureReferralSchema(db);
+  const row = await db.prepare("SELECT code FROM special_invite_codes WHERE user_id = ?").bind(String(userId)).first();
+  if (row?.code) return row.code;
+  for (let i = 0; i < 5; i++) {
+    const code = makeCode();
+    const clash = await db.prepare("SELECT 1 AS x FROM referral_codes WHERE code = ?").bind(code).first();
+    if (clash) continue;
+    const r = await db.prepare("INSERT OR IGNORE INTO special_invite_codes (code, user_id, created_at) VALUES (?, ?, ?)").bind(code, String(userId), now).run();
+    if (r?.meta?.changes) return code;
+    const again = await db.prepare("SELECT code FROM special_invite_codes WHERE user_id = ?").bind(String(userId)).first();
+    if (again?.code) return again.code;
+  }
+  throw new Error("SPECIAL_INVITE_CODE_FAILED");
+}
+
+// コード → 持ち主と種類。特別招待のコードは、持ち主が今もオーナーのときだけ「特別」。
+async function resolveInviteCode(db, code) {
+  const normal = await db.prepare("SELECT user_id FROM referral_codes WHERE code = ?").bind(code).first();
+  if (normal?.user_id) return { userId: String(normal.user_id), special: false };
+  const sp = await db.prepare("SELECT s.user_id, u.role FROM special_invite_codes s LEFT JOIN users u ON u.user_id = s.user_id WHERE s.code = ?").bind(code).first();
+  if (sp?.user_id) return { userId: String(sp.user_id), special: String(sp.role || "").toUpperCase() === "OWNER" };
+  return null;
+}
+
 // 初回ログイン時に呼ぶ。既存ユーザー・自分のコード・知らないコードは何もしない。
 export async function attributeReferral(db, { inviteeUserId, code, isNewUser, now = Math.floor(Date.now() / 1000) }) {
   if (!db || !isNewUser || !inviteeUserId || !isReferralCode(code)) return { attributed: false };
   await ensureReferralSchema(db);
-  const owner = await db.prepare("SELECT c.user_id, u.role FROM referral_codes c LEFT JOIN users u ON u.user_id = c.user_id WHERE c.code = ?").bind(code).first();
-  if (!owner?.user_id || String(owner.user_id) === String(inviteeUserId)) return { attributed: false };
+  const owner = await resolveInviteCode(db, code);
+  if (!owner?.userId || owner.userId === String(inviteeUserId)) return { attributed: false };
   const r = await db.prepare("INSERT OR IGNORE INTO referrals (invitee_user_id, inviter_user_id, code, created_at) VALUES (?, ?, ?, ?)")
-    .bind(String(inviteeUserId), String(owner.user_id), code, now).run();
+    .bind(String(inviteeUserId), owner.userId, code, now).run();
   const attributed = Boolean(r?.meta?.changes);
-  const special = String(owner.role || "").toUpperCase() === "OWNER";
+  const special = owner.special;
   if (attributed) {
     if (special) {
       await grantWatchBonus(db, inviteeUserId, OWNER_SOURCE_PREFIX + "invited_signup", OWNER_INVITE_BONUS.invitedSignup, now);
@@ -90,7 +117,7 @@ export async function attributeReferral(db, { inviteeUserId, code, isNewUser, no
       await grantWatchBonus(db, inviteeUserId, "invited_signup", INVITE_BONUS.invitedSignup, now);
     }
   }
-  return { attributed, inviterUserId: String(owner.user_id), special };
+  return { attributed, inviterUserId: owner.userId, special };
 }
 
 // ADVANCED 以上になったときに呼ぶ（昇格処理から）。招待された人でなければ何も起きない（主キー1行）。
@@ -100,8 +127,8 @@ export async function markReferralQualified(db, inviteeUserId, now = Math.floor(
   const r = await db.prepare("UPDATE referrals SET qualified_at = ?, season = ? WHERE invitee_user_id = ? AND qualified_at IS NULL")
     .bind(now, seasonOf(now), String(inviteeUserId)).run();
   if (!r?.meta?.changes) return false;
-  const ref = await db.prepare("SELECT r.inviter_user_id, u.role FROM referrals r LEFT JOIN users u ON u.user_id = r.inviter_user_id WHERE r.invitee_user_id = ?").bind(String(inviteeUserId)).first();
-  if (String(ref?.role || "").toUpperCase() === "OWNER") {
+  const ref = await db.prepare("SELECT r.inviter_user_id, u.role, (SELECT 1 FROM special_invite_codes s WHERE s.code = r.code) AS via_special FROM referrals r LEFT JOIN users u ON u.user_id = r.inviter_user_id WHERE r.invitee_user_id = ?").bind(String(inviteeUserId)).first();
+  if (ref?.via_special && String(ref?.role || "").toUpperCase() === "OWNER") {
     // 運営の招待：招待された人に大きめの特典（上限の外）。運営側には付けない。
     await grantWatchBonus(db, inviteeUserId, OWNER_SOURCE_PREFIX + "invited_advanced", OWNER_INVITE_BONUS.invitedAdvanced, now);
     return true;
@@ -144,10 +171,12 @@ export async function getWatchBonus(db, userId) {
 export async function inviterNameForCode(db, code) {
   if (!db || !isReferralCode(code)) return null;
   try {
+    const owner = await resolveInviteCode(db, code);
+    if (!owner) return null;
     const row = await db.prepare(
-      "SELECT c.user_id, (SELECT role FROM users u WHERE u.user_id = c.user_id) AS role, (SELECT p.nick_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = c.user_id AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END LIMIT 1) AS nick_name FROM referral_codes c WHERE c.code = ?"
-    ).bind(code).first();
-    return row?.user_id ? { name: row.nick_name || null, special: String(row.role || "").toUpperCase() === "OWNER" } : null;
+      "SELECT p.nick_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END LIMIT 1"
+    ).bind(owner.userId).first();
+    return { name: row?.nick_name || null, special: owner.special };
   } catch { return null; }
 }
 
@@ -185,12 +214,22 @@ function inviteClient() {
     var d = x.d; if (!d || !d.ok) throw new Error("x");
     var month = String(d.season).split("-")[1].replace(/^0/, "") + "月";
     root.innerHTML =
-      '<div class="inv-link"><input readonly value="' + esc(d.link) + '" aria-label="あなたの招待リンク"><button type="button" id="invCopy">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
+      '<div class="inv-link"><input readonly value="' + esc(d.link) + '" aria-label="あなたの個人の招待リンク"><button type="button" id="invCopy">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
       '<p class="inv-lead">このリンクから<b>初めて</b>ログインした人が対象です（リンクを開いてから30日以内）。APIキーを登録してADVANCEDになると1人に数えます。</p>' +
       '<div class="inv-box"><b>あなたの招待</b><div class="inv-nums"><span><em>' + d.this_season + '</em>' + esc(month) + '</span><span><em>' + d.lifetime + '</em>累計</span></div>' +
       (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="inv-lead">まだいません。同盟やDiscordでリンクを共有してみましょう。</p>') + '</div>' +
-      (d.special ? '<div class="inv-box inv-special"><b>👑 運営の特別招待リンクです</b><ul><li>招待された人：ログインでウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>・限定の着せ替え「ゴールド」・運営招待バッジ</li><li>ADVANCEDになるとさらにウォッチ枠 <b class="hl">+' + d.rewards.invitedAdvanced + '</b>（通常の招待の上限とは別）</li></ul>' : '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul>') +
+      '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul>' +
       '<small class="inv-note">いまのあなたの上乗せ：ウォッチ枠 +' + d.bonus + '（招待での上乗せは合計 +' + d.bonus_cap + ' まで）</small></div>';
+    if (d.special_link) {
+      root.insertAdjacentHTML("beforeend", '<div class="inv-box inv-special"><b>👑 運営の特別招待リンク（オーナーだけ）</b>' +
+        '<div class="inv-link"><input readonly value="' + esc(d.special_link) + '" aria-label="運営の特別招待リンク"><button type="button" id="invCopySp">' + (navigator.share ? "共有" : "コピー") + '</button></div>' +
+        '<ul><li>招待された人：ログインでウォッチ枠 <b class="hl">+' + d.special_rewards.invitedSignup + '</b>・限定の着せ替え「ゴールド」・運営招待バッジ</li><li>ADVANCEDになるとさらにウォッチ枠 <b class="hl">+' + d.special_rewards.invitedAdvanced + '</b>（通常の招待の上限とは別）</li></ul>' +
+        '<small class="inv-note">特別に招きたい相手にだけ送ってください。上の個人の招待リンクは通常の招待になります。</small></div>');
+      document.getElementById("invCopySp").onclick = function () {
+        if (navigator.share) { navigator.share({ title: "EagleEye", text: "EagleEye運営からの特別招待", url: d.special_link }).catch(function () {}); return; }
+        var btn = this; (navigator.clipboard ? navigator.clipboard.writeText(d.special_link) : Promise.reject()).then(function () { btn.textContent = "コピーしました"; }).catch(function () {});
+      };
+    }
     document.getElementById("invCopy").onclick = function () {
       var text = "KingShotの分析・攻略ツール EagleEye（無料）";
       if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }
