@@ -53,3 +53,50 @@ test("routes are public and cached for signed-out visitors", () => {
   assert.match(src, /async function servePublicPage[\s\S]*?if \(auth\?\.status === "ACTIVE"\) return eagleEyeHtmlResponse\(await render\(true\)\)[\s\S]*?return servePublicCached/);
   assert.match(src, /response\.headers\.set\("cache-control", "public, max-age=" \+ maxAge\)/);
 });
+
+test("SEO：存在しない王国は404・検索に載せない。データがない王国も載せない", async () => {
+  const { publicKingdomExists, renderPublicKingdomNotFound } = await import("../src/public-pages.js");
+  const db = rows => ({ prepare: () => ({ bind: () => ({ first: async () => rows }) }) });
+  assert.equal(await publicKingdomExists(db({ ok: 1 }), 1524), true);
+  assert.equal(await publicKingdomExists(db(null), 99999), false);
+  assert.equal(await publicKingdomExists(db(null), 0), false);
+  const nf = renderPublicKingdomNotFound(99999);
+  assert.match(nf, /<meta name="robots" content="noindex">/);
+  assert.doesNotMatch(nf, /rel="canonical"/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /if \(!\(await publicKingdomExists\(env\.DB, kid\)\)\) return eagleEyeHtmlResponse\(renderPublicKingdomNotFound\(kid\), 404\);/);
+  const empty = renderPublicKingdomPage(9, { catalog: { kid: 9 }, players: [], alliances: [], matchup: null, score: null, growth: null }, { origin: "https://eagleeye-ks.com" });
+  assert.match(empty, /<meta name="robots" content="noindex">/);
+  assert.doesNotMatch(empty, /rel="canonical"/);
+  assert.match(renderPublicKingdomPage(1524, data, { origin: "https://eagleeye-ks.com" }), /rel="canonical"/);
+});
+
+test("SEO：タイムラインの全体表は専用ページへ（王国ページで全ページ同じ文章を出さない）", async () => {
+  const { renderPublicTimelinePage } = await import("../src/public-pages.js");
+  const html = renderPublicKingdomPage(1524, { ...data, age: 301 }, { origin: "https://eagleeye-ks.com" });
+  assert.match(html, /<a href="\/kingdom-timeline">タイムライン全体/);
+  assert.doesNotMatch(html, /<details class="tl-all">/);
+  assert.match(html, /次に解放されるもの/);
+  const page = renderPublicTimelinePage({ origin: "https://eagleeye-ks.com" });
+  assert.match(page, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/kingdom-timeline">/);
+  assert.match(page, /第7世代 SSR英雄/);
+  assert.match(renderSitemapXml("https://eagleeye-ks.com", [1]), /<loc>https:\/\/eagleeye-ks\.com\/kingdom-timeline<\/loc>/);
+  // ログイン後の王国ページは従来どおりページ内で全体を開ける
+  const portal = readFileSync(new URL("../src/kingdom-portal.js", import.meta.url), "utf8");
+  assert.match(portal, /renderKingdomTimelineSection\(timelineAge, \{ kid \}\)/);
+});
+
+test("SEO：関連する王国（戦力順位が近い・近い番号）へのリンク。読み取りは主キーと索引の範囲だけ", async () => {
+  const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11, power_rank: 9 }] }, { origin: "" });
+  assert.match(html, /<h2>関連する王国<\/h2>/);
+  assert.match(html, /href="\/k\/1530">王国 1530<em>9位/);
+  assert.match(html, /href="\/k\/1523">王国 1523<\/a>/);
+  assert.doesNotMatch(renderPublicKingdomPage(1524, data, { origin: "" }), /関連する王国/);
+  const src = readFileSync(new URL("../src/public-pages.js", import.meta.url), "utf8");
+  assert.match(src, /FROM kingdom_catalog WHERE kid BETWEEN \? AND \? AND kid <> \?/);
+  assert.match(src, /FROM kingdom_stats_current WHERE power_rank BETWEEN \? AND \? AND kid <> \? ORDER BY power_rank ASC LIMIT 6/);
+  const mig = readFileSync(new URL("../migrations/0072_kingdom_stats_power_rank_index.sql", import.meta.url), "utf8");
+  assert.match(mig, /CREATE INDEX IF NOT EXISTS idx_kingdom_stats_current_power_rank ON kingdom_stats_current \(power_rank\)/);
+  const stats = readFileSync(new URL("../src/kingdom-stats.js", import.meta.url), "utf8");
+  assert.match(stats, /idx_kingdom_stats_current_power_rank/);
+});

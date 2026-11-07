@@ -61,7 +61,8 @@ function esc(value) {
 }
 const dayRange = m => m.from === m.to ? `${m.from}日目` : `${m.from}〜${m.to}日目`;
 
-export function renderKingdomTimelineSection(age, { kid = "" } = {}) {
+// fullHref を渡すと、全体の表をページ内に載せず専用ページへのリンクにする（公開の王国ページ：全ページ同じ文章を減らす）。
+export function renderKingdomTimelineSection(age, { kid = "", fullHref = "" } = {}) {
   const status = kingdomTimelineStatus(age);
   if (!status) return "";
   const item = (m, note) => `<li class="tl-item tl-${esc(m.category)}"><span class="tl-tag">${esc(CATEGORY_LABEL[m.category] || "")}</span><b>${esc(m.title)}</b><small>${esc(m.detail)}</small><em>${note}</em></li>`;
@@ -74,8 +75,14 @@ export function renderKingdomTimelineSection(age, { kid = "" } = {}) {
 ${now.length ? `<h3>いま解放の時期</h3><ul class="tl-list">${now.map(m => item(m, esc(dayRange(m)))).join("")}</ul>` : ""}
 ${next.length ? `<h3>次に解放されるもの</h3><ul class="tl-list">${next.map(m => item(m, "あと" + esc(m.daysLeft) + "日（" + esc(dayRange(m)) + "）")).join("")}</ul>` : `<p class="tl-note">資料にある解放はすべて到達済みです。</p>`}
 ${last.length ? `<h3>最近解放済み</h3><ul class="tl-list tl-done">${last.map(m => item(m, esc(dayRange(m)) + " ✓")).join("")}</ul>` : ""}
-<details class="tl-all"><summary>タイムライン全体を見る</summary><ul class="tl-list">${all}</ul></details>
+${fullHref ? `<p class="tl-note"><a href="${esc(fullHref)}">タイムライン全体（英雄・ペット・黄金の解放時期）を見る →</a></p>` : `<details class="tl-all"><summary>タイムライン全体を見る</summary><ul class="tl-list">${all}</ul></details>`}
 <p class="tl-note">日数は目安で、サーバーにより前後します。出典：${esc(KINGDOM_TIMELINE_SOURCE)}。開設日数はMightPulseの王国データより。</p></section>`;
 }
 
 export const KINGDOM_TIMELINE_CSS = ".kingdom-timeline .tl-age{padding:12px 14px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);font-size:14px}.kingdom-timeline .tl-age strong{font-size:18px;color:var(--ee-cyan,#22d3ee)}.kingdom-timeline h3{margin:14px 0 6px;font-size:13px;color:var(--ee-subtext,#94a3b8)}.tl-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.tl-item{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px;padding:9px 12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035)}.tl-item b{font-size:14px}.tl-item small{grid-column:2;font-size:12px;color:var(--ee-subtext,#94a3b8)}.tl-item em{grid-column:2;font-style:normal;font-size:12px;font-weight:800;color:var(--ee-cyan,#22d3ee)}.tl-done .tl-item em{color:var(--ee-success,#22c55e)}.tl-tag{grid-row:1/4;align-self:start;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:900;background:var(--ee-panel-raised,#172a40);color:var(--ee-subtext,#94a3b8)}.tl-hero .tl-tag{background:#7c3aed;color:#fff}.tl-pet .tl-tag{background:#059669;color:#fff}.tl-truegold .tl-tag{background:#b45309;color:#fff}.tl-event .tl-tag{background:#be123c;color:#fff}.tl-all{margin-top:10px}.tl-all summary{cursor:pointer;font-size:13px;color:var(--ee-cyan,#22d3ee)}.tl-all .tl-list{margin-top:8px}.tl-note{font-size:11px;color:var(--ee-subtext,#94a3b8);line-height:1.6;margin-top:8px}";
+
+// 公開ページ用：タイムライン全体（どの王国にも共通の表）。
+export function renderKingdomTimelineTable() {
+  const item = m => `<li class="tl-item tl-${esc(m.category)}"><span class="tl-tag">${esc(CATEGORY_LABEL[m.category] || "")}</span><b>${esc(m.title)}</b><small>${esc(m.detail)}</small><em>${esc(dayRange(m))}</em></li>`;
+  return `<section class="kingdom-timeline"><ul class="tl-list">${KINGDOM_TIMELINE.map(item).join("")}</ul><p class="tl-note">日数は目安で、サーバーにより前後します。出典：${esc(KINGDOM_TIMELINE_SOURCE)}。</p></section>`;
+}
