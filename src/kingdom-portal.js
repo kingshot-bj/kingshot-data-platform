@@ -63,14 +63,22 @@ async function catalogRow(db, kid) {
 }
 
 // Alliance ids are stored as "153300015" or "153300015.0" depending on source.
+// 王国の番号が無いときに出す入力フォーム（「〜を指定してください」の行き止まりにしない）。
+function kidFormPage(title, path, lead) {
+  return page(title, "<main class='wrap'><h1>" + esc(title) + "</h1><p class='kf-lead'>" + esc(lead) + "</p>" +
+    "<form class='kf' method='get' action='" + esc(path) + "'><input type='number' name='kid' inputmode='numeric' min='1' max='99999' placeholder='王国の番号（例：1524）' aria-label='王国の番号' required><button type='submit'>表示</button></form>" +
+    "<p class='kf-lead'>番号が分からないときは <a href='/kingdom-catalog'>王国カタログ</a> から探せます。</p>" +
+    "<style>.kf-lead{color:var(--ee-subtext);font-size:14px}.kf-lead a{color:var(--ee-cyan)}.kf{display:flex;gap:8px;margin:14px 0}.kf input{flex:1;min-width:0;padding:12px;border-radius:10px;border:1px solid var(--ee-border);background:var(--ee-panel);color:var(--ee-text,#e8f3ff);font-size:16px}.kf button{padding:12px 18px;border:0!important;border-radius:10px;background:var(--ee-cyan,#22d3ee)!important;color:#04121f!important;font-weight:900;font-size:15px}</style></main>");
+}
+
 export function normalizeAllianceId(value) {
   return String(value ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
 }
 
-export async function renderKingdomDetailPage(request, env) {
+export async function renderKingdomDetailPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url = new URL(request.url);
   const kidText = String(url.searchParams.get("kid") || "").trim();
-  if (!/^\d+$/.test(kidText)) return page("王国詳細", "<div class='empty'>王国IDを指定してください。</div>");
+  if (!/^\d+$/.test(kidText)) return kidFormPage("王国の詳細", "/kingdom", "見たい王国の番号を入れてください。戦力・上位プレイヤー・同盟・ランキングをまとめて見られます。");
   const kid = Number(kidText);
   const row = await catalogRow(env.DB, kid);
   if (!row) return page("王国詳細", "<div class='empty'>王国カタログに該当王国がありません。<a href='/kingdom-catalog'>王国カタログへ</a></div>");
@@ -93,6 +101,9 @@ export async function renderKingdomDetailPage(request, env) {
     "SELECT rank,target_id,aid,abbr,name,score,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 10"
   ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 10 });
 
+  // 王国ウォッチに入ったことのない王国：ログイン中に開いたら、上位プレイヤー・同盟の2ボードだけ裏で取得して再読み込み。
+  const fetchNotice = onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards: [["personal_power", topPlayers], ["alliance_power", topAlliances]], boardState: boards.results || [], what: "上位プレイヤーと同盟" });
+
   let growthHtml = "", growthHistory = null;
   try { growthHistory = await loadKingdomGrowthHistory(env.ARCHIVE, kid); growthHtml = renderKingdomGrowthSection(growthHistory) + "<style>" + KINGDOM_GROWTH_CSS + "</style>"; }
   catch (error) { console.error("kingdom_growth_history_failed", kid, error?.message || error); }
@@ -101,33 +112,55 @@ export async function renderKingdomDetailPage(request, env) {
     : currentKingdomAge(detail.age_days, archived?.observed_at);
   const timelineHtml = timelineAge != null ? renderKingdomTimelineSection(timelineAge, { kid }) + "<style>" + KINGDOM_TIMELINE_CSS + "</style>" : "";
   const fields = [
-    ["Power",detail.power],["平均Power",detail.avg_power],["領主数",detail.player_count],["Active",detail.active_players],
-    ["Active 7d",detail.active_7d],["Active 30d",detail.active_30d],["同盟数",detail.alliance_count],["Health",detail.health],
-    ["Power Rank",detail.power_rank],["Activity Rank",detail.activity_rank],["Power Gain 7d",detail.power_gain_7d],
-    ["TC Pushers 7d",detail.tc_pushers_7d],["Governor Power",detail.gov_power],["Alliance Power",detail.alliance_power],
-    ["Hero Power",detail.hero_power],["Troop Power",detail.troop_power],["Building Power",detail.building_power],
-    ["Research Power",detail.research_power],["Pet Power",detail.pet_power],["Migrant Score",detail.migrant_score],
-    ["Mystic Trial",detail.mystic_trial],["Master Power",detail.master_power]
+    ["総戦力",detail.power],["平均戦力",detail.avg_power],["領主数",detail.player_count],["マップ上の領主",detail.active_players],
+    ["7日間の活動者",detail.active_7d],["30日間の活動者",detail.active_30d],["同盟数",detail.alliance_count],["健全度",detail.health],
+    ["戦力順位",detail.power_rank],["活動順位",detail.activity_rank],["7日間の戦力の伸び",detail.power_gain_7d],
+    ["7日間で役場を上げた人",detail.tc_pushers_7d],["領主戦力",detail.gov_power],["同盟戦力",detail.alliance_power],
+    ["英雄戦力",detail.hero_power],["兵士戦力",detail.troop_power],["建物戦力",detail.building_power],
+    ["研究戦力",detail.research_power],["ペット戦力",detail.pet_power],["移民スコア",detail.migrant_score],
+    ["秘境の試練",detail.mystic_trial],["マスター戦力",detail.master_power]
   ].filter(([,v]) => v !== undefined && v !== null);
 
   const playerRows=(topPlayers.results||[]).map(r=>"<a class='row' href='/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(r.nick_name||r.governor_id||r.target_id)+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
   const allianceRows=(topAlliances.results||[]).map(r=>"<a class='row' href='/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(r.abbr||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(r.name||r.abbr||r.target_id)+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
   const boardRows=(boards.results||[]).map(r=>{
     const label=BOARDS.find(x=>x[0]===r.board)?.[1]||r.board;
-    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"行 · 変更 "+num(r.changed_rows)+" · "+esc(ts(r.last_checked_at))+"</small></a>";
+    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"件 · 更新 "+esc(ts(r.last_checked_at))+"</small></a>";
   }).join("");
 
   const html = "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><div class='hero'><div><div class='eyebrow'>王国ポータル</div><h1>王国 "+esc(kid)+"</h1><p>"+esc(row.name||detail.name||"名称未取得")+"</p></div><button id='watch' data-kid='"+esc(kid)+"'>＋王国ウォッチリスト</button></div>"+
-    "<div class='actions'><a href='/kingdom/rankings?kid="+kid+"'>26ランキングを見る</a><a href='/kingdom/compare?kid="+kid+"'>王国比較</a><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a><a href='/kingdom/mighty?kid="+kid+"'>Mighty Events / KvK</a></div>"+
+    "<div class='actions'><a href='/kingdom/rankings?kid="+kid+"'>ランキングを見る</a><a href='/kingdom/compare?kid="+kid+"'>王国比較</a><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a><a href='/kingdom/mighty?kid="+kid+"'>KvK・王国イベント</a></div>"+
     "<section><h2>基本情報</h2><div class='grid'>"+fields.map(([k,v])=>"<div class='card'><small>"+esc(k)+"</small><strong>"+esc(num(v))+"</strong></div>").join("")+"</div></section>"+
-    "<section><h2>Momentum</h2><div class='momentum'><b>Power Gain 7d</b><span>"+esc(num(detail.power_gain_7d))+"</span><b>TC Pushers 7d</b><span>"+esc(num(detail.tc_pushers_7d))+"</span><b>Active 7d / 30d</b><span>"+esc(num(detail.active_7d))+" / "+esc(num(detail.active_30d))+"</span><b>Health</b><span>"+esc(num(detail.health))+"</span></div></section>"+
+    "<section><h2>この7日間の勢い</h2><div class='momentum'><b>戦力の伸び</b><span>"+esc(num(detail.power_gain_7d))+"</span><b>役場を上げた人</b><span>"+esc(num(detail.tc_pushers_7d))+"</span><b>活動者（7日 / 30日）</b><span>"+esc(num(detail.active_7d))+" / "+esc(num(detail.active_30d))+"</span><b>健全度</b><span>"+esc(num(detail.health))+"</span></div></section>"+
     growthHtml+timelineHtml+
-    "<section><h2>Top Player</h2><div class='list'>"+(playerRows||"<div class='empty'>現在のランキングデータなし</div>")+"</div></section>"+
-    "<section><h2>Top Alliance</h2><div class='list'>"+(allianceRows||"<div class='empty'>現在の同盟ランキングデータなし</div>")+"</div></section>"+
+    fetchNotice+
+    "<section><h2>戦力上位のプレイヤー</h2><div class='list'>"+(playerRows||"<div class='empty'>まだランキングを取得していません</div>")+"</div></section>"+
+    "<section><h2>戦力上位の同盟</h2><div class='list'>"+(allianceRows||"<div class='empty'>まだ同盟ランキングを取得していません</div>")+"</div></section>"+
     "<section><h2>ランキングボード</h2><div class='boards'>"+(boardRows||"<div class='empty'>ランキング未取得</div>")+"</div></section>"+
-    "<section><h2>データ鮮度</h2><div class='fresh'>EagleEye取得："+esc(ts(row.last_seen_at))+"<br>MightPulse観測："+esc(ts(row.source_observed_at || detail.source_observed_at || detail.cached_at))+"<br>R2："+esc(row.r2_latest_key ? "最新アーカイブあり" : "未保存")+"</div></section>"+
-    "</main><script>document.getElementById('watch')?.addEventListener('click',async function(){this.disabled=true;try{const r=await fetch('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(this.dataset.kid),top_n:10,interval_hours:6})});const d=await r.json();if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'登録失敗');this.textContent='✓ ウォッチリスト登録済み';}catch(e){alert(e.message||e);this.disabled=false}});</script>";
+    "<section><h2>データの取得日時</h2><div class='fresh'>"+esc(ts(row.source_observed_at || detail.source_observed_at || detail.cached_at || row.last_seen_at))+"</div></section>"+
+    "</main><script>document.getElementById('watch')?.addEventListener('click',async function(){this.disabled=true;try{const r=await fetch('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(this.dataset.kid),top_n:10,interval_hours:6})});const d=await r.json();if(r.status===401){location.href='/login?next='+encodeURIComponent(location.pathname+location.search);return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'登録失敗');this.textContent='✓ ウォッチリスト登録済み';}catch(e){alert(e.message||e);this.disabled=false}});</script>";
   return page("王国 "+kid, html);
+}
+
+// 開いたページのランキングが無い／古いとき、ログイン中なら裏で取得して数秒後に再読み込みする案内（ランキング以外のページ用）。
+// boards: [[board, rowsResult]]、boardState: kingdom_ranking_board_state の行（board, last_checked_at）。
+function onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards, boardState, what }) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const stale = boards.filter(([board, rows]) => {
+    const checked = Number((boardState || []).find(x => x.board === board)?.last_checked_at || 0);
+    return !(rows?.results || []).length || rows?.archived || nowSec - checked > RANKING_ON_DEMAND_STALE_SECONDS;
+  }).map(([board]) => board);
+  if (!stale.length) return "";
+  const empty = boards.every(([, rows]) => !(rows?.results || []).length);
+  if (url.searchParams.get("fetched") === "1") return empty ? "<div class='empty'>今は" + esc(what) + "を取得できませんでした。時間をおいてもう一度開いてください。</div>" : "";
+  if (auth?.status === "ACTIVE" && typeof onDemand === "function") {
+    const job = Promise.all(stale.map(b => Promise.resolve().then(() => onDemand(kid, b)).catch(error => console.warn("ranking_on_demand_failed", kid, b, error?.code || error?.message || error))));
+    if (typeof waitUntil === "function") waitUntil(job);
+    const again = new URL(url); again.searchParams.set("fetched", "1");
+    return "<div class='empty'>⏳ " + esc(what) + "の最新データを取得しています。数秒後に自動で更新します。</div><script>setTimeout(function(){location.replace(" + JSON.stringify(again.pathname + again.search) + ")},6000)</script>";
+  }
+  if (!auth && empty) return "<div class='empty'>" + esc(what) + "はまだ取得されていません。 <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン</a>すると、開いたときに取得します。</div>";
+  return "";
 }
 
 // 王国ウォッチに登録されていない王国でもランキングを見られるように、開いたときに足りない／古い1ボードだけ取りに行く。
@@ -202,9 +235,9 @@ export async function renderKingdomRankingsPage(request, env, auth = null, { onD
   return page("王国ランキング", html);
 }
 
-export async function renderAllianceListPage(request, env) {
+export async function renderAllianceListPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url=new URL(request.url); const kid=Number(url.searchParams.get("kid"));
-  if(!Number.isInteger(kid)||kid<1) return page("同盟一覧","<div class='empty'>kidを指定してください。</div>");
+  if(!Number.isInteger(kid)||kid<1) return kidFormPage("同盟一覧", "/kingdom/alliances", "同盟一覧を見たい王国の番号を入れてください。");
   let rows=await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all();
   if (!(rows.results || []).length) {
     rows = await withArchivedRankings(env, kid, await env.DB.prepare(
@@ -213,7 +246,12 @@ export async function renderAllianceListPage(request, env) {
     rows.results = rows.results.map(r => ({ ...r, power: r.power ?? r.score, power_rank: r.power_rank ?? r.rank }));
   }
   const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"ランキングcurrent")+"</small></a>").join("");
-  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><div class='list'>"+(body||"<div class='empty'>同盟ランキングデータがありません。</div>")+"</div></main>");
+  let fetchNotice = "";
+  if (!(rows.results || []).length || rows.archived) {
+    const st = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = 'alliance_power'").bind(kid).all().catch(() => ({ results: [] }));
+    fetchNotice = onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards: [["alliance_power", rows]], boardState: st?.results || [], what: "同盟一覧" });
+  }
+  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1>"+fetchNotice+"<div class='list'>"+(body||(fetchNotice?"":"<div class='empty'>同盟ランキングデータがありません。</div>"))+"</div></main>");
 }
 
 export async function renderAlliancePage(request, env, auth = null) {
@@ -221,7 +259,9 @@ export async function renderAlliancePage(request, env, auth = null) {
   const kid = Number(url.searchParams.get("kid"));
   const tag = String(url.searchParams.get("tag") || "").trim();
   const requestedRefresh = url.searchParams.get("refresh") === "1";
-  if (!Number.isInteger(kid) || !tag) return page("同盟詳細", "<div class='empty'>王国と同盟タグを指定してください。</div>");
+  // 同盟が決まっていなければ、その王国の同盟一覧（王国も無ければ番号の入力）へ。
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("同盟を探す", "/kingdom/alliances", "同盟を探したい王国の番号を入れてください。王国の同盟一覧が表示されます。");
+  if (!tag) return Response.redirect(new URL("/kingdom/alliances?kid=" + kid, url).toString(), 302);
 
   let row = await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid,tag,tag).first();
   if (!row) row = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first();
@@ -604,10 +644,10 @@ export async function handleKingdomPortalApi(request, env) {
 export async function renderKingdomMightyPage(request, env, auth = null) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
-  if (!Number.isInteger(kid) || kid < 1) return page("Mighty", "<main class='wrap'><div class='empty'>王国IDを指定してください。</div></main>");
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("KvK・王国イベント", "/kingdom/mighty", "見たい王国の番号を入れてください。");
 
   if (!auth || auth.status !== "ACTIVE") {
-    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>Mighty機能</h1><div class='empty'>Mighty機能を利用するにはDiscordログインが必要です。</div></main>");
+    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>KvK・王国イベント</h1><div class='empty'>この機能を使うにはログインが必要です。 <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン →</a></div></main>");
   }
 
   const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
@@ -800,7 +840,7 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
   const eventDate = eventData.date ? String(eventData.date) : null;
   const eventCount = Number(eventData.count || categories.reduce((n, c) => n + (Array.isArray(c?.events) ? c.events.length : 0), 0));
 
-  return page("Mighty Events / KvK", "<main class='wrap mighty-page'>" +
+  return page("KvK・王国イベント", "<main class='wrap mighty-page'>" +
     "<a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a>" +
     "<div class='mighty-hero'>" +
       "<div><div class='eyebrow'>Mighty・KvK</div><h1>王国 " + kid + " <span>· Mighty</span></h1><p>イベント・KvK情報</p></div>" +
@@ -822,7 +862,7 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
 }
 
 export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
-  if (!auth || auth.status !== "ACTIVE") return page("Watchlist Analytics","<main class='wrap'><div class='empty'>ログインが必要です。</div></main>");
+  if (!auth || auth.status !== "ACTIVE") return page("王国ウォッチの状況","<main class='wrap'><div class='empty'>ログインが必要です。 <a href='" + esc(loginUrlFor("/kingdom-watchlist/analytics")) + "'>ログイン →</a></div></main>");
   const watches = await env.DB.prepare(
     "SELECT w.kid,w.top_n,w.interval_hours,w.enabled,w.last_run_at,w.last_success_at,w.last_error,c.name,c.status,c.source_observed_at,c.last_seen_at FROM kingdom_watchlists w LEFT JOIN kingdom_catalog c ON c.kid=w.kid WHERE w.discord_id=? ORDER BY w.created_at DESC LIMIT 100"
   ).bind(auth.discord_id).all();
@@ -830,7 +870,7 @@ export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
     const freshness=r.source_observed_at&&r.last_seen_at?Math.max(0,Number(r.last_seen_at)-Number(r.source_observed_at)):null;
     return "<div class='row'><b>王国 "+esc(r.kid)+"</b><span>"+esc(r.name||"名称未取得")+"</span><em>"+(Number(r.enabled)===1?"監視中":"停止")+"</em><small>最終成功 "+esc(ts(r.last_success_at))+" / 鮮度差 "+esc(freshness==null?"—":Math.round(freshness/60)+"分")+"</small></div>";
   }).join("");
-  return page("Watchlist Analytics","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国ウォッチリスト</a><h1>Watchlist Analytics</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国ウォッチリストはありません。</div>")+"</div></main>");
+  return page("王国ウォッチの状況","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国ウォッチリスト</a><h1>王国ウォッチの状況</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国ウォッチリストはありません。</div>")+"</div></main>");
 }
 
 // この王国・このボードに載っている対象だけの変化を、最後のチェック以降で取る。
@@ -859,7 +899,7 @@ export async function renderKingdomChangesPage(request, env) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const board = String(url.searchParams.get("board") || "personal_power");
-  if (!Number.isInteger(kid) || kid < 1) return page("ランキング変化","<main class='wrap'><div class='empty'>kidを指定してください。</div></main>");
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("ランキングの変化", "/kingdom/changes", "順位の変化を見たい王国の番号を入れてください。");
   const current = await withArchivedRankings(env, kid, await env.DB.prepare(
     "SELECT rank,target_type,target_id,governor_id,nick_name,score,abbr,name,previous_rank,observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
   ).bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
@@ -873,7 +913,7 @@ export async function renderKingdomChangesPage(request, env) {
     return "<div class='rank'><b>#"+esc(r.rank)+"</b><a href='/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id)+"'>"+esc(r.nick_name||r.governor_id||r.target_id)+"</a><span>"+(movement==="UP"?"↑"+d:movement==="DOWN"?"↓"+Math.abs(d):"→")+" / 前回 "+esc(r.previous_rank??"—")+"</span><small>"+esc(ts(r.observed_at))+"</small></div>";
   }).join("");
   const inOut=(events.results||[]).filter(r=>["RANK_IN","RANK_OUT","RANKING_IN","RANKING_OUT"].includes(String(r.change_type))).map(r=>"<div class='row'><span>"+esc(r.change_type)+"</span><span>"+esc(r.target_id)+"</span><small>"+esc(ts(r.detected_at))+"</small></div>").join("");
-  return page("ランキング変化","<main class='wrap'><a class='back' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(board)+"'>← ランキング</a><h1>ランキング変化</h1><p>前回順位 → 今回順位。現在値とChange Eventだけを使用しています。</p><section><h2>順位変動</h2><div class='list'>"+(rows||"<div class='empty'>変動データなし</div>")+"</div></section><section><h2>IN / OUT</h2><div class='list'>"+(inOut||"<div class='empty'>直近IN / OUTなし</div>")+"</div></section></main>");
+  return page("ランキング変化","<main class='wrap'><a class='back' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(board)+"'>← ランキング</a><h1>ランキング変化</h1><p>前回の順位 → 今回の順位。最近の入れ替わりも表示します。</p><section><h2>順位変動</h2><div class='list'>"+(rows||"<div class='empty'>順位の変動はまだありません</div>")+"</div></section><section><h2>ランク入り・ランク外</h2><div class='list'>"+(inOut||"<div class='empty'>最近のランク入り・ランク外はありません</div>")+"</div></section></main>");
 }
 
 function rankDelta(prev,current){

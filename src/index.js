@@ -1497,7 +1497,7 @@ function extractKingdomRankingEntries(payload) {
 async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
+    return renderLoginRequiredPage(request, "王国ウォッチリスト", "王国ウォッチリストを使うにはログインしてください。");
   }
   return renderKingdomWatchlistPageReplacement();
 }
@@ -5170,15 +5170,15 @@ export default {
         // Shared theme, colour themes and bottom navigation like every other page.
         return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName, { origin: publicOrigin(request, env) }).text());
       }
-      if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
+      if (url.pathname === "/kingdom") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
-      if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
-      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAlliancePage(request, env, auth)); }
+      if (url.pathname === "/kingdom/alliances") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAllianceListPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
       if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
       if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));
-      if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
+      if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "王国ウォッチの状況", "王国ウォッチの状況を見るにはログインしてください。")); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-raw-data") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderApiRawDataPage(guard.auth)); }
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
@@ -5227,6 +5227,8 @@ export default {
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
       if (url.pathname === "/api/player-compare/refresh-capacity") return await handlePlayerCompareRefreshCapacityApi(request, env);
       if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);
+      // 領主IDなしで開かれたプレイヤー系の画面は、行き止まりにせずプレイヤー検索へ。
+      if (["/player", "/player/history", "/player/changes"].includes(url.pathname) && !String(url.searchParams.get("governor_id") || "").trim()) return Response.redirect(new URL("/players", url).toString(), 302);
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
       if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
@@ -7948,7 +7950,7 @@ async function handlePlayerCompareApi(request, env) {
 
 async function renderPlayerComparePage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "プレイヤー比較", "プレイヤー比較を使うにはログインしてください。"));
   const ids = normalizeCompareGovernorIds(new URL(request.url).searchParams.getAll("governor_id"));
   const initial = JSON.stringify(ids);
   const escSkill = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -10311,8 +10313,8 @@ async function renderPublicStatusPage(request, env) {
     : data.overall === "WAITING" && !usageWarning && !watchlistWarning
       ? {label:"空き待ち",tone:"neutral",icon:"…",desc:"API Poolの空き待ちです。収集処理は自動再試行の対象で、障害とは区別されています。"}
       : usageWarning || data.overall === "DEGRADED" || watchlistWarning
-        ? {label:"一部注意",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
-        : {label:"正常に稼働中",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
+        ? {label:"一部注意",tone:"warn",icon:"i",desc:"一部のサービス（データ取得・ウォッチリスト・サーバー）で注意が必要です。"}
+        : {label:"正常に稼働中",tone:"good",icon:"✓",desc:"EagleEyeのサービス（データ取得・ウォッチリスト・サーバー）は正常範囲です。"};
 
   const rows = data.services.map(s => {
     const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : s.status === "WAITING" ? {label:"待機中",tone:"neutral",icon:"…"} : {label:"未確認",tone:"neutral",icon:"—"};
@@ -10538,7 +10540,7 @@ async function renderPublicStatusPage(request, env) {
   const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
     ? `
       <section class="section">
-        <h2>Cloudflare リソース監視</h2>
+        <h2>サーバーの状態</h2>
         <div class="card resource-card">
           <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
           ${canViewDetailedUsage ? `
@@ -10570,9 +10572,9 @@ async function renderPublicStatusPage(request, env) {
     `
     : `
       <section class="section">
-        <h2>Cloudflare リソース監視</h2>
+        <h2>サーバーの状態</h2>
         <div class="card resource-card">
-          <div class="resource-head"><div><b>Cloudflare Usage</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
+          <div class="resource-head"><div><b>サーバーの使用量</b><small>くわしい数値は運営向け</small></div><span class="state neutral">制限付き表示</span></div>
           <div class="resource-note">D1 / Workers / R2の詳細使用量とD1 Query InsightsはADMIN / OWNERのみ確認できます。</div>
         </div>
       </section>`;
@@ -10786,7 +10788,7 @@ ${canViewDetailedUsage ? `<script>
 
 async function renderSupportPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return `<!doctype html><html lang="ja"><body style="margin:0;background:#0f172a;color:#fff;font-family:system-ui;padding:28px"><div style="max-width:620px;margin:auto"><h1>お問い合わせ</h1><p style="color:#94a3b8">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord" style="color:#f59e0b;font-weight:800">Discordでログイン</a></div></body></html>`;
+  if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お問い合わせ", "お問い合わせにはDiscordでのログインが必要です（運営とのやり取りにDiscordを使うため）。");
   const supportCatalogJson = JSON.stringify(SUPPORT_CATALOG).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
   *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.choices{display:grid;gap:9px;margin-top:10px}.choice{width:100%;padding:14px;text-align:left;border:1px solid #334155;border-radius:13px;background:#0b1424;color:#f8fafc;font:inherit;cursor:pointer}.choice:hover{border-color:#f59e0b}.back{margin-top:10px;background:transparent;color:#94a3b8;border:0;padding:8px 0;cursor:pointer}.qa{margin-top:14px;padding:14px;border:1px solid #365314;border-radius:14px;background:#14210f;color:#d9f99d}.incident{margin-top:14px;padding:14px;border:1px solid #7f1d1d;border-radius:14px;background:#2a1114;color:#fecaca}.field{margin-top:14px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:100px;resize:vertical}.submit{width:100%;margin-top:18px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}.muted{font-size:12px;color:#94a3b8}
