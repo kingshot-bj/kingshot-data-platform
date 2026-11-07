@@ -11,6 +11,7 @@
 
 import { discordApiRequest } from "./discord-support.js";
 import { recordDiagnostic } from "./diagnostics.js";
+import { kvkDayEmbed, kvkLeadEmbed, kvkMatchupEmbed, discordMessageBody } from "./discord-embeds.js";
 
 export const KVK_PARENT_CHANNEL_NAME = "kvk-通知";
 
@@ -68,6 +69,9 @@ async function createKvkDiscordSchema(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_outbox (
     message_key TEXT PRIMARY KEY, kid INTEGER NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL, sent_at INTEGER, status TEXT)`).run();
   await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_discord_outbox_pending ON kvk_discord_outbox(sent_at, created_at)").run();
+  // 埋め込みカード（embed）の中身。古い行は NULL のまま文字で送る。
+  const cols = (await db.prepare("PRAGMA table_info(kvk_discord_outbox)").all())?.results || [];
+  if (!cols.some(c => c.name === "embed_json")) await db.prepare("ALTER TABLE kvk_discord_outbox ADD COLUMN embed_json TEXT").run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_discord_dm_queue (
     kid INTEGER NOT NULL, discord_id TEXT NOT NULL, thread_id TEXT NOT NULL, created_at INTEGER NOT NULL, sent_at INTEGER, status TEXT,
     PRIMARY KEY (kid, discord_id))`).run();
@@ -107,20 +111,25 @@ export function buildKvkScoreNotifications(kid, previous, current, now, origin =
     if (before ? ended(before) : !sameSeason) continue;
     const a = Number(day.kingdom_score), b = Number(day.opponent_score);
     const verdict = a > b ? "勝利 🎉" : a < b ? "敗北" : "引き分け";
-    out.push({ key: `KVK:DAY:${season}:${kid}:${day.day}`, kid, content: `**KvK ${day.name || "Day " + day.day} の結果**（シーズン${season}）\n王国${kid} ${compactScore(a)} vs 王国${opp} ${compactScore(b)} → **${verdict}**`+link(origin, kid) });
+    const endedDays = (current.days || []).filter(d => ended(d) && Number(d.day) <= Number(day.day));
+    const wins = endedDays.filter(d => Number(d.kingdom_score) > Number(d.opponent_score)).length;
+    const losses = endedDays.filter(d => Number(d.kingdom_score) < Number(d.opponent_score)).length;
+    out.push({ key: `KVK:DAY:${season}:${kid}:${day.day}`, kid, content: `**KvK ${day.name || "Day " + day.day} の結果**（シーズン${season}）\n王国${kid} ${compactScore(a)} vs 王国${opp} ${compactScore(b)} → **${verdict}**`+link(origin, kid),
+      embed: kvkDayEmbed({ season, kid, opponent: opp, dayName: day.name || "Day " + day.day, score: a, opponentScore: b, wins, losses, origin }) });
   }
   const running = (current.days || []).some(d => !ended(d));
   if (sameSeason && running) {
     const lead = (s, o) => { const x = Number(s), y = Number(o); return Number.isFinite(x) && Number.isFinite(y) && (x || y) ? Math.sign(x - y) : 0; };
     const was = lead(previous.score, previous.opponent_score), is = lead(current.score, current.opponent_score);
     if (was && is && was !== is) {
-      out.push({ key: `KVK:LEAD:${season}:${kid}:${now}`, kid, content: `**KvK 優勢が入れ替わりました**（シーズン${season}）\n王国${kid} ${compactScore(current.score)} vs 王国${opp} ${compactScore(current.opponent_score)} → 王国${kid}が**${is > 0 ? "優勢" : "劣勢"}**に`+link(origin, kid) });
+      out.push({ key: `KVK:LEAD:${season}:${kid}:${now}`, kid, content: `**KvK 優勢が入れ替わりました**（シーズン${season}）\n王国${kid} ${compactScore(current.score)} vs 王国${opp} ${compactScore(current.opponent_score)} → 王国${kid}が**${is > 0 ? "優勢" : "劣勢"}**に`+link(origin, kid),
+        embed: kvkLeadEmbed({ season, kid, opponent: opp, score: current.score, opponentScore: current.opponent_score, origin }) });
     }
   }
   return out;
 }
 
-export function buildKvkMatchupNotifications(season, stage, matchups, kingdoms, origin = "") {
+export function buildKvkMatchupNotifications(season, stage, matchups, kingdoms, origin = "", powers = {}) {
   // Each pair is listed once (A -> B), so look a kingdom up on both sides.
   const out = [];
   for (const kid of new Set(kingdoms.map(Number))) {
@@ -134,7 +143,8 @@ export function buildKvkMatchupNotifications(season, stage, matchups, kingdoms, 
       kid,
       content: opponent == null
         ? `**KvK シーズン${season} の組み合わせ**\n王国${kid} は今回は対戦なし（不戦）です。`
-        : `**KvK シーズン${season} の組み合わせが発表されました**\n王国${kid} vs 王国${opponent}${opponentName ? "（" + opponentName + "）" : ""}`+link(origin, kid)
+        : `**KvK シーズン${season} の組み合わせが発表されました**\n王国${kid} vs 王国${opponent}${opponentName ? "（" + opponentName + "）" : ""}`+link(origin, kid),
+      embed: kvkMatchupEmbed({ season, kid, opponent, opponentName, power: powers[kid] ?? null, opponentPower: opponent == null ? null : (powers[opponent] ?? null), origin })
     });
   }
   return out;
@@ -143,7 +153,7 @@ export function buildKvkMatchupNotifications(season, stage, matchups, kingdoms, 
 export async function enqueueKvkNotifications(db, items, now) {
   if (!items.length) return 0;
   await ensureKvkDiscordSchema(db);
-  const statements = items.map(item => db.prepare("INSERT OR IGNORE INTO kvk_discord_outbox (message_key, kid, content, created_at) VALUES (?, ?, ?, ?)").bind(item.key, item.kid, item.content, now));
+  const statements = items.map(item => db.prepare("INSERT OR IGNORE INTO kvk_discord_outbox (message_key, kid, content, embed_json, created_at) VALUES (?, ?, ?, ?, ?)").bind(item.key, item.kid, item.content, item.embed ? JSON.stringify(item.embed) : null, now));
   for (let i = 0; i < statements.length; i += 50) await db.batch(statements.slice(i, i + 50));
   return items.length;
 }
@@ -295,7 +305,7 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
 
     // 3) Outbox: drop stale messages and those for kingdoms without a thread, send the rest.
     await db.prepare("UPDATE kvk_discord_outbox SET sent_at = ?, status = 'DROPPED' WHERE sent_at IS NULL AND created_at < ?").bind(now, now - KVK_OUTBOX_MAX_AGE_SECONDS).run();
-    const pending = (await db.prepare("SELECT message_key, kid, content FROM kvk_discord_outbox WHERE sent_at IS NULL ORDER BY created_at, message_key LIMIT 20").all()).results || [];
+    const pending = (await db.prepare("SELECT message_key, kid, content, embed_json FROM kvk_discord_outbox WHERE sent_at IS NULL ORDER BY created_at, message_key LIMIT 20").all()).results || [];
     for (const item of pending) {
       const thread = threads.get(Number(item.kid));
       if (!thread) {
@@ -307,7 +317,9 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
       }
       if (budget.calls >= maxCalls) break;
       budget.calls++;
-      await request(env, `/channels/${thread.thread_id}/messages`, { method: "POST", body: JSON.stringify({ content: String(item.content).slice(0, 2000), allowed_mentions: { parse: [] } }) });
+      let embed = null;
+      try { embed = item.embed_json ? JSON.parse(item.embed_json) : null; } catch { embed = null; }
+      await request(env, `/channels/${thread.thread_id}/messages`, { method: "POST", body: JSON.stringify(discordMessageBody(item.content, embed)) });
       await db.prepare("UPDATE kvk_discord_outbox SET sent_at = ?, status = 'SENT' WHERE message_key = ?").bind(now, item.message_key).run();
       summary.sent++;
     }

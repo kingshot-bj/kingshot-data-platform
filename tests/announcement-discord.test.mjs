@@ -49,10 +49,11 @@ test("existing announcements are not re-posted; due ones go to a read-only #お�
   const created = d.calls.find(c => c.method === "POST" && c.path.endsWith("/channels"));
   assert.equal(created.body.name, ANNOUNCE_CHANNEL_NAME);
   const post = d.calls.find(c => c.path === "/channels/900000000000000001/messages");
-  assert.match(post.body.content, /新機能/);
-  assert.match(post.body.content, /https:\/\/ee\.example\/news/);
+  assert.match(post.body.embeds[0].title, /新機能/, "カード形式で送る");
+  assert.equal(post.body.embeds[0].url, "https://ee.example/news");
+  assert.equal(post.body.embeds[0].image.url, "https://ee.example/assets/og/common.jpg");
   assert.deepEqual(post.body.allowed_mentions, { parse: [] });
-  assert.ok(!d.calls.some(c => c.body?.content?.includes("昔の")), "old announcement not posted");
+  assert.ok(!d.calls.some(c => c.body?.embeds?.[0]?.title?.includes("昔の") || c.body?.content?.includes("昔の")), "old announcement not posted");
   const d2 = fakeDiscord();
   assert.equal((await runAnnouncementDiscordSync(env(db), { request: d2.request, now: Math.floor(Date.now() / 1000) + 20 })).posted, 0, "posted once");
   assert.equal((await runAnnouncementDiscordSync(env(db), { request: d2.request, now: Math.floor(Date.now() / 1000) + 3700 })).posted, 1, "scheduled post goes out when due");
