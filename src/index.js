@@ -72,7 +72,7 @@ import { enhanceSeo, websiteJsonLd } from "./seo.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
 import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
-import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT } from "./themes.js";
+import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT, EAGLEEYE_THEMES } from "./themes.js";
 import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
 import { isSessionRevoked, revokeSessions } from "./session-revocation.js";
 import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
@@ -5039,7 +5039,14 @@ export default {
       if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
       if (url.pathname === "/invite") return eagleEyeHtmlResponse(renderInvitePage());
       if (url.pathname === "/api/invite") return await handleInviteApi(request, env);
-      if (url.pathname === "/api/rewards") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: true, rewards: [] }); return json({ ok: true, rewards: await getUserRewards(env.DB, auth.user_id) }); }
+      if (url.pathname === "/api/rewards") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE") return json({ ok: true, rewards: [] });
+        const own = await getUserRewards(env.DB, auth.user_id);
+        // オーナーは限定の着せ替えもすべて使える。
+        const all = String(auth.role || "").toUpperCase() === "OWNER" ? EAGLEEYE_THEMES.map(t => t.reward).filter(Boolean) : [];
+        return json({ ok: true, rewards: [...new Set([...own, ...all])] });
+      }
       if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
       if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
       if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);

@@ -173,3 +173,18 @@ test("限定の着せ替え・特別招待の表示", async () => {
   const page = (await import("../src/referrals.js")).renderInvitePage();
   assert.match(page, /運営の特別招待リンクです/);
 });
+
+test("オーナーは限定の着せ替えもすべて使える（/api/rewards）", async () => {
+  const crypto = await import("node:crypto");
+  const worker = (await import("../src/index.js")).default;
+  const b64 = b => Buffer.from(b).toString("base64url");
+  const body = b64(JSON.stringify({ sub: "123456789012345678", exp: Math.floor(Date.now() / 1000) + 3600 }));
+  const token = body + "." + b64(crypto.createHmac("sha256", "s").update(body).digest());
+  const run = async role => {
+    const stmt = sql => ({ bind: () => stmt(sql), first: async () => sql.includes("FROM users WHERE discord_id") ? { user_id: "u1", discord_id: "123456789012345678", role, status: "ACTIVE" } : null, all: async () => ({ results: [] }), run: async () => ({ meta: {} }) });
+    const res = await worker.fetch(new Request("https://eagleeye-ks.com/api/rewards", { headers: { cookie: "eagleeye_session=" + token } }), { DB: { prepare: stmt, batch: async () => [] }, EAGLEEYE_SESSION_SECRET: "s" }, { waitUntil() {} });
+    return (await res.json()).rewards;
+  };
+  assert.deepEqual(await run("OWNER"), ["theme_gold"]);
+  assert.deepEqual(await run("ADVANCED"), []);
+});
