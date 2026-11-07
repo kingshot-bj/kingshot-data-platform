@@ -30,6 +30,13 @@ export function addHeadIcons(html) {
   return add ? html.replace("</head>", add + "</head>") : html;
 }
 
+export function shareDescription(description) {
+  const text = String(description || "").trim();
+  const first = text.split("。")[0];
+  const short = first && first.length < text.length ? first + "。" : text;
+  return short.length > 70 ? short.slice(0, 69) + "…" : short;
+}
+
 export function enhanceSeo(html) {
   html = addHeadIcons(html);
   if (typeof html !== "string" || !html.includes("</head>")) return html;
@@ -44,7 +51,8 @@ export function enhanceSeo(html) {
   const description = attr(html, /<meta name="description" content="([^"]*)"/);
   const add = [];
   if (!html.includes('property="og:title"')) add.push(`<meta property="og:title" content="${title}">`);
-  if (!html.includes('property="og:description"') && description) add.push(`<meta property="og:description" content="${description}">`);
+  // Discord・X などの共有カードは説明文を全部出すので、共有用は最初の1文だけにする（検索用の description は長いまま）。
+  if (!html.includes('property="og:description"') && description) add.push(`<meta property="og:description" content="${shareDescription(description)}">`);
   if (!html.includes('property="og:url"')) add.push(`<meta property="og:url" content="${canonical}">`);
   if (!html.includes('property="og:type"')) add.push('<meta property="og:type" content="website">');
   if (!html.includes('property="og:site_name"')) add.push('<meta property="og:site_name" content="EagleEye">');

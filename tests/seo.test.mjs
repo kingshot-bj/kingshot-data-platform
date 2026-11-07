@@ -82,3 +82,13 @@ test("ホームの見出し構造：H1→H2（主要メニュー・ツール）�
   assert.match(src, /<a href="\/tools\/gold"><h3 class="ee-h"><b>黄金計算<\/b><\/h3>/);
   assert.match(src, /content="キングショット（KingShot）の分析・攻略に役立つ/);
 });
+
+test("共有カード（og:description）は最初の1文だけ、検索用の description は長いまま", async () => {
+  const { enhanceSeo, shareDescription } = await import("../src/seo.js");
+  const long = "キングショット（KingShot）の分析・攻略に役立つ非公式ファンサイト。王国・同盟・プレイヤーのランキング推移を見やすくまとめています。計算ツールも無料です。";
+  const html = enhanceSeo(`<html><head><title>T</title><meta name="description" content="${long}"><link rel="canonical" href="https://eagleeye-ks.com/"></head><body></body></html>`);
+  assert.match(html, /<meta property="og:description" content="キングショット（KingShot）の分析・攻略に役立つ非公式ファンサイト。">/);
+  assert.ok(html.includes(`<meta name="description" content="${long}">`));
+  assert.equal(shareDescription("短い説明"), "短い説明");
+  assert.equal(shareDescription("あ".repeat(100)).length, 70);
+});
