@@ -43,8 +43,27 @@ export function mysticFromLeaderboards(list) {
   return MYSTIC_STAGES.map(s => out.find(o => o.key === s[0])).filter(Boolean);
 }
 
-// 画面に出している（＝見てよい）値だけで共有データを作る。
-export function playerShareData(player, profile = null) {
+const HERO_RANK_LABELS = { single_hero: "英雄総力", hero_total: "英雄全体総力", hero_no_equip: "英雄（装備除外）", hero_equip: "英雄（装備込み）" };
+
+function allianceRoleText(a) {
+  if (!a || typeof a !== "object") return null;
+  if (a.rank_label) return String(a.rank_label).slice(0, 12);
+  const n = numOrNull(a.rank);
+  return n != null && n >= 1 && n <= 5 ? "R" + n : null;
+}
+
+// 英雄は戦力（なければレベル）の高い順に6人。名前は画面と同じ日本語名にする。
+export function topHeroes(list, heroName = v => v) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(h => h && (h.name || h.id) && (h.level != null || h.power != null))
+    .map(h => ({ name: String(heroName(h.name || h.id) || h.name || h.id).slice(0, 14), level: numOrNull(h.level), power: numOrNull(h.power), stars: h.star_label ? String(h.star_label).slice(0, 8) : numOrNull(h.stars ?? h.star) }))
+    .sort((a, b) => (b.power ?? -1) - (a.power ?? -1) || (b.level ?? -1) - (a.level ?? -1))
+    .slice(0, 6)
+    .map(({ power, ...h }) => h);
+}
+
+// 画面に出している（＝見てよい）値だけで共有データを作る。シールド・炎上の終了時刻やオンライン状態は載せない。
+export function playerShareData(player, profile = null, opts = {}) {
   const p = player || {};
   const r = profile?.ranks && typeof profile.ranks === "object" ? profile.ranks : {};
   const tc = numOrNull(p.town_center_level);
@@ -61,6 +80,20 @@ export function playerShareData(player, profile = null) {
     kills: numOrNull(p.kills),
     killsRank: numOrNull(r.kills_rank),
     mystic: mysticFromLeaderboards(r.leaderboards),
+    vip: numOrNull(p.vip),
+    coords: numOrNull(p.x) != null && numOrNull(p.y) != null ? p.x + ", " + p.y : null,
+    language: profile?.language ? String(Array.isArray(profile.language) ? profile.language.join(", ") : profile.language).slice(0, 20) : null,
+    office: profile?.office && typeof profile.office !== "object" ? String(profile.office).slice(0, 20) : null,
+    allianceRole: allianceRoleText(profile?.alliance),
+    ranks: [
+      ["役場", r.town_center_rank, null],
+      ["移民スコア", r.migrant_rank, r.migrant_score],
+      ["秘境の試練（総合）", r.mystic_rank, r.mystic_trial],
+      ...(Array.isArray(profile?.hero_rankings) ? profile.hero_rankings : []).map(h => [HERO_RANK_LABELS[h.board] || null, h.rank, h.score])
+    ].filter(([label, rank, score]) => label && (numOrNull(rank) != null || numOrNull(score) != null)).map(([label, rank, score]) => ({ label, rank: numOrNull(rank), score: numOrNull(score) })),
+    heroes: topHeroes(profile?.heroes, opts.heroName),
+    heroCount: Array.isArray(profile?.heroes) ? profile.heroes.length : null,
+    govGear: profile?.gov_gear && !profile.gov_gear.hidden && Array.isArray(profile.gov_gear.items) ? profile.gov_gear.items.length : null,
     date: p.observed_at ? new Date((Number(p.observed_at) + 9 * 3600) * 1000).toISOString().slice(0, 10) : ""
   };
   return data;
@@ -110,8 +143,9 @@ export function playerShareClient(cfg) {
 
   async function build() {
     P = currentPalette();
-    var W = 1080, PAD = 48, ms = d.mystic || [];
-    var H = PAD + 60 + 220 + 250 + (ms.length ? 80 + Math.ceil(ms.length / 3) * 150 : 0) + 90 + 200;
+    var W = 1080, PAD = 48, ms = d.mystic || [], rk = d.ranks || [], hs = d.heroes || [];
+    var chips = [d.vip != null ? "VIP " + d.vip : null, d.allianceRole ? "同盟 " + d.allianceRole : null, d.office ? "役職 " + d.office : null, d.coords ? "座標 " + d.coords : null, d.language ? "言語 " + d.language : null].filter(Boolean);
+    var H = PAD + 60 + 220 + (chips.length ? 70 : 0) + 250 + (rk.length ? 70 + Math.ceil(rk.length / 3) * 124 : 0) + (ms.length ? 70 + Math.ceil(ms.length / 3) * 150 : 0) + (hs.length ? 70 + Math.ceil(hs.length / 3) * 124 : 0) + 90 + 200;
     var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var c = cv.getContext("2d");
     var bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, P.panel); bg.addColorStop(1, P.bg); c.fillStyle = bg; c.fillRect(0, 0, W, H);
@@ -132,6 +166,11 @@ export function playerShareClient(cfg) {
     c.fillStyle = P.accent; fit(c, sub || " ", tw, 30, "800"); c.fillText(sub, tx, y + 134);
     if (d.gid) { c.fillStyle = P.subtext; c.font = "600 22px " + FONT; c.fillText("領主ID " + d.gid, tx, y + 170); }
     y += 220;
+    if (chips.length) {
+      var cx = PAD; c.font = "700 24px " + FONT; c.textBaseline = "middle";
+      chips.forEach(function (t) { var w = c.measureText(t).width + 32; if (cx + w > W - PAD) return; c.save(); rr(c, cx, y, w, 48, 24); c.fillStyle = P.raised; c.fill(); c.lineWidth = 1.5; c.strokeStyle = P.border; c.stroke(); c.restore(); c.textAlign = "left"; c.fillStyle = P.text; c.fillText(t, cx + 16, y + 25); cx += w + 10; });
+      c.textBaseline = "alphabetic"; y += 70;
+    }
     // 3つの大きな数字
     var tiles = [["戦力", big(d.power), rank(d.powerRank)], ["役場", d.tc || "—", d.gold ? "黄金バッジ " + d.gold : ""], ["撃破数", big(d.kills), rank(d.killsRank)]];
     var tW = (W - PAD * 2 - 24) / 3;
@@ -143,6 +182,17 @@ export function playerShareClient(cfg) {
       if (t[2]) { c.fillStyle = P.accent; c.font = "800 24px " + FONT; c.fillText(t[2], x + tW / 2, y + 184); }
     });
     y += 250;
+    function grid(title, items, draw, rowH) {
+      c.textAlign = "left"; c.fillStyle = P.text; c.font = "800 30px " + FONT; c.fillText(title, PAD + 6, y + 40); y += 70;
+      var gW = (W - PAD * 2 - 24) / 3;
+      items.forEach(function (it, i) { var x = PAD + (i % 3) * (gW + 12), yy = y + Math.floor(i / 3) * rowH; c.save(); rr(c, x, yy, gW, rowH - 14, 18); c.fillStyle = P.raised; c.fill(); c.restore(); c.textAlign = "center"; draw(it, x + gW / 2, yy, gW); });
+      y += Math.ceil(items.length / 3) * rowH;
+    }
+    if (rk.length) grid("ランキング（王国内）", rk, function (m, cxm, yy, gW) {
+      c.fillStyle = P.subtext; fit(c, m.label, gW - 20, 21, "700"); c.fillText(m.label, cxm, yy + 34);
+      c.fillStyle = P.text; c.font = "900 36px " + FONT; c.fillText(m.rank != null ? Number(m.rank).toLocaleString("ja-JP") + "位" : "—", cxm, yy + 78);
+      if (m.score != null) { c.fillStyle = P.accent; c.font = "700 19px " + FONT; c.fillText(big(m.score), cxm, yy + 102); }
+    }, 124);
     if (ms.length) {
       c.textAlign = "left"; c.fillStyle = P.text; c.font = "800 30px " + FONT; c.fillText("秘境の試練", PAD + 6, y + 40); y += 70;
       var mW = (W - PAD * 2 - 24) / 3;
@@ -155,7 +205,11 @@ export function playerShareClient(cfg) {
       });
       y += Math.ceil(ms.length / 3) * 150 + 10;
     }
-    c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "500 21px " + FONT; c.fillText("データ：" + (d.date || "") + "　EagleEye調べ", PAD + 6, y + 30);
+    if (hs.length) grid("英雄" + (d.heroCount ? "（" + d.heroCount + "人中 上位" + hs.length + "）" : ""), hs, function (h, cxm, yy, gW) {
+      c.fillStyle = P.text; fit(c, h.name, gW - 20, 28, "800"); c.fillText(h.name, cxm, yy + 44);
+      c.fillStyle = P.accent; c.font = "800 24px " + FONT; c.fillText((h.level != null ? "Lv." + h.level : "") + (h.stars != null ? "　★" + h.stars : ""), cxm, yy + 86);
+    }, 124);
+    c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "500 21px " + FONT; c.fillText((d.govGear != null ? "領主装備 " + d.govGear + "件　" : "") + "データ：" + (d.date || "") + "　EagleEye調べ", PAD + 6, y + 30);
     y += 70; c.strokeStyle = P.border; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 24;
     var imgs = await Promise.all([loadImg(cfg.bj), loadImg(cfg.qr)]);
     if (imgs[0]) c.drawImage(imgs[0], PAD, y, 130, 130 * imgs[0].height / imgs[0].width);
@@ -195,8 +249,8 @@ export function playerShareClient(cfg) {
 export const PLAYER_SHARE_CSS = "#pshShare{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}#pshShare button{border:1px solid var(--ee-cyan,#22d3ee)!important;background:var(--ee-panel2,#0d2035)!important;color:var(--ee-text,#e8f3ff)!important;border-radius:11px;padding:9px 14px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}#pshShare button:first-child{background:var(--ee-cyan,#22d3ee)!important;color:#04111c!important}#pshShare button:disabled{opacity:.6}#pshMsg{font-size:12px;color:var(--ee-sub,#8098b0)}#pshPreview{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px}#pshPreview img{max-width:100%;max-height:75vh;border-radius:12px}#pshPreview p{color:#fff;margin:0;font-size:14px}#pshPreview button{border:0;border-radius:10px;padding:10px 18px;font-weight:800}";
 
 // プレイヤー詳細ページに埋め込む部分（ボタンの置き場所・データ・スクリプト）。
-export function playerShareEmbed(player, profile) {
-  const data = playerShareData(player, profile);
+export function playerShareEmbed(player, profile, opts = {}) {
+  const data = playerShareData(player, profile, opts);
   const json = JSON.stringify(data).replace(/</g, "\\u003c");
   const cfg = JSON.stringify({ palettes: shareCardPalettes(), avatar: "/api/avatar?u=", bj: "/assets/eagleeye/bjnyan/poses/common.webp", qr: "/assets/eagleeye/qr-share.svg" }).replace(/</g, "\\u003c");
   return "<div id='pshShare'></div><style>" + PLAYER_SHARE_CSS + "</style><script type='application/json' id='pshData'>" + json + "</script>" +

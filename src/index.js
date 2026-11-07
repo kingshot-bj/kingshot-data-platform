@@ -8545,7 +8545,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
       ${(profile?.locked_advanced || []).some(i => i.key === "base_coordinates") ? '<div class="card"><div class="label">座標</div><div class="value">' + lockedInlineValue() + '</div></div>' : card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("同盟", p.alliance_name || "-")}
     </div>
-    ${playerShareEmbed(p, profile)}
+    ${playerShareEmbed(p, profile, { heroName: localizeHeroName })}
     ${noticeHtml}
     ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
     ${(profile?.locked_advanced || []).length ? "<style>" + LOCKED_CSS + "</style>" : ""}
