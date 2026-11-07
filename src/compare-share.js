@@ -213,16 +213,18 @@ export function compareShareClient(cfg) {
       // radar
       y += 14; c.save(); rr(c, PAD, y, W - PAD * 2, 560, 20); c.fillStyle = alpha(P.raised, .6); c.fill(); c.strokeStyle = P.border; c.lineWidth = 1.5; c.stroke(); c.restore();
       var cx0 = PAD + 300, cy0 = y + 280, R = 190;
-      var maxes = STAGES.map(function (s) { return Math.max.apply(null, [1].concat(mys.map(function (m) { return m[s[0]] ? m[s[0]].v : 0; }))); });
-      var mins = STAGES.map(function (s) { var v = mys.map(function (m) { return m[s[0]] ? m[s[0]].v : null; }).filter(function (x) { return x != null; }); return v.length ? Math.min.apply(null, v) : 0; });
+      // 秘境のAPI値は「ステージ種別×10000＋章ステージ番号」なので、種別の分を引いた番号で比べる。
+      var OFF = { coliseum: 10000, forest_of_life: 20000, crystal_cave: 30000, knowledge_nexus: 40000, molten_fort: 50000, radiant_spire: 60000 };
+      var stageNo = function (m, key) { var x = m[key]; if (!x) return null; var v = Number(x.v); return v > OFF[key] ? v - OFF[key] : v; };
+      var maxes = STAGES.map(function (s) { return Math.max.apply(null, [1].concat(mys.map(function (m) { return stageNo(m, s[0]) || 0; }))); });
       var pt = function (i, r) { var a = -Math.PI / 2 + i * Math.PI / 3; return [cx0 + r * Math.cos(a), cy0 + r * Math.sin(a)]; };
       c.strokeStyle = P.border; c.lineWidth = 2;
       [.25, .5, .75, 1].forEach(function (f) { c.beginPath(); for (var i = 0; i < 6; i++) { var q = pt(i, R * f); i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.closePath(); c.stroke(); });
       c.font = "700 24px " + FONT; c.fillStyle = P.subtext; c.textAlign = "center"; c.textBaseline = "middle";
       for (var i = 0; i < 6; i++) { var e = pt(i, R); c.beginPath(); c.moveTo(cx0, cy0); c.lineTo(e[0], e[1]); c.stroke(); var lp = pt(i, R + 44); c.fillText(STAGES[i][1], lp[0], lp[1]); }
       mys.forEach(function (m, j) {
-        // 比べた中の最低を内側20%、最高を外周に（差が見えやすいように）
-        var pts = STAGES.map(function (s, i) { var v = m[s[0]] ? m[s[0]].v : null; if (v == null) return pt(i, 0); var span = maxes[i] - mins[i]; var f = span > 0 ? .2 + .8 * (v - mins[i]) / span : 1; return pt(i, R * f); });
+        // 外周＝比べた中のトップ。トップより30%少ないと中心（形がトゲトゲにならず、差も見える）
+        var pts = STAGES.map(function (s, i) { var n = stageNo(m, s[0]); if (n == null) return pt(i, 0); var f = Math.max(.12, Math.min(1, 1 - (maxes[i] - n) / (maxes[i] * .3))); return pt(i, R * f); });
         c.beginPath(); pts.forEach(function (q, k) { k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); }); c.closePath();
         c.fillStyle = COLORS[j].replace("rgb", "rgba").replace(")", ",.16)"); c.fill(); c.lineWidth = 4; c.strokeStyle = COLORS[j]; c.stroke();
         pts.forEach(function (q) { c.beginPath(); c.arc(q[0], q[1], 6, 0, Math.PI * 2); c.fillStyle = COLORS[j]; c.fill(); });
@@ -230,7 +232,7 @@ export function compareShareClient(cfg) {
       c.textAlign = "left"; c.textBaseline = "alphabetic"; var lx = PAD + 610, ly = y + 150;
       c.fillStyle = "rgb(253,230,138)"; c.font = "800 26px " + FONT; c.fillText("秘境の試練バランス", lx, ly);
       ps.forEach(function (p, j) { var yy = ly + 46 + j * 44; c.fillStyle = COLORS[j]; c.fillRect(lx, yy - 12, 28, 10); c.fillStyle = P.text; c.font = "700 23px " + FONT; c.fillText(wrap(c, p.player.nick_name || p.governor_id, W - PAD - lx - 44, 1)[0], lx + 40, yy - 2); });
-      c.fillStyle = P.subtext; c.font = "500 18px " + FONT; wrap(c, "比べた中の最高を外周、最低を内側にしています", W - PAD - lx - 10, 3).forEach(function (t, k) { c.fillText(t, lx, ly + 66 + ps.length * 44 + k * 26); });
+      c.fillStyle = P.subtext; c.font = "500 18px " + FONT; wrap(c, "外周＝比べた中のトップ。トップとの差が大きいほど内側", W - PAD - lx - 10, 3).forEach(function (t, k) { c.fillText(t, lx, ly + 66 + ps.length * 44 + k * 26); });
       y += 560;
     }
     if (picked.rows.length) {
