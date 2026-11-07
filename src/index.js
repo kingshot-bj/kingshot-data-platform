@@ -1,5 +1,6 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
+import { recordFunnel, loadFunnel } from "./funnel.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
@@ -5116,8 +5117,8 @@ export default {
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        const [active, cf, d1, apiPool] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null)]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool }));
+        const [active, cf, d1, apiPool, funnel] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null)]);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel }));
       }
       if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
       if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
@@ -5723,6 +5724,7 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
+  if (env.DB) await recordFunnel(env.DB, "login_start");
   const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
@@ -5738,6 +5740,15 @@ async function handleDiscordCallback(request, env) {
   const state = url.searchParams.get("state");
   if (!config.clientId || !config.clientSecret || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
+  }
+  // Discordの画面で「キャンセル」した人は、エラー画面ではなく元のページへ戻す（ログインはしない）。
+  if (url.searchParams.get("error") && !code) {
+    if (env.DB) await recordFunnel(env.DB, "login_cancelled");
+    let back = null;
+    try { back = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
+    const h = new Headers({ Location: new URL(back || "/", request.url).toString(), "Cache-Control": "no-store" });
+    h.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+    return new Response(null, { status: 302, headers: h });
   }
   if (!code || !state) {
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_callback_state" }, 400);
@@ -5829,6 +5840,7 @@ async function handleDiscordCallback(request, env) {
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
+      await recordFunnel(env.DB, userResult?.isNew ? "login_new" : "login_returning");
       // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
       const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
       if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
