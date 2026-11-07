@@ -90,7 +90,14 @@ export async function renderKingdomDetailPage(request, env, auth = null, { onDem
     try { legacy = row.raw_json ? JSON.parse(row.raw_json) : null; } catch {}
   }
   const payload = archived?.payload || legacy || {};
-  const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  const detail = { ...(payload?.data && typeof payload.data === "object" ? payload.data : payload) };
+  // カタログの保存データに無い項目は、毎日の集計（kingdom_stats_current）で補う。
+  const stat = await env.DB.prepare("SELECT power, power_gain_7d, power_rank, age_days, player_count, observed_at FROM kingdom_stats_current WHERE kid = ?").bind(kid).first().catch(() => null);
+  if (stat) {
+    for (const k of ["power", "power_gain_7d", "power_rank", "player_count"]) if (detail[k] == null && stat[k] != null) detail[k] = stat[k];
+    if (detail.avg_power == null && Number(stat.power) > 0 && Number(stat.player_count) > 0) detail.avg_power = Math.round(Number(stat.power) / Number(stat.player_count));
+    if (detail.source_observed_at == null && stat.observed_at) detail.source_observed_at = stat.observed_at;
+  }
   const boards = await env.DB.prepare(
     "SELECT board, MAX(checked_rows) AS rows, MAX(changed_rows) AS changed_rows, MAX(last_checked_at) AS last_checked_at, MAX(source_observed_at) AS source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? GROUP BY board ORDER BY board"
   ).bind(kid).all();
@@ -514,49 +521,77 @@ export async function renderKingdomComparePage(request, env) {
     return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p class='cmp-lead'>最大4つの王国を並べて、戦力や成長を比較できます。比べたい王国の番号を追加してください。</p>" + picker + "</main>");
   }
 
+  // 毎日の集計（kingdom_stats_current）が主。カタログの保存データに項目があれば追加で並べる。
   const placeholders = kids.map(() => "?").join(",");
-  const rows = await env.DB.prepare(
-    "SELECT kid,name,status,raw_json,source_observed_at,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ") ORDER BY kid"
-  ).bind(...kids).all();
-
-  const details = await Promise.all((rows.results || []).map(async row => {
-    let archived = null;
-    try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
-    let legacy = null;
-    if (!archived?.payload && row.raw_json) {
-      try { legacy = JSON.parse(row.raw_json); } catch {}
-    }
-    const payload = archived?.payload || legacy || {};
-    const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
-    return { ...row, detail };
+  const [statRows, catRows] = await Promise.all([
+    env.DB.prepare("SELECT kid, power, power_gain_7d, power_rank, age_days, player_count, observed_at FROM kingdom_stats_current WHERE kid IN (" + placeholders + ")").bind(...kids).all().catch(() => ({ results: [] })),
+    env.DB.prepare("SELECT kid,name,raw_json,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ")").bind(...kids).all().catch(() => ({ results: [] }))
+  ]);
+  const stats = new Map((statRows.results || []).map(r => [Number(r.kid), r]));
+  const cats = new Map((catRows.results || []).map(r => [Number(r.kid), r]));
+  const details = await Promise.all(kids.map(async kid => {
+    const row = cats.get(kid) || {};
+    let detail = {};
+    try {
+      const archived = row.r2_latest_key ? await readR2Json(env.ARCHIVE, row.r2_latest_key) : null;
+      const payload = archived?.payload || (row.raw_json ? JSON.parse(row.raw_json) : {}) || {};
+      detail = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
+    } catch {}
+    const st = stats.get(kid) || {};
+    const pick = (a, b) => a != null && a !== "" ? a : (b != null && b !== "" ? b : null);
+    const power = Number(pick(st.power, detail.power));
+    const players = Number(pick(st.player_count, detail.player_count));
+    const gain = Number(pick(st.power_gain_7d, detail.power_gain_7d));
+    return {
+      kid, name: row.name || detail.name || null, observedAt: st.observed_at || null,
+      v: {
+        power: Number.isFinite(power) && power > 0 ? power : null,
+        power_rank: pick(st.power_rank, detail.power_rank),
+        gain: Number.isFinite(gain) ? gain : null,
+        gain_pct: Number.isFinite(gain) && power > 0 ? gain / (power - gain) * 100 : null,
+        players: Number.isFinite(players) && players > 0 ? players : null,
+        avg: power > 0 && players > 0 ? power / players : pick(detail.avg_power, null),
+        age: pick(st.age_days, detail.age_days),
+        alliances: pick(detail.alliance_count, null),
+        tc_pushers: pick(detail.tc_pushers_7d, null),
+        hero: pick(detail.hero_power, null),
+        troop: pick(detail.troop_power, null),
+        research: pick(detail.research_power, null)
+      }
+    };
   }));
-
-  const cards = details.map(row => {
-    const d = row.detail || {};
-    const metrics = [
-      ["総戦力", d.power],
-      ["平均戦力", d.avg_power],
-      ["領主数", d.player_count],
-      ["7日間の活動者", d.active_7d],
-      ["30日間の活動者", d.active_30d],
-      ["7日間の戦力の伸び", d.power_gain_7d],
-      ["7日間で役場を上げた人", d.tc_pushers_7d],
-      ["健全度", d.health],
-      ["同盟数", d.alliance_count],
-      ["英雄戦力", d.hero_power],
-      ["兵士戦力", d.troop_power],
-      ["研究戦力", d.research_power]
-    ];
-    return "<article class='compare'><h2>王国 " + esc(row.kid) + "</h2><p>" + esc(row.name || d.name || "名称未取得") + "</p>" +
-      "<div class='compare-meta'>データ取得 " + esc(ts(row.source_observed_at || d.source_observed_at || row.last_seen_at)) + "</div>" +
-      "<div class='compare-metrics'>" + metrics.map(([label,value]) =>
-        "<div><small>" + esc(label) + "</small><strong>" + esc(num(value)) + "</strong></div>"
-      ).join("") + "</div></article>";
+  // [キー, 表示名, 書式, 大きい方が良いか]
+  const METRICS = [
+    ["power", "総戦力", "big", true], ["power_rank", "戦力順位（全王国）", "rank", false], ["gain", "7日間の戦力の伸び", "big", true],
+    ["gain_pct", "7日間の伸び率", "pct", true], ["players", "領主数", "int", true], ["avg", "1人あたりの戦力", "big", true],
+    ["age", "開設からの日数", "int", null], ["alliances", "同盟数", "int", null], ["tc_pushers", "7日間で役場を上げた人", "int", true],
+    ["hero", "英雄戦力", "big", true], ["troop", "兵士戦力", "big", true], ["research", "研究戦力", "big", true]
+  ];
+  const fmt = (v, f) => {
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return "—";
+    if (f === "pct") return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+    if (f === "rank") return n.toLocaleString("ja-JP") + "位";
+    if (f === "big") { const a = Math.abs(n); return a >= 1e8 ? (n / 1e8).toFixed(a >= 1e10 ? 0 : 1) + "億" : a >= 1e4 ? Math.round(n / 1e4).toLocaleString("ja-JP") + "万" : n.toLocaleString("ja-JP"); }
+    return Math.round(n).toLocaleString("ja-JP");
+  };
+  const tableRows = METRICS.filter(([k]) => details.some(d => d.v[k] != null)).map(([k, label, f, higher]) => {
+    const vals = details.map(d => d.v[k] == null ? null : Number(d.v[k]));
+    const known = vals.filter(v => v != null && Number.isFinite(v));
+    const best = higher == null || known.length < 2 ? null : (higher ? Math.max(...known) : Math.min(...known));
+    return "<tr><th>" + esc(label) + "</th>" + vals.map(v => "<td" + (best != null && v === best ? " class='best'" : "") + ">" + esc(fmt(v, f)) + "</td>").join("") + "</tr>";
   }).join("");
+  const head = "<tr><th></th>" + details.map(d => "<th><a href='/kingdom?kid=" + esc(d.kid) + "'>王国 " + esc(d.kid) + "</a>" + (d.name ? "<small>" + esc(d.name) + "</small>" : "") + "</th>").join("") + "</tr>";
+  const newest = Math.max(0, ...details.map(d => Number(d.observedAt) || 0));
+  const cards = tableRows
+    ? "<div class='cmp-table-wrap'><table class='cmp-table'><thead>" + head + "</thead><tbody>" + tableRows + "</tbody></table></div>" +
+      "<p class='cmp-note'>色付きの数字がその項目でいちばん良い王国です。" + (newest ? "データ：" + esc(ts(newest)) + "（毎日更新）" : "") + "</p>" +
+      "<style>.cmp-table-wrap{overflow-x:auto;border:1px solid var(--ee-border);border-radius:14px;background:var(--ee-panel)}.cmp-table{width:100%;border-collapse:collapse;font-size:13px}.cmp-table th,.cmp-table td{padding:10px 8px;border-bottom:1px solid var(--ee-border-soft);text-align:right;white-space:nowrap}.cmp-table tr:last-child th,.cmp-table tr:last-child td{border-bottom:0}.cmp-table tbody th{text-align:left;color:var(--ee-subtext);font-weight:700;white-space:normal;min-width:7.5em}.cmp-table thead th{font-size:14px}.cmp-table thead a{color:var(--ee-text,#e8f3ff);text-decoration:none}.cmp-table thead small{display:block;color:var(--ee-subtext);font-weight:400}.cmp-table td.best{color:var(--ee-cyan,#22d3ee);font-weight:900}.cmp-note{color:var(--ee-subtext);font-size:12px}</style>"
+    : "";
 
   return page("王国比較",
-    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p class='cmp-lead'>最大4王国。今の数値と、この7日間の伸びを並べて比較します。</p>" + picker + "<div class='comparegrid'>" +
-    (cards || "<div class='empty'>比較対象がありません。</div>") +
+    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p class='cmp-lead'>最大4王国。今の数値と、この7日間の伸びを並べて比較します。</p>" + picker + "<div class='cmp-result'>" +
+    (cards || "<div class='empty'>この王国の集計データはまだありません（毎日自動で取得しています）。</div>") +
     "</div></main>"
   );
 }
