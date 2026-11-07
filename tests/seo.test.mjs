@@ -78,7 +78,7 @@ test("王国一覧：日本語H1と構造化データ（パンくず）", async 
 test("ホームの見出し構造：H1→H2（主要メニュー・ツール）→H3（各メニュー・各ツール）、分析・攻略のキーワード", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /<h2 class="ee-h"><b>主要メニュー<\/b><\/h2>/);
-  assert.equal((src.match(/<h3 class="ee-h"><strong>/g) || []).length, 6, "主要メニュー6つ");
+  assert.equal((src.match(/<h3 class="ee-h"><strong>/g) || []).length, 12, "主要メニュー6つ×（ログイン中／未ログイン）");
   assert.match(src, /<a href="\/tools\/gold"><h3 class="ee-h"><b>黄金計算<\/b><\/h3>/);
   assert.match(src, /content="キングショット（KingShot）の分析・攻略に役立つ/);
 });

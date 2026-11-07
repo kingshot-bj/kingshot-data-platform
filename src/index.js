@@ -54,7 +54,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
-import { loadMilestones, recordMilestone, renderMilestonesPage } from "./milestones.js";
+import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -10758,6 +10758,7 @@ async function handleMilestonesApi(request, env, url) {
       if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
       return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
     }
+    if (!milestonesAvailableFor(auth.role)) return json({ ok: false, error: "COMING_SOON" }, 403);
     const settings = await getPlayerVisibilitySettings(env.DB);
     const result = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role), markSeen: url.searchParams.get("seen") === "1" });
     return json({ ok: true, ...result });
@@ -10776,7 +10777,7 @@ async function handleHomeSummary(request, env, executionContext) {
       visible: key => visibilityEnabled(settings, key, auth.role),
       changeVisible: change => isChangeVisibleForRole(change, auth.role, settings)
     });
-    const ms = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role) }).catch(error => { console.warn("home_milestones_failed", error?.message || error); return null; });
+    const ms = !milestonesAvailableFor(auth.role) ? null : await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role) }).catch(error => { console.warn("home_milestones_failed", error?.message || error); return null; });
     if (ms) summary.milestones = { achieved: ms.achieved, total: ms.total, unseen: ms.unseen };
     // 自分の領主データが3時間より古ければ裏で取り直す。画面側は少し待って再取得する。
     if (summary.me && executionContext?.waitUntil && claimMeAutoRefresh(summary.me)) {
@@ -10843,7 +10844,7 @@ async function renderHome(request, env) {
 .ee-tile{min-height:112px;padding:10px 5px;border-radius:17px;background:linear-gradient(155deg,rgba(13,34,54,.98),rgba(6,18,31,.98));border-color:rgba(43,77,107,.68);transition:transform .16s,border-color .16s,background .16s}.ee-tile.primary{border-color:rgba(32,215,242,.5);background:linear-gradient(155deg,rgba(10,45,65,.98),rgba(6,20,34,.98))}.ee-tile:active{transform:scale(.965);background:#102b43}.ee-tile img{width:48px;height:48px}.ee-tile strong{font-size:11px}.ee-tile small{font-size:8px;color:#89a1b8}.ee-tile .badge{right:8px;top:8px;min-width:18px;height:18px;box-shadow:0 0 15px rgba(32,215,242,.18)}
 .ee-summary{gap:8px;margin-top:17px}.ee-stat{padding:11px 12px;border-radius:15px;background:linear-gradient(150deg,rgba(10,25,41,.95),rgba(6,16,28,.95));border-color:rgba(35,65,95,.62)}.ee-stat-label{font-size:8px;letter-spacing:.08em}.ee-stat-value{font-size:17px}.ee-stat-sub{font-size:8px;color:#7892aa}.ee-more{display:none}
 .ee-milestone-card{width:100%;display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 15px;text-align:left;border:1px solid rgba(246,200,75,.25);border-radius:16px;background:linear-gradient(110deg,rgba(48,39,18,.52),rgba(8,22,37,.92));color:#e7edf5;opacity:.78;cursor:not-allowed}
-.ee-milestone-live{opacity:1;cursor:pointer;text-decoration:none}.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
+.ee-milestone-live{opacity:1;cursor:pointer;text-decoration:none}.ee-welcome-slim .ee-welcome{min-height:0!important;padding:12px 16px!important}.ee-welcome-slim .ee-welcome-bj{width:78px!important;height:78px!important;bottom:-6px!important}.ee-welcome-slim .ee-welcome-copy:after{display:none!important}.ee-welcome-slim .ee-welcome-copy:before{margin-bottom:4px!important}.ee-home-me+.ee-menu-title{margin-top:14px}.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
 .ee-milestone-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(246,200,75,.35);border-radius:12px;color:#f6c84b;font-size:24px}
 .ee-milestone-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.ee-milestone-copy strong{font-size:12px;font-weight:950}.ee-milestone-copy small{font-size:9px;color:#8da2b8}.ee-milestone-status{flex:0 0 auto;padding:6px 8px;border:1px solid rgba(246,200,75,.24);border-radius:999px;color:#f6d98b;font-size:9px;font-weight:900;white-space:nowrap}
 .ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
@@ -11123,7 +11124,7 @@ ${EAGLEEYE_NAV_CSS}
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
-<a class="ee-welcome-link" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
+<a class="ee-welcome-link${session ? " ee-welcome-slim" : ""}" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
   <div class="ee-welcome-copy">
     <h1 class="ee-welcome-h1">キングショット 分析・攻略ダッシュボード</h1>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
@@ -11131,16 +11132,25 @@ ${EAGLEEYE_NAV_CSS}
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
 <a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
-<div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>必要な入口だけをここに</span></div>
+${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+<div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
+<section class="ee-mainmenu" data-menu="signed-in">
+  <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>
+  <a class="ee-tile primary" href="/kvk"><img src="/assets/eagleeye/bjnyan/13_kingdom_data_review.png" alt=""><h3 class="ee-h"><strong>KvK</strong></h3><small>対戦相手・スコア</small></a>
+  <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><h3 class="ee-h"><strong>王国検索</strong></h3><small>王国を探す</small></a>
+  <a class="ee-tile" href="/watchlist"><img src="/assets/eagleeye/bjnyan/05_player_identity_check.png" alt=""><h3 class="ee-h"><strong>比較・共有</strong></h3><small>ウォッチから比較画像</small></a>
+  <a class="ee-tile" href="/settings/theme"><img src="/assets/eagleeye/bjnyan/14_search_refining.png" alt=""><h3 class="ee-h"><strong>着せ替え</strong></h3><small>色テーマを選ぶ</small></a>
+  <a class="ee-tile" href="/news"><img src="/assets/eagleeye/bjnyan/04_player_found.png" alt=""><h3 class="ee-h"><strong>お知らせ</strong></h3><small>更新情報</small><b class="badge" data-badge="news" hidden>0</b></a>
+</section>` : `<div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
   <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><h3 class="ee-h"><strong>ランキング</strong></h3><small>王国・順位を確認</small></a>
   <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><h3 class="ee-h"><strong>ウォッチリスト</strong></h3><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge" data-badge="watch" hidden>0</b></a>
   <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><h3 class="ee-h"><strong>プレイヤー検索</strong></h3><small>プレイヤーを探す</small></a>
   <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><h3 class="ee-h"><strong>王国検索</strong></h3><small>王国を探す</small></a>
-  <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><h3 class="ee-h"><strong>システム状況</strong></h3><small>稼働状況を確認</small></a>
+  <a class="ee-tile" href="/kvk/matchups"><img src="/assets/eagleeye/bjnyan/13_kingdom_data_review.png" alt=""><h3 class="ee-h"><strong>KvK組み合わせ</strong></h3><small>対戦カードを確認</small></a>
   <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ</small></a>
 </section>
-<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section><section class="ee-home-tools" aria-label="ツール"><h2>ツール</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><h3 class="ee-h"><b>英雄の欠片計算</b></h3><small>★5までの必要数</small></a><a href="/tools/gold"><h3 class="ee-h"><b>黄金計算</b></h3><small>建物ごとのG1〜8</small></a><a href="/tools/gold-tech"><h3 class="ee-h"><b>黄金テクノロジー研究</b></h3><small>T11研究の必要数</small></a><a href="/hero-catalog"><h3 class="ee-h"><b>英雄カタログ</b></h3><small>全英雄のスキル</small></a><a href="/kingdoms"><h3 class="ee-h"><b>王国一覧</b></h3><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><h3 class="ee-h"><b>KvK組み合わせ</b></h3><small>秘境の試練で比較</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
+<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>`}<section class="ee-home-tools" id="tools" aria-label="ツール"><h2>ツール</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><h3 class="ee-h"><b>英雄の欠片計算</b></h3><small>★5までの必要数</small></a><a href="/tools/gold"><h3 class="ee-h"><b>黄金計算</b></h3><small>建物ごとのG1〜8</small></a><a href="/tools/gold-tech"><h3 class="ee-h"><b>黄金テクノロジー研究</b></h3><small>T11研究の必要数</small></a><a href="/hero-catalog"><h3 class="ee-h"><b>英雄カタログ</b></h3><small>全英雄のスキル</small></a><a href="/kingdoms"><h3 class="ee-h"><b>王国一覧</b></h3><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><h3 class="ee-h"><b>KvK組み合わせ</b></h3><small>秘境の試練で比較</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
 <section class="ee-summary">
   <a class="ee-stat" href="/watchlist"><div class="ee-stat-label">ウォッチ中のプレイヤー</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div></a>
   <a class="ee-stat" href="/kingdom-watchlist"><div class="ee-stat-label">ウォッチ中の王国</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div></a>
@@ -11151,11 +11161,15 @@ ${EAGLEEYE_NAV_CSS}
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
-<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
+${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
   <span class="ee-milestone-status" id="homeMilestoneStatus">NEW</span>
-</a>
+</a>` : `<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
+  <span class="ee-milestone-icon" aria-hidden="true">✦</span>
+  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>使い方と成長でバッジが増えていきます</small></span>
+  <span class="ee-milestone-status">準備中</span>
+</button>`}
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
