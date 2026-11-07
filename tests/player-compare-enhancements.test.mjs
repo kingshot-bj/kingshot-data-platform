@@ -67,7 +67,18 @@ test("ring, bar, and custom ranking modes retain up to four players", () => {
   assert.ok(script.includes("const players=available"));
   assert.ok(script.includes("players.forEach((e,i)=>{const row"));
   assert.ok(script.includes("items.slice(0,4)"));
-  assert.ok(script.includes("players.length+'人'"));
+  assert.ok(script.includes("players.length+'人を比較'"));
+});
+
+test("リングの真ん中はトップの人と差（秘境はステージ差・ほかは%）を出す", () => {
+  const start = script.indexOf("const STAGE_OFFSETS=");
+  const src = script.slice(start, script.indexOf(" function renderCard(card){"));
+  const leaderOf = new Function("safeText", src + "; return leaderOf;")(e => e ? e.t : "");
+  const card = t => ({ querySelector: () => ({ t }) });
+  assert.deepEqual(leaderOf(card("闘技場"), [{ name: "Choob", score: 10605 }, { name: "B", score: 10600 }]), { title: "👑Choob", note: "+5ステージ リード" });
+  assert.deepEqual(leaderOf(card("英雄総力"), [{ name: "A", score: 100 }, { name: "おーとオートAUTO！", score: 125 }]), { title: "👑おーとオー…", note: "+25% リード" });
+  assert.deepEqual(leaderOf(card("英雄総力"), [{ name: "A", score: 5 }, { name: "B", score: 5 }]), { title: "互角", note: "2人を比較" });
+  assert.match(script, /center\.textContent=lead\.title/);
 });
 
 

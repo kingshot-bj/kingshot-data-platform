@@ -15,7 +15,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-split-ring .slice{transition:stroke-dasharray 2.2s cubic-bezier(.2,.8,.2,1),stroke-dashoffset 2.2s}
 .ee-split-ring .slice-a{stroke:#ffd166;filter:drop-shadow(0 0 4px #ffd166aa)}
 .ee-split-ring .slice-b{stroke:#42d9ff;filter:drop-shadow(0 0 4px #42d9ffaa)}
-.ee-split-ring .ee-center{position:absolute;text-align:center;max-width:76%;font-weight:800;font-size:clamp(15px,4vw,22px);line-height:1.15}
+.ee-split-ring .ee-center{position:absolute;text-align:center;max-width:80%;font-weight:800;font-size:clamp(12px,3.4vw,18px);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ee-split-ring .ee-center small{display:block;font-size:10px;font-weight:600;color:var(--sub,#91a7bf);margin-top:5px}
 .ee-spark-layer{position:absolute;inset:0;pointer-events:none}
 .ee-spark-layer i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px 2px var(--spark);animation:ee-spark 3.6s ease-out var(--delay) infinite;transform:rotate(var(--angle)) translateY(-38px)}
@@ -72,6 +72,19 @@ function enhance(){
  modes.forEach(([key,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.mode=key;b.setAttribute('aria-pressed',String(key===mode));b.addEventListener('click',()=>{mode=key;try{localStorage.setItem('eagleeye-player-compare-chart-v1',mode)}catch{}Object.entries(buttons).forEach(([k,node])=>node.setAttribute('aria-pressed',String(k===mode)));renderAll()});buttons[key]=b;tools.appendChild(b)});
  sec.insertBefore(tools,sec.children[1]||null);sec.insertBefore(status,tools.nextSibling);
  const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const smalls=[...cell.querySelectorAll('small')];const name=safeText(smalls[0]);const n=cell.querySelector('.counter');const api=smalls.find(el=>safeText(el).startsWith('API値:'));const apiText=api?safeText(api).slice('API値:'.length).replace(/,/g,'').trim():'';const raw=apiText!==''&&Number.isFinite(Number(apiText))?Number(apiText):(n&&n.dataset.target!==''&&Number.isFinite(Number(n.dataset.target))?Number(n.dataset.target):null);return{name:name||('プレイヤー'+(i+1)),score:raw,display:n?safeText(n):'—',stage:false,color:colors[i%colors.length]}});
+ // リングの真ん中：だれがトップか、どれだけ差があるか（秘境はステージ数の差、ほかは%の差）。
+ const STAGE_OFFSETS={'闘技場':10000,'生命の森':20000,'水晶鉱山':30000,'知識の枢軸':40000,'溶岩要塞':50000,'輝光の塔':60000};
+ function leaderOf(card,players){
+  const title=safeText(card.querySelector('.mystic-name'));const off=STAGE_OFFSETS[title];
+  const val=e=>off&&e.score>off?e.score-off:e.score;
+  const sorted=players.slice().sort((a,b)=>val(b)-val(a));
+  const top=sorted[0],second=sorted[1];
+  if(!top||!second||val(top)===val(second))return{title:'互角',note:players.length+'人を比較'};
+  const short=Array.from(String(top.name)).length>5?Array.from(String(top.name)).slice(0,5).join('')+'…':String(top.name);
+  const diff=val(top)-val(second);
+  const note=off?'+'+diff+'ステージ':'+'+(val(second)>0?(Math.round(diff/val(second)*1000)/10):100)+'%';
+  return{title:'👑'+short,note:note+' リード'};
+ }
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
   const existing=card.querySelector('.mystic-ring');if(existing)existing.style.display='none';
@@ -85,7 +98,7 @@ function enhance(){
    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 120 120');svg.setAttribute('aria-hidden','true');
    const circ=2*Math.PI*48,track=document.createElementNS(ns,'circle');track.setAttribute('class','track');track.setAttribute('cx','60');track.setAttribute('cy','60');track.setAttribute('r','48');svg.appendChild(track);
    let offset=0;players.forEach((e,i)=>{const circle=document.createElementNS(ns,'circle');circle.setAttribute('class','slice');circle.setAttribute('cx','60');circle.setAttribute('cy','60');circle.setAttribute('r','48');circle.style.stroke=colors[i%colors.length];circle.style.filter='drop-shadow(0 0 4px '+colors[i%colors.length]+'88)';const portion=sum>0?Math.max(0,e.score)/sum:1/players.length;circle.style.strokeDasharray=(portion*circ)+' '+(circ-portion*circ);circle.style.strokeDashoffset=String(-offset);offset+=portion*circ;svg.appendChild(circle)});
-   ring.appendChild(svg);const center=document.createElement('div');center.className='ee-center';center.textContent=players.length+'人';const sm=document.createElement('small');sm.textContent='比較中';center.appendChild(sm);ring.appendChild(center);
+   ring.appendChild(svg);const lead=leaderOf(card,players);const center=document.createElement('div');center.className='ee-center';center.textContent=lead.title;const sm=document.createElement('small');sm.textContent=lead.note;center.appendChild(sm);ring.appendChild(center);
    if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=document.createElement('div');layer.className='ee-spark-layer';players.forEach((e,i)=>{const p=document.createElement('i');p.style.setProperty('--angle',(players.slice(0,i+1).reduce((n,x)=>n+(sum>0?Math.max(0,x.score)/sum:1/players.length),0)*360)+'deg');p.style.setProperty('--distance',(25+(i%4)*10)+'px');p.style.setProperty('--delay',(-i*240)+'ms');p.style.setProperty('--spark',colors[i%colors.length]);layer.appendChild(p)});ring.appendChild(layer)}
    const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=players.map((e,i)=>e.name+' '+fmt(e.score)).join(' ／ ');view.append(ring,legend);
   }else if(mode==='bar'){
