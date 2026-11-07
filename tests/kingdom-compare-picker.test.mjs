@@ -40,3 +40,18 @@ test("比較の数字は毎日の集計（kingdom_stats_current）から出し�
   assert.doesNotMatch(html, /<th>英雄戦力<\/th>/, "どの王国にも値の無い項目は出さない");
   assert.doesNotMatch(html, /名称未取得/);
 });
+
+test("比較を画像で共有：ボタン・埋め込みデータ・招待コード付きURL", async () => {
+  const stats = [{ kid: 1523, power: 79228615776, power_gain_7d: 5604704559, power_rank: 38, age_days: 300, player_count: 4747, observed_at: 1794024346 }, { kid: 1524, power: 61332674138, power_gain_7d: 5241979188, power_rank: 2392, age_days: 300, player_count: 1935, observed_at: 1794024346 }];
+  const db2 = { prepare: sql => ({ bind: () => ({ first: async () => null, all: async () => ({ results: sql.includes("kingdom_stats_current") ? stats : [] }) }), first: async () => null }) };
+  const html = await renderKingdomComparePage(new Request("https://eagleeye-ks.com/kingdom/compare?kid=1524&kid=1523"), { DB: db2 });
+  assert.match(html, /<div id='kcmpShare'><\/div>/);
+  const json = JSON.parse(html.match(/<script type='application\/json' id='kcmpData'>([\s\S]*?)<\/script>/)[1]);
+  assert.deepEqual(json.kingdoms.map(k => k.kid), [1524, 1523]);
+  assert.equal(json.kingdoms[1].v.power_rank, 38);
+  assert.match(html, /fetch\("\/api\/invite"/, "ログイン中は招待コードを付ける");
+  assert.match(html, /navigator\.share\(\{ files: \[file\]/);
+  // 王国が1つだけのとき（比較表なし）は共有ボタンを出さない
+  const one = await renderKingdomComparePage(new Request("https://eagleeye-ks.com/kingdom/compare?kid=1524"), { DB: db2 });
+  assert.doesNotMatch(one, /id='kcmpShare'/);
+});

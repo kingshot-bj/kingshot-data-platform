@@ -33,7 +33,7 @@ export const MILESTONES = Object.freeze([
   { key: "governor_link", group: "eagleeye", icon: "🪪", title: "領主の証", desc: "マイKingShotで自分の領主IDを登録する", href: "/my-player", check: c => ({ done: Boolean(c.linked) }) },
   { key: "observer", group: "eagleeye", icon: "🔭", title: "観測者", desc: "APIキーを登録してADVANCEDになる", href: "/my-player", check: c => ({ done: (ROLE_RANK[String(c.role || "").toUpperCase()] ?? 0) >= ROLE_RANK.ADVANCED }) },
   { key: "watcher", group: "eagleeye", icon: "👀", title: "見張り番", desc: "プレイヤーを3人ウォッチする", href: "/players", check: c => ({ done: Number(c.watchCount) >= 3, now: Math.min(3, Number(c.watchCount) || 0), goal: 3, label: `${Math.min(3, Number(c.watchCount) || 0)} / 3人` }) },
-  { key: "herald", group: "eagleeye", icon: "📣", title: "伝令", desc: "プレイヤー比較の画像を作って共有する", href: "/players", check: c => ({ done: Boolean(c.shared) }) },
+  { key: "herald", group: "eagleeye", icon: "📣", title: "伝令", desc: "比較の画像（プレイヤー・王国）を作って共有する", href: "/players", check: c => ({ done: Boolean(c.shared) }) },
   ...[1, 5, 8].map(g => ({
     key: "gold_" + g, group: "growth", icon: "🏅", title: `黄金${g}`, desc: `役場を黄金${g}にする`, needsPlayer: true, sensitive: "base_power",
     check: c => {
