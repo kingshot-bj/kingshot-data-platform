@@ -21,6 +21,8 @@ export const INVITE_TITLES = Object.freeze([
 
 // 招待の特典（プレイヤーのウォッチ枠の上乗せ）。
 export const INVITE_BONUS = Object.freeze({ invitedSignup: 2, invitedAdvanced: 5, perQualifiedInvite: 5 });
+// 招待でもらえるウォッチ枠の合計の上限（サブ垢の量産で増やしすぎないように）。
+export const INVITE_BONUS_CAP = 30;
 
 // 日本時間の「年-月」（シーズン）。
 export function seasonOf(unixSeconds) {
@@ -100,7 +102,7 @@ export async function getWatchBonus(db, userId) {
   try {
     await ensureReferralSchema(db);
     const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS n FROM user_watch_bonus WHERE user_id = ?").bind(String(userId)).first();
-    return Math.max(0, Number(row?.n) || 0);
+    return Math.min(INVITE_BONUS_CAP, Math.max(0, Number(row?.n) || 0));
   } catch { return 0; }
 }
 
@@ -153,7 +155,7 @@ function inviteClient() {
       '<p class="inv-lead">このリンクから<b>初めて</b>ログインした人が対象です（リンクを開いてから30日以内）。APIキーを登録してADVANCEDになると1人に数えます。</p>' +
       '<div class="inv-box"><b>あなたの招待</b><div class="inv-nums"><span><em>' + d.this_season + '</em>' + esc(month) + '</span><span><em>' + d.lifetime + '</em>累計</span></div>' +
       (d.invitees.length ? '<ul>' + d.invitees.map(function (i) { return '<li>' + esc(i.name || "（領主ID未登録）") + '　' + (i.qualified ? '<span class="ok">ADVANCED ✓</span>' : '<span class="wait">登録済み・ADVANCED待ち</span>') + '</li>'; }).join("") + '</ul>' : '<p class="inv-lead">まだいません。同盟やDiscordでリンクを共有してみましょう。</p>') + '</div>' +
-      '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul><small class="inv-note">いまのあなたの上乗せ：ウォッチ枠 +' + d.bonus + '</small></div>';
+      '<div class="inv-box"><b>🎁 招待の特典</b><ul><li>招待された人：ログインするとウォッチ枠 <b class="hl">+' + d.rewards.invitedSignup + '</b>、ADVANCEDになるとさらに <b class="hl">+' + d.rewards.invitedAdvanced + '</b></li><li>あなた：招待した人がADVANCEDになるたびにウォッチ枠 <b class="hl">+' + d.rewards.perQualifiedInvite + '</b></li></ul><small class="inv-note">いまのあなたの上乗せ：ウォッチ枠 +' + d.bonus + '（招待での上乗せは合計 +' + d.bonus_cap + ' まで）</small></div>';
     document.getElementById("invCopy").onclick = function () {
       var text = "KingShotの分析・攻略ツール EagleEye（無料）";
       if (navigator.share) { navigator.share({ title: "EagleEye", text: text, url: d.link }).catch(function () {}); return; }

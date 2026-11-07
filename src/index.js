@@ -1,5 +1,6 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
+import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
 import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
@@ -55,7 +56,7 @@ import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
 import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
-import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS } from "./referrals.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
@@ -898,8 +899,9 @@ async function runKingdomWatchlistJobs(env) {
 
 async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
-  const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
   const apiLimiter = options?.apiLimiter || null;
+  // 通常の王国ウォッチは、ユーザー操作のために BACKGROUND_KEY_RESERVE 本を空けておく（負荷テストは指定どおり）。
+  const reserveApiKeys = apiLimiter ? Math.max(0, Number(options?.reserveApiKeys) || 0) : Math.max(BACKGROUND_KEY_RESERVE, Number(options?.reserveApiKeys) || 0);
   const loadTestContext = options?.loadTestContext || null;
   const loadTestRunId = loadTestContext?.runId ? String(loadTestContext.runId) : null;
   const loadTestJobId = loadTestContext?.jobId ? String(loadTestContext.jobId) : String(job?.job_id || "");
@@ -924,6 +926,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), KINGDOM_RANKING_BOARDS.length - startIndex, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
+      if (!apiLimiter) await recordPoolPressure(env.DB, "background_yielded");
       const code = apiLimiter ? "API_POOL_LOAD_TEST_CAPACITY_WAIT" : "NO_API_POOL_KEY_AVAILABLE";
       const error = new Error(code);
       error.code = code;
@@ -1177,6 +1180,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), remaining, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
+      if (!apiLimiter) await recordPoolPressure(env.DB, "background_yielded");
       const error = new Error("NO_API_POOL_KEY_AVAILABLE");
       error.code = "NO_API_POOL_KEY_AVAILABLE";
       throw error;
@@ -5112,8 +5116,8 @@ export default {
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        const [active, cf, d1] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null)]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1 }));
+        const [active, cf, d1, apiPool] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null)]);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool }));
       }
       if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
       if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
@@ -5281,6 +5285,12 @@ export default {
       await runD1UsageAlert(env);
     } catch (error) {
       console.error("d1_usage_alert_failed", error?.message || error);
+    }
+    try {
+      // APIキー使用率の見張り（1時間に1回、直近24時間が1日の上限の50%超でオーナーへDM）。
+      await runApiPoolUsageAlert(env);
+    } catch (error) {
+      console.error("api_pool_usage_alert_failed", error?.message || error);
     }
     try {
       const announce = await runAnnouncementDiscordSync(env);
@@ -7286,7 +7296,11 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
         lastNoKeyError = error;
       }
     }
-    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    if (!lease) {
+      // ユーザー操作（プレイヤーの取得・ホームの自動更新）でキーが取れなかった回数。増えてきたら裏の収集の枠を見直す。
+      await recordPoolPressure(env.DB, "interactive_no_key");
+      throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    }
 
     const result = await getMightPulsePlayer(env, id, {
       include: ["base","base,ranks","base,heroes,ranks,gov_gear"].includes(String(include)) ? String(include) : "base",
@@ -10786,7 +10800,7 @@ async function handleInviteApi(request, env) {
   if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   try {
     const mine = await loadMyReferrals(env.DB, auth.user_id);
-    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, rewards: INVITE_BONUS });
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: INVITE_BONUS });
   } catch (error) {
     console.error("invite_failed", error?.message || error);
     return json({ ok: false, error: "INVITE_FAILED" }, 500);
