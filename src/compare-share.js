@@ -116,21 +116,40 @@ export function compareShareClient(cfg) {
   // 比較ページで「いま表示している」行（＝選んだ項目と表示中のグループ）＋追加ランキングで選んだ項目。
   // 上の基本4項目と、秘境の試練の章（上で描く）は重ねない。多すぎるとiPhoneで画像が作れないので100行まで。
   function pickedRows(d, hasMys) {
-    var table = document.querySelector(".compare-table"); if (!table) return { rows: [], more: 0 };
     var all = d.players || [], keep = []; all.forEach(function (p, i) { if (!p.missing && p.player && keep.length < 4) keep.push(i); });
     var custom = {}; document.querySelectorAll("[data-ee-custom-board]").forEach(function (el) { custom[el.getAttribute("data-ee-custom-board")] = 1; });
-    var skip = { "比較項目": 1, "戦力": 1, "役場レベル": 1, "役場": 1, "VIP": 1, "撃破数": 1, "王国": 1 };
-    var stageNames = STAGES.map(function (s) { return "ランキング：" + s[1]; });
-    var out = [], seen = {};
-    table.querySelectorAll("tbody tr").forEach(function (tr) {
-      var th = tr.querySelector("th"); var label = th ? th.textContent.replace(/\s+/g, " ").trim() : "";
-      if (!label || skip[label] || seen[label]) return;
-      if (tr.hidden && !custom[label]) return;
-      if (hasMys && stageNames.some(function (n) { return label.indexOf(n) === 0; })) return;
-      var tds = tr.querySelectorAll("td");
-      var vals = keep.map(function (i) { var td = tds[i]; if (!td) return "—"; var v = td.querySelector(".value"); return ((v || td).textContent || "").replace(/\s+/g, " ").trim() || "—"; });
+    var skip = { "比較項目": 1, "戦力": 1, "役場レベル": 1, "役場": 1, "VIP": 1, "撃破数": 1, "王国": 1, "EagleEye取得": 1, "元データ時刻": 1 };
+    var stageNames = STAGES.map(function (s) { return s[1]; }).concat(STAGES.map(function (s) { return s[0]; }));
+    var isStage = function (label) { var x = label.replace(/^ランキング：/, ""); return label.indexOf("ランキング：") === 0 && stageNames.indexOf(x) >= 0; };
+    var clean = function (el) { return el ? (el.textContent || "").replace(/\s+/g, " ").trim() : ""; };
+    // 項目ごとに「表示しているか」と、プレイヤーごとの値を集める。
+    // スマホはプレイヤーごとのカード（.compare-metric）、広い画面は表（.compare-table）で出ている。
+    var shown = typeof window.__eeCompareShown === "function" ? window.__eeCompareShown : null;
+    var order = [], byLabel = {};
+    function add(label, visible, col, value) {
+      if (!label) return;
+      if (!byLabel[label]) { byLabel[label] = { visible: false, values: {} }; order.push(label); }
+      if (visible) byLabel[label].visible = true;
+      if (col != null && byLabel[label].values[col] == null) byLabel[label].values[col] = value;
+    }
+    document.querySelectorAll(".compare-player-card").forEach(function (card, col) {
+      card.querySelectorAll(".compare-metric").forEach(function (m) { var label = m.getAttribute("data-compare-label") || clean(m.querySelector("span")); var exact = Number(m.getAttribute("data-rank-score")); add(label, shown ? shown(label) || !m.hidden : !m.hidden, col, m.getAttribute("data-rank-score") != null && isFinite(exact) ? exact.toLocaleString("ja-JP") : clean(m.querySelector("strong")) || "—"); });
+    });
+    // 英雄スキル・専用装備・防衛編成などは表にしかない。表は画面に出していないので、ページが残した控え（template）から読む。
+    var tpl = document.getElementById("eeCompareTableData");
+    var table = (tpl && tpl.content && tpl.content.querySelector(".compare-table")) || document.querySelector(".compare-table");
+    if (table) table.querySelectorAll("tbody tr").forEach(function (tr) {
+      var label = clean(tr.querySelector("th")), tds = tr.querySelectorAll("td");
+      add(label, shown ? shown(label) : !tr.hidden, null, null);
+      if (byLabel[label]) Array.prototype.forEach.call(tds, function (td, col) { if (byLabel[label].values[col] == null) { var v = td.querySelector(".value"); byLabel[label].values[col] = clean(v || td) || "—"; } });
+    });
+    var out = [];
+    order.forEach(function (label) {
+      var r = byLabel[label];
+      if (skip[label] || (!r.visible && !custom[label]) || (hasMys && isStage(label))) return;
+      var vals = keep.map(function (i) { var v = r.values[i]; return v == null || v === "" ? "—" : v; });
       if (vals.every(function (v) { return v === "—" || v === "データなし"; })) return;
-      seen[label] = 1; out.push({ label: label, values: vals });
+      out.push({ label: label.replace(/^ランキング：/, ""), values: vals });
     });
     return { rows: out.slice(0, 100), more: Math.max(0, out.length - 100) };
   }
