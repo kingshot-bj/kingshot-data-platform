@@ -19,7 +19,9 @@ export const EAGLEEYE_THEMES = Object.freeze([
     tokens: { bg: "#111214", panel: "#1a1c1f", deep: "#151618", raised: "#232529", border: "#3a3d43", soft: "#2a2c31", text: "#f2f3f5", subtext: "#b0b4bb", muted: "#868a91", accent: "#93c5fd", rival: "#f87171" }, light: "#2563eb" },
   // 限定：運営（オーナー）の招待で来た人だけが選べる（user_rewards の theme_gold）。
   { id: "gold", name: "ゴールド", description: "運営招待の限定カラー", reward: "theme_gold",
-    tokens: { bg: "#17130a", panel: "#241c0e", deep: "#1d160b", raised: "#2f2512", border: "#6b5420", soft: "#3d311a", text: "#fff8e6", subtext: "#e6cf98", muted: "#b39c66", accent: "#fbbf24", rival: "#60a5fa" }, light: "#b45309" }
+    tokens: { bg: "#0d0a04", panel: "#1a1408", deep: "#140f06", raised: "#251c0b", border: "#8c6a1f", soft: "#3b2d12", text: "#fff5d6", subtext: "#e6c98a", muted: "#a88f5c", accent: "#f5c542", rival: "#60a5fa" }, light: "#b45309",
+    // 色を変えるだけでなく「金属の金」に見せる仕上げ（ダークモードのみ）。
+    effects: "gold" }
 ]);
 
 // 共有カード（canvas）用の色。使っている着せ替えの色で画像を作る（ライトモードでも画像は濃い色）。
@@ -33,6 +35,30 @@ const SAFE_ID_SHARE = /^[a-z][a-z0-9-]{1,30}$/;
 const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep", raised: "--ee-panel-raised", border: "--ee-border", soft: "--ee-border-soft", text: "--ee-text", subtext: "--ee-subtext", muted: "--ee-muted", accent: "--ee-cyan", rival: "--ee-rival" };
 const SAFE_ID = /^[a-z][a-z0-9-]{1,30}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+// 限定カラーの特別な仕上げ（ダークモードのみ）。CSSは固定の文字列で、利用者の入力は入らない。
+const GOLD_METAL = "linear-gradient(100deg,#fff4c2 0%,#f5c542 22%,#b8860b 45%,#fff0b3 60%,#d4a017 78%,#fff4c2 100%)";
+const THEME_EFFECTS = {
+  gold: d => [
+    // 背景：上からの金の光＋金粉
+    `${d} body{background:radial-gradient(rgba(255,215,90,.10) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(255,215,90,.06) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(245,197,66,.28),rgba(245,197,66,0) 62%),#0b0803!important;background-attachment:fixed!important}`,
+    // ロゴ・見出し・カードの題名：金属の光沢（ゆっくり流れる）
+    `${d} :is(h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b){background:${GOLD_METAL};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:ee-gold-shine 5s linear infinite;filter:drop-shadow(0 0 6px rgba(245,197,66,.35))}`,
+    `@keyframes ee-gold-shine{from{background-position:0% 50%}to{background-position:220% 50%}}`,
+    `@media (prefers-reduced-motion:reduce){${d} :is(h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b){animation:none}}`,
+    // カード：金属の縁（グラデーションの枠）＋内側のハイライト＋金の影
+    `${d} :is(.ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat){border:1.5px solid transparent!important;background:linear-gradient(160deg,rgba(255,236,170,.10),rgba(255,236,170,0) 42%) padding-box,linear-gradient(var(--ee-panel),var(--ee-panel)) padding-box,linear-gradient(135deg,#fff3c4,#c8961c 28%,#6e4f0e 50%,#f5c542 72%,#fff3c4) border-box!important;box-shadow:0 0 18px rgba(245,197,66,.18),0 10px 28px rgba(0,0,0,.5)!important}`,
+    // ヘッダー：金のライン
+    `${d} .ee-top{border-bottom:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(245,197,66,0),#f5c542,#fff3c4,#f5c542,rgba(245,197,66,0)) 1!important;box-shadow:0 6px 24px rgba(245,197,66,.12)}`,
+    // ボタン：金のグラデーション
+    `${d} :is(.inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button){background:linear-gradient(180deg,#ffe58a,#f5c542 45%,#c8961c)!important;color:#2a1c02!important;border-color:#fff0b3!important;box-shadow:0 2px 12px rgba(245,197,66,.45)}`,
+    // 下のナビ：金のライン、選択中は光る
+    `${d} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(245,197,66,0),#f5c542,#fff3c4,#f5c542,rgba(245,197,66,0)) 1!important;box-shadow:0 -8px 26px rgba(245,197,66,.14)}`,
+    `${d} .ee-nav a.active:before{background:${GOLD_METAL}!important;box-shadow:0 0 14px rgba(245,197,66,.9)!important}`,
+    // プロフィール：金のリング
+    `${d} .ee-avatar{box-shadow:0 0 0 2px #f5c542,0 0 16px rgba(245,197,66,.6)!important}`
+  ].join("\n")
+};
 
 export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
   return themes.filter(t => t.tokens && SAFE_ID.test(t.id)).map(t => {
@@ -52,7 +78,7 @@ export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
     const dark = `html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`;
     const light = `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]`;
     return `${dark} .gear-stat{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-stat b{color:var(--ee-text,#f2f3f5)}${dark} .gear-gems{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-gems b{color:var(--ee-text,#f2f3f5)}${light} .gear-stat{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-stat b{color:var(--ee-text,#172033)}${light} .gear-gems{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-gems b{color:var(--ee-text,#172033)}`;
-  })).join("\n");
+  })).concat(themes.filter(t => t.effects && THEME_EFFECTS[t.effects] && SAFE_ID.test(t.id)).map(t => THEME_EFFECTS[t.effects](`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`))).join("\n");
 }
 
 // Runs in <head> before the page paints, so there is no flash of the default colours.

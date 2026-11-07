@@ -207,3 +207,13 @@ test("オーナーは限定の着せ替えもすべて使える（/api/rewards�
   assert.deepEqual(await run("OWNER"), ["theme_gold"]);
   assert.deepEqual(await run("ADVANCED"), []);
 });
+
+test("ゴールドは色だけでなく金属の仕上げ（ダークモードのみ・動きを減らす設定に対応）", async () => {
+  const { eagleEyeThemesCss } = await import("../src/themes.js");
+  const css = eagleEyeThemesCss();
+  assert.match(css, /html\[data-ee-skin="gold"\]:not\(\[data-eagle-theme="light"\]\) body\{background:radial-gradient/);
+  assert.match(css, /@keyframes ee-gold-shine/);
+  assert.match(css, /prefers-reduced-motion:reduce/);
+  assert.match(css, /linear-gradient\(135deg,#fff3c4,#c8961c 28%,#6e4f0e 50%,#f5c542 72%,#fff3c4\) border-box/);
+  assert.doesNotMatch(css, /data-ee-skin="sakura"\]:not\(\[data-eagle-theme="light"\]\) body\{background:radial/, "ほかの着せ替えには付けない");
+});
