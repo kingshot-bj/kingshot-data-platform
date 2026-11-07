@@ -8,6 +8,7 @@
 // DMs are queued in announcement_dm_queue and sent in small batches from the
 // cron, so Discord outages never block posting on EagleEye.
 
+import { announcementEmbed, discordMessageBody } from "./discord-embeds.js";
 import { discordApiRequest } from "./discord-support.js";
 import { kvkPublicOrigin } from "./kvk-discord.js";
 import { ensureBadgeSchema } from "./notification-badges.js";
@@ -136,7 +137,9 @@ export async function runAnnouncementDiscordSync(env, { now = Math.floor(Date.no
       for (const item of due) {
         if (budget.calls + 1 > maxCalls) break;
         budget.calls++;
-        await request(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content: announcementChannelMessage(item, origin), allowed_mentions: { parse: [] } }) });
+        // カード形式（タイトル・本文・BJにゃんの共有カード画像）。
+        const embed = announcementEmbed({ ...item, image_url: origin ? origin + "/assets/og/common.jpg" : null }, origin);
+        await request(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify(discordMessageBody(announcementChannelMessage(item, origin), embed)) });
         await db.prepare("UPDATE announcements SET discord_posted_at = ? WHERE id = ?").bind(now, item.id).run();
         summary.posted++;
       }

@@ -157,7 +157,15 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   await setState(db, "matchups", { sha, season, stage, count: normalized.length, changedAt: now, checkedAt: now }, now);
   if (Number(previous?.season) !== season) {
     const own = ((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all()).results || []).map(r => Number(r.kid));
-    await enqueueKvkNotifications(db, buildKvkMatchupNotifications(season, stage, normalized, own, kvkPublicOrigin(env)), now).catch(error => console.error("kvk_notify_enqueue_failed", error?.message || error));
+    // 総戦力（カタログ巡回で保存済み）をカードに載せる。自国＋相手国だけ、bind上限内で。
+    const ownSet = new Set(own);
+    const related = [...new Set(normalized.filter(m => ownSet.has(Number(m.kid)) || ownSet.has(Number(m.opponent))).flatMap(m => [Number(m.kid), Number(m.opponent)]).filter(Number.isFinite))].slice(0, 90);
+    const powers = {};
+    if (related.length) {
+      const rows = await db.prepare("SELECT kid, power FROM kingdom_stats_current WHERE kid IN (" + related.map(() => "?").join(",") + ")").bind(...related).all().catch(() => ({ results: [] }));
+      for (const r of rows?.results || []) powers[Number(r.kid)] = r.power;
+    }
+    await enqueueKvkNotifications(db, buildKvkMatchupNotifications(season, stage, normalized, own, kvkPublicOrigin(env), powers), now).catch(error => console.error("kvk_notify_enqueue_failed", error?.message || error));
   }
   return { status: "CHANGED", season, stage, count: normalized.length };
 }

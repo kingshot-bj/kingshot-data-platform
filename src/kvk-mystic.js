@@ -9,6 +9,8 @@
 // unexpected response shape never burns API quota.
 
 import { collectMightPulseThroughGuards } from "./data-collection-engine.js";
+import { kvkMysticEmbed } from "./discord-embeds.js";
+import { enqueueKvkNotifications, kvkPublicOrigin, KVK_CURRENT_KINGDOM_SQL, KVK_LINKS_FROM_SQL } from "./kvk-discord.js";
 
 export const MYSTIC_STAGE_KEYS = Object.freeze(["coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
 export const KVK_MYSTIC_PER_RUN = 2;
@@ -148,6 +150,7 @@ export async function runKvkMysticCollection(env, { now = Math.floor(Date.now() 
   }
   const open = emptyStreak >= BREAKER_LIMIT;
   await setState(db, "breaker", { season, emptyStreak, open }, now);
+  if (summary.fetched) await notifyMysticPairs(env, season, todo.map(t => Number(t.kid)), now).catch(error => console.error("kvk_mystic_notify_failed", error?.message || error));
   if (open) console.error("kvk_mystic_breaker_open", season, emptyStreak);
   return summary;
 }
@@ -162,4 +165,42 @@ export async function loadMysticSummaries(db, season, kids) {
     for (const r of rows) { try { out.set(Number(r.kid), JSON.parse(r.boards_json)); } catch {} }
   }
   return out;
+}
+
+// 両国の秘境データがそろった対戦を、EagleEyeユーザーがいる王国のKvKスレッドへカードで知らせる（1シーズン1回）。
+export function buildMysticNotification(season, kid, opponent, mine, theirs, origin = "") {
+  const r = compareMystic(mine, theirs);
+  if (!r.stages.length) return null;
+  const lab = (side, key) => (Array.isArray(side?.[key]?.labels) && side[key].labels[0]) || stageLabelFromValue(side?.[key]?.best) || String(side?.[key]?.best ?? "—");
+  const stages = r.stages.map(s => ({ label: s.label, a: lab(mine, s.key), b: lab(theirs, s.key), win: Math.sign(s.a - s.b) }));
+  return {
+    key: `KVK:MYSTIC:${season}:${kid}`,
+    kid,
+    content: `**秘境の試練 比較（シーズン${season}）**\n王国${kid} vs 王国${opponent}：${r.wins}勝 ${r.losses}敗`,
+    embed: kvkMysticEmbed({ season, kid, opponent, wins: r.wins, losses: r.losses, stages, origin })
+  };
+}
+
+async function notifyMysticPairs(env, season, fetchedKids, now) {
+  const db = env.DB;
+  if (!fetchedKids.length) return;
+  const users = new Set(((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all())?.results || []).map(r => Number(r.kid)));
+  if (!users.size) return;
+  const items = [];
+  const origin = kvkPublicOrigin(env);
+  for (const kid of fetchedKids) {
+    const pair = await db.prepare("SELECT kid, opponent FROM kvk_matchups WHERE season = ? AND (kid = ? OR opponent = ?) LIMIT 1").bind(season, kid, kid).first().catch(() => null);
+    if (!pair || pair.opponent == null) continue;
+    const a = Number(pair.kid), b = Number(pair.opponent);
+    if (!users.has(a) && !users.has(b)) continue;
+    const rows = (await db.prepare("SELECT kid, boards_json FROM kvk_mystic_summary WHERE season = ? AND status = 'OK' AND kid IN (?, ?)").bind(season, a, b).all())?.results || [];
+    if (rows.length < 2) continue;
+    const boards = Object.fromEntries(rows.map(r => { try { return [Number(r.kid), JSON.parse(r.boards_json)]; } catch { return [Number(r.kid), null]; } }));
+    for (const [me, them] of [[a, b], [b, a]]) {
+      if (!users.has(me)) continue;
+      const item = buildMysticNotification(season, me, them, boards[me], boards[them], origin);
+      if (item) items.push(item);
+    }
+  }
+  if (items.length) await enqueueKvkNotifications(db, items, now);
 }
