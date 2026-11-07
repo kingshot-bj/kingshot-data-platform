@@ -4,6 +4,7 @@
 // 読み取りは1回あたり数十行（主キー・索引で引く）。
 
 import { INVITE_TITLES, ensureReferralSchema, getUserRewards } from "./referrals.js";
+import { loadMissions } from "./missions.js";
 
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
 // 公開前はオーナーだけが見られる（ユーザーには「準備中」）。公開するときは true にする。
@@ -60,6 +61,12 @@ export const MILESTONES = Object.freeze([
   })),
   { key: "kingdom_top10", group: "growth", icon: "👑", title: "王国の十傑", desc: "自分の王国で個人戦力TOP10に入る", needsPlayer: true, sensitive: "ranks_core",
     check: c => ({ done: Number(c.powerRank) > 0 && Number(c.powerRank) <= 10, label: Number(c.powerRank) > 0 ? `いま 王国内${c.powerRank}位` : "" }) },
+  // 習慣編：今日の作戦（デイリー3つ全部）の連続日数と、週の作戦の全達成。見た目のバッジだけ（広告とは関係なし）。
+  ...[[3, "🔥", "3日連続"], [7, "⚡", "1週間連続"], [30, "🌟", "30日連続"]].map(([n, icon, t]) => ({
+    key: "streak_" + n, group: "habit", icon, title: t, desc: `今日の作戦（3つ全部）を${n}日続ける（1日休んでも途切れない）`,
+    check: c => ({ done: Number(c.missionBest) >= n, now: Math.min(Number(c.missionStreak) || 0, n), goal: n, label: `いま ${Number(c.missionStreak) || 0}日` })
+  })),
+  { key: "week_clear", group: "habit", icon: "🗓️", title: "週の作戦 制覇", desc: "週の作戦を3つとも達成する", check: c => ({ done: Number(c.weeklyClears) >= 1 }) },
   ...INVITE_TITLES.map(t => ({
     key: t.key, group: "invite", icon: t.icon, title: t.title, desc: `招待した${t.n}人がADVANCEDになる`,
     check: c => ({ done: Number(c.invites) >= t.n, now: Math.min(Number(c.invites) || 0, t.n), goal: t.n, label: `いま ${Number(c.invites) || 0}人` })
@@ -69,6 +76,7 @@ export const MILESTONES = Object.freeze([
 export const MILESTONE_GROUPS = Object.freeze([
   { key: "eagleeye", title: "EagleEye編", lead: "EagleEyeを使いこなす5つの一歩" },
   { key: "growth", title: "成長編", lead: "ゲーム内の到達点（記録されたデータで自動判定）" },
+  { key: "habit", title: "習慣編", lead: "今日の作戦を続けるともらえるバッジ" },
   { key: "invite", title: "招待編", lead: "招待リンクから登録した人がADVANCEDになると1人" }
 ]);
 
@@ -120,7 +128,7 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
   if (!db || !auth?.user_id) return null;
   await ensureMilestoneSchema(db);
   const userId = String(auth.user_id);
-  const [storedRows, link, watch, invited, rewards] = await Promise.all([
+  const [storedRows, link, watch, invited, rewards, missions] = await Promise.all([
     db.prepare("SELECT key, achieved_at, seen FROM user_milestones WHERE user_id = ?").bind(userId).all(),
     db.prepare(
       "SELECT l.governor_id, l.kingdom_id, p.kid, p.power, p.town_center_level FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
@@ -128,10 +136,11 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
     ).bind(userId).first(),
     auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 }),
     ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 })),
-    getUserRewards(db, userId)
+    getUserRewards(db, userId),
+    auth.discord_id ? loadMissions(db, String(auth.discord_id)).catch(() => null) : Promise.resolve(null)
   ]);
   const stored = new Map((storedRows?.results || []).map(r => [String(r.key), { achieved_at: Number(r.achieved_at), seen: Number(r.seen) }]));
-  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, rewards, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible };
+  const ctx = { linked: Boolean(link), role: auth.role, watchCount: Number(watch?.n) || 0, invites: Number(invited?.n) || 0, rewards, shared: stored.has("herald"), player: null, powerRank: null, mysticChapter: 0, visible, missionStreak: missions?.streak || 0, missionBest: missions?.best || 0, weeklyClears: missions?.weeklyClears || 0 };
   const kid = Number(link?.kid ?? link?.kingdom_id) || null;
   if (link && link.power != null) ctx.player = { power: link.power, town_center_level: link.town_center_level };
   if (link && kid) {
@@ -151,7 +160,7 @@ export async function loadMilestones(db, auth, { visible = () => true, now = Mat
   }
   const unseen = items.filter(i => i.done && stored.get(i.key)?.seen === 0).map(i => ({ key: i.key, icon: i.icon, title: i.title }));
   if (markSeen && unseen.length) await db.prepare("UPDATE user_milestones SET seen = 1 WHERE user_id = ? AND seen = 0").bind(userId).run();
-  return { items, achieved: items.filter(i => i.done).length, total: items.length, unseen };
+  return { items, achieved: items.filter(i => i.done).length, total: items.length, unseen, missions };
 }
 
 
@@ -171,7 +180,16 @@ function milestonesClient(cfg) {
     if (x.s === 401) { root.innerHTML = '<div class="ms-login"><p>マイルストーンはログインすると記録されます。</p><a href="/api/auth/discord?next=%2Fmilestones">Discordでログイン →</a></div>'; return; }
     var d = x.d; if (!d || !d.ok) throw new Error("x");
     var fresh = {}; (d.unseen || []).forEach(function (u) { fresh[u.key] = 1; });
-    var html = '<div class="ms-total"><b>' + d.achieved + '</b> / ' + d.total + ' 達成<span class="ms-bar"><i style="width:' + Math.round(d.achieved / Math.max(1, d.total) * 100) + '%"></i></span></div>';
+    var html = "";
+    var mi = d.missions;
+    if (mi) {
+      var row = function (m, extra) { return (m.done || !m.href ? '<div class="mi-row' + (m.done ? ' done' : '') + '">' : '<a class="mi-row" href="' + esc(m.href) + '">') + '<span class="mi-check">' + (m.done ? '✓' : '') + '</span><span class="mi-title">' + esc(m.title) + '</span>' + (extra || (m.done ? '' : '<span class="mi-go">→</span>')) + (m.done || !m.href ? '</div>' : '</a>'); };
+      html += '<section class="mi-box" id="missions"><div class="mi-head"><h2>🎯 今日の作戦</h2><span class="mi-streak">' + (mi.streak ? '🔥 ' + mi.streak + '日連続' : '連続 0日') + (mi.restUsed ? '<small>（休み1日使用中）</small>' : '') + '</span></div>' +
+        '<div class="mi-list">' + mi.daily.map(function (m) { return row(m); }).join("") + '</div>' +
+        '<h3>今週の作戦 <small>' + mi.weeklyDone + ' / 3</small></h3><div class="mi-list">' + mi.weekly.map(function (w) { return row(w, '<span class="mi-count">' + w.now + ' / ' + w.goal + '</span>'); }).join("") + '</div>' +
+        '<p class="ms-lead">3つ全部で1日達成。1日だけなら休んでも連続は続きます。日付は日本時間で変わります。</p></section>';
+    }
+    html += '<div class="ms-total"><b>' + d.achieved + '</b> / ' + d.total + ' 達成<span class="ms-bar"><i style="width:' + Math.round(d.achieved / Math.max(1, d.total) * 100) + '%"></i></span></div>';
     if ((d.unseen || []).length) html += '<div class="ms-new">🎉 新しく達成：' + d.unseen.map(function (u) { return esc(u.icon + " " + u.title); }).join("、") + '</div>';
     cfg.groups.forEach(function (g) {
       var items = d.items.filter(function (i) { return i.group === g.key; });
@@ -199,6 +217,10 @@ export function renderMilestonesPage() {
 .ms-copy{flex:1;min-width:0;display:grid;gap:3px}.ms-copy b{font-size:14px}.ms-copy small{font-size:12px;color:var(--ee-subtext)}.ms-copy em{font-style:normal;font-size:11px;color:var(--ee-cyan)}
 .ms-bar{display:block;height:6px;border-radius:3px;background:rgba(148,163,184,.25);overflow:hidden}.ms-bar i{display:block;height:100%;background:linear-gradient(90deg,#f6c84b,#facc15)}
 .ms-state{flex:0 0 auto;text-align:right;font-size:12px;font-weight:900;color:var(--ee-subtext)}.done .ms-state{color:#f6c84b;font-size:18px}.ms-state small{display:block;font-size:10px;font-weight:700;color:var(--ee-subtext)}
+.mi-box{margin:0 0 16px;padding:14px;border:1px solid rgba(246,200,75,.5);border-radius:16px;background:linear-gradient(110deg,rgba(246,200,75,.14),var(--ee-panel))}.mi-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.mi-head h2{font-size:17px;margin:0}.mi-streak{font-size:13px;font-weight:900;color:#f6c84b;text-align:right}.mi-streak small{display:block;font-size:10px;color:var(--ee-subtext);font-weight:700}
+.mi-box h3{font-size:14px;margin:12px 0 6px}.mi-box h3 small{color:var(--ee-subtext);font-size:12px}.mi-list{display:grid;gap:6px;margin-top:8px}.mi-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none;font-size:14px}
+.mi-row.done{border-color:rgba(246,200,75,.5)}.mi-row.done .mi-title{color:var(--ee-subtext);text-decoration:line-through}.mi-check{flex:0 0 22px;height:22px;border-radius:7px;border:2px solid rgba(246,200,75,.6);display:grid;place-items:center;font-weight:900;color:#1a1300;background:transparent}.done .mi-check{background:#f6c84b}
+.mi-title{flex:1;min-width:0;font-weight:800}.mi-go{color:var(--ee-cyan);font-weight:900}.mi-count{font-size:12px;font-weight:900;color:var(--ee-subtext)}
 .ms-login{padding:16px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel)}.ms-login a{display:inline-block;margin-top:6px;padding:9px 16px;border-radius:999px;background:#5865f2;color:#fff;font-weight:900;text-decoration:none}</style></head>
 <body><main class="wrap"><nav class="crumbs"><a href="/">EagleEye</a> › マイルストーン</nav>
 <h1>✦ マイルストーン</h1><p class="lead">EagleEyeの使い方とゲーム内の成長で、バッジが増えていきます。判定はEagleEyeに記録されたデータで自動で行います（一度達成したら消えません）。</p>

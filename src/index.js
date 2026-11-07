@@ -57,7 +57,7 @@ import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, log
 import { renderKvkPage, runKvkCollection } from "./kvk.js";
 import { findCoveringWatchlist } from "./watchlist-coverage.js";
 import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
-import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor } from "./milestones.js";
+import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor, MILESTONES_PUBLIC } from "./milestones.js";
 import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP, OWNER_INVITE_BONUS, getUserRewards, getOrCreateSpecialInviteCode } from "./referrals.js";
 import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
@@ -96,6 +96,7 @@ import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } 
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { playerShareEmbed } from "./player-share.js";
+import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
@@ -5032,7 +5033,7 @@ export default {
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
-      if (url.pathname === "/api/pv") return await handlePageViewBeacon(request, env, { isSameOrigin: isSameOriginRequest });
+      if (url.pathname === "/api/pv") return await handlePageViewBeacon(request, env, { isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView(request, env, path) });
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
@@ -5143,7 +5144,8 @@ export default {
       if (url.pathname === "/owner/growth") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        return eagleEyeHtmlResponse(renderGrowthPage(await loadGrowth(env.DB)));
+        const [growth, missions] = await Promise.all([loadGrowth(env.DB), loadMissionStats(env.DB).catch(() => [])]);
+        return eagleEyeHtmlResponse(renderGrowthPage({ ...growth, missions }));
       }
       if (url.pathname === "/api/owner/growth/baseline" || url.pathname === "/api/owner/growth/revenue") return await handleOwnerGrowthApi(request, env, url.pathname.endsWith("/baseline") ? "baseline" : "revenue");
       if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
@@ -10918,6 +10920,18 @@ async function handleAnnouncementsApi(request, env) {
   }
 }
 
+// 今日の作戦：PVのついでに、ログイン中（署名を確かめたセッション）の人の「使った機能」を記録する。
+// ユーザー表は読まない（discord_id で記録）。公開前は対象（オーナー）だけ。
+async function recordMissionFromView(request, env, path) {
+  const action = missionActionForPath(path);
+  if (!action || !env.DB || !env.EAGLEEYE_SESSION_SECRET) return;
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  const session = token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
+  if (!session?.sub) return;
+  if (!(await isMissionUser(env.DB, session.sub, { isPublic: MILESTONES_PUBLIC }))) return;
+  await recordMissionAction(env.DB, session.sub, action);
+}
+
 // マイルストーン（表示時判定・D1にある値だけ）。share は比較画像を作れたときに画面から呼ばれる。
 async function handleMilestonesApi(request, env, url) {
   const auth = await getAuthenticatedUser(request, env);
@@ -10925,6 +10939,7 @@ async function handleMilestonesApi(request, env, url) {
   try {
     if (url.pathname === "/api/milestones/share") {
       if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+      if (milestonesAvailableFor(auth.role) && auth.discord_id) await recordMissionAction(env.DB, String(auth.discord_id), "share").catch(() => false);
       return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
     }
     if (!milestonesAvailableFor(auth.role)) return json({ ok: false, error: "COMING_SOON" }, 403);
@@ -10965,6 +10980,7 @@ async function handleHomeSummary(request, env, executionContext) {
     });
     const ms = !milestonesAvailableFor(auth.role) ? null : await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role) }).catch(error => { console.warn("home_milestones_failed", error?.message || error); return null; });
     if (ms) summary.milestones = { achieved: ms.achieved, total: ms.total, unseen: ms.unseen };
+    if (ms?.missions) summary.missions = { dailyDone: ms.missions.dailyDone, daily: ms.missions.daily, streak: ms.missions.streak, weeklyDone: ms.missions.weeklyDone };
     // 自分の領主データが3時間より古ければ裏で取り直す。画面側は少し待って再取得する。
     if (summary.me && executionContext?.waitUntil && claimMeAutoRefresh(summary.me)) {
       const governorId = summary.me.governor_id;
@@ -11356,6 +11372,11 @@ ${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-m
 </a>
 ${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
+${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live ee-mission-card" href="/milestones#missions" id="homeMissions">
+  <span class="ee-milestone-icon" aria-hidden="true">🎯</span>
+  <span class="ee-milestone-copy"><strong>今日の作戦</strong><small id="homeMissionsText">3つの作戦で、EagleEyeを毎日ちょっと便利に</small></span>
+  <span class="ee-milestone-status" id="homeMissionsStatus">0 / 3</span>
+</a>` : ''}
 ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
@@ -11431,6 +11452,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
     var ob=document.getElementById("homeOnboard"),obCopy=${JSON.stringify({ link: onboardingCopy("link"), key: onboardingCopy("key") })}[d.onboarding||""]
     if(ob){if(obCopy){document.getElementById("homeOnboardTitle").textContent=obCopy.title;document.getElementById("homeOnboardBody").textContent=obCopy.body;document.getElementById("homeOnboardCta").textContent=obCopy.cta+" →";ob.hidden=false}else ob.hidden=true}
+    if(d.missions){var xt=document.getElementById("homeMissionsText"),xs=document.getElementById("homeMissionsStatus"),xn=(d.missions.daily||[]).filter(function(x){return !x.done})[0];if(xs)xs.textContent=d.missions.dailyDone+" / 3"+(d.missions.streak?" 🔥"+d.missions.streak:"");if(xt)xt.textContent=xn?"次："+xn.title:"今日の作戦はすべて達成！"}
     if(d.milestones){var mt=document.getElementById("homeMilestoneText"),ms=document.getElementById("homeMilestoneStatus"),mu=d.milestones.unseen||[];if(ms)ms.textContent=d.milestones.achieved+" / "+d.milestones.total+" 達成";if(mt&&mu.length)mt.textContent="🎉 達成："+mu.slice(0,2).map(function(u){return u.title}).join("、")+(mu.length>2?" ほか"+(mu.length-2)+"件":"")}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus");if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st){var w=Number(k.score),l=Number(k.opponent_score);st.textContent=isFinite(w)&&isFinite(l)&&(w||l)?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
     var ch=d.changes||[];
