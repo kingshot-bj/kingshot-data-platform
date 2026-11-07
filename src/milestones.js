@@ -4,6 +4,11 @@
 // 読み取りは1回あたり数十行（主キー・索引で引く）。
 
 const ROLE_RANK = { BASIC: 0, ADVANCED: 1, VIP: 2, ADMIN: 3, OWNER: 4 };
+// 公開前はオーナーだけが見られる（ユーザーには「準備中」）。公開するときは true にする。
+export const MILESTONES_PUBLIC = false;
+export function milestonesAvailableFor(role) {
+  return MILESTONES_PUBLIC || String(role || "").toUpperCase() === "OWNER";
+}
 // 秘境の試練のステージ系ボード（値＝オフセット＋通算ステージ番号。1章10ステージ）。
 export const MYSTIC_STAGE_BOARDS = Object.freeze({ coliseum: 10000, forest_of_life: 20000, crystal_cave: 30000, knowledge_nexus: 40000, molten_fort: 50000, radiant_spire: 60000 });
 const RANK_BOARDS = ["personal_power", ...Object.keys(MYSTIC_STAGE_BOARDS)];
@@ -151,6 +156,7 @@ function milestonesClient(cfg) {
     return i.href && !i.done ? '<a class="' + cls + '" href="' + esc(i.href) + '">' + inner + '</a>' : '<div class="' + cls + '">' + inner + '</div>';
   }
   fetch("/api/milestones?seen=1", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); }).then(function (x) {
+    if (x.s === 403) { root.innerHTML = '<div class="ms-login"><p>🛠️ マイルストーンは準備中です。公開までもう少しお待ちください。</p></div>'; return; }
     if (x.s === 401) { root.innerHTML = '<div class="ms-login"><p>マイルストーンはログインすると記録されます。</p><a href="/api/auth/discord?next=%2Fmilestones">Discordでログイン →</a></div>'; return; }
     var d = x.d; if (!d || !d.ok) throw new Error("x");
     var fresh = {}; (d.unseen || []).forEach(function (u) { fresh[u.key] = 1; });

@@ -110,11 +110,38 @@ test("画面・ホーム・メニュー・共有ボタンの配線", () => {
   assert.match(html, /next=%2Fmilestones/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /url\.pathname === "\/milestones"\) return eagleEyeHtmlResponse\(renderMilestonesPage\(\)\)/);
-  assert.match(index, /<a class="ee-milestone-card ee-milestone-live" href="\/milestones"/);
+  assert.match(index, /milestonesAvailableFor\(role\) \? `<a class="ee-milestone-card ee-milestone-live" href="\/milestones"/);
+  assert.match(index, /<span class="ee-milestone-status">準備中<\/span>/);
   assert.doesNotMatch(index, /デイリー・累計目標と報酬/);
   const ui = readFileSync(new URL("../src/eagleeye-ui.js", import.meta.url), "utf8");
   assert.match(ui, /href="\/milestones" data-other-key="milestones"/);
-  assert.doesNotMatch(ui, /ee-drawer-milestone" type="button" disabled/);
+  assert.match(ui, /milestonesAvailableFor\(auth\.role\)/);
   const share = readFileSync(new URL("../src/compare-share.js", import.meta.url), "utf8");
   assert.match(share, /\/api\/milestones\/share", \{ method: "POST"/);
+});
+
+test("公開前：オーナーだけ見られ、ほかは準備中（API 403・メニューは押せない）", async () => {
+  const { milestonesAvailableFor, MILESTONES_PUBLIC } = await import("../src/milestones.js");
+  const { renderEagleEyeOtherMenu } = await import("../src/eagleeye-ui.js");
+  assert.equal(MILESTONES_PUBLIC, false);
+  assert.equal(milestonesAvailableFor("OWNER"), true);
+  for (const r of ["BASIC", "ADVANCED", "VIP", "ADMIN", null]) assert.equal(milestonesAvailableFor(r), false, String(r));
+  assert.match(renderEagleEyeOtherMenu({ auth: { role: "OWNER" } }), /href="\/milestones"/);
+  const basic = renderEagleEyeOtherMenu({ auth: { role: "ADVANCED" } });
+  assert.doesNotMatch(basic, /href="\/milestones"/);
+  assert.match(basic, /準備中/);
+  assert.doesNotMatch(renderEagleEyeOtherMenu({ auth: null }), /href="\/milestones"/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /if \(!milestonesAvailableFor\(auth\.role\)\) return json\(\{ ok: false, error: "COMING_SOON" \}, 403\)/);
+  assert.match(renderMilestonesPage(), /x\.s === 403/);
+});
+
+test("ホームの主要メニュー：ログイン中は下のバーと重ならない6つ、自分の領主を先に", () => {
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const signed = index.slice(index.indexOf('data-menu="signed-in"'), index.indexOf("</section>", index.indexOf('data-menu="signed-in"')));
+  for (const href of ["/my-player", "/kvk", "/kingdom-catalog", "/watchlist", "/settings/theme", "/news"]) assert.ok(signed.includes(`href="${href}"`), href);
+  for (const href of ["/kingdom/rankings", "/players", "/status", "/hero-catalog"]) assert.ok(!signed.includes(`href="${href}"`), href);
+  assert.ok(index.indexOf('id="homeMe"') < index.indexOf('data-menu="signed-in"'), "ログイン中は自分の領主が先");
+  assert.match(index, /<section class="ee-home-tools" id="tools"/);
+  assert.match(index, /ee-welcome-link\$\{session \? " ee-welcome-slim" : ""\}/);
 });
