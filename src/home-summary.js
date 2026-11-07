@@ -19,6 +19,8 @@ export async function buildHomeSummary(db, auth, deps) {
     "FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
     "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
   ).bind(auth.user_id).first();
+  // 未登録・未昇格の人への最初の一歩（BASICのみ）。
+  summary.onboarding = String(auth.role || "").toUpperCase() === "BASIC" ? (link ? "key" : "link") : null;
   if (link) {
     const kid = Number(link.kid ?? link.kingdom_id) || null;
     summary.me = {
