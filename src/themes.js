@@ -38,6 +38,11 @@ const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 // 限定カラーの特別な仕上げ（ダークモードのみ）。CSSは固定の文字列で、利用者の入力は入らない。
 const GOLD_METAL = "linear-gradient(100deg,#fff4c2 0%,#f5c542 22%,#b8860b 45%,#fff0b3 60%,#d4a017 78%,#fff4c2 100%)";
+// ライトモード用：白い背景でも読める濃い金
+const GOLD_METAL_DARK = "linear-gradient(100deg,#7a4f00 0%,#b8860b 25%,#e2b23a 45%,#8a5a00 62%,#c8961c 80%,#7a4f00 100%)";
+const GOLD_TITLES = "h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b";
+const GOLD_CARDS = ".ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat";
+const GOLD_BUTTONS = ".inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button";
 const THEME_EFFECTS = {
   gold: d => [
     // 背景：上からの金の光＋金粉
@@ -57,6 +62,19 @@ const THEME_EFFECTS = {
     `${d} .ee-nav a.active:before{background:${GOLD_METAL}!important;box-shadow:0 0 14px rgba(245,197,66,.9)!important}`,
     // プロフィール：金のリング
     `${d} .ee-avatar{box-shadow:0 0 0 2px #f5c542,0 0 16px rgba(245,197,66,.6)!important}`
+  ].join("\n"),
+  // ライトモード：シャンパン色の背景と金粉、濃い金の縁と光沢
+  goldLight: l => [
+    `${l} body{background:radial-gradient(rgba(184,134,11,.13) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(184,134,11,.08) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(245,197,66,.35),rgba(245,197,66,0) 62%),linear-gradient(180deg,#fff8e6,#fbf1d8)!important;background-attachment:fixed!important}`,
+    `${l} :is(${GOLD_TITLES}){background:${GOLD_METAL_DARK};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:ee-gold-shine 5s linear infinite}`,
+    `@media (prefers-reduced-motion:reduce){${l} :is(${GOLD_TITLES}){animation:none}}`,
+    `${l} :is(${GOLD_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,#fffdf6,#fff4d9) padding-box,linear-gradient(135deg,#f3d27a,#b8860b 30%,#7a4f00 50%,#e2b23a 72%,#f3d27a) border-box!important;box-shadow:0 0 0 1px rgba(184,134,11,.10),0 6px 18px rgba(122,79,0,.14),0 0 16px rgba(245,197,66,.18)!important}`,
+    `${l} :is(.ee-top,.ee-nav,.ee-global-nav){background:rgba(255,249,234,.94)!important}`,
+    `${l} .ee-top{border-bottom:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(184,134,11,0),#b8860b,#e2b23a,#b8860b,rgba(184,134,11,0)) 1!important}`,
+    `${l} :is(${GOLD_BUTTONS}){background:linear-gradient(180deg,#ffe58a,#e2b23a 45%,#b8860b)!important;color:#2a1c02!important;border-color:#8a5a00!important;box-shadow:0 2px 10px rgba(184,134,11,.35)}`,
+    `${l} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(184,134,11,0),#b8860b,#e2b23a,#b8860b,rgba(184,134,11,0)) 1!important;box-shadow:0 -6px 20px rgba(184,134,11,.12)}`,
+    `${l} .ee-nav a.active:before{background:${GOLD_METAL_DARK}!important;box-shadow:0 0 12px rgba(184,134,11,.7)!important}`,
+    `${l} .ee-avatar{box-shadow:0 0 0 2px #b8860b,0 0 14px rgba(184,134,11,.45)!important}`
   ].join("\n")
 };
 
@@ -78,7 +96,8 @@ export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
     const dark = `html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`;
     const light = `html[data-ee-skin="${t.id}"][data-eagle-theme="light"]`;
     return `${dark} .gear-stat{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-stat b{color:var(--ee-text,#f2f3f5)}${dark} .gear-gems{background:var(--ee-panel-raised,#232529);color:var(--ee-subtext,#b0b4bb)}${dark} .gear-gems b{color:var(--ee-text,#f2f3f5)}${light} .gear-stat{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-stat b{color:var(--ee-text,#172033)}${light} .gear-gems{background:var(--ee-panel,#fff);color:var(--ee-subtext,#55657a);border:1px solid var(--ee-border-soft,#dbe3ee)}${light} .gear-gems b{color:var(--ee-text,#172033)}`;
-  })).concat(themes.filter(t => t.effects && THEME_EFFECTS[t.effects] && SAFE_ID.test(t.id)).map(t => THEME_EFFECTS[t.effects](`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`))).join("\n");
+  })).concat(themes.filter(t => t.effects && THEME_EFFECTS[t.effects] && SAFE_ID.test(t.id)).map(t => THEME_EFFECTS[t.effects](`html[data-ee-skin="${t.id}"]:not([data-eagle-theme="light"])`)))
+    .concat(themes.filter(t => t.effects && THEME_EFFECTS[t.effects + "Light"] && SAFE_ID.test(t.id)).map(t => THEME_EFFECTS[t.effects + "Light"](`html[data-ee-skin="${t.id}"][data-eagle-theme="light"]`))).join("\n");
 }
 
 // Runs in <head> before the page paints, so there is no flash of the default colours.
