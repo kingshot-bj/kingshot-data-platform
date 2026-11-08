@@ -96,9 +96,10 @@ import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } 
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { playerShareEmbed } from "./player-share.js";
+import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage } from "./owner-snapshot.js";
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
-import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
+import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -5130,6 +5131,7 @@ export default {
       if (url.pathname === "/api/owner/kingdom-load-test/cancel") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestCancelApi(request, env, guard.auth); }
       if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId, processKingdomWatchlistJob, executionContext); }
       if (url.pathname === "/api/owner/discord-diagnostics") return await handleOwnerDiscordDiagnosticsApi(request, env);
+      if (url.pathname === "/api/owner/snapshot") return await handleOwnerSnapshotApi(request, env);
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
       if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
@@ -9673,6 +9675,30 @@ async function writeOwnerAuditLog(env, actor, action, targetUserId, targetDiscor
   await env.DB.prepare(`INSERT INTO owner_audit_log (audit_id, actor_user_id, actor_discord_id, action, target_user_id, target_discord_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(crypto.randomUUID(), actor.user_id, actor.discord_id, action, targetUserId || null, targetDiscordId || null, details ? JSON.stringify(details) : null, Math.floor(Date.now() / 1000)).run();
 }
+// オーナー閲覧専用の鍵（OWNER_READONLY_TOKEN）で読むだけのスナップショット。Claudeの作業環境から使う。
+// ?sections=overview,traffic,growth,users（既定）/ all / audit,system,coverage など。
+async function handleOwnerSnapshotApi(request, env) {
+  if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!readonlyTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (readonlyRateLimited()) return json({ ok: false, error: "RATE_LIMITED" }, 429);
+  const sections = parseSections(new URL(request.url).searchParams.get("sections"));
+  const want = k => sections.includes(k);
+  const settle = p => p.then(v => v, error => ({ error: String(error?.message || error).slice(0, 160) }));
+  const out = { ok: true, generatedAt: Math.floor(Date.now() / 1000), sections };
+  const jobs = [];
+  if (want("overview")) jobs.push(Promise.all([settle(getD1UsageState(env.DB)), settle(getApiPoolUsageState(env.DB)), settle(getAllianceSweepState(env.DB)), settle(loadFunnel(env.DB, { days: 14 })), settle(loadDailyActive(env.DB, { days: 14 }))]).then(([d1, apiPool, allianceSweep, funnel, dailyActive]) => { out.overview = { d1, apiPool, allianceSweep, funnel, dailyActive }; }));
+  if (want("traffic")) jobs.push(Promise.all([settle(loadCloudflareTraffic(env, { days: 14 })), settle(loadCloudflareTopTraffic(env))]).then(([cloudflare, top]) => { out.traffic = { cloudflare, top }; }));
+  if (want("growth")) jobs.push(Promise.all([settle(loadGrowth(env.DB)), settle(loadMissionStats(env.DB))]).then(([growth, missions]) => { out.growth = growth?.error ? growth : { headline: growthHeadline(growth), daily: growth.traffic?.daily?.slice(0, 14), pages: growth.traffic?.groups, active: growth.active, measuredRevenue: growth.measured, baselines: growth.baselines?.map(b => ({ label: b.label, created_at: b.created_at, summary: b.summary })), missions }; }));
+  if (want("users")) jobs.push(settle(loadSnapshotUsers(env.DB)).then(v => { out.users = v; }));
+  if (want("audit")) jobs.push(settle(loadSnapshotAudit(env.DB)).then(v => { out.audit = v; }));
+  if (want("system")) jobs.push(settle(loadSnapshotSystem(env.DB)).then(v => { out.system = v; }));
+  if (want("coverage")) jobs.push(settle(loadSnapshotCoverage(env.DB)).then(v => { out.coverage = v; }));
+  await Promise.all(jobs);
+  await writeOwnerAuditLog(env, { user_id: "readonly-token", discord_id: "readonly-token" }, "READONLY_SNAPSHOT", null, null, { sections }).catch(() => {});
+  return json(scrubSecrets(out));
+}
+
 async function handleOwnerUsersApi(request, env) {
   const guard = await requireOwner(request, env); if (guard.error) return guard.error;
   const url = new URL(request.url), q = String(url.searchParams.get("q") || "").trim(), like = "%" + q + "%";
