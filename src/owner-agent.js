@@ -1,11 +1,11 @@
-// 作業用の鍵（OWNER_AGENT_TOKEN）：Claude がオーナーとして「運用＋設定の変更」の操作を呼べるようにする。
-// ・ヘッダー X-EagleEye-Agent-Token で送る（Authorization は閲覧専用の鍵が使っている）。
+// Claude 用の鍵（OWNER_READONLY_TOKEN をそのまま使う）：Claude がオーナーとして「運用＋設定の変更」の操作を呼べるようにする。
+// ・Authorization: Bearer で送る（スナップショットと同じ鍵）。鍵が付いていない・違うときは今までどおり Cookie で判定。
 // ・呼べないもの：ユーザーの権限変更・無効化、APIキーの登録・移動・削除・無効化、データの削除・復元、
 //   ログアウトさせる操作、ログイン・本人のアカウント設定、DELETE の操作すべて。
-// ・使うたびに監査ログへ記録（1リクエスト1回）。isolate ごとに1時間300回まで。鍵の値は画面・ログに出さない。
+// ・書き換えの操作（GET以外）は監査ログへ記録（1リクエスト1回）。isolate ごとに1時間300回まで。鍵の値は画面・ログに出さない。
 
-export const AGENT_HEADER = "x-eagleeye-agent-token";
-export const AGENT_MIN_TOKEN_LENGTH = 32;
+import { readonlyTokenOk } from "./owner-snapshot.js";
+
 export const AGENT_RATE_PER_HOUR = 300;
 export const AGENT_USER = Object.freeze({ user_id: "claude-agent", discord_id: "claude-agent", username: "claude-agent", global_name: "Claude（作業用）", role: "OWNER", status: "ACTIVE", agent: true });
 
@@ -42,20 +42,9 @@ export function agentRouteAllowed(method, pathname) {
   return true;
 }
 
-const enc = new TextEncoder();
-function timingSafeEqualStr(a, b) {
-  const x = enc.encode(String(a)), y = enc.encode(String(b));
-  let diff = x.length ^ y.length;
-  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] || 0) ^ (y[i] || 0);
-  return diff === 0;
-}
-
-// undefined：作業用の鍵が付いていない（いつもどおりCookieで判定）。null：鍵が違う・呼べない操作・回数超え（拒否）。
+// undefined：Claude 用の鍵が付いていない・違う（いつもどおりCookieで判定）。null：呼べない操作（拒否）。
 export function agentTokenState(request, env) {
-  const provided = request.headers.get(AGENT_HEADER);
-  if (!provided) return undefined;
-  const expected = String(env?.OWNER_AGENT_TOKEN || "");
-  if (expected.length < AGENT_MIN_TOKEN_LENGTH || !timingSafeEqualStr(provided.trim(), expected)) return null;
+  if (!readonlyTokenOk(request, env)) return undefined;
   const url = new URL(request.url);
   if (!agentRouteAllowed(request.method, url.pathname)) return null;
   return AGENT_USER;
@@ -72,10 +61,11 @@ export function agentRateLimited(nowMs = Date.now()) {
 }
 export function resetAgentRate() { hits.clear(); hitHour = 0; }
 
-// 1リクエスト1回だけ監査ログに書く。
+// 書き換えの操作（GET・HEAD以外）だけ、1リクエスト1回監査ログに書く（D1の書き込みを増やさない）。
 const audited = new WeakSet();
 export async function auditAgentRequest(request, env, writeAudit) {
-  if (audited.has(request)) return;
+  const m = String(request.method || "GET").toUpperCase();
+  if (m === "GET" || m === "HEAD" || audited.has(request)) return;
   audited.add(request);
   const url = new URL(request.url);
   await Promise.resolve(writeAudit(env, AGENT_USER, "AGENT_REQUEST", null, null, { method: request.method, path: url.pathname, query: url.search.slice(0, 200) })).catch(() => {});

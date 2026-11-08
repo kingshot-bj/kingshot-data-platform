@@ -2,21 +2,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { agentRouteAllowed, agentTokenState, agentRateLimited, resetAgentRate, AGENT_RATE_PER_HOUR, AGENT_HEADER } from "../src/owner-agent.js";
+import { agentRouteAllowed, agentTokenState, agentRateLimited, resetAgentRate, AGENT_RATE_PER_HOUR } from "../src/owner-agent.js";
 
 const TOKEN = "a".repeat(40);
-const req = (path, method = "GET", token = TOKEN) => new Request("https://eagleeye-ks.com" + path, { method, headers: token ? { [AGENT_HEADER]: token } : {} });
+const req = (path, method = "GET", token = TOKEN) => new Request("https://eagleeye-ks.com" + path, { method, headers: token ? { authorization: "Bearer " + token } : {} });
 
 test("呼べる操作：運用と設定の変更。呼べない：権限変更・無効化・APIキー・削除・復元・ログアウト・ログイン・本人設定・DELETE", () => {
   for (const [m, p] of [["POST", "/swordland/refresh-events"], ["GET", "/api/owner/snapshot"], ["POST", "/api/admin/announcements"], ["POST", "/api/admin/player-visibility"], ["GET", "/api/admin/data-retention"], ["POST", "/api/admin/api-pool/health-check"], ["GET", "/owner/social"], ["GET", "/api/members"]]) assert.ok(agentRouteAllowed(m, p), m + " " + p);
   for (const [m, p] of [["POST", "/api/owner/users/role"], ["POST", "/api/owner/users/status"], ["POST", "/api/admin/api-pool/add"], ["POST", "/api/admin/api-pool/delete"], ["POST", "/api/admin/api-pool/revoke"], ["POST", "/api/admin/api-pool/move"], ["POST", "/api/owner/api-pool/reassign"], ["POST", "/api/owner/google-drive/restore"], ["POST", "/api/admin/data-retention"], ["POST", "/api/owner/stale-activity"], ["POST", "/api/owner/kvk/relogin-missing"], ["GET", "/api/auth/discord"], ["GET", "/api/me"], ["POST", "/api/me/mightpulse-key"], ["DELETE", "/api/kingdom-watchlist"], ["GET", "/login"]]) assert.ok(!agentRouteAllowed(m, p), m + " " + p);
 });
 
-test("鍵の判定：付いていなければ今までどおり（undefined）、違う・短い・呼べない操作は拒否（null）", () => {
-  const env = { OWNER_AGENT_TOKEN: TOKEN };
+test("鍵の判定：付いていない・違う・短いときは今までどおり（undefined）、呼べない操作は拒否（null）", () => {
+  const env = { OWNER_READONLY_TOKEN: TOKEN };
   assert.equal(agentTokenState(req("/swordland", "GET", null), env), undefined);
-  assert.equal(agentTokenState(req("/swordland", "GET", "b".repeat(40)), env), null);
-  assert.equal(agentTokenState(req("/swordland"), { OWNER_AGENT_TOKEN: "short" }), null, "サーバー側の鍵が短ければ誰も使えない");
+  assert.equal(agentTokenState(req("/swordland", "GET", "b".repeat(40)), env), undefined, "他のBearer（gatewayなど）はそのまま通す");
+  assert.equal(agentTokenState(req("/swordland", "GET", "short"), { OWNER_READONLY_TOKEN: "short" }), undefined, "サーバー側の鍵が短ければ誰も使えない");
   assert.equal(agentTokenState(req("/api/owner/users/role", "POST"), env), null);
   const ok = agentTokenState(req("/swordland/refresh-events", "POST"), env);
   assert.equal(ok.role, "OWNER"); assert.equal(ok.user_id, "claude-agent");
@@ -41,12 +41,15 @@ test("配線：鍵が付いていればCookieは見ない。使うたびに監�
   const worker = (await import("../src/index.js")).default;
   const audits = [];
   const stmt = (sql, a = []) => ({ bind: (...x) => stmt(sql, x), first: async () => null, all: async () => ({ results: [] }), run: async () => { if (sql.includes("INSERT INTO owner_audit_log")) audits.push(a); return { meta: {} }; } });
-  const env = { DB: { prepare: sql => stmt(sql), batch: async () => [] }, OWNER_AGENT_TOKEN: TOKEN };
+  const env = { DB: { prepare: sql => stmt(sql), batch: async () => [] }, OWNER_READONLY_TOKEN: TOKEN };
   const ctx = { waitUntil() {}, passThroughOnException() {} };
-  const denied = await worker.fetch(new Request("https://eagleeye-ks.com/api/owner/users/role", { method: "POST", headers: { [AGENT_HEADER]: TOKEN, origin: "https://eagleeye-ks.com", "content-type": "application/json" }, body: "{}" }), env, ctx);
+  const denied = await worker.fetch(new Request("https://eagleeye-ks.com/api/owner/users/role", { method: "POST", headers: { authorization: "Bearer " + TOKEN, origin: "https://eagleeye-ks.com", "content-type": "application/json" }, body: "{}" }), env, ctx);
   assert.ok([401, 403].includes(denied.status), "権限変更は通らない: " + denied.status);
-  const ok = await worker.fetch(new Request("https://eagleeye-ks.com/owner/growth", { headers: { [AGENT_HEADER]: TOKEN } }), env, ctx);
+  const ok = await worker.fetch(new Request("https://eagleeye-ks.com/owner/growth", { headers: { authorization: "Bearer " + TOKEN } }), env, ctx);
   assert.equal(ok.status, 200);
   assert.match(await ok.text(), /成長ダッシュボード/);
-  assert.ok(audits.some(a => a[3] === "AGENT_REQUEST" || a.includes("AGENT_REQUEST")), "監査ログに記録");
+  assert.ok(!audits.some(a => a.includes("AGENT_REQUEST")), "見るだけの操作は監査ログに書かない（D1の書き込みを増やさない）");
+  const before = audits.length;
+  await worker.fetch(new Request("https://eagleeye-ks.com/swordland/refresh-events", { method: "POST", headers: { authorization: "Bearer " + TOKEN, origin: "https://eagleeye-ks.com" } }), env, ctx);
+  assert.ok(audits.slice(before).some(a => a.includes("AGENT_REQUEST")), "書き換えの操作は監査ログに記録");
 });
