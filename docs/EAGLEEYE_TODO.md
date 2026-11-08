@@ -11,6 +11,20 @@
   - 今はカタログの検索で両方の名前が当たるようにしてある（`data-hero` に別名を入れている）。
   - テスト `tests/hero-seo.test.mjs` の「アイヴァはエヴァでも検索できる」も合わせて更新する。
 
+- [ ] **王国の「戦力順位」（power_rank）の意味を調べる**（2026-11-08 記録）
+  - `kingdom_stats_current.power_rank` は MightPulse の値をそのまま保存しているが、総戦力の順位と合わない
+    （例：総戦力が最大級の王国1が1914位、新しい王国は0）。
+  - 公開の王国ページの「戦力順位」と「戦力順位が近い王国」、王国比較の共有画像がこの値を使っている。
+  - API の生データ（/admin/api-raw-data）と MightPulse の説明で意味を確かめてから、表示名を直すか使うのをやめるか決める。
+  - SNS投稿セット（src/social-pack.js）は使っていない。
+
+## SNSの自動投稿（進行中）
+
+- [x] ステップ1：毎週月曜に実データから画像・ショート動画・投稿文を自動で作る（GitHub Actions「SNS weekly pack」→ R2 → /owner/social）
+- [ ] ステップ2：Discord（Secrets に SOCIAL_DISCORD_WEBHOOK_URL を入れれば投稿する）・X（開発者登録とキーが必要）
+- [ ] ステップ3：Instagram・YouTube・TikTok（各SNSの開発者登録・審査が必要。YouTube と TikTok は審査が通るまで非公開投稿のみ）
+- [ ] GitHub Actions の CLOUDFLARE_API_TOKEN に R2 の書き込み権限があるか確認（ないと /owner/social に画像が出ない。Artifact には残る）
+
 ## 保留（まだやらない）
 
 - [ ] **Discord統合（Bot・通知・有料化）**（2026-11-08 調査済み・保留）

@@ -239,7 +239,7 @@ ${sections || '<div class="empty">王国データを読み込めませんでし�
 // （ClaudeBot が /player・/alliance などのログイン画面を1日30万回以上読んでいた。公開ページ /k/・/kingdoms・/kvk/s… などは今まで通り）
 export const ROBOTS_LOGIN_ONLY_PATHS = Object.freeze([
   "/player", "/alliance", "/kingdom?", "/kingdom/", "/kingdom-catalog", "/kingdom-watchlist", "/kvk?", "/kvk$",
-  "/watchlist", "/news", "/settings", "/milestones", "/invite", "/login", "/status-json-comparator"
+  "/watchlist", "/news", "/settings", "/milestones", "/invite", "/login", "/status-json-comparator", "/social/"
 ]);
 
 export function renderRobotsTxt(origin, { preview = false } = {}) {

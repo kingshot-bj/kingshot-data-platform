@@ -1,0 +1,72 @@
+name: SNS weekly pack
+
+# 毎週月曜 9:13（日本時間）に、実データから SNS 用の画像・ショート動画・投稿文を作り、R2 に保存する。
+# 自動投稿は Secrets に鍵があるSNSだけ。手動で動かすときは「投稿もする」を選んだ時だけ投稿する。
+on:
+  schedule:
+    - cron: "13 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      post:
+        description: "SNSへの投稿もする"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: social-weekly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install fonts and ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk ffmpeg
+      - name: Install Playwright (Chromium)
+        run: npm install --no-save --no-package-lock playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Build this week's pack
+        run: node scripts/social/build.mjs social-out
+      - name: Post to SNS
+        if: github.event_name == 'schedule' || inputs.post
+        env:
+          SOCIAL_DISCORD_WEBHOOK_URL: ${{ secrets.SOCIAL_DISCORD_WEBHOOK_URL }}
+          SOCIAL_X_API_KEY: ${{ secrets.SOCIAL_X_API_KEY }}
+          SOCIAL_X_API_SECRET: ${{ secrets.SOCIAL_X_API_SECRET }}
+          SOCIAL_X_ACCESS_TOKEN: ${{ secrets.SOCIAL_X_ACCESS_TOKEN }}
+          SOCIAL_X_ACCESS_SECRET: ${{ secrets.SOCIAL_X_ACCESS_SECRET }}
+          SOCIAL_YOUTUBE_CLIENT_ID: ${{ secrets.SOCIAL_YOUTUBE_CLIENT_ID }}
+          SOCIAL_YOUTUBE_CLIENT_SECRET: ${{ secrets.SOCIAL_YOUTUBE_CLIENT_SECRET }}
+          SOCIAL_YOUTUBE_REFRESH_TOKEN: ${{ secrets.SOCIAL_YOUTUBE_REFRESH_TOKEN }}
+          SOCIAL_TIKTOK_CLIENT_KEY: ${{ secrets.SOCIAL_TIKTOK_CLIENT_KEY }}
+          SOCIAL_TIKTOK_CLIENT_SECRET: ${{ secrets.SOCIAL_TIKTOK_CLIENT_SECRET }}
+          SOCIAL_TIKTOK_REFRESH_TOKEN: ${{ secrets.SOCIAL_TIKTOK_REFRESH_TOKEN }}
+          SOCIAL_INSTAGRAM_USER_ID: ${{ secrets.SOCIAL_INSTAGRAM_USER_ID }}
+          SOCIAL_INSTAGRAM_ACCESS_TOKEN: ${{ secrets.SOCIAL_INSTAGRAM_ACCESS_TOKEN }}
+        run: node scripts/social/publish.mjs social-out
+      - name: Keep files as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-pack
+          path: social-out
+          retention-days: 30
+      - name: Save to R2 (shown on /owner/social)
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          npm install --global wrangler@4 >/dev/null
+          week=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).week)')
+          for f in $(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).files.join(" "))') manifest.json; do
+            wrangler r2 object put "eagleeye-archive/social/$week/$f" --file "social-out/$f" --remote
+          done
+          wrangler r2 object put "eagleeye-archive/social/latest.json" --file social-out/manifest.json --content-type application/json --remote
