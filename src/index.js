@@ -1,7 +1,7 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
 import { recordFunnel, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
-import { googleConfigured, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
+import { googleConfigured, googleLoginOpen, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
 import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, loadCloudflareTopTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
@@ -5086,7 +5086,7 @@ export default {
         const next = sanitizeLoginReturnPath(url.searchParams.get("next"));
         // Googleが未設定なら、今までどおりDiscordへ直行。
         if (!googleConfigured(env)) return Response.redirect(new URL("/api/auth/discord?direct=1" + (next ? "&next=" + encodeURIComponent(next) : ""), url).toString(), 302);
-        return eagleEyeHtmlResponse(renderLoginChooserPage({ next: next || "" }));
+        return eagleEyeHtmlResponse(renderLoginChooserPage({ next: next || "", googleOpen: googleLoginOpen(env) }));
       }
       if (url.pathname === "/api/auth/google") return await startGoogleLogin(request, env);
       if (url.pathname === GOOGLE_CALLBACK_PATH) return await handleGoogleCallback(request, env);
@@ -5932,6 +5932,11 @@ async function handleDiscordCallback(request, env) {
 async function startGoogleLogin(request, env) {
   if (!googleConfigured(env)) return json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" }, 503);
   const url = new URL(request.url);
+  // 公開前は選択画面へ戻す（オーナーの動作確認だけ ?test=1 で通す）。
+  if (!googleLoginOpen(env) && url.searchParams.get("test") !== "1") {
+    const next = sanitizeLoginReturnPath(url.searchParams.get("next"));
+    return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), url).toString(), 302);
+  }
   const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
   if (env.DB) await recordFunnel(env.DB, "google_start");
   const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
