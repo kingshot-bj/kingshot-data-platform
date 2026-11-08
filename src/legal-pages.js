@@ -226,7 +226,7 @@ export function renderTermsPage(origin = "") {
 }
 
 // 運営者情報（AdSense審査・利用者向けに、運営者と問い合わせ先を明記する）
-export const ABOUT_UPDATED_AT = "2026年11月2日";
+export const ABOUT_UPDATED_AT = "2026年11月8日";
 const ABOUT_SECTIONS = [
   {
     title: "EagleEyeについて",
@@ -243,6 +243,15 @@ const ABOUT_SECTIONS = [
 <li><b>サービス名</b>：EagleEye（イーグルアイ）</li>
 <li><b>運営者</b>：BJ</li>
 <li><b>URL</b>：https://eagleeye-ks.com</li>
+</ul>`
+  },
+  {
+    title: "運営・開発チーム",
+    body: `<ul>
+<li><b>運営</b>：1524サーバー（KingShot 王国1524）・1524サーバー司令部</li>
+<li><b>設計・主要エンジニア</b>：BJにゃん</li>
+<li><b>エンジニア</b>：あまね</li>
+<li><b>発足メンバー</b>：シバ犬・はんぺん・いちくん</li>
 </ul>`
   },
   {

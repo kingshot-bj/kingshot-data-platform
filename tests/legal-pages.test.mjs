@@ -94,3 +94,13 @@ test("every page carries a footer with policy / operator / contact links", async
   for (const href of ["/terms", "/privacy", "/about", "/support"]) assert.ok(index.includes('<a href="' + href + '">'), href);
   assert.match(index, /if \(!html\.includes\('id="ee-site-footer"'\)\)/);
 });
+
+test("運営者情報：運営・開発チーム（1524サーバー・司令部、設計・主要エンジニア、エンジニア、発足メンバー）", () => {
+  const about = renderAboutPage("https://eagleeye-ks.com");
+  assert.match(about, /<h2>\d+\. 運営・開発チーム<\/h2>/);
+  assert.match(about, /<b>運営<\/b>：1524サーバー（KingShot 王国1524）・1524サーバー司令部/);
+  assert.match(about, /<b>設計・主要エンジニア<\/b>：BJにゃん/);
+  assert.match(about, /<b>エンジニア<\/b>：あまね/);
+  assert.match(about, /<b>発足メンバー<\/b>：シバ犬・はんぺん・いちくん/);
+  assert.match(about, /最終更新日：2026年11月8日/);
+});
