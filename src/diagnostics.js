@@ -13,6 +13,9 @@ const DIAGNOSTIC_SERVICES = [
   ["history_storage", "履歴ストレージ", "DEGRADED"]
 ];
 
+// サービスの状態の判定に使わない記録（想定どおりの動き）。
+export const INFORMATIONAL_ERROR_CODES = new Set(["RANKING_ENTRIES_EMPTY_SKIPPED", "KVK_MEMBER_NOT_IN_SERVER"]);
+
 let diagnosticSchemaPromise = null;
 
 export async function ensureDiagnosticSchema(db) {
@@ -114,8 +117,11 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     metadata: row.metadata_json ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })() : null
   }));
 
+  // 想定どおりの「お知らせ」の記録（未解放ランキングのスキップ、サーバーにいない人をスレッドに追加できない等）は
+  // 一覧には残すが、サービスの状態（正常／注意）には使わない。
   const latestByService = new Map();
   for (const event of events) {
+    if (INFORMATIONAL_ERROR_CODES.has(String(event.error_code || ""))) continue;
     if (!latestByService.has(event.service)) latestByService.set(event.service, event);
   }
 

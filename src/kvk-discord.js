@@ -329,8 +329,10 @@ export async function runKvkDiscordSync(env, { now = Math.floor(Date.now() / 100
   summary.calls = budget.calls;
   if (summary.errors.length || summary.created || summary.added || summary.removed || summary.sent) {
     await recordDiagnostic(db, {
-      service: "discord", feature: "kvk_threads", operation: "SYNC_KVK_THREADS",
+      // KvKスレッドは通知システム（Discord認証ではない）。サーバーにいない人（50001）を追加できなかっただけなら想定どおり。
+      service: "notifications", feature: "kvk_threads", operation: "SYNC_KVK_THREADS",
       status: summary.errors.some(e => e.where === "run") ? "FAILED" : summary.errors.length ? "WARNING" : "SUCCESS",
+      errorCode: summary.errors.length && summary.errors.every(e => e.where === "add_member" && Number(e.code) === 50001) ? "KVK_MEMBER_NOT_IN_SERVER" : null,
       rowsSaved: summary.added + summary.sent,
       message: "KvKスレッドの同期: 作成" + summary.created + " / 追加" + summary.added + " / 削除" + summary.removed + " / 送信" + summary.sent + (summary.skippedMembers ? " / 追加できなかったユーザー" + summary.skippedMembers : ""),
       metadata: summary
