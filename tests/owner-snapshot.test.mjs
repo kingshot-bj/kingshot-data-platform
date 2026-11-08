@@ -29,7 +29,7 @@ test("Discord IDの伏せ字・セクションの指定・秘密の項目を落�
   assert.equal(maskDiscordId("12345"), "*****");
   assert.equal(maskDiscordId(null), null);
   assert.deepEqual(parseSections(null), ["overview", "traffic", "growth", "users"]);
-  assert.deepEqual(parseSections("all").length, 7);
+  assert.deepEqual(parseSections("all").length, 8);
   assert.deepEqual(parseSections("audit,nope,audit"), ["audit"]);
   const out = scrubSecrets({ api_key: "k", nested: { access_token: "t", clientSecret: "s", encrypted_key: "e", sessions: 5, pvPerSession: 2, keys: 30 }, list: [{ password: "p", n: 1 }] });
   assert.deepEqual(out, { nested: { sessions: 5, pvPerSession: 2, keys: 30 }, list: [{ n: 1 }] });
@@ -55,4 +55,24 @@ test("配線：GETだけ、鍵の確認が最初、回数制限、監査ログ�
   assert.match(fn, /return json\(scrubSecrets\(out\)\);/);
   assert.doesNotMatch(fn, /INSERT|UPDATE|DELETE|updateUserRole|setUserStatus/i);
   assert.doesNotMatch(fn, /OWNER_READONLY_TOKEN/, "鍵の値を返したりログに出したりしない");
+});
+
+test("probe：一覧は実行者・キーを返さない。probe_id の1件だけ中身を返し、秘密は除く。形の違うIDやR2の外は読まない", async () => {
+  const { loadSnapshotProbe } = await import("../src/owner-snapshot.js");
+  const id = "f25b2be2-f282-46a7-aaba-3617c1a88887";
+  const db = { prepare: sql => ({ all: async () => ({ results: [{ request_id: id, created_at: 1, endpoint: "/kingdoms/1524/events", status: "SUCCESS", r2_object_key: "mightpulse-probe/2026-11-01/" + id + ".json" }] }), bind: () => ({ first: async () => ({ request_id: id, endpoint: "/kingdoms/1524/events", created_at: 1, r2_object_key: "mightpulse-probe/2026-11-01/" + id + ".json" }) }) }) };
+  const bucket = { get: async key => ({ text: async () => JSON.stringify({ endpoint: "/kingdoms/1524/events", response: { events: [{ name: "Swordland" }] }, api_key: "SECRET", headers: { authorization: "Bearer x" } }) }) };
+  const list = await loadSnapshotProbe(db, bucket);
+  assert.equal(list.runs[0].endpoint, "/kingdoms/1524/events");
+  assert.equal(list.runs[0].archived, true);
+  assert.equal(list.runs[0].r2_object_key, undefined);
+  assert.equal(list.detail, undefined, "probe_id が無ければ中身は読まない");
+  const one = await loadSnapshotProbe(db, bucket, { probeId: id });
+  assert.equal(one.detail.record.response.events[0].name, "Swordland");
+  assert.equal(one.detail.record.api_key, undefined);
+  assert.equal(one.detail.record.headers.authorization, undefined);
+  assert.equal((await loadSnapshotProbe(db, bucket, { probeId: "../../x" })).detail.error, "INVALID_PROBE_ID");
+  const src = readFileSync(new URL("../src/owner-snapshot.js", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("export async function loadSnapshotProbe"));
+  assert.doesNotMatch(fn.slice(0, fn.indexOf("FROM mightpulse_probe_runs ORDER")), /actor_discord_id|key_id|user_id/, "一覧に実行者・キーを入れない");
 });
