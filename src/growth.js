@@ -23,7 +23,7 @@ export const ROUTE_GROUPS = Object.freeze([
   { key: "watchlist", label: "ウォッチリスト", match: p => p.startsWith("/watchlist") || p.startsWith("/player-watchlist") || p.startsWith("/kingdom-watchlist") },
   { key: "players", label: "プレイヤー", match: p => p.startsWith("/players") || p.startsWith("/player") || p.startsWith("/compare") },
   { key: "kvk", label: "KvK", match: p => p.startsWith("/kvk") },
-  { key: "kingdom", label: "王国", match: p => p.startsWith("/kingdom") || p.startsWith("/alliance") },
+  { key: "kingdom", label: "王国", match: p => p.startsWith("/kingdom") || p.startsWith("/alliance") || p.startsWith("/k/") || p.startsWith("/a/") },
   { key: "hero", label: "英雄", match: p => p.startsWith("/hero") },
   { key: "tools", label: "計算ツール", match: p => p.startsWith("/tools") || p.startsWith("/gold") },
   { key: "news", label: "お知らせ", match: p => p.startsWith("/news") },
@@ -41,18 +41,59 @@ export function routeGroupOf(path) {
   return ROUTE_GROUPS.find(g => g.match(p))?.key || "other";
 }
 
+// 来た元（新しいセッションの始まりだけ数える）。保存するのは分類の名前だけで、URLやホスト名は保存しない。
+export const TRAFFIC_SOURCES = Object.freeze([
+  { key: "search", label: "検索（Google・Yahoo!・Bingなど）" },
+  { key: "x", label: "X（Twitter）" },
+  { key: "discord", label: "Discord" },
+  { key: "line", label: "LINE" },
+  { key: "youtube", label: "YouTube" },
+  { key: "reddit", label: "Reddit" },
+  { key: "social", label: "そのほかのSNS" },
+  { key: "ai", label: "AI（ChatGPTなど）" },
+  { key: "site", label: "ほかのサイト" },
+  { key: "tagged", label: "告知リンク（?ref= 付き）" },
+  { key: "direct", label: "直接・ブックマーク・アプリ" }
+]);
+const SOURCE_KEYS = new Set(TRAFFIC_SOURCES.map(x => x.key));
+const HOST_RULES = [
+  ["ai", /(^|\.)(chatgpt\.com|openai\.com|perplexity\.ai|claude\.ai|gemini\.google\.com|copilot\.microsoft\.com)$/],
+  ["search", /(^|\.)(google\.[a-z.]+|bing\.com|yahoo\.co\.jp|yahoo\.com|duckduckgo\.com|baidu\.com|naver\.com|yandex\.[a-z.]+|ecosia\.org|smartnews\.com)$/],
+  ["x", /(^|\.)(t\.co|x\.com|twitter\.com)$/],
+  ["discord", /(^|\.)(discord\.com|discordapp\.com|discord\.gg)$/],
+  ["line", /(^|\.)(line\.me|line-apps\.com)$/],
+  ["youtube", /(^|\.)(youtube\.com|youtu\.be)$/],
+  ["reddit", /(^|\.)reddit\.com$/],
+  ["social", /(^|\.)(facebook\.com|instagram\.com|threads\.net|tiktok\.com|bsky\.app|note\.com|5ch\.net)$/]
+];
+// ?ref=discord のような告知リンクの印（決まった名前だけ受け付ける。ほかは「告知リンク」にまとめる）。
+const TAG_TO_SOURCE = { discord: "discord", x: "x", twitter: "x", line: "line", youtube: "youtube", yt: "youtube", reddit: "reddit" };
+export function classifyTrafficSource({ refHost = "", tag = "", selfHost = "" } = {}) {
+  const t = String(tag || "").toLowerCase();
+  if (t) return TAG_TO_SOURCE[t] || "tagged";
+  const host = String(refHost || "").toLowerCase().replace(/^www\./, "").slice(0, 120);
+  if (!host || host === String(selfHost || "").toLowerCase().replace(/^www\./, "")) return "direct";
+  if (!/^[a-z0-9.-]+$/.test(host)) return "site";
+  for (const [key, re] of HOST_RULES) if (re.test(host)) return key;
+  return "site";
+}
+
 const BOT_UA = /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch|go-http/i;
 export function isLikelyBot(ua) { return !ua || BOT_UA.test(ua); }
 
 // 1回のPVで足す行。flags：v=今日初めて, w=今週初めて, m=今月初めて, s=新しいセッション, r=前回来た日からの日数（初回は -1）
 // staff：オーナー・管理者のブラウザ（管理画面を開いたことがある）。どのページでも pv:staff だけに数える。
-export function pvRows({ path, signedIn, ads, flags = {}, staff = false }) {
+export function pvRows({ path, signedIn, ads, flags = {}, staff = false, source = "" }) {
   const auth = signedIn ? "in" : "out";
   const grp = staff ? "staff" : routeGroupOf(path);
   const rows = [["pv:" + grp, auth]];
   if (grp === "staff") return rows; // 管理画面は訪問者・セッションに数えない（オーナー自身の利用で膨らませない）
   if (ads) rows.push(["adpv", auth]); // 広告のスクリプトを読み込んだページ（いまは公開ページだけ）
-  if (flags.s) rows.push(["session", auth]);
+  if (flags.s) {
+    rows.push(["session", auth]);
+    // 来た元と最初に開いたページの種類（どちらも決まった名前だけ）
+    if (SOURCE_KEYS.has(source)) rows.push(["src:" + source, auth], ["land:" + grp, auth]);
+  }
   if (flags.v) {
     rows.push(["visitor", auth]);
     const r = Number(flags.r);
@@ -120,7 +161,8 @@ export async function handlePageViewBeacon(request, env, { isSameOrigin, nowMs =
   const f = body?.f && typeof body.f === "object" ? body.f : {};
   const flags = { v: f.v === 1, w: f.w === 1, m: f.m === 1, s: f.s === 1, r: Number.isFinite(Number(f.r)) ? Math.max(-1, Math.min(9999, Math.floor(Number(f.r)))) : -1 };
   try {
-    await recordPageView(env.DB, { path, signedIn, ads: body?.a === 1, flags, staff: body?.st === 1 }, { nowMs });
+    const source = flags.s ? classifyTrafficSource({ refHost: typeof body?.rh === "string" ? body.rh : "", tag: typeof body?.t === "string" && /^[a-z0-9_-]{1,20}$/i.test(body.t) ? body.t : "", selfHost: new URL(request.url).hostname }) : "";
+    await recordPageView(env.DB, { path, signedIn, ads: body?.a === 1, flags, staff: body?.st === 1, source }, { nowMs });
     if (onView && signedIn) await Promise.resolve(onView(path)).catch(error => console.warn("pv_on_view_failed", error?.message || error));
     return pvJson({ ok: true });
   } catch (error) {
@@ -145,7 +187,10 @@ export function pageViewBeaconScript() {
     if(ls.getItem("ee_v_mon")!==mon){f.m=1;ls.setItem("ee_v_mon",mon)}
     var la=Number(ls.getItem("ee_v_last")||0);if(!la||now-la>18e5)f.s=1;ls.setItem("ee_v_last",String(now));
   }catch(_){}
-  var body=JSON.stringify({p:location.pathname.slice(0,200),a:document.querySelector('script[src*="adsbygoogle.js"]')?1:0,st:st,f:f});
+  var o={p:location.pathname.slice(0,200),a:document.querySelector('script[src*="adsbygoogle.js"]')?1:0,st:st,f:f};
+  // 新しいセッションの時だけ：来た元のホスト名（URLの残りは送らない）と、告知リンクの ?ref=
+  if(f.s){try{var rh=document.referrer?new URL(document.referrer).hostname:"";if(rh&&rh!==location.hostname)o.rh=rh.slice(0,120)}catch(_){}try{var q=new URLSearchParams(location.search),t=q.get("ref")||q.get("utm_source")||"";if(/^[A-Za-z0-9_-]{1,20}$/.test(t))o.t=t.toLowerCase()}catch(_){}}
+  var body=JSON.stringify(o);
   try{if(navigator.sendBeacon&&navigator.sendBeacon("/api/pv",new Blob([body],{type:"application/json"})))return}catch(_){}
   try{fetch("/api/pv",{method:"POST",headers:{"content-type":"application/json"},body:body,keepalive:true,credentials:"same-origin"})}catch(_){}
 })();
@@ -191,7 +236,19 @@ export function summarizeTraffic(rows, { days, nowMs }) {
     groups[k][r.auth === "in" ? "in" : "out"] += Number(r.n) || 0;
   }
   const firstDay = rows.reduce((a, r) => r.metric.startsWith("pv:") && (!a || r.day < a) ? r.day : a, null);
-  return { daily, groups, firstDay };
+  // 来た元・最初に開いたページ（新しいセッションの数）。直近7日（今日を含む）と全期間。
+  const since7 = jstDay(nowMs - 6 * 86400 * 1000);
+  const tally = prefix => {
+    const all = {}, last7 = {};
+    for (const r of rows) {
+      if (!r.metric.startsWith(prefix)) continue;
+      const k = r.metric.slice(prefix.length), n = Number(r.n) || 0;
+      all[k] = (all[k] || 0) + n;
+      if (r.day >= since7) last7[k] = (last7[k] || 0) + n;
+    }
+    return { all, last7 };
+  };
+  return { daily, groups, firstDay, sources: tally("src:"), landing: tally("land:") };
 }
 
 // ログインユーザーの DAU/WAU/MAU と翌日・7日後の継続（user_daily_active から）。
@@ -344,6 +401,21 @@ function bars(daily, key) {
   return `<div class="bars">${daily.slice().reverse().map(d => `<i title="${esc(d.day)} ${num(d[key])}" style="height:${Math.max(2, Math.round(d[key] / max * 100))}%"></i>`).join("")}</div>`;
 }
 
+// 来た元と最初に開いたページの表（新しいセッションの数）。
+export function sourcesCard(traffic) {
+  const src = traffic?.sources || { all: {}, last7: {} }, land = traffic?.landing || { all: {}, last7: {} };
+  const total7 = Object.values(src.last7).reduce((a, b) => a + b, 0), totalAll = Object.values(src.all).reduce((a, b) => a + b, 0);
+  if (!totalAll) return `<div class="card"><h2>どこから来たか</h2><p class="muted">まだ記録がありません（新しいセッションの始まりに、来た元の分類だけを数えます）。</p></div>`;
+  const srcRows = TRAFFIC_SOURCES.filter(x => src.all[x.key]).sort((a, b) => (src.last7[b.key] || 0) - (src.last7[a.key] || 0) || src.all[b.key] - src.all[a.key])
+    .map(x => `<tr><td>${esc(x.label)}</td><td>${num(src.last7[x.key] || 0)}</td><td>${pct(src.last7[x.key] || 0, total7)}</td><td>${num(src.all[x.key])}</td></tr>`).join("");
+  const label = k => ROUTE_GROUPS.find(g => g.key === k)?.label || "その他";
+  const landRows = Object.entries(land.all).sort((a, b) => (land.last7[b[0]] || 0) - (land.last7[a[0]] || 0) || b[1] - a[1])
+    .map(([k, n]) => `<tr><td>${esc(label(k))}</td><td>${num(land.last7[k] || 0)}</td><td>${num(n)}</td></tr>`).join("");
+  return `<div class="card"><h2>どこから来たか（新しいセッション）</h2><table><thead><tr><th>来た元</th><th>7日</th><th>割合</th><th>62日</th></tr></thead><tbody>${srcRows}</tbody></table>
+<h2 style="margin-top:14px">最初に開いたページ</h2><table><thead><tr><th>ページ</th><th>7日</th><th>62日</th></tr></thead><tbody>${landRows}</tbody></table>
+<p class="muted">告知するときは URL の後ろに <code>?ref=discord</code>・<code>?ref=x</code> などを付けると、ここで分けて数えられます。</p></div>`;
+}
+
 export function renderGrowthPage(growth) {
   const h = headline(growth);
   const sim = simulateRevenue({ revenuePvPerDay: h.revenuePvPerDay, adPvPerDay: h.adPvPerDay, measured: growth.measured });
@@ -375,7 +447,7 @@ ${kpi("翌日も来た", fmt(h.d1, "%"), growth.active.d1.kept + " / " + growth.
 ${kpi("7日後も来た", fmt(h.d7, "%"), growth.active.d7.kept + " / " + growth.active.d7.base + "人")}
 </div></div>
 <div class="card"><h2>PV（日ごと・35日）</h2>${bars(growth.traffic.daily.slice(0, 35), "pv")}<div class="scroll"><table><thead><tr><th>日付</th><th>PV</th><th>ログイン中</th><th>広告あり</th><th>訪問者</th><th>セッション</th><th>新規</th><th>再訪</th></tr></thead><tbody>${growth.traffic.daily.slice(0, 14).map(d => `<tr><td>${esc(d.day.slice(5))}</td><td>${num(d.pv)}</td><td>${num(d.pvIn)}</td><td>${num(d.adPv)}</td><td>${num(d.visitors)}</td><td>${num(d.sessions)}</td><td>${num(d.retNew)}</td><td>${num(d.ret1 + d.ret7 + d.ret30 + d.retOld)}</td></tr>`).join("")}</tbody></table></div></div>
-<div class="card"><h2>よく見られているページ（62日）</h2>${groups.length ? `<table><thead><tr><th>ページ</th><th>PV</th><th>割合</th><th>ログイン中</th></tr></thead><tbody>${groups.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td>${num(v.in + v.out)}</td><td>${pct(v.in + v.out, groupTotal)}</td><td>${pct(v.in, v.in + v.out)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}</div>
+${sourcesCard(growth.traffic)}<div class="card"><h2>よく見られているページ（62日）</h2>${groups.length ? `<table><thead><tr><th>ページ</th><th>PV</th><th>割合</th><th>ログイン中</th></tr></thead><tbody>${groups.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td>${num(v.in + v.out)}</td><td>${pct(v.in + v.out, groupTotal)}</td><td>${pct(v.in, v.in + v.out)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}</div>
 <div class="card"><h2>広告収益の試算（目標 月${num(GOAL_YEN)}円）</h2>
 <p class="muted">月のPV＝直近7日の1日平均×30。RPM＝1000PVあたりの収益（仮定）。「いま」は広告を出している公開ページだけ、「ログイン後も」は審査後にログイン後のページにも出した場合（管理・ログイン画面は除く）。</p>
 <div class="scroll"><table><thead><tr><th>RPM（仮定）</th><th>いま</th><th>ログイン後も</th><th>目標に必要なPV／日</th></tr></thead><tbody>${sim.rows.map(r => `<tr><td>${r.rpm}円</td><td>${num(r.nowAdOnly)}円</td><td>${num(r.allPages)}円</td><td>${num(r.needPvPerDay)}</td></tr>`).join("")}</tbody></table></div>
