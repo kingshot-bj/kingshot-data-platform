@@ -65,7 +65,7 @@ import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
 import { runKvkMysticCollection } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
-import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { enhanceSeo, websiteJsonLd } from "./seo.js";
@@ -5023,14 +5023,14 @@ export default {
       if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, [...await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => []), ...await loadAllianceSitemapPaths(env.DB).catch(() => [])]), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 21600);
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
       if (url.pathname === "/kvk/matchups") { const season = await currentKvkSeason(env.DB); return Response.redirect(new URL(season ? "/kvk/s" + season : "/kvk", url).toString(), 302); }
-      { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }); } }
-      if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })));
-      if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })));
-      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }));
-      { const m = url.pathname.match(/^\/heroes\/([a-z-]{2,40})\/?$/); if (m) { const heroName = heroNameBySlug(m[1]); if (heroName) return await servePublicPage(request, env, executionContext, async signedIn => { let iconByName = {}; try { iconByName = await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_page_icons_failed", error?.message || error); } return renderHeroPage(heroName, { origin: publicOrigin(request, env), iconByName, signedIn, loginHref: loginUrlFor(url.pathname) }); }); return eagleEyeHtmlResponse(renderHeroNotFoundPage(), 404); } }
-      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); const data = await loadPublicAlliance(env.DB, kid, m[2]).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell })); } }
-      if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })));
-      { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); if (!(await publicKingdomExists(env.DB, kid))) return eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn })); } }
+      { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }, PUBLIC_CACHE_TTL.data); } }
+      if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }), PUBLIC_CACHE_TTL.data);
+      { const m = url.pathname.match(/^\/heroes\/([a-z-]{2,40})\/?$/); if (m) { const heroName = heroNameBySlug(m[1]); if (heroName) return await servePublicPage(request, env, executionContext, async signedIn => { let iconByName = {}; try { iconByName = await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_page_icons_failed", error?.message || error); } return renderHeroPage(heroName, { origin: publicOrigin(request, env), iconByName, signedIn, loginHref: loginUrlFor(url.pathname) }); }, PUBLIC_CACHE_TTL.static); return eagleEyeHtmlResponse(renderHeroNotFoundPage(), 404); } }
+      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => { const data = await loadPublicAlliance(env.DB, kid, m[2]).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell }); }, PUBLIC_CACHE_TTL.data); } }
+      if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => (await publicKingdomExists(env.DB, kid)) ? renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn }) : eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404), PUBLIC_CACHE_TTL.data); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
       if (url.pathname === "/about") return eagleEyeHtmlResponse(renderAboutPage(publicOrigin(request, env)));
       if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
@@ -5193,7 +5193,8 @@ export default {
       }
       if (url.pathname === "/kingdom-catalog") { if (url.searchParams.get("suggest") === "1") return await renderKingdomCatalogPage(request, env); return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
       if (url.pathname.startsWith("/hero-icons/assets/")) return await serveHeroIconAsset(request, env, url.pathname);
-      if (url.pathname === "/hero-catalog") {
+      // 誰が見ても同じページなのでキャッシュする（キャッシュがある時は D1 のアイコン一覧も読まない）。
+      if (url.pathname === "/hero-catalog") return await servePublicCached(request, executionContext, async () => {
         let iconByName = {};
         try {
           iconByName = await getSavedHeroIconMap(env.DB);
@@ -5202,7 +5203,7 @@ export default {
         }
         // Shared theme, colour themes and bottom navigation like every other page.
         return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName, { origin: publicOrigin(request, env) }).text());
-      }
+      }, PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/kingdom") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/alliances") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAllianceListPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
@@ -5687,7 +5688,7 @@ async function servePublicCached(request, executionContext, build, maxAge = PUBL
   }
   const built = await build();
   const response = new Response(built.body, built);
-  response.headers.set("cache-control", "public, max-age=" + maxAge);
+  if (response.ok) response.headers.set("cache-control", "public, max-age=" + maxAge);
   if (cache && response.ok) {
     const put = cache.put(key, response.clone()).catch(() => {});
     if (executionContext?.waitUntil) executionContext.waitUntil(put); else await put;
@@ -5703,7 +5704,7 @@ async function renderHeroShardRoute(request, env, executionContext) {
   // Saved hero icons are the same for every viewer, so the public page stays cacheable.
   const loadIcons = async () => { try { return await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_shard_icons_failed", error?.message || error); return {}; } };
   if (auth?.status !== "ACTIVE") {
-    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards"), iconByName: await loadIcons() })));
+    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards"), iconByName: await loadIcons() })), PUBLIC_CACHE_TTL.static);
   }
   let heroes = null, heroesNote = "";
   try {
@@ -5731,16 +5732,16 @@ async function renderHeroShardRoute(request, env, executionContext) {
   return eagleEyeHtmlResponse(renderHeroShardPage({ origin, signedIn: true, heroes, heroesNote, iconByName: await loadIcons() }));
 }
 
-async function servePublicPage(request, env, executionContext, render) {
+// render は HTML か Response（「見つかりません」など）を返す。Response はキャッシュしない（ok のときだけ置く）。
+// 存在確認などの D1 読み取りは render の中で行うと、キャッシュがある時は D1 を読まずに返せる。
+async function servePublicPage(request, env, executionContext, render, maxAge = PUBLIC_CACHE_SECONDS) {
+  const toResponse = out => out instanceof Response ? out : eagleEyeHtmlResponse(out);
   const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
   if (hasSession) {
     const auth = await getAuthenticatedUser(request, env).catch(() => null);
-    if (auth?.status === "ACTIVE") return eagleEyeHtmlResponse(await render(true));
+    if (auth?.status === "ACTIVE") return toResponse(await render(true));
   }
-  return servePublicCached(request, executionContext, async () => {
-    const res = eagleEyeHtmlResponse(await render(false));
-    return res;
-  });
+  return servePublicCached(request, executionContext, async () => toResponse(await render(false)), maxAge);
 }
 
 function eagleEyeHtmlResponse(html, status = 200) {
@@ -11411,7 +11412,7 @@ ${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-m
   <a class="ee-tile" href="/kvk/matchups"><img src="/assets/eagleeye/bjnyan/13_kingdom_data_review.png" alt=""><h3 class="ee-h"><strong>KvK組み合わせ</strong></h3><small>対戦カードを確認</small></a>
   <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ</small></a>
 </section>
-<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>`}<section class="ee-home-tools" id="tools" aria-label="ツール"><h2>ツール</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><h3 class="ee-h"><b>英雄の欠片計算</b></h3><small>★5までの必要数</small></a><a href="/tools/gold"><h3 class="ee-h"><b>黄金計算</b></h3><small>建物ごとのG1〜8</small></a><a href="/tools/gold-tech"><h3 class="ee-h"><b>黄金テクノロジー研究</b></h3><small>T11研究の必要数</small></a><a href="/hero-catalog"><h3 class="ee-h"><b>英雄カタログ</b></h3><small>全英雄のスキル</small></a><a href="/kingdoms"><h3 class="ee-h"><b>王国一覧</b></h3><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><h3 class="ee-h"><b>KvK組み合わせ</b></h3><small>秘境の試練で比較</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
+<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>`}<section class="ee-home-tools" id="tools" aria-label="ツール"><h2>ツール</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><h3 class="ee-h"><b>英雄の欠片計算</b></h3><small>★5までの必要数</small></a><a href="/tools/gold"><h3 class="ee-h"><b>黄金計算</b></h3><small>建物ごとのG1〜8</small></a><a href="/tools/gold-tech"><h3 class="ee-h"><b>黄金テクノロジー研究</b></h3><small>T11研究の必要数</small></a><a href="/hero-catalog"><h3 class="ee-h"><b>英雄カタログ</b></h3><small>全英雄のスキル</small></a><a href="/kingdoms"><h3 class="ee-h"><b>王国一覧</b></h3><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><h3 class="ee-h"><b>KvK組み合わせ</b></h3><small>秘境の試練で比較</small></a><a href="/kingdom-timeline"><h3 class="ee-h"><b>王国タイムライン</b></h3><small>英雄・黄金の解放時期</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
 <section class="ee-summary">
   <a class="ee-stat" href="/watchlist"><div class="ee-stat-label">ウォッチ中のプレイヤー</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div></a>
   <a class="ee-stat" href="/kingdom-watchlist"><div class="ee-stat-label">ウォッチ中の王国</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div></a>

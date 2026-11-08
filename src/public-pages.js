@@ -15,6 +15,10 @@ import { siteOrigin } from "./site-origin.js";
 import { heroPagePaths } from "./hero-pages.js";
 
 export const PUBLIC_CACHE_SECONDS = 300;
+// 公開ページをWorkerのキャッシュに置く時間（ログインしていない人向けの同じHTML）。
+// ・王国・同盟・KvK組み合わせ：データは1日1回＋KvK中のスコア → 1時間
+// ・英雄・ツール・タイムライン：中身はデプロイの時しか変わらない → 6時間
+export const PUBLIC_CACHE_TTL = Object.freeze({ data: 3600, static: 21600 });
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -148,7 +152,7 @@ export function renderPublicTimelinePage({ origin = "" } = {}) {
 <h1>キングショット 王国タイムライン</h1>
 <p class="lead">王国の開設から何日目に、英雄・ペット・黄金・研究が解放されるかの目安です。自分の王国の開設日数は<a href="/kingdoms">王国ページ</a>で見られます。</p>
 ${renderKingdomTimelineTable()}`;
-  return shell({ title: "キングショット 王国タイムライン（英雄・ペット・黄金の解放時期） | EagleEye", description: "キングショット（KingShot）の王国開設からの日数ごとに、新しい英雄・ペット・黄金・研究が解放される時期の目安をまとめた一覧。", canonical, body, origin });
+  return shell({ title: "キングショット 王国タイムライン（英雄・ペット・黄金の解放時期） | EagleEye", description: "キングショット（KingShot）の王国開設からの日数ごとに、新しい英雄・ペット・黄金・研究が解放される時期の目安をまとめた一覧。", canonical, body, origin , jsonLd: { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "王国タイムライン", item: canonical }] } });
 }
 
 export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = false } = {}) {
@@ -184,7 +188,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   const nearKids = data.nearKids || [], similar = data.similar || [];
   const related = nearKids.length || similar.length ? `<h2>関連する王国</h2><div class="related">${similar.length ? `<div class="rel-group"><small>戦力順位が近い王国</small>${similar.map(k => `<a href="/k/${encodeURIComponent(k.kid)}">王国 ${esc(k.kid)}<em>${esc(k.power_rank)}位・${esc(compactNumber(k.power))}</em></a>`).join("")}</div>` : ""}${nearKids.length ? `<div class="rel-group"><small>近い番号の王国（開設時期が近い）</small>${nearKids.map(k => `<a href="/k/${k}">王国 ${k}</a>`).join("")}</div>` : ""}</div>` : "";
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a> › 王国 ${esc(kid)}</nav>
-<h1>王国 ${esc(kid)}${esc(name)}</h1>
+<h1>キングショット 王国 ${esc(kid)}${esc(name)}</h1>
 <p class="lead">KingShot 王国${esc(kid)}の戦力・成長・ランキング・KvK情報。${growth?.latestAt ? esc(fmtDate(growth.latestAt)) + " 時点。" : ""}データは毎日更新されます。</p>
 ${stats}
 <h2>戦力ランキング（上位10人）</h2>${playerRows}
@@ -252,9 +256,14 @@ export function renderAdsTxt(publisherId) {
   return `google.com, ${id}, DIRECT, f08c47fec0942fa0\n`;
 }
 
+// 更新日（lastmod）は本当に毎日変わるページ（王国・KvK・同盟・ホーム・王国一覧）にだけ付ける。
+// 英雄・ツール・タイムラインなどデプロイの時しか変わらないページには付けない
+// （全部「今日」にすると、検索エンジンが更新日を信用しなくなる）。changefreq は Google が使わないので出さない。
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
-  const urls = [...extraPaths.map(p => origin + p), `${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/tools/gold`, `${origin}/tools/gold-tech`, `${origin}/about`, `${origin}/kingdom-timeline`, ...heroPagePaths().map(p => origin + p), ...kids.map(k => `${origin}/k/${k}`)];
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
+  const daily = [...extraPaths, "/", "/kingdoms", ...kids.map(k => `/k/${k}`)];
+  const fixed = ["/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...heroPagePaths()];
+  const urls = [...daily.map(p => `<url><loc>${esc(origin + p)}</loc><lastmod>${today}</lastmod></url>`), ...fixed.map(p => `<url><loc>${esc(origin + p)}</loc></url>`)];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }
 
 export { KINGDOM_GROWTH_FIELDS };

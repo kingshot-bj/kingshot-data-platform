@@ -50,7 +50,7 @@ test("routes are public and cached for signed-out visitors", () => {
   assert.match(src, /url\.pathname === "\/sitemap\.xml"/);
   assert.match(src, /url\.pathname === "\/kingdoms"\) return await servePublicPage/);
   assert.match(src, /\\\/k\\\/\(\\d\{1,6\}\)/);
-  assert.match(src, /async function servePublicPage[\s\S]*?if \(auth\?\.status === "ACTIVE"\) return eagleEyeHtmlResponse\(await render\(true\)\)[\s\S]*?return servePublicCached/);
+  assert.match(src, /async function servePublicPage[\s\S]*?if \(auth\?\.status === "ACTIVE"\) return toResponse\(await render\(true\)\)[\s\S]*?return servePublicCached/);
   assert.match(src, /response\.headers\.set\("cache-control", "public, max-age=" \+ maxAge\)/);
 });
 
@@ -64,7 +64,7 @@ test("SEO：存在しない王国は404・検索に載せない。データが�
   assert.match(nf, /<meta name="robots" content="noindex">/);
   assert.doesNotMatch(nf, /rel="canonical"/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /if \(!\(await publicKingdomExists\(env\.DB, kid\)\)\) return eagleEyeHtmlResponse\(renderPublicKingdomNotFound\(kid\), 404\);/);
+  assert.match(index, /\(await publicKingdomExists\(env\.DB, kid\)\) \? renderPublicKingdomPage\([\s\S]*?: eagleEyeHtmlResponse\(renderPublicKingdomNotFound\(kid\), 404\), PUBLIC_CACHE_TTL\.data\)/);
   const empty = renderPublicKingdomPage(9, { catalog: { kid: 9 }, players: [], alliances: [], matchup: null, score: null, growth: null }, { origin: "https://eagleeye-ks.com" });
   assert.match(empty, /<meta name="robots" content="noindex">/);
   assert.doesNotMatch(empty, /rel="canonical"/);
@@ -110,4 +110,14 @@ test("robots.txt：ログイン必須のページはクローラーに来させ�
   for (const p of ["/", "/k/1524", "/kingdoms", "/kingdom-timeline", "/kvk/s23", "/kvk/matchups", "/hero-catalog", "/heroes/amadeus", "/tools/gold", "/tools/hero-shards", "/about", "/privacy", "/terms", "/support", "/status"]) assert.ok(!blocked(p), "allowed: " + p);
   const sitemap = renderSitemapXml("https://eagleeye-ks.com", [1, 1524], undefined, ["/kvk/s23"]);
   for (const loc of sitemap.match(/<loc>[^<]+<\/loc>/g)) assert.ok(!blocked(loc.slice(5, -6).replace("https://eagleeye-ks.com", "")), loc);
+});
+
+test("SEO：王国ページの見出しに「キングショット」、タイムラインにパンくず、KvKの「2位以降」はnofollow、ホームからタイムライン", async () => {
+  const { renderPublicTimelinePage } = await import("../src/public-pages.js");
+  assert.match(renderPublicKingdomPage(1524, data, { origin: "https://eagleeye-ks.com" }), /<h1>キングショット 王国 1524/);
+  const tl = renderPublicTimelinePage({ origin: "https://eagleeye-ks.com" });
+  assert.match(tl, /"@type":"BreadcrumbList"/);
+  assert.match(tl, /"name":"王国タイムライン","item":"https:\/\/eagleeye-ks\.com\/kingdom-timeline"/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /<a href="\/kingdom-timeline"><h3 class="ee-h"><b>王国タイムライン<\/b>/);
 });
