@@ -127,6 +127,8 @@ export async function loadSnapshotProbe(db, bucket, { probeId = "" } = {}) {
     if (text.length > PROBE_MAX_BYTES) return { ...out, detail: { error: "TOO_LARGE", bytes: text.length, request_id: row.request_id } };
     let record = null;
     try { record = scrubSecrets(JSON.parse(text)); } catch { record = { raw: text.slice(0, 2000) }; }
+    // 誰がどのキーで実行したかは返さない（一覧と同じ）。
+    if (record && typeof record === "object") for (const k of ["user_id", "actor_discord_id", "actor_label", "key_id", "key_owner_user_id"]) delete record[k];
     out.detail = { request_id: row.request_id, endpoint: row.endpoint, created_at: row.created_at, record };
   }
   return out;
