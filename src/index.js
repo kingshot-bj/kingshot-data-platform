@@ -11622,7 +11622,8 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
       countUp(kCount,kc,700);
     }catch(e){}
   }
-  loadCounts();
+  // ウォッチの件数はログインしている人だけ（ログインしていない人に毎回401を返していた）
+  ${session ? "loadCounts();" : ""}
   function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function compact(v){var n=Number(v);if(!isFinite(n))return v==null?"-":String(v);var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/[.]0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/[.]0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/[.]0$/,"")+"K";return n.toLocaleString("ja-JP")}
   function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<35)return "Lv.30（"+(l-30)+"/5）";var g=Math.floor((l-35)/5)+1,st=(l-35)%5;return "黄金"+g+(st?"（"+st+"/5）":"")}
