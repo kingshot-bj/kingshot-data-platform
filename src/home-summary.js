@@ -35,9 +35,13 @@ export async function buildHomeSummary(db, auth, deps) {
     const rank = ROLE_RANK[String(auth.role || "BASIC").toUpperCase()] ?? 0;
     if (kid && rank >= ROLE_RANK.ADVANCED) {
       const score = await db.prepare(
-        "SELECT kid, season, stage, opponent, score, opponent_score, fetched_at FROM kvk_scores WHERE kid = ? LIMIT 1"
+        "SELECT kid, season, stage, opponent, score, opponent_score, days_json, fetched_at FROM kvk_scores WHERE kid = ? LIMIT 1"
       ).bind(kid).first().catch(() => null);
-      if (score && score.opponent) summary.kvk = { kid, season: score.season, stage: score.stage, opponent: score.opponent, score: score.score, opponent_score: score.opponent_score, fetched_at: score.fetched_at };
+      if (score && score.opponent) {
+        // 最終日の終わりを過ぎていれば「終了」。ホームでは終了後3日は結果だけ、それより後はカードを隠す（KvKのページからは見られる）。
+        const endedAt = kvkEndedAt(score.days_json, Math.floor(Date.now() / 1000));
+        summary.kvk = { kid, season: score.season, stage: score.stage, opponent: score.opponent, score: score.score, opponent_score: score.opponent_score, fetched_at: score.fetched_at, ended: endedAt != null, ended_at: endedAt };
+      }
     }
   }
 
@@ -89,4 +93,14 @@ export function claimMeAutoRefresh(me, { now = Math.floor(Date.now() / 1000), no
   if (attempts.size > 500) attempts.clear();
   attempts.set(key, nowMs);
   return true;
+}
+
+// KvK の日ごとの記録（days_json）から、全日程が終わった時刻を出す。まだ終わっていなければ null。
+export function kvkEndedAt(daysJson, nowSec = Math.floor(Date.now() / 1000)) {
+  let days = [];
+  try { days = Array.isArray(daysJson) ? daysJson : JSON.parse(daysJson || "[]"); } catch { days = []; }
+  const ends = days.map(d => Number(d?.end_ts)).filter(Number.isFinite);
+  if (!ends.length) return null;
+  const last = Math.max(...ends);
+  return nowSec >= last ? last : null;
 }
