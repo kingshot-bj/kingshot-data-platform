@@ -57,13 +57,15 @@ jobs:
           name: social-pack
           path: social-out
           retention-days: 30
+      # R2 だけに書ける鍵（CLOUDFLARE_R2_API_TOKEN）を使う。D1 用の鍵（CLOUDFLARE_API_TOKEN）には R2 の権限がない。
       - name: Save to R2 (shown on /owner/social)
         continue-on-error: true
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::warning::Secrets に CLOUDFLARE_R2_API_TOKEN がないので R2 に保存しません（Artifact には残ります）"; exit 0; fi
           npm install --global wrangler@4 >/dev/null
           week=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).week)')
           for f in $(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).files.join(" "))') manifest.json; do
