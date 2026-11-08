@@ -108,12 +108,12 @@ export async function loadCloudflareTraffic(env, { days = 14, nowMs = Date.now()
   return result;
 }
 
-// 直近24時間で多いアクセス（ページ・ボット名・回線事業者）。「人のPVは数百なのにHTMLが1日数十万回」の正体を調べる用。
+// 直近24時間で多いアクセス（ページ・ボット名・国）。回線事業者（ASN）は無料プランでは取れない。「人のPVは数百なのにHTMLが1日数十万回」の正体を調べる用。
 // オーナー画面を開いたときだけ、Cloudflareの集計APIを3回呼ぶ（D1は読まない）。IPアドレスは出さない。
 export const TOP_TRAFFIC_GROUPS = Object.freeze([
   { key: "paths", title: "多く読まれたパス", dims: "clientRequestPath edgeResponseContentTypeName", label: d => (d.clientRequestPath || "/") + (d.edgeResponseContentTypeName ? "（" + d.edgeResponseContentTypeName + "）" : "") },
   { key: "agents", title: "多いユーザーエージェント（ボットの名前）", dims: "userAgent", label: d => d.userAgent || "（なし）" },
-  { key: "asns", title: "多い回線事業者（ASN）", dims: "clientAsn clientASNDescription", label: d => (d.clientASNDescription || "不明") + (d.clientAsn ? "（AS" + d.clientAsn + "）" : "") }
+  { key: "countries", title: "多い国", dims: "clientCountryName", label: d => d.clientCountryName || "不明" }
 ]);
 
 export async function loadCloudflareTopTraffic(env, { nowMs = Date.now(), fetchImpl = fetch, limit = 12 } = {}) {
@@ -143,7 +143,7 @@ export function renderTopTrafficCard(top) {
     const res = top.groups[g.key] || {};
     if (res.error) return `<h3>${esc(g.title)}</h3><p class="err">取得できませんでした（${esc(res.error)}）</p>`;
     if (!res.rows?.length) return `<h3>${esc(g.title)}</h3><p class="muted">データがありません。</p>`;
-    return `<h3>${esc(g.title)}</h3><table><thead><tr><th>${g.key === "paths" ? "パス（種類）" : g.key === "agents" ? "ユーザーエージェント" : "回線事業者"}</th><th>回数</th></tr></thead><tbody>${res.rows.map(r => `<tr><td style="word-break:break-all">${esc(r.label)}</td><td>${num(r.count)}</td></tr>`).join("")}</tbody></table>`;
+    return `<h3>${esc(g.title)}</h3><table><thead><tr><th>${g.key === "paths" ? "パス（種類）" : g.key === "agents" ? "ユーザーエージェント" : "国"}</th><th>回数</th></tr></thead><tbody>${res.rows.map(r => `<tr><td style="word-break:break-all">${esc(r.label)}</td><td>${num(r.count)}</td></tr>`).join("")}</tbody></table>`;
   };
   return `<div class="card"><h2>直近24時間で多いアクセス（Cloudflareの集計）</h2>${TOP_TRAFFIC_GROUPS.map(section).join("")}<p class="muted">ボットも含めた全部のアクセスです。数字はCloudflareのサンプリングによる推計値です。IPアドレスは表示しません。</p></div>`;
 }

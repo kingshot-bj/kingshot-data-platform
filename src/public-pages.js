@@ -225,10 +225,17 @@ ${sections || '<div class="empty">王国データを読み込めませんでし�
   return shell({ title: "キングショット 王国一覧・戦力ランキング | EagleEye", description: `キングショット（KingShot）の全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin, jsonLd: origin ? { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "王国一覧", item: origin + "/kingdoms" }] } : null });
 }
 
+// ログインしないと中身が出ないページは、すべてのクローラーに来ないよう指定する。
+// （ClaudeBot が /player・/alliance などのログイン画面を1日30万回以上読んでいた。公開ページ /k/・/kingdoms・/kvk/s… などは今まで通り）
+export const ROBOTS_LOGIN_ONLY_PATHS = Object.freeze([
+  "/player", "/alliance", "/kingdom?", "/kingdom/", "/kingdom-catalog", "/kingdom-watchlist", "/kvk?", "/kvk$",
+  "/watchlist", "/news", "/settings", "/milestones", "/invite", "/login", "/status-json-comparator"
+]);
+
 export function renderRobotsTxt(origin, { preview = false } = {}) {
   // Preview deployments must never be indexed.
   if (preview) return "User-agent: *\nDisallow: /\n";
-  return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\nDisallow: /kingdom/changes\n\nSitemap: ${origin}/sitemap.xml\n`;
+  return `User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /owner\nDisallow: /my-player\nDisallow: /account\nDisallow: /kingdom/changes\n${ROBOTS_LOGIN_ONLY_PATHS.map(p => "Disallow: " + p + "\n").join("")}\nSitemap: ${origin}/sitemap.xml\n`;
 }
 
 // ads.txt for Google AdSense. ADSENSE_PUBLISHER_ID (pub-…) is set after approval;
