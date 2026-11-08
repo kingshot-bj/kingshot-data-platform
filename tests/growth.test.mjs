@@ -213,3 +213,64 @@ test("PVの記録：失敗しても例外を外へ出さない（ページ表示
   resetGrowthSchemaCache();
   assert.equal(await recordPageView(fakeDb(), { path: "/", flags: { v: 1 } }, { nowMs: NOW }), 3); // PV・訪問者・新規
 });
+
+test("来た元：検索・SNS・Discord・AI・ほかのサイト・直接に分ける。?ref= は決まった名前だけ", async () => {
+  const { classifyTrafficSource: c } = await import("../src/growth.js");
+  const self = "eagleeye-ks.com";
+  assert.equal(c({ refHost: "www.google.co.jp", selfHost: self }), "search");
+  assert.equal(c({ refHost: "search.yahoo.co.jp", selfHost: self }), "search");
+  assert.equal(c({ refHost: "www.bing.com", selfHost: self }), "search");
+  assert.equal(c({ refHost: "t.co", selfHost: self }), "x");
+  assert.equal(c({ refHost: "discord.com", selfHost: self }), "discord");
+  assert.equal(c({ refHost: "gemini.google.com", selfHost: self }), "ai", "Gemini は検索ではなくAI");
+  assert.equal(c({ refHost: "chatgpt.com", selfHost: self }), "ai");
+  assert.equal(c({ refHost: "altema.jp", selfHost: self }), "site");
+  assert.equal(c({ refHost: "", selfHost: self }), "direct");
+  assert.equal(c({ refHost: "eagleeye-ks.com", selfHost: self }), "direct");
+  assert.equal(c({ refHost: "evil.example<script>", selfHost: self }), "site");
+  assert.equal(c({ tag: "discord" }), "discord");
+  assert.equal(c({ tag: "twitter", refHost: "www.google.com" }), "x", "?ref= が優先");
+  assert.equal(c({ tag: "kvk-campaign" }), "tagged");
+});
+
+test("来た元は新しいセッションの時だけ、分類の名前と最初のページの種類だけを記録（スタッフは数えない）", async () => {
+  const { pvRows, summarizeTraffic, sourcesCard, pageViewBeaconScript } = await import("../src/growth.js");
+  assert.deepEqual(pvRows({ path: "/k/1", signedIn: false, flags: { s: true }, source: "search" }), [["pv:kingdom", "out"], ["session", "out"], ["src:search", "out"], ["land:kingdom", "out"]]);
+  assert.deepEqual(pvRows({ path: "/k/1", signedIn: false, flags: {}, source: "search" }), [["pv:kingdom", "out"]], "セッションの途中は記録しない");
+  assert.deepEqual(pvRows({ path: "/k/1", signedIn: false, flags: { s: true }, source: "https://x.example/" }), [["pv:kingdom", "out"], ["session", "out"]], "決まった名前以外は保存しない");
+  assert.deepEqual(pvRows({ path: "/owner", signedIn: true, flags: { s: true }, source: "search", staff: true }), [["pv:staff", "in"]]);
+  const nowMs = Date.parse("2026-11-08T12:00:00+09:00");
+  const t = summarizeTraffic([
+    { day: "2026-11-08", metric: "src:search", auth: "out", n: 3 }, { day: "2026-11-08", metric: "src:discord", auth: "out", n: 2 },
+    { day: "2026-10-20", metric: "src:search", auth: "out", n: 5 }, { day: "2026-11-08", metric: "land:kingdom", auth: "out", n: 4 }
+  ], { days: 62, nowMs });
+  assert.deepEqual(t.sources.last7, { search: 3, discord: 2 });
+  assert.deepEqual(t.sources.all, { search: 8, discord: 2 });
+  assert.deepEqual(t.landing.last7, { kingdom: 4 });
+  const card = sourcesCard(t);
+  assert.match(card, /検索（Google・Yahoo!・Bingなど）<\/td><td>3<\/td><td>60%<\/td><td>8<\/td>/);
+  assert.match(card, /<td>王国<\/td><td>4<\/td>/);
+  // ブラウザからはホスト名だけ（URLの残りは送らない）、新しいセッションの時だけ
+  const js = pageViewBeaconScript();
+  assert.match(js, /if\(f\.s\)\{try\{var rh=document\.referrer\?new URL\(document\.referrer\)\.hostname:""/);
+  assert.doesNotMatch(js, /o\.rh=document\.referrer/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /sources: growth\.traffic\?\.sources, landing: growth\.traffic\?\.landing/);
+});
+
+test("ページの種類：公開の王国ページ /k/・同盟ページ /a/ は「王国」、英雄ページ /heroes は「英雄」", async () => {
+  const { routeGroupOf } = await import("../src/growth.js");
+  assert.equal(routeGroupOf("/k/1524"), "kingdom");
+  assert.equal(routeGroupOf("/a/1524/153300050"), "kingdom");
+  assert.equal(routeGroupOf("/kingdoms"), "kingdom");
+  assert.equal(routeGroupOf("/heroes/alcar"), "hero");
+  assert.equal(routeGroupOf("/kvk/s23"), "kvk");
+  assert.equal(routeGroupOf("/about"), "guide");
+});
+
+test("プライバシーポリシー：アクセスの集計（来た元はホスト名だけ送り、回数だけ保存）を書いている", () => {
+  const legal = readFileSync(new URL("../src/legal-pages.js", import.meta.url), "utf8");
+  assert.match(legal, /<b>アクセスの集計<\/b>：/);
+  assert.match(legal, /来た元のURLやホスト名、個人を区別するIDは保存しません。検索した言葉などURLの中身は送信しません。/);
+  assert.doesNotMatch(legal, /画面の設定を保存します。サーバーには送信しません。/);
+});

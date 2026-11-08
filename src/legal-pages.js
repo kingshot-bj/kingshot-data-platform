@@ -1,7 +1,7 @@
 // Public legal pages. Content must describe what the code actually does;
 // update this page whenever data handling changes.
 
-export const PRIVACY_POLICY_UPDATED_AT = "2026年11月2日";
+export const PRIVACY_POLICY_UPDATED_AT = "2026年11月8日";
 
 const PRIVACY_SECTIONS = [
   {
@@ -39,7 +39,8 @@ const PRIVACY_SECTIONS = [
     body: `<ul>
 <li><b>ログイン用Cookie</b>（<code>eagleeye_session</code>）：ログイン状態を保つための署名付きCookieです。有効期間は7日間です。</li>
 <li><b>招待用Cookie</b>（<code>ee_ref</code>）：招待リンクを開いたときに招待コードを最長30日間保存し、初めてのログイン時に招待した人と結びつけるために使います。ログイン後に削除します。</li>
-<li><b>ブラウザ内の保存（localStorage）</b>：表示テーマや比較画面の表示設定など、画面の設定を保存します。サーバーには送信しません。</li>
+<li><b>ブラウザ内の保存（localStorage）</b>：表示テーマや比較画面の表示設定など、画面の設定を保存します。設定そのものはサーバーには送信しません。</li>
+<li><b>アクセスの集計</b>：ページを開いたとき、ページの種類と、ブラウザに保存した「その日・週・月に初めて来たか」「前回来た日からの日数」、新しい訪問の始まりには来た元のサイト（検索・SNSなどを判別するためのホスト名と、告知リンクの印）を送ります。サーバーでは種類ごとの日ごとの回数としてだけ保存し、来た元のURLやホスト名、個人を区別するIDは保存しません。検索した言葉などURLの中身は送信しません。</li>
 <li><b>広告用のCookie</b>：広告を表示するページでは、Googleなどの第三者配信事業者がCookieを使用し、利用者の本サービスや他のウェブサイトへの過去のアクセス情報に基づいて広告を配信することがあります（詳しくは「広告の配信について」をご覧ください）。</li>
 </ul>
 <p>本サービス自身が、利用者を追跡する目的のCookieを発行することはありません。</p>`
