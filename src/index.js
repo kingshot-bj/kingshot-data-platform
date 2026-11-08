@@ -89,6 +89,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
+import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP } from "./alliance-compare.js";
 import { loadAllianceForCompare } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
@@ -5207,6 +5208,9 @@ export default {
       if (url.pathname === "/kingdom") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/alliances") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAllianceListPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      // 聖剣争奪：対戦相手の登録（ADVANCED以上・同盟のR4/R5）と表示。
+      if (url.pathname === "/api/swordland/home") return await handleSwordlandHomeApi(request, env);
+      if (url.pathname === "/swordland") return await handleSwordlandPage(request, env);
       // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
       if (url.pathname === "/alliance/compare") {
         const auth = await getAuthenticatedUser(request, env);
@@ -5305,6 +5309,11 @@ export default {
       await runKingdomWatchlistJobs(env);
     } catch (error) {
       console.error("kingdom_watchlist_scheduler_failed", error?.message || error);
+    }
+    try {
+      await runSwordlandEventsRefresh(env);
+    } catch (error) {
+      console.error("swordland_events_refresh_failed", error?.message || error);
     }
     try {
       await runUserKingdomRankingRefresh(env);
@@ -5710,6 +5719,58 @@ async function serveSocialRoute(request, env, executionContext, url) {
     if (!item) return json({ ok: false, error: "NOT_FOUND" }, 404);
     return new Response(renderSocialCard(item, { format: m[2], week: pack.week }), { headers: { "content-type": "text/html; charset=UTF-8" } });
   }, PUBLIC_CACHE_TTL.data));
+}
+
+// ---- 聖剣争奪 ----
+// ホームの入口用（軽い：メンバー表は読まない）。開催中でなければ active:false。
+async function handleSwordlandHomeApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: true, active: false });
+  await ensureSwordlandSchema(env.DB).catch(() => {});
+  const mine = await myAlliance(env.DB, auth.user_id);
+  const showdown = mine?.kid ? await activeShowdown(env.DB, Number(mine.kid)) : null;
+  if (!showdown) return json({ ok: true, active: false });
+  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid) : null;
+  const canCompare = canUseAllianceCompare(auth.role);
+  return json({ ok: true, active: true, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
+    matchup: matchup ? { kid: matchup.opp_kid, tag: matchup.opp_tag, count: matchup.count, disputed: matchup.disputed, compareUrl: canCompare && mine.alliance_abbr ? compareUrl(mine.kid, mine.alliance_abbr, matchup.opp_kid, matchup.opp_tag) : null } : null,
+    canRegister: canRegisterRole(auth.role) && Boolean(mine.alliance_abbr) });
+}
+
+async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
+  await ensureSwordlandSchema(env.DB);
+  const mine = await myAlliance(env.DB, auth.user_id);
+  const showdown = mine?.kid ? await activeShowdown(env.DB, Number(mine.kid)) : null;
+  const state = { mine, showdown, matchup: null, canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
+  if (!showdown || !mine?.alliance_aid) return state;
+  state.matchup = await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid);
+  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
+    // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
+    const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
+    state.canRegister = Boolean(a && !a.error && isOfficer(a.members, mine.governor_id));
+  }
+  return state;
+}
+
+async function handleSwordlandPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪", "聖剣争奪の対戦相手を見るにはログインしてください。"));
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (request.method === "POST") {
+    if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+    const state = await loadSwordlandState(env, auth);
+    if (!state.canRegister) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。" }), 403);
+    const form = await request.formData().catch(() => null);
+    const oppKid = Number(String(form?.get("opp_kid") || "").trim());
+    const oppTag = String(form?.get("opp_tag") || "").trim().slice(0, 24);
+    if (!Number.isInteger(oppKid) || oppKid < 1 || oppKid > 999999 || !/^[^\s:：,<>"']{1,24}$/.test(oppTag)) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "相手の王国番号と同盟タグを正しく入れてください。" }), 400);
+    const opp = await loadAllianceForCompare(env, oppKid, oppTag, { canFetch: true }).catch(() => ({ error: "FAILED" }));
+    if (opp?.error) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "王国" + oppKid + "の「" + oppTag + "」が見つかりませんでした。王国番号と同盟タグを確かめてください。" }), 404);
+    await saveMatchup(env.DB, { season: state.showdown.begin_ts, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
+    await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
+    return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
+  }
+  return eagleEyeHtmlResponse(renderSwordlandPage({ state: await loadSwordlandState(env, auth) }));
 }
 
 async function servePublicCached(request, executionContext, build, maxAge = PUBLIC_CACHE_SECONDS) {
@@ -11639,7 +11700,7 @@ ${EAGLEEYE_NAV_CSS}
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
 ${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
-${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(!d||!d.active)return;var a=document.getElementById('homeSword'),b=document.getElementById('homeSwordBody');if(d.matchup){b.textContent='今回の相手：王国'+d.matchup.kid+'の '+d.matchup.tag+'（'+d.matchup.count+'人が登録）';if(d.matchup.compareUrl)a.href=d.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'R4以上の人が対戦相手を登録すると、ここに表示されます'}a.hidden=false}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
 <section class="ee-mainmenu" data-menu="signed-in">
   <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>

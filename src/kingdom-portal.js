@@ -988,6 +988,8 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
   const rankRow = await db.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid, tag, tag, tag).first().catch(() => null);
   if (row && rankRow) row = { ...row, power: row.power ?? rankRow.power, power_rank: row.power_rank ?? rankRow.power_rank, name: row.name || rankRow.name, abbr: row.abbr || rankRow.abbr };
   if (!row) row = rankRow;
+  // EagleEye にまだ無い同盟（違う王国など）も、取得してよい時は同盟タグで取りに行く。
+  if (!row && canFetch) row = { kid, aid: "", abbr: tag, name: "", power: null, power_rank: null, unknown: true };
   if (!row) return { kid, tag, error: "NOT_FOUND" };
   const getAlliance = p => p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
   const getMembers = p => { const a = getAlliance(p); return [p?.roster, p?.members, p?.data?.roster, p?.data?.members, p?.data?.data?.roster, p?.data?.data?.members, a?.roster, a?.members, a?.member_list].find(Array.isArray) || []; };
@@ -1018,8 +1020,9 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
     } catch (error) { status = String(error?.code || error?.message || "FETCH_FAILED").slice(0, 60); }
   }
   const alliance = getAlliance(payload);
+  if (row.unknown && !members.length) return { kid, tag, error: "NOT_FOUND" };
   return {
-    kid, tag, aid: normalizeAid(row.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
+    kid, tag, aid: normalizeAid(row.aid || alliance.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
     power: row.power ?? null, power_rank: row.power_rank ?? null, observedAt, fetched, status,
     members: members.map(normalizeAllianceMember).map(m => ({ name: m.name, id: m.id, power: m.power, tc: m.tc ?? null, role: m.role, roleLabel: m.roleLabel, image: m.image }))
   };
