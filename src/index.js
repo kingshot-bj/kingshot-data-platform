@@ -5211,6 +5211,17 @@ export default {
       // 聖剣争奪：対戦相手の登録（ADVANCED以上・同盟のR4/R5）と表示。
       if (url.pathname === "/api/swordland/home") return await handleSwordlandHomeApi(request, env);
       if (url.pathname === "/swordland") return await handleSwordlandPage(request, env);
+      if (url.pathname === "/swordland/refresh-events") {
+        // オーナーだけ：イベント日程を今すぐ取り直す（同じサイトからのPOSTのみ）。
+        if (request.method !== "POST") return Response.redirect(new URL("/swordland", url).toString(), 303);
+        const guard = await requireOwner(request, env); if (guard.error) return guard.error;
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const r = await runSwordlandEventsRefresh(env, { force: true }).catch(error => ({ error: String(error?.message || error).slice(0, 80) }));
+        await writeOwnerAuditLog(env, guard.auth, "SWORDLAND_EVENTS_REFRESH", null, null, r).catch(() => {});
+        const msg = r.error ? "取得に失敗しました：" + r.error : "日程を取り直しました（" + (r.kingdoms || 0) + "王国・聖剣の日程 " + (r.saved || 0) + "件" + ((r.errors || []).length ? "・失敗 " + r.errors.map(e => "王国" + e.kid + " " + e.status).join("、") : "") + "）。";
+        const state = await loadSwordlandState(env, guard.auth);
+        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true }));
+      }
       // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
       if (url.pathname === "/alliance/compare") {
         const auth = await getAuthenticatedUser(request, env);
@@ -5770,7 +5781,7 @@ async function handleSwordlandPage(request, env) {
     await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
     return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
   }
-  return eagleEyeHtmlResponse(renderSwordlandPage({ state: await loadSwordlandState(env, auth) }));
+  return eagleEyeHtmlResponse(renderSwordlandPage({ state: await loadSwordlandState(env, auth), isOwner: auth.role === "OWNER" }));
 }
 
 async function servePublicCached(request, executionContext, build, maxAge = PUBLIC_CACHE_SECONDS) {

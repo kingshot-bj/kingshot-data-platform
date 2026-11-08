@@ -74,3 +74,23 @@ test("メニュー：「その他」に聖剣争奪と同盟比較。開催期�
   assert.ok(keys.some(([k, h]) => k === "allianceCompare" && h === "/alliance/compare"));
   assert.match(renderSwordlandPage({ state: {} }), /href="\/alliance\/compare">⚔️ 同盟比較はいつでも使えます/);
 });
+
+test("オーナーの手動取得：いつでも（毎時の制限なし）・最大10王国・失敗した王国を返す。ボタンはオーナーだけ", async () => {
+  resetSwordlandSchemaCache();
+  const binds = [];
+  const db = { batch: async () => [], prepare: sql => { const st = { bind: (...a) => { if (sql.includes("FROM user_player_links")) binds.push(a); return st; }, run: async () => ({}), all: async () => ({ results: sql.includes("FROM user_player_links") ? [{ kid: 1524 }, { kid: 1001 }] : [] }), first: async () => null }; return st; } };
+  const collect = async (env, o) => { if (o.targetId === "1001") { const e = new Error("MIGHTPULSE_NOT_FOUND"); e.code = "MIGHTPULSE_NOT_FOUND"; throw e; } return { result: { data: payload } }; };
+  const at = Date.parse("2026-11-09T01:30:00Z");
+  const r = await runSwordlandEventsRefresh({ DB: db }, { nowMs: at, collect, force: true });
+  assert.equal(r.kingdoms, 2); assert.equal(r.saved, 1);
+  assert.deepEqual(r.errors, [{ kid: 1001, status: "MIGHTPULSE_NOT_FOUND" }]);
+  assert.equal(binds[0][1], 10, "最大10王国");
+  assert.ok(binds[0][0] > Math.floor(at / 1000), "取得済みの王国も取り直す");
+  assert.match(renderSwordlandPage({ state: {}, isOwner: true }), /action="\/swordland\/refresh-events"/);
+  assert.doesNotMatch(renderSwordlandPage({ state: {} }), /refresh-events/);
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const route = index.slice(index.indexOf('if (url.pathname === "/swordland/refresh-events")'), index.indexOf('if (url.pathname === "/swordland/refresh-events")') + 900);
+  assert.match(route, /const guard = await requireOwner\(request, env\); if \(guard\.error\) return guard\.error;/);
+  assert.match(route, /if \(!isSameOriginRequest\(request\)\)/);
+  assert.match(route, /writeOwnerAuditLog\(env, guard\.auth, "SWORDLAND_EVENTS_REFRESH"/);
+});
