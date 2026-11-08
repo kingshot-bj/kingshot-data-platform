@@ -7,6 +7,37 @@ export const ALLIANCE_COMPARE_MAX = 4;
 export const ALLIANCE_COMPARE_TOP_OPTIONS = Object.freeze([3, 10, 20, 30, 0]); // 0 = 全員
 export const ALLIANCE_COMPARE_DEFAULT_TOP = 3;
 export const ALLIANCE_COMPARE_ROLES = Object.freeze(["ADVANCED", "VIP", "ADMIN", "OWNER"]);
+// 上位3人の秘境の試練（プレイヤー比較と同じ王国ランキングの値）。ステージは「種別×10000＋番号」なので種別の分を引いて「章-ステージ」に。
+export const MYSTIC_TOP = 3;
+export const MYSTIC_COMPARE_BOARDS = Object.freeze([
+  ["mystic_trial", "秘境の試練（総合）", 0], ["coliseum", "闘技場", 10000], ["forest_of_life", "生命の森", 20000], ["crystal_cave", "水晶鉱山", 30000],
+  ["knowledge_nexus", "知識の枢軸", 40000], ["molten_fort", "溶岩要塞", 50000], ["radiant_spire", "輝光の塔", 60000]
+]);
+const MYSTIC_KEYS = MYSTIC_COMPARE_BOARDS.map(b => b[0]);
+export function topByPower(members, n = MYSTIC_TOP) {
+  return (members || []).filter(m => m && m.id && m.power !== null && Number.isFinite(Number(m.power))).sort((a, b) => Number(b.power) - Number(a.power)).slice(0, n);
+}
+// 同盟ごとに1回だけ読む（王国ランキング＝上位100人。D1の読み取りは同盟あたり2本）。
+// 戻り値：{ checked: [board...]（その王国で取得済みの種類）, values: { governor_id: { board: score } } }
+export async function loadTopMystic(db, alliance, n = MYSTIC_TOP) {
+  const top = topByPower(alliance?.members, n);
+  const kid = Number(alliance?.kid);
+  if (!db || !top.length || !Number.isInteger(kid)) return { checked: [], values: {} };
+  const ids = top.map(m => String(m.id));
+  const ph = a => a.map(() => "?").join(",");
+  const [rows, state] = await Promise.all([
+    db.prepare("SELECT board, target_id, score FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'PLAYER' AND board IN (" + ph(MYSTIC_KEYS) + ") AND target_id IN (" + ph(ids) + ")").bind(kid, ...MYSTIC_KEYS, ...ids).all().catch(() => ({ results: [] })),
+    db.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? AND board IN (" + ph(MYSTIC_KEYS) + ") AND last_checked_at IS NOT NULL").bind(kid, ...MYSTIC_KEYS).all().catch(() => ({ results: [] }))
+  ]);
+  const values = {};
+  for (const r of rows.results || []) {
+    const sc = Number(r.score);
+    if (!Number.isFinite(sc)) continue;
+    (values[String(r.target_id)] ||= {})[r.board] = sc;
+  }
+  return { checked: [...new Set((state.results || []).map(r => r.board))], values };
+}
+
 export const POWER_BANDS = Object.freeze([[5e8, "5億以上"], [3e8, "3〜5億"], [1e8, "1〜3億"], [0, "1億未満"]]);
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -68,7 +99,8 @@ export function renderAllianceComparePage({ alliances = [], targets = [], top = 
     return `<div class="ac-in"><input name="kid" inputmode="numeric" pattern="\\d*" placeholder="王国番号" value="${esc(t.kid || "")}" aria-label="王国番号${i + 1}"><input name="tag" placeholder="同盟タグ" value="${esc(t.tag || "")}" aria-label="同盟タグ${i + 1}"></div>`;
   }).join("");
   const missing = alliances.filter(a => a.error).map(a => `王国${esc(a.kid)}の「${esc(a.tag)}」`).join("・");
-  const data = found.map(a => ({ kid: a.kid, abbr: a.abbr, name: a.name, power: a.power, power_rank: a.power_rank, observedAt: a.observedAt, fetched: a.fetched, status: a.status, members: a.members }));
+  const data = found.map(a => ({ kid: a.kid, abbr: a.abbr, name: a.name, power: a.power, power_rank: a.power_rank, observedAt: a.observedAt, fetched: a.fetched, status: a.status, members: a.members, mystic: a.mystic || null }));
+  const mysticBoardsJson = JSON.stringify(MYSTIC_COMPARE_BOARDS);
   const dataJson = JSON.stringify(data).replace(/</g, "\\u003c");
   const topJson = JSON.stringify(ALLIANCE_COMPARE_TOP_OPTIONS.includes(top) ? top : ALLIANCE_COMPARE_DEFAULT_TOP);
   const bandsJson = JSON.stringify(POWER_BANDS);
@@ -83,7 +115,7 @@ h1{font-size:22px;margin:6px 0 4px}.lead{font-size:13px;color:var(--ee-subtext,#
 .tbl td.best{outline:2px solid var(--ee-cyan,#22d3ee)}.tbl thead td{background:none;font-size:13px;line-height:1.3}.tbl thead small{display:block;font-size:10px;color:var(--ee-subtext,#91a7bf);font-weight:600}
 .mem{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mem small{display:block;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 .note{font-size:11px;color:var(--ee-subtext,#91a7bf);line-height:1.6}.warn{font-size:12px;padding:8px 10px;border-radius:9px;border:1px dashed currentColor;margin:8px 0}
-h2{font-size:15px;margin:4px 0 8px}
+h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:12px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 </style></head><body><main class="wrap"><a href="/kingdom/rankings">← ランキング</a>
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
@@ -94,12 +126,20 @@ ${found.length >= 2 ? `<section class="card"><div class="tops" id="acTops" role=
 <script id="acData" type="application/json">${dataJson}</script>
 <script>(function(){
 var A=JSON.parse(document.getElementById("acData").textContent||"[]");if(A.length<2)return;
-var BANDS=${bandsJson},cur=${topJson},body=document.getElementById("acBody"),tops=document.getElementById("acTops");
+var BANDS=${bandsJson},MB=${mysticBoardsJson},MT=${MYSTIC_TOP},cur=${topJson},body=document.getElementById("acBody"),tops=document.getElementById("acTops");
 function e(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function cp(v){var n=Number(v);if(!isFinite(n)||v===null)return "—";var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/\\.?0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/\\.0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/\\.0$/,"")+"K";return String(Math.round(n))}
 function known(a){return (a.members||[]).filter(function(m){return m.power!==null&&isFinite(Number(m.power))}).map(function(m){return Object.assign({},m,{power:Number(m.power)})}).sort(function(x,y){return y.power-x.power})}
 function at(s){if(!s)return "—";var d=new Date(s*1000+324e5).toISOString();return d.slice(5,10).replace("-","/")+" "+d.slice(11,16)}
 function row(label,vals,fmt,better){var nums=vals.map(function(v){return v==null||!isFinite(Number(v))?null:Number(v)}),ok=nums.filter(function(v){return v!==null}),best=ok.length>1?(better==="min"?Math.min.apply(null,ok):Math.max.apply(null,ok)):null,uniq=best!==null&&ok.filter(function(v){return v===best}).length===1;return "<tr><th>"+e(label)+"</th>"+vals.map(function(v,i){return "<td class=\\""+(uniq&&nums[i]===best?"best":"")+"\\">"+(fmt?fmt(v):e(v==null?"—":v))+"</td>"}).join("")+"</tr>"}
+function stg(v,off){var x=Math.round(Number(v)-off);if(!isFinite(x)||x<1)return null;return (Math.floor((x-1)/10)+1)+"-"+((x-1)%10+1)}
+function top3(a){return (a.members||[]).filter(function(m){return m&&m.id&&m.power!==null&&isFinite(Number(m.power))}).sort(function(x,y){return Number(y.power)-Number(x.power)}).slice(0,MT)}
+function mystic(){if(!A.some(function(a){return a.mystic}))return "";var P=A.map(top3),n=Math.max.apply(null,P.map(function(t){return t.length}));if(!n)return "";
+var h="<h2 style=\\"margin-top:14px\\">上位"+MT+"人の秘境の試練</h2>";
+for(var i=0;i<n;i++){var ms=P.map(function(t){return t[i]||null});h+="<table class=\\"tbl mys\\"><thead><tr><th>"+(i+1)+"位どうし</th>"+ms.map(function(m){return "<td>"+(m?"<span class=\\"mem\\">"+e(m.name)+"<small>"+cp(m.power)+"</small></span>":"—")+"</td>"}).join("")+"</tr></thead><tbody>";
+h+=MB.map(function(b){var raw=ms.map(function(m,j){var my=A[j].mystic;if(!m||!my)return {v:null,t:"—"};var v=my.values&&my.values[String(m.id)]&&my.values[String(m.id)][b[0]];if(v!=null)return {v:v,t:b[2]?(stg(v,b[2])||"—"):Number(v).toLocaleString("ja-JP")};return {v:null,t:(my.checked||[]).indexOf(b[0])>=0?"100位圏外":"取得中"}});var ok=raw.filter(function(x){return x.v!=null}).map(function(x){return x.v}),best=ok.length>1?Math.max.apply(null,ok):null,uniq=best!==null&&ok.filter(function(v){return v===best}).length===1;
+return "<tr><th>"+e(b[1])+"</th>"+raw.map(function(x){return "<td class=\\""+(uniq&&x.v===best?"best":"")+(x.v==null?" dim":"")+"\\">"+e(x.t)+"</td>"}).join("")+"</tr>"}).join("")+"</tbody></table>"}
+return h+"<p class=\\"note\\">秘境の試練は各王国のランキング（上位100人）の最高クリアステージです（章-ステージ）。「100位圏外」はその王国のランキングに入っていない人、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
 function render(){
 tops.querySelectorAll("button").forEach(function(b){b.classList.toggle("on",Number(b.dataset.n)===cur)});
 var K=A.map(known),T=K.map(function(k){return cur>0?k.slice(0,cur):k});
@@ -115,6 +155,7 @@ row(label+"の平均",T.map(function(t){return t.length?t.reduce(function(s,m){r
 var n=Math.max.apply(null,T.map(function(t){return t.length}));
 if(n>0){h+="<h2 style=\\"margin-top:14px\\">"+e(label)+"どうし</h2><table class=\\"tbl\\"><tbody>";for(var i=0;i<n;i++){var ms=T.map(function(t){return t[i]||null}),ps=ms.map(function(m){return m?m.power:null}),ok=ps.filter(function(v){return v!==null}),best=ok.length>1?Math.max.apply(null,ok):null;h+="<tr><th>"+(i+1)+"位</th>"+ms.map(function(m){return "<td class=\\""+(m&&best!==null&&m.power===best&&ok.filter(function(v){return v===best}).length===1?"best":"")+"\\">"+(m?"<span class=\\"mem\\">"+e(m.name)+"<small>"+cp(m.power)+(m.roleLabel?" · "+e(m.roleLabel):"")+"</small></span>":"—")+"</td>"}).join("")+"</tr>"}h+="</tbody></table>"}
 h+="<h2 style=\\"margin-top:14px\\">戦力帯ごとの人数（全員）</h2><table class=\\"tbl\\"><tbody>"+BANDS.map(function(b,bi){return row(b[1],K.map(function(k){return k.filter(function(m){return BANDS.findIndex(function(x){return m.power>=x[0]})===bi}).length}),function(v){return e(v)+"人"})}).join("")+"</tbody></table>";
+h+=mystic();
 h+="<p class=\\"note\\">メンバー表の時点："+A.map(function(a){return e(a.abbr)+" "+at(a.observedAt)+(a.fetched?"（今取得）":"")}).join(" ／ ")+"</p>";
 body.innerHTML=h}
 tops.addEventListener("click",function(ev){var b=ev.target.closest("button");if(!b)return;cur=Number(b.dataset.n);try{var u=new URL(location.href);u.searchParams.set("top",String(cur));history.replaceState(null,"",u)}catch(x){}render()});

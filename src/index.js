@@ -91,7 +91,7 @@ import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
 import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
-import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP } from "./alliance-compare.js";
+import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadTopMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
 import { loadAllianceForCompare } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
@@ -5232,6 +5232,12 @@ export default {
         const topParam = Number(url.searchParams.get("top"));
         const top = ALLIANCE_COMPARE_TOP_OPTIONS.includes(topParam) && url.searchParams.has("top") ? topParam : ALLIANCE_COMPARE_DEFAULT_TOP;
         const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
+        // 上位3人の秘境の試練：プレイヤー比較と同じ表示の権限。王国ランキングが古い・無いときは裏で取りに行く。
+        const found = alliances.filter(a => a && !a.error);
+        if (found.length >= 2 && visibilityEnabled(await getPlayerVisibilitySettings(env.DB), "ranks_leaderboards", auth.role)) {
+          await Promise.all(found.map(async a => { a.mystic = await loadTopMystic(env.DB, a).catch(() => null); }));
+          await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
+        }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
         return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top }));
       }
