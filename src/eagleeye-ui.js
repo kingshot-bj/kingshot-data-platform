@@ -255,6 +255,46 @@ export const EAGLEEYE_DRAWER_INIT = `
     x.onclick=function(){try{localStorage.setItem(key,String(Date.now()+3*86400000));}catch(e){}bar.remove();};
     bar.appendChild(a);bar.appendChild(x);document.body.insertBefore(bar,document.body.firstChild);
   }
+  // BASIC の人へ ADVANCED への案内（ポップアップ）。しつこくしない：
+  // ・そのタブで2ページ目以降、ページを開いて3秒後　・「あとで」で3日、「表示しない」で30日出さない
+  // ・マイKingShot・ログイン・管理画面では出さない　・出した回数と押した回数だけ数える（個人は記録しない）
+  function paintUpgradePopup(step){
+    if(!step||document.getElementById("eeUpgradePop"))return;
+    if(/^\\/(my-player|login|owner|admin|auth)/.test(location.pathname))return;
+    var KEY="ee-upgrade-pop-next";
+    try{
+      if(Number(localStorage.getItem(KEY)||0)>Date.now())return;
+      var n=Number(sessionStorage.getItem("ee-upgrade-pop-views")||0)+1;sessionStorage.setItem("ee-upgrade-pop-views",String(n));
+      if(n<2)return;
+    }catch(e){return;}
+    function ping(kind){try{var b=JSON.stringify({step:kind});if(!(navigator.sendBeacon&&navigator.sendBeacon("/api/funnel-event",new Blob([b],{type:"application/json"}))))fetch("/api/funnel-event",{method:"POST",headers:{"content-type":"application/json"},body:b,keepalive:true,credentials:"same-origin"});}catch(e){}}
+    function later(days){try{localStorage.setItem(KEY,String(Date.now()+days*86400000));}catch(e){}}
+    setTimeout(function(){
+      if(document.getElementById("eeUpgradePop"))return;
+      var isKey=step==="key";
+      var title=isKey?"あと1ステップでADVANCED":"まず領主IDを登録しよう";
+      var lead=isKey?"MightPulseのAPIキー（無料・約1分）を登録すると、見られる情報が一気に増えます。":"領主IDを登録すると（30秒）、自分の戦力や役場の推移がホームに出て、ADVANCEDへの最初の一歩になります。";
+      var items=isKey?["英雄スキル・専用装備・英雄の装備","領主装備・宝石","プレイヤーの座標","KvK画面（対戦相手・スコア推移・秘境の比較）","ウォッチ：プレイヤー3人→20人、王国1→3"]:["自分の戦力・役場の推移がホームに","ウォッチ中の変化のお知らせ","あと1ステップでADVANCED"];
+      var wrap=document.createElement("div");wrap.id="eeUpgradePop";
+      wrap.innerHTML='<div class="eup-back"></div><div class="eup-sheet" role="dialog" aria-modal="true" aria-labelledby="eupTitle"><button type="button" class="eup-x" aria-label="閉じる">×</button><img src="/assets/eagleeye/bjnyan/poses/common.webp" alt="" class="eup-img"><b id="eupTitle"></b><p class="eup-lead"></p><ul class="eup-list"></ul><a class="eup-cta" href="/my-player"></a><div class="eup-sub"><button type="button" class="eup-later">あとで</button><button type="button" class="eup-never">しばらく表示しない</button></div></div>';
+      wrap.querySelector("#eupTitle").textContent=title;
+      wrap.querySelector(".eup-lead").textContent=lead;
+      var ul=wrap.querySelector(".eup-list");items.forEach(function(t){var li=document.createElement("li");li.textContent=t;ul.appendChild(li);});
+      wrap.querySelector(".eup-cta").textContent=(isKey?"APIキーを登録する":"領主IDを登録する")+" →";
+      var st=document.createElement("style");
+      st.textContent="#eeUpgradePop{position:fixed;inset:0;z-index:9998;display:flex;align-items:flex-end;justify-content:center}#eeUpgradePop .eup-back{position:absolute;inset:0;background:rgba(0,0,0,.55)}#eeUpgradePop .eup-sheet{position:relative;width:100%;max-width:520px;margin:0 8px calc(8px + env(safe-area-inset-bottom));padding:18px 18px 14px;border-radius:20px;border:1px solid rgba(250,204,21,.6);background:var(--ee-panel,#0f1f36);color:var(--ee-text,#e8f3ff);box-shadow:0 -10px 40px rgba(0,0,0,.45);font:14px/1.6 system-ui,-apple-system,sans-serif;animation:eupIn .35s ease-out}@keyframes eupIn{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}#eeUpgradePop .eup-img{float:right;width:72px;height:auto;margin:18px 0 4px 8px}#eeUpgradePop b{display:block;font-size:18px;color:var(--ee-text,#e8f3ff);margin:2px 28px 6px 0}#eeUpgradePop b:before{content:'✦ ';color:#eab308}#eeUpgradePop .eup-lead{margin:0 0 8px;font-size:13px;color:var(--ee-subtext,#91a7bf)}#eeUpgradePop .eup-list{clear:both;margin:0 0 12px;padding-left:1.2em;font-size:13px}#eeUpgradePop .eup-cta{display:block;padding:12px;border-radius:999px;background:#facc15;color:#1f1300;font-weight:900;text-align:center;text-decoration:none}#eeUpgradePop .eup-sub{display:flex;justify-content:space-between;margin-top:8px}#eeUpgradePop .eup-sub button,#eeUpgradePop .eup-x{border:0;background:transparent;color:var(--ee-subtext,#91a7bf);font:inherit;font-size:12px;padding:6px 4px;cursor:pointer}#eeUpgradePop .eup-x{position:absolute;top:6px;right:8px;font-size:22px;line-height:1}@media(prefers-reduced-motion:reduce){#eeUpgradePop .eup-sheet{animation:none}}";
+      wrap.appendChild(st);
+      function close(days){later(days);wrap.remove();}
+      wrap.querySelector(".eup-back").onclick=function(){close(3);};
+      wrap.querySelector(".eup-x").onclick=function(){close(3);};
+      wrap.querySelector(".eup-later").onclick=function(){close(3);};
+      wrap.querySelector(".eup-never").onclick=function(){close(30);};
+      wrap.querySelector(".eup-cta").onclick=function(){later(3);ping("upgrade_popup_click");};
+      document.body.appendChild(wrap);
+      later(3);ping("upgrade_popup_shown");
+      try{wrap.querySelector(".eup-cta").focus({preventScroll:true});}catch(e){}
+    },3000);
+  }
   // Pages that used to push the watchlist size into the badge keep working; the
   // size is no longer shown as a badge.
   window.__eagleEyeSetPlayerWatchlistCount=function(){};
@@ -262,7 +302,7 @@ export const EAGLEEYE_DRAWER_INIT = `
     if(!state||!state.ok){paintBadges(null);return;}
     return fetch("/api/badges",{credentials:"same-origin",cache:"no-store"})
       .then(function(response){return response.ok?response.json():null;})
-      .then(function(data){paintBadges(data&&data.ok?data:null);if(data&&data.ok)paintOnboarding(data.onboarding);});
+      .then(function(data){paintBadges(data&&data.ok?data:null);if(data&&data.ok){paintOnboarding(data.onboarding);paintUpgradePopup(data.onboarding);}});
   }).catch(function(){paintBadges(null);});
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic

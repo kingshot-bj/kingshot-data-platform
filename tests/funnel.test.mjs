@@ -28,7 +28,7 @@ test("日本時間の日ごとに数え、知らない段階は数えない", as
   assert.deepEqual([...db.counts.keys()].sort(), ["2026-11-07|login_cancelled", "2026-11-07|login_new", "2026-11-07|login_start"]);
   const f = await loadFunnel(db, { days: 14, nowMs: t });
   assert.equal(f.daily[0].day, "2026-11-07");
-  assert.deepEqual(f.totals, { login_start: 2, google_start: 0, login_cancelled: 1, login_new: 1, login_returning: 0 });
+  assert.deepEqual(f.totals, { login_start: 2, google_start: 0, login_cancelled: 1, login_new: 1, login_returning: 0, upgrade_popup_shown: 0, upgrade_popup_click: 0 });
   assert.deepEqual(f.cohort, { users: 5, linked: 1, keyed: 0, advanced: 0 });
   const html = renderFunnelCard(f);
   assert.match(html, /登録までの流れ（直近14日）/);

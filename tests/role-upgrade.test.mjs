@@ -54,3 +54,25 @@ test("配線：プレイヤー画面・マイKingShot・ホーム・全ページ
   const hs = readFileSync(new URL("../src/home-summary.js", import.meta.url), "utf8");
   assert.match(hs, /summary\.onboarding = /);
 });
+
+test("BASICへのADVANCED案内ポップアップ：しつこくしない出し方と、回数だけ数える", async () => {
+  const { EAGLEEYE_DRAWER_INIT } = await import("../src/eagleeye-ui.js");
+  const js = EAGLEEYE_DRAWER_INIT.replace(/<\/?script[^>]*>/g, "");
+  assert.doesNotThrow(() => new Function(js));
+  const fn = js.slice(js.indexOf("function paintUpgradePopup"), js.indexOf("// Pages that used to push"));
+  assert.match(fn, /if\(\/\^\\\/\(my-player\|login\|owner\|admin\|auth\)\/\.test\(location\.pathname\)\)return;/, "マイKingShot・ログイン・管理画面では出さない");
+  assert.match(fn, /if\(n<2\)return;/, "そのタブの1ページ目では出さない");
+  assert.match(fn, /\},3000\);/, "開いて3秒後");
+  assert.match(fn, /close\(3\)/);
+  assert.match(fn, /close\(30\)/, "しばらく表示しない＝30日");
+  assert.match(fn, /later\(3\);ping\("upgrade_popup_shown"\)/, "出したら3日は出さない");
+  assert.match(fn, /href="\/my-player"/);
+  assert.doesNotMatch(fn, /user_id|discord/i);
+  assert.match(js, /paintOnboarding\(data\.onboarding\);paintUpgradePopup\(data\.onboarding\);/, "BASICの判定は既存の /api\/badges の結果を使う（読み取りを増やさない）");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const ep = index.slice(index.indexOf('url.pathname === "/api/funnel-event"'), index.indexOf('url.pathname === "/api/funnel-event"') + 700);
+  assert.match(ep, /isSameOriginRequest\(request\)/);
+  assert.match(ep, /CLIENT_FUNNEL_STEPS\.includes\(body\?\.step\)/, "画面から送れるのは案内の2つだけ（ログインの段階は送れない）");
+  const { CLIENT_FUNNEL_STEPS } = await import("../src/funnel.js");
+  assert.deepEqual([...CLIENT_FUNNEL_STEPS], ["upgrade_popup_shown", "upgrade_popup_click"]);
+});

@@ -1,6 +1,6 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
-import { recordFunnel, loadFunnel } from "./funnel.js";
+import { recordFunnel, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
 import { googleConfigured, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
@@ -5037,6 +5037,15 @@ export default {
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
+      if (url.pathname === "/api/funnel-event") {
+        // 昇格案内の表示・押した回数だけ（日ごとの回数。個人は記録しない）。同じサイトからのPOSTだけ。
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => null);
+        if (!CLIENT_FUNNEL_STEPS.includes(body?.step)) return json({ ok: false, error: "INVALID_STEP" }, 400);
+        await recordFunnel(env.DB, body.step);
+        return json({ ok: true });
+      }
       if (url.pathname === "/api/pv") return await handlePageViewBeacon(request, env, { isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView(request, env, path) });
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
