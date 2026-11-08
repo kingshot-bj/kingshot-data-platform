@@ -16,6 +16,13 @@ export function isDiscordUserId(id) {
   return /^\d{15,25}$/.test(String(id ?? "").trim());
 }
 
+// Googleログインを一般に開けるか。設定が入っていても、公開するまでは選択画面で「準備中」にする。
+// 公開するときは GOOGLE_LOGIN_OPEN を true にする（または Workerの変数 GOOGLE_LOGIN_OPEN="1"）。
+export const GOOGLE_LOGIN_OPEN = false;
+export function googleLoginOpen(env) {
+  return GOOGLE_LOGIN_OPEN || String(env?.GOOGLE_LOGIN_OPEN || "") === "1";
+}
+
 export function googleConfigured(env) {
   return Boolean(env?.GOOGLE_OAUTH_CLIENT_ID && env?.GOOGLE_OAUTH_CLIENT_SECRET && env?.EAGLEEYE_SESSION_SECRET);
 }
@@ -96,16 +103,16 @@ export async function upsertGoogleUser(db, googleUser, now = Math.floor(Date.now
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ログイン方法を選ぶ画面（Googleが設定されているときだけ使う）。
-export function renderLoginChooserPage({ next = "" } = {}) {
+export function renderLoginChooserPage({ next = "", googleOpen = true } = {}) {
   const q = next ? "&next=" + encodeURIComponent(next) : "";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ログイン | EagleEye</title><meta name="robots" content="noindex">
 <style>body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:520px;margin:0 auto;padding:28px 16px calc(96px + env(safe-area-inset-bottom))}h1{font-size:22px;margin:0 0 6px}.lead{font-size:13px;color:var(--ee-subtext);margin:0 0 18px}
 .lg{display:flex;align-items:center;justify-content:center;gap:10px;margin:10px 0;padding:14px;border-radius:14px;font-size:16px;font-weight:900;text-decoration:none}.lg-d{background:#5865f2;color:#fff}.lg-g{background:#fff;color:#1f1f1f;border:1px solid #dadce0}
-.note{margin-top:18px;padding:12px 14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);font-size:12px;line-height:1.7;color:var(--ee-subtext)}.note b{color:var(--ee-text)}</style></head>
+.lg-soon{opacity:.55;cursor:not-allowed}.lg-soon span{font-size:11px;font-weight:900;padding:2px 8px;border-radius:999px;background:#1f1f1f;color:#fff}.note{margin-top:18px;padding:12px 14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);font-size:12px;line-height:1.7;color:var(--ee-subtext)}.note b{color:var(--ee-text)}</style></head>
 <body><main class="wrap"><h1>EagleEyeにログイン</h1><p class="lead">どちらでも無料で使えます。</p>
 <a class="lg lg-d" href="/api/auth/discord?direct=1${esc(q)}">Discordでログイン</a>
-<a class="lg lg-g" href="/api/auth/google?x=1${esc(q)}">Googleでログイン</a>
+${googleOpen ? `<a class="lg lg-g" href="/api/auth/google?x=1${esc(q)}">Googleでログイン</a>` : `<div class="lg lg-g lg-soon" aria-disabled="true">Googleでログイン<span>準備中</span></div>`}
 <div class="note"><b>Discordでログインするとできること</b><br>KvK通知（王国ごとの非公開スレッド）、運営からのお知らせDM、サポートへの問い合わせ。<br>APIキー（MightPulse）の作成にもDiscordが必要なため、ADVANCEDになるにはDiscordアカウントが要ります。<br><br><b>Googleでログインした場合</b><br>ウォッチリスト・ホームの変化・マイKingShotなど、BASICの機能が使えます。</div>
 </main></body></html>`;
 }

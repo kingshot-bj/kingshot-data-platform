@@ -85,7 +85,7 @@ test("Worker全体：未設定なら今までどおりDiscordへ直行、設定�
   const r2 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/discord"), { ...base, DB: memDb() }, ctx);
   assert.match(r2.headers.get("location"), /^https:\/\/discord\.com\//);
   // 設定済み
-  const env = { ...base, DB: memDb(), GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "gsecret" };
+  const env = { ...base, DB: memDb(), GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "gsecret", GOOGLE_LOGIN_OPEN: "1" };
   const r3 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/discord?next=/watchlist"), env, ctx);
   assert.match(r3.headers.get("location"), /\/login\?next=%2Fwatchlist$/, "まず選択画面へ");
   const r4 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/discord?direct=1"), env, ctx);
@@ -122,4 +122,27 @@ test("Discord専用の処理は仮IDに対して動かない", () => {
   assert.match(kvk, /return \/\^\\d\{15,25\}\$\/\.test\(id\) \? id : "";/, "KvKスレッドは数字のIDだけ");
   const legal = readFileSync(new URL("../src/legal-pages.js", import.meta.url), "utf8");
   assert.match(legal, /<b>Googleアカウント情報<\/b>：Googleでログインした場合の、Googleアカウントの識別番号と表示名。メールアドレスは取得しません。/);
+});
+
+test("公開前：Googleのボタンは「準備中」で押せない、直接来たら選択画面へ戻す（動作確認は ?test=1 だけ）", async () => {
+  const { GOOGLE_LOGIN_OPEN, googleLoginOpen } = await import("../src/google-auth.js");
+  assert.equal(GOOGLE_LOGIN_OPEN, false);
+  assert.equal(googleLoginOpen({}), false);
+  assert.equal(googleLoginOpen({ GOOGLE_LOGIN_OPEN: "1" }), true);
+  const closed = renderLoginChooserPage({ next: "/watchlist", googleOpen: false });
+  assert.doesNotMatch(closed, /href="\/api\/auth\/google/);
+  assert.match(closed, /aria-disabled="true">Googleでログイン<span>準備中<\/span>/);
+  assert.match(closed, /href="\/api\/auth\/discord\?direct=1&amp;next=%2Fwatchlist"/);
+  resetGoogleAuthSchemaCache();
+  const worker = (await import("../src/index.js")).default;
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+  const env = { EAGLEEYE_SESSION_SECRET: "s", DISCORD_CLIENT_ID: "d", DISCORD_CLIENT_SECRET: "x", DB: memDb(), GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "gsecret" };
+  const page = await (await worker.fetch(new Request("https://eagleeye-ks.com/login?next=/watchlist"), env, ctx)).text();
+  assert.match(page, /準備中/);
+  const r = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist"), env, ctx);
+  assert.equal(r.status, 302);
+  assert.match(r.headers.get("location"), /\/login\?next=%2Fwatchlist$/);
+  assert.ok(!env.DB.funnel.includes("google_start"), "押せないので数えない");
+  const t = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?test=1"), env, ctx);
+  assert.equal(new URL(t.headers.get("location")).host, "accounts.google.com");
 });
