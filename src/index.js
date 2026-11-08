@@ -4,7 +4,7 @@ import { recordFunnel, loadFunnel } from "./funnel.js";
 import { googleConfigured, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
-import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
+import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, loadCloudflareTopTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
 import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
 import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
@@ -5139,8 +5139,8 @@ export default {
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        const [active, cf, d1, apiPool, funnel] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null)]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel }));
+        const [active, cf, d1, apiPool, funnel, top] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null), loadCloudflareTopTraffic(env).catch(() => null)]);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top }));
       }
       if (url.pathname === "/owner/growth") {
         const guard = await requireOwner(request, env);
