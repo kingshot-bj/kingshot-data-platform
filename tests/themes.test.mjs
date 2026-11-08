@@ -67,3 +67,18 @@ test("ワインレッド：あまねの運営招待とオーナーだけの豪�
   assert.equal((page.match(/🔒 運営からの招待で解放/g) || []).length, 2, "ゴールドと同じ表示");
   assert.doesNotMatch(page, /あまね/, "画面に個人の名前は出さない");
 });
+
+test("豪華カラー：ホーム以外（その他メニュー・検索・ランキング・ウォッチ）のカードも光る縁にそろえる", () => {
+  const css = eagleEyeThemesCss();
+  for (const id of ["gold", "wine"]) {
+    for (const mode of [':not([data-eagle-theme="light"])', '[data-eagle-theme="light"]']) {
+      const sel = `html[data-ee-skin="${id}"]${mode}`;
+      const card = css.split("\n").find(l => l.startsWith(`${sel} :is(.ee-tile`));
+      assert.ok(card, id + mode);
+      for (const c of [".ee-global-nav-links a", ".search-panel", ".search-intro", ".rank-row", ".rank-switch", ".watch-option"]) assert.ok(card.includes(c), id + " " + c);
+      assert.ok(css.includes(`${sel} :is(.search-mode span,.search-input-row input,.rank-picker-trigger,.actions a,.rank-head button`), id + " 小さな部品の縁");
+      assert.ok(css.includes(`${sel} .watch-hub{background:transparent!important}`), id + " ウォッチのトップは背景を見せる");
+    }
+  }
+  assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#ff8fa8/, "検索ボタンもワインの金属ボタン");
+});

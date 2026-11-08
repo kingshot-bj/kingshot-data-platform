@@ -44,8 +44,12 @@ const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 // 豪華カラーの特別な仕上げ（金属の光沢・光る縁・粉のきらめき）。CSSは固定の文字列で、利用者の入力は入らない。
 // ゴールドとワインレッドは同じ仕上げで、色だけが違う。
 const LUXE_TITLES = "h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b";
-const LUXE_CARDS = ".ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat";
-const LUXE_BUTTONS = ".inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button";
+// ホーム以外のページ（その他メニュー・検索・ランキング・ウォッチ）のカードも同じ光る縁にそろえる。
+const LUXE_CARDS = ".ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat," +
+  ".ee-global-nav-links a,.ee-global-nav-links button,.search-panel,.search-intro,.search-state,.player-result,.player-lookup,.watch-option,.rank-row,.rank-switch,.rank-settings";
+const LUXE_BUTTONS = ".inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button,.search-input-row button";
+// 小さな部品（切替・入力・ボタン類）：細い光る縁だけ（影は控えめ）。
+const LUXE_CONTROLS = ".search-mode span,.search-input-row input,.rank-picker-trigger,.actions a,.rank-head button,.rank-row .star,.ee-global-nav-panel-head button";
 const LUXE = {
   gold: {
     shine: "ee-gold-shine",
@@ -70,6 +74,10 @@ function luxeDark(d, { shine, dark: c }) {
     `@media (prefers-reduced-motion:reduce){${d} :is(${LUXE_TITLES}){animation:none}}`,
     // カード：金属の縁（グラデーションの枠）＋内側のハイライト＋光る影
     `${d} :is(${LUXE_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,rgba(${c.hl},.10),rgba(${c.hl},0) 42%) padding-box,linear-gradient(var(--ee-panel),var(--ee-panel)) padding-box,linear-gradient(135deg,${c.frame}) border-box!important;box-shadow:0 0 18px rgba(${c.glow},.18),0 10px 28px rgba(0,0,0,.5)!important}`,
+    `${d} :is(${LUXE_CONTROLS}){border:1px solid transparent!important;background:linear-gradient(var(--ee-panel-raised),var(--ee-panel-raised)) padding-box,linear-gradient(135deg,${c.frame}) border-box!important}`,
+    // ページ全体を1枚のカードにしている所（ウォッチのトップ）は透明にして、きらめく背景を見せる
+    `${d} .watch-hub{background:transparent!important}`,
+    `${d} .search-mode input:checked+span{box-shadow:0 0 0 1px rgba(${c.glow},.55),0 0 12px rgba(${c.glow},.45)!important;color:var(--ee-text)!important}`,
     // ヘッダー：光るライン
     `${d} .ee-top{border-bottom:1px solid transparent!important;border-image:${fadeLine(c.glow, c.line)}!important;box-shadow:0 6px 24px rgba(${c.glow},.12)}`,
     // ボタン：金属のグラデーション
@@ -88,6 +96,9 @@ function luxeLight(l, { shine, light: c }) {
     `${l} :is(${LUXE_TITLES}){background:${c.metal};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:${shine} 5s linear infinite}`,
     `@media (prefers-reduced-motion:reduce){${l} :is(${LUXE_TITLES}){animation:none}}`,
     `${l} :is(${LUXE_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,${c.card}) padding-box,linear-gradient(135deg,${c.frame}) border-box!important;box-shadow:0 0 0 1px rgba(${c.dust},.10),0 6px 18px rgba(${c.deep},.14),0 0 16px rgba(${c.glow},.18)!important}`,
+    `${l} :is(${LUXE_CONTROLS}){border:1px solid transparent!important;background:linear-gradient(#ffffff,#ffffff) padding-box,linear-gradient(135deg,${c.frame}) border-box!important}`,
+    `${l} .watch-hub{background:transparent!important}`,
+    `${l} .search-mode input:checked+span{box-shadow:0 0 0 1px rgba(${c.dust},.45),0 0 10px rgba(${c.glow},.35)!important;background:linear-gradient(160deg,${c.card}) padding-box,linear-gradient(135deg,${c.frame}) border-box!important}`,
     `${l} :is(.ee-top,.ee-nav,.ee-global-nav){background:rgba(${c.bar},.94)!important}`,
     `${l} .ee-top{border-bottom:1px solid transparent!important;border-image:${fadeLine(c.dust, c.line)}!important}`,
     `${l} :is(${LUXE_BUTTONS}){background:linear-gradient(180deg,${c.btn})!important;color:${c.btnText}!important;border-color:${c.btnBorder}!important;box-shadow:0 2px 10px rgba(${c.dust},.35)}`,
