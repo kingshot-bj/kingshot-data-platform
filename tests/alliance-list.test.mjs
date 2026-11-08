@@ -38,6 +38,10 @@ test("同盟一覧：詳細を開いた同盟が1件あっても、ランキン�
   assert.equal(rows[0][0], "2");
   assert.notEqual(rows[0][2], "0", "戦力は0ではない");
   assert.equal(rows.filter(r => r[1] === "LegionOfLegends").length, 1, "同じ同盟を2回出さない");
+  const html = await list(fakeEnv());
+  assert.doesNotMatch(html, /ランキングcurrent/, "内部用の文字を出さない");
+  assert.match(html, /LegionOfLegends<\/span><em>[^<]*<\/em><small>87人<\/small>/, "人数が分かる同盟は人数を出す");
+  assert.match(html, /GANgsters<\/span><em>[^<]*<\/em><small><\/small>/, "人数が分からなければ空");
 });
 
 test("同盟一覧：ランキングがない王国では alliance_catalog の同盟を出す", async () => {
