@@ -44,7 +44,7 @@ export function publicOrigin(request, env = null) {
 }
 
 // noindex: 検索に載せない（canonical・OGを出さず robots noindex）。存在しない王国・データがまだない王国に使う。
-function shell({ title, description, canonical, body, jsonLd = null, origin = "", noindex = false }) {
+export function shell({ title, description, canonical, body, jsonLd = null, origin = "", noindex = false }) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>${noindex ? '<meta name="robots" content="noindex">' : `<meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}">`}
@@ -85,7 +85,7 @@ export async function loadPublicKingdom(env, kid) {
   const [catalog, players, alliances, matchup, score, growth, near, statsRow] = await Promise.all([
     db.prepare("SELECT kid, name, status, region, language, last_seen_at, r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT rank, nick_name, score, aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10").bind(kid).all().catch(() => ({ results: [] })),
-    db.prepare("SELECT rank, abbr, name, score FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] })),
+    db.prepare("SELECT rank, abbr, name, score, COALESCE(target_id, aid) AS aid FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT season, opponent, opponent_name FROM kvk_matchups WHERE kid = ? ORDER BY season DESC LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT season, stage, opponent, score, opponent_score FROM kvk_scores WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
     env.ARCHIVE ? loadKingdomGrowthHistory(env.ARCHIVE, kid).catch(() => null) : null,
@@ -118,7 +118,13 @@ export async function loadPublicKingdom(env, kid) {
       age = currentKingdomAge(detail?.age_days, snap?.observed_at);
     } catch { age = null; }
   }
-  return { catalog, players: playerRows, alliances: alliances?.results || [], matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar };
+  // ウォッチされていない王国は、裏で集めた同盟一覧（alliance_directory）から上位5を出す。
+  let allianceList = alliances?.results || [];
+  if (!allianceList.length) {
+    const dir = await db.prepare("SELECT rank, abbr, name, power AS score, aid FROM alliance_directory WHERE kid = ? ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] }));
+    allianceList = dir?.results || [];
+  }
+  return { catalog, players: playerRows, alliances: allianceList, matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar };
 }
 
 // 存在しない王国番号（カタログにない）は404にする。どんな番号でも中身のないページを返すと、検索エンジンに「中身のないページが無限にある」と見られる。
@@ -167,7 +173,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
 
   const playerRows = players.length ? `<div class="list">${players.map(p => `<div class="row"><b>${esc(p.rank)}</b><span>${esc(p.nick_name || "-")}${p.abbr ? `<small>[${esc(p.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(p.score))}</em></div>`).join("")}</div>`
     : `<div class="empty">個人ランキングは、この王国が誰かのウォッチリストに入ると自動で取得されます。</div>`;
-  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => `<div class="row"><b>${esc(a.rank)}</b><span>${esc(a.name || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(a.score))}</em></div>`).join("")}</div>` : "";
+  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const label = `${esc(a.name || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
 
   let kvk = "";
   if (matchup?.opponent) {

@@ -6,6 +6,13 @@
 
 export const D1_READ_ALERT_DEFAULT_ROWS = 300_000_000;
 export const D1_READ_CHECK_INTERVAL_SECONDS = 3600;
+// Workers 有料プランで料金に含まれる月の枠（超えると従量課金）。環境変数で上書きできる。
+export const D1_MONTHLY_READ_QUOTA_DEFAULT = 25_000_000_000;
+export const D1_MONTHLY_WRITE_QUOTA_DEFAULT = 50_000_000;
+export function d1MonthlyQuota(env) {
+  const r = Number(env?.D1_MONTHLY_READ_QUOTA), w = Number(env?.D1_MONTHLY_WRITE_QUOTA);
+  return { reads: r > 0 ? r : D1_MONTHLY_READ_QUOTA_DEFAULT, writes: w > 0 ? w : D1_MONTHLY_WRITE_QUOTA_DEFAULT };
+}
 const STATE_KEY = "d1_read_usage";
 
 let schemaReady = null;
@@ -29,13 +36,13 @@ export async function getD1UsageState(db) {
   try { return JSON.parse(row?.value || "null"); } catch { return null; }
 }
 
-async function fetchTodayRowsRead(env, day, fetchImpl) {
+async function fetchTodayRowsRead(env, day, fetchImpl, untilDay = day) {
   const res = await fetchImpl("https://api.cloudflare.com/client/v4/graphql", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: "Bearer " + String(env.CLOUDFLARE_ANALYTICS_TOKEN).trim() },
     body: JSON.stringify({
-      query: "query($accountTag:String!,$day:Date,$databaseId:String){viewer{accounts(filter:{accountTag:$accountTag}){d1AnalyticsAdaptiveGroups(limit:100,filter:{date_geq:$day,date_leq:$day,databaseId:$databaseId}){sum{rowsRead rowsWritten readQueries}}}}}",
-      variables: { accountTag: String(env.CLOUDFLARE_ACCOUNT_ID).trim(), day, databaseId: String(env.CLOUDFLARE_D1_DATABASE_ID).trim() }
+      query: "query($accountTag:String!,$day:Date,$untilDay:Date,$databaseId:String){viewer{accounts(filter:{accountTag:$accountTag}){d1AnalyticsAdaptiveGroups(limit:100,filter:{date_geq:$day,date_leq:$untilDay,databaseId:$databaseId}){sum{rowsRead rowsWritten readQueries}}}}}",
+      variables: { accountTag: String(env.CLOUDFLARE_ACCOUNT_ID).trim(), day, untilDay, databaseId: String(env.CLOUDFLARE_D1_DATABASE_ID).trim() }
     })
   });
   const body = await res.json().catch(() => null);
@@ -72,6 +79,11 @@ export async function runD1UsageAlert(env, { nowMs = Date.now(), fetchImpl = fet
   const state = { checkedAt: now, day, threshold, alertedDay: prev?.alertedDay || null, rowsRead: null, rowsWritten: null, readQueries: null, error: null };
   try {
     Object.assign(state, await fetchTodayRowsRead(env, day, fetchImpl));
+    // 今月（UTC）の合計：余裕がある日にだけ動く裏の収集が見る。
+    const month = await fetchTodayRowsRead(env, day.slice(0, 8) + "01", fetchImpl, day);
+    state.monthStart = day.slice(0, 8) + "01";
+    state.monthRowsRead = month.rowsRead;
+    state.monthRowsWritten = month.rowsWritten;
   } catch (error) {
     state.error = String(error?.message || error).slice(0, 160);
   }

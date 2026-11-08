@@ -1,5 +1,5 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
-import { runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
+import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
 import { recordFunnel, loadFunnel } from "./funnel.js";
 import { googleConfigured, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
@@ -65,7 +65,7 @@ import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
 import { runKvkMysticCollection } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
-import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { enhanceSeo, websiteJsonLd } from "./seo.js";
@@ -96,6 +96,7 @@ import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } 
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { playerShareEmbed } from "./player-share.js";
+import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
@@ -5018,7 +5019,7 @@ export default {
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
-      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => [])), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 3600);
+      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, [...await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => []), ...await loadAllianceSitemapPaths(env.DB).catch(() => [])]), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 21600);
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
       if (url.pathname === "/kvk/matchups") { const season = await currentKvkSeason(env.DB); return Response.redirect(new URL(season ? "/kvk/s" + season : "/kvk", url).toString(), 302); }
       { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }); } }
@@ -5026,6 +5027,7 @@ export default {
       if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })));
       if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }));
       { const m = url.pathname.match(/^\/heroes\/([a-z-]{2,40})\/?$/); if (m) { const heroName = heroNameBySlug(m[1]); if (heroName) return await servePublicPage(request, env, executionContext, async signedIn => { let iconByName = {}; try { iconByName = await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_page_icons_failed", error?.message || error); } return renderHeroPage(heroName, { origin: publicOrigin(request, env), iconByName, signedIn, loginHref: loginUrlFor(url.pathname) }); }); return eagleEyeHtmlResponse(renderHeroNotFoundPage(), 404); } }
+      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); const data = await loadPublicAlliance(env.DB, kid, m[2]).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell })); } }
       if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })));
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); if (!(await publicKingdomExists(env.DB, kid))) return eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404); return await servePublicPage(request, env, executionContext, async signedIn => renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn })); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
@@ -5139,8 +5141,8 @@ export default {
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
-        const [active, cf, d1, apiPool, funnel, top] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null), loadCloudflareTopTraffic(env).catch(() => null)]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top }));
+        const [active, cf, d1, apiPool, funnel, top, sweep] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null), loadCloudflareTopTraffic(env).catch(() => null), getAllianceSweepState(env.DB).catch(() => null)]);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top, sweep }));
       }
       if (url.pathname === "/owner/growth") {
         const guard = await requireOwner(request, env);
@@ -5329,6 +5331,14 @@ export default {
       if (announce?.errors?.length) console.error("announcement_discord_errors", JSON.stringify(announce.errors).slice(0, 500));
     } catch (error) {
       console.error("announcement_discord_failed", error?.message || error);
+    }
+    try {
+      // 全王国の同盟一覧：今月のD1とAPIキーに余裕がある時間だけ、少しずつ集める（公開の同盟ページ用）。
+      const [d1, api] = await Promise.all([getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null)]);
+      const sweep = await runAllianceSweep(env, { collect: collectMightPulseThroughGuards, extractEntries: extractKingdomRankingEntries, d1, api, quota: d1MonthlyQuota(env) });
+      if (sweep?.failed) console.error("alliance_sweep_partial", JSON.stringify(sweep));
+    } catch (error) {
+      console.error("alliance_sweep_failed", error?.message || error);
     }
     try {
       const discord = await runKvkDiscordSync(env);
