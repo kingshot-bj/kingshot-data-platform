@@ -23,7 +23,7 @@
 - [x] ステップ1：毎週月曜に実データから画像・ショート動画・投稿文を自動で作る（GitHub Actions「SNS weekly pack」→ R2 → /owner/social）
 - [ ] ステップ2：Discord（Secrets に SOCIAL_DISCORD_WEBHOOK_URL を入れれば投稿する）・X（開発者登録とキーが必要）
 - [ ] ステップ3：Instagram・YouTube・TikTok（各SNSの開発者登録・審査が必要。YouTube と TikTok は審査が通るまで非公開投稿のみ）
-- [ ] GitHub Actions の CLOUDFLARE_API_TOKEN に R2 の書き込み権限があるか確認（ないと /owner/social に画像が出ない。Artifact には残る）
+- [ ] R2 だけに書ける Cloudflare の鍵を作り、GitHub の Secrets に CLOUDFLARE_R2_API_TOKEN として入れる（今の CLOUDFLARE_API_TOKEN には R2 の権限がなく、2026-11-08 の初回は 403。画像・動画は Artifact に30日残る）
 
 ## 保留（まだやらない）
 
