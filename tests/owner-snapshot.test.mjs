@@ -61,7 +61,7 @@ test("probe：一覧は実行者・キーを返さない。probe_id の1件だ�
   const { loadSnapshotProbe } = await import("../src/owner-snapshot.js");
   const id = "f25b2be2-f282-46a7-aaba-3617c1a88887";
   const db = { prepare: sql => ({ all: async () => ({ results: [{ request_id: id, created_at: 1, endpoint: "/kingdoms/1524/events", status: "SUCCESS", r2_object_key: "mightpulse-probe/2026-11-01/" + id + ".json" }] }), bind: () => ({ first: async () => ({ request_id: id, endpoint: "/kingdoms/1524/events", created_at: 1, r2_object_key: "mightpulse-probe/2026-11-01/" + id + ".json" }) }) }) };
-  const bucket = { get: async key => ({ text: async () => JSON.stringify({ endpoint: "/kingdoms/1524/events", response: { events: [{ name: "Swordland" }] }, api_key: "SECRET", headers: { authorization: "Bearer x" } }) }) };
+  const bucket = { get: async key => ({ text: async () => JSON.stringify({ endpoint: "/kingdoms/1524/events", user_id: "u1", actor_discord_id: "1403315983871115354", actor_label: "BJ", key_id: "k1", key_owner_user_id: "u1", response: { events: [{ name: "Swordland" }] }, api_key: "SECRET", headers: { authorization: "Bearer x" } }) }) };
   const list = await loadSnapshotProbe(db, bucket);
   assert.equal(list.runs[0].endpoint, "/kingdoms/1524/events");
   assert.equal(list.runs[0].archived, true);
@@ -70,6 +70,7 @@ test("probe：一覧は実行者・キーを返さない。probe_id の1件だ�
   const one = await loadSnapshotProbe(db, bucket, { probeId: id });
   assert.equal(one.detail.record.response.events[0].name, "Swordland");
   assert.equal(one.detail.record.api_key, undefined);
+  for (const k of ["user_id", "actor_discord_id", "actor_label", "key_id", "key_owner_user_id"]) assert.equal(one.detail.record[k], undefined, k);
   assert.equal(one.detail.record.headers.authorization, undefined);
   assert.equal((await loadSnapshotProbe(db, bucket, { probeId: "../../x" })).detail.error, "INVALID_PROBE_ID");
   const src = readFileSync(new URL("../src/owner-snapshot.js", import.meta.url), "utf8");
