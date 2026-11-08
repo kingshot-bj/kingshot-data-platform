@@ -5264,7 +5264,7 @@ export default {
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
       if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
-      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
+      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env, executionContext));
       return eagleEyeHtmlResponse(await renderHome(request, env));
     } catch (error) {
       console.error("EagleEye request error:", error);
@@ -5291,6 +5291,11 @@ export default {
       await runKingdomWatchlistJobs(env);
     } catch (error) {
       console.error("kingdom_watchlist_scheduler_failed", error?.message || error);
+    }
+    try {
+      await runUserKingdomRankingRefresh(env);
+    } catch (error) {
+      console.error("user_kingdom_ranking_refresh_failed", error?.message || error);
     }
     try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
@@ -7380,7 +7385,7 @@ async function fetchThroughWatchlistApiPool(env, {
 // 同じ王国・ボードは6時間に1回まで（D1の最終確認時刻）＋同じisolate内で10分に1回まで（失敗の連打防止）。
 const RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS = 6 * 3600;
 const rankingOnDemandAttempts = new Map();
-async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now() } = {}) {
+async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0 } = {}) {
   if (!env?.DB || !Number.isInteger(kid) || kid < 1 || !KINGDOM_RANKING_BOARDS.includes(board)) return { skipped: true, reason: "INVALID" };
   const key = kid + ":" + board;
   const last = rankingOnDemandAttempts.get(key) || 0;
@@ -7390,7 +7395,7 @@ async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now
   const now = Math.floor(nowMs / 1000);
   const state = await env.DB.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
   if (state?.last_checked_at && now - Number(state.last_checked_at) < RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS) return { skipped: true, reason: "FRESH" };
-  const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_RANKING_ON_DEMAND");
+  const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, purpose, reserveApiKeys ? { reserveApiKeys } : {});
   const payload = fetched.result?.data;
   const entries = extractKingdomRankingEntries(payload).slice(0, WATCHLIST_RANKING_LIMIT);
   if (!entries.length) return { saved: false, reason: "RANKING_ENTRIES_EMPTY" };
@@ -7878,33 +7883,65 @@ async function handlePlayerCompareRefreshCapacityApi(request, env) {
 const COMPARE_KINGDOM_ONLY_BOARDS = Object.freeze(["rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power", "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm", "pet_power", "island_prosperity", "master_power"]);
 const COMPARE_RANKING_STALE_SECONDS = 24 * 3600;
 const COMPARE_RANKING_MAX_BOARDS = 26;
-// 比較画面を開いたときに、足りない／古いランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
+// 画面を開いたときに、足りない／古い（24時間より前）王国ランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
 // 実際の取得は refreshKingdomRankingOnDemand（6時間以内に取ったものは取り直さない・10分以内の再試行もしない）。
-async function scheduleCompareRankingFetch(env, executionContext, kidList, { nowMs = Date.now() } = {}) {
+// 戻り値は「取りに行った王国と種類の数」（画面で「取得中」を出す）。
+async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS } = {}) {
   const kids = [...new Set((kidList || []).map(Number).filter(k => Number.isInteger(k) && k > 0))].slice(0, 4);
-  if (!kids.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
-  const now = Math.floor(nowMs / 1000);
-  const state = await env.DB.prepare("SELECT kid, board, last_checked_at FROM kingdom_ranking_board_state WHERE kid IN (" + kids.map(() => "?").join(",") + ") AND board IN (" + COMPARE_KINGDOM_ONLY_BOARDS.map(() => "?").join(",") + ")")
-    .bind(...kids, ...COMPARE_KINGDOM_ONLY_BOARDS).all().catch(() => ({ results: [] }));
-  const checked = new Map((state.results || []).map(r => [r.kid + ":" + r.board, Number(r.last_checked_at) || 0]));
-  const todo = [];
-  for (const kid of kids) for (const board of COMPARE_KINGDOM_ONLY_BOARDS) {
-    if (now - (checked.get(kid + ":" + board) || 0) > COMPARE_RANKING_STALE_SECONDS) todo.push([kid, board]);
-  }
-  const jobs = todo.slice(0, COMPARE_RANKING_MAX_BOARDS);
+  if (!kids.length || !boards?.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
+  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs);
+  const jobs = todo.slice(0, maxBoards);
   if (!jobs.length) return [];
-  executionContext.waitUntil((async () => {
-    for (const [kid, board] of jobs) {
-      try { await refreshKingdomRankingOnDemand(env, kid, board, { nowMs }); }
-      catch (error) {
-        console.warn("compare_ranking_fetch_failed", kid, board, error?.code || error?.message || error);
-        if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) break; // キーが空いていなければやめる
-      }
-    }
-  })());
+  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs }));
   const byKid = new Map();
   for (const [kid] of jobs) byKid.set(kid, (byKid.get(kid) || 0) + 1);
-  return [...byKid].map(([kid, boards]) => ({ kid, boards }));
+  return [...byKid].map(([kid, n]) => ({ kid, boards: n }));
+}
+async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now()) {
+  const now = Math.floor(nowMs / 1000);
+  const state = await db.prepare("SELECT kid, board, last_checked_at FROM kingdom_ranking_board_state WHERE kid IN (" + kids.map(() => "?").join(",") + ") AND board IN (" + boards.map(() => "?").join(",") + ")")
+    .bind(...kids, ...boards).all().catch(() => ({ results: [] }));
+  const checked = new Map((state.results || []).map(r => [r.kid + ":" + r.board, Number(r.last_checked_at) || 0]));
+  const todo = [];
+  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > COMPARE_RANKING_STALE_SECONDS) todo.push([kid, board]);
+  return todo;
+}
+async function runKingdomRankingJobs(env, jobs, options = {}) {
+  let done = 0;
+  for (const [kid, board] of jobs) {
+    try { await refreshKingdomRankingOnDemand(env, kid, board, options); done++; }
+    catch (error) {
+      console.warn("kingdom_ranking_fetch_failed", kid, board, error?.code || error?.message || error);
+      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) break; // キーが空いていなければやめる
+    }
+  }
+  return done;
+}
+async function scheduleCompareRankingFetch(env, executionContext, kidList, options = {}) {
+  return scheduleKingdomRankingFetch(env, executionContext, kidList, COMPARE_KINGDOM_ONLY_BOARDS, options);
+}
+
+// プレイヤー詳細で王国ランキングから出す項目（英雄ランキング4種類・秘境のステージ6種類）。
+const PLAYER_PAGE_RANKING_BOARDS = Object.freeze(["single_hero", "hero_total", "hero_no_equip", "hero_equip", "coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
+
+// 登録ユーザーの王国（王国ウォッチ外）は、王国ランキングにしかない項目を1日1回自動で更新する。
+// 1時間に1回だけ動き、1回に最大6種類。ユーザー操作のために BACKGROUND_KEY_RESERVE 本のキーを空けておく。
+const USER_KINGDOM_RANKING_BOARDS = Object.freeze([...COMPARE_KINGDOM_ONLY_BOARDS, "coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
+const USER_KINGDOM_RANKING_PER_RUN = 6;
+async function runUserKingdomRankingRefresh(env, { nowMs = Date.now() } = {}) {
+  if (!env?.DB) return { skipped: "NO_DB" };
+  const now = Math.floor(nowMs / 1000);
+  if (Math.floor(now / 3600) === Math.floor((now - 300) / 3600) && now % 3600 >= 300) return { skipped: "NOT_THIS_TICK" }; // 1時間に1回（毎時の最初の5分の実行だけ）
+  const rows = await env.DB.prepare(
+    "SELECT DISTINCT p.kid AS kid FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.status = 'ACTIVE' AND p.kid IS NOT NULL " +
+    "AND p.kid NOT IN (SELECT kid FROM kingdom_watchlists WHERE enabled = 1) LIMIT 50"
+  ).all().catch(() => ({ results: [] }));
+  const kids = (rows.results || []).map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
+  if (!kids.length) return { kingdoms: 0, fetched: 0 };
+  const todo = [];
+  for (let i = 0; i < kids.length; i += 10) todo.push(...await staleKingdomRankingBoards(env.DB, kids.slice(i, i + 10), USER_KINGDOM_RANKING_BOARDS, nowMs));
+  const fetched = await runKingdomRankingJobs(env, todo.slice(0, USER_KINGDOM_RANKING_PER_RUN), { nowMs, purpose: "KINGDOM_RANKING_USER_KINGDOM", reserveApiKeys: BACKGROUND_KEY_RESERVE });
+  return { kingdoms: kids.length, pending: todo.length, fetched };
 }
 
 async function handlePlayerCompareApi(request, env, executionContext = null) {
@@ -8401,7 +8438,7 @@ async function handlePlayerSectionExport(request, env) {
     return json({ ok: false, error: error?.code || "PLAYER_EXPORT_FAILED", message: error?.message || "Google Sheetsへの出力に失敗しました。", status: error?.status || 0 }, 502);
   }
 }
-async function renderPlayerPage(request, env) {
+async function renderPlayerPage(request, env, executionContext = null) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
     return renderLoginRequiredPage(request, "プレイヤー詳細", "プレイヤー詳細を見るにはログインしてください。");
@@ -8491,6 +8528,8 @@ async function renderPlayerPage(request, env) {
     const heroKid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
     const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
     const heroRankingsPromise = visibilityEnabled(visibilitySettings, "hero_rankings", auth.role) ? getLatestPlayerHeroRankings(env, heroKid, governorId) : null;
+    // 王国ランキングから出す項目（英雄ランキング・秘境のステージ順位）が無い／古い王国は、裏で取りに行く（画面は1回だけ読み直す）。
+    visibleProfile.ranking_pending = await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
     let buildHistoryHtml = "";
     const buildVisible = {
       heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
@@ -9062,7 +9101,9 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
       hero_no_equip: "英雄総力（装備除外）",
       hero_equip: "英雄総力（装備込み）"
     };
-    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + (heroRankings.length ? '<div class="mini-grid">' : "");
+    const rankingPending = Array.isArray(p.ranking_pending) ? p.ranking_pending : [];
+    const pendingNotice = rankingPending.length ? '<div class="ranking-pending" id="rankingPending" style="margin:0 0 10px;padding:10px 12px;border:1px dashed currentColor;border-radius:10px;font-size:12px;opacity:.85">⏳ 王国' + esc(rankingPending.map(x => x.kid).join('・')) + 'のランキング（英雄総力・秘境の順位など）を取得しています。数秒後に自動で更新します。</div><script>(function(){if(/[?&]rk=1(&|$)/.test(location.search))return;setTimeout(function(){var u=new URL(location.href);u.searchParams.set("rk","1");location.replace(u.pathname+u.search)},8000)})();</script>' : '';
+    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + pendingNotice + (heroRankings.length ? '<div class="mini-grid">' : "");
     for (const ranking of heroRankings) {
       html += '<div class="mini-card"><span>' + esc(heroRankingLabels[ranking.board] || ranking.board) + '</span><b>' + esc(formatCompactNumber(ranking.score)) + ' / ' + esc(ranking.rank ?? "-") + '位</b></div>';
     }
