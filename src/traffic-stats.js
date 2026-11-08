@@ -108,6 +108,46 @@ export async function loadCloudflareTraffic(env, { days = 14, nowMs = Date.now()
   return result;
 }
 
+// 直近24時間で多いアクセス（ページ・ボット名・回線事業者）。「人のPVは数百なのにHTMLが1日数十万回」の正体を調べる用。
+// オーナー画面を開いたときだけ、Cloudflareの集計APIを3回呼ぶ（D1は読まない）。IPアドレスは出さない。
+export const TOP_TRAFFIC_GROUPS = Object.freeze([
+  { key: "paths", title: "多く読まれたパス", dims: "clientRequestPath edgeResponseContentTypeName", label: d => (d.clientRequestPath || "/") + (d.edgeResponseContentTypeName ? "（" + d.edgeResponseContentTypeName + "）" : "") },
+  { key: "agents", title: "多いユーザーエージェント（ボットの名前）", dims: "userAgent", label: d => d.userAgent || "（なし）" },
+  { key: "asns", title: "多い回線事業者（ASN）", dims: "clientAsn clientASNDescription", label: d => (d.clientASNDescription || "不明") + (d.clientAsn ? "（AS" + d.clientAsn + "）" : "") }
+]);
+
+export async function loadCloudflareTopTraffic(env, { nowMs = Date.now(), fetchImpl = fetch, limit = 12 } = {}) {
+  const token = env?.CF_ANALYTICS_TOKEN, zoneTag = env?.CF_ZONE_ID;
+  if (!token || !zoneTag) return { configured: false };
+  const until = new Date(nowMs).toISOString();
+  const since = new Date(nowMs - 24 * 3600 * 1000 + 60000).toISOString();
+  const out = { configured: true, since, until, groups: {} };
+  await Promise.all(TOP_TRAFFIC_GROUPS.map(async g => {
+    try {
+      const data = await cfGraphql(token,
+        `query($zoneTag:string,$since:Time,$until:Time){viewer{zones(filter:{zoneTag:$zoneTag}){httpRequestsAdaptiveGroups(limit:${Number(limit) | 0},orderBy:[count_DESC],filter:{datetime_geq:$since,datetime_lt:$until,requestSource:"eyeball"}){count dimensions{${g.dims}}}}}}`,
+        { zoneTag, since, until }, fetchImpl);
+      const rows = data?.viewer?.zones?.[0]?.httpRequestsAdaptiveGroups || [];
+      out.groups[g.key] = { rows: rows.map(r => ({ label: String(g.label(r.dimensions || {})).slice(0, 160), count: Number(r.count) || 0 })) };
+    } catch (error) {
+      out.groups[g.key] = { error: error.message };
+    }
+  }));
+  return out;
+}
+
+export function renderTopTrafficCard(top) {
+  if (!top || !top.configured) return "";
+  const total = Math.max(1, ...Object.values(top.groups).flatMap(g => (g.rows || []).map(r => r.count)));
+  const section = g => {
+    const res = top.groups[g.key] || {};
+    if (res.error) return `<h3>${esc(g.title)}</h3><p class="err">取得できませんでした（${esc(res.error)}）</p>`;
+    if (!res.rows?.length) return `<h3>${esc(g.title)}</h3><p class="muted">データがありません。</p>`;
+    return `<h3>${esc(g.title)}</h3><table><thead><tr><th>${g.key === "paths" ? "パス（種類）" : g.key === "agents" ? "ユーザーエージェント" : "回線事業者"}</th><th>回数</th></tr></thead><tbody>${res.rows.map(r => `<tr><td style="word-break:break-all">${esc(r.label)}</td><td>${num(r.count)}</td></tr>`).join("")}</tbody></table>`;
+  };
+  return `<div class="card"><h2>直近24時間で多いアクセス（Cloudflareの集計）</h2>${TOP_TRAFFIC_GROUPS.map(section).join("")}<p class="muted">ボットも含めた全部のアクセスです。数字はCloudflareのサンプリングによる推計値です。IPアドレスは表示しません。</p></div>`;
+}
+
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const num = v => v === null || v === undefined ? "—" : Number(v).toLocaleString("ja-JP");
 function renderD1Card(d1) {
@@ -138,7 +178,7 @@ function bars(rows, key) {
   return rows.map(r => `<div class="bar"><span>${esc(String(r.day || r.date).slice(5))}</span><i style="width:${Math.round((Number(r[key]) || 0) / max * 100)}%"></i><b>${num(r[key])}</b></div>`).join("");
 }
 
-export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null, funnel = undefined } = {}) {
+export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null, funnel = undefined, top = null } = {}) {
   const activeRows = active.map(d => ({ ...d, roleText: ROLES.filter(r => d.roles[r]).map(r => r + " " + d.roles[r]).join("・") }));
   const activeHtml = `<div class="bars">${bars(activeRows, "total")}</div><table><thead><tr><th>日付（日本時間）</th><th>人数</th><th>ロール内訳</th></tr></thead><tbody>${activeRows.map(d => `<tr><td>${esc(d.day)}</td><td>${num(d.total)}</td><td>${esc(d.roleText || "—")}</td></tr>`).join("")}</tbody></table>`;
   let cfHtml;
@@ -155,5 +195,5 @@ export function renderOwnerTrafficPage({ active = [], cf = { configured: false }
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px 96px}a{color:#38bdf8}.card{background:#111c33;border:1px solid #1e2b47;border-radius:16px;padding:16px;margin:14px 0}h1{font-size:22px;margin:8px 0}h2{font-size:17px;margin:0 0 10px}h3{font-size:14px;margin:16px 0 8px;color:#cbd5e1}.bars{display:grid;gap:4px;margin:6px 0 12px}.bar{display:grid;grid-template-columns:3.2em 1fr 4em;gap:8px;align-items:center;font-size:12px}.bar i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,#0ea5e9,#22d3ee);min-width:2px}.bar b{text-align:right;font-weight:700}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 4px;border-bottom:1px solid #1e2b47;text-align:left}td:nth-child(n+2),th:nth-child(n+2){text-align:right}td:last-child{text-align:right}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.err{color:#fca5a5;font-size:12px}code{background:#0b1222;padding:1px 4px;border-radius:4px}</style></head>
 <body><main class="wrap"><a href="/owner">← OWNER管理</a><h1>アクセス状況</h1>
 ${funnel === undefined ? "" : renderFunnelCard(funnel)}${renderD1Card(d1)}${renderApiPoolCard(apiPool)}<div class="card"><h2>ログインして使った人（1日あたり）</h2>${activeHtml}<p class="muted">1人1日1回だけ数えます。記録は90日で消えます。</p></div>
-<div class="card"><h2>訪問者（Cloudflareの集計）</h2>${cfHtml}</div></main></body></html>`;
+<div class="card"><h2>訪問者（Cloudflareの集計）</h2>${cfHtml}</div>${renderTopTrafficCard(top)}</main></body></html>`;
 }

@@ -94,3 +94,31 @@ test("未設定なら設定方法を案内し、OWNER専用ルートとリンク
   assert.match(src, /href="\/owner\/traffic"/);
   assert.match(src, /if \(user\) await recordDailyActive\(env\.DB, user\);/);
 });
+
+test("直近24時間で多いアクセス：ページ・ボット名・回線事業者。IPは出さない。失敗した表だけエラー表示", async () => {
+  const { loadCloudflareTopTraffic, renderTopTrafficCard } = await import("../src/traffic-stats.js");
+  assert.deepEqual(await loadCloudflareTopTraffic({}), { configured: false });
+  const queries = [];
+  const fetchImpl = async (url, init) => {
+    const body = JSON.parse(init.body);
+    queries.push(body);
+    assert.equal(init.headers.authorization, "Bearer tok");
+    if (body.query.includes("userAgent")) return new Response(JSON.stringify({ data: { viewer: { zones: [{ httpRequestsAdaptiveGroups: [{ count: 300000, dimensions: { userAgent: "Mozilla/5.0 (compatible; SomeBot/1.0)" } }] }] } } }));
+    if (body.query.includes("clientAsn")) return new Response(JSON.stringify({ errors: [{ message: "unknown field clientAsn" }] }));
+    return new Response(JSON.stringify({ data: { viewer: { zones: [{ httpRequestsAdaptiveGroups: [{ count: 250000, dimensions: { clientRequestPath: "/k/1524", edgeResponseContentTypeName: "html" } }] }] } } }));
+  };
+  const top = await loadCloudflareTopTraffic({ CF_ANALYTICS_TOKEN: "tok", CF_ZONE_ID: "z" }, { nowMs: Date.parse("2026-11-08T10:00:00Z"), fetchImpl });
+  assert.equal(queries.length, 3);
+  for (const q of queries) {
+    assert.match(q.query, /httpRequestsAdaptiveGroups\(limit:12,orderBy:\[count_DESC\],filter:\{datetime_geq:\$since,datetime_lt:\$until,requestSource:"eyeball"\}\)/);
+    assert.doesNotMatch(q.query, /clientIP/);
+  }
+  assert.equal(queries[0].variables.until, "2026-11-08T10:00:00.000Z");
+  const html = renderTopTrafficCard(top);
+  assert.match(html, /\/k\/1524（html）/);
+  assert.match(html, /250,000/);
+  assert.match(html, /SomeBot\/1\.0/);
+  assert.match(html, /取得できませんでした（unknown field clientAsn）/);
+  assert.doesNotMatch(html, /tok/);
+  assert.equal(renderTopTrafficCard({ configured: false }), "");
+});

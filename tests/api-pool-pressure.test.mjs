@@ -74,7 +74,7 @@ test("配線：裏の収集はユーザー用に枠を残す、ユーザー操�
   assert.match(player, /await recordPoolPressure\(env\.DB, "interactive_no_key"\);/);
   assert.doesNotMatch(player, /reserveAvailableKeys/, "ユーザー操作は枠を残さず使える");
   assert.match(index, /await runApiPoolUsageAlert\(env\);/);
-  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel \}\)/);
+  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top \}\)/);
   const engine = readFileSync(new URL("../src/data-collection-engine.js", import.meta.url), "utf8");
   assert.match(engine, /reserveAvailableKeys: Math\.floor\(reserveKeys\)/);
   assert.match(readFileSync(new URL("../src/kvk-mystic.js", import.meta.url), "utf8"), /purpose: "KVK_MYSTIC_BOARDS", reserveKeys: BACKGROUND_KEY_RESERVE/);
