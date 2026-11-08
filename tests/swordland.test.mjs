@@ -66,3 +66,11 @@ test("配線：ホームの入口（ログイン中だけ・開催中だけ表�
   assert.match(index, /await runSwordlandEventsRefresh\(env\);/);
   assert.match(renderRobotsTxt("https://eagleeye-ks.com"), /Disallow: \/swordland/);
 });
+
+test("メニュー：「その他」に聖剣争奪と同盟比較。開催期間外の聖剣ページから同盟比較へ", async () => {
+  const { EAGLEEYE_OTHER_MENU } = await import("../src/eagleeye-ui.js");
+  const keys = EAGLEEYE_OTHER_MENU.map(x => [x.key, x.href]);
+  assert.ok(keys.some(([k, h]) => k === "swordland" && h === "/swordland"));
+  assert.ok(keys.some(([k, h]) => k === "allianceCompare" && h === "/alliance/compare"));
+  assert.match(renderSwordlandPage({ state: {} }), /href="\/alliance\/compare">⚔️ 同盟比較はいつでも使えます/);
+});

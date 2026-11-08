@@ -125,7 +125,7 @@ export function renderSwordlandPage({ state, message = "" }) {
   const mine = s.mine ? `王国${esc(s.mine.kid)}の ${esc(s.mine.alliance_abbr || "")}${s.mine.alliance_name ? "（" + esc(s.mine.alliance_name) + "）" : ""}` : "";
   const cur = s.matchup ? `<p class="now">今回の相手：<b>王国${esc(s.matchup.opp_kid)}の ${esc(s.matchup.opp_tag)}</b>（${esc(s.matchup.count)}人が登録${s.matchup.disputed ? "・登録が分かれています" : ""}）</p>` + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, s.matchup.opp_kid, s.matchup.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
   let body;
-  if (!s.showdown) body = `<p>今は聖剣争奪の開催期間ではありません（日程はMightPulseから1日1回確認しています）。</p>`;
+  if (!s.showdown) body = `<p>今は聖剣争奪の開催期間ではありません（日程はMightPulseから1日1回確認しています）。開催中はここで対戦相手を登録・確認できます。</p><p><a class="btn" href="/alliance/compare">⚔️ 同盟比較はいつでも使えます</a></p>`;
   else if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
   else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required value="${esc(s.mine?.opp_kid || "")}"><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">登録する</button></form>`;
   else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>`;
