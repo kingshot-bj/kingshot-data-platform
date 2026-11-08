@@ -72,7 +72,7 @@ export function kvkPairHtml(r) {
     if (kid == null) return '<div class="sd bye">不戦（対戦相手なし）</div>';
     return '<a class="sd' + (up ? " up" : "") + '" href="/k/' + e(kid) + '"><b>王国 ' + e(kid) + '</b><small>総戦力 ' + e(pow || "—") + '（参考）・開設' + (age != null ? e(age) + "日" : "—") + '</small></a>';
   };
-  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>' + e(r[8]) + 'ステージ中</small><a class="more" href="/kvk?kid=' + e(r[0]) + '">2位以降を見る</a>' : '<small>集計中</small>';
+  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>' + e(r[8]) + 'ステージ中</small><a class="more" href="/kvk?kid=' + e(r[0]) + '" rel="nofollow">2位以降を見る</a>' : '<small>集計中</small>';
   return '<li class="pair">' + side(r[0], r[1], r[2], aUp) + '<div class="vs"><span>VS</span>' + mid + '</div>' + side(r[3], r[4], r[5], bUp) + '</li>';
 }
 

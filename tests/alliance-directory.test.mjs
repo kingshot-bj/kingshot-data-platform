@@ -125,7 +125,7 @@ test("loadPublicAlliance：上位10人より下のメンバーの名前は渡さ
 test("配線：/a/ のルート（見つからなければ404・noindex）、王国ページからのリンク、サイトマップ、1時間ごとの処理、オーナー画面", async () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /url\.pathname\.match\(\/\^\\\/a\\\/\(\\d\{1,6\}\)\\\/\(\\d\{1,20\}\)\\\/\?\$\/\)/);
-  assert.match(index, /noindex: true \}\), 404\); return await servePublicPage\(request, env, executionContext, async signedIn => renderPublicAlliancePage/);
+  assert.match(index, /async signedIn => \{ const data = await loadPublicAlliance\(env\.DB, kid, m\[2\]\)\.catch\(\(\) => null\); if \(!data\) return eagleEyeHtmlResponse\(publicShell\([\s\S]*?noindex: true \}\), 404\); return renderPublicAlliancePage/);
   assert.match(index, /loadAllianceSitemapPaths\(env\.DB\)/);
   assert.match(index, /runAllianceSweep\(env, \{ collect: collectMightPulseThroughGuards, extractEntries: extractKingdomRankingEntries, d1, api, quota: d1MonthlyQuota\(env\) \}\)/);
   assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);

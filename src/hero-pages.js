@@ -4,7 +4,7 @@
 // catalog and the sitemap.
 
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
-import { HERO_TROOPS_JA, skillCard, skillGroupLabel } from "./hero-catalog-page.js";
+import { HERO_TROOPS_JA, skillCard, skillGroupLabel, heroSourceLinksHtml } from "./hero-catalog-page.js";
 import { HERO_SLUGS } from "./hero-slugs.js";
 export { HERO_SLUGS };
 import { canonicalHeroName, heroRarity, isDedicatedShardHero, MAX_STEPS, shardsBetween } from "./hero-shards.js";
@@ -91,10 +91,10 @@ export function renderHeroPage(name, { origin = "", iconByName = {}, signedIn = 
 <dl class="hp-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
 <div class="actions">${cta}</div>
 ${groups.map(g => `<section class="skill-group"><h2>${esc(g.type)}<small>${(g.skills || []).length}個</small></h2><div class="skill-grid">${(g.skills || []).map(s => skillCard({ ...s, heroSource: data.source })).join("")}</div></section>`).join("")}
-<p class="note">スキル情報は公開資料（<a href="${esc(data.source)}" target="_blank" rel="noopener noreferrer">${esc(data.sourceName || "出典")}</a>、確認日 ${esc(data.checkedAt || "未記録")}）をもとにしています。ゲーム内の表記と異なる場合があります。</p>
+<p class="note">スキル情報は公開資料（${heroSourceLinksHtml(data)}、確認日 ${esc(data.checkedAt || "未記録")}）をもとにしています。ゲーム内の表記と異なる場合があります。</p>
 ${peers.length ? `<section class="related"><h2>同じ世代の英雄</h2><div class="chips">${peers.map(heroLink).join("")}</div></section>` : ""}
 ${sameTroop.length ? `<section class="related"><h2>同じ兵種の${esc(rarity)}英雄</h2><div class="chips">${sameTroop.map(heroLink).join("")}</div></section>` : ""}
-<p class="back"><a href="/hero-catalog">← 英雄カタログで全英雄を見る</a></p>`;
+<p class="back"><a href="/hero-catalog">← 英雄カタログで全英雄を見る</a> · <a href="/kingdom-timeline">英雄が登場する時期（王国タイムライン）</a></p>`;
   const title = `${display}のスキルと性能｜キングショット英雄 | EagleEye`;
   // 実際に載っているスキルの種類だけを書く（専用装備のデータがない英雄もいる）。
   const description = `${heroSummary(name)}${skillGroupLabel(data)}のスキル${skillTotal}個の効果と初期値・最大値を日本語でまとめています。`.slice(0, 160);

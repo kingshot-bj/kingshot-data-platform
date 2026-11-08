@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { HERO_SKILLS_JA } from "../src/hero-skills-ja.js";
 import { HERO_SLUGS } from "../src/hero-slugs.js";
 import { renderHeroPage, heroPagePaths, heroNameBySlug } from "../src/hero-pages.js";
-import { renderHeroCatalogPage, skillGroupLabel } from "../src/hero-catalog-page.js";
+import { renderHeroCatalogPage, skillGroupLabel, heroSourceUrls } from "../src/hero-catalog-page.js";
 import { canonicalHeroName } from "../src/hero-shards.js";
 import { renderSitemapXml } from "../src/public-pages.js";
 
@@ -80,4 +80,44 @@ test("サイトマップ：英雄ページは登録データから全員分、�
   const xml = renderSitemapXml("https://eagleeye-ks.com", []);
   for (const n of NAMES) assert.ok(xml.includes(`<loc>https://eagleeye-ks.com/heroes/${HERO_SLUGS[n]}</loc>`), n);
   assert.ok(xml.includes("<loc>https://eagleeye-ks.com/hero-catalog</loc>"));
+});
+
+test("カタログ：見出しに検索語、世代ごとのまとまり、タイムラインへのリンク。出典は英雄ごとに1行・nofollow", async () => {
+  const html = await renderHeroCatalogPage({}).text();
+  assert.match(html, /<h1>キングショット 英雄一覧<\/h1>/);
+  assert.match(html, /href="\/kingdom-timeline"/);
+  const heads = [...html.matchAll(/<div class="gen-head" data-gen-head="([a-z0-9]+)"><h3>([^<]+)<\/h3>/g)].map(m => m[2]);
+  assert.equal(heads[0], "第1世代（レジェンド）");
+  assert.deepEqual(heads.slice(-3), ["そのほかのレジェンド英雄", "エピック英雄", "レア英雄"]);
+  // 世代は順番どおり、どの英雄もどこか1つのまとまりに入る
+  const gens = heads.filter(h => /^第\d+世代/.test(h)).map(h => Number(h.match(/\d+/)[0]));
+  assert.deepEqual(gens, [...gens].sort((a, b) => a - b));
+  assert.equal((html.match(/<div class="hero-item" data-gen="/g) || []).length, NAMES.length);
+  // 外部リンク：スキルごとに付けない。英雄ごとの出典の数（重複なし）だけ。すべて nofollow
+  const external = [...html.matchAll(/<a [^>]*href="https?:[^"]*"[^>]*>/g)].map(m => m[0]);
+  const expected = NAMES.reduce((n, name) => n + heroSourceUrls(HERO_SKILLS_JA[name]).length, 0);
+  assert.equal(external.length, expected);
+  assert.ok(external.every(a => /rel="nofollow noopener noreferrer"/.test(a)));
+  assert.doesNotMatch(html, /英雄ページの出典|専用装備の出典/);
+  // 検索で空になった世代の見出しは隠す
+  assert.match(html, /h\.classList\.toggle\("hidden",!cards\.some\(c=>c\.dataset\.gen===h\.dataset\.genHead&&!c\.classList\.contains\("hidden"\)\)\)/);
+});
+
+test("個別ページ：出典は注記の1か所（nofollow）、タイムラインへのリンク", () => {
+  for (const n of NAMES) {
+    const html = renderHeroPage(n, { origin: "" });
+    const external = [...html.matchAll(/<a [^>]*href="https?:[^"]*"[^>]*>/g)].map(m => m[0]);
+    assert.equal(external.length, heroSourceUrls(HERO_SKILLS_JA[n]).length, n);
+    assert.ok(external.every(a => /nofollow/.test(a)), n);
+    assert.match(html, /href="\/kingdom-timeline"/, n);
+  }
+});
+
+test("サイトマップ：更新日は毎日変わるページだけ（英雄・ツールには付けない）", () => {
+  const xml = renderSitemapXml("https://x", [1], "2026-11-08", ["/kvk/s23"]);
+  assert.match(xml, /<loc>https:\/\/x\/k\/1<\/loc><lastmod>2026-11-08<\/lastmod>/);
+  assert.match(xml, /<loc>https:\/\/x\/kvk\/s23<\/loc><lastmod>2026-11-08<\/lastmod>/);
+  assert.match(xml, /<loc>https:\/\/x\/hero-catalog<\/loc><\/url>/);
+  assert.match(xml, /<loc>https:\/\/x\/heroes\/alcar<\/loc><\/url>/);
+  assert.doesNotMatch(xml, /changefreq/);
 });
