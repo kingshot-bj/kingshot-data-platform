@@ -8,8 +8,12 @@ export const FUNNEL_STEPS = Object.freeze([
   { key: "google_start", label: "Googleへ" },
   { key: "login_cancelled", label: "Discordで取消" },
   { key: "login_new", label: "新規ログイン" },
-  { key: "login_returning", label: "再ログイン" }
+  { key: "login_returning", label: "再ログイン" },
+  { key: "upgrade_popup_shown", label: "昇格案内を表示" },
+  { key: "upgrade_popup_click", label: "昇格案内を押した" }
 ]);
+// 画面から送ってよい段階（ログインの段階はサーバーだけが数える）。
+export const CLIENT_FUNNEL_STEPS = Object.freeze(["upgrade_popup_shown", "upgrade_popup_click"]);
 
 const jstDay = ms => new Date(ms + 9 * 3600 * 1000).toISOString().slice(0, 10);
 

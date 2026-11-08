@@ -255,6 +255,44 @@ export const EAGLEEYE_DRAWER_INIT = `
     x.onclick=function(){try{localStorage.setItem(key,String(Date.now()+3*86400000));}catch(e){}bar.remove();};
     bar.appendChild(a);bar.appendChild(x);document.body.insertBefore(bar,document.body.firstChild);
   }
+  // BASIC の人へ ADVANCED への案内（画面いっぱいのポップアップ）。しつこくしない：
+  // ・ページを開いて0.8秒後に大きく出す　・出したら3日、「あとで」で3日、「しばらく表示しない」で30日出さない
+  // ・マイKingShot・ログイン・管理画面では出さない　・出した回数と押した回数だけ数える（個人は記録しない）
+  function paintUpgradePopup(step){
+    if(!step||document.getElementById("eeUpgradePop"))return;
+    if(/^\\/(my-player|login|owner|admin|auth)/.test(location.pathname))return;
+    var KEY="ee-upgrade-pop-next";
+    try{
+      if(Number(localStorage.getItem(KEY)||0)>Date.now())return;
+    }catch(e){return;}
+    function ping(kind){try{var b=JSON.stringify({step:kind});if(!(navigator.sendBeacon&&navigator.sendBeacon("/api/funnel-event",new Blob([b],{type:"application/json"}))))fetch("/api/funnel-event",{method:"POST",headers:{"content-type":"application/json"},body:b,keepalive:true,credentials:"same-origin"});}catch(e){}}
+    function later(days){try{localStorage.setItem(KEY,String(Date.now()+days*86400000));}catch(e){}}
+    setTimeout(function(){
+      if(document.getElementById("eeUpgradePop"))return;
+      var isKey=step==="key";
+      var title=isKey?"あと1ステップでADVANCED":"まず領主IDを登録しよう";
+      var lead=isKey?"MightPulseのAPIキー（無料・約1分）を登録すると、見られる情報が一気に増えます。":"領主IDを登録すると（30秒）、自分の戦力や役場の推移がホームに出て、ADVANCEDへの最初の一歩になります。";
+      var items=isKey?["英雄スキル・専用装備・英雄の装備","領主装備・宝石","プレイヤーの座標","KvK画面（対戦相手・スコア推移・秘境の比較）","ウォッチ：プレイヤー3人→20人、王国1→3"]:["自分の戦力・役場の推移がホームに","ウォッチ中の変化のお知らせ","あと1ステップでADVANCED"];
+      var wrap=document.createElement("div");wrap.id="eeUpgradePop";
+      wrap.innerHTML='<div class="eup-back"></div><div class="eup-sheet" role="dialog" aria-modal="true" aria-labelledby="eupTitle"><button type="button" class="eup-x" aria-label="閉じる">×</button><img src="/assets/eagleeye/bjnyan/poses/common.webp" alt="" class="eup-img"><b id="eupTitle"></b><p class="eup-lead"></p><ul class="eup-list"></ul><a class="eup-cta" href="/my-player"></a><div class="eup-sub"><button type="button" class="eup-later">あとで</button><button type="button" class="eup-never">しばらく表示しない</button></div></div>';
+      wrap.querySelector("#eupTitle").textContent=title;
+      wrap.querySelector(".eup-lead").textContent=lead;
+      var ul=wrap.querySelector(".eup-list");items.forEach(function(t){var li=document.createElement("li");li.textContent=t;ul.appendChild(li);});
+      wrap.querySelector(".eup-cta").textContent=(isKey?"APIキーを登録する":"領主IDを登録する")+" →";
+      var st=document.createElement("style");
+      st.textContent="#eeUpgradePop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;padding:12px}#eeUpgradePop .eup-back{position:absolute;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}#eeUpgradePop .eup-sheet{position:relative;width:100%;max-width:460px;max-height:calc(100vh - 24px);overflow:auto;padding:26px 20px 16px;border-radius:24px;border:2px solid #eab308;background:var(--ee-panel,#0f1f36);color:var(--ee-text,#e8f3ff);box-shadow:0 0 0 6px rgba(234,179,8,.18),0 20px 60px rgba(0,0,0,.55);font:15px/1.6 system-ui,-apple-system,sans-serif;text-align:center;animation:eupIn .45s cubic-bezier(.2,1.3,.4,1)}@keyframes eupIn{from{transform:scale(.85);opacity:0}to{transform:none;opacity:1}}#eeUpgradePop .eup-img{display:block;width:150px;max-width:45%;height:auto;margin:0 auto 6px}#eeUpgradePop b{display:block;font-size:24px;line-height:1.3;color:var(--ee-text,#e8f3ff);margin:4px 0 8px}#eeUpgradePop b:before{content:'✦ ';color:#eab308}#eeUpgradePop .eup-lead{margin:0 0 12px;font-size:14px;color:var(--ee-subtext,#91a7bf)}#eeUpgradePop .eup-list{display:inline-block;text-align:left;margin:0 0 16px;padding-left:1.2em;font-size:14px}#eeUpgradePop .eup-list li{margin:3px 0}#eeUpgradePop .eup-cta{display:block;padding:15px;border-radius:999px;background:#facc15;color:#1f1300;font-weight:900;font-size:16px;text-align:center;text-decoration:none;box-shadow:0 6px 18px rgba(250,204,21,.35)}#eeUpgradePop .eup-sub{display:flex;justify-content:space-between;margin-top:10px}#eeUpgradePop .eup-sub button,#eeUpgradePop .eup-x{border:0;background:transparent;color:var(--ee-subtext,#91a7bf);font:inherit;font-size:13px;padding:8px 6px;cursor:pointer}#eeUpgradePop .eup-x{position:absolute;top:8px;right:10px;font-size:26px;line-height:1}@media(prefers-reduced-motion:reduce){#eeUpgradePop .eup-sheet{animation:none}}";
+      wrap.appendChild(st);
+      function close(days){later(days);wrap.remove();}
+      wrap.querySelector(".eup-back").onclick=function(){close(3);};
+      wrap.querySelector(".eup-x").onclick=function(){close(3);};
+      wrap.querySelector(".eup-later").onclick=function(){close(3);};
+      wrap.querySelector(".eup-never").onclick=function(){close(30);};
+      wrap.querySelector(".eup-cta").onclick=function(){later(3);ping("upgrade_popup_click");};
+      document.body.appendChild(wrap);
+      later(3);ping("upgrade_popup_shown");
+      try{wrap.querySelector(".eup-cta").focus({preventScroll:true});}catch(e){}
+    },800);
+  }
   // Pages that used to push the watchlist size into the badge keep working; the
   // size is no longer shown as a badge.
   window.__eagleEyeSetPlayerWatchlistCount=function(){};
@@ -262,7 +300,7 @@ export const EAGLEEYE_DRAWER_INIT = `
     if(!state||!state.ok){paintBadges(null);return;}
     return fetch("/api/badges",{credentials:"same-origin",cache:"no-store"})
       .then(function(response){return response.ok?response.json():null;})
-      .then(function(data){paintBadges(data&&data.ok?data:null);if(data&&data.ok)paintOnboarding(data.onboarding);});
+      .then(function(data){paintBadges(data&&data.ok?data:null);if(data&&data.ok){paintOnboarding(data.onboarding);paintUpgradePopup(data.onboarding);}});
   }).catch(function(){paintBadges(null);});
   var links=drawer.querySelector(".ee-global-nav-links");
   // The home drawer already renders account links server-side, so only generic
