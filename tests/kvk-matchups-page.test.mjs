@@ -49,7 +49,7 @@ test("matchups: pairs once, Mystic tally decides order; no KvK scores, no total-
   const html = renderKvkMatchupsPage({ season: 23, pairs, observedAt: 11, origin: "https://eagleeye-ks.com" });
   assert.match(html, /<title>キングショット KvK S23 組み合わせ一覧（秘境の試練で比較） \| EagleEye<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/kvk\/s23">/);
-  assert.ok(html.indexOf('data-kid="3"') < html.indexOf('data-kid="1"'), "6-0 before 4-1");
+  assert.ok(html.indexOf('href="/k/3"') < html.indexOf('href="/k/1"'), "6-0 before 4-1");
   assert.match(html, /<span class="w">4<\/span>-<span class="">1<\/span>/);
   assert.match(html, /href="\/kvk\?kid=1">2位以降を見る<\/a>/, "stage detail behind login");
   assert.doesNotMatch(html, /大差|やや差あり/, "no verdicts from total power");
@@ -71,5 +71,25 @@ test("wiring: routes, sitemap, links, share card", () => {
 test("pairs not yet compared go to the bottom", () => {
   const pairs = [{ a: { kid: 9 }, b: { kid: 10 }, mystic: null }, { a: { kid: 1 }, b: { kid: 2 }, mystic: { wins: 3, losses: 3, even: 0, stages: [1, 2, 3, 4, 5, 6] } }];
   const html = renderKvkMatchupsPage({ season: 1, pairs });
-  assert.ok(html.indexOf('data-kid="1"') < html.indexOf('data-kid="9"'));
+  assert.ok(html.indexOf('href="/k/1"') < html.indexOf('href="/k/9"'));
+});
+
+test("軽量化：HTMLで出すのは最初の60組だけ、残りは小さなデータ。検索・並べ替え・もっと見るは同じHTMLを画面側で作る", async () => {
+  const { KVK_INITIAL_ROWS, kvkPairHtml } = await import("../src/kvk-matchups-page.js");
+  const pairs = Array.from({ length: 1227 }, (_, i) => ({ a: { kid: i * 2 + 1, power: 8.65e10, age: 600 }, b: { kid: i * 2 + 2, power: 8.97e10, age: 560 }, mystic: { wins: i % 7, losses: 6 - (i % 7), even: 0, stages: [1, 2, 3, 4, 5, 6] } }));
+  const html = renderKvkMatchupsPage({ season: 23, pairs, origin: "https://eagleeye-ks.com" });
+  assert.equal(KVK_INITIAL_ROWS, 60);
+  const ul = html.slice(html.indexOf('<ul class="list" id="list">'), html.indexOf("</ul>"));
+  assert.equal((ul.match(/<li class="pair">/g) || []).length, 60);
+  assert.ok(html.length < 150000, "全1227組で150KB未満（以前は約680KB）: " + html.length);
+  assert.match(html, /id="moreBtn">残り1167組を表示<\/button>/);
+  const data = JSON.parse(html.match(/<script type="application\/json" id="kvkRows">(.*?)<\/script>/)[1]);
+  assert.equal(data.length, 1227);
+  assert.deepEqual(data.find(r => r[0] === 1), [1, "86.5B", 600, 2, "89.7B", 560, 0, 6, 6]);
+  // 画面側で作るHTMLもサーバーと同じ形
+  assert.match(kvkPairHtml([1, "87B", 600, 2, "90B", 560, 4, 1, 6]), /<a class="sd up" href="\/k\/1"><b>王国 1<\/b><small>総戦力 87B（参考）・開設600日<\/small><\/a><div class="vs"><span>VS<\/span><b class="tally"><span class="w">4<\/span>-<span class="">1<\/span><\/b><small>6ステージ中<\/small><a class="more" href="\/kvk\?kid=1">2位以降を見る<\/a>/);
+  assert.match(kvkPairHtml([5, "10B", null, null, null, null, null, null, 0]), /不戦/);
+  assert.match(kvkPairHtml([1, "87B", 600, 2, "90B", 560, null, null, 0]), /集計中/);
+  const script = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));
+  assert.doesNotThrow(() => new Function(script));
 });
