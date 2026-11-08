@@ -256,9 +256,12 @@ export async function renderAllianceListPage(request, env, auth = null, { onDema
   const normAid = v => String(v ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
   const known = new Set(rows.results.flatMap(r => [normAid(r.aid), normAid(r.target_id)]).filter(Boolean));
   // ランキングに無い同盟だけ、後ろに足す（ランキングが無い王国では、これが一覧になる）。
+  // 詳細を開いたことがある同盟は、人数（alliance_catalog）もランキングの行に出す。
+  const memberByAid = new Map((catalog.results || []).filter(c => c.member_count != null).map(c => [normAid(c.aid), c.member_count]));
+  rows.results = rows.results.map(r => r.member_count != null ? r : { ...r, member_count: memberByAid.get(normAid(r.aid)) ?? memberByAid.get(normAid(r.target_id)) ?? null });
   const extra = (catalog.results || []).filter(c => !known.has(normAid(c.aid)));
   if (extra.length) rows.results = [...rows.results, ...extra].slice(0, 100);
-  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"ランキングcurrent")+"</small></a>").join("");
+  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"")+"</small></a>").join("");
   let fetchNotice = "";
   if (!(rows.results || []).length || rows.archived) {
     const st = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = 'alliance_power'").bind(kid).all().catch(() => ({ results: [] }));
