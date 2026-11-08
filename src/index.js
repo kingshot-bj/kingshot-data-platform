@@ -89,6 +89,8 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
+import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP } from "./alliance-compare.js";
+import { loadAllianceForCompare } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
@@ -5205,6 +5207,18 @@ export default {
       if (url.pathname === "/kingdom") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
       if (url.pathname === "/kingdom/alliances") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAllianceListPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
+      if (url.pathname === "/alliance/compare") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "同盟比較", "同盟比較を使うにはログインしてください。"));
+        if (!canUseAllianceCompare(auth.role)) return eagleEyeHtmlResponse(renderAllianceComparePage({ message: "同盟比較はADVANCED以上の機能です。マイKingShotで領主を登録し、MightPulseのAPIキーを登録するとADVANCEDになります（/my-player）。" }));
+        const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
+        const topParam = Number(url.searchParams.get("top"));
+        const top = ALLIANCE_COMPARE_TOP_OPTIONS.includes(topParam) && url.searchParams.has("top") ? topParam : ALLIANCE_COMPARE_DEFAULT_TOP;
+        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
+        if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top }));
+      }
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
       if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }

@@ -267,7 +267,46 @@ export async function renderAllianceListPage(request, env, auth = null, { onDema
     const st = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = 'alliance_power'").bind(kid).all().catch(() => ({ results: [] }));
     fetchNotice = onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards: [["alliance_power", rows]], boardState: st?.results || [], what: "同盟一覧" });
   }
-  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1>"+fetchNotice+"<div class='list'>"+(body||(fetchNotice?"":"<div class='empty'>同盟ランキングデータがありません。</div>"))+"</div></main>");
+  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><p style='margin:0 0 10px;font-size:13px'><a href='/alliance/compare'>⚔️ 同盟を比べる（違う王国どうしも・聖剣の下見）→</a></p>"+fetchNotice+"<div class='list'>"+(body||(fetchNotice?"":"<div class='empty'>同盟ランキングデータがありません。</div>"))+"</div></main>");
+}
+
+// 戦力の表記（数値・"1.2B" など）を数値にする。
+function parsePower(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const text = String(value).trim().replace(/,/g, "").replace(/\s+/g, "");
+  const match = text.match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
+  if (!match) {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const magnitude = match[2] ? ({K:1e3,M:1e6,B:1e9}[match[2].toUpperCase()] || 1) : 1;
+  const result = Number(match[1]) * magnitude;
+  return Number.isFinite(result) ? result : null;
+}
+
+// 同盟メンバー1人分を表示用の形にする（同盟詳細・同盟比較で共通）。
+export function normalizeAllianceMember(m, i = 0) {
+    const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
+    const id=String(m?.governor_id||m?.uid||m?.id||"");
+    const rawPower=m?.power??m?.personal_power??m?.score;
+    const power=parsePower(rawPower);
+    const tc=m?.town_center_level??m?.town_center??m?.tc_level;
+    const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
+    // MightPulse Alliance Roster fields: alliance_rank / alliance_rank_label.
+    // Prefer the documented fields; retain legacy aliases as fallbacks.
+    const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
+    const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
+    // alliance_rank may be a member's ordinal rank (e.g. 1), not the R1-R5 tier.
+    // Prefer the human-readable label when resolving the role tier.
+    const roleText=String(roleLabelRaw||"").trim();
+    const roleName=roleText.toLowerCase();
+    const labelMatch=roleText.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
+    const rawMatch=String(roleRaw).trim().match(/^R?([1-5])$/i);
+    const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
+    const role=labelMatch?Number(labelMatch[1]):roleByName??(rawMatch?Number(rawMatch[1]):null);
+    const displayRole=role!==null?"R"+role+(role===5?"（盟主）":""):roleText;
+    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
 }
 
 export async function renderAlliancePage(request, env, auth = null) {
@@ -366,41 +405,7 @@ export async function renderAlliancePage(request, env, auth = null) {
   const ranking = new Map((rankingResult.results||[]).map(r=>[String(r.board),r]));
   const powerRank = ranking.get("alliance_power")?.rank ?? alliance.power_rank ?? row.power_rank ?? row.rank;
   const killsRank = ranking.get("alliance_kills")?.rank ?? alliance.kills_rank;
-  const parsePower = value => {
-    if (value === null || value === undefined || value === "") return null;
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    const text = String(value).trim().replace(/,/g, "").replace(/\s+/g, "");
-    const match = text.match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
-    if (!match) {
-      const parsed = Number(text);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    const magnitude = match[2] ? ({K:1e3,M:1e6,B:1e9}[match[2].toUpperCase()] || 1) : 1;
-    const result = Number(match[1]) * magnitude;
-    return Number.isFinite(result) ? result : null;
-  };
-  const normalized = members.map((m,i)=>{
-    const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
-    const id=String(m?.governor_id||m?.uid||m?.id||"");
-    const rawPower=m?.power??m?.personal_power??m?.score;
-    const power=parsePower(rawPower);
-    const tc=m?.town_center_level??m?.town_center??m?.tc_level;
-    const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
-    // MightPulse Alliance Roster fields: alliance_rank / alliance_rank_label.
-    // Prefer the documented fields; retain legacy aliases as fallbacks.
-    const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
-    const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
-    // alliance_rank may be a member's ordinal rank (e.g. 1), not the R1-R5 tier.
-    // Prefer the human-readable label when resolving the role tier.
-    const roleText=String(roleLabelRaw||"").trim();
-    const roleName=roleText.toLowerCase();
-    const labelMatch=roleText.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
-    const rawMatch=String(roleRaw).trim().match(/^R?([1-5])$/i);
-    const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
-    const role=labelMatch?Number(labelMatch[1]):roleByName??(rawMatch?Number(rawMatch[1]):null);
-    const displayRole=role!==null?"R"+role+(role===5?"（盟主）":""):roleText;
-    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
-  });
+  const normalized = members.map(normalizeAllianceMember);
   const powerSorted = normalized.slice().sort((a,b)=>{
     if (a.power === null && b.power === null) return a.name.localeCompare(b.name,"ja");
     if (a.power === null) return 1;
@@ -500,7 +505,7 @@ export async function renderAlliancePage(request, env, auth = null) {
   const refreshButton=signedIn?"<a class='refresh' href='"+esc(refreshUrl)+"'>↻ 最新情報を取得</a>":"<a class='refresh' href='"+esc(loginHref)+"'>ログインして取得</a>";
   const loginLink=signedIn?"":" <a class='notice-login' href='"+esc(loginHref)+"'>Discordでログイン →</a>";
   const html="<main class='wrap alliance-page'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a>"+
-    "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>同盟</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div>"+refreshButton+"</header>"+
+    "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>同盟</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div>"+refreshButton+"</header>"+"<p style='margin:8px 0 0;font-size:13px'><a href='/alliance/compare?a="+encodeURIComponent(kid+":"+(allianceAbbr||tag))+"'>⚔️ この同盟をほかの同盟と比べる（聖剣の下見）→</a></p>"+
     (statusMessage?"<div class='notice'>"+esc(statusMessage)+loginLink+"</div>":"")+
     "<section><div class='section-title'><h2>同盟概要</h2><small>取得 "+esc(ts(row.last_seen_at||row.updated_at||historyFallbackAt))+"</small></div><div class='metrics'>"+
       "<div class='metric'><small>同盟戦力</small><strong>"+compact(alliancePower)+"</strong><span>"+(powerRank==null?"順位データなし":"戦力順位 "+esc(powerRank)+"位")+"</span></div>"+
@@ -971,4 +976,51 @@ function rankDelta(prev,current){
 }
 function page(title, body){
   return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+esc(title)+" | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}"+EAGLEEYE_THEME_BASE_CSS+"body{margin:0;background:#0a1424;color:#e8f3ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 48px}.back{color:var(--ee-subtext);text-decoration:none}.eyebrow{margin-top:22px;color:var(--ee-cyan);font-size:11px;font-weight:900;letter-spacing:2px}.hero{margin-top:16px;padding:20px;border:1px solid var(--ee-border);border-radius:18px;background:var(--ee-panel);display:flex;justify-content:space-between;gap:12px}.hero h1,h1{margin:4px 0;font-size:28px}.hero p{color:var(--ee-subtext)}.hero button,.actions a{border:1px solid var(--ee-border);background:var(--ee-panel-raised);color:#f8fafc;padding:9px 12px;border-radius:10px;text-decoration:none;font-weight:800}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}.card,.compare,.fresh,.momentum{padding:14px;border:1px solid var(--ee-border);border-radius:12px;background:var(--ee-panel)}.card small{display:block;color:var(--ee-subtext)}.card strong{display:block;margin-top:5px;font-size:18px}.momentum{display:grid;grid-template-columns:1fr 1fr;gap:10px}.list{display:grid;gap:7px}.row{display:grid;grid-template-columns:45px 1fr auto auto;gap:8px;align-items:center;padding:11px 12px;border:1px solid var(--ee-border);border-radius:10px;background:var(--ee-panel-raised);color:#fff;text-decoration:none}.row em{font-style:normal;color:var(--ee-cyan)}.row small{color:var(--ee-subtext)}.boards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}.board,.boardtabs a{display:block;padding:10px;border:1px solid var(--ee-border);border-radius:9px;background:var(--ee-panel);color:#fff;text-decoration:none}.board small{display:block;color:var(--ee-muted);margin-top:4px}.boardtabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.boardtabs a.active{border-color:var(--ee-cyan);color:var(--ee-cyan)}.rank{display:grid;grid-template-columns:45px 1fr auto 55px 35px;gap:8px;align-items:center;padding:10px;border-bottom:1px solid var(--ee-border-soft)}.rank a{color:#fff;text-decoration:none}.rank span{color:var(--ee-cyan)}.rank small{color:var(--ee-subtext)}.star{border:0;background:none;color:var(--ee-cyan);font-size:18px}.comparegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.compare-meta{color:var(--ee-muted);font-size:11px;margin:8px 0 12px}.compare-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}.compare-metrics div{padding:9px;border:1px solid var(--ee-border);border-radius:9px;background:var(--ee-panel-deep)}.compare-metrics small{display:block;color:var(--ee-subtext)}.compare-metrics strong{display:block;margin-top:3px}.empty{padding:18px;border:1px dashed #475569;border-radius:12px;color:var(--ee-subtext)}section{margin-top:24px}section h2{font-size:18px}@media(max-width:600px){.hero{flex-direction:column}.row{grid-template-columns:35px 1fr auto}.row small{display:none}.rank{grid-template-columns:35px 1fr auto 35px 30px}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style></head><body>"+body+"</body></html>";
+}
+
+// 同盟比較用：同盟の情報とメンバー表を読む。メンバー表が無いか24時間より古く、取得してよい時（ログイン中）は
+// 同盟詳細と同じしくみで取りに行く（同じ同盟は10分に1回まで）。
+export const ALLIANCE_COMPARE_STALE_SECONDS = 24 * 3600;
+export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, nowMs = Date.now() } = {}) {
+  const db = env.DB;
+  const normalizeAid = v => String(v ?? "").replace(/^(\d+)\.0+$/, "$1");
+  let row = await db.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid, tag, tag).first().catch(() => null);
+  const rankRow = await db.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid, tag, tag, tag).first().catch(() => null);
+  if (row && rankRow) row = { ...row, power: row.power ?? rankRow.power, power_rank: row.power_rank ?? rankRow.power_rank, name: row.name || rankRow.name, abbr: row.abbr || rankRow.abbr };
+  if (!row) row = rankRow;
+  if (!row) return { kid, tag, error: "NOT_FOUND" };
+  const getAlliance = p => p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
+  const getMembers = p => { const a = getAlliance(p); return [p?.roster, p?.members, p?.data?.roster, p?.data?.members, p?.data?.data?.roster, p?.data?.data?.members, a?.roster, a?.members, a?.member_list].find(Array.isArray) || []; };
+  let payload = {}, observedAt = Number(row.updated_at || row.last_seen_at || 0) || null;
+  if (row.r2_latest_key) { try { payload = (await readR2Json(env.ARCHIVE, row.r2_latest_key))?.payload || {}; } catch {} }
+  if (!Object.keys(payload).length && env.ARCHIVE) {
+    try {
+      const hist = await listAllianceHistoryFromR2(env.ARCHIVE, { kid, aid: normalizeAid(row.aid || tag), limit: 3 });
+      const newest = (hist || []).find(h => h?.payload && typeof h.payload === "object");
+      if (newest) { payload = newest.payload?.data && typeof newest.payload.data === "object" ? newest.payload.data : newest.payload; observedAt = Number(newest.observed_at) || observedAt; }
+    } catch {}
+  }
+  let members = getMembers(payload), fetched = false, status = "";
+  const now = Math.floor(nowMs / 1000);
+  const stale = !members.length || !observedAt || now - observedAt > ALLIANCE_COMPARE_STALE_SECONDS;
+  if (canFetch && stale && env.ARCHIVE && await claimAllianceRefresh(db, kid, row.aid || row.abbr || tag, now).catch(() => false)) {
+    try {
+      const collected = await collectAllianceDetail(env, kid, row.abbr || tag, { purpose: "ALLIANCE_COMPARE_ON_DEMAND" });
+      const got = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
+      const gp = got?.data && typeof got.data === "object" ? got.data : got;
+      const gm = getMembers(gp);
+      if (gm.length) {
+        const aid = normalizeAid(gp?.alliance?.aid ?? gp?.data?.alliance?.aid ?? gp?.aid ?? row.aid ?? tag);
+        const archive = await archiveAllianceHistoryBatch(env.ARCHIVE, { kid, aid, observedAt: now, sourceObservedAt: Number(gp?.source_observed_at ?? gp?.observed_at ?? 0) || null, payload: got });
+        if (archive?.key) await db.prepare("INSERT INTO alliance_catalog (kid,aid,abbr,name,member_count,r2_latest_key,first_seen_at,last_seen_at,updated_at,status) VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE') ON CONFLICT(kid,aid) DO UPDATE SET r2_latest_key=excluded.r2_latest_key,member_count=COALESCE(excluded.member_count,alliance_catalog.member_count),abbr=COALESCE(alliance_catalog.abbr,excluded.abbr),name=COALESCE(alliance_catalog.name,excluded.name),last_seen_at=excluded.last_seen_at,updated_at=excluded.updated_at").bind(kid, aid, row.abbr || tag || null, row.name || null, gm.length, archive.key, now, now, now).run().catch(() => {});
+        payload = gp; members = gm; observedAt = now; fetched = true;
+      } else status = "NO_MEMBERS";
+    } catch (error) { status = String(error?.code || error?.message || "FETCH_FAILED").slice(0, 60); }
+  }
+  const alliance = getAlliance(payload);
+  return {
+    kid, tag, aid: normalizeAid(row.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
+    power: row.power ?? null, power_rank: row.power_rank ?? null, observedAt, fetched, status,
+    members: members.map(normalizeAllianceMember).map(m => ({ name: m.name, id: m.id, power: m.power, tc: m.tc ?? null, role: m.role, roleLabel: m.roleLabel, image: m.image }))
+  };
 }
