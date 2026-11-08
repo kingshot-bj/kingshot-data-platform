@@ -43,3 +43,12 @@ test("登録ユーザーの王国（ウォッチ外）を1日1回更新：1時�
   assert.match(index, /const USER_KINGDOM_RANKING_PER_RUN = 6;/);
   assert.match(index, /await runUserKingdomRankingRefresh\(env\);/);
 });
+
+test("表示：取得済みのランキングに載っていなければ「100位圏外」、取得中なら「取得中」、それ以外は「—」", () => {
+  assert.match(index, /p\.rankingChecked = checkedByKid\.get\(k\) \|\| \[\]; p\.rankingPending = pendingKids\.has\(k\);/);
+  assert.match(index, /FROM kingdom_ranking_board_state WHERE kid IN \(" \+ checkedKids\.map\(\(\) => "\?"\)\.join\(","\) \+ "\) AND last_checked_at > \?/);
+  assert.match(index, /return checked\?\\"<td class=\\\\\\"rank-out\\\\\\">100位圏外<\/td>\\":p\.rankingPending\?\\"<td>取得中<\/td>\\":\\"<td>—<\/td>\\"/);
+  assert.match(index, /leaderboardRows\.set\(key,\{key,label,byId:\{\}\}\)/);
+  // gov_charm（サーバー）と govcharm（表のキー）を同じものとして比べる
+  assert.match(index, /String\(b\)\.toLowerCase\(\)\.replace\(\/\[\^a-z0-9\]\/g,\\"\\"\)===rk/);
+});
