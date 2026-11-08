@@ -4,7 +4,7 @@
 // catalog and the sitemap.
 
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
-import { HERO_TROOPS_JA, skillCard } from "./hero-catalog-page.js";
+import { HERO_TROOPS_JA, skillCard, skillGroupLabel } from "./hero-catalog-page.js";
 import { HERO_SLUGS } from "./hero-slugs.js";
 export { HERO_SLUGS };
 import { canonicalHeroName, heroRarity, isDedicatedShardHero, MAX_STEPS, shardsBetween } from "./hero-shards.js";
@@ -96,7 +96,8 @@ ${peers.length ? `<section class="related"><h2>同じ世代の英雄</h2><div cl
 ${sameTroop.length ? `<section class="related"><h2>同じ兵種の${esc(rarity)}英雄</h2><div class="chips">${sameTroop.map(heroLink).join("")}</div></section>` : ""}
 <p class="back"><a href="/hero-catalog">← 英雄カタログで全英雄を見る</a></p>`;
   const title = `${display}のスキルと性能｜キングショット英雄 | EagleEye`;
-  const description = `${heroSummary(name)}討伐・遠征・専用装備のスキル${skillTotal}個の効果と初期値・最大値を日本語でまとめています。`.slice(0, 160);
+  // 実際に載っているスキルの種類だけを書く（専用装備のデータがない英雄もいる）。
+  const description = `${heroSummary(name)}${skillGroupLabel(data)}のスキル${skillTotal}個の効果と初期値・最大値を日本語でまとめています。`.slice(0, 160);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 <meta property="og:type" content="article"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(display)}のスキルと性能 | EagleEye"><meta property="og:url" content="${esc(canonical)}">

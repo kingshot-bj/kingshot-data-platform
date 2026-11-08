@@ -16,9 +16,9 @@ export function isDiscordUserId(id) {
   return /^\d{15,25}$/.test(String(id ?? "").trim());
 }
 
-// Googleログインを一般に開けるか。設定が入っていても、公開するまでは選択画面で「準備中」にする。
-// 公開するときは GOOGLE_LOGIN_OPEN を true にする（または Workerの変数 GOOGLE_LOGIN_OPEN="1"）。
-export const GOOGLE_LOGIN_OPEN = false;
+// Googleログインを一般に開けるか（2026-11 公開）。false にすると選択画面で「準備中」に戻り、
+// /api/auth/google は ?test=1 以外を選択画面へ戻す（Workerの変数 GOOGLE_LOGIN_OPEN="1" でも開ける）。
+export const GOOGLE_LOGIN_OPEN = true;
 export function googleLoginOpen(env) {
   return GOOGLE_LOGIN_OPEN || String(env?.GOOGLE_LOGIN_OPEN || "") === "1";
 }
