@@ -177,6 +177,26 @@ test("運営（オーナー）の招待：特典が大きく上限の外、限�
   assert.deepEqual(await inviterNameForCode(db, code), { name: null, special: false });
 });
 
+test("あまねの特別招待から来た人だけワインレッドも付く。BJの特別招待ではゴールドだけ", async () => {
+  const { OWNER_INVITE_EXTRA_REWARDS } = await import("../src/referrals.js");
+  const AMANE = "dec37b66-b557-4c3c-b668-59044e3cfae0";
+  assert.deepEqual([...OWNER_INVITE_EXTRA_REWARDS[AMANE]], ["theme_wine"]);
+  resetReferralSchemaCache();
+  const db = fakeDb();
+  db.t.roles.set(AMANE, "OWNER");
+  db.t.roles.set("BJ", "OWNER");
+  const a = await getOrCreateSpecialInviteCode(db, AMANE, 1, () => "amanecdz");
+  const b = await getOrCreateSpecialInviteCode(db, "BJ", 1, () => "bjbjcdzz");
+  await attributeReferral(db, { inviteeUserId: "WA", code: a, isNewUser: true, now: 10 });
+  await attributeReferral(db, { inviteeUserId: "WB", code: b, isNewUser: true, now: 10 });
+  assert.deepEqual((await getUserRewards(db, "WA")).sort(), ["badge_owner_invite", "theme_gold", "theme_wine"]);
+  assert.deepEqual((await getUserRewards(db, "WB")).sort(), ["badge_owner_invite", "theme_gold"]);
+  // あまねの個人の招待リンク（通常）では付かない
+  const personal = await getOrCreateReferralCode(db, AMANE, 1, () => "amanepzz");
+  await attributeReferral(db, { inviteeUserId: "WC", code: personal, isNewUser: true, now: 10 });
+  assert.deepEqual(await getUserRewards(db, "WC"), []);
+});
+
 test("限定の着せ替え・特別招待の表示", async () => {
   const { EAGLEEYE_THEMES, renderThemePickerPage } = await import("../src/themes.js");
   const gold = EAGLEEYE_THEMES.find(t => t.id === "gold");
@@ -204,7 +224,7 @@ test("オーナーは限定の着せ替えもすべて使える（/api/rewards�
     const res = await worker.fetch(new Request("https://eagleeye-ks.com/api/rewards", { headers: { cookie: "eagleeye_session=" + token } }), { DB: { prepare: stmt, batch: async () => [] }, EAGLEEYE_SESSION_SECRET: "s" }, { waitUntil() {} });
     return (await res.json()).rewards;
   };
-  assert.deepEqual(await run("OWNER"), ["theme_gold"]);
+  assert.deepEqual(await run("OWNER"), ["theme_gold", "theme_wine"]);
   assert.deepEqual(await run("ADVANCED"), []);
 });
 

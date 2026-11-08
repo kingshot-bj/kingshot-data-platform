@@ -21,7 +21,12 @@ export const EAGLEEYE_THEMES = Object.freeze([
   { id: "gold", name: "ゴールド", description: "運営招待の限定カラー", reward: "theme_gold",
     tokens: { bg: "#0d0a04", panel: "#1a1408", deep: "#140f06", raised: "#251c0b", border: "#8c6a1f", soft: "#3b2d12", text: "#fff5d6", subtext: "#e6c98a", muted: "#a88f5c", accent: "#f5c542", rival: "#60a5fa" }, light: "#b45309",
     // 色を変えるだけでなく「金属の金」に見せる仕上げ（ダークモードのみ）。
-    effects: "gold" }
+    effects: "gold" },
+  // 限定：あまね（オーナー）の特別招待で来た人とオーナーだけが選べる（user_rewards の theme_wine）。
+  // ゴールドと同じ豪華な仕上げ（光沢・光る縁・きらめき）を、ワインレッドで。
+  { id: "wine", name: "ワインレッド", description: "あまねの運営招待の限定カラー", reward: "theme_wine", lockLabel: "あまねの運営招待で解放",
+    tokens: { bg: "#14060b", panel: "#220b13", deep: "#1a080f", raised: "#2e0f1a", border: "#7a1f38", soft: "#3d1422", text: "#fff0f3", subtext: "#e7aebd", muted: "#a97a87", accent: "#e8456a", rival: "#60a5fa" }, light: "#9f1239",
+    effects: "wine" }
 ]);
 
 // 共有カード（canvas）用の色。使っている着せ替えの色で画像を作る（ライトモードでも画像は濃い色）。
@@ -36,47 +41,62 @@ const TOKEN_VARS = { bg: "--ee-bg", panel: "--ee-panel", deep: "--ee-panel-deep"
 const SAFE_ID = /^[a-z][a-z0-9-]{1,30}$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 
-// 限定カラーの特別な仕上げ（ダークモードのみ）。CSSは固定の文字列で、利用者の入力は入らない。
-const GOLD_METAL = "linear-gradient(100deg,#fff4c2 0%,#f5c542 22%,#b8860b 45%,#fff0b3 60%,#d4a017 78%,#fff4c2 100%)";
-// ライトモード用：白い背景でも読める濃い金
-const GOLD_METAL_DARK = "linear-gradient(100deg,#7a4f00 0%,#b8860b 25%,#e2b23a 45%,#8a5a00 62%,#c8961c 80%,#7a4f00 100%)";
-const GOLD_TITLES = "h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b";
-const GOLD_CARDS = ".ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat";
-const GOLD_BUTTONS = ".inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button";
-const THEME_EFFECTS = {
-  gold: d => [
-    // 背景：上からの金の光＋金粉
-    `${d} body{background:radial-gradient(rgba(255,215,90,.10) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(255,215,90,.06) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(245,197,66,.28),rgba(245,197,66,0) 62%),#0b0803!important;background-attachment:fixed!important}`,
-    // ロゴ・見出し・カードの題名：金属の光沢（ゆっくり流れる）
-    `${d} :is(h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b){background:${GOLD_METAL};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:ee-gold-shine 5s linear infinite;filter:drop-shadow(0 0 6px rgba(245,197,66,.35))}`,
-    `@keyframes ee-gold-shine{from{background-position:0% 50%}to{background-position:220% 50%}}`,
-    `@media (prefers-reduced-motion:reduce){${d} :is(h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b){animation:none}}`,
-    // カード：金属の縁（グラデーションの枠）＋内側のハイライト＋金の影
-    `${d} :is(.ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat){border:1.5px solid transparent!important;background:linear-gradient(160deg,rgba(255,236,170,.10),rgba(255,236,170,0) 42%) padding-box,linear-gradient(var(--ee-panel),var(--ee-panel)) padding-box,linear-gradient(135deg,#fff3c4,#c8961c 28%,#6e4f0e 50%,#f5c542 72%,#fff3c4) border-box!important;box-shadow:0 0 18px rgba(245,197,66,.18),0 10px 28px rgba(0,0,0,.5)!important}`,
-    // ヘッダー：金のライン
-    `${d} .ee-top{border-bottom:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(245,197,66,0),#f5c542,#fff3c4,#f5c542,rgba(245,197,66,0)) 1!important;box-shadow:0 6px 24px rgba(245,197,66,.12)}`,
-    // ボタン：金のグラデーション
-    `${d} :is(.inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button){background:linear-gradient(180deg,#ffe58a,#f5c542 45%,#c8961c)!important;color:#2a1c02!important;border-color:#fff0b3!important;box-shadow:0 2px 12px rgba(245,197,66,.45)}`,
-    // 下のナビ：金のライン、選択中は光る
-    `${d} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(245,197,66,0),#f5c542,#fff3c4,#f5c542,rgba(245,197,66,0)) 1!important;box-shadow:0 -8px 26px rgba(245,197,66,.14)}`,
-    `${d} .ee-nav a.active:before{background:${GOLD_METAL}!important;box-shadow:0 0 14px rgba(245,197,66,.9)!important}`,
-    // プロフィール：金のリング
-    `${d} .ee-avatar{box-shadow:0 0 0 2px #f5c542,0 0 16px rgba(245,197,66,.6)!important}`
-  ].join("\n"),
-  // ライトモード：シャンパン色の背景と金粉、濃い金の縁と光沢
-  goldLight: l => [
-    `${l} body{background:radial-gradient(rgba(184,134,11,.13) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(184,134,11,.08) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(245,197,66,.35),rgba(245,197,66,0) 62%),linear-gradient(180deg,#fff8e6,#fbf1d8)!important;background-attachment:fixed!important}`,
-    `${l} :is(${GOLD_TITLES}){background:${GOLD_METAL_DARK};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:ee-gold-shine 5s linear infinite}`,
-    `@media (prefers-reduced-motion:reduce){${l} :is(${GOLD_TITLES}){animation:none}}`,
-    `${l} :is(${GOLD_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,#fffdf6,#fff4d9) padding-box,linear-gradient(135deg,#f3d27a,#b8860b 30%,#7a4f00 50%,#e2b23a 72%,#f3d27a) border-box!important;box-shadow:0 0 0 1px rgba(184,134,11,.10),0 6px 18px rgba(122,79,0,.14),0 0 16px rgba(245,197,66,.18)!important}`,
-    `${l} :is(.ee-top,.ee-nav,.ee-global-nav){background:rgba(255,249,234,.94)!important}`,
-    `${l} .ee-top{border-bottom:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(184,134,11,0),#b8860b,#e2b23a,#b8860b,rgba(184,134,11,0)) 1!important}`,
-    `${l} :is(${GOLD_BUTTONS}){background:linear-gradient(180deg,#ffe58a,#e2b23a 45%,#b8860b)!important;color:#2a1c02!important;border-color:#8a5a00!important;box-shadow:0 2px 10px rgba(184,134,11,.35)}`,
-    `${l} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:linear-gradient(90deg,rgba(184,134,11,0),#b8860b,#e2b23a,#b8860b,rgba(184,134,11,0)) 1!important;box-shadow:0 -6px 20px rgba(184,134,11,.12)}`,
-    `${l} .ee-nav a.active:before{background:${GOLD_METAL_DARK}!important;box-shadow:0 0 12px rgba(184,134,11,.7)!important}`,
-    `${l} .ee-avatar{box-shadow:0 0 0 2px #b8860b,0 0 14px rgba(184,134,11,.45)!important}`
-  ].join("\n")
+// 豪華カラーの特別な仕上げ（金属の光沢・光る縁・粉のきらめき）。CSSは固定の文字列で、利用者の入力は入らない。
+// ゴールドとワインレッドは同じ仕上げで、色だけが違う。
+const LUXE_TITLES = "h1,.ee-brand span,.ee-welcome-h1,.eyebrow,.ee-h b,.ee-tile strong,.ee-home-tools-grid b,.ee-me-name,.ee-milestone-copy strong,.ms-copy b,.inv-box>b";
+const LUXE_CARDS = ".ee-tile,.ee-me-card,.ee-welcome,.ee-milestone-card,.ee-home-tools-grid a,.card,.panel,.inv-box,.ms-card,.cmp-pick,.cmp-table-wrap,.ee-change,.ee-stat";
+const LUXE_BUTTONS = ".inv-link button,.cmp-form button,.kf button,#kcmpShare button:first-child,#eeShareBar button:first-child,.ms-link button";
+const LUXE = {
+  gold: {
+    shine: "ee-gold-shine",
+    dark: { dust: "255,215,90", glow: "245,197,66", base: "#0b0803", metal: "linear-gradient(100deg,#fff4c2 0%,#f5c542 22%,#b8860b 45%,#fff0b3 60%,#d4a017 78%,#fff4c2 100%)", hl: "255,236,170", frame: "#fff3c4,#c8961c 28%,#6e4f0e 50%,#f5c542 72%,#fff3c4", line: "#f5c542,#fff3c4,#f5c542", btn: "#ffe58a,#f5c542 45%,#c8961c", btnText: "#2a1c02", btnBorder: "#fff0b3", ring: "#f5c542" },
+    light: { dust: "184,134,11", glow: "245,197,66", bg: "#fff8e6,#fbf1d8", metal: "linear-gradient(100deg,#7a4f00 0%,#b8860b 25%,#e2b23a 45%,#8a5a00 62%,#c8961c 80%,#7a4f00 100%)", card: "#fffdf6,#fff4d9", frame: "#f3d27a,#b8860b 30%,#7a4f00 50%,#e2b23a 72%,#f3d27a", deep: "122,79,0", bar: "255,249,234", line: "#b8860b,#e2b23a,#b8860b", btn: "#ffe58a,#e2b23a 45%,#b8860b", btnText: "#2a1c02", btnBorder: "#8a5a00", ring: "#b8860b" }
+  },
+  // ワインレッド：深い赤ワインの地に、ロゼの光沢と光る縁。
+  wine: {
+    shine: "ee-wine-shine",
+    dark: { dust: "255,150,175", glow: "214,40,80", base: "#100307", metal: "linear-gradient(100deg,#ffe0e8 0%,#f0587a 22%,#8c1030 45%,#ffc9d6 60%,#c8174a 78%,#ffe0e8 100%)", hl: "255,200,215", frame: "#ffd6e0,#b3123b 28%,#4a0618 50%,#e8456a 72%,#ffd6e0", line: "#d6335a,#ffd6e0,#d6335a", btn: "#ff8fa8,#c81e4a 45%,#7d0f2b", btnText: "#fff5f7", btnBorder: "#ffb8c8", ring: "#e0445f" },
+    light: { dust: "159,18,57", glow: "224,68,95", bg: "#fff5f7,#fbe8ee", metal: "linear-gradient(100deg,#5c0a20 0%,#9f1239 25%,#e0445f 45%,#6d0c26 62%,#be1a48 80%,#5c0a20 100%)", card: "#fffafb,#fdeef2", frame: "#f5a3b6,#9f1239 30%,#5c0a20 50%,#e0445f 72%,#f5a3b6", deep: "92,10,32", bar: "255,246,248", line: "#9f1239,#e0445f,#9f1239", btn: "#ff8fa8,#d6335a 45%,#9f1239", btnText: "#ffffff", btnBorder: "#6d0c26", ring: "#9f1239" }
+  }
 };
+const fadeLine = (rgb, mid) => `linear-gradient(90deg,rgba(${rgb},0),${mid},rgba(${rgb},0)) 1`;
+function luxeDark(d, { shine, dark: c }) {
+  return [
+    // 背景：上からの光＋きらめく粉
+    `${d} body{background:radial-gradient(rgba(${c.dust},.10) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.06) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.28),rgba(${c.glow},0) 62%),${c.base}!important;background-attachment:fixed!important}`,
+    // ロゴ・見出し・カードの題名：金属の光沢（ゆっくり流れる）
+    `${d} :is(${LUXE_TITLES}){background:${c.metal};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:${shine} 5s linear infinite;filter:drop-shadow(0 0 6px rgba(${c.glow},.35))}`,
+    `@keyframes ${shine}{from{background-position:0% 50%}to{background-position:220% 50%}}`,
+    `@media (prefers-reduced-motion:reduce){${d} :is(${LUXE_TITLES}){animation:none}}`,
+    // カード：金属の縁（グラデーションの枠）＋内側のハイライト＋光る影
+    `${d} :is(${LUXE_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,rgba(${c.hl},.10),rgba(${c.hl},0) 42%) padding-box,linear-gradient(var(--ee-panel),var(--ee-panel)) padding-box,linear-gradient(135deg,${c.frame}) border-box!important;box-shadow:0 0 18px rgba(${c.glow},.18),0 10px 28px rgba(0,0,0,.5)!important}`,
+    // ヘッダー：光るライン
+    `${d} .ee-top{border-bottom:1px solid transparent!important;border-image:${fadeLine(c.glow, c.line)}!important;box-shadow:0 6px 24px rgba(${c.glow},.12)}`,
+    // ボタン：金属のグラデーション
+    `${d} :is(${LUXE_BUTTONS}){background:linear-gradient(180deg,${c.btn})!important;color:${c.btnText}!important;border-color:${c.btnBorder}!important;box-shadow:0 2px 12px rgba(${c.glow},.45)}`,
+    // 下のナビ：光るライン、選択中は光る
+    `${d} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:${fadeLine(c.glow, c.line)}!important;box-shadow:0 -8px 26px rgba(${c.glow},.14)}`,
+    `${d} .ee-nav a.active:before{background:${c.metal}!important;box-shadow:0 0 14px rgba(${c.glow},.9)!important}`,
+    // プロフィール：光るリング
+    `${d} .ee-avatar{box-shadow:0 0 0 2px ${c.ring},0 0 16px rgba(${c.glow},.6)!important}`
+  ].join("\n");
+}
+// ライトモード：淡い背景と粉、濃い色の縁と光沢
+function luxeLight(l, { shine, light: c }) {
+  return [
+    `${l} body{background:radial-gradient(rgba(${c.dust},.13) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.08) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.35),rgba(${c.glow},0) 62%),linear-gradient(180deg,${c.bg})!important;background-attachment:fixed!important}`,
+    `${l} :is(${LUXE_TITLES}){background:${c.metal};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:${shine} 5s linear infinite}`,
+    `@media (prefers-reduced-motion:reduce){${l} :is(${LUXE_TITLES}){animation:none}}`,
+    `${l} :is(${LUXE_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,${c.card}) padding-box,linear-gradient(135deg,${c.frame}) border-box!important;box-shadow:0 0 0 1px rgba(${c.dust},.10),0 6px 18px rgba(${c.deep},.14),0 0 16px rgba(${c.glow},.18)!important}`,
+    `${l} :is(.ee-top,.ee-nav,.ee-global-nav){background:rgba(${c.bar},.94)!important}`,
+    `${l} .ee-top{border-bottom:1px solid transparent!important;border-image:${fadeLine(c.dust, c.line)}!important}`,
+    `${l} :is(${LUXE_BUTTONS}){background:linear-gradient(180deg,${c.btn})!important;color:${c.btnText}!important;border-color:${c.btnBorder}!important;box-shadow:0 2px 10px rgba(${c.dust},.35)}`,
+    `${l} :is(.ee-nav,.ee-global-nav){border-top:1px solid transparent!important;border-image:${fadeLine(c.dust, c.line)}!important;box-shadow:0 -6px 20px rgba(${c.dust},.12)}`,
+    `${l} .ee-nav a.active:before{background:${c.metal}!important;box-shadow:0 0 12px rgba(${c.dust},.7)!important}`,
+    `${l} .ee-avatar{box-shadow:0 0 0 2px ${c.ring},0 0 14px rgba(${c.dust},.45)!important}`
+  ].join("\n");
+}
+const THEME_EFFECTS = Object.fromEntries(Object.entries(LUXE).flatMap(([id, p]) => [[id, d => luxeDark(d, p)], [id + "Light", l => luxeLight(l, p)]]));
 
 export function eagleEyeThemesCss(themes = EAGLEEYE_THEMES) {
   return themes.filter(t => t.tokens && SAFE_ID.test(t.id)).map(t => {
@@ -122,7 +142,7 @@ export function renderThemePickerPage() {
     return `<button type="button" class="skin${t.reward ? " locked" : ""}" data-skin="${escapeHtml(t.id)}"${lock} style="background:${k.bg};border-color:${k.border}">
 <span class="skin-card" style="background:${k.panel}"><i style="background:${k.accent}"></i><b style="color:${k.text}">${escapeHtml(t.name)}</b><small style="color:${k.subtext}">${escapeHtml(t.description)}</small></span>
 <span class="skin-bar"><em style="background:${k.accent}"></em><em style="background:${k.raised}"></em><em style="background:${k.subtext}"></em></span>
-<span class="skin-check">✓ 使用中</span>${t.reward ? '<span class="skin-lock">🔒 運営からの招待で解放</span>' : ""}</button>`;
+<span class="skin-check">✓ 使用中</span>${t.reward ? `<span class="skin-lock">🔒 ${escapeHtml(t.lockLabel || "運営からの招待で解放")}</span>` : ""}</button>`;
   };
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>着せ替え | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -154,7 +174,7 @@ function curMode(){try{var m=localStorage.getItem("eagleeye-theme");return m==="
 function applyMode(){var m=curMode(),eff=m==="auto"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;document.documentElement.setAttribute("data-eagle-theme",eff);document.querySelectorAll(".mode").forEach(function(b){var on=b.getAttribute("data-mode")===m;b.classList.toggle("on",on);b.setAttribute("aria-checked",on?"true":"false")})}
 document.querySelectorAll(".mode").forEach(function(b){b.addEventListener("click",function(){var m=b.getAttribute("data-mode");try{if(m==="auto")localStorage.removeItem("eagleeye-theme");else localStorage.setItem("eagleeye-theme",m)}catch(e){}applyMode()})});applyMode();
 fetch("/api/rewards",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){var got=(d&&d.rewards)||[];document.querySelectorAll(".skin[data-reward]").forEach(function(b){if(got.indexOf(b.getAttribute("data-reward"))>=0)b.classList.remove("locked")})}).catch(function(){});
-document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){if(b.classList.contains("locked")){alert("この着せ替えは、EagleEye運営からの招待リンクで登録した人だけが使える限定カラーです。");return}var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
+document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){if(b.classList.contains("locked")){alert(b.getAttribute("data-skin")==="wine"?"この着せ替えは、あまねの運営招待リンクで登録した人だけが使える限定カラーです。":"この着せ替えは、EagleEye運営からの招待リンクで登録した人だけが使える限定カラーです。");return}var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
 if(id==="navy")document.documentElement.removeAttribute("data-ee-skin");else document.documentElement.setAttribute("data-ee-skin",id);
 paint()})});paint()})();</script></body></html>`;
 }
