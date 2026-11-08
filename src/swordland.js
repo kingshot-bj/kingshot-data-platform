@@ -41,17 +41,17 @@ export function extractEvents(payload) {
 }
 
 // 1日1回：登録ユーザーの王国のイベント日程を取る（1回の実行で最大3王国。Mighty対応のキー）。
-export async function runSwordlandEventsRefresh(env, { nowMs = Date.now(), collect = collectMightyOnly } = {}) {
+export async function runSwordlandEventsRefresh(env, { nowMs = Date.now(), collect = collectMightyOnly, force = false } = {}) {
   const db = env?.DB;
   if (!db) return { skipped: "NO_DB" };
   const now = Math.floor(nowMs / 1000);
-  if (now % 3600 >= 300) return { skipped: "NOT_THIS_TICK" }; // 1時間に1回（毎時の最初の5分）
+  if (!force && now % 3600 >= 300) return { skipped: "NOT_THIS_TICK" }; // 1時間に1回（毎時の最初の5分）。オーナーの手動実行（force）はいつでも
   await ensureSwordlandSchema(db);
   const kids = ((await db.prepare(
     "SELECT DISTINCT p.kid AS kid FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
     "LEFT JOIN swordland_fetch_state s ON s.kid = p.kid WHERE l.status = 'ACTIVE' AND p.kid IS NOT NULL AND (s.fetched_at IS NULL OR s.fetched_at < ?) LIMIT ?"
-  ).bind(now - SWORDLAND_EVENTS_STALE_SECONDS, SWORDLAND_EVENTS_PER_RUN).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)).filter(k => k > 0);
-  let saved = 0;
+  ).bind(force ? now + 1 : now - SWORDLAND_EVENTS_STALE_SECONDS, force ? 10 : SWORDLAND_EVENTS_PER_RUN).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)).filter(k => k > 0);
+  let saved = 0; const errors = [];
   for (const kid of kids) {
     let status = "OK";
     try {
@@ -63,12 +63,12 @@ export async function runSwordlandEventsRefresh(env, { nowMs = Date.now(), colle
         saved++;
       }
     } catch (error) {
-      status = String(error?.code || error?.message || "FAILED").slice(0, 40);
+      status = String(error?.code || error?.message || "FAILED").slice(0, 40); errors.push({ kid, status });
       if (/NO_API_POOL_KEY_AVAILABLE|NO_MIGHTY/i.test(status)) { await markFetched(db, kid, now, status); break; }
     }
     await markFetched(db, kid, now, status);
   }
-  return { kingdoms: kids.length, saved };
+  return { kingdoms: kids.length, saved, errors };
 }
 async function markFetched(db, kid, now, status) {
   await db.prepare("INSERT INTO swordland_fetch_state (kid, fetched_at, status) VALUES (?, ?, ?) ON CONFLICT(kid) DO UPDATE SET fetched_at = excluded.fetched_at, status = excluded.status").bind(kid, now, status).run().catch(() => {});
@@ -119,7 +119,7 @@ export function compareUrl(kid, abbr, oppKid, oppTag) {
 const jstDate = sec => new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slice(5, 10).replace("-", "/");
 
 // 登録ページ。
-export function renderSwordlandPage({ state, message = "" }) {
+export function renderSwordlandPage({ state, message = "", isOwner = false }) {
   const s = state || {};
   const period = s.showdown ? `${jstDate(s.showdown.begin_ts)}〜${jstDate(s.showdown.end_ts - 1)}` : "";
   const mine = s.mine ? `王国${esc(s.mine.kid)}の ${esc(s.mine.alliance_abbr || "")}${s.mine.alliance_name ? "（" + esc(s.mine.alliance_name) + "）" : ""}` : "";
@@ -136,5 +136,6 @@ h1{font-size:22px;margin:6px 0 2px}.sub{font-size:13px;color:var(--ee-subtext,#9
 .now{font-size:15px}.note{font-size:12px;color:var(--ee-subtext,#91a7bf)}.msg{padding:9px 11px;border-radius:9px;border:1px dashed currentColor;font-size:13px}
 </style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>⚔️ 聖剣争奪</h1><p class="sub">${period ? "開催期間 " + esc(period) : ""}${mine ? "・" + mine : ""}</p>
 ${message ? `<p class="msg">${esc(message)}</p>` : ""}<section class="card">${body}</section>
+${isOwner ? `<form method="post" action="/swordland/refresh-events" class="card"><p class="note">オーナー：登録ユーザーの王国のイベント日程（Mighty対応のキー）を今すぐ取り直します（最大10王国）。</p><button type="submit" class="btn">今すぐ日程を取得</button></form>` : ""}
 <p class="note">組み合わせはゲームの外からは分からないため、同盟のR4・R5の人に登録してもらっています。登録が分かれたときは、多く登録された方を表示します。</p></main></body></html>`;
 }
