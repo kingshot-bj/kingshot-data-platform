@@ -89,6 +89,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
+import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
 import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP } from "./alliance-compare.js";
 import { loadAllianceForCompare } from "./kingdom-portal.js";
@@ -9441,6 +9442,13 @@ async function handleKingdomRankingPreferencesApi(request, env) {
 }
 
 async function getAuthenticatedUser(request, env) {
+  // 作業用の鍵（X-EagleEye-Agent-Token）：決められた操作だけオーナーとして通す。鍵が付いていればCookieは見ない。
+  const agent = agentTokenState(request, env);
+  if (agent !== undefined) {
+    if (!agent || agentRateLimited() || !env.DB) return null;
+    await auditAgentRequest(request, env, writeOwnerAuditLog);
+    return agent;
+  }
   const secret = env.EAGLEEYE_SESSION_SECRET;
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   if (!token || !secret) return null;
