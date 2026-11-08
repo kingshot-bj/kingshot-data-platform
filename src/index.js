@@ -96,7 +96,7 @@ import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } 
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { playerShareEmbed } from "./player-share.js";
-import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage } from "./owner-snapshot.js";
+import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe } from "./owner-snapshot.js";
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
@@ -9813,6 +9813,7 @@ async function handleOwnerSnapshotApi(request, env) {
   if (want("audit")) jobs.push(settle(loadSnapshotAudit(env.DB)).then(v => { out.audit = v; }));
   if (want("system")) jobs.push(settle(loadSnapshotSystem(env.DB)).then(v => { out.system = v; }));
   if (want("coverage")) jobs.push(settle(loadSnapshotCoverage(env.DB)).then(v => { out.coverage = v; }));
+  if (want("probe")) jobs.push(settle(loadSnapshotProbe(env.DB, env.ARCHIVE, { probeId: new URL(request.url).searchParams.get("probe_id") || "" })).then(v => { out.probe = v; }));
   await Promise.all(jobs);
   await writeOwnerAuditLog(env, { user_id: "readonly-token", discord_id: "readonly-token" }, "READONLY_SNAPSHOT", null, null, { sections }).catch(() => {});
   return json(scrubSecrets(out));

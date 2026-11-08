@@ -5,7 +5,7 @@
 
 export const READONLY_MIN_TOKEN_LENGTH = 32;
 export const READONLY_RATE_PER_HOUR = 60;
-export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage"]);
+export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage", "probe"]);
 export const SNAPSHOT_DEFAULT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users"]);
 
 const enc = new TextEncoder();
@@ -104,4 +104,30 @@ export async function loadSnapshotCoverage(db) {
     q("SELECT COUNT(*) AS n FROM player_watchlists WHERE enabled = 1"), q("SELECT COUNT(*) AS n FROM kingdom_watchlists"), q("SELECT COUNT(*) AS n FROM users")
   ]);
   return { players, kingdoms, alliances, playerWatch, kingdomWatch, users };
+}
+
+// MightPulse Probe（調査ツール）の保存結果。一覧は最近40件の記録だけ（誰がどのキーで実行したかは返さない）。
+// probe_id を指定したときだけ、その1件の保存結果（R2・保存時に秘密は除去済み）を返す。読むだけ。
+export const PROBE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PROBE_MAX_BYTES = 300000;
+export async function loadSnapshotProbe(db, bucket, { probeId = "" } = {}) {
+  const rows = await db.prepare(
+    "SELECT request_id, created_at, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, error_code, trigger_reason, response_count, save_destination, key_source, r2_object_key FROM mightpulse_probe_runs ORDER BY created_at DESC LIMIT 40"
+  ).all().catch(() => ({ results: [] }));
+  const runs = (rows?.results || []).map(r => ({ ...r, archived: Boolean(r.r2_object_key), r2_object_key: undefined }));
+  const out = { runs };
+  if (probeId) {
+    if (!PROBE_ID.test(String(probeId))) return { ...out, detail: { error: "INVALID_PROBE_ID" } };
+    const row = await db.prepare("SELECT request_id, endpoint, created_at, r2_object_key FROM mightpulse_probe_runs WHERE request_id = ? LIMIT 1").bind(String(probeId)).first().catch(() => null);
+    if (!row) return { ...out, detail: { error: "NOT_FOUND" } };
+    if (!row.r2_object_key || !String(row.r2_object_key).startsWith("mightpulse-probe/") || !bucket?.get) return { ...out, detail: { error: "NOT_ARCHIVED", request_id: row.request_id } };
+    const obj = await bucket.get(row.r2_object_key).catch(() => null);
+    if (!obj) return { ...out, detail: { error: "R2_OBJECT_MISSING", request_id: row.request_id } };
+    const text = await obj.text();
+    if (text.length > PROBE_MAX_BYTES) return { ...out, detail: { error: "TOO_LARGE", bytes: text.length, request_id: row.request_id } };
+    let record = null;
+    try { record = scrubSecrets(JSON.parse(text)); } catch { record = { raw: text.slice(0, 2000) }; }
+    out.detail = { request_id: row.request_id, endpoint: row.endpoint, created_at: row.created_at, record };
+  }
+  return out;
 }
