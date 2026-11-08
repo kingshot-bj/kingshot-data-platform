@@ -30,9 +30,13 @@ export const AGENT_DENY = Object.freeze([
   { path: "/logout" }
 ]);
 
+// 拒否リストの例外（オーナーが許可したもの）。/api/me/player：作業用の領主IDの登録（ホームの表示確認用）。
+export const AGENT_ALLOW = Object.freeze(["/api/me/player"]);
+
 export function agentRouteAllowed(method, pathname) {
   const m = String(method || "GET").toUpperCase(), p = String(pathname || "/");
   if (m === "DELETE") return false;
+  if (AGENT_ALLOW.includes(p)) return true;
   for (const d of AGENT_DENY) {
     const hit = p === d.path || p.startsWith(d.path.endsWith("/") ? d.path : d.path + "/");
     if (!hit) continue;
