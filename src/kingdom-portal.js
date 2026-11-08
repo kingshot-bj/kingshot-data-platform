@@ -246,13 +246,18 @@ export async function renderKingdomRankingsPage(request, env, auth = null, { onD
 export async function renderAllianceListPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url=new URL(request.url); const kid=Number(url.searchParams.get("kid"));
   if(!Number.isInteger(kid)||kid<1) return kidFormPage("同盟一覧", "/kingdom/alliances", "同盟一覧を見たい王国の番号を入れてください。");
-  let rows=await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all();
-  if (!(rows.results || []).length) {
-    rows = await withArchivedRankings(env, kid, await env.DB.prepare(
-      "SELECT kid,target_id,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' ORDER BY rank ASC LIMIT 100"
-    ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 100 });
-    rows.results = rows.results.map(r => ({ ...r, power: r.power ?? r.score, power_rank: r.power_rank ?? r.rank }));
-  }
+  // 一覧は王国の同盟ランキング（全同盟がそろっている）を先に使う。alliance_catalog は同盟の詳細を開いた時に
+  // 1件ずつ入るだけなので、そこを先に見ると「開いた同盟1つだけ・順位と戦力なし」の一覧になっていた。
+  let rows = await withArchivedRankings(env, kid, await env.DB.prepare(
+    "SELECT kid,target_id,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' ORDER BY rank ASC LIMIT 100"
+  ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 100 });
+  rows.results = (rows.results || []).map(r => ({ ...r, power: r.power ?? r.score, power_rank: r.power_rank ?? r.rank }));
+  const catalog = await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all().catch(() => ({ results: [] }));
+  const normAid = v => String(v ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+  const known = new Set(rows.results.flatMap(r => [normAid(r.aid), normAid(r.target_id)]).filter(Boolean));
+  // ランキングに無い同盟だけ、後ろに足す（ランキングが無い王国では、これが一覧になる）。
+  const extra = (catalog.results || []).filter(c => !known.has(normAid(c.aid)));
+  if (extra.length) rows.results = [...rows.results, ...extra].slice(0, 100);
   const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"ランキングcurrent")+"</small></a>").join("");
   let fetchNotice = "";
   if (!(rows.results || []).length || rows.archived) {
@@ -272,7 +277,10 @@ export async function renderAlliancePage(request, env, auth = null) {
   if (!tag) return Response.redirect(new URL("/kingdom/alliances?kid=" + kid, url).toString(), 302);
 
   let row = await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid,tag,tag).first();
-  if (!row) row = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first();
+  const rankRow = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first().catch(() => null);
+  // alliance_catalog には戦力・順位が入っていないことがある（詳細を開いた時の保存）→ ランキングの値で補う。
+  if (row && rankRow) row = { ...row, power: row.power ?? rankRow.power, power_rank: row.power_rank ?? rankRow.power_rank };
+  if (!row) row = rankRow;
   if (!row) {
     const archivedAlliance = await withArchivedRankings(env, kid, { results: [] }, { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE" && [String(r.abbr), String(r.aid), String(r.target_id)].includes(String(tag)), limit: 1 });
     const a = archivedAlliance.results[0];
