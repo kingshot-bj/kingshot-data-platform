@@ -51,7 +51,9 @@ test("取得側：6時間に1回まで・1ボード・100件まで・ユーザ�
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const fn = index.slice(index.indexOf("async function refreshKingdomRankingOnDemand"), index.indexOf("async function fetchKingdomRankingThroughApiPool"));
   assert.match(fn, /RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS/);
-  assert.match(fn, /fetchKingdomRankingThroughApiPool\(env, kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_RANKING_ON_DEMAND"\)/);
+  // ユーザー操作として全キーを使う（既定値）。裏の定期更新だけ reserveApiKeys を指定する。
+  assert.match(fn, /purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0/);
+  assert.match(fn, /fetchKingdomRankingThroughApiPool\(env, kid, board, WATCHLIST_RANKING_LIMIT, purpose, reserveApiKeys \? \{ reserveApiKeys \} : \{\}\)/);
   assert.match(fn, /\.slice\(0, WATCHLIST_RANKING_LIMIT\)/);
   assert.match(fn, /KINGDOM_RANKING_BOARDS\.includes\(board\)/);
   assert.match(index, /renderKingdomRankingsPage\(request, env, auth, \{ onDemand: \(kid, board\) => refreshKingdomRankingOnDemand\(env, kid, board\), waitUntil:/);

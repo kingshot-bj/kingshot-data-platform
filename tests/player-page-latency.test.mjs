@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-const page = src.slice(src.indexOf("async function renderPlayerPage(request, env)"), src.indexOf("function renderPlayerFetchingPage("));
+const page = src.slice(src.indexOf("async function renderPlayerPage(request, env"), src.indexOf("function renderPlayerFetchingPage("));
 
 test("a never-stored player gets an instant page that fetches in the background", () => {
   const firstVisit = page.indexOf("return renderPlayerFetchingPage(governorId);");
