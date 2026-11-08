@@ -61,8 +61,8 @@ test("BASICへのADVANCED案内ポップアップ：しつこくしない出し�
   assert.doesNotThrow(() => new Function(js));
   const fn = js.slice(js.indexOf("function paintUpgradePopup"), js.indexOf("// Pages that used to push"));
   assert.match(fn, /if\(\/\^\\\/\(my-player\|login\|owner\|admin\|auth\)\/\.test\(location\.pathname\)\)return;/, "マイKingShot・ログイン・管理画面では出さない");
-  assert.match(fn, /if\(n<2\)return;/, "そのタブの1ページ目では出さない");
-  assert.match(fn, /\},3000\);/, "開いて3秒後");
+  assert.match(fn, /\},800\);/, "開いて0.8秒後に大きく出す");
+  assert.match(fn, /eup-x/, "×で消せる");
   assert.match(fn, /close\(3\)/);
   assert.match(fn, /close\(30\)/, "しばらく表示しない＝30日");
   assert.match(fn, /later\(3\);ping\("upgrade_popup_shown"\)/, "出したら3日は出さない");

@@ -255,8 +255,8 @@ export const EAGLEEYE_DRAWER_INIT = `
     x.onclick=function(){try{localStorage.setItem(key,String(Date.now()+3*86400000));}catch(e){}bar.remove();};
     bar.appendChild(a);bar.appendChild(x);document.body.insertBefore(bar,document.body.firstChild);
   }
-  // BASIC の人へ ADVANCED への案内（ポップアップ）。しつこくしない：
-  // ・そのタブで2ページ目以降、ページを開いて3秒後　・「あとで」で3日、「表示しない」で30日出さない
+  // BASIC の人へ ADVANCED への案内（画面いっぱいのポップアップ）。しつこくしない：
+  // ・ページを開いて0.8秒後に大きく出す　・出したら3日、「あとで」で3日、「しばらく表示しない」で30日出さない
   // ・マイKingShot・ログイン・管理画面では出さない　・出した回数と押した回数だけ数える（個人は記録しない）
   function paintUpgradePopup(step){
     if(!step||document.getElementById("eeUpgradePop"))return;
@@ -264,8 +264,6 @@ export const EAGLEEYE_DRAWER_INIT = `
     var KEY="ee-upgrade-pop-next";
     try{
       if(Number(localStorage.getItem(KEY)||0)>Date.now())return;
-      var n=Number(sessionStorage.getItem("ee-upgrade-pop-views")||0)+1;sessionStorage.setItem("ee-upgrade-pop-views",String(n));
-      if(n<2)return;
     }catch(e){return;}
     function ping(kind){try{var b=JSON.stringify({step:kind});if(!(navigator.sendBeacon&&navigator.sendBeacon("/api/funnel-event",new Blob([b],{type:"application/json"}))))fetch("/api/funnel-event",{method:"POST",headers:{"content-type":"application/json"},body:b,keepalive:true,credentials:"same-origin"});}catch(e){}}
     function later(days){try{localStorage.setItem(KEY,String(Date.now()+days*86400000));}catch(e){}}
@@ -282,7 +280,7 @@ export const EAGLEEYE_DRAWER_INIT = `
       var ul=wrap.querySelector(".eup-list");items.forEach(function(t){var li=document.createElement("li");li.textContent=t;ul.appendChild(li);});
       wrap.querySelector(".eup-cta").textContent=(isKey?"APIキーを登録する":"領主IDを登録する")+" →";
       var st=document.createElement("style");
-      st.textContent="#eeUpgradePop{position:fixed;inset:0;z-index:9998;display:flex;align-items:flex-end;justify-content:center}#eeUpgradePop .eup-back{position:absolute;inset:0;background:rgba(0,0,0,.55)}#eeUpgradePop .eup-sheet{position:relative;width:100%;max-width:520px;margin:0 8px calc(8px + env(safe-area-inset-bottom));padding:18px 18px 14px;border-radius:20px;border:1px solid rgba(250,204,21,.6);background:var(--ee-panel,#0f1f36);color:var(--ee-text,#e8f3ff);box-shadow:0 -10px 40px rgba(0,0,0,.45);font:14px/1.6 system-ui,-apple-system,sans-serif;animation:eupIn .35s ease-out}@keyframes eupIn{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}#eeUpgradePop .eup-img{float:right;width:72px;height:auto;margin:18px 0 4px 8px}#eeUpgradePop b{display:block;font-size:18px;color:var(--ee-text,#e8f3ff);margin:2px 28px 6px 0}#eeUpgradePop b:before{content:'✦ ';color:#eab308}#eeUpgradePop .eup-lead{margin:0 0 8px;font-size:13px;color:var(--ee-subtext,#91a7bf)}#eeUpgradePop .eup-list{clear:both;margin:0 0 12px;padding-left:1.2em;font-size:13px}#eeUpgradePop .eup-cta{display:block;padding:12px;border-radius:999px;background:#facc15;color:#1f1300;font-weight:900;text-align:center;text-decoration:none}#eeUpgradePop .eup-sub{display:flex;justify-content:space-between;margin-top:8px}#eeUpgradePop .eup-sub button,#eeUpgradePop .eup-x{border:0;background:transparent;color:var(--ee-subtext,#91a7bf);font:inherit;font-size:12px;padding:6px 4px;cursor:pointer}#eeUpgradePop .eup-x{position:absolute;top:6px;right:8px;font-size:22px;line-height:1}@media(prefers-reduced-motion:reduce){#eeUpgradePop .eup-sheet{animation:none}}";
+      st.textContent="#eeUpgradePop{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;padding:12px}#eeUpgradePop .eup-back{position:absolute;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}#eeUpgradePop .eup-sheet{position:relative;width:100%;max-width:460px;max-height:calc(100vh - 24px);overflow:auto;padding:26px 20px 16px;border-radius:24px;border:2px solid #eab308;background:var(--ee-panel,#0f1f36);color:var(--ee-text,#e8f3ff);box-shadow:0 0 0 6px rgba(234,179,8,.18),0 20px 60px rgba(0,0,0,.55);font:15px/1.6 system-ui,-apple-system,sans-serif;text-align:center;animation:eupIn .45s cubic-bezier(.2,1.3,.4,1)}@keyframes eupIn{from{transform:scale(.85);opacity:0}to{transform:none;opacity:1}}#eeUpgradePop .eup-img{display:block;width:150px;max-width:45%;height:auto;margin:0 auto 6px}#eeUpgradePop b{display:block;font-size:24px;line-height:1.3;color:var(--ee-text,#e8f3ff);margin:4px 0 8px}#eeUpgradePop b:before{content:'✦ ';color:#eab308}#eeUpgradePop .eup-lead{margin:0 0 12px;font-size:14px;color:var(--ee-subtext,#91a7bf)}#eeUpgradePop .eup-list{display:inline-block;text-align:left;margin:0 0 16px;padding-left:1.2em;font-size:14px}#eeUpgradePop .eup-list li{margin:3px 0}#eeUpgradePop .eup-cta{display:block;padding:15px;border-radius:999px;background:#facc15;color:#1f1300;font-weight:900;font-size:16px;text-align:center;text-decoration:none;box-shadow:0 6px 18px rgba(250,204,21,.35)}#eeUpgradePop .eup-sub{display:flex;justify-content:space-between;margin-top:10px}#eeUpgradePop .eup-sub button,#eeUpgradePop .eup-x{border:0;background:transparent;color:var(--ee-subtext,#91a7bf);font:inherit;font-size:13px;padding:8px 6px;cursor:pointer}#eeUpgradePop .eup-x{position:absolute;top:8px;right:10px;font-size:26px;line-height:1}@media(prefers-reduced-motion:reduce){#eeUpgradePop .eup-sheet{animation:none}}";
       wrap.appendChild(st);
       function close(days){later(days);wrap.remove();}
       wrap.querySelector(".eup-back").onclick=function(){close(3);};
@@ -293,7 +291,7 @@ export const EAGLEEYE_DRAWER_INIT = `
       document.body.appendChild(wrap);
       later(3);ping("upgrade_popup_shown");
       try{wrap.querySelector(".eup-cta").focus({preventScroll:true});}catch(e){}
-    },3000);
+    },800);
   }
   // Pages that used to push the watchlist size into the badge keep working; the
   // size is no longer shown as a badge.
