@@ -100,3 +100,14 @@ test("SEO：関連する王国（戦力順位が近い・近い番号）への�
   const stats = readFileSync(new URL("../src/kingdom-stats.js", import.meta.url), "utf8");
   assert.match(stats, /idx_kingdom_stats_current_power_rank/);
 });
+
+test("robots.txt：ログイン必須のページはクローラーに来させない。公開ページ・サイトマップのURLは止めない", () => {
+  const robots = renderRobotsTxt("https://eagleeye-ks.com");
+  const rules = robots.split("\n").filter(l => l.startsWith("Disallow: ")).map(l => l.slice(10));
+  // Google の解釈：前方一致、末尾の $ は「ここで終わり」
+  const blocked = path => rules.some(r => r.endsWith("$") ? path === r.slice(0, -1) : path.startsWith(r));
+  for (const p of ["/player?governor_id=1", "/players", "/player-watchlist", "/player/compare?governor_id=1", "/alliance?kid=1&tag=A", "/kingdom?kid=1524", "/kingdom/rankings", "/kingdom/alliances", "/kvk", "/kvk?kid=1", "/watchlist", "/news", "/kingdom-watchlist", "/kingdom-catalog"]) assert.ok(blocked(p), "blocked: " + p);
+  for (const p of ["/", "/k/1524", "/kingdoms", "/kingdom-timeline", "/kvk/s23", "/kvk/matchups", "/hero-catalog", "/heroes/amadeus", "/tools/gold", "/tools/hero-shards", "/about", "/privacy", "/terms", "/support", "/status"]) assert.ok(!blocked(p), "allowed: " + p);
+  const sitemap = renderSitemapXml("https://eagleeye-ks.com", [1, 1524], undefined, ["/kvk/s23"]);
+  for (const loc of sitemap.match(/<loc>[^<]+<\/loc>/g)) assert.ok(!blocked(loc.slice(5, -6).replace("https://eagleeye-ks.com", "")), loc);
+});
