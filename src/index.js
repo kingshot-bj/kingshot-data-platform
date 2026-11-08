@@ -266,14 +266,6 @@ async function runDiagnosticHealthChecks(env) {
       });
     }
 
-    if (due("notifications")) {
-      await write({
-        service:"notifications",
-        status:"WARNING",
-        errorCode:"NOTIFICATION_PROBE_NOT_CONFIGURED",
-        message:"通知送信経路の自動診断プローブは未構成です。"
-      });
-    }
   } catch (error) {
     console.error("diagnostic_health_check_failed", error?.message || error);
   }
