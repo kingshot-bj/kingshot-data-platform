@@ -137,7 +137,7 @@ test("公開中：Googleのボタンは押せる。閉じる（googleOpen:false�
   const ctx = { waitUntil() {}, passThroughOnException() {} };
   const env = { EAGLEEYE_SESSION_SECRET: "s", DISCORD_CLIENT_ID: "d", DISCORD_CLIENT_SECRET: "x", DB: memDb(), GOOGLE_OAUTH_CLIENT_ID: "cid", GOOGLE_OAUTH_CLIENT_SECRET: "gsecret" };
   const page = await (await worker.fetch(new Request("https://eagleeye-ks.com/login?next=/watchlist"), env, ctx)).text();
-  assert.doesNotMatch(page, /lg-soon/);
+  assert.doesNotMatch(page, /aria-disabled="true">Googleでログイン/);
   assert.match(page, /<a class="lg lg-g" href="\/api\/auth\/google\?x=1/);
   const r = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist"), env, ctx);
   assert.equal(r.status, 302);
