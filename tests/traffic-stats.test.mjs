@@ -91,7 +91,7 @@ test("未設定なら設定方法を案内し、OWNER専用ルートとリンク
   assert.match(renderOwnerTrafficPage({ active: [] }), /CF_ANALYTICS_TOKEN/);
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /url\.pathname === "\/owner\/traffic"\) \{\n\s+const guard = await requireOwner/);
-  assert.match(src, /href="\/owner\/traffic"/);
+  assert.match(src, /"href": "\/owner\/traffic"/);
   assert.match(src, /if \(user\) await recordDailyActive\(env\.DB, user\);/);
 });
 

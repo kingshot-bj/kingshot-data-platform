@@ -5154,6 +5154,7 @@ export default {
       if (url.pathname === "/api/owner/audit-log") return await handleOwnerAuditLogApi(request, env);
       if (url.pathname === "/owner/discord-diagnostics") return eagleEyeHtmlResponse(await renderOwnerDiscordDiagnosticsPage(request, env));
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
+      if (url.pathname === "/owner/users") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env, { view: "users" }));
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
@@ -9948,9 +9949,135 @@ document.getElementById("kvkRelogin").onclick=async()=>{const b=document.getElem
 </script></body></html>`;
 }
 
-async function renderOwnerAdminPage(request,env){
+// オーナー管理の入口：機能をまとめて並べる（各ページの中身・URL・権限チェックは変えない）。
+// ユーザー・権限管理と監査ログは /owner/users に分けた（入口では重いユーザー一覧を読まない）。
+const OWNER_PAGE_CSS = ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}";
+const OWNER_MENU_GROUPS = Object.freeze([
+  {
+    "title": "成長・集客",
+    "note": "毎日見るもの",
+    "open": true,
+    "links": [
+      {
+        "href": "/owner/growth",
+        "title": "成長ダッシュボード",
+        "note": "PV・訪問者・継続率・広告収益の試算・前後比較"
+      },
+      {
+        "href": "/owner/traffic",
+        "title": "アクセス状況",
+        "note": "1日の利用者数・訪問者数"
+      },
+      {
+        "href": "/owner/social",
+        "title": "SNS投稿セット",
+        "note": "毎週の画像・ショート動画・投稿文と自動投稿の結果"
+      }
+    ]
+  },
+  {
+    "title": "データ",
+    "note": "プレイヤー・王国のデータと公開範囲",
+    "open": true,
+    "links": [
+      {
+        "href": "/players",
+        "title": "プレイヤーDB",
+        "note": "検索・詳細・履歴・変更"
+      },
+      {
+        "href": "/kingdom-watchlist",
+        "title": "王国ウォッチリスト",
+        "note": "監視対象・ランキング"
+      },
+      {
+        "href": "/admin/kingdom-rankings",
+        "title": "王国ランキング",
+        "note": "必要なランキングだけ取得・閲覧・Sheets出力"
+      },
+      {
+        "href": "/admin/data-coverage",
+        "title": "データ登録状況",
+        "note": "現在登録されているプレイヤー数・王国数を確認"
+      },
+      {
+        "href": "/admin/player-visibility",
+        "title": "データ公開設定",
+        "note": "ロール別公開範囲"
+      }
+    ]
+  },
+  {
+    "title": "運用・トラブル対応",
+    "note": "障害・キー・外部サービスの状態",
+    "open": true,
+    "links": [
+      {
+        "href": "/admin/diagnostics",
+        "title": "システムログ",
+        "note": "サービス状態・診断イベント・障害詳細"
+      },
+      {
+        "href": "/admin/api-pool",
+        "title": "API Pool管理",
+        "note": "APIキー・Pool・テスト"
+      },
+      {
+        "href": "/owner/discord-diagnostics",
+        "title": "Discord連携調査",
+        "note": "OAuth・Bot設定状態・自動参加の失敗履歴"
+      },
+      {
+        "href": "/admin/google-drive",
+        "title": "Google Drive連携",
+        "note": "接続状態・OAuth設定・Driveアーカイブ設定"
+      },
+      {
+        "href": "/admin/data-retention",
+        "title": "データ保存期間",
+        "note": "D1履歴・R2アーカイブ"
+      }
+    ]
+  },
+  {
+    "title": "開発・調査用",
+    "note": "普段は使わない検証用の画面",
+    "open": false,
+    "links": [
+      {
+        "href": "/admin/api-raw-data",
+        "title": "API Raw Inspector",
+        "note": "MightPulse保存生データと画像リソースを実画像で照合"
+      },
+      {
+        "href": "/owner/kingdom-load-test",
+        "title": "王国ウォッチリスト実処理負荷テスト",
+        "note": "本番と同じ取得・保存パイプラインを実行"
+      },
+      {
+        "href": "/owner/kingdom-catalog-r2-backfill",
+        "title": "王国Catalog R2バックフィル",
+        "note": "既存詳細JSONを最大10件ずつR2へ退避"
+      }
+    ]
+  }
+]);
+async function renderOwnerMenuPage(env){
+  const counts=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first().catch(()=>null);
+  const link=l=>'<a class="link" href="'+escapeHtml(l.href)+'"><b>'+escapeHtml(l.title)+'</b><span>'+escapeHtml(l.note)+'</span></a>';
+  const group=g=>g.open
+    ? '<div class="card"><h2>'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'</span></h2><div class="links">'+g.links.map(link).join("")+'</div></div>'
+    : '<details class="card"><summary style="cursor:pointer;font-weight:800;font-size:1.1em">'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'（'+g.links.length+'）</span></summary><div class="links" style="margin-top:12px">'+g.links.map(link).join("")+'</div></details>';
+  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a></div></div>';
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OWNER管理 | EagleEye</title>
+<style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
+${OWNER_MENU_GROUPS.map(group).join("")}${users}</main></body></html>`;
+}
+
+async function renderOwnerAdminPage(request,env,{ view = "menu" } = {}){
   const guard=await requireOwner(request,env);
   if(guard.error)return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
+  if(view==="menu")return renderOwnerMenuPage(env);
   const [users,logs,kingdomCounts,playerCounts]=await Promise.all([
     env.DB.prepare("SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'VIP' THEN 2 WHEN 'ADVANCED' THEN 3 ELSE 4 END,u.last_login_at DESC").all(),
     env.DB.prepare("SELECT audit_id,actor_discord_id,action,target_discord_id,details_json,created_at FROM owner_audit_log ORDER BY created_at DESC LIMIT 50").all(),
@@ -9984,9 +10111,9 @@ async function renderOwnerAdminPage(request,env){
       '</div><div class="actions">' + watchAction + '</div></article>';
   }).join("") || '<div class="muted">ユーザーが登録されていません</div>';
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OWNER管理 | EagleEye</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
-<div class="card"><h2>管理機能</h2><div class="links"><a class="link" href="/owner/social"><b>SNS投稿セット</b><span>毎週の画像・ショート動画・投稿文と自動投稿の結果</span></a><a class="link" href="/owner/growth"><b>成長ダッシュボード</b><span>PV・訪問者・継続率・広告収益の試算・前後比較</span></a><a class="link" href="/owner/traffic"><b>アクセス状況</b><span>1日の利用者数・訪問者数</span></a><a class="link" href="/owner/discord-diagnostics"><b>Discord連携調査</b><span>OAuth・Bot設定状態・自動参加の失敗履歴</span></a><a class="link" href="/admin/api-pool"><b>API Pool管理</b><span>APIキー・Pool・テスト</span></a><a class="link" href="/admin/google-drive"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定</span></a><a class="link" href="/admin/diagnostics"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細</span></a><a class="link" href="/admin/data-coverage"><b>データ登録状況</b><span>現在登録されているプレイヤー数・王国数を確認</span></a><a class="link" href="/admin/api-raw-data"><b>API Raw Inspector</b><span>MightPulse保存生データと画像リソースを実画像で照合</span></a><a class="link" href="/owner/kingdom-load-test"><b>王国ウォッチリスト実処理負荷テスト</b><span>本番と同じ取得・保存パイプラインを実行</span></a><a class="link" href="/owner/kingdom-catalog-r2-backfill"><b>王国Catalog R2バックフィル</b><span>既存詳細JSONを最大10件ずつR2へ退避</span></a><a class="link" href="/admin/kingdom-rankings"><b>王国ランキング</b><span>必要なランキングだけ取得・閲覧・Sheets出力</span></a><a class="link" href="/admin/data-retention"><b>データ保存期間</b><span>D1履歴・R2アーカイブ</span></a><a class="link" href="/admin/player-visibility"><b>データ公開設定</b><span>ロール別公開範囲</span></a><a class="link" href="/players"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更</span></a><a class="link" href="/kingdom-watchlist"><b>王国ウォッチリスト</b><span>監視対象・ランキング</span></a></div></div>
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ユーザー・権限管理 | EagleEye</title>
+<style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>ユーザー・権限管理</h1><p class="sub">ユーザーのロール・状態・ウォッチ件数とOWNER監査ログ</p>
+<p class="sub"><a href="/owner" style="color:#7dd3fc">← オーナー管理メニューへ</a></p>
 <div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
