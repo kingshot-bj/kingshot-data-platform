@@ -64,6 +64,6 @@ test("ワインレッド：あまねの運営招待とオーナーだけの豪�
   const page = renderThemePickerPage();
   assert.match(page, /data-skin="wine"/);
   assert.match(page, /data-skin="wine" data-reward="theme_wine"/);
-  assert.match(page, /🔒 あまねの運営招待で解放/);
-  assert.match(page, /🔒 運営からの招待で解放/, "ゴールドの表示はそのまま");
+  assert.equal((page.match(/🔒 運営からの招待で解放/g) || []).length, 2, "ゴールドと同じ表示");
+  assert.doesNotMatch(page, /あまね/, "画面に個人の名前は出さない");
 });
