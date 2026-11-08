@@ -202,7 +202,7 @@ test("オーナーだけ：画面・保存APIの入口", () => {
   assert.match(api, /request\.method !== "POST"/);
   assert.match(api, /await requireOwner\(request, env\)/);
   assert.match(api, /isSameOriginRequest\(request\)/);
-  assert.match(index, /href="\/owner\/growth"><b>成長ダッシュボード/);
+  assert.match(index, /"href": "\/owner\/growth",\s*"title": "成長ダッシュボード"/, "オーナー管理メニュー（成長・集客）にある");
 });
 
 test("PVの記録：失敗しても例外を外へ出さない（ページ表示を止めない）", async () => {
