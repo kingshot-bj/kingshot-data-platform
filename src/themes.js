@@ -25,7 +25,7 @@ export const EAGLEEYE_THEMES = Object.freeze([
   // 限定：あまね（オーナー）の特別招待で来た人とオーナーだけが選べる（user_rewards の theme_wine）。
   // ゴールドと同じ豪華な仕上げ（光沢・光る縁・きらめき）を、ワインレッドで。
   { id: "wine", name: "ワインレッド", description: "運営招待の限定カラー", reward: "theme_wine",
-    tokens: { bg: "#14060b", panel: "#220b13", deep: "#1a080f", raised: "#2e0f1a", border: "#7a1f38", soft: "#3d1422", text: "#fff0f3", subtext: "#e7aebd", muted: "#a97a87", accent: "#e8456a", rival: "#60a5fa" }, light: "#9f1239",
+    tokens: { bg: "#170610", panel: "#260b1c", deep: "#1d0816", raised: "#331027", border: "#8a2357", soft: "#44152f", text: "#fff0f7", subtext: "#f2b8d4", muted: "#b07f99", accent: "#f472b6", rival: "#60a5fa" }, light: "#db2777",
     effects: "wine" }
 ]);
 
@@ -57,17 +57,21 @@ const LUXE = {
     light: { dust: "184,134,11", glow: "245,197,66", bg: "#fff8e6,#fbf1d8", metal: "linear-gradient(100deg,#7a4f00 0%,#b8860b 25%,#e2b23a 45%,#8a5a00 62%,#c8961c 80%,#7a4f00 100%)", card: "#fffdf6,#fff4d9", frame: "#f3d27a,#b8860b 30%,#7a4f00 50%,#e2b23a 72%,#f3d27a", deep: "122,79,0", bar: "255,249,234", line: "#b8860b,#e2b23a,#b8860b", btn: "#ffe58a,#e2b23a 45%,#b8860b", btnText: "#2a1c02", btnBorder: "#8a5a00", ring: "#b8860b" }
   },
   // ワインレッド：深い赤ワインの地に、ロゼの光沢と光る縁。
+  // ワインレッド：深いワインの地に、ローズゴールドのピンクの光沢と、小さなハートのきらめき（女の子っぽく、でも上品に）。
   wine: {
     shine: "ee-wine-shine",
-    dark: { dust: "255,150,175", glow: "214,40,80", base: "#100307", metal: "linear-gradient(100deg,#ffe0e8 0%,#f0587a 22%,#8c1030 45%,#ffc9d6 60%,#c8174a 78%,#ffe0e8 100%)", hl: "255,200,215", frame: "#ffd6e0,#b3123b 28%,#4a0618 50%,#e8456a 72%,#ffd6e0", line: "#d6335a,#ffd6e0,#d6335a", btn: "#ff8fa8,#c81e4a 45%,#7d0f2b", btnText: "#fff5f7", btnBorder: "#ffb8c8", ring: "#e0445f" },
-    light: { dust: "159,18,57", glow: "224,68,95", bg: "#fff5f7,#fbe8ee", metal: "linear-gradient(100deg,#5c0a20 0%,#9f1239 25%,#e0445f 45%,#6d0c26 62%,#be1a48 80%,#5c0a20 100%)", card: "#fffafb,#fdeef2", frame: "#f5a3b6,#9f1239 30%,#5c0a20 50%,#e0445f 72%,#f5a3b6", deep: "92,10,32", bar: "255,246,248", line: "#9f1239,#e0445f,#9f1239", btn: "#ff8fa8,#d6335a 45%,#9f1239", btnText: "#ffffff", btnBorder: "#6d0c26", ring: "#9f1239" }
+    hearts: true,
+    dark: { dust: "255,170,205", glow: "236,72,140", base: "#140510", metal: "linear-gradient(100deg,#fff0f6 0%,#ff9cc6 20%,#e0457f 42%,#ffe1ee 58%,#f472b6 76%,#fff0f6 100%)", hl: "255,214,232", frame: "#ffe1ee,#f472b6 26%,#9d174d 50%,#ff9cc6 74%,#ffe1ee", line: "#f472b6,#ffe1ee,#f472b6", btn: "#ffc2dc,#f472b6 45%,#be185d", btnText: "#ffffff", btnBorder: "#ffd6e7", ring: "#f472b6" },
+    light: { dust: "219,39,119", glow: "244,114,182", bg: "#fff7fb,#fdeaf3", metal: "linear-gradient(100deg,#9d174d 0%,#db2777 25%,#f472b6 45%,#a21caf 62%,#e0457f 80%,#9d174d 100%)", card: "#fffbfd,#fff0f7", frame: "#fbcfe8,#ec4899 30%,#9d174d 50%,#f9a8d4 72%,#fbcfe8", deep: "157,23,77", bar: "255,247,251", line: "#db2777,#f9a8d4,#db2777", btn: "#ffc2dc,#ec4899 45%,#be185d", btnText: "#ffffff", btnBorder: "#be185d", ring: "#ec4899" }
   }
 };
+// 背景の小さなハート（SVG、固定の文字列）。
+const heartLayer = (rgb, alpha) => `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cpath d='M18 26c-3-4-9-2-9 3 0 4 9 9 9 9s9-5 9-9c0-5-6-7-9-3z' fill='rgba(${rgb},${alpha})'/%3E%3Cpath d='M54 58c-2-2.6-6-1.3-6 2 0 2.6 6 6 6 6s6-3.4 6-6c0-3.3-4-4.6-6-2z' fill='rgba(${rgb},${alpha * 0.7})'/%3E%3C/svg%3E") 0 0/72px 72px,`;
 const fadeLine = (rgb, mid) => `linear-gradient(90deg,rgba(${rgb},0),${mid},rgba(${rgb},0)) 1`;
-function luxeDark(d, { shine, dark: c }) {
+function luxeDark(d, { shine, hearts, dark: c }) {
   return [
-    // 背景：上からの光＋きらめく粉
-    `${d} body{background:radial-gradient(rgba(${c.dust},.10) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.06) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.28),rgba(${c.glow},0) 62%),${c.base}!important;background-attachment:fixed!important}`,
+    // 背景：上からの光＋きらめく粉（ワインレッドは小さなハートも）
+    `${d} body{background:${hearts ? heartLayer(c.dust, 0.16) : ""}radial-gradient(rgba(${c.dust},.10) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.06) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.28),rgba(${c.glow},0) 62%),${c.base}!important;background-attachment:fixed!important}`,
     // ロゴ・見出し・カードの題名：金属の光沢（ゆっくり流れる）
     `${d} :is(${LUXE_TITLES}){background:${c.metal};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:${shine} 5s linear infinite;filter:drop-shadow(0 0 6px rgba(${c.glow},.35))}`,
     `@keyframes ${shine}{from{background-position:0% 50%}to{background-position:220% 50%}}`,
@@ -90,9 +94,9 @@ function luxeDark(d, { shine, dark: c }) {
   ].join("\n");
 }
 // ライトモード：淡い背景と粉、濃い色の縁と光沢
-function luxeLight(l, { shine, light: c }) {
+function luxeLight(l, { shine, hearts, light: c }) {
   return [
-    `${l} body{background:radial-gradient(rgba(${c.dust},.13) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.08) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.35),rgba(${c.glow},0) 62%),linear-gradient(180deg,${c.bg})!important;background-attachment:fixed!important}`,
+    `${l} body{background:${hearts ? heartLayer(c.dust, 0.12) : ""}radial-gradient(rgba(${c.dust},.13) 1px,transparent 1.6px) 0 0/24px 24px,radial-gradient(rgba(${c.dust},.08) 1px,transparent 1.6px) 12px 12px/24px 24px,radial-gradient(120% 55% at 50% -6%,rgba(${c.glow},.35),rgba(${c.glow},0) 62%),linear-gradient(180deg,${c.bg})!important;background-attachment:fixed!important}`,
     `${l} :is(${LUXE_TITLES}){background:${c.metal};background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent!important;-webkit-text-fill-color:transparent;animation:${shine} 5s linear infinite}`,
     `@media (prefers-reduced-motion:reduce){${l} :is(${LUXE_TITLES}){animation:none}}`,
     `${l} :is(${LUXE_CARDS}){border:1.5px solid transparent!important;background:linear-gradient(160deg,${c.card}) padding-box,linear-gradient(135deg,${c.frame}) border-box!important;box-shadow:0 0 0 1px rgba(${c.dust},.10),0 6px 18px rgba(${c.deep},.14),0 0 16px rgba(${c.glow},.18)!important}`,
