@@ -12,6 +12,7 @@ export function resetKingdomStatsSchemaCache() { schemaReady = null; }
 export async function ensureKingdomStatsSchema(db) {
   if (!schemaReady) {
     schemaReady = db.prepare("CREATE TABLE IF NOT EXISTS kingdom_stats_current (kid INTEGER PRIMARY KEY, power INTEGER, power_gain_7d INTEGER, power_rank INTEGER, age_days INTEGER, player_count INTEGER, observed_at INTEGER NOT NULL)").run()
+      .then(() => db.prepare("CREATE INDEX IF NOT EXISTS idx_kingdom_stats_current_power_rank ON kingdom_stats_current (power_rank)").run())
       .catch(error => { schemaReady = null; throw error; });
   }
   return schemaReady;

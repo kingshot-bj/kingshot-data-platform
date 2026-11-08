@@ -9,7 +9,7 @@
 
 import { loadKingdomGrowthHistory, KINGDOM_GROWTH_FIELDS } from "./kingdom-growth-history.js";
 import { loginUrlFor } from "./login-return.js";
-import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
+import { currentKingdomAge, renderKingdomTimelineSection, renderKingdomTimelineTable, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
 import { readR2Json } from "./kingdom-portal.js";
 import { siteOrigin } from "./site-origin.js";
 import { heroPagePaths } from "./hero-pages.js";
@@ -43,10 +43,11 @@ export function publicOrigin(request, env = null) {
   return siteOrigin(request, env);
 }
 
-function shell({ title, description, canonical, body, jsonLd = null, origin = "" }) {
+// noindex: 検索に載せない（canonical・OGを出さず robots noindex）。存在しない王国・データがまだない王国に使う。
+function shell({ title, description, canonical, body, jsonLd = null, origin = "", noindex = false }) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
-<meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}">
+<title>${esc(title)}</title>${noindex ? '<meta name="robots" content="noindex">' : `<meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}">`}
 ${jsonLd ? '<script type="application/ld+json">' + JSON.stringify(jsonLd).replace(/</g, "\\u003c") + "</script>" : ""}
 <style>
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -66,6 +67,7 @@ h2{margin:22px 0 8px;font-size:17px}
 .kingdom-timeline h2{margin:22px 0 8px;font-size:17px}
 ${KINGDOM_TIMELINE_CSS}
 .note{margin-top:20px;font-size:11px;color:var(--ee-subtext);line-height:1.6}
+.related{display:grid;gap:10px}.rel-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.rel-group small{flex:0 0 100%;font-size:12px;color:var(--ee-subtext)}.rel-group a{padding:8px 10px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none;font-weight:800;font-size:13px}.rel-group a em{display:block;font-style:normal;font-weight:600;font-size:11px;color:var(--ee-subtext)}
 </style></head><body><main class="wrap">${body}</main></body></html>`;
 }
 
@@ -80,14 +82,24 @@ const fmtDate = at => new Date(Number(at) * 1000).toISOString().slice(0, 10);
 
 export async function loadPublicKingdom(env, kid) {
   const db = env.DB;
-  const [catalog, players, alliances, matchup, score, growth] = await Promise.all([
+  const [catalog, players, alliances, matchup, score, growth, near, statsRow] = await Promise.all([
     db.prepare("SELECT kid, name, status, region, language, last_seen_at, r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT rank, nick_name, score, aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT rank, abbr, name, score FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT season, opponent, opponent_name FROM kvk_matchups WHERE kid = ? ORDER BY season DESC LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT season, stage, opponent, score, opponent_score FROM kvk_scores WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
-    env.ARCHIVE ? loadKingdomGrowthHistory(env.ARCHIVE, kid).catch(() => null) : null
+    env.ARCHIVE ? loadKingdomGrowthHistory(env.ARCHIVE, kid).catch(() => null) : null,
+    // 関連王国：近い番号（主キーの範囲で最大8行）
+    db.prepare("SELECT kid FROM kingdom_catalog WHERE kid BETWEEN ? AND ? AND kid <> ? ORDER BY kid ASC").bind(kid - 4, kid + 4, kid).all().catch(() => ({ results: [] })),
+    db.prepare("SELECT power_rank FROM kingdom_stats_current WHERE kid = ?").bind(kid).first().catch(() => null)
   ]);
+  // 関連王国：戦力順位が近い王国（power_rank の索引で前後3つ）
+  let similar = [];
+  const myRank = Number(statsRow?.power_rank) || null;
+  if (myRank) {
+    const rows = await db.prepare("SELECT kid, power, power_rank FROM kingdom_stats_current WHERE power_rank BETWEEN ? AND ? AND kid <> ? ORDER BY power_rank ASC LIMIT 6").bind(Math.max(1, myRank - 3), myRank + 3, kid).all().catch(() => ({ results: [] }));
+    similar = rows?.results || [];
+  }
   // Personal boards carry only the alliance id; resolve tags from the alliance boards.
   let playerRows = players?.results || [];
   if (playerRows.some(p => !p.abbr && p.aid)) {
@@ -106,7 +118,31 @@ export async function loadPublicKingdom(env, kid) {
       age = currentKingdomAge(detail?.age_days, snap?.observed_at);
     } catch { age = null; }
   }
-  return { catalog, players: playerRows, alliances: alliances?.results || [], matchup, score, growth, age };
+  return { catalog, players: playerRows, alliances: alliances?.results || [], matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar };
+}
+
+// 存在しない王国番号（カタログにない）は404にする。どんな番号でも中身のないページを返すと、検索エンジンに「中身のないページが無限にある」と見られる。
+export async function publicKingdomExists(db, kid) {
+  if (!Number.isInteger(kid) || kid <= 0) return false;
+  const row = await db.prepare("SELECT 1 AS ok FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => ({ ok: 1 }));
+  return Boolean(row);
+}
+
+export function renderPublicKingdomNotFound(kid) {
+  const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a></nav>
+<h1>王国 ${esc(kid)} は見つかりません</h1>
+<p class="lead">この番号の王国はまだ記録されていません。新しい王国は毎日自動で取得しています。</p>
+<p><a href="/kingdoms">王国一覧から探す →</a></p>`;
+  return shell({ title: `王国${kid}は見つかりません | EagleEye`, description: "", canonical: "", body, noindex: true });
+}
+
+export function renderPublicTimelinePage({ origin = "" } = {}) {
+  const canonical = origin + "/kingdom-timeline";
+  const body = `<nav class="crumbs"><a href="/">EagleEye</a> › 王国タイムライン</nav>
+<h1>キングショット 王国タイムライン</h1>
+<p class="lead">王国の開設から何日目に、英雄・ペット・黄金・研究が解放されるかの目安です。自分の王国の開設日数は<a href="/kingdoms">王国ページ</a>で見られます。</p>
+${renderKingdomTimelineTable()}`;
+  return shell({ title: "キングショット 王国タイムライン（英雄・ペット・黄金の解放時期） | EagleEye", description: "キングショット（KingShot）の王国開設からの日数ごとに、新しい英雄・ペット・黄金・研究が解放される時期の目安をまとめた一覧。", canonical, body, origin });
 }
 
 export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = false } = {}) {
@@ -139,6 +175,8 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
     kvk = `<h2>KvK</h2><div class="kvk">シーズン${esc(matchup.season)}の対戦相手：<a href="/k/${encodeURIComponent(matchup.opponent)}">王国 ${esc(matchup.opponent)}</a>（<a href="/kvk/s${encodeURIComponent(matchup.season)}">全組み合わせと戦力差</a>）${live && score.score != null ? `<br>スコア ${esc(compactNumber(score.score))} : ${esc(compactNumber(score.opponent_score))}` : ""}</div>`;
   }
 
+  const nearKids = data.nearKids || [], similar = data.similar || [];
+  const related = nearKids.length || similar.length ? `<h2>関連する王国</h2><div class="related">${similar.length ? `<div class="rel-group"><small>戦力順位が近い王国</small>${similar.map(k => `<a href="/k/${encodeURIComponent(k.kid)}">王国 ${esc(k.kid)}<em>${esc(k.power_rank)}位・${esc(compactNumber(k.power))}</em></a>`).join("")}</div>` : ""}${nearKids.length ? `<div class="rel-group"><small>近い番号の王国（開設時期が近い）</small>${nearKids.map(k => `<a href="/k/${k}">王国 ${k}</a>`).join("")}</div>` : ""}</div>` : "";
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a> › 王国 ${esc(kid)}</nav>
 <h1>王国 ${esc(kid)}${esc(name)}</h1>
 <p class="lead">KingShot 王国${esc(kid)}の戦力・成長・ランキング・KvK情報。${growth?.latestAt ? esc(fmtDate(growth.latestAt)) + " 時点。" : ""}データは毎日更新されます。</p>
@@ -146,7 +184,8 @@ ${stats}
 <h2>戦力ランキング（上位10人）</h2>${playerRows}
 ${allianceRows ? `<h2>同盟ランキング（上位5）</h2>${allianceRows}` : ""}
 ${kvk}
-${data.age != null ? renderKingdomTimelineSection(data.age, { kid }) : ""}
+${related}
+${data.age != null ? renderKingdomTimelineSection(data.age, { kid, fullHref: "/kingdom-timeline" }) : ""}
 ${loginCta(kid, signedIn)}
 <p class="note">データ提供：MightPulse。ゲーム内の公開情報をもとに集計しています。KingShotの公式サイトではありません。</p>`;
 
@@ -159,7 +198,9 @@ ${loginCta(kid, signedIn)}
       { "@type": "ListItem", position: 3, name: "王国 " + kid, item: canonical }
     ]
   };
-  return shell({ title, description, canonical, body, jsonLd, origin });
+  // データがまだない王国は検索に載せない（ページは見られる）。
+  const noindex = !latest && !players.length;
+  return shell({ title, description, canonical, body, jsonLd, origin, noindex });
 }
 
 export async function loadPublicKingdomIds(db) {
@@ -199,7 +240,7 @@ export function renderAdsTxt(publisherId) {
 }
 
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
-  const urls = [...extraPaths.map(p => origin + p), `${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/tools/gold`, `${origin}/tools/gold-tech`, `${origin}/about`, ...heroPagePaths().map(p => origin + p), ...kids.map(k => `${origin}/k/${k}`)];
+  const urls = [...extraPaths.map(p => origin + p), `${origin}/`, `${origin}/kingdoms`, `${origin}/hero-catalog`, `${origin}/tools/hero-shards`, `${origin}/tools/gold`, `${origin}/tools/gold-tech`, `${origin}/about`, `${origin}/kingdom-timeline`, ...heroPagePaths().map(p => origin + p), ...kids.map(k => `${origin}/k/${k}`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(u => `<url><loc>${esc(u)}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq></url>`).join("\n")}\n</urlset>\n`;
 }
 
