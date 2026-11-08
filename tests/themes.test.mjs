@@ -43,11 +43,11 @@ test("the EagleEye cyan accent follows the theme", () => {
   assert.ok(normalizeLegacyPalette("<style>.a{color:#22d3ee;border-color:#22d3ee}</style>").includes("color:var(--ee-cyan,#22d3ee);border-color:var(--ee-cyan,#22d3ee)"));
 });
 
-test("ワインレッド：だれでも選べる豪華カラー。ゴールドと同じ仕上げ（光沢・光る縁・きらめき）をダーク・ライト両方に", () => {
+test("ワインレッド：あまねの運営招待とオーナーだけの豪華カラー。ゴールドと同じ仕上げ（光沢・光る縁・きらめき）をダーク・ライト両方に", () => {
   const wine = EAGLEEYE_THEMES.find(t => t.id === "wine");
   assert.ok(wine, "ワインレッドがある");
   assert.equal(wine.name, "ワインレッド");
-  assert.equal(wine.reward, undefined, "限定ではない");
+  assert.equal(wine.reward, "theme_wine", "限定");
   assert.equal(wine.effects, "wine");
   const css = eagleEyeThemesCss();
   const dark = 'html[data-ee-skin="wine"]:not([data-eagle-theme="light"])';
@@ -63,5 +63,7 @@ test("ワインレッド：だれでも選べる豪華カラー。ゴールド�
   assert.ok(css.includes('animation:ee-gold-shine 5s linear infinite'));
   const page = renderThemePickerPage();
   assert.match(page, /data-skin="wine"/);
-  assert.doesNotMatch(page, /data-skin="wine" data-reward/);
+  assert.match(page, /data-skin="wine" data-reward="theme_wine"/);
+  assert.match(page, /🔒 あまねの運営招待で解放/);
+  assert.match(page, /🔒 運営からの招待で解放/, "ゴールドの表示はそのまま");
 });

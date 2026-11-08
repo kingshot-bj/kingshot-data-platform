@@ -28,6 +28,9 @@ export const INVITE_BONUS_CAP = 30;
 // 限定の着せ替え「ゴールド」と「運営招待」バッジも付く（user_rewards）。
 export const OWNER_INVITE_BONUS = Object.freeze({ invitedSignup: 5, invitedAdvanced: 10 });
 export const OWNER_INVITE_REWARDS = Object.freeze(["theme_gold", "badge_owner_invite"]);
+// オーナーごとの追加の特典（その人の特別招待リンクから来た人だけ）。キーは users.user_id。
+// あまね：限定の着せ替え「ワインレッド」。
+export const OWNER_INVITE_EXTRA_REWARDS = Object.freeze({ "dec37b66-b557-4c3c-b668-59044e3cfae0": Object.freeze(["theme_wine"]) });
 const OWNER_SOURCE_PREFIX = "owner_";
 
 // 日本時間の「年-月」（シーズン）。
@@ -112,7 +115,7 @@ export async function attributeReferral(db, { inviteeUserId, code, isNewUser, no
   if (attributed) {
     if (special) {
       await grantWatchBonus(db, inviteeUserId, OWNER_SOURCE_PREFIX + "invited_signup", OWNER_INVITE_BONUS.invitedSignup, now);
-      for (const reward of OWNER_INVITE_REWARDS) await grantReward(db, inviteeUserId, reward, "owner_invite", now);
+      for (const reward of [...OWNER_INVITE_REWARDS, ...(OWNER_INVITE_EXTRA_REWARDS[owner.userId] || [])]) await grantReward(db, inviteeUserId, reward, "owner_invite", now);
     } else {
       await grantWatchBonus(db, inviteeUserId, "invited_signup", INVITE_BONUS.invitedSignup, now);
     }

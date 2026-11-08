@@ -22,8 +22,9 @@ export const EAGLEEYE_THEMES = Object.freeze([
     tokens: { bg: "#0d0a04", panel: "#1a1408", deep: "#140f06", raised: "#251c0b", border: "#8c6a1f", soft: "#3b2d12", text: "#fff5d6", subtext: "#e6c98a", muted: "#a88f5c", accent: "#f5c542", rival: "#60a5fa" }, light: "#b45309",
     // 色を変えるだけでなく「金属の金」に見せる仕上げ（ダークモードのみ）。
     effects: "gold" },
-  // あまねのリクエスト。ゴールドと同じ豪華な仕上げ（光沢・光る縁・きらめき）を、ワインレッドで。だれでも選べる。
-  { id: "wine", name: "ワインレッド", description: "豪華に光る深紅",
+  // 限定：あまね（オーナー）の特別招待で来た人とオーナーだけが選べる（user_rewards の theme_wine）。
+  // ゴールドと同じ豪華な仕上げ（光沢・光る縁・きらめき）を、ワインレッドで。
+  { id: "wine", name: "ワインレッド", description: "あまねの運営招待の限定カラー", reward: "theme_wine", lockLabel: "あまねの運営招待で解放",
     tokens: { bg: "#14060b", panel: "#220b13", deep: "#1a080f", raised: "#2e0f1a", border: "#7a1f38", soft: "#3d1422", text: "#fff0f3", subtext: "#e7aebd", muted: "#a97a87", accent: "#e8456a", rival: "#60a5fa" }, light: "#9f1239",
     effects: "wine" }
 ]);
@@ -141,7 +142,7 @@ export function renderThemePickerPage() {
     return `<button type="button" class="skin${t.reward ? " locked" : ""}" data-skin="${escapeHtml(t.id)}"${lock} style="background:${k.bg};border-color:${k.border}">
 <span class="skin-card" style="background:${k.panel}"><i style="background:${k.accent}"></i><b style="color:${k.text}">${escapeHtml(t.name)}</b><small style="color:${k.subtext}">${escapeHtml(t.description)}</small></span>
 <span class="skin-bar"><em style="background:${k.accent}"></em><em style="background:${k.raised}"></em><em style="background:${k.subtext}"></em></span>
-<span class="skin-check">✓ 使用中</span>${t.reward ? '<span class="skin-lock">🔒 運営からの招待で解放</span>' : ""}</button>`;
+<span class="skin-check">✓ 使用中</span>${t.reward ? `<span class="skin-lock">🔒 ${escapeHtml(t.lockLabel || "運営からの招待で解放")}</span>` : ""}</button>`;
   };
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>着せ替え | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -173,7 +174,7 @@ function curMode(){try{var m=localStorage.getItem("eagleeye-theme");return m==="
 function applyMode(){var m=curMode(),eff=m==="auto"?(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):m;document.documentElement.setAttribute("data-eagle-theme",eff);document.querySelectorAll(".mode").forEach(function(b){var on=b.getAttribute("data-mode")===m;b.classList.toggle("on",on);b.setAttribute("aria-checked",on?"true":"false")})}
 document.querySelectorAll(".mode").forEach(function(b){b.addEventListener("click",function(){var m=b.getAttribute("data-mode");try{if(m==="auto")localStorage.removeItem("eagleeye-theme");else localStorage.setItem("eagleeye-theme",m)}catch(e){}applyMode()})});applyMode();
 fetch("/api/rewards",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(d){var got=(d&&d.rewards)||[];document.querySelectorAll(".skin[data-reward]").forEach(function(b){if(got.indexOf(b.getAttribute("data-reward"))>=0)b.classList.remove("locked")})}).catch(function(){});
-document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){if(b.classList.contains("locked")){alert("この着せ替えは、EagleEye運営からの招待リンクで登録した人だけが使える限定カラーです。");return}var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
+document.querySelectorAll(".skin").forEach(function(b){b.addEventListener("click",function(){if(b.classList.contains("locked")){alert(b.getAttribute("data-skin")==="wine"?"この着せ替えは、あまねの運営招待リンクで登録した人だけが使える限定カラーです。":"この着せ替えは、EagleEye運営からの招待リンクで登録した人だけが使える限定カラーです。");return}var id=b.getAttribute("data-skin");try{if(id==="navy")localStorage.removeItem("eagleeye-skin");else localStorage.setItem("eagleeye-skin",id)}catch(e){}
 if(id==="navy")document.documentElement.removeAttribute("data-ee-skin");else document.documentElement.setAttribute("data-ee-skin",id);
 paint()})});paint()})();</script></body></html>`;
 }
