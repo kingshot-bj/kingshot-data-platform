@@ -52,12 +52,12 @@ test("ワインレッド：あまねの運営招待とオーナーだけの豪�
   const css = eagleEyeThemesCss();
   const dark = 'html[data-ee-skin="wine"]:not([data-eagle-theme="light"])';
   const light = 'html[data-ee-skin="wine"][data-eagle-theme="light"]';
-  assert.ok(css.includes(`${dark}{--ee-bg:#14060b`), "ダークの色");
-  assert.ok(css.includes(`${dark} body{background:radial-gradient`), "背景のきらめき");
+  assert.ok(css.includes(`${dark}{--ee-bg:#170610`), "ダークの色");
+  assert.ok(css.includes(`${dark} body{background:url("data:image/svg+xml`), "背景のきらめき（ハート）");
   assert.match(css, /@keyframes ee-wine-shine/);
   assert.ok(css.includes(`animation:ee-wine-shine 5s linear infinite`), "見出しの光沢が流れる");
-  assert.ok(css.includes(`${dark} .ee-avatar{box-shadow:0 0 0 2px #e0445f`), "光るリング");
-  assert.ok(css.includes(`${light} body{background:radial-gradient(rgba(159,18,57`), "ライトモードの仕上げ");
+  assert.ok(css.includes(`${dark} .ee-avatar{box-shadow:0 0 0 2px #f472b6`), "光るリング");
+  assert.ok(css.includes(`${light} body{background:url("data:image/svg+xml`), "ライトモードの仕上げ（ハート）");
   assert.ok(css.includes(`@media (prefers-reduced-motion:reduce){${dark}`), "動きを減らす設定では止める");
   // ゴールドの仕上げはそのまま
   assert.ok(css.includes('animation:ee-gold-shine 5s linear infinite'));
@@ -80,5 +80,5 @@ test("豪華カラー：ホーム以外（その他メニュー・検索・ラ�
       assert.ok(css.includes(`${sel} .watch-hub{background:transparent!important}`), id + " ウォッチのトップは背景を見せる");
     }
   }
-  assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#ff8fa8/, "検索ボタンもワインの金属ボタン");
+  assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#ffc2dc/, "検索ボタンもワインの金属ボタン");
 });
