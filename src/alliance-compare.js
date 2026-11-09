@@ -21,9 +21,10 @@ export function topByPower(members, n = MYSTIC_TOP) {
 }
 // 戦力上位3人ぶんだけ読む（IDで絞るので、読むのは見つかった行だけ）。
 // 戻り値：{ checked: [board...]（その王国で取得済みの種類）, values: { governor_id: { board: score } } }
-export async function loadAllianceMystic(db, alliance) {
+// extraIds：上位3人のほかに読む人（見ている本人など）。
+export async function loadAllianceMystic(db, alliance, extraIds = []) {
   const kid = Number(alliance?.kid);
-  const ids = [...new Set(topByPower(alliance?.members).map(m => String(m.id)))];
+  const ids = [...new Set([...topByPower(alliance?.members).map(m => String(m.id)), ...extraIds.map(String).filter(Boolean)])];
   if (!db || !ids.length || !Number.isInteger(kid)) return { checked: [], values: {} };
   const ph = a => a.map(() => "?").join(",");
   const chunks = [];
@@ -111,7 +112,7 @@ export function renderAllianceComparePage({ alliances = [], targets = [], top = 
     return `<div class="ac-in"><input name="kid" inputmode="numeric" pattern="\\d*" placeholder="王国番号" value="${esc(t.kid || "")}" aria-label="王国番号${i + 1}"><input name="tag" placeholder="同盟タグ" value="${esc(t.tag || "")}" aria-label="同盟タグ${i + 1}"></div>`;
   }).join("");
   const missing = alliances.filter(a => a.error).map(a => `王国${esc(a.kid)}の「${esc(a.tag)}」`).join("・");
-  const data = found.map(a => ({ kid: a.kid, abbr: a.abbr, name: a.name, power: a.power, power_rank: a.power_rank, observedAt: a.observedAt, fetched: a.fetched, status: a.status, members: a.members, mystic: a.mystic || null }));
+  const data = found.map(a => ({ kid: a.kid, abbr: a.abbr, name: a.name, power: a.power, power_rank: a.power_rank, observedAt: a.observedAt, fetched: a.fetched, status: a.status, members: a.members, mystic: a.mystic || null, me: a.me || null }));
   const mysticBoardsJson = JSON.stringify(MYSTIC_COMPARE_BOARDS);
   const dataJson = JSON.stringify(data).replace(/</g, "\\u003c");
   const topJson = JSON.stringify(ALLIANCE_COMPARE_TOP_OPTIONS.includes(top) ? top : ALLIANCE_COMPARE_DEFAULT_TOP);
@@ -127,7 +128,7 @@ h1{font-size:22px;margin:6px 0 4px}.lead{font-size:13px;color:var(--ee-subtext,#
 .tbl td.best{outline:2px solid var(--ee-cyan,#22d3ee)}.tbl thead td{background:none;font-size:13px;line-height:1.3}.tbl thead small{display:block;font-size:10px;color:var(--ee-subtext,#91a7bf);font-weight:600}
 .mem{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mem small{display:block;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 .note{font-size:11px;color:var(--ee-subtext,#91a7bf);line-height:1.6}.warn{font-size:12px;padding:8px 10px;border-radius:9px;border:1px dashed currentColor;margin:8px 0}
-h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
+h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl.mys td.who.me{outline:2px dashed var(--ee-cyan,#22d3ee);outline-offset:-2px}.you{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:var(--ee-cyan,#22d3ee);color:#04202a;margin-right:2px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 </style></head><body><main class="wrap"><a href="/kingdom/rankings">← ランキング</a>
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
@@ -147,11 +148,12 @@ function row(label,vals,fmt,better){var nums=vals.map(function(v){return v==null
 function stg(v,off){var x=Math.round(Number(v)-off);if(!isFinite(x)||x<1)return null;return (Math.floor((x-1)/10)+1)+"-"+((x-1)%10+1)}
 var COL=["#ffd166","#42d9ff","#a18aff","#5ee6a8"];
 function top3(a){return (a.members||[]).filter(function(m){return m&&m.id&&m.power!==null&&isFinite(Number(m.power))}).sort(function(x,y){return Number(y.power)-Number(x.power)}).slice(0,MT)}
-function mystic(){if(!A.some(function(a){return a.mystic}))return "";var P=A.map(top3);if(!P.some(function(t){return t.length}))return "";
-var h="<h2 style=\\"margin-top:14px\\">秘境の試練（各同盟の上位"+MT+"人・"+P.reduce(function(s,t){return s+t.length},0)+"人を比べる）</h2><p class=\\"note\\">"+A.map(function(a,i){return "<b style=\\"color:"+COL[i%4]+"\\">■ "+e(a.abbr||"")+"</b>"}).join("　")+"</p>";
+function withMe(a){var t=top3(a).map(function(m){return Object.assign({},m,{me:!!(a.me&&String(m.id)===String(a.me))})});if(a.me&&!t.some(function(m){return m.me})){var m=(a.members||[]).find(function(x){return String(x.id)===String(a.me)});if(m)t.push(Object.assign({},m,{me:true,extra:true}))}return t}
+function mystic(){if(!A.some(function(a){return a.mystic}))return "";var P=A.map(withMe);if(!P.some(function(t){return t.length}))return "";var hasMe=P.some(function(t){return t.some(function(m){return m.extra})});
+var h="<h2 style=\\"margin-top:14px\\">秘境の試練（各同盟の上位"+MT+"人"+(hasMe?"＋あなた":"")+"・"+P.reduce(function(s,t){return s+t.length},0)+"人を比べる）</h2><p class=\\"note\\">"+A.map(function(a,i){return "<b style=\\"color:"+COL[i%4]+"\\">■ "+e(a.abbr||"")+"</b>"}).join("　")+"</p>";
 h+=MB.map(function(b){var rows=[];A.forEach(function(a,ai){P[ai].forEach(function(m){var my=a.mystic,v=my&&my.values&&my.values[String(m.id)]&&my.values[String(m.id)][b[0]];rows.push({ai:ai,m:m,v:v==null?null:Number(v),miss:!my?"—":((my.checked||[]).indexOf(b[0])>=0?"100位圏外":"取得中")})})});
 rows.sort(function(x,y){return (y.v==null?-1:y.v)-(x.v==null?-1:x.v)});
-return "<table class=\\"tbl mys\\"><colgroup><col style=\\"width:3em\\"><col><col style=\\"width:34%\\"></colgroup><thead><tr><th colspan=\\"3\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows.map(function(r,i){var val=r.v==null?r.miss:(b[2]?(stg(r.v,b[2])||"—"):r.v.toLocaleString("ja-JP"));return "<tr><th>"+(r.v==null?"":(i+1)+"位")+"</th><td class=\\"who\\" style=\\"border-left:4px solid "+COL[r.ai%4]+"\\"><span class=\\"mem\\">"+e(r.m.name)+"<small>"+e(A[r.ai].abbr||"")+" · "+cp(r.m.power)+"</small></span></td><td class=\\""+(i===0&&r.v!=null?"best":"")+(r.v==null?" dim":"")+"\\">"+e(val)+"</td></tr>"}).join("")+"</tbody></table>"}).join("");
+return "<table class=\\"tbl mys\\"><colgroup><col style=\\"width:3em\\"><col><col style=\\"width:34%\\"></colgroup><thead><tr><th colspan=\\"3\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows.map(function(r,i){var val=r.v==null?r.miss:(b[2]?(stg(r.v,b[2])||"—"):r.v.toLocaleString("ja-JP"));return "<tr><th>"+(r.v==null?"":(i+1)+"位")+"</th><td class=\\"who"+(r.m.me?" me":"")+"\\" style=\\"border-left:4px solid "+COL[r.ai%4]+"\\"><span class=\\"mem\\">"+(r.m.me?"<b class=\\"you\\">あなた</b> ":"")+e(r.m.name)+"<small>"+e(A[r.ai].abbr||"")+" · "+cp(r.m.power)+"</small></span></td><td class=\\""+(i===0&&r.v!=null?"best":"")+(r.v==null?" dim":"")+"\\">"+e(val)+"</td></tr>"}).join("")+"</tbody></table>"}).join("");
 return h+"<p class=\\"note\\">各同盟の戦力上位"+MT+"人を集めて、ステージごとに進んでいる順に並べています。値は各王国のランキング（上位100人）の最高クリアステージ（章-ステージ）です。「100位圏外」はその王国のランキングに入っていない人、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
 function render(){
 tops.querySelectorAll("button").forEach(function(b){b.classList.toggle("on",Number(b.dataset.n)===cur)});

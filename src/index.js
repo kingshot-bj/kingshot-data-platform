@@ -5236,7 +5236,11 @@ export default {
         // 秘境の試練（ステージごとの上位3人）：プレイヤー比較と同じ表示の権限。王国ランキングが古い・無いときは裏で取りに行く。
         const found = alliances.filter(a => a && !a.error);
         if (found.length >= 2 && visibilityEnabled(await getPlayerVisibilitySettings(env.DB), "ranks_leaderboards", auth.role)) {
-          await Promise.all(found.map(async a => { a.mystic = await loadAllianceMystic(env.DB, a).catch(() => null); }));
+          // 見ている本人がどれかの同盟にいれば、その人も並べる（ユーザー自身の位置が分かるように）。
+          const me = await myAlliance(env.DB, auth.user_id);
+          const meId = me?.governor_id ? String(me.governor_id) : "";
+          for (const a of found) if (meId && Number(a.kid) === Number(me.kid) && (a.members || []).some(m => String(m.id) === meId)) a.me = meId;
+          await Promise.all(found.map(async a => { a.mystic = await loadAllianceMystic(env.DB, a, a.me ? [a.me] : []).catch(() => null); }));
           await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
         }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
