@@ -53,6 +53,26 @@ test("配線：表示の権限はプレイヤー比較と同じ（ranks_leaderbo
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const route = index.slice(index.indexOf('if (url.pathname === "/alliance/compare") {'), index.indexOf('if (url.pathname === "/alliance") {'));
   assert.match(route, /visibilityEnabled\(await getPlayerVisibilitySettings\(env\.DB\), "ranks_leaderboards", auth\.role\)/);
-  assert.match(route, /loadAllianceMystic\(env\.DB, a\)/);
+  assert.match(route, /loadAllianceMystic\(env\.DB, a, a\.me \? \[a\.me\] : \[\]\)/);
+  assert.match(route, /const me = await myAlliance\(env\.DB, auth\.user_id\);/, "見ている本人のメイン領主");
+  assert.match(route, /Number\(a\.kid\) === Number\(me\.kid\) && \(a\.members \|\| \[\]\)\.some\(m => String\(m\.id\) === meId\)/, "その同盟のメンバーのときだけ");
   assert.match(route, /scheduleKingdomRankingFetch\(env, executionContext, found\.map\(a => a\.kid\), MYSTIC_COMPARE_BOARDS\.map\(b => b\[0\]\)\)/);
+});
+
+test("見ている本人：上位3人に入っていなくても「あなた」として並ぶ（自分の位置が分かる）", () => {
+  const a = { kid: 1524, abbr: "Pen", me: "14", members, mystic: { checked: ["coliseum"], values: { "11": { coliseum: 10620 }, "14": { coliseum: 10611 } } } };
+  const b = { kid: 1537, abbr: "LOL", members: [{ name: "B1", id: "21", power: 600 }], mystic: { checked: ["coliseum"], values: { "21": { coliseum: 10612 } } } };
+  const html = renderAllianceComparePage({ alliances: [a, b], targets: [], top: 3 });
+  const dataJson = html.match(/<script id="acData" type="application\/json">([\s\S]*?)<\/script>/)[1];
+  const script = html.match(/<script>(\(function\(\)\{\nvar A=[\s\S]*?)<\/script>/)[1];
+  const body = { innerHTML: "" };
+  const document = { getElementById: id => id === "acData" ? { textContent: dataJson } : id === "acBody" ? body : { querySelectorAll: () => [], addEventListener() {} } };
+  new Function("document", "location", "history", script)(document, { href: "https://x/" }, { replaceState() {} });
+  const text = body.innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  assert.match(text, /各同盟の上位3人＋あなた・5人を比べる/);
+  assert.match(text, /闘技場 1位 A1 Pen · 300 62-10 2位 B1 LOL · 600 62-2 3位 あなた A4 Pen · 100 62-1/, "本人も進み順の中に入る");
+  assert.match(body.innerHTML, /class="who me"/, "本人の行は目立たせる");
+  const loaded = [];
+  const db = { prepare: sql => ({ bind: (...x) => ({ all: async () => { if (sql.includes("kingdom_ranking_current")) loaded.push(x); return { results: [] }; } }) }) };
+  return loadAllianceMystic(db, { kid: 1524, members }, ["14"]).then(() => assert.ok(loaded[0].includes("14"), "本人のぶんも読む"));
 });
