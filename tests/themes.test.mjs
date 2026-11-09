@@ -57,9 +57,11 @@ test("ワインレッド：あまねの運営招待とオーナーだけの豪�
   assert.match(css, /@keyframes ee-wine-shine/);
   assert.ok(css.includes(`animation:ee-wine-shine 5s linear infinite`), "見出しの光沢が流れる");
   assert.ok(css.includes(`${dark} .ee-avatar{box-shadow:0 0 0 2px #e2b23a`), "光るリング");
-  assert.ok(css.includes(`${light} body{background:radial-gradient(rgba(160,110,20`), "ライトモードの仕上げ");
+  assert.ok(css.includes(`${light} body{background:radial-gradient(rgba(123,30,46`), "ライトモードの仕上げ");
   assert.ok(css.includes(`@media (prefers-reduced-motion:reduce){${dark}`), "動きを減らす設定では止める");
   assert.doesNotMatch(css, /data:image\/svg/, "ハートの模様は入れない");
+  assert.ok(css.includes('html[data-ee-skin="wine"][data-eagle-theme="light"] body{background:radial-gradient(rgba(123,30,46'), "ライトは黄色の粉にしない");
+  assert.ok(!/html\[data-ee-skin="wine"\]\[data-eagle-theme="light"\] body\{[^}]*#fdf9f1/.test(css), "ライトの地はクリーム色（黄色寄り）にしない");
   const sakura = EAGLEEYE_THEMES.find(t => t.id === "sakura");
   assert.notEqual(wine.tokens.accent, sakura.tokens.accent, "さくらと色を被らせない");
   // ゴールドの仕上げはそのまま
@@ -93,5 +95,5 @@ test("豪華カラー：見出しの光沢は、どの色の所でも地の色�
   const wine = EAGLEEYE_THEMES.find(t => t.id === "wine");
   const stops = sel => { const line = css.split("\n").find(l => l.startsWith(sel + " :is(h1,")); return [...line.match(/background:linear-gradient\(100deg,([^)]*)\)/)[1].matchAll(/#[0-9a-f]{6}/gi)].map(m => m[0]); };
   for (const c of stops('html[data-ee-skin="wine"]:not([data-eagle-theme="light"])')) assert.ok(ratio(c, wine.tokens.panel) >= 4.5, "ダーク " + c);
-  for (const c of stops('html[data-ee-skin="wine"][data-eagle-theme="light"]')) assert.ok(ratio(c, "#fffdf8") >= 4.5, "ライト " + c);
+  for (const c of stops('html[data-ee-skin="wine"][data-eagle-theme="light"]')) assert.ok(ratio(c, "#ffffff") >= 4.5, "ライト " + c);
 });
