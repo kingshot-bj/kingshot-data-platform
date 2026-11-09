@@ -58,10 +58,11 @@ const LUXE = {
   },
   // ワインレッド：深い赤ワインの地に、ロゼの光沢と光る縁。
   // ワインレッド：明るめのワイン（ベリー・ローズ系の赤）の地に、ローズの光沢と光る縁。
+  // 見出しの光沢は、地の色に対してどの色もコントラスト4.5以上（読める）にしてある（テストで確認）。
   wine: {
     shine: "ee-wine-shine",
-    dark: { dust: "255,190,205", glow: "255,92,130", base: "#3a0e1e", metal: "linear-gradient(100deg,#fff1f4 0%,#ff8fab 22%,#d1365e 44%,#ffd3dd 60%,#ff6b8f 78%,#fff1f4 100%)", hl: "255,220,228", frame: "#ffd6df,#e04a72 28%,#7a1634 50%,#ff8fab 72%,#ffd6df", line: "#ff6b8f,#ffd6df,#ff6b8f", btn: "#ffb3c4,#e8436c 45%,#a3163f", btnText: "#ffffff", btnBorder: "#ffd0db", ring: "#ff6b8f" },
-    light: { dust: "200,30,80", glow: "255,107,143", bg: "#fff6f8,#ffe9ef", metal: "linear-gradient(100deg,#8c1c3c 0%,#c2185b 25%,#ff6b8f 45%,#a3163f 62%,#e04a72 80%,#8c1c3c 100%)", card: "#fffbfc,#fff0f4", frame: "#ffc2d1,#e04a72 30%,#8c1c3c 50%,#ff8fab 72%,#ffc2d1", deep: "140,28,60", bar: "255,246,248", line: "#c2185b,#ff8fab,#c2185b", btn: "#ffb3c4,#e8436c 45%,#b0174a", btnText: "#ffffff", btnBorder: "#a3163f", ring: "#e04a72" }
+    dark: { dust: "255,190,205", glow: "255,92,130", base: "#3a0e1e", metal: "linear-gradient(100deg,#fff1f4 0%,#ffb3c6 22%,#ff7f9f 44%,#ffe1e8 60%,#ff96b0 78%,#fff1f4 100%)", hl: "255,220,228", frame: "#ffd6df,#e04a72 28%,#7a1634 50%,#ff8fab 72%,#ffd6df", line: "#ff6b8f,#ffd6df,#ff6b8f", btn: "#ffb3c4,#e8436c 45%,#a3163f", btnText: "#ffffff", btnBorder: "#ffd0db", ring: "#ff6b8f" },
+    light: { dust: "200,30,80", glow: "255,107,143", bg: "#fff6f8,#ffe9ef", metal: "linear-gradient(100deg,#7a1533 0%,#a3163f 25%,#c2185b 45%,#8c1c3c 62%,#b0174a 80%,#7a1533 100%)", card: "#fffbfc,#fff0f4", frame: "#ffc2d1,#e04a72 30%,#8c1c3c 50%,#ff8fab 72%,#ffc2d1", deep: "140,28,60", bar: "255,246,248", line: "#c2185b,#ff8fab,#c2185b", btn: "#ffb3c4,#e8436c 45%,#b0174a", btnText: "#ffffff", btnBorder: "#a3163f", ring: "#e04a72" }
   }
 };
 const fadeLine = (rgb, mid) => `linear-gradient(90deg,rgba(${rgb},0),${mid},rgba(${rgb},0)) 1`;

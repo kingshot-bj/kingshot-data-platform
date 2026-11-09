@@ -83,3 +83,13 @@ test("豪華カラー：ホーム以外（その他メニュー・検索・ラ�
   }
   assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#ffb3c4/, "検索ボタンもワインの金属ボタン");
 });
+
+test("豪華カラー：見出しの光沢は、どの色の所でも地の色に対して読める（コントラスト4.5以上）", () => {
+  const lum = h => { const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(1 + i, 3 + i), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const css = eagleEyeThemesCss();
+  const wine = EAGLEEYE_THEMES.find(t => t.id === "wine");
+  const stops = sel => { const line = css.split("\n").find(l => l.startsWith(sel + " :is(h1,")); return [...line.match(/background:linear-gradient\(100deg,([^)]*)\)/)[1].matchAll(/#[0-9a-f]{6}/gi)].map(m => m[0]); };
+  for (const c of stops('html[data-ee-skin="wine"]:not([data-eagle-theme="light"])')) assert.ok(ratio(c, wine.tokens.panel) >= 4.5, "ダーク " + c);
+  for (const c of stops('html[data-ee-skin="wine"][data-eagle-theme="light"]')) assert.ok(ratio(c, "#fff0f4") >= 4.5, "ライト " + c);
+});
