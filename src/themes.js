@@ -25,7 +25,7 @@ export const EAGLEEYE_THEMES = Object.freeze([
   // 限定：あまね（オーナー）の特別招待で来た人とオーナーだけが選べる（user_rewards の theme_wine）。
   // ゴールドと同じ豪華な仕上げ（光沢・光る縁・きらめき）を、ワインレッドで。
   { id: "wine", name: "ワインレッド", description: "運営招待の限定カラー", reward: "theme_wine",
-    tokens: { bg: "#3b0f1f", panel: "#4c1428", deep: "#43122a", raised: "#5c1a33", border: "#b8476a", soft: "#6a2240", text: "#fff3f6", subtext: "#f5c4d2", muted: "#c995a6", accent: "#ff6b8f", rival: "#60a5fa" }, light: "#c2185b",
+    tokens: { bg: "#14050a", panel: "#22090f", deep: "#1a070c", raised: "#2e0d16", border: "#6e1a2b", soft: "#3a1019", text: "#f8ecee", subtext: "#d9b3b9", muted: "#9c7a80", accent: "#d9576a", rival: "#60a5fa" }, light: "#8e1a2e",
     effects: "wine" }
 ]);
 
@@ -57,12 +57,12 @@ const LUXE = {
     light: { dust: "184,134,11", glow: "245,197,66", bg: "#fff8e6,#fbf1d8", metal: "linear-gradient(100deg,#7a4f00 0%,#b8860b 25%,#e2b23a 45%,#8a5a00 62%,#c8961c 80%,#7a4f00 100%)", card: "#fffdf6,#fff4d9", frame: "#f3d27a,#b8860b 30%,#7a4f00 50%,#e2b23a 72%,#f3d27a", deep: "122,79,0", bar: "255,249,234", line: "#b8860b,#e2b23a,#b8860b", btn: "#ffe58a,#e2b23a 45%,#b8860b", btnText: "#2a1c02", btnBorder: "#8a5a00", ring: "#b8860b" }
   },
   // ワインレッド：深い赤ワインの地に、ロゼの光沢と光る縁。
-  // ワインレッド：明るめのワイン（ベリー・ローズ系の赤）の地に、ローズの光沢と光る縁。
+  // ワインレッド：上品な深いワイン（ボルドー）の地に、シャンパン色の光沢。さくら（ピンク）と被らないよう、ピンクは使わない。
   // 見出しの光沢は、地の色に対してどの色もコントラスト4.5以上（読める）にしてある（テストで確認）。
   wine: {
     shine: "ee-wine-shine",
-    dark: { dust: "255,190,205", glow: "255,92,130", base: "#3a0e1e", metal: "linear-gradient(100deg,#fff1f4 0%,#ffb3c6 22%,#ff7f9f 44%,#ffe1e8 60%,#ff96b0 78%,#fff1f4 100%)", hl: "255,220,228", frame: "#ffd6df,#e04a72 28%,#7a1634 50%,#ff8fab 72%,#ffd6df", line: "#ff6b8f,#ffd6df,#ff6b8f", btn: "#ffb3c4,#e8436c 45%,#a3163f", btnText: "#ffffff", btnBorder: "#ffd0db", ring: "#ff6b8f" },
-    light: { dust: "200,30,80", glow: "255,107,143", bg: "#fff6f8,#ffe9ef", metal: "linear-gradient(100deg,#7a1533 0%,#a3163f 25%,#c2185b 45%,#8c1c3c 62%,#b0174a 80%,#7a1533 100%)", card: "#fffbfc,#fff0f4", frame: "#ffc2d1,#e04a72 30%,#8c1c3c 50%,#ff8fab 72%,#ffc2d1", deep: "140,28,60", bar: "255,246,248", line: "#c2185b,#ff8fab,#c2185b", btn: "#ffb3c4,#e8436c 45%,#b0174a", btnText: "#ffffff", btnBorder: "#a3163f", ring: "#e04a72" }
+    dark: { dust: "230,180,160", glow: "150,20,45", base: "#12040a", metal: "linear-gradient(100deg,#f6e3d6 0%,#e8a1a8 22%,#d4656f 44%,#f3d5c8 60%,#e08a8f 78%,#f6e3d6 100%)", hl: "240,210,196", frame: "#f0d2c4,#9e1b32 28%,#4a0a16 50%,#c4495a 72%,#f0d2c4", line: "#9e1b32,#e6c3b3,#9e1b32", btn: "#c44a5c,#8e1a2e 45%,#5c0e1d", btnText: "#fff4f0", btnBorder: "#d99a9f", ring: "#b8324a" },
+    light: { dust: "120,20,40", glow: "158,27,50", bg: "#fbf6f4,#f5ebe8", metal: "linear-gradient(100deg,#5c0e1d 0%,#7b1e2e 25%,#9e1b32 45%,#4a0a16 62%,#8e1a2e 80%,#5c0e1d 100%)", card: "#fffdfc,#faf3f1", frame: "#e8c6c0,#9e1b32 30%,#4a0a16 50%,#b8324a 72%,#e8c6c0", deep: "74,10,22", bar: "253,249,248", line: "#7b1e2e,#c48a8f,#7b1e2e", btn: "#b8324a,#8e1a2e 45%,#5c0e1d", btnText: "#ffffff", btnBorder: "#4a0a16", ring: "#7b1e2e" }
   }
 };
 const fadeLine = (rgb, mid) => `linear-gradient(90deg,rgba(${rgb},0),${mid},rgba(${rgb},0)) 1`;
