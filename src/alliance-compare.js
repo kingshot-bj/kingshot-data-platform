@@ -7,7 +7,7 @@ export const ALLIANCE_COMPARE_MAX = 4;
 export const ALLIANCE_COMPARE_TOP_OPTIONS = Object.freeze([3, 10, 20, 30, 0]); // 0 = 全員
 export const ALLIANCE_COMPARE_DEFAULT_TOP = 3;
 export const ALLIANCE_COMPARE_ROLES = Object.freeze(["ADVANCED", "VIP", "ADMIN", "OWNER"]);
-// 秘境の試練：ステージごとに、その同盟でいちばん進んでいる3人どうしを比べる（戦力順ではない）。
+// 秘境の試練：各同盟の戦力上位3人（2同盟なら6人）を集めて、ステージごとに進んでいる順に並べる。
 // 値はプレイヤー比較と同じ王国ランキング（上位100人）。ステージは「種別×10000＋番号」なので種別の分を引いて「章-ステージ」に。
 export const MYSTIC_TOP = 3;
 export const MYSTIC_COMPARE_BOARDS = Object.freeze([
@@ -16,11 +16,14 @@ export const MYSTIC_COMPARE_BOARDS = Object.freeze([
 ]);
 const MYSTIC_KEYS = MYSTIC_COMPARE_BOARDS.map(b => b[0]);
 const MYSTIC_ID_CHUNK = 80; // D1 の1文あたりの値は100個まで（王国1＋種類7＋ID80）
-// 同盟のメンバー全員ぶんを読む（メンバーのIDで絞るので、読むのは見つかった行だけ）。
+export function topByPower(members, n = MYSTIC_TOP) {
+  return (members || []).filter(m => m && m.id && m.power !== null && Number.isFinite(Number(m.power))).sort((a, b) => Number(b.power) - Number(a.power)).slice(0, n);
+}
+// 戦力上位3人ぶんだけ読む（IDで絞るので、読むのは見つかった行だけ）。
 // 戻り値：{ checked: [board...]（その王国で取得済みの種類）, values: { governor_id: { board: score } } }
 export async function loadAllianceMystic(db, alliance) {
   const kid = Number(alliance?.kid);
-  const ids = [...new Set((alliance?.members || []).map(m => String(m?.id || "")).filter(Boolean))];
+  const ids = [...new Set(topByPower(alliance?.members).map(m => String(m.id)))];
   if (!db || !ids.length || !Number.isInteger(kid)) return { checked: [], values: {} };
   const ph = a => a.map(() => "?").join(",");
   const chunks = [];
@@ -37,12 +40,14 @@ export async function loadAllianceMystic(db, alliance) {
   }
   return { checked: [...new Set((state.results || []).map(r => r.board))], values };
 }
-// ステージごとの上位n人（その同盟の中で）。
-export function topByStage(alliance, board, n = MYSTIC_TOP) {
-  const v = alliance?.mystic?.values || {};
-  return (alliance?.members || []).filter(m => m?.id && v[String(m.id)]?.[board] != null)
-    .map(m => ({ name: m.name, id: String(m.id), score: v[String(m.id)][board] }))
-    .sort((x, y) => y.score - x.score).slice(0, n);
+// ステージごとに、各同盟の戦力上位3人を集めて進んでいる順に並べる（値の無い人は後ろ）。
+export function rankTopPlayersByStage(alliances, board, n = MYSTIC_TOP) {
+  const out = [];
+  (alliances || []).forEach((a, ai) => topByPower(a?.members, n).forEach(m => {
+    const v = a?.mystic?.values?.[String(m.id)]?.[board];
+    out.push({ ai, name: m.name, score: v == null ? null : Number(v) });
+  }));
+  return out.sort((x, y) => (y.score ?? -1) - (x.score ?? -1));
 }
 
 export const POWER_BANDS = Object.freeze([[5e8, "5億以上"], [3e8, "3〜5億"], [1e8, "1〜3億"], [0, "1億未満"]]);
@@ -122,7 +127,7 @@ h1{font-size:22px;margin:6px 0 4px}.lead{font-size:13px;color:var(--ee-subtext,#
 .tbl td.best{outline:2px solid var(--ee-cyan,#22d3ee)}.tbl thead td{background:none;font-size:13px;line-height:1.3}.tbl thead small{display:block;font-size:10px;color:var(--ee-subtext,#91a7bf);font-weight:600}
 .mem{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mem small{display:block;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 .note{font-size:11px;color:var(--ee-subtext,#91a7bf);line-height:1.6}.warn{font-size:12px;padding:8px 10px;border-radius:9px;border:1px dashed currentColor;margin:8px 0}
-h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
+h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 </style></head><body><main class="wrap"><a href="/kingdom/rankings">← ランキング</a>
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
@@ -140,14 +145,14 @@ function known(a){return (a.members||[]).filter(function(m){return m.power!==nul
 function at(s){if(!s)return "—";var d=new Date(s*1000+324e5).toISOString();return d.slice(5,10).replace("-","/")+" "+d.slice(11,16)}
 function row(label,vals,fmt,better){var nums=vals.map(function(v){return v==null||!isFinite(Number(v))?null:Number(v)}),ok=nums.filter(function(v){return v!==null}),best=ok.length>1?(better==="min"?Math.min.apply(null,ok):Math.max.apply(null,ok)):null,uniq=best!==null&&ok.filter(function(v){return v===best}).length===1;return "<tr><th>"+e(label)+"</th>"+vals.map(function(v,i){return "<td class=\\""+(uniq&&nums[i]===best?"best":"")+"\\">"+(fmt?fmt(v):e(v==null?"—":v))+"</td>"}).join("")+"</tr>"}
 function stg(v,off){var x=Math.round(Number(v)-off);if(!isFinite(x)||x<1)return null;return (Math.floor((x-1)/10)+1)+"-"+((x-1)%10+1)}
-function stageTop(a,k){var v=(a.mystic&&a.mystic.values)||{};return (a.members||[]).filter(function(m){return m&&m.id&&v[String(m.id)]&&v[String(m.id)][k]!=null}).map(function(m){return {name:m.name,score:v[String(m.id)][k]}}).sort(function(x,y){return y.score-x.score}).slice(0,MT)}
-function mystic(){if(!A.some(function(a){return a.mystic}))return "";
-var h="<h2 style=\\"margin-top:14px\\">秘境の試練（ステージごとの上位"+MT+"人）</h2><table class=\\"tbl mys\\"><thead><tr><th></th>"+A.map(function(a){return "<td>"+e(a.abbr||"")+"</td>"}).join("")+"</tr></thead></table>";
-h+=MB.map(function(b){var T=A.map(function(a){return stageTop(a,b[0])}),done=A.map(function(a){return !!(a.mystic&&(a.mystic.checked||[]).indexOf(b[0])>=0)});
-var rows="";for(var i=0;i<MT;i++){var cells=T.map(function(t,j){var x=t[i];if(x)return {v:x.score,html:"<span class=\\"mem\\">"+e(b[2]?(stg(x.score,b[2])||"—"):Number(x.score).toLocaleString("ja-JP"))+"<small>"+e(x.name)+"</small></span>"};return {v:null,html:A[j].mystic?(done[j]?"—":"取得中"):"—"}}),ok=cells.filter(function(c){return c.v!=null}).map(function(c){return c.v}),best=ok.length>1?Math.max.apply(null,ok):null,uniq=best!==null&&ok.filter(function(v){return v===best}).length===1;
-rows+="<tr><th>"+(i+1)+"位</th>"+cells.map(function(c){return "<td class=\\""+(uniq&&c.v===best?"best":"")+(c.v==null?" dim":"")+"\\">"+c.html+"</td>"}).join("")+"</tr>"}
-return "<table class=\\"tbl mys\\"><thead><tr><th colspan=\\""+(A.length+1)+"\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows+"</tbody></table>"}).join("");
-return h+"<p class=\\"note\\">ステージごとに、その同盟でいちばん進んでいる"+MT+"人を並べています（戦力の順ではありません）。値は各王国のランキング（上位100人）の最高クリアステージ（章-ステージ）なので、ランキングに入っていない人は数えていません。「—」はランキングに入っている人がそれ以上いないこと、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
+var COL=["#ffd166","#42d9ff","#a18aff","#5ee6a8"];
+function top3(a){return (a.members||[]).filter(function(m){return m&&m.id&&m.power!==null&&isFinite(Number(m.power))}).sort(function(x,y){return Number(y.power)-Number(x.power)}).slice(0,MT)}
+function mystic(){if(!A.some(function(a){return a.mystic}))return "";var P=A.map(top3);if(!P.some(function(t){return t.length}))return "";
+var h="<h2 style=\\"margin-top:14px\\">秘境の試練（各同盟の上位"+MT+"人・"+P.reduce(function(s,t){return s+t.length},0)+"人を比べる）</h2><p class=\\"note\\">"+A.map(function(a,i){return "<b style=\\"color:"+COL[i%4]+"\\">■ "+e(a.abbr||"")+"</b>"}).join("　")+"</p>";
+h+=MB.map(function(b){var rows=[];A.forEach(function(a,ai){P[ai].forEach(function(m){var my=a.mystic,v=my&&my.values&&my.values[String(m.id)]&&my.values[String(m.id)][b[0]];rows.push({ai:ai,m:m,v:v==null?null:Number(v),miss:!my?"—":((my.checked||[]).indexOf(b[0])>=0?"100位圏外":"取得中")})})});
+rows.sort(function(x,y){return (y.v==null?-1:y.v)-(x.v==null?-1:x.v)});
+return "<table class=\\"tbl mys\\"><colgroup><col style=\\"width:3em\\"><col><col style=\\"width:34%\\"></colgroup><thead><tr><th colspan=\\"3\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows.map(function(r,i){var val=r.v==null?r.miss:(b[2]?(stg(r.v,b[2])||"—"):r.v.toLocaleString("ja-JP"));return "<tr><th>"+(r.v==null?"":(i+1)+"位")+"</th><td class=\\"who\\" style=\\"border-left:4px solid "+COL[r.ai%4]+"\\"><span class=\\"mem\\">"+e(r.m.name)+"<small>"+e(A[r.ai].abbr||"")+" · "+cp(r.m.power)+"</small></span></td><td class=\\""+(i===0&&r.v!=null?"best":"")+(r.v==null?" dim":"")+"\\">"+e(val)+"</td></tr>"}).join("")+"</tbody></table>"}).join("");
+return h+"<p class=\\"note\\">各同盟の戦力上位"+MT+"人を集めて、ステージごとに進んでいる順に並べています。値は各王国のランキング（上位100人）の最高クリアステージ（章-ステージ）です。「100位圏外」はその王国のランキングに入っていない人、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
 function render(){
 tops.querySelectorAll("button").forEach(function(b){b.classList.toggle("on",Number(b.dataset.n)===cur)});
 var K=A.map(known),T=K.map(function(k){return cur>0?k.slice(0,cur):k});
