@@ -54,7 +54,7 @@ test("配線：表示の権限はプレイヤー比較と同じ（ranks_leaderbo
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const route = index.slice(index.indexOf('if (url.pathname === "/alliance/compare") {'), index.indexOf('if (url.pathname === "/alliance") {'));
   assert.match(route, /visibilityEnabled\(await getPlayerVisibilitySettings\(env\.DB\), "ranks_leaderboards", auth\.role\)/);
-  assert.match(route, /loadAllianceMystic\(env\.DB, a, a\.me \? \[a\.me\] : \[\]\)/);
+  assert.match(route, /loadAllianceMystic\(env\.DB, a, full \? \(a\.members \|\| \[\]\)\.map\(m => m\.id\) : a\.me \? \[a\.me\] : \[\]\)/, "本人がいるときだけメンバー全員ぶん");
   assert.match(route, /const me = await myAlliance\(env\.DB, auth\.user_id\);/, "見ている本人のメイン領主");
   assert.match(route, /Number\(a\.kid\) === Number\(me\.kid\) && \(a\.members \|\| \[\]\)\.some\(m => String\(m\.id\) === meId\)/, "その同盟のメンバーのときだけ");
   assert.match(route, /scheduleKingdomRankingFetch\(env, executionContext, found\.map\(a => a\.kid\), MYSTIC_COMPARE_BOARDS\.map\(b => b\[0\]\)\)/);
@@ -76,4 +76,20 @@ test("見ている本人：上位3人に入っていなくても「あなた」�
   const loaded = [];
   const db = { prepare: sql => ({ bind: (...x) => ({ all: async () => { if (sql.includes("kingdom_ranking_current")) loaded.push(x); return { results: [] }; } }) }) };
   return loadAllianceMystic(db, { kid: 1524, members }, ["14"]).then(() => assert.ok(loaded[0].includes("14"), "本人のぶんも読む"));
+});
+
+test("あなた：自分の同盟の中で何位か・相手の同盟なら何位相当かを出す", () => {
+  const mem = [{ name: "A1", id: "11", power: 500 }, { name: "A2", id: "12", power: 400 }, { name: "A3", id: "13", power: 300 }, { name: "A4", id: "14", power: 200 }, { name: "ME", id: "15", power: 100 }];
+  const a = { kid: 1524, abbr: "Pen", me: "15", members: mem, mystic: { full: true, checked: ["coliseum"], values: { "11": { coliseum: 10620 }, "12": { coliseum: 10600 }, "14": { coliseum: 10590 }, "15": { coliseum: 10595 } }, ranks: { "15": { coliseum: 40 } } } };
+  const bm = [{ name: "B1", id: "21", power: 600 }, { name: "B2", id: "22", power: 550 }, { name: "B3", id: "23", power: 520 }, { name: "B4", id: "24", power: 90 }];
+  const b = { kid: 1537, abbr: "LOL", members: bm, mystic: { full: true, checked: ["coliseum"], values: { "21": { coliseum: 10630 }, "24": { coliseum: 10599 } } } };
+  const html = renderAllianceComparePage({ alliances: [a, b], targets: [], top: 3 });
+  const dataJson = html.match(/<script id="acData" type="application\/json">([\s\S]*?)<\/script>/)[1];
+  const script = html.match(/<script>(\(function\(\)\{\nvar A=[\s\S]*?)<\/script>/)[1];
+  const body = { innerHTML: "" };
+  const document = { getElementById: id => id === "acData" ? { textContent: dataJson } : id === "acBody" ? body : { querySelectorAll: () => [], addEventListener() {} } };
+  new Function("document", "location", "history", script)(document, { href: "https://x/" }, { replaceState() {} });
+  const text = body.innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  // 自分 10595：Pen では 10620・10600 の2人が上 → 3位。LOL では 10630・10599 の2人が上 → 3位相当（B4は上位3人の外でも数える）
+  assert.match(text, /あなた ME Pen · 100 60-5 王国内40位 Pen内3位・LOLなら3位相当/);
 });
