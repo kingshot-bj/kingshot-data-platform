@@ -104,7 +104,7 @@ export function compactPower(v) {
 const jst = sec => sec ? new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slice(5, 16).replace("T", " ") : "—";
 
 // 画面。alliances は loadAllianceForCompare の結果の配列。
-export function renderAllianceComparePage({ alliances = [], targets = [], top = ALLIANCE_COMPARE_DEFAULT_TOP, message = "" } = {}) {
+export function renderAllianceComparePage({ alliances = [], targets = [], top = ALLIANCE_COMPARE_DEFAULT_TOP, message = "", shareHtml = "" } = {}) {
   const found = alliances.filter(a => !a.error);
   const inputs = Array.from({ length: ALLIANCE_COMPARE_MAX }, (_, i) => {
     const t = targets[i] || {};
@@ -132,7 +132,7 @@ h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
 ${message ? `<div class="warn">${esc(message)}</div>` : ""}${missing ? `<div class="warn">見つからなかった同盟：${missing}（王国番号と同盟タグを確かめてください）</div>` : ""}
-${found.length >= 2 ? `<section class="card"><div class="tops" id="acTops" role="group" aria-label="比べる人数">${ALLIANCE_COMPARE_TOP_OPTIONS.map(n => `<button type="button" data-n="${n}">${n ? "上位" + n + "人" : "全員"}</button>`).join("")}</div><div id="acBody"></div>
+${found.length >= 2 ? `<section class="card"><div class="tops" id="acTops" role="group" aria-label="比べる人数">${ALLIANCE_COMPARE_TOP_OPTIONS.map(n => `<button type="button" data-n="${n}">${n ? "上位" + n + "人" : "全員"}</button>`).join("")}</div><div id="acBody"></div>${shareHtml}
 <p class="note">数字は各同盟のメンバー表の「戦力（総合）」です。聖剣争奪のマッチングに使われる部隊戦闘力とは違うので目安として見てください。明るい枠はその行のいちばん上です。</p></section>` : `<p class="note">2つ以上の同盟を入れると比較が表示されます。</p>`}
 </main>
 <script id="acData" type="application/json">${dataJson}</script>
