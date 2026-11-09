@@ -20,7 +20,7 @@ export function topByPower(members, n = MYSTIC_TOP) {
   return (members || []).filter(m => m && m.id && m.power !== null && Number.isFinite(Number(m.power))).sort((a, b) => Number(b.power) - Number(a.power)).slice(0, n);
 }
 // 戦力上位3人ぶんだけ読む（IDで絞るので、読むのは見つかった行だけ）。
-// 戻り値：{ checked: [board...]（その王国で取得済みの種類）, values: { governor_id: { board: score } } }
+// 戻り値：{ checked: [board...]（その王国で取得済みの種類）, values: { governor_id: { board: score } }, ranks: { governor_id: { board: 王国内順位 } } }
 // extraIds：上位3人のほかに読む人（見ている本人など）。
 export async function loadAllianceMystic(db, alliance, extraIds = []) {
   const kid = Number(alliance?.kid);
@@ -31,15 +31,18 @@ export async function loadAllianceMystic(db, alliance, extraIds = []) {
   for (let i = 0; i < ids.length; i += MYSTIC_ID_CHUNK) chunks.push(ids.slice(i, i + MYSTIC_ID_CHUNK));
   const [state, ...parts] = await Promise.all([
     db.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? AND board IN (" + ph(MYSTIC_KEYS) + ") AND last_checked_at IS NOT NULL").bind(kid, ...MYSTIC_KEYS).all().catch(() => ({ results: [] })),
-    ...chunks.map(c => db.prepare("SELECT board, target_id, score FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'PLAYER' AND board IN (" + ph(MYSTIC_KEYS) + ") AND target_id IN (" + ph(c) + ")").bind(kid, ...MYSTIC_KEYS, ...c).all().catch(() => ({ results: [] })))
+    ...chunks.map(c => db.prepare("SELECT board, target_id, score, rank FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'PLAYER' AND board IN (" + ph(MYSTIC_KEYS) + ") AND target_id IN (" + ph(c) + ")").bind(kid, ...MYSTIC_KEYS, ...c).all().catch(() => ({ results: [] })))
   ]);
-  const values = {};
+  const values = {}, ranks = {};
   for (const part of parts) for (const r of part.results || []) {
     const sc = Number(r.score);
     if (!Number.isFinite(sc)) continue;
     (values[String(r.target_id)] ||= {})[r.board] = sc;
+    const rk = Number(r.rank);
+    if (Number.isInteger(rk) && rk > 0) (ranks[String(r.target_id)] ||= {})[r.board] = rk;
   }
-  return { checked: [...new Set((state.results || []).map(r => r.board))], values };
+  // ranks：その人の王国内の本当の順位（画面に出す。並べた人の中での順番は順位として出さない）
+  return { checked: [...new Set((state.results || []).map(r => r.board))], values, ranks };
 }
 // ステージごとに、各同盟の戦力上位3人を集めて進んでいる順に並べる（値の無い人は後ろ）。
 export function rankTopPlayersByStage(alliances, board, n = MYSTIC_TOP) {
@@ -128,7 +131,7 @@ h1{font-size:22px;margin:6px 0 4px}.lead{font-size:13px;color:var(--ee-subtext,#
 .tbl td.best{outline:2px solid var(--ee-cyan,#22d3ee)}.tbl thead td{background:none;font-size:13px;line-height:1.3}.tbl thead small{display:block;font-size:10px;color:var(--ee-subtext,#91a7bf);font-weight:600}
 .mem{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mem small{display:block;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 .note{font-size:11px;color:var(--ee-subtext,#91a7bf);line-height:1.6}.warn{font-size:12px;padding:8px 10px;border-radius:9px;border:1px dashed currentColor;margin:8px 0}
-h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl.mys td.who.me{outline:2px dashed var(--ee-cyan,#22d3ee);outline-offset:-2px}.you{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:var(--ee-cyan,#22d3ee);color:#04202a;margin-right:2px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
+h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl.mys .ord{display:inline-block;min-width:1.6em;color:var(--ee-subtext,#91a7bf);font-weight:700}.tbl.mys small.krk{display:block;font-size:10px;font-weight:600;color:var(--ee-subtext,#91a7bf)}.tbl.mys td.who.me{outline:2px dashed var(--ee-cyan,#22d3ee);outline-offset:-2px}.you{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:var(--ee-cyan,#22d3ee);color:#04202a;margin-right:2px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 </style></head><body><main class="wrap"><a href="/kingdom/rankings">← ランキング</a>
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
@@ -151,10 +154,10 @@ function top3(a){return (a.members||[]).filter(function(m){return m&&m.id&&m.pow
 function withMe(a){var t=top3(a).map(function(m){return Object.assign({},m,{me:!!(a.me&&String(m.id)===String(a.me))})});if(a.me&&!t.some(function(m){return m.me})){var m=(a.members||[]).find(function(x){return String(x.id)===String(a.me)});if(m)t.push(Object.assign({},m,{me:true,extra:true}))}return t}
 function mystic(){if(!A.some(function(a){return a.mystic}))return "";var P=A.map(withMe);if(!P.some(function(t){return t.length}))return "";var hasMe=P.some(function(t){return t.some(function(m){return m.extra})});
 var h="<h2 style=\\"margin-top:14px\\">秘境の試練（各同盟の上位"+MT+"人"+(hasMe?"＋あなた":"")+"・"+P.reduce(function(s,t){return s+t.length},0)+"人を比べる）</h2><p class=\\"note\\">"+A.map(function(a,i){return "<b style=\\"color:"+COL[i%4]+"\\">■ "+e(a.abbr||"")+"</b>"}).join("　")+"</p>";
-h+=MB.map(function(b){var rows=[];A.forEach(function(a,ai){P[ai].forEach(function(m){var my=a.mystic,v=my&&my.values&&my.values[String(m.id)]&&my.values[String(m.id)][b[0]];rows.push({ai:ai,m:m,v:v==null?null:Number(v),miss:!my?"—":((my.checked||[]).indexOf(b[0])>=0?"100位圏外":"取得中")})})});
+h+=MB.map(function(b){var rows=[];A.forEach(function(a,ai){P[ai].forEach(function(m){var my=a.mystic,v=my&&my.values&&my.values[String(m.id)]&&my.values[String(m.id)][b[0]];var rk=my&&my.ranks&&my.ranks[String(m.id)]&&my.ranks[String(m.id)][b[0]];rows.push({ai:ai,m:m,rk:rk||null,v:v==null?null:Number(v),miss:!my?"—":((my.checked||[]).indexOf(b[0])>=0?"100位圏外":"取得中")})})});
 rows.sort(function(x,y){return (y.v==null?-1:y.v)-(x.v==null?-1:x.v)});
-return "<table class=\\"tbl mys\\"><colgroup><col style=\\"width:3em\\"><col><col style=\\"width:34%\\"></colgroup><thead><tr><th colspan=\\"3\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows.map(function(r,i){var val=r.v==null?r.miss:(b[2]?(stg(r.v,b[2])||"—"):r.v.toLocaleString("ja-JP"));return "<tr><th>"+(r.v==null?"":(i+1)+"位")+"</th><td class=\\"who"+(r.m.me?" me":"")+"\\" style=\\"border-left:4px solid "+COL[r.ai%4]+"\\"><span class=\\"mem\\">"+(r.m.me?"<b class=\\"you\\">あなた</b> ":"")+e(r.m.name)+"<small>"+e(A[r.ai].abbr||"")+" · "+cp(r.m.power)+"</small></span></td><td class=\\""+(i===0&&r.v!=null?"best":"")+(r.v==null?" dim":"")+"\\">"+e(val)+"</td></tr>"}).join("")+"</tbody></table>"}).join("");
-return h+"<p class=\\"note\\">各同盟の戦力上位"+MT+"人を集めて、ステージごとに進んでいる順に並べています。値は各王国のランキング（上位100人）の最高クリアステージ（章-ステージ）です。「100位圏外」はその王国のランキングに入っていない人、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
+return "<table class=\\"tbl mys\\"><colgroup><col style=\\"width:3em\\"><col><col style=\\"width:34%\\"></colgroup><thead><tr><th colspan=\\"3\\">"+e(b[1])+"</th></tr></thead><tbody>"+rows.map(function(r,i){var val=r.v==null?r.miss:(b[2]?(stg(r.v,b[2])||"—"):r.v.toLocaleString("ja-JP"));return "<tr><th>"+(r.v==null?"":"<span class=\\"ord\\">"+(i+1)+"</span>")+"</th><td class=\\"who"+(r.m.me?" me":"")+"\\" style=\\"border-left:4px solid "+COL[r.ai%4]+"\\"><span class=\\"mem\\">"+(r.m.me?"<b class=\\"you\\">あなた</b> ":"")+e(r.m.name)+"<small>"+e(A[r.ai].abbr||"")+" · "+cp(r.m.power)+"</small></span></td><td class=\\""+(i===0&&r.v!=null?"best":"")+(r.v==null?" dim":"")+"\\">"+e(val)+(r.rk?"<small class=\\"krk\\">王国内"+e(r.rk)+"位</small>":"")+"</td></tr>"}).join("")+"</tbody></table>"}).join("");
+return h+"<p class=\\"note\\">各同盟の戦力上位"+MT+"人を集めて、ステージごとに進んでいる順に並べています（左の数字は並び順、「王国内◯位」がその人の王国での本当の順位です）。値は各王国のランキング（上位100人）の最高クリアステージ（章-ステージ）です。「100位圏外」はその王国のランキングに入っていない人、「取得中」はいま取りに行っているところです（少し待って開き直すと出ます）。</p>"}
 function render(){
 tops.querySelectorAll("button").forEach(function(b){b.classList.toggle("on",Number(b.dataset.n)===cur)});
 var K=A.map(known),T=K.map(function(k){return cur>0?k.slice(0,cur):k});

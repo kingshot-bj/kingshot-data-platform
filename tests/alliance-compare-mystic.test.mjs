@@ -42,9 +42,10 @@ test("画面：ステージごとに6人を進んでいる順に並べる（章-
   new Function("document", "location", "history", script)(document, { href: "https://x/" }, { replaceState() {} });
   const text = body.innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   assert.match(text, /秘境の試練（各同盟の上位3人・4人を比べる）/);
-  assert.match(text, /闘技場 1位 A1 Pen · 300 62-10 2位 B1 LOL · 600 62-1 3位 A2 Pen · 500 61-5 A3 Pen · 400 100位圏外/, "進み順。ランキングに無い人は後ろで100位圏外");
+  assert.match(text, /闘技場 1 A1 Pen · 300 62-10 2 B1 LOL · 600 62-1 3 A2 Pen · 500 61-5 A3 Pen · 400 100位圏外/, "進み順。ランキングに無い人は後ろで100位圏外");
+  assert.doesNotMatch(text, /闘技場 1位/, "並び順を「位」とは書かない（本当の順位と紛らわしい）");
   assert.match(body.innerHTML, /<td class="best">62-10<\/td>/, "いちばん上を明るく");
-  assert.match(text, /秘境の試練（総合） 1位 A2 Pen · 500 2,400 .*B1 LOL · 600 取得中/, "総合は数字そのまま、取っていない種類は取得中");
+  assert.match(text, /秘境の試練（総合） 1 A2 Pen · 500 2,400 .*B1 LOL · 600 取得中/, "総合は数字そのまま、取っていない種類は取得中");
   assert.doesNotMatch(text, /1位どうし/);
   assert.equal(MYSTIC_COMPARE_BOARDS.length, 7);
 });
@@ -60,7 +61,7 @@ test("配線：表示の権限はプレイヤー比較と同じ（ranks_leaderbo
 });
 
 test("見ている本人：上位3人に入っていなくても「あなた」として並ぶ（自分の位置が分かる）", () => {
-  const a = { kid: 1524, abbr: "Pen", me: "14", members, mystic: { checked: ["coliseum"], values: { "11": { coliseum: 10620 }, "14": { coliseum: 10611 } } } };
+  const a = { kid: 1524, abbr: "Pen", me: "14", members, mystic: { checked: ["coliseum"], values: { "11": { coliseum: 10620 }, "14": { coliseum: 10611 } }, ranks: { "14": { coliseum: 23 } } } };
   const b = { kid: 1537, abbr: "LOL", members: [{ name: "B1", id: "21", power: 600 }], mystic: { checked: ["coliseum"], values: { "21": { coliseum: 10612 } } } };
   const html = renderAllianceComparePage({ alliances: [a, b], targets: [], top: 3 });
   const dataJson = html.match(/<script id="acData" type="application\/json">([\s\S]*?)<\/script>/)[1];
@@ -70,7 +71,7 @@ test("見ている本人：上位3人に入っていなくても「あなた」�
   new Function("document", "location", "history", script)(document, { href: "https://x/" }, { replaceState() {} });
   const text = body.innerHTML.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
   assert.match(text, /各同盟の上位3人＋あなた・5人を比べる/);
-  assert.match(text, /闘技場 1位 A1 Pen · 300 62-10 2位 B1 LOL · 600 62-2 3位 あなた A4 Pen · 100 62-1/, "本人も進み順の中に入る");
+  assert.match(text, /闘技場 1 A1 Pen · 300 62-10 2 B1 LOL · 600 62-2 3 あなた A4 Pen · 100 62-1 王国内23位/, "本人も進み順の中に入り、王国内の本当の順位を出す");
   assert.match(body.innerHTML, /class="who me"/, "本人の行は目立たせる");
   const loaded = [];
   const db = { prepare: sql => ({ bind: (...x) => ({ all: async () => { if (sql.includes("kingdom_ranking_current")) loaded.push(x); return { results: [] }; } }) }) };
