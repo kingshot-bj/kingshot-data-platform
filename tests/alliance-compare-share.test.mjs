@@ -16,9 +16,12 @@ test("カードのデータ：戦力の項目と、秘境はステージごと�
   assert.equal(d.alliances[0].v.top_sum, 4e8 + 3.9e8 + 3.8e8, "戦力上位3人の合計");
   assert.equal(d.alliances[1].v.power_rank, 1);
   const col = d.mystic.find(s => s.label === "闘技場");
-  assert.deepEqual(col, { label: "闘技場", ai: 0, name: "a1", value: "54-9" }, "種別の分を引いた章-ステージ");
-  assert.deepEqual(d.mystic.find(s => s.label === "秘境の試練（総合）"), { label: "秘境の試練（総合）", ai: 1, name: "b0", value: "2,378" });
-  assert.equal(d.mystic.find(s => s.label === "生命の森").ai, null, "だれもランキングにいないステージは空");
+  assert.deepEqual(col.rows.map(r => [r.name, r.value]), [["a1", "54-9"], ["b0", "53-2"], ["a0", "圏外"], ["a2", "圏外"], ["b1", "圏外"], ["b2", "圏外"]], "6人全員を進んでいる順に。種別の分を引いた章-ステージ");
+  assert.equal(col.rows[0].ai, 0);
+  const total = d.mystic.find(s => s.label === "秘境の試練（総合）");
+  assert.deepEqual(total.rows[0], { ai: 1, name: "b0", value: "2,378", ok: true });
+  assert.equal(total.rows.find(r => r.name === "a0").value, "取得中", "取っていない種類は取得中");
+  assert.equal(d.mystic.find(s => s.label === "生命の森").rows.filter(r => r.ok).length, 0);
   assert.deepEqual(allianceShareData([{ ...a, mystic: null }, { ...b, mystic: null }]).mystic, [], "秘境を見られない人のカードには秘境を入れない");
   assert.equal(ALLIANCE_SHARE_METRICS.length, 5);
 });
