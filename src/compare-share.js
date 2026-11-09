@@ -41,7 +41,7 @@ export function compareShareClient(cfg) {
   function currentPalette() { var id = document.documentElement.getAttribute("data-ee-skin") || "navy"; return PALS[id] || PALS.navy || { bg: "#0b1424", panel: "#0f1f36", raised: "#13263d", border: "#1d344d", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee" }; }
   var P = currentPalette();
   function alpha(hex, a) { var n = parseInt(String(hex).slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
-  var COLORS = ["rgb(34,211,238)", "rgb(251,191,36)", "rgb(244,114,182)", "rgb(163,230,53)"];
+  var COLORS = ["rgb(34,211,238)", "rgb(251,191,36)", "rgb(244,114,182)", "rgb(163,230,53)", "rgb(167,139,250)", "rgb(251,146,60)"];
   var FONT = '-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif';
   var head = document.querySelector(".head") || document.querySelector("main");
   if (!head || document.getElementById("eeShareBar")) return;
@@ -63,7 +63,7 @@ export function compareShareClient(cfg) {
     else prompt("コピーしてください", shareText);
   });
 
-  function ids() { return new URLSearchParams(location.search).getAll("governor_id").slice(0, 4); }
+  function ids() { return new URLSearchParams(location.search).getAll("governor_id").slice(0, 6); }
   function compact(n) { n = Number(n); if (!isFinite(n)) return "—"; var a = Math.abs(n); return a >= 1e9 ? (n / 1e9).toFixed(2) + "B" : a >= 1e6 ? (n / 1e6).toFixed(1) + "M" : a >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n); }
   function boardsOf(p) {
     var out = {}, map = { 21: "coliseum", 22: "forest_of_life", 23: "crystal_cave", 24: "knowledge_nexus", 25: "molten_fort", 26: "radiant_spire" };
@@ -157,7 +157,7 @@ export function compareShareClient(cfg) {
 
   async function build(d) {
     P = currentPalette();
-    var ps = (d.players || []).filter(function (p) { return !p.missing && p.player; }).slice(0, 4);
+    var ps = (d.players || []).filter(function (p) { return !p.missing && p.player; }).slice(0, 6);
     if (ps.length < 2) throw new Error("比較できるプレイヤーが2人以上必要です");
     var n = ps.length, W = 1080, PAD = 44, LBL = 190, colW = (W - PAD * 2 - LBL) / n;
     var mys = ps.map(boardsOf);
@@ -182,11 +182,12 @@ export function compareShareClient(cfg) {
       var cx = PAD + LBL + colW * i + colW / 2;
       c.save(); rr(c, cx - 55, y, 110, 110, 24); c.fillStyle = P.raised; c.fill(); if (avatars[i]) { c.clip(); c.drawImage(avatars[i], cx - 55, y, 110, 110); } c.restore();
       c.save(); rr(c, cx - 55, y, 110, 110, 24); c.lineWidth = 3; c.strokeStyle = COLORS[i]; c.stroke(); c.restore();
-      c.textAlign = "center"; c.fillStyle = P.text; c.font = "800 25px " + FONT;
+      c.textAlign = "center"; c.fillStyle = P.text; c.font = (n > 4 ? "800 21px " : "800 25px ") + FONT;
       var lines = wrap(c, p.player.nick_name || ("ID " + p.governor_id), colW - 12, 2);
       lines.forEach(function (t, k) { c.fillText(t, cx, y + 145 + k * 31); });
-      c.fillStyle = P.subtext; c.font = "700 20px " + FONT;
-      c.fillText("王国" + (p.player.kid != null ? p.player.kid : "—") + (p.player.alliance_abbr ? "・" + p.player.alliance_abbr : ""), cx, y + 145 + lines.length * 31 + 2);
+      c.fillStyle = P.subtext; c.font = (n > 4 ? "700 17px " : "700 20px ") + FONT;
+      var where = (n > 4 ? "" : "王国") + (p.player.kid != null ? p.player.kid : "—") + (p.player.alliance_abbr ? "・" + p.player.alliance_abbr : "");
+      wrap(c, where, colW - 8, 1).forEach(function (t) { c.fillText(t, cx, y + 145 + lines.length * 31 + 2); });
     });
     y += 250;
     function drawRow(label, vals, fmt, higher, labels) {
@@ -198,8 +199,8 @@ export function compareShareClient(cfg) {
         var x = PAD + LBL + colW * i, isBest = unique && v === best;
         c.save(); rr(c, x + 3, y, colW - 6, ROW, 14); c.fillStyle = P.raised; c.fill(); if (isBest) { c.fillStyle = alpha(P.accent, .3); c.fill(); c.lineWidth = 2.5; c.strokeStyle = P.accent; c.stroke(); } c.restore();
         var cx = x + colW / 2;
-        if (fmt === null) { var t = tcText(v); if (t || !isFinite(v)) { c.fillStyle = P.text; c.font = "800 28px " + FONT; c.textAlign = "center"; c.fillText(t || "—", cx, y + ROW / 2); } else { var g = Math.floor((v - 35) / 5) + 1, st = (v - 35) % 5; badge(c, st ? cx - 34 : cx, y + ROW / 2, 24, g); if (st) { for (var k = 0; k < 5; k++) { c.fillStyle = k < st ? "rgb(250,214,60)" : "rgba(150,130,100,.5)"; c.fillRect(cx - 4 + k * 10, y + ROW / 2 - 6, 8, 12); } } } return; }
-        c.fillStyle = P.text; c.font = "800 30px " + FONT; c.textAlign = "center";
+        if (fmt === null) { var t = tcText(v); if (t || !isFinite(v)) { c.fillStyle = P.text; c.font = (n > 4 ? "800 23px " : "800 28px ") + FONT; c.textAlign = "center"; c.fillText(t || "—", cx, y + ROW / 2); } else { var g = Math.floor((v - 35) / 5) + 1, st = (v - 35) % 5; badge(c, st ? cx - 34 : cx, y + ROW / 2, 24, g); if (st) { for (var k = 0; k < 5; k++) { c.fillStyle = k < st ? "rgb(250,214,60)" : "rgba(150,130,100,.5)"; c.fillRect(cx - 4 + k * 10, y + ROW / 2 - 6, 8, 12); } } } return; }
+        c.fillStyle = P.text; c.font = (n > 4 ? "800 24px " : "800 30px ") + FONT; c.textAlign = "center";
         c.fillText(labels && labels[i] ? labels[i] : fmt(v), cx, y + ROW / 2);
       });
       c.textBaseline = "alphabetic"; y += ROW + GAP;

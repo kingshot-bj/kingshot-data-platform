@@ -31,7 +31,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 @media(max-width:480px){}</style>
 <script>
 (function(){
-const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
+const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8','#fb923c','#f472b6'];
 const fmt=v=>{if(v==null||!Number.isFinite(Number(v)))return '—';try{return new Intl.NumberFormat('ja-JP',{maximumFractionDigits:1}).format(Number(v))}catch{return String(v)}};
 const safeText=e=>String(e&&e.textContent||'').trim();
 function collapseDetails(){
@@ -175,7 +175,7 @@ function enhance(){
    candidateRows.get(label).push({name,score});
   });
  });
- const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,4)}));
+ const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,6)}));
  const customPanel=document.createElement('details');customPanel.className='ee-custom-rankings';
  const customSummary=document.createElement('summary');customSummary.textContent='追加ランキング（取得済みスコアのみ）';customPanel.appendChild(customSummary);
  const customList=document.createElement('div');customList.className='ee-custom-rank-list';
