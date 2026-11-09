@@ -5240,7 +5240,13 @@ export default {
           const me = await myAlliance(env.DB, auth.user_id);
           const meId = me?.governor_id ? String(me.governor_id) : "";
           for (const a of found) if (meId && Number(a.kid) === Number(me.kid) && (a.members || []).some(m => String(m.id) === meId)) a.me = meId;
-          await Promise.all(found.map(async a => { a.mystic = await loadAllianceMystic(env.DB, a, a.me ? [a.me] : []).catch(() => null); }));
+          // 本人がいるときは「自分の同盟の中で何位か・相手の同盟なら何位相当か」を出すため、比べている同盟のメンバー全員ぶんを読む
+          // （王国ランキングに入っている人の行だけが見つかる。本人がいないときは今までどおり上位3人ぶんだけ）。
+          const full = found.some(a => a.me);
+          await Promise.all(found.map(async a => {
+            a.mystic = await loadAllianceMystic(env.DB, a, full ? (a.members || []).map(m => m.id) : a.me ? [a.me] : []).catch(() => null);
+            if (a.mystic && full) a.mystic.full = true;
+          }));
           await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
         }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
