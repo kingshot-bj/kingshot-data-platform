@@ -58,11 +58,12 @@ const LUXE = {
   },
   // ワインレッド：深い赤ワインの地に、ロゼの光沢と光る縁。
   // ワインレッド：深いワインの地に、本物のゴールドの光沢（ワイン×ゴールドの2色づかい）。光り・縁は控えめにして読みやすく。
+  // ライトは白に近い地にワインが主役、ゴールドは細いシャンパン色の差し色だけ（黄色が強すぎないように）。
   // 見出しの光沢は、地の色に対してどの色もコントラスト4.5以上（読める）にしてある（テストで確認）。
   wine: {
     shine: "ee-wine-shine",
     dark: { dust: "245,197,66", glow: "130,22,44", base: "#170a10", metal: "linear-gradient(100deg,#fff4c2 0%,#f5c542 22%,#c9961c 45%,#fff0b3 60%,#e2b23a 78%,#fff4c2 100%)", hl: "255,236,170", frame: "#fff0b3,#c9961c 26%,#6e1a2c 50%,#e2b23a 74%,#fff0b3", line: "#7b1e2e,#e2b23a,#7b1e2e", btn: "#9e2a40,#7b1e2e 50%,#561020", btnText: "#fff4c2", btnBorder: "#e2b23a", ring: "#e2b23a" },
-    light: { dust: "160,110,20", glow: "200,150,40", bg: "#fdf9f1,#f7efe0", metal: "linear-gradient(100deg,#5a1222 0%,#7b1e2e 30%,#8e2a3c 50%,#5a1222 70%,#7b1e2e 100%)", card: "#fffdf8,#fbf5ea", frame: "#f3d27a,#b8860b 28%,#7b1e2e 50%,#e2b23a 72%,#f3d27a", deep: "90,18,34", bar: "253,250,243", line: "#7b1e2e,#d4a017,#7b1e2e", btn: "#8e2a3c,#6d1a2b 50%,#4f1220", btnText: "#fff4c2", btnBorder: "#b8860b", ring: "#b8860b" }
+    light: { dust: "123,30,46", glow: "158,42,62", bg: "#fbf9f8,#f5f0f0", metal: "linear-gradient(100deg,#5a1222 0%,#7b1e2e 30%,#8e2a3c 50%,#5a1222 70%,#7b1e2e 100%)", card: "#ffffff,#fbf8f8", frame: "#ead9cc,#c9a170 22%,#7b1e2e 50%,#a8374a 74%,#ead9cc", deep: "90,18,34", bar: "252,250,250", line: "#7b1e2e,#c9a170,#7b1e2e", btn: "#8e2a3c,#6d1a2b 50%,#4f1220", btnText: "#ffffff", btnBorder: "#c9a170", ring: "#8e2a3c" }
   }
 };
 const fadeLine = (rgb, mid) => `linear-gradient(90deg,rgba(${rgb},0),${mid},rgba(${rgb},0)) 1`;
