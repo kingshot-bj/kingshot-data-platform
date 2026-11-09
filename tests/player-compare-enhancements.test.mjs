@@ -63,10 +63,10 @@ test("remaining chart modes render every player supplied to the chart", () => {
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
-test("ring, bar, and custom ranking modes retain up to four players", () => {
+test("ring, bar, and custom ranking modes retain up to six players", () => {
   assert.ok(script.includes("const players=available"));
   assert.ok(script.includes("players.forEach((e,i)=>{const row"));
-  assert.ok(script.includes("items.slice(0,4)"));
+  assert.ok(script.includes("items.slice(0,6)"));
   assert.ok(script.includes("players.length+'人を比較'"));
 });
 
@@ -211,4 +211,18 @@ test("Mystic Trial radar excludes Radiant Spire and uses five-axis baseline", ()
   assert.ok(script.includes("fmt(maxPerAxis*5)"));
   assert.ok(!script.includes("fmt(maxPerAxis*6)"));
   assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
+});
+
+test("プレイヤー比較は最大6人（選択・API・共有カード・色の数をそろえる）", async () => {
+  const { PLAYER_COMPARE_MAX, normalizeCompareGovernorIds } = await import("../src/player-compare.js");
+  assert.equal(PLAYER_COMPARE_MAX, 6);
+  assert.equal(normalizeCompareGovernorIds(Array.from({ length: 8 }, (_, i) => String(1000000 + i))).length, 6);
+  const { readFileSync } = await import("node:fs");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /0 \/ 6人選択/);
+  assert.match(index, /if\(selected\.size>=6\)\{input\.checked=false;alert\("比較できるのは最大6人です。"\)/);
+  const share = readFileSync(new URL("../src/compare-share.js", import.meta.url), "utf8");
+  assert.match(share, /getAll\("governor_id"\)\.slice\(0, 6\)/);
+  assert.equal((share.match(/var COLORS = \[([^\]]*)\]/)[1].match(/rgb\(/g) || []).length, 6, "6人ぶんの色");
+  assert.ok(script.includes("'#fb923c','#f472b6'"), "比較画面の色も6人ぶん");
 });
