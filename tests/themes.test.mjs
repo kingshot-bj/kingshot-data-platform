@@ -52,12 +52,12 @@ test("ワインレッド：あまねの運営招待とオーナーだけの豪�
   const css = eagleEyeThemesCss();
   const dark = 'html[data-ee-skin="wine"]:not([data-eagle-theme="light"])';
   const light = 'html[data-ee-skin="wine"][data-eagle-theme="light"]';
-  assert.ok(css.includes(`${dark}{--ee-bg:#14050a`), "ダークの色");
+  assert.ok(css.includes(`${dark}{--ee-bg:#170a10`), "ダークの色");
   assert.ok(css.includes(`${dark} body{background:radial-gradient`), "背景のきらめき");
   assert.match(css, /@keyframes ee-wine-shine/);
   assert.ok(css.includes(`animation:ee-wine-shine 5s linear infinite`), "見出しの光沢が流れる");
-  assert.ok(css.includes(`${dark} .ee-avatar{box-shadow:0 0 0 2px #b8324a`), "光るリング");
-  assert.ok(css.includes(`${light} body{background:radial-gradient(rgba(120,20,40`), "ライトモードの仕上げ");
+  assert.ok(css.includes(`${dark} .ee-avatar{box-shadow:0 0 0 2px #e2b23a`), "光るリング");
+  assert.ok(css.includes(`${light} body{background:radial-gradient(rgba(160,110,20`), "ライトモードの仕上げ");
   assert.ok(css.includes(`@media (prefers-reduced-motion:reduce){${dark}`), "動きを減らす設定では止める");
   assert.doesNotMatch(css, /data:image\/svg/, "ハートの模様は入れない");
   const sakura = EAGLEEYE_THEMES.find(t => t.id === "sakura");
@@ -83,7 +83,7 @@ test("豪華カラー：ホーム以外（その他メニュー・検索・ラ�
       assert.ok(css.includes(`${sel} .watch-hub{background:transparent!important}`), id + " ウォッチのトップは背景を見せる");
     }
   }
-  assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#c44a5c/, "検索ボタンもワインの金属ボタン");
+  assert.match(css, /\.ms-link button,\.search-input-row button\)\{background:linear-gradient\(180deg,#9e2a40/, "検索ボタンもワインの金属ボタン");
 });
 
 test("豪華カラー：見出しの光沢は、どの色の所でも地の色に対して読める（コントラスト4.5以上）", () => {
@@ -93,5 +93,5 @@ test("豪華カラー：見出しの光沢は、どの色の所でも地の色�
   const wine = EAGLEEYE_THEMES.find(t => t.id === "wine");
   const stops = sel => { const line = css.split("\n").find(l => l.startsWith(sel + " :is(h1,")); return [...line.match(/background:linear-gradient\(100deg,([^)]*)\)/)[1].matchAll(/#[0-9a-f]{6}/gi)].map(m => m[0]); };
   for (const c of stops('html[data-ee-skin="wine"]:not([data-eagle-theme="light"])')) assert.ok(ratio(c, wine.tokens.panel) >= 4.5, "ダーク " + c);
-  for (const c of stops('html[data-ee-skin="wine"][data-eagle-theme="light"]')) assert.ok(ratio(c, "#fffdfc") >= 4.5, "ライト " + c);
+  for (const c of stops('html[data-ee-skin="wine"][data-eagle-theme="light"]')) assert.ok(ratio(c, "#fffdf8") >= 4.5, "ライト " + c);
 });
