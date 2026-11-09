@@ -91,6 +91,7 @@ import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
 import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
+import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
 import { loadAllianceForCompare } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
@@ -5239,7 +5240,11 @@ export default {
           await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
         }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
-        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top }));
+        // 画像で共有（スマホの中で作る。サーバー・D1の負担は増えない）
+        const shareFound = alliances.filter(a => a && !a.error);
+        const newestRoster = Math.max(0, ...shareFound.map(a => Number(a.observedAt) || 0));
+        const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml }));
       }
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
