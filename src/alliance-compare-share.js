@@ -2,7 +2,7 @@ import { shareCardPalettes } from "./themes.js";
 import { topByPower, rankTopPlayersByStage, MYSTIC_COMPARE_BOARDS, MYSTIC_TOP } from "./alliance-compare.js";
 // 同盟比較を画像（カード）で共有する。画像はスマホの中で canvas で作るので、サーバー・D1の負担は増えない。
 // ・同盟ごとの見出し（タグ・王国・勝ち数）、項目ごとに良い方を光らせて👑
-// ・秘境の試練：各同盟の戦力上位3人を集めて、ステージごとにいちばん進んでいる人
+// ・秘境の試練：各同盟の戦力上位3人（2同盟なら6人）を、ステージごとに進んでいる順に全員
 // ・BJにゃん・EagleEye・QR・メンバー表の日付
 // ・ログイン中なら共有するURLに本人の招待コード（?ref=）を付ける（/api/invite。未ログインなら付けない）
 
@@ -25,11 +25,15 @@ export function allianceShareData(alliances, dateText = "") {
     const sum = top.length ? top.reduce((s, m) => s + Number(m.power), 0) : null;
     return { abbr: String(a.abbr || a.tag || ""), kid: a.kid, v: { power: a.power ?? null, power_rank: a.power_rank ?? null, members: (a.members || []).length || null, top_sum: sum, top_avg: sum == null ? null : sum / top.length } };
   });
-  const mystic = list.some(a => a.mystic) ? MYSTIC_COMPARE_BOARDS.map(([key, label, off]) => {
-    const lead = rankTopPlayersByStage(list, key)[0];
-    if (!lead || lead.score == null) return { label, ai: null, name: "", value: "" };
-    return { label, ai: lead.ai, name: String(lead.name || ""), value: off ? (stageLabel(lead.score, off) || "") : Number(lead.score).toLocaleString("ja-JP") };
-  }) : [];
+  // 秘境：ステージごとに6人（各同盟の戦力上位3人）を進んでいる順に。ランキングに無い人は後ろで「圏外」、取っていない種類は「取得中」。
+  const mystic = list.some(a => a.mystic) ? MYSTIC_COMPARE_BOARDS.map(([key, label, off]) => ({
+    label,
+    rows: rankTopPlayersByStage(list, key).map(r => ({
+      ai: r.ai, name: String(r.name || ""),
+      value: r.score == null ? (list[r.ai]?.mystic?.checked?.includes(key) ? "圏外" : "取得中") : off ? (stageLabel(r.score, off) || "") : Number(r.score).toLocaleString("ja-JP"),
+      ok: r.score != null
+    }))
+  })) : [];
   return { date: dateText, alliances: items, mystic };
 }
 
@@ -87,10 +91,11 @@ export function allianceShareClient(cfg) {
       if (ok.filter(function (v) { return v === b; }).length !== 1) return null;
       var idx = vals.indexOf(b); wins[idx]++; return idx;
     });
-    var MY = (data.mystic || []).filter(function (s) { return s.ai != null; });
-    MY.forEach(function (s) { if (s.ai < wins.length) wins[s.ai]++; });
-    var ROW = 84, GAP = 10, MROW = 66;
-    var H = PAD + 60 + 200 + rows.length * (ROW + GAP) + (MY.length ? 90 + MY.length * (MROW + 8) : 0) + 110 + 220;
+    var MY = (data.mystic || []).filter(function (s) { return s.rows && s.rows.length; });
+    MY.forEach(function (s) { var lead = s.rows[0]; if (lead && lead.ok && lead.ai < wins.length) wins[lead.ai]++; });
+    var ROW = 84, GAP = 10, CELL_H = 104, PER = Math.min(6, Math.max.apply(null, MY.map(function (s) { return s.rows.length; }).concat([1])));
+    var LINES = MY.map(function (s) { return Math.ceil(s.rows.length / PER); });
+    var H = 30 + PAD + 60 + 200 + rows.length * (ROW + GAP) + (MY.length ? 90 + MY.reduce(function (t, s, i) { return t + 44 + LINES[i] * (CELL_H + 8) + 14; }, 0) : 0) + 110 + 220;
     var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
     var c = cv.getContext("2d");
     var bg = c.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, P.panel); bg.addColorStop(1, P.bg); c.fillStyle = bg; c.fillRect(0, 0, W, H);
@@ -119,18 +124,26 @@ export function allianceShareClient(cfg) {
       c.textBaseline = "alphabetic"; y += ROW + GAP;
     });
     if (MY.length) {
-      y += 24; c.textAlign = "left"; c.fillStyle = "rgb(253,230,138)"; c.font = "800 28px " + FONT; c.fillText("秘境の試練（各同盟の上位3人でいちばん進んでいる人）", PAD + 6, y + 30); y += 66;
-      MY.forEach(function (s) {
-        c.save(); rr(c, PAD, y, W - PAD * 2, MROW, 14); c.fillStyle = P.raised; c.fill(); c.fillStyle = COLORS[s.ai % 4]; rr(c, PAD, y, 10, MROW, 5); c.fill(); c.restore();
-        c.textBaseline = "middle"; c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "700 24px " + FONT; c.fillText(s.label, PAD + 26, y + MROW / 2);
-        c.fillStyle = P.text; c.font = "800 26px " + FONT; c.fillText(clip(c, s.name + "（" + (ks[s.ai] ? ks[s.ai].abbr : "") + "）", 400), PAD + 300, y + MROW / 2);
-        c.textAlign = "right"; c.fillStyle = COLORS[s.ai % 4]; c.font = "900 32px " + FONT; c.fillText(s.value, W - PAD - 24, y + MROW / 2);
-        c.textBaseline = "alphabetic"; y += MROW + 8;
+      y += 24; c.textAlign = "left"; c.fillStyle = "rgb(253,230,138)"; c.font = "800 28px " + FONT; c.fillText("秘境の試練（各同盟の上位3人を進んでいる順に）", PAD + 6, y + 30); y += 66;
+      var cw = (W - PAD * 2 - (PER - 1) * 8) / PER;
+      MY.forEach(function (s, si) {
+        c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = P.text; c.font = "800 26px " + FONT; c.fillText(s.label, PAD + 4, y + 30); y += 44;
+        s.rows.forEach(function (r, i) {
+          var col = i % PER, line = Math.floor(i / PER), x = PAD + col * (cw + 8), yy = y + line * (CELL_H + 8), clr = COLORS[r.ai % 4];
+          c.save(); rr(c, x, yy, cw, CELL_H, 14); c.fillStyle = P.raised; c.fill(); if (i === 0 && r.ok) { c.fillStyle = alpha(P.accent, .25); c.fill(); c.lineWidth = 3; c.strokeStyle = P.accent; c.stroke(); } c.restore();
+          c.fillStyle = clr; rr(c, x, yy, cw, 7, 4); c.fill();
+          c.textAlign = "center"; c.textBaseline = "middle";
+          c.fillStyle = P.subtext; c.font = "700 18px " + FONT; c.fillText(r.ok ? (i + 1) + "位" : "", x + cw / 2, yy + 24);
+          c.fillStyle = r.ok ? clr : P.subtext; c.font = (r.ok ? "900 " : "700 ") + (r.ok ? 28 : 20) + "px " + FONT; c.fillText(r.value || "—", x + cw / 2, yy + 54);
+          c.fillStyle = P.text; c.font = "700 18px " + FONT; c.fillText(clip(c, r.name, cw - 14), x + cw / 2, yy + 84);
+        });
+        c.textBaseline = "alphabetic"; y += LINES[si] * (CELL_H + 8) + 14;
       });
     }
     y += 20; c.textAlign = "left"; c.fillStyle = P.subtext; c.font = "500 21px " + FONT;
-    c.fillText("👑 = その項目でいちばん良い同盟　メンバー表：" + (data.date || ""), PAD + 6, y + 24);
-    y += 70; c.strokeStyle = P.border; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 24;
+    c.fillText("👑 = その項目でいちばん良い同盟（秘境は1位の人の同盟）　枠の上の色＝同盟", PAD + 6, y + 24);
+    c.fillText("メンバー表：" + (data.date || ""), PAD + 6, y + 54);
+    y += 100; c.strokeStyle = P.border; c.lineWidth = 1.5; c.beginPath(); c.moveTo(PAD, y); c.lineTo(W - PAD, y); c.stroke(); y += 24;
     var imgs = await Promise.all([loadImg(cfg.bj), loadImg(cfg.qr)]);
     if (imgs[0]) c.drawImage(imgs[0], PAD, y, 130, 130 * imgs[0].height / imgs[0].width);
     c.textAlign = "left"; c.fillStyle = P.text; c.font = "900 38px " + FONT; c.fillText("EagleEye", PAD + 150, y + 50);
