@@ -9,6 +9,11 @@ export const FUNNEL_STEPS = Object.freeze([
   { key: "login_cancelled", label: "Discordで取消" },
   { key: "login_new", label: "新規ログイン" },
   { key: "login_returning", label: "再ログイン" },
+  // どこで離れたか：Discord・Google の画面から戻ってきたか、戻ってきて失敗したか（11/10〜）
+  { key: "discord_return", label: "Discordから戻った" },
+  { key: "google_return", label: "Googleから戻った" },
+  { key: "google_done", label: "Googleで完了" },
+  { key: "login_error", label: "ログイン失敗" },
   { key: "upgrade_popup_shown", label: "昇格案内を表示" },
   { key: "upgrade_popup_click", label: "昇格案内を押した" }
 ]);
@@ -79,6 +84,9 @@ export function renderFunnelCard(f) {
   const steps = [
     ["ログインに進んだ（Discord＋Google）", t.login_start + t.google_start, ""],
     ["新しくログインした", t.login_new, pct(t.login_new, t.login_start + t.google_start)],
+    ["Discordの画面から戻ってきた", t.discord_return, pct(t.discord_return, t.login_start)],
+    ["Googleの画面から戻ってきた", t.google_return, pct(t.google_return, t.google_start)],
+    ["戻ってきたがログイン失敗", t.login_error, pct(t.login_error, t.discord_return + t.google_return)],
     ["領主IDを登録", c.linked, pct(c.linked, c.users)],
     ["APIキーを登録", c.keyed, pct(c.keyed, c.users)],
     ["ADVANCED以上", c.advanced, pct(c.advanced, c.users)]

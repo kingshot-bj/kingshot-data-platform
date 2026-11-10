@@ -5925,6 +5925,8 @@ async function handleDiscordCallback(request, env) {
   if (!config.clientId || !config.clientSecret || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
+  // どこで離れたかを数える：Discordの画面から戻ってきた（キャンセルも含む）。
+  if (env.DB) await recordFunnel(env.DB, "discord_return");
   // Discordの画面で「キャンセル」した人は、エラー画面ではなく元のページへ戻す（ログインはしない）。
   if (url.searchParams.get("error") && !code) {
     if (env.DB) await recordFunnel(env.DB, "login_cancelled");
@@ -5935,9 +5937,11 @@ async function handleDiscordCallback(request, env) {
     return new Response(null, { status: 302, headers: h });
   }
   if (!code || !state) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_callback_state" }, 400);
   }
   if (!(await verifyStateToken(state, config.sessionSecret))) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "invalid_state_signature" }, 400);
   }
 
@@ -5961,6 +5965,7 @@ async function handleDiscordCallback(request, env) {
       metadata: { httpStatus: tokenResponse.status }
     });
     console.error("Discord token exchange failed:", tokenResponse.status);
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "DISCORD_TOKEN_EXCHANGE_FAILED" }, 502);
   }
 
@@ -5976,6 +5981,7 @@ async function handleDiscordCallback(request, env) {
       metadata: { httpStatus: userResponse.status }
     });
     console.error("Discord user lookup failed:", userResponse.status);
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "DISCORD_USER_LOOKUP_FAILED" }, 502);
   }
 
@@ -6084,19 +6090,25 @@ async function handleGoogleCallback(request, env) {
   let returnPath = null;
   try { returnPath = sanitizeLoginReturnPath(cookies[LOGIN_RETURN_COOKIE]); } catch {}
   const clearReturn = h => h.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  // どこで離れたかを数える：Googleの画面から戻ってきた（キャンセルも含む）。
+  if (env.DB) await recordFunnel(env.DB, "google_return");
   if (url.searchParams.get("error") && !code) {
     if (env.DB) await recordFunnel(env.DB, "login_cancelled");
     const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
     clearReturn(h);
     return new Response(null, { status: 302, headers: h });
   }
-  if (!code || !state || !(await verifyStateToken(state, env.EAGLEEYE_SESSION_SECRET))) return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+  if (!code || !state || !(await verifyStateToken(state, env.EAGLEEYE_SESSION_SECRET))) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
+    return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+  }
   let googleUser;
   try {
     googleUser = await fetchGoogleUser(env, { code, redirectUri: googleRedirectUri(env, request.url) });
   } catch (error) {
     if (env.DB) await recordDiagnostic(env.DB, { service: "google", feature: "oauth", operation: "LOGIN", status: "FAILED", errorCode: String(error?.code || "GOOGLE_LOGIN_FAILED"), message: "Google login failed", metadata: { httpStatus: Number(error?.httpStatus || 0) || null } });
     console.error("google_login_failed", error?.code || "GOOGLE_LOGIN_FAILED");
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: String(error?.code || "GOOGLE_LOGIN_FAILED") }, 502);
   }
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
@@ -6104,6 +6116,7 @@ async function handleGoogleCallback(request, env) {
   const result = await upsertGoogleUser(env.DB, googleUser, now);
   if (result?.status === "DISABLED") return json({ ok: false, error: "USER_DISABLED" }, 403);
   await recordFunnel(env.DB, result.isNew ? "login_new" : "login_returning");
+  await recordFunnel(env.DB, "google_done");
   const refCode = cookies[REF_COOKIE];
   if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
   const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
