@@ -92,6 +92,7 @@ import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
 import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
+import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
 import { loadAllianceForCompare } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
@@ -5035,6 +5036,7 @@ export default {
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => (await publicKingdomExists(env.DB, kid)) ? renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn }) : eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404), PUBLIC_CACHE_TTL.data); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
       if (url.pathname === "/about") return eagleEyeHtmlResponse(renderAboutPage(publicOrigin(request, env)));
+      if (url.pathname === "/guide") return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidePage(publicOrigin(request, env))), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
