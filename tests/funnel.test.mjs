@@ -28,7 +28,7 @@ test("日本時間の日ごとに数え、知らない段階は数えない", as
   assert.deepEqual([...db.counts.keys()].sort(), ["2026-11-07|login_cancelled", "2026-11-07|login_new", "2026-11-07|login_start"]);
   const f = await loadFunnel(db, { days: 14, nowMs: t });
   assert.equal(f.daily[0].day, "2026-11-07");
-  assert.deepEqual(f.totals, { login_start: 2, google_start: 0, login_cancelled: 1, login_new: 1, login_returning: 0, upgrade_popup_shown: 0, upgrade_popup_click: 0 });
+  assert.deepEqual(f.totals, { login_start: 2, google_start: 0, login_cancelled: 1, login_new: 1, login_returning: 0, discord_return: 0, google_return: 0, google_done: 0, login_error: 0, upgrade_popup_shown: 0, upgrade_popup_click: 0 });
   assert.deepEqual(f.cohort, { users: 5, linked: 1, keyed: 0, advanced: 0 });
   const html = renderFunnelCard(f);
   assert.match(html, /登録までの流れ（直近14日）/);
@@ -49,4 +49,19 @@ test("配線：ログイン開始・取消・新規/再ログインを数える�
   assert.match(cancel, /status: 302/);
   assert.doesNotMatch(cancel, /SESSION_COOKIE/, "取消ではセッションを出さない");
   assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);
+});
+
+test("どこで離れたか：Discord・Googleの画面から戻った回数、Googleで完了、戻ってきて失敗を数える", () => {
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const discord = index.slice(index.indexOf("async function handleDiscordCallback("), index.indexOf("async function handleDiscordCallback(") + 4000);
+  assert.ok(discord.indexOf('recordFunnel(env.DB, "discord_return")') < discord.indexOf('recordFunnel(env.DB, "login_cancelled")'), "キャンセルも含めて戻ってきたら数える");
+  assert.equal((discord.match(/recordFunnel\(env\.DB, "login_error"\)/g) || []).length, 4, "state なし・state 不正・トークン失敗・ユーザー取得失敗");
+  const google = index.slice(index.indexOf("async function handleGoogleCallback("), index.indexOf("async function upsertUser("));
+  assert.ok(google.indexOf('recordFunnel(env.DB, "google_return")') < google.indexOf('recordFunnel(env.DB, "login_cancelled")'));
+  assert.equal((google.match(/recordFunnel\(env\.DB, "login_error"\)/g) || []).length, 2);
+  assert.match(google, /await recordFunnel\(env\.DB, "google_done"\);/);
+  const html = renderFunnelCard({ days: 1, daily: [], totals: { login_start: 10, google_start: 5, login_new: 3, discord_return: 4, google_return: 1, login_error: 1, google_done: 1 }, cohort: { users: 0, linked: 0, keyed: 0, advanced: 0 } });
+  assert.match(html, /<th>Discordの画面から戻ってきた<\/th><td>4<\/td><td class="muted">40%<\/td>/);
+  assert.match(html, /<th>Googleの画面から戻ってきた<\/th><td>1<\/td><td class="muted">20%<\/td>/);
+  assert.match(html, /<th>戻ってきたがログイン失敗<\/th><td>1<\/td><td class="muted">20%<\/td>/);
 });
