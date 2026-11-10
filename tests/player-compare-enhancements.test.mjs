@@ -226,3 +226,10 @@ test("プレイヤー比較は最大6人（選択・API・共有カード・色�
   assert.equal((share.match(/var COLORS = \[([^\]]*)\]/)[1].match(/rgb\(/g) || []).length, 6, "6人ぶんの色");
   assert.ok(script.includes("'#fb923c','#f472b6'"), "比較画面の色も6人ぶん");
 });
+
+test("比較ページの説明も6人（「2〜4人」の書き残しがない）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.doesNotMatch(index, /2〜4人/);
+  assert.match(index, /2〜6人を横並びで比較します/);
+});

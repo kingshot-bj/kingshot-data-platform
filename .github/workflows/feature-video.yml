@@ -1,0 +1,37 @@
+name: Feature video
+
+# 機能紹介の縦長動画（字幕つき・1080×1920）を作って、Artifact に置く。手動で動かす。
+# ログインが必要な場面（プレイヤー詳細・比較・同盟比較）は、Secrets に EAGLEEYE_VIDEO_TOKEN があるときだけ撮る（無ければ飛ばす）。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feature-video
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install fonts and ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk ffmpeg
+      - name: Install Playwright (Chromium)
+        run: npm install --no-save --no-package-lock playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Build the video
+        env:
+          EAGLEEYE_VIDEO_TOKEN: ${{ secrets.EAGLEEYE_VIDEO_TOKEN }}
+        run: node scripts/social/feature-video.mjs feature-video-out
+      - name: Keep the video as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-video
+          path: feature-video-out
+          retention-days: 30
