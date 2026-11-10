@@ -168,7 +168,7 @@ const TERMS_SECTIONS = [
   }
 ];
 
-function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "" }) {
+export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "" }) {
   const body = sections.map((section, i) =>
     `<section class="legal-section"><h2>${i + 1}. ${section.title}</h2>${section.body}</section>`
   ).join("");
