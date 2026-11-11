@@ -248,6 +248,8 @@ export async function collectKingdomRanking(env, kid, board, {
 
 export async function collectPlayerDetail(env, governorId, {
   purpose = "PLAYER_COLLECTION",
+  wait = null,
+  maxAge = null,
   globalLimiter = null,
   useGlobalSemaphore = true
 } = {}) {
@@ -257,7 +259,11 @@ export async function collectPlayerDetail(env, governorId, {
     targetType: "PLAYER",
     targetId: String(governorId),
     purpose,
-    query: { include: "base,heroes,ranks,gov_gear" },
+    query: {
+      include: "base,heroes,ranks,gov_gear",
+      ...(wait !== null && wait !== undefined && wait !== "" ? { wait } : {}),
+      ...(maxAge !== null && maxAge !== undefined && maxAge !== "" ? { max_age: maxAge } : {})
+    },
     globalLimiter,
     useGlobalSemaphore
   });
@@ -266,6 +272,9 @@ export async function collectPlayerDetail(env, governorId, {
 
 export async function collectAllianceDetail(env, kid, abbr, {
   purpose = "ALLIANCE_COLLECTION",
+  include = "info,roster",
+  wait = null,
+  maxAge = null,
   globalLimiter = null,
   useGlobalSemaphore = true
 } = {}) {
@@ -275,7 +284,11 @@ export async function collectAllianceDetail(env, kid, abbr, {
     targetType: "ALLIANCE",
     targetId: `${kid}:${abbr}`,
     purpose,
-    query: { include: "info,roster" },
+    query: {
+      include,
+      ...(wait !== null && wait !== undefined && wait !== "" ? { wait } : {}),
+      ...(maxAge !== null && maxAge !== undefined && maxAge !== "" ? { max_age: maxAge } : {})
+    },
     globalLimiter,
     useGlobalSemaphore
   });
