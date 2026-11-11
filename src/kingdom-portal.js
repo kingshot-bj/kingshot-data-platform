@@ -1050,7 +1050,7 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
     } catch (error) { status = String(error?.code || error?.message || "FETCH_FAILED").slice(0, 60); }
   }
   const alliance = getAlliance(payload);
-  if (row.unknown && !members.length) return { kid, tag, error: "NOT_FOUND" };
+  if (row.unknown && !members.length && !status.startsWith("REFRESH_PENDING") && status !== "REFRESH_IN_PROGRESS") return { kid, tag, error: "NOT_FOUND" };
   return {
     kid, tag, aid: normalizeAid(row.aid || alliance.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
     power: row.power ?? null, power_rank: row.power_rank ?? null, observedAt, fetched, status,
