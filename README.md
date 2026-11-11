@@ -118,7 +118,7 @@ Browser clients do not call the external game-data provider directly. Provider c
 | `src/api-pool.js` | API key pool and lease management |
 | `migrations/` | D1 schema migrations |
 | `tests/` | Automated tests and regression checks |
-| `docs/` | Architecture notes, engineering decisions and handoff documents |
+| `docs/` | Public engineering case study and reviewer-oriented documentation |
 | `wrangler.jsonc` | Cloudflare Worker configuration |
 
 ## Project status
@@ -143,4 +143,4 @@ AI-assisted development tools are used as implementation support. Product direct
 
 ---
 
-日本語での開発経緯・詳細な仕様引継ぎは `docs/` 以下を参照してください。古いチャット引継ぎ資料は履歴として `docs/archive/` に保存しています。
+技術的な設計判断と実装上の課題は [`docs/ENGINEERING_CASE_STUDY.md`](./docs/ENGINEERING_CASE_STUDY.md) にまとめています。
