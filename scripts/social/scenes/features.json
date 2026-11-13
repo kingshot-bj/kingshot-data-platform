@@ -1,0 +1,24 @@
+{
+  "name": "features",
+  "title": "機能紹介（登録するとできること）",
+  "output": "eagleeye-features.mp4",
+  "post": [
+    "キングショットの王国・同盟・プレイヤーのデータが無料で見られる「EagleEye」。",
+    "ランキング・KvK・プレイヤー比較・聖剣争奪の同盟比較まで。",
+    "{host}",
+    "",
+    "#キングショット #KingShot #聖剣争奪"
+  ],
+  "scenes": [
+    { "slide": "title", "seconds": 3 },
+    { "page": "/", "caption": "キングショットの王国・プレイヤーのデータが<b>無料</b>で見られる", "seconds": 4, "scroll": 500 },
+    { "page": "/kingdom/rankings?kid=1524&board=hero_total", "caption": "王国ランキング<br>戦力・英雄・秘境の試練など", "seconds": 4, "scroll": 700 },
+    { "page": "/kvk", "caption": "KvKの対戦相手とスコアの推移", "seconds": 4, "scroll": 500 },
+    { "page": "/player?governor_id=222916605", "caption": "<b>無料登録</b>で、英雄の装備・領主装備まで見られる", "seconds": 5, "scroll": 1400, "login": true },
+    { "page": "/player/compare?governor_id=222916605&governor_id=227081160&governor_id=224984906&governor_id=228822223&governor_id=227052663&governor_id=227331459", "caption": "最大6人を比較して、画像で共有", "seconds": 5, "scroll": 900, "login": true },
+    { "page": "/alliance/compare?a=1524:Pen&a=1537:LOL", "caption": "同盟比較で<b>聖剣争奪</b>の下見<br>秘境の試練をステージごとに", "seconds": 6, "scroll": 2600, "login": true },
+    { "page": "/settings/theme", "caption": "着せ替えで好きな色に", "seconds": 3, "scroll": 300 },
+    { "slide": "signup", "seconds": 5 },
+    { "slide": "outro", "seconds": 3 }
+  ]
+}

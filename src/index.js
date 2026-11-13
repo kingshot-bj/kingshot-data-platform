@@ -89,7 +89,7 @@ import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalP
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
-import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
+import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
 import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
@@ -5234,7 +5234,8 @@ export default {
         const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
         const topParam = Number(url.searchParams.get("top"));
         const top = ALLIANCE_COMPARE_TOP_OPTIONS.includes(topParam) && url.searchParams.has("top") ? topParam : ALLIANCE_COMPARE_DEFAULT_TOP;
-        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
+        const quiet = isQuietAgentRequest(request, auth);
+        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: !quiet }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
         // 秘境の試練（ステージごとの上位3人）：プレイヤー比較と同じ表示の権限。王国ランキングが古い・無いときは裏で取りに行く。
         const found = alliances.filter(a => a && !a.error);
         if (found.length >= 2 && visibilityEnabled(await getPlayerVisibilitySettings(env.DB), "ranks_leaderboards", auth.role)) {
@@ -5249,7 +5250,7 @@ export default {
             a.mystic = await loadAllianceMystic(env.DB, a, full ? (a.members || []).map(m => m.id) : a.me ? [a.me] : []).catch(() => null);
             if (a.mystic && full) a.mystic.full = true;
           }));
-          await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
+          if (!quiet) await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
         }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
         // 画像で共有（スマホの中で作る。サーバー・D1の負担は増えない）
@@ -7687,7 +7688,8 @@ async function handlePlayerApi(request, env) {
     const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
     const fetchRich = rich || refresh;
 
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
@@ -8200,7 +8202,7 @@ async function handlePlayerCompareApi(request, env, executionContext = null) {
       return {governor_id:id,player,profile,profileNeedsRich,rankings,rankingsExpected:canReadCoreRanks||canReadLeaderboardRanks,history,rankHistory:[],period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
     }));
     // 比較に出す項目のうち、王国ランキングからしか取れないもの（領主宝石・英雄総力など）が無い／古い王国は、裏で取りに行く。
-    const rankingPending = await scheduleCompareRankingFetch(env, executionContext, compareKids);
+    const rankingPending = isQuietAgentRequest(request, auth) ? [] : await scheduleCompareRankingFetch(env, executionContext, compareKids);
     // その王国で取得済み（7日以内）のランキングの種類。表に値が無いとき「100位圏外」か「取得中」かを分ける。
     const checkedKids = [...new Set([...compareKidById.values()].filter(k => Number.isInteger(k) && k > 0))];
     const checkedByKid = new Map();
@@ -8604,7 +8606,8 @@ async function renderPlayerPage(request, env, executionContext = null) {
     if (!observation && !refresh && !rich) {
       return renderPlayerFetchingPage(governorId);
     }
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
@@ -8664,7 +8667,7 @@ async function renderPlayerPage(request, env, executionContext = null) {
     const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
     const heroRankingsPromise = visibilityEnabled(visibilitySettings, "hero_rankings", auth.role) ? getLatestPlayerHeroRankings(env, heroKid, governorId) : null;
     // 王国ランキングから出す項目（英雄ランキング・秘境のステージ順位）が無い／古い王国は、裏で取りに行く（画面は1回だけ読み直す）。
-    visibleProfile.ranking_pending = await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
+    visibleProfile.ranking_pending = isQuietAgentRequest(request, auth) ? [] : await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
     let buildHistoryHtml = "";
     const buildVisible = {
       heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
@@ -9511,6 +9514,7 @@ async function getAuthenticatedUser(request, env) {
 
 async function trackServiceUsage(env, auth, operation, { targetType = null, targetId = null, metadata = {} } = {}) {
   if (!auth?.user_id) return;
+  if (auth.agent) return; // Claude 用の鍵は利用者ではないので、利用の記録に数えない
   try {
     await recordServiceUsage(env, {
       operation,

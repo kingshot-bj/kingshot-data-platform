@@ -16,7 +16,7 @@ test("対象のランキング：プレイヤー単体では取れない13種類
 test("配線：比較APIは王国番号（権限に関係なく）で予約し、結果に rankingPending を返す。実際の取得は既存の取り直し制限つき", () => {
   assert.match(index, /return await handlePlayerCompareApi\(request, env, executionContext\);/);
   assert.match(index, /compareKids\.push\(raw\.kid\);/);
-  assert.match(index, /const rankingPending = await scheduleCompareRankingFetch\(env, executionContext, compareKids\);/);
+  assert.match(index, /const rankingPending = isQuietAgentRequest\(request, auth\) \? \[\] : await scheduleCompareRankingFetch\(env, executionContext, compareKids\);/);
   assert.match(index, /return json\(\{ok:true,players,period_days:30,rankingPending\}\);/);
   const fn = index.slice(index.indexOf("async function scheduleKingdomRankingFetch("), index.indexOf("async function handlePlayerCompareApi("));
   assert.match(fn, /refreshKingdomRankingOnDemand\(env, kid, board, options\)/);
@@ -29,7 +29,7 @@ test("配線：比較APIは王国番号（権限に関係なく）で予約し�
 
 test("プレイヤー詳細：英雄ランキング・秘境ステージの王国ランキングが無い／古ければ裏で取り、「取得中」を出して1回だけ読み直す", () => {
   assert.match(index, /return eagleEyeHtmlResponse\(await renderPlayerPage\(request, env, executionContext\)\);/);
-  assert.match(index, /visibleProfile\.ranking_pending = await scheduleKingdomRankingFetch\(env, executionContext, \[heroKid\], PLAYER_PAGE_RANKING_BOARDS/);
+  assert.match(index, /visibleProfile\.ranking_pending = isQuietAgentRequest\(request, auth\) \? \[\] : await scheduleKingdomRankingFetch\(env, executionContext, \[heroKid\], PLAYER_PAGE_RANKING_BOARDS/);
   const boards = JSON.parse(index.match(/const PLAYER_PAGE_RANKING_BOARDS = Object\.freeze\((\[[^\]]+\])\)/)[1]);
   assert.deepEqual(boards.slice(0, 4), ["single_hero", "hero_total", "hero_no_equip", "hero_equip"]);
   assert.match(index, /if\(\/\[\?&\]rk=1\(&\|\$\)\/\.test\(location\.search\)\)return;/, "読み直しは1回だけ（rk=1）");

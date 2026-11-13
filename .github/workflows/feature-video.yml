@@ -1,9 +1,24 @@
 name: Feature video
 
-# 機能紹介の縦長動画（字幕つき・1080×1920）を作って、Artifact に置く。手動で動かす。
-# ログインが必要な場面（プレイヤー詳細・比較・同盟比較）は、Secrets に EAGLEEYE_VIDEO_TOKEN があるときだけ撮る（無ければ飛ばす）。
+# 機能紹介の縦長動画（字幕つき・1080×1920）を作って Artifact に置く。手動で動かす（iPhone の GitHub アプリの「Run workflow」からも動かせる）。
+# 場面は scripts/social/scenes/<set>.json。ログインが必要な場面は、Secrets に EAGLEEYE_VIDEO_TOKEN があるときだけ撮る（無ければ飛ばす）。
+# 撮影中は広告・アクセス記録の通信を止め、サーバーは裏で MightPulse に取りに行かない（API Pool を使わない）。
 on:
   workflow_dispatch:
+    inputs:
+      scene_set:
+        description: "場面セット"
+        type: choice
+        options: [features, alliance-compare]
+        default: features
+      bgm:
+        description: "BGMのファイル（リポジトリ内のパス。空ならBGMなし）"
+        type: string
+        default: ""
+      fade:
+        description: "場面の切り替えのフェード（秒）"
+        type: string
+        default: "0.4"
 
 permissions:
   contents: read
@@ -18,20 +33,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install fonts and ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk ffmpeg
-      - name: Install Playwright (Chromium)
-        run: npm install --no-save --no-package-lock playwright@1.48.2 && npx playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-media
       - name: Build the video
         env:
           EAGLEEYE_VIDEO_TOKEN: ${{ secrets.EAGLEEYE_VIDEO_TOKEN }}
-        run: node scripts/social/feature-video.mjs feature-video-out
+          SCENE_SET: ${{ inputs.scene_set }}
+          BGM: ${{ inputs.bgm }}
+          FADE: ${{ inputs.fade }}
+        run: |
+          args=(feature-video-out --set "$SCENE_SET" --fade "$FADE")
+          if [ -n "$BGM" ]; then args+=(--bgm "$BGM"); fi
+          node scripts/social/feature-video.mjs "${args[@]}"
       - name: Keep the video as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: feature-video
+          name: feature-video-${{ inputs.scene_set }}
           path: feature-video-out
           retention-days: 30
