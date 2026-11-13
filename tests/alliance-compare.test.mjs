@@ -56,7 +56,7 @@ test("配線：ログイン必須・ADVANCED以上・入口（同盟詳細・同
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /if \(url\.pathname === "\/alliance\/compare"\) \{/);
   assert.match(index, /if \(!canUseAllianceCompare\(auth\.role\)\) return eagleEyeHtmlResponse\(renderAllianceComparePage\(\{ message:/);
-  assert.match(index, /loadAllianceForCompare\(env, t\.kid, t\.tag, \{ canFetch: true \}\)/);
+  assert.match(index, /loadAllianceForCompare\(env, t\.kid, t\.tag, \{ canFetch: !quiet \}\)/);
   const portal = readFileSync(new URL("../src/kingdom-portal.js", import.meta.url), "utf8");
   assert.match(portal, /href='\/alliance\/compare\?a="\+encodeURIComponent\(kid\+":"\+\(allianceAbbr\|\|tag\)\)/);
   assert.match(portal, /<a href='\/alliance\/compare'>⚔️ 同盟を比べる/);

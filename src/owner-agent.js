@@ -74,3 +74,11 @@ export async function auditAgentRequest(request, env, writeAudit) {
   const url = new URL(request.url);
   await Promise.resolve(writeAudit(env, AGENT_USER, "AGENT_REQUEST", null, null, { method: request.method, path: url.pathname, query: url.search.slice(0, 200) })).catch(() => {});
 }
+
+// 動画の撮影（scripts/social/feature-video.mjs）：Claude 用の鍵で来て、さらに X-EagleEye-Video: 1 が付いているときだけ「静かに見る」。
+// ・裏で MightPulse（API Pool）に取りに行かない（今あるデータだけで表示する）
+// ・普通のユーザーには関係しない（鍵が無ければ印は無視される）
+export const VIDEO_HEADER = "x-eagleeye-video";
+export function isQuietAgentRequest(request, auth) {
+  return auth?.agent === true && request?.headers?.get?.(VIDEO_HEADER) === "1";
+}

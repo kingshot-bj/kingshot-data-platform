@@ -1,0 +1,14 @@
+name: Setup media tools
+description: 日本語フォント・ffmpeg・Playwright（Chromium）を入れる（SNS用の画像・動画づくりで共通）
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Install fonts and ffmpeg
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk ffmpeg
+    - name: Install Playwright (Chromium)
+      shell: bash
+      run: npm install --no-save --no-package-lock playwright@1.48.2 && npx playwright install --with-deps chromium

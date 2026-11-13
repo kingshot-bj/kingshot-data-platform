@@ -120,7 +120,8 @@ test("毎週の自動実行：月曜9:13（日本時間）。投稿は定期実�
   assert.match(wf, /cron: "13 0 \* \* 1"/);
   assert.match(wf, /if: github\.event_name == 'schedule' \|\| inputs\.post/);
   assert.match(wf, /SOCIAL_DISCORD_WEBHOOK_URL: \$\{\{ secrets\.SOCIAL_DISCORD_WEBHOOK_URL \}\}/);
-  assert.match(wf, /fonts-noto-cjk ffmpeg/);
+  assert.match(wf, /uses: \.\/\.github\/actions\/setup-media/, "準備は共通部品で");
+  assert.match(readFileSync(new URL("../.github/actions/setup-media/action.yml", import.meta.url), "utf8"), /fonts-noto-cjk ffmpeg/);
   assert.match(wf, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_R2_API_TOKEN \}\}/, "R2 だけの鍵を使う（D1 用の鍵の権限を広げない）");
   const pub = readFileSync(new URL("../scripts/social/publish.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(pub, /console\.log\([^)]*process\.env/);
