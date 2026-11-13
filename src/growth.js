@@ -299,21 +299,45 @@ export function simulateRevenue({ revenuePvPerDay, adPvPerDay, measured = null, 
   };
 }
 
+// 登録まわりの日ごとの数（今日の成果用）。小さい表を直近8日分だけ読む（D1は4文）。
+// 新規登録＝users.created_at、領主ID登録・APIキー登録（＝ADVANCEDへの最後の一歩）は「その日に初めて登録した人」の数。
+// Claude の作業用アカウント（claude-agent）は数えない。
+export const EVENT_KEYS = Object.freeze(["signup", "linked", "keyed"]);
+export async function loadDailyEvents(db, { nowMs = Date.now(), days = 8 } = {}) {
+  const sinceDay = jstDay(nowMs - (days - 1) * 86400 * 1000);
+  const since = Math.floor(Date.parse(sinceDay + "T00:00:00+09:00") / 1000);
+  const day = col => `date(${col} + 32400, 'unixepoch')`;
+  const q = sql => db.prepare(sql).bind(since).all().then(r => r?.results || []).catch(() => []);
+  const [users, links, keys, funnel] = await Promise.all([
+    q(`SELECT ${day("created_at")} AS d, COUNT(*) AS n FROM users WHERE created_at >= ? AND user_id <> 'claude-agent' GROUP BY d`),
+    q(`SELECT ${day("first_at")} AS d, COUNT(*) AS n FROM (SELECT user_id, MIN(created_at) AS first_at FROM user_player_links WHERE user_id <> 'claude-agent' GROUP BY user_id) WHERE first_at >= ? GROUP BY d`),
+    q(`SELECT ${day("first_at")} AS d, COUNT(*) AS n FROM (SELECT contributed_by_user_id AS u, MIN(contributed_at) AS first_at FROM api_pool_keys WHERE contributed_by_user_id IS NOT NULL AND contributed_at IS NOT NULL GROUP BY u) WHERE first_at >= ? GROUP BY d`),
+    db.prepare("SELECT day AS d, step, n FROM funnel_daily WHERE day >= ?").bind(sinceDay).all().then(r => r?.results || []).catch(() => [])
+  ]);
+  const out = {};
+  for (let i = 0; i < days; i++) out[jstDay(nowMs - i * 86400 * 1000)] = { signup: 0, linked: 0, keyed: 0, funnel: {} };
+  const put = (rows, key) => { for (const r of rows) if (out[r.d]) out[r.d][key] = Number(r.n) || 0; };
+  put(users, "signup"); put(links, "linked"); put(keys, "keyed");
+  for (const r of funnel) if (out[r.d]) out[r.d].funnel[r.step] = Number(r.n) || 0;
+  return out;
+}
+
 export async function loadGrowth(db, { nowMs = Date.now(), days = 62 } = {}) {
   await ensureSchema(db);
   const since = jstDay(nowMs - (days - 1) * 86400 * 1000);
   const activeSince = jstDay(nowMs - 35 * 86400 * 1000);
-  const [traffic, active, baselines, settings] = await Promise.all([
+  const [traffic, active, baselines, settings, events] = await Promise.all([
     db.prepare("SELECT day, metric, auth, n FROM traffic_daily WHERE day >= ?").bind(since).all(),
     db.prepare("SELECT day, user_id FROM user_daily_active WHERE day >= ?").bind(activeSince).all().catch(() => ({ results: [] })),
     db.prepare("SELECT baseline_id, label, created_at, summary_json FROM growth_baselines ORDER BY baseline_id DESC LIMIT 10").all(),
-    db.prepare("SELECT key, value FROM growth_settings WHERE key IN ('revenue_measured')").all()
+    db.prepare("SELECT key, value FROM growth_settings WHERE key IN ('revenue_measured')").all(),
+    loadDailyEvents(db, { nowMs }).catch(() => ({}))
   ]);
   const t = summarizeTraffic(traffic?.results || [], { days, nowMs });
   const a = summarizeActive(active?.results || [], { nowMs });
   let measured = null;
   for (const s of settings?.results || []) if (s.key === "revenue_measured") { try { measured = JSON.parse(s.value); } catch { measured = null; } }
-  return { traffic: t, active: a, measured, baselines: (baselines?.results || []).map(b => ({ ...b, summary: safeParse(b.summary_json) })), nowMs };
+  return { traffic: t, active: a, measured, events: events || {}, baselines: (baselines?.results || []).map(b => ({ ...b, summary: safeParse(b.summary_json) })), nowMs };
 }
 const safeParse = s => { try { return JSON.parse(s); } catch { return null; } };
 
@@ -388,6 +412,29 @@ export async function adPvBetween(db, from, to) {
   return Number(row?.n) || 0;
 }
 
+// 今日の成果：今日（0時から今まで）と、昨日（1日分）・直近7日の1日平均（今日を除く）。
+export function todaySummary(growth) {
+  const d = growth.traffic?.daily || [], ev = growth.events || {};
+  const days = d.map(x => x.day);
+  const evOf = (day, k) => {
+    const e = ev[day];
+    if (!e) return 0;
+    if (k === "loginDone") return (e.funnel.login_new || 0) + (e.funnel.login_returning || 0);
+    if (k === "loginStart") return (e.funnel.login_start || 0) + (e.funnel.google_start || 0);
+    if (k === "loginBack") return (e.funnel.discord_return || 0) + (e.funnel.google_return || 0);
+    return e[k] || 0;
+  };
+  const val = (i, k) => k in (d[i] || {}) ? Number(d[i][k]) || 0 : evOf(days[i], k);
+  const avg7 = k => { let sum = 0; for (let i = 1; i <= 7; i++) sum += val(i, k); return sum / 7; };
+  const row = k => ({ today: val(0, k), yesterday: val(1, k), avg7: avg7(k) });
+  return {
+    day: days[0] || "",
+    visitors: row("visitors"), pv: row("pv"), signup: row("signup"), loginDone: row("loginDone"),
+    linked: row("linked"), keyed: row("keyed"),
+    funnel: { start: val(0, "loginStart"), back: val(0, "loginBack"), done: val(0, "loginDone"), error: Number(ev[days[0]]?.funnel?.login_error) || 0 }
+  };
+}
+
 // ---- 画面 ----
 
 const COMPARE_KEYS = [
@@ -418,6 +465,7 @@ export function sourcesCard(traffic) {
 
 export function renderGrowthPage(growth) {
   const h = headline(growth);
+  const t = todaySummary(growth);
   const sim = simulateRevenue({ revenuePvPerDay: h.revenuePvPerDay, adPvPerDay: h.adPvPerDay, measured: growth.measured });
   const groups = Object.entries(growth.traffic.groups).sort((a, b) => (b[1].in + b[1].out) - (a[1].in + a[1].out));
   const groupTotal = groups.reduce((a, [, v]) => a + v.in + v.out, 0);
@@ -425,30 +473,69 @@ export function renderGrowthPage(growth) {
   const enough = h.daysWithData >= 7;
   const base = growth.baselines[0];
   const kpi = (title, value, note = "", tag = "実測") => `<div class="kpi"><span class="tag ${tag === "実測" ? "m" : "e"}">${tag}</span><b>${value}</b><small>${esc(title)}</small>${note ? `<em>${esc(note)}</em>` : ""}</div>`;
+  // 今日の大きな数字：昨日・7日平均と並べ、7日平均より多ければ↑
+  const big = (title, r, note = "") => {
+    const cls = r.today > r.avg7 ? "up" : "";
+    return `<div class="big"><small>${esc(title)}</small><b class="${cls}">${num(r.today)}</b><em>昨日 ${num(r.yesterday)}・7日平均 ${fixed(r.avg7, 1)}${note ? "・" + esc(note) : ""}</em></div>`;
+  };
   const m = growth.measured;
+  const ev = growth.events || {};
+  const evDay = day => ev[day] || { signup: 0, linked: 0, keyed: 0 };
+  const now = new Date((growth.nowMs || Date.now()) + 9 * 3600 * 1000).toISOString().slice(11, 16);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>成長ダッシュボード | EagleEye</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:960px;margin:auto;padding:20px 16px 96px}a{color:#38bdf8}.card{background:#111c33;border:1px solid #1e2b47;border-radius:16px;padding:14px;margin:12px 0}h1{font-size:21px;margin:8px 0}h2{font-size:16px;margin:0 0 10px}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}.kpi{position:relative;background:#0b1428;border:1px solid #1e2b47;border-radius:12px;padding:10px 10px 8px;display:flex;flex-direction:column;gap:2px}.kpi b{font-size:20px}.kpi small{color:#cbd5e1;font-size:12px}.kpi em{font-style:normal;color:#94a3b8;font-size:11px}.tag{position:absolute;top:6px;right:6px;font-size:10px;padding:1px 6px;border-radius:99px}.tag.m{background:#064e3b;color:#6ee7b7}.tag.e{background:#78350f;color:#fcd34d}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 4px;border-bottom:1px solid #1e2b47;text-align:right}th:first-child,td:first-child{text-align:left}.bars{display:flex;align-items:flex-end;gap:2px;height:70px;margin:8px 0}.bars i{flex:1;background:linear-gradient(#f5c542,#b7791f);border-radius:2px 2px 0 0;min-width:3px}.warn{background:#3b2a07;border:1px solid #a16207;color:#fde68a;border-radius:10px;padding:8px 10px;font-size:13px}form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}input{background:#0b1428;color:#f8fafc;border:1px solid #334155;border-radius:8px;padding:7px 8px;font-size:14px;min-width:0}button{background:#f5c542;color:#1a1300;border:0;border-radius:8px;padding:8px 12px;font-weight:700;font-size:14px}.scroll{overflow-x:auto}.up{color:#6ee7b7}.down{color:#fca5a5}</style></head>
+<style>*{box-sizing:border-box}body{margin:0;background:var(--ee-bg,#0f172a);color:var(--ee-text,#f8fafc);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:960px;margin:auto;padding:20px 16px 96px}a{color:var(--ee-cyan,#38bdf8)}
+.card{background:var(--ee-panel,#111c33);border:1px solid var(--ee-border-soft,#1e2b47);border-radius:16px;padding:14px;margin:12px 0}h1{font-size:21px;margin:8px 0}h2{font-size:16px;margin:0 0 10px}h3{font-size:13px;margin:12px 0 6px;color:var(--ee-subtext,#94a3b8)}
+.muted{color:var(--ee-subtext,#94a3b8);font-size:12px;line-height:1.6}.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.kpi{position:relative;background:var(--ee-panel-raised,#0b1428);border:1px solid var(--ee-border-soft,#1e2b47);border-radius:12px;padding:10px 10px 8px;display:flex;flex-direction:column;gap:2px}.kpi b{font-size:20px}.kpi small{font-size:12px;opacity:.85}.kpi em{font-style:normal;color:var(--ee-subtext,#94a3b8);font-size:11px}
+.tag{position:absolute;top:6px;right:6px;font-size:10px;padding:1px 6px;border-radius:99px}.tag.m{background:#064e3b;color:#6ee7b7}.tag.e{background:#78350f;color:#fcd34d}
+.today{border-width:2px;border-color:var(--ee-cyan,#38bdf8)}.bigs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.big{background:var(--ee-panel-raised,#0b1428);border:1px solid var(--ee-border-soft,#1e2b47);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}.big small{font-size:12px;opacity:.85}.big b{font-size:30px;line-height:1.15}.big em{font-style:normal;color:var(--ee-subtext,#94a3b8);font-size:11px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin-top:10px}.flow span{background:var(--ee-panel-raised,#0b1428);border:1px solid var(--ee-border-soft,#1e2b47);border-radius:99px;padding:4px 10px}.flow b{font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 4px;border-bottom:1px solid var(--ee-border-soft,#1e2b47);text-align:right}th:first-child,td:first-child{text-align:left}td:first-child{white-space:nowrap}
+.bars{display:flex;align-items:flex-end;gap:2px;height:70px;margin:8px 0}.bars i{flex:1;background:linear-gradient(var(--ee-cyan,#f5c542),var(--ee-blue,#b7791f));border-radius:2px 2px 0 0;min-width:3px}
+.warn{background:#3b2a07;border:1px solid #a16207;color:#fde68a;border-radius:10px;padding:8px 10px;font-size:13px}form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}input{background:var(--ee-panel-raised,#0b1428);color:inherit;border:1px solid var(--ee-border,#334155);border-radius:8px;padding:7px 8px;font-size:14px;min-width:0}button{background:var(--ee-cyan,#f5c542);color:#04202a;border:0;border-radius:8px;padding:8px 12px;font-weight:700;font-size:14px}
+.scroll{overflow-x:auto}.up{color:#22c55e}.down{color:#ef4444}details.card>summary{cursor:pointer;font-weight:800;font-size:15px;list-style:none}details.card>summary::-webkit-details-marker{display:none}details.card>summary:before{content:"▸ ";color:var(--ee-subtext,#94a3b8)}details[open].card>summary:before{content:"▾ "}details.card[open]>summary{margin-bottom:10px}
+.toc{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;margin:6px 0 2px}.toc a{padding:3px 9px;border:1px solid var(--ee-border-soft,#1e2b47);border-radius:99px;text-decoration:none}</style></head>
 <body><main class="wrap"><a href="/owner">← OWNER管理</a>・<a href="/owner/traffic">アクセス状況</a><h1>成長ダッシュボード</h1>
-<p class="muted">「実測」はEagleEyeが数えた値、「試算」は仮定から計算した値です。PVは JavaScript が動くブラウザで開かれた回数（ボット・管理画面を除く）。日付は日本時間。</p>
+<nav class="toc"><a href="#today">今日</a><a href="#week">7日の平均</a><a href="#daily">日ごとの推移</a><a href="#sources">どこから来たか</a><a href="#more">収益・比較・作戦</a></nav>
+
+<section class="card today" id="today"><h2>今日の成果（${esc(t.day.slice(5).replace("-", "/"))} 0:00〜${esc(now)}）</h2><div class="bigs">
+${big("訪問者", t.visitors, "ブラウザ単位")}
+${big("PV", t.pv)}
+${big("新規登録", t.signup)}
+${big("ログイン完了", t.loginDone, "新規＋再ログイン")}
+${big("領主IDを登録", t.linked, "初めて登録した人")}
+${big("APIキーを登録", t.keyed, "＝ADVANCEDへの最後の一歩")}
+</div>
+<div class="flow">ログイン：<span>押した <b>${num(t.funnel.start)}</b></span>→<span>画面から戻った <b>${num(t.funnel.back)}</b></span>→<span>完了 <b>${num(t.funnel.done)}</b></span>${t.funnel.error ? `<span class="down">失敗 <b>${num(t.funnel.error)}</b></span>` : ""}</div>
+<p class="muted">今日の数は0時からいままでの途中経過です。7日平均より多い数字は緑。「昨日」は1日分なので、夜になるまでは今日の方が少なく見えます。</p></section>
+
 ${enough ? "" : `<p class="warn">PVの計測はまだ ${h.daysWithData}日分です。7日たまるまで平均・試算は小さく出ます。</p>`}
-<div class="card"><h2>直近7日の平均（今日を除く）</h2><div class="kpis">
+<section class="card" id="week"><h2>直近7日の1日平均（今日を除く）</h2>
+<h3>アクセス</h3><div class="kpis">
 ${kpi("PV／日", num(Math.round(h.pvPerDay)), "ログイン中 " + num(Math.round(h.pvInPerDay)))}
 ${kpi("訪問者／日", fixed(h.visitorsPerDay), "ブラウザ単位")}
 ${kpi("セッション／日", fixed(h.sessionsPerDay), "30分あいたら別")}
 ${kpi("PV／訪問者", fixed(h.pvPerVisitor, 2))}
-${kpi("PV／セッション", fixed(h.pvPerSession, 2))}
 ${kpi("再訪率", fmt(h.revisitRate, "%"), "前にも来たことがある訪問者")}
 ${kpi("今週の訪問者", num(h.weekVisitors), h.lastWeekVisitors == null ? "月曜から・ブラウザ単位" : "先週 " + num(h.lastWeekVisitors))}
 ${kpi("今月の訪問者", num(h.monthVisitors), h.lastMonthVisitors == null ? "1日から・ブラウザ単位" : "先月 " + num(h.lastMonthVisitors))}
+</div>
+<h3>ログインユーザー</h3><div class="kpis">
 ${kpi("ログインDAU", fixed(h.dauAvg7), "今日 " + num(growth.active.dauToday))}
-${kpi("ログインWAU／MAU", num(h.wau) + " / " + num(h.mau))}
+${kpi("WAU／MAU", num(h.wau) + " / " + num(h.mau))}
 ${kpi("PV／ログインユーザー", fixed(h.pvPerActiveUser, 1))}
 ${kpi("翌日も来た", fmt(h.d1, "%"), growth.active.d1.kept + " / " + growth.active.d1.base + "人")}
 ${kpi("7日後も来た", fmt(h.d7, "%"), growth.active.d7.kept + " / " + growth.active.d7.base + "人")}
-</div></div>
-<div class="card"><h2>PV（日ごと・35日）</h2>${bars(growth.traffic.daily.slice(0, 35), "pv")}<div class="scroll"><table><thead><tr><th>日付</th><th>PV</th><th>ログイン中</th><th>広告あり</th><th>訪問者</th><th>セッション</th><th>新規</th><th>再訪</th></tr></thead><tbody>${growth.traffic.daily.slice(0, 14).map(d => `<tr><td>${esc(d.day.slice(5))}</td><td>${num(d.pv)}</td><td>${num(d.pvIn)}</td><td>${num(d.adPv)}</td><td>${num(d.visitors)}</td><td>${num(d.sessions)}</td><td>${num(d.retNew)}</td><td>${num(d.ret1 + d.ret7 + d.ret30 + d.retOld)}</td></tr>`).join("")}</tbody></table></div></div>
-${sourcesCard(growth.traffic)}<div class="card"><h2>よく見られているページ（62日）</h2>${groups.length ? `<table><thead><tr><th>ページ</th><th>PV</th><th>割合</th><th>ログイン中</th></tr></thead><tbody>${groups.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td>${num(v.in + v.out)}</td><td>${pct(v.in + v.out, groupTotal)}</td><td>${pct(v.in, v.in + v.out)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}</div>
-<div class="card"><h2>広告収益の試算（目標 月${num(GOAL_YEN)}円）</h2>
+</div>
+<p class="muted">「実測」はEagleEyeが数えた値、「試算」は仮定から計算した値です。PVは JavaScript が動くブラウザで開かれた回数（ボット・管理画面を除く）。日付は日本時間。</p></section>
+
+<section class="card" id="daily"><h2>日ごとの推移</h2>${bars(growth.traffic.daily.slice(0, 35), "pv")}<p class="muted">棒グラフはPV（35日）。表は14日。</p><div class="scroll"><table><thead><tr><th>日付</th><th>訪問者</th><th>PV</th><th>新規登録</th><th>領主ID</th><th>APIキー</th><th>ログイン中PV</th><th>再訪</th></tr></thead><tbody>${growth.traffic.daily.slice(0, 14).map(d => { const e = evDay(d.day); return `<tr><td>${esc(d.day.slice(5))}</td><td>${num(d.visitors)}</td><td>${num(d.pv)}</td><td>${e.signup ? num(e.signup) : "—"}</td><td>${e.linked ? num(e.linked) : "—"}</td><td>${e.keyed ? num(e.keyed) : "—"}</td><td>${num(d.pvIn)}</td><td>${num(d.ret1 + d.ret7 + d.ret30 + d.retOld)}</td></tr>`; }).join("")}</tbody></table></div><p class="muted">新規登録・領主ID・APIキーは直近8日だけ数えます（それより前は「—」）。</p></section>
+
+<div id="sources">${sourcesCard(growth.traffic)}</div>
+<details class="card"><summary>よく見られているページ（62日）</summary>${groups.length ? `<table><thead><tr><th>ページ</th><th>PV</th><th>割合</th><th>ログイン中</th></tr></thead><tbody>${groups.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td>${num(v.in + v.out)}</td><td>${pct(v.in + v.out, groupTotal)}</td><td>${pct(v.in, v.in + v.out)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}</details>
+
+<div id="more"></div>
+<details class="card"><summary>広告収益の試算（目標 月${num(GOAL_YEN)}円）</summary>
 <p class="muted">月のPV＝直近7日の1日平均×30。RPM＝1000PVあたりの収益（仮定）。「いま」は広告を出している公開ページだけ、「ログイン後も」は審査後にログイン後のページにも出した場合（管理・ログイン画面は除く）。</p>
 <div class="scroll"><table><thead><tr><th>RPM（仮定）</th><th>いま</th><th>ログイン後も</th><th>目標に必要なPV／日</th></tr></thead><tbody>${sim.rows.map(r => `<tr><td>${r.rpm}円</td><td>${num(r.nowAdOnly)}円</td><td>${num(r.allPages)}円</td><td>${num(r.needPvPerDay)}</td></tr>`).join("")}</tbody></table></div>
 <div class="kpis" style="margin-top:10px">
@@ -457,12 +544,12 @@ ${kpi("目標に必要なPV／日", num(sim.needPvPerDay), sim.basis === "measur
 ${kpi("いまのPVとの差", sim.gapRatio ? "×" + fixed(sim.gapRatio, 0) : "—", "必要PV ÷ いまの1日PV", "試算")}
 </div>
 <form method="post" action="/api/owner/growth/revenue" id="rev"><input name="yen" inputmode="numeric" placeholder="実際の収益（円）" style="width:150px"><input name="from" type="date"><span>〜</span><input name="to" type="date"><button>保存</button></form>
-<p class="muted">AdSenseの管理画面の「見積もり収益額」を期間ごと入力すると、同じ期間の「広告ありPV」から実測RPMを出します。広告のクリックや表示を目的にした仕組みは作りません。</p></div>
-<div class="card"><h2>前後比較（基準との差）</h2>
-${base ? `<p class="muted">基準「${esc(base.label)}」（${esc(jstDay(base.created_at * 1000))} 保存）と、いまの直近7日平均を並べます。差は施策の効果とは限りません（季節・イベント・告知などの影響も入ります）。</p><div class="scroll"><table><thead><tr><th>指標</th><th>基準</th><th>いま</th><th>差</th></tr></thead><tbody>${COMPARE_KEYS.map(([k, t, d]) => { const b = base.summary?.[k], c = h[k]; const diff = b != null && c != null && Number.isFinite(b) && Number.isFinite(c) ? c - b : null; return `<tr><td>${esc(t)}</td><td>${fmt(b, d)}</td><td>${fmt(c, d)}</td><td class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff == null ? "—" : (diff > 0 ? "+" : "") + fmt(diff, d)}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">まだ基準がありません。施策を出す前に保存しておくと、あとで前後を比べられます。</p>`}
+<p class="muted">AdSenseの管理画面の「見積もり収益額」を期間ごと入力すると、同じ期間の「広告ありPV」から実測RPMを出します。広告のクリックや表示を目的にした仕組みは作りません。</p></details>
+<details class="card"><summary>前後比較（基準との差）</summary>
+${base ? `<p class="muted">基準「${esc(base.label)}」（${esc(jstDay(base.created_at * 1000))} 保存）と、いまの直近7日平均を並べます。差は施策の効果とは限りません（季節・イベント・告知などの影響も入ります）。</p><div class="scroll"><table><thead><tr><th>指標</th><th>基準</th><th>いま</th><th>差</th></tr></thead><tbody>${COMPARE_KEYS.map(([k, tt, d]) => { const b = base.summary?.[k], c = h[k]; const diff = b != null && c != null && Number.isFinite(b) && Number.isFinite(c) ? c - b : null; return `<tr><td>${esc(tt)}</td><td>${fmt(b, d)}</td><td>${fmt(c, d)}</td><td class="${diff > 0 ? "up" : diff < 0 ? "down" : ""}">${diff == null ? "—" : (diff > 0 ? "+" : "") + fmt(diff, d)}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">まだ基準がありません。施策を出す前に保存しておくと、あとで前後を比べられます。</p>`}
 <form method="post" action="/api/owner/growth/baseline" id="bl"><input name="label" maxlength="60" placeholder="名前（例：作戦リリース前）" style="flex:1"><button>いまの値を基準に保存</button></form>
-${growth.baselines.length > 1 ? `<p class="muted">これまでの基準：${growth.baselines.map(b => esc(b.label)).join("・")}</p>` : ""}</div>
-<div class="card"><h2>今日の作戦（14日）</h2>${(growth.missions || []).length ? `<table><thead><tr><th>日付</th><th>使った人</th><th>3つ全部達成</th><th>達成率</th></tr></thead><tbody>${growth.missions.map(m => `<tr><td>${esc(m.day.slice(5))}</td><td>${num(m.users)}</td><td>${num(m.cleared)}</td><td>${pct(m.cleared, m.users)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}<p class="muted">公開前はオーナーだけが対象です。</p></div>
+${growth.baselines.length > 1 ? `<p class="muted">これまでの基準：${growth.baselines.map(b => esc(b.label)).join("・")}</p>` : ""}</details>
+<details class="card"><summary>今日の作戦（14日）</summary>${(growth.missions || []).length ? `<table><thead><tr><th>日付</th><th>使った人</th><th>3つ全部達成</th><th>達成率</th></tr></thead><tbody>${growth.missions.map(x => `<tr><td>${esc(x.day.slice(5))}</td><td>${num(x.users)}</td><td>${num(x.cleared)}</td><td>${pct(x.cleared, x.users)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}<p class="muted">公開前はオーナーだけが対象です。</p></details>
 <script>
 (function(){
   function send(form,url,pick){form.addEventListener("submit",function(e){e.preventDefault();var b=form.querySelector("button");b.disabled=true;fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(pick()),credentials:"same-origin"}).then(function(r){return r.json()}).then(function(x){if(x&&x.ok)location.reload();else{alert("保存できませんでした："+(x&&x.error||""));b.disabled=false}}).catch(function(){alert("保存できませんでした");b.disabled=false})})}
