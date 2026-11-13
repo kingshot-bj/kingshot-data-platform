@@ -188,10 +188,10 @@ test("画面：実測・試算の札、基準の保存と前後比較（因果�
   await assert.rejects(() => saveMeasuredRevenue(db, { yen: 10, from: day(1), to: day(3) }), /INVALID_RANGE/);
   await saveMeasuredRevenue(db, { yen: 300, from: day(3), to: day(1), adPv: 3000 });
   assert.match(renderGrowthPage(await loadGrowth(db, { nowMs: NOW })), /100円/);
-  // 画面を開いたときの読み取りは4文だけ
+  // 画面を開いたときの読み取りは8文だけ（アクセス4文＋今日の成果用の小さい表4文）
   const reads = db.calls.length;
   await loadGrowth(db, { nowMs: NOW });
-  assert.equal(db.calls.length - reads, 4);
+  assert.equal(db.calls.length - reads, 8);
 });
 
 test("オーナーだけ：画面・保存APIの入口", () => {
@@ -273,4 +273,33 @@ test("プライバシーポリシー：アクセスの集計（来た元はホ�
   assert.match(legal, /<b>アクセスの集計<\/b>：/);
   assert.match(legal, /来た元のURLやホスト名、個人を区別するIDは保存しません。検索した言葉などURLの中身は送信しません。/);
   assert.doesNotMatch(legal, /画面の設定を保存します。サーバーには送信しません。/);
+});
+
+test("今日の成果：今日・昨日・7日平均、登録まわりとログインの流れ。作業用アカウントは数えない", async () => {
+  const { loadDailyEvents, todaySummary } = await import("../src/growth.js");
+  const today = day(0), y = day(1);
+  const calls = [];
+  const db = { prepare: sql => ({ bind: (...a) => ({ all: async () => {
+    calls.push(sql);
+    if (sql.includes("FROM users")) return { results: [{ d: today, n: 3 }, { d: y, n: 1 }] };
+    if (sql.includes("user_player_links")) return { results: [{ d: today, n: 2 }] };
+    if (sql.includes("api_pool_keys")) return { results: [{ d: today, n: 1 }] };
+    if (sql.includes("funnel_daily")) return { results: [{ d: today, step: "login_start", n: 5 }, { d: today, step: "google_start", n: 1 }, { d: today, step: "discord_return", n: 3 }, { d: today, step: "login_new", n: 2 }, { d: today, step: "login_returning", n: 1 }, { d: today, step: "login_error", n: 1 }] };
+    return { results: [] };
+  } }) }) };
+  const ev = await loadDailyEvents(db, { nowMs: NOW });
+  assert.equal(calls.length, 4, "小さい表を4文だけ");
+  assert.ok(calls.filter(q => /FROM users|user_player_links/.test(q)).every(q => q.includes("<> 'claude-agent'")), "作業用アカウントは数えない");
+  assert.deepEqual([ev[today].signup, ev[today].linked, ev[today].keyed, ev[y].signup], [3, 2, 1, 1]);
+  const daily = Array.from({ length: 8 }, (_, i) => ({ day: day(i), pv: i === 0 ? 50 : 70, visitors: i === 0 ? 9 : 10, pvIn: 0, ret1: 0, ret7: 0, ret30: 0, retOld: 0 }));
+  const t = todaySummary({ traffic: { daily }, events: ev });
+  assert.deepEqual(t.signup, { today: 3, yesterday: 1, avg7: 1 / 7 });
+  assert.deepEqual(t.pv, { today: 50, yesterday: 70, avg7: 70 });
+  assert.deepEqual(t.funnel, { start: 6, back: 3, done: 3, error: 1 });
+  const html = renderGrowthPage({ traffic: { daily: daily.concat(Array.from({ length: 54 }, (_, i) => ({ day: day(i + 8), pv: 0, visitors: 0, pvIn: 0, ret1: 0, ret7: 0, ret30: 0, retOld: 0, weekly: 0, monthly: 0, sessions: 0, revenuePv: 0, adPv: 0 }))), groups: {}, sources: { all: {}, last7: {} }, landing: { all: {}, last7: {} } }, active: { dauToday: 0, dauAvg7: 0, wau: 0, mau: 0, d1: { kept: 0, base: 0, rate: null }, d7: { kept: 0, base: 0, rate: null } }, events: ev, baselines: [], nowMs: NOW });
+  assert.match(html, /id="today"><h2>今日の成果/);
+  assert.match(html, /<small>新規登録<\/small><b class="up">3<\/b><em>昨日 1・7日平均 0\.1/, "7日平均より多ければ緑");
+  assert.match(html, /押した <b>6<\/b><\/span>→<span>画面から戻った <b>3<\/b><\/span>→<span>完了 <b>3<\/b><\/span><span class="down">失敗 <b>1<\/b>/);
+  assert.ok(html.indexOf('id="today"') < html.indexOf('id="week"'), "今日の成果がいちばん上");
+  assert.match(html, /<details class="card"><summary>広告収益の試算/, "収益・比較・作戦は閉じておく");
 });
