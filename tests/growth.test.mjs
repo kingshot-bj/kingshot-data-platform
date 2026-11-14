@@ -249,7 +249,8 @@ test("来た元は新しいセッションの時だけ、分類の名前と最�
   assert.deepEqual(t.sources.all, { search: 8, discord: 2 });
   assert.deepEqual(t.landing.last7, { kingdom: 4 });
   const card = sourcesCard(t);
-  assert.match(card, /検索（Google・Yahoo!・Bingなど）<\/td><td>3<\/td><td>60%<\/td><td>8<\/td>/);
+  // 表は短い名前（スマホではみ出さない）。元の名前は title に残す（11/14〜）。
+  assert.match(card, /<td title="検索（Google・Yahoo!・Bingなど）">検索<\/td><td>3<\/td><td>60%<\/td><td>8<\/td>/);
   assert.match(card, /<td>王国<\/td><td>4<\/td>/);
   // ブラウザからはホスト名だけ（URLの残りは送らない）、新しいセッションの時だけ
   const js = pageViewBeaconScript();

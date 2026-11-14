@@ -92,6 +92,8 @@ export async function loadFunnel(db, { days = 14, nowMs = Date.now() } = {}) {
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (a, b) => b > 0 ? Math.round(a / b * 100) + "%" : "—";
 
+// 日ごとの表の見出し（スマホで折り返さない短い名前。元の名前は title に残す）。
+const FUNNEL_SHORT = Object.freeze({ login_start: "Discordへ", google_start: "Googleへ", login_cancelled: "取消", login_new: "新規", login_returning: "再ログイン", discord_return: "D戻り", google_return: "G戻り", google_done: "G完了", login_error: "失敗", upgrade_popup_shown: "昇格表示", upgrade_popup_click: "昇格押下" });
 export function renderFunnelCard(f) {
   if (!f) return `<div class="card"><h2>登録までの流れ</h2><p class="muted">読み込めませんでした。</p></div>`;
   const t = f.totals, c = f.cohort;
@@ -105,9 +107,9 @@ export function renderFunnelCard(f) {
     ["APIキーを登録", c.keyed, pct(c.keyed, c.users)],
     ["ADVANCED以上", c.advanced, pct(c.advanced, c.users)]
   ];
-  const rows = f.daily.filter(d => FUNNEL_STEPS.some(s => d[s.key])).map(d => `<tr><td>${esc(d.day.slice(5))}</td>${FUNNEL_STEPS.map(s => `<td>${d[s.key]}</td>`).join("")}</tr>`).join("");
+  const rows = f.daily.filter(d => FUNNEL_STEPS.some(s => d[s.key])).map(d => `<tr><td style="position:sticky;left:0;z-index:1;padding-right:10px;background:var(--ee-panel,#111c33);box-shadow:1px 0 0 var(--ee-border-soft,#1e2b47)">${esc(d.day.slice(5))}</td>${FUNNEL_STEPS.map(s => `<td>${d[s.key]}</td>`).join("")}</tr>`).join("");
   return `<div class="card"><h2>登録までの流れ（直近${f.days}日）</h2>
 <table><tbody>${steps.map(([label, n, p]) => `<tr><th>${esc(label)}</th><td>${Number(n) || 0}</td><td class="muted">${esc(p)}</td></tr>`).join("")}</tbody></table>
 <p class="muted">新しくログインした人の割合は「ボタンを押した回数」に対して（再ログインも押した回数に含まれます）。領主ID・APIキー・ADVANCEDの割合は、この期間に初めてログインした${c.users}人に対して。Discordの画面で取り消した回数：${t.login_cancelled}回。</p>
-${rows ? `<table><thead><tr><th>日付</th>${FUNNEL_STEPS.map(s => `<th>${esc(s.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">まだ記録がありません（この機能の公開後から数えます）。</p>`}</div>`;
+${rows ? `<div class="ee-funnel-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px"><table class="ee-funnel-daily" style="width:auto;min-width:100%;white-space:nowrap"><thead><tr><th style="position:sticky;left:0;z-index:1;padding-right:10px;background:var(--ee-panel,#111c33);box-shadow:1px 0 0 var(--ee-border-soft,#1e2b47)">日付</th>${FUNNEL_STEPS.map(s => `<th title="${esc(s.label)}">${esc(FUNNEL_SHORT[s.key] || s.label)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div><p class="muted">表は横にスクロールできます。</p>` : `<p class="muted">まだ記録がありません（この機能の公開後から数えます）。</p>`}</div>`;
 }
