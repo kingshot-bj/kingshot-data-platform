@@ -102,7 +102,7 @@ test("成長ダッシュボード：SNSごとの新規登録（7日）と登録�
   const events = { "2026-11-14": { funnel: { "new_src:tiktok": 2, login_new: 5 } }, "2026-11-13": { funnel: { "new_src:tiktok": 1, "new_src:x": 1 } } };
   assert.deepEqual(signupsBySource(events), { tiktok: 3, x: 1 });
   const card = sourcesCard({ sources: { all: { tiktok: 30, search: 50 }, last7: { tiktok: 30, search: 50 } }, landing: { all: {}, last7: {} } }, events);
-  assert.match(card, /新規登録（7日）/);
-  assert.match(card, /<td>TikTok<\/td><td>30<\/td><td>[^<]*<\/td><td>30<\/td><td>3<\/td><td>10%<\/td>/);
-  assert.match(card, /検索[^<]*<\/td>(<td>[^<]*<\/td>){3}<td>—<\/td><td>—<\/td>/, "SNS以外は登録を数えない");
+  assert.match(card, /title="新規登録（7日）"/);
+  assert.match(card, /<td title="TikTok">TikTok<\/td><td>30<\/td><td>[^<]*<\/td><td>30<\/td><td>3<\/td><td>10%<\/td>/);
+  assert.match(card, />検索<\/td>(<td>[^<]*<\/td>){3}<td>—<\/td><td>—<\/td>/, "SNS以外は登録を数えない");
 });

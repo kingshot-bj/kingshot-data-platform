@@ -468,6 +468,8 @@ export function signupsBySource(events, { days = 7 } = {}) {
   return out;
 }
 
+// 表に出す短い名前（スマホで横にはみ出さないように）。元の名前は title に残す。
+const SOURCE_SHORT = Object.freeze({ search: "検索", x: "X", social: "ほかのSNS", ai: "AI", site: "ほかのサイト", tagged: "告知リンク", direct: "直接・アプリ" });
 export function sourcesCard(traffic, events = null) {
   const src = traffic?.sources || { all: {}, last7: {} }, land = traffic?.landing || { all: {}, last7: {} };
   const signup7 = signupsBySource(events);
@@ -475,11 +477,11 @@ export function sourcesCard(traffic, events = null) {
   const total7 = Object.values(src.last7).reduce((a, b) => a + b, 0), totalAll = Object.values(src.all).reduce((a, b) => a + b, 0);
   if (!totalAll) return `<div class="card"><h2>どこから来たか</h2><p class="muted">まだ記録がありません（新しいセッションの始まりに、来た元の分類だけを数えます）。</p></div>`;
   const srcRows = TRAFFIC_SOURCES.filter(x => src.all[x.key]).sort((a, b) => (src.last7[b.key] || 0) - (src.last7[a.key] || 0) || src.all[b.key] - src.all[a.key])
-    .map(x => `<tr><td>${esc(x.label)}</td><td>${num(src.last7[x.key] || 0)}</td><td>${pct(src.last7[x.key] || 0, total7)}</td><td>${num(src.all[x.key])}</td>${signupCell(x.key)}</tr>`).join("");
+    .map(x => `<tr><td title="${esc(x.label)}">${esc(SOURCE_SHORT[x.key] || x.label)}</td><td>${num(src.last7[x.key] || 0)}</td><td>${pct(src.last7[x.key] || 0, total7)}</td><td>${num(src.all[x.key])}</td>${signupCell(x.key)}</tr>`).join("");
   const label = k => ROUTE_GROUPS.find(g => g.key === k)?.label || "その他";
   const landRows = Object.entries(land.all).sort((a, b) => (land.last7[b[0]] || 0) - (land.last7[a[0]] || 0) || b[1] - a[1])
     .map(([k, n]) => `<tr><td>${esc(label(k))}</td><td>${num(land.last7[k] || 0)}</td><td>${num(n)}</td></tr>`).join("");
-  return `<div class="card"><h2>どこから来たか（新しいセッション）</h2><table><thead><tr><th>来た元</th><th>7日</th><th>割合</th><th>62日</th><th>新規登録（7日）</th><th>登録率</th></tr></thead><tbody>${srcRows}</tbody></table>
+  return `<div class="card"><h2>どこから来たか（新しいセッション）</h2><div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:100%"><thead><tr><th>来た元</th><th>7日</th><th>割合</th><th>62日</th><th title="新規登録（7日）">登録</th><th>登録率</th></tr></thead><tbody>${srcRows}</tbody></table></div>
 <h2 style="margin-top:14px">最初に開いたページ</h2><table><thead><tr><th>ページ</th><th>7日</th><th>62日</th></tr></thead><tbody>${landRows}</tbody></table>
 <p class="muted">告知するときは URL の後ろに <code>?ref=discord</code>・<code>?ref=x</code> などを付けると、ここで分けて数えられます。新規登録は、SNSのリンク（<code>?ref=</code>）から来て30日以内に初めてログインした人の数です（11/14〜）。登録率＝新規登録÷新しいセッション（7日）。</p></div>`;
 }
