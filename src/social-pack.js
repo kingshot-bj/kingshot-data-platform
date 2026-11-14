@@ -7,6 +7,7 @@
 import { compactNumber } from "./public-pages.js";
 import { currentKvkSeason, loadSeasonMatchups } from "./kvk-matchups-page.js";
 import { kvkEndedAt } from "./home-summary.js";
+import { renderPlansSection } from "./social-plans.js";
 
 export const SOCIAL_FORMATS = Object.freeze({ story: { w: 1080, h: 1920, rows: 10 }, square: { w: 1080, h: 1080, rows: 5 } });
 export const SOCIAL_PLATFORMS = Object.freeze(["x", "discord", "youtube", "tiktok", "instagram"]);
@@ -192,6 +193,7 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}.lead{color:v
 .caps{flex:1;min-width:0;display:grid;gap:8px}.cap-h{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:3px}.cap textarea{width:100%;box-sizing:border-box;font:12px/1.5 system-ui;background:var(--ee-bg,#0a1424);color:inherit;border:1px solid var(--ee-border-soft,#223b57);border-radius:8px;padding:6px;resize:vertical}
 .copy{font:700 12px system-ui;padding:4px 10px;border-radius:8px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-panel-raised,#172a40);color:inherit}
 .dl a{display:inline-block;margin-right:10px;font-weight:700}.muted{color:var(--ee-subtext,#91a7bf);font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px;border-bottom:1px solid var(--ee-border-soft,#223b57)}td:nth-child(-n+2){white-space:nowrap}
+.plan{border-top:1px solid var(--ee-border-soft,#223b57);padding:10px 0}.plan summary{cursor:pointer;font-size:14px;line-height:1.6}.plan .caps{margin-top:8px}.badge{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:11px;background:rgba(250,204,21,.14);color:var(--ee-gold,#facc15)}
 @media (max-width:640px){.row{flex-direction:column}}
 </style></head><body><main class="wrap"><a href="/owner">← OWNER管理</a>・<a href="/owner/growth">成長ダッシュボード</a>
 <h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">実際のデータから毎週月曜に自動で作ります。下の「今すぐ作る」でいつでも作れます（投稿はしません）。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
@@ -199,6 +201,7 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}.lead{color:v
 <section class="card"><h2>ショート動画（YouTube・TikTok・Instagram 用）</h2>${video ? `<video src="${video}" controls playsinline style="width:216px;border-radius:10px"></video><p class="dl"><a href="${video}" download>動画をダウンロード</a></p>` : '<p class="muted">まだ作られていません（毎週月曜に自動で作ります。GitHub の「SNS weekly pack」から手動でも動かせます）。</p>'}</section>
 <section class="card"><h2>自動投稿の結果</h2>${postRows}</section>
 ${items || '<p class="muted">今週のネタを作れるデータがありません。</p>'}
+${renderPlansSection({ origin: pack.origin })}
 <script>(()=>{const b=document.getElementById("run-btn"),m=document.getElementById("run-msg");let was=false,timer=null;
 const label={success:"成功",failure:"失敗",cancelled:"中止"};
 const show=d=>{if(!d||!d.ok){b.disabled=true;m.textContent=d&&d.error==="GITHUB_TOKEN_REJECTED"?"GitHub の鍵が使えません（SOCIAL_GITHUB_DISPATCH_TOKEN を確認）":"GitHub の状態を読めませんでした";return}

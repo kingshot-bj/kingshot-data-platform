@@ -49,6 +49,8 @@ export const TRAFFIC_SOURCES = Object.freeze([
   { key: "line", label: "LINE" },
   { key: "youtube", label: "YouTube" },
   { key: "reddit", label: "Reddit" },
+  { key: "tiktok", label: "TikTok" },
+  { key: "instagram", label: "Instagram" },
   { key: "social", label: "そのほかのSNS" },
   { key: "ai", label: "AI（ChatGPTなど）" },
   { key: "site", label: "ほかのサイト" },
@@ -64,10 +66,12 @@ const HOST_RULES = [
   ["line", /(^|\.)(line\.me|line-apps\.com)$/],
   ["youtube", /(^|\.)(youtube\.com|youtu\.be)$/],
   ["reddit", /(^|\.)reddit\.com$/],
-  ["social", /(^|\.)(facebook\.com|instagram\.com|threads\.net|tiktok\.com|bsky\.app|note\.com|5ch\.net)$/]
+  ["tiktok", /(^|\.)tiktok\.com$/],
+  ["instagram", /(^|\.)instagram\.com$/],
+  ["social", /(^|\.)(facebook\.com|threads\.net|bsky\.app|note\.com|5ch\.net)$/]
 ];
 // ?ref=discord のような告知リンクの印（決まった名前だけ受け付ける。ほかは「告知リンク」にまとめる）。
-const TAG_TO_SOURCE = { discord: "discord", x: "x", twitter: "x", line: "line", youtube: "youtube", yt: "youtube", reddit: "reddit" };
+const TAG_TO_SOURCE = { discord: "discord", x: "x", twitter: "x", line: "line", youtube: "youtube", yt: "youtube", reddit: "reddit", tiktok: "tiktok", tt: "tiktok", instagram: "instagram", ig: "instagram" };
 export function classifyTrafficSource({ refHost = "", tag = "", selfHost = "" } = {}) {
   const t = String(tag || "").toLowerCase();
   if (t) return TAG_TO_SOURCE[t] || "tagged";
