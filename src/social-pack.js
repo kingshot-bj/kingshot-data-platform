@@ -194,10 +194,23 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}.lead{color:v
 .dl a{display:inline-block;margin-right:10px;font-weight:700}.muted{color:var(--ee-subtext,#91a7bf);font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px;border-bottom:1px solid var(--ee-border-soft,#223b57)}td:nth-child(-n+2){white-space:nowrap}
 @media (max-width:640px){.row{flex-direction:column}}
 </style></head><body><main class="wrap"><a href="/owner">← OWNER管理</a>・<a href="/owner/growth">成長ダッシュボード</a>
-<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">実際のデータから毎週月曜に自動で作ります。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
+<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">実際のデータから毎週月曜に自動で作ります。下の「今すぐ作る」でいつでも作れます（投稿はしません）。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
+<section class="card" id="run"><h2>今すぐ作る<small>最新のデータで画像・動画・投稿文を作り直します（10分ほど）。SNSへの投稿はしません。同じ週の分は上書きされます。</small></h2><button type="button" class="copy" id="run-btn" disabled>今すぐ作る</button> <span class="muted" id="run-msg">状態を確認しています…</span></section>
 <section class="card"><h2>ショート動画（YouTube・TikTok・Instagram 用）</h2>${video ? `<video src="${video}" controls playsinline style="width:216px;border-radius:10px"></video><p class="dl"><a href="${video}" download>動画をダウンロード</a></p>` : '<p class="muted">まだ作られていません（毎週月曜に自動で作ります。GitHub の「SNS weekly pack」から手動でも動かせます）。</p>'}</section>
 <section class="card"><h2>自動投稿の結果</h2>${postRows}</section>
 ${items || '<p class="muted">今週のネタを作れるデータがありません。</p>'}
+<script>(()=>{const b=document.getElementById("run-btn"),m=document.getElementById("run-msg");let was=false,timer=null;
+const label={success:"成功",failure:"失敗",cancelled:"中止"};
+const show=d=>{if(!d||!d.ok){b.disabled=true;m.textContent=d&&d.error==="GITHUB_TOKEN_REJECTED"?"GitHub の鍵が使えません（SOCIAL_GITHUB_DISPATCH_TOKEN を確認）":"GitHub の状態を読めませんでした";return}
+if(!d.configured){b.disabled=true;m.textContent="未設定：Worker のシークレットに SOCIAL_GITHUB_DISPATCH_TOKEN がありません";return}
+const last=d.last?("前回 "+new Date(d.last.createdAt).toLocaleString("ja-JP")+"："+(d.running?"作成中":(label[d.last.conclusion]||d.last.conclusion||d.last.status))):"まだ実行がありません";
+b.disabled=d.running;m.innerHTML="";m.append(last);if(d.last&&d.last.url&&String(d.last.url).startsWith("https://github.com/")){const a=document.createElement("a");a.href=d.last.url;a.target="_blank";a.rel="noopener";a.textContent=" 詳細";m.append(a)}
+if(was&&!d.running&&d.last&&d.last.conclusion==="success"){m.append("（できました。再読み込みすると反映されます）")}
+was=d.running;clearTimeout(timer);if(d.running)timer=setTimeout(load,30000)};
+const load=()=>fetch("/owner/social/run",{credentials:"same-origin"}).then(r=>r.json()).then(show).catch(()=>show(null));
+b.addEventListener("click",async()=>{b.disabled=true;m.textContent="依頼しています…";try{const r=await fetch("/owner/social/run",{method:"POST",credentials:"same-origin"});const d=await r.json();
+if(d.ok){m.textContent="作成を始めました。10分ほどで終わります";was=true;timer=setTimeout(load,15000)}else if(d.error==="ALREADY_RUNNING"){m.textContent="いま作成中です";was=true;timer=setTimeout(load,30000)}else{show({ok:false,error:d.error})}}catch(e){show(null)}});
+load()})()</script>
 <script>document.querySelectorAll(".copy").forEach(b=>b.addEventListener("click",async()=>{const t=b.closest(".cap").querySelector("textarea");try{await navigator.clipboard.writeText(t.value);b.textContent="コピーしました"}catch(e){t.select();document.execCommand("copy");b.textContent="コピーしました"}setTimeout(()=>{b.textContent="コピー"},1500)}));</script>
 </main></body></html>`;
 }
