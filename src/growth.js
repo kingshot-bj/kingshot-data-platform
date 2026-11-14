@@ -71,7 +71,11 @@ const HOST_RULES = [
   ["social", /(^|\.)(facebook\.com|threads\.net|bsky\.app|note\.com|5ch\.net)$/]
 ];
 // ?ref=discord のような告知リンクの印（決まった名前だけ受け付ける。ほかは「告知リンク」にまとめる）。
-const TAG_TO_SOURCE = { discord: "discord", x: "x", twitter: "x", line: "line", youtube: "youtube", yt: "youtube", reddit: "reddit", tiktok: "tiktok", tt: "tiktok", instagram: "instagram", ig: "instagram" };
+export const TAG_TO_SOURCE = { discord: "discord", x: "x", twitter: "x", line: "line", youtube: "youtube", yt: "youtube", reddit: "reddit", tiktok: "tiktok", tt: "tiktok", instagram: "instagram", ig: "instagram" };
+// SNSから来た人の新規登録を数えるための印（Cookie）。SNSの ?ref= で来たときだけ、SNSの名前（分類名）を30日残す。
+// 個人を特定する情報は入れない。新規ログインのとき funnel_daily に「new_src:SNS名」を1つ足して消す（src/funnel.js）。
+export const SIGNUP_SOURCE_COOKIE = "ee_src";
+export const SIGNUP_SOURCES = Object.freeze([...new Set(Object.values(TAG_TO_SOURCE))]);
 export function classifyTrafficSource({ refHost = "", tag = "", selfHost = "" } = {}) {
   const t = String(tag || "").toLowerCase();
   if (t) return TAG_TO_SOURCE[t] || "tagged";
@@ -194,6 +198,8 @@ export function pageViewBeaconScript() {
   var o={p:location.pathname.slice(0,200),a:document.querySelector('script[src*="adsbygoogle.js"]')?1:0,st:st,f:f};
   // 新しいセッションの時だけ：来た元のホスト名（URLの残りは送らない）と、告知リンクの ?ref=
   if(f.s){try{var rh=document.referrer?new URL(document.referrer).hostname:"";if(rh&&rh!==location.hostname)o.rh=rh.slice(0,120)}catch(_){}try{var q=new URLSearchParams(location.search),t=q.get("ref")||q.get("utm_source")||"";if(/^[A-Za-z0-9_-]{1,20}$/.test(t))o.t=t.toLowerCase()}catch(_){}}
+  // SNSの ?ref= で来たら、SNSの名前だけを Cookie に30日残す（新規登録をSNSごとに数えるため）。
+  try{var sr=${JSON.stringify(TAG_TO_SOURCE)}[String(new URLSearchParams(location.search).get("ref")||"").toLowerCase()];if(sr)document.cookie="${SIGNUP_SOURCE_COOKIE}="+sr+";max-age=2592000;path=/;samesite=lax;secure"}catch(_){}
   var body=JSON.stringify(o);
   try{if(navigator.sendBeacon&&navigator.sendBeacon("/api/pv",new Blob([body],{type:"application/json"})))return}catch(_){}
   try{fetch("/api/pv",{method:"POST",headers:{"content-type":"application/json"},body:body,keepalive:true,credentials:"same-origin"})}catch(_){}
@@ -453,18 +459,29 @@ function bars(daily, key) {
 }
 
 // 来た元と最初に開いたページの表（新しいセッションの数）。
-export function sourcesCard(traffic) {
+// events：日ごとの登録まわりの数（loadDailyEvents。直近8日）。SNSごとの新規登録は funnel の「new_src:SNS名」。
+export function signupsBySource(events, { days = 7 } = {}) {
+  const out = {};
+  for (const day of Object.keys(events || {}).sort().reverse().slice(0, days))
+    for (const [step, n] of Object.entries(events[day]?.funnel || {}))
+      if (step.startsWith("new_src:")) { const k = step.slice(8); out[k] = (out[k] || 0) + (Number(n) || 0); }
+  return out;
+}
+
+export function sourcesCard(traffic, events = null) {
   const src = traffic?.sources || { all: {}, last7: {} }, land = traffic?.landing || { all: {}, last7: {} };
+  const signup7 = signupsBySource(events);
+  const signupCell = k => SIGNUP_SOURCES.includes(k) ? `<td>${num(signup7[k] || 0)}</td><td>${pct(signup7[k] || 0, src.last7[k] || 0)}</td>` : "<td>—</td><td>—</td>";
   const total7 = Object.values(src.last7).reduce((a, b) => a + b, 0), totalAll = Object.values(src.all).reduce((a, b) => a + b, 0);
   if (!totalAll) return `<div class="card"><h2>どこから来たか</h2><p class="muted">まだ記録がありません（新しいセッションの始まりに、来た元の分類だけを数えます）。</p></div>`;
   const srcRows = TRAFFIC_SOURCES.filter(x => src.all[x.key]).sort((a, b) => (src.last7[b.key] || 0) - (src.last7[a.key] || 0) || src.all[b.key] - src.all[a.key])
-    .map(x => `<tr><td>${esc(x.label)}</td><td>${num(src.last7[x.key] || 0)}</td><td>${pct(src.last7[x.key] || 0, total7)}</td><td>${num(src.all[x.key])}</td></tr>`).join("");
+    .map(x => `<tr><td>${esc(x.label)}</td><td>${num(src.last7[x.key] || 0)}</td><td>${pct(src.last7[x.key] || 0, total7)}</td><td>${num(src.all[x.key])}</td>${signupCell(x.key)}</tr>`).join("");
   const label = k => ROUTE_GROUPS.find(g => g.key === k)?.label || "その他";
   const landRows = Object.entries(land.all).sort((a, b) => (land.last7[b[0]] || 0) - (land.last7[a[0]] || 0) || b[1] - a[1])
     .map(([k, n]) => `<tr><td>${esc(label(k))}</td><td>${num(land.last7[k] || 0)}</td><td>${num(n)}</td></tr>`).join("");
-  return `<div class="card"><h2>どこから来たか（新しいセッション）</h2><table><thead><tr><th>来た元</th><th>7日</th><th>割合</th><th>62日</th></tr></thead><tbody>${srcRows}</tbody></table>
+  return `<div class="card"><h2>どこから来たか（新しいセッション）</h2><table><thead><tr><th>来た元</th><th>7日</th><th>割合</th><th>62日</th><th>新規登録（7日）</th><th>登録率</th></tr></thead><tbody>${srcRows}</tbody></table>
 <h2 style="margin-top:14px">最初に開いたページ</h2><table><thead><tr><th>ページ</th><th>7日</th><th>62日</th></tr></thead><tbody>${landRows}</tbody></table>
-<p class="muted">告知するときは URL の後ろに <code>?ref=discord</code>・<code>?ref=x</code> などを付けると、ここで分けて数えられます。</p></div>`;
+<p class="muted">告知するときは URL の後ろに <code>?ref=discord</code>・<code>?ref=x</code> などを付けると、ここで分けて数えられます。新規登録は、SNSのリンク（<code>?ref=</code>）から来て30日以内に初めてログインした人の数です（11/14〜）。登録率＝新規登録÷新しいセッション（7日）。</p></div>`;
 }
 
 export function renderGrowthPage(growth) {
@@ -535,7 +552,7 @@ ${kpi("7日後も来た", fmt(h.d7, "%"), growth.active.d7.kept + " / " + growth
 
 <section class="card" id="daily"><h2>日ごとの推移</h2>${bars(growth.traffic.daily.slice(0, 35), "pv")}<p class="muted">棒グラフはPV（35日）。表は14日。</p><div class="scroll"><table><thead><tr><th>日付</th><th>訪問者</th><th>PV</th><th>新規登録</th><th>領主ID</th><th>APIキー</th><th>ログイン中PV</th><th>再訪</th></tr></thead><tbody>${growth.traffic.daily.slice(0, 14).map(d => { const e = evDay(d.day); return `<tr><td>${esc(d.day.slice(5))}</td><td>${num(d.visitors)}</td><td>${num(d.pv)}</td><td>${e.signup ? num(e.signup) : "—"}</td><td>${e.linked ? num(e.linked) : "—"}</td><td>${e.keyed ? num(e.keyed) : "—"}</td><td>${num(d.pvIn)}</td><td>${num(d.ret1 + d.ret7 + d.ret30 + d.retOld)}</td></tr>`; }).join("")}</tbody></table></div><p class="muted">新規登録・領主ID・APIキーは直近8日だけ数えます（それより前は「—」）。</p></section>
 
-<div id="sources">${sourcesCard(growth.traffic)}</div>
+<div id="sources">${sourcesCard(growth.traffic, growth.events)}</div>
 <details class="card"><summary>よく見られているページ（62日）</summary>${groups.length ? `<table><thead><tr><th>ページ</th><th>PV</th><th>割合</th><th>ログイン中</th></tr></thead><tbody>${groups.map(([k, v]) => `<tr><td>${esc(label(k))}</td><td>${num(v.in + v.out)}</td><td>${pct(v.in + v.out, groupTotal)}</td><td>${pct(v.in, v.in + v.out)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">まだ記録がありません。</p>`}</details>
 
 <div id="more"></div>
