@@ -52,8 +52,9 @@ jobs:
           path: social-out
           retention-days: 30
       # R2 だけに書ける鍵（CLOUDFLARE_R2_API_TOKEN）を使う。D1 用の鍵（CLOUDFLARE_API_TOKEN）には R2 の権限がない。
+      # 保存に失敗したら実行全体を赤にする（continue-on-error は付けない）。鍵が未設定のときだけ警告で済ませる。
+      # 画像・動画はこの前の手順で Artifact に残してあるので、ここで止まっても失われない。
       - name: Save to R2 (shown on /owner/social)
-        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
