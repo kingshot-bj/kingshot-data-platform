@@ -24,17 +24,39 @@ function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 
-// One on-demand MightPulse refresh per alliance per 10 minutes, shared by all
-// viewers and independent of whether the alliance is in alliance_catalog.
-const ALLIANCE_REFRESH_INTERVAL_SECONDS = 600;
+// Prevent concurrent on-demand refreshes for the same alliance. This is a
+// short in-flight lease, not a ten-minute freshness cooldown: MightPulse owns
+// its own 10-minute free-follow-up window and exposes retry_after for queued work.
+const ALLIANCE_REFRESH_LOCK_SECONDS = 60;
 async function claimAllianceRefresh(db, kid, tag, now) {
   const result = await db.prepare(
     `INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at
      WHERE api_request_locks.lock_until <= ?`
-  ).bind("ALLIANCE_REFRESH:" + Number(kid) + ":" + String(tag).slice(0, 64), crypto.randomUUID(), now + ALLIANCE_REFRESH_INTERVAL_SECONDS, now, now).run();
+  ).bind("ALLIANCE_REFRESH:" + Number(kid) + ":" + String(tag).slice(0, 64), crypto.randomUUID(), now + ALLIANCE_REFRESH_LOCK_SECONDS, now, now).run();
   return Number(result?.meta?.changes || 0) === 1;
+}
+
+function allianceRefreshState(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const refresh = String(source.refresh || source.data?.refresh || source.alliance?.refresh || "").toLowerCase();
+  const retryAfter = Number(source.retry_after ?? source.data?.retry_after ?? source.alliance?.retry_after);
+  return {
+    refresh,
+    retryAfter: Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(600, Math.ceil(retryAfter)) : null
+  };
+}
+
+function allianceRefreshMessage(payload, fallback) {
+  const state = allianceRefreshState(payload);
+  if (["queued", "running"].includes(state.refresh)) {
+    return "MightPulse側でRoster更新中です。" +
+      (state.retryAfter ? " " + state.retryAfter + "秒後にもう一度お試しください。" : "少し時間をおいて再試行してください。");
+  }
+  if (state.refresh === "skipped") return "MightPulse側の更新待ちが混雑しています。少し時間をおいて再試行してください。";
+  if (state.refresh === "failed" || state.refresh === "expired") return "MightPulse側のRoster更新に失敗しました。時間をおいて再試行してください。";
+  return fallback;
 }
 function num(v) {
   const n = Number(v);
@@ -356,16 +378,15 @@ export async function renderAlliancePage(request, env, auth = null) {
   let alliance = getAlliance(payload);
   let members = getMembers(payload);
   const now = Math.floor(Date.now()/1000);
-  const lastAttempt = Number(row.updated_at || row.last_seen_at || historyFallbackAt || 0);
   // Only signed-in users can trigger an upstream fetch; anonymous visitors see stored data.
   const signedIn = Boolean(auth && auth.status === "ACTIVE");
-  const wantsFetch = Boolean(env.ARCHIVE) && signedIn && (members.length===0 || requestedRefresh) && now-lastAttempt>=ALLIANCE_REFRESH_INTERVAL_SECONDS;
+  const wantsFetch = Boolean(env.ARCHIVE) && signedIn && (members.length===0 || requestedRefresh);
   const shouldFetch = wantsFetch && await claimAllianceRefresh(env.DB, kid, row.aid || row.abbr || tag, now).catch(() => false);
   let statusMessage = !signedIn ? "最新情報の取得にはログインが必要です。"
-    : requestedRefresh && !shouldFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
+    : wantsFetch && !shouldFetch ? "同盟Rosterの取得処理中です。少し待ってから再読み込みしてください。" : "";
   if (shouldFetch) {
     try {
-      const collected = await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
+      const collected = await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND",include:"info,members_base",wait:30});
       const fetched = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
       const fetchedPayload = fetched?.data && typeof fetched.data==="object" ? fetched.data : fetched;
       const fetchedMembers = getMembers(fetchedPayload);
@@ -383,16 +404,16 @@ export async function renderAlliancePage(request, env, auth = null) {
         members = fetchedMembers;
         statusMessage = "最新情報を取得しました。";
       } else {
-        await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(now,row.kid,row.aid).run().catch(()=>{});
-        statusMessage = "APIからメンバー情報が返りませんでした。";
+        // Do not advance alliance_catalog.updated_at for a queued/running response:
+        // that timestamp describes stored data, not a successful roster refresh.
+        statusMessage = allianceRefreshMessage(fetched, "APIからRosterメンバー情報が返りませんでした。");
       }
     } catch (error) {
-      await env.DB.prepare("UPDATE alliance_catalog SET updated_at=? WHERE kid=? AND aid=?").bind(now,row.kid,row.aid).run().catch(()=>{});
       console.error("alliance_roster_on_demand_failed",{kid,tag,message:error?.message||String(error)});
       statusMessage = "取得に失敗しました。時間をおいて再試行してください。";
     }
   } else if (!members.length && !statusMessage) {
-    statusMessage = "Rosterがありません。取得は10分間隔で再試行します。";
+    statusMessage = "Rosterが保存されていません。最新情報を取得してください。";
   }
 
   const allianceName = String(alliance.name || row.name || tag);
@@ -1005,9 +1026,11 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
   let members = getMembers(payload), fetched = false, status = "";
   const now = Math.floor(nowMs / 1000);
   const stale = !members.length || !observedAt || now - observedAt > ALLIANCE_COMPARE_STALE_SECONDS;
-  if (canFetch && stale && env.ARCHIVE && await claimAllianceRefresh(db, kid, row.aid || row.abbr || tag, now).catch(() => false)) {
-    try {
-      const collected = await collectAllianceDetail(env, kid, row.abbr || tag, { purpose: "ALLIANCE_COMPARE_ON_DEMAND" });
+  if (canFetch && stale && env.ARCHIVE) {
+    const claimed = await claimAllianceRefresh(db, kid, row.aid || row.abbr || tag, now).catch(() => false);
+    if (!claimed) status = "REFRESH_IN_PROGRESS";
+    if (claimed) try {
+      const collected = await collectAllianceDetail(env, kid, row.abbr || tag, { purpose: "ALLIANCE_COMPARE_ON_DEMAND", include: "info,members_base", wait: 30 });
       const got = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
       const gp = got?.data && typeof got.data === "object" ? got.data : got;
       const gm = getMembers(gp);
@@ -1016,11 +1039,18 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
         const archive = await archiveAllianceHistoryBatch(env.ARCHIVE, { kid, aid, observedAt: now, sourceObservedAt: Number(gp?.source_observed_at ?? gp?.observed_at ?? 0) || null, payload: got });
         if (archive?.key) await db.prepare("INSERT INTO alliance_catalog (kid,aid,abbr,name,member_count,r2_latest_key,first_seen_at,last_seen_at,updated_at,status) VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE') ON CONFLICT(kid,aid) DO UPDATE SET r2_latest_key=excluded.r2_latest_key,member_count=COALESCE(excluded.member_count,alliance_catalog.member_count),abbr=COALESCE(alliance_catalog.abbr,excluded.abbr),name=COALESCE(alliance_catalog.name,excluded.name),last_seen_at=excluded.last_seen_at,updated_at=excluded.updated_at").bind(kid, aid, row.abbr || tag || null, row.name || null, gm.length, archive.key, now, now, now).run().catch(() => {});
         payload = gp; members = gm; observedAt = now; fetched = true;
-      } else status = "NO_MEMBERS";
+      } else {
+        const state = allianceRefreshState(got);
+        status = ["queued", "running"].includes(state.refresh)
+          ? "REFRESH_PENDING" + (state.retryAfter ? ":" + state.retryAfter : "")
+          : state.refresh === "skipped" ? "REFRESH_SKIPPED"
+          : state.refresh === "failed" || state.refresh === "expired" ? "REFRESH_FAILED"
+          : "NO_MEMBERS";
+      }
     } catch (error) { status = String(error?.code || error?.message || "FETCH_FAILED").slice(0, 60); }
   }
   const alliance = getAlliance(payload);
-  if (row.unknown && !members.length) return { kid, tag, error: "NOT_FOUND" };
+  if (row.unknown && !members.length && !status.startsWith("REFRESH_PENDING") && status !== "REFRESH_IN_PROGRESS") return { kid, tag, error: "NOT_FOUND" };
   return {
     kid, tag, aid: normalizeAid(row.aid || alliance.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
     power: row.power ?? null, power_rank: row.power_rank ?? null, observedAt, fetched, status,
