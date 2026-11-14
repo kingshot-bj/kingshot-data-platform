@@ -1,6 +1,6 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
-import { recordFunnel, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
+import { recordFunnel, recordSignupSource, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
 import { googleConfigured, googleLoginOpen, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
@@ -107,7 +107,7 @@ import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, load
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
-import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
+import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -6035,6 +6035,8 @@ async function handleDiscordCallback(request, env) {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
       await recordFunnel(env.DB, userResult?.isNew ? "login_new" : "login_returning");
+      // SNSから来た人の新規登録を、SNSごとに数える（Cookie はこの後のレスポンスで消す）。
+      if (userResult?.isNew) await recordSignupSource(env.DB, parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
       // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
       const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
       if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
@@ -6060,6 +6062,7 @@ async function handleDiscordCallback(request, env) {
   });
   responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   if (parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
@@ -6121,12 +6124,14 @@ async function handleGoogleCallback(request, env) {
   if (result?.status === "DISABLED") return json({ ok: false, error: "USER_DISABLED" }, 403);
   await recordFunnel(env.DB, result.isNew ? "login_new" : "login_returning");
   await recordFunnel(env.DB, "google_done");
+  if (result.isNew) await recordSignupSource(env.DB, cookies[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
   const refCode = cookies[REF_COOKIE];
   if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
   const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
   const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
   clearReturn(h);
   if (refCode) h.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (cookies[SIGNUP_SOURCE_COOKIE]) h.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
   h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, { maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   return new Response(null, { status: 302, headers: h });
 }

@@ -101,7 +101,8 @@ test("ブラウザ側のスクリプト：1ページ1回・個人IDは送らな�
   assert.match(s, /navigator\.webdriver/);
   assert.match(s, /sendBeacon\("\/api\/pv"/);
   assert.match(s, /\/\^\\\/\(owner\|admin\)\(\\\/\|\$\)\//);
-  assert.doesNotMatch(s, /user_id|discord|Math\.random/);
+  // 個人のID（user_id・Discord のID）は送らない。SNSの名前としての "discord" は Cookie の印に使う（11/14〜）。
+  assert.doesNotMatch(s, /user_id|discord_id|discordId|governor|Math\.random/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\);/);
   assert.match(index, /url\.pathname === "\/api\/pv"\) return await handlePageViewBeacon\(request, env, \{ isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView\(request, env, path\) \}\)/);

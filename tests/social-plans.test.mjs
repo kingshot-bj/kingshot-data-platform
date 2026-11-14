@@ -56,3 +56,53 @@ test("オーナー画面：企画ごとにSNS別の投稿文とコピーボタ�
   assert.match(html, /id="plans"/);
   for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) assert.doesNotThrow(() => new Function(m[1]));
 });
+
+// 2026-11-14：SNS別の新規登録を数える（来訪は数えていたが、登録はSNSと結びついていなかった）。
+import { pageViewBeaconScript, SIGNUP_SOURCES, SIGNUP_SOURCE_COOKIE, signupsBySource, sourcesCard } from "../src/growth.js";
+import { recordSignupSource } from "../src/funnel.js";
+import { readFileSync } from "node:fs";
+
+test("SNSの ?ref= で来たら、SNSの名前だけを Cookie に30日残す", () => {
+  const s = pageViewBeaconScript().replace(/<\/?script>/g, "");
+  const run = search => {
+    const jar = [];
+    const doc = { visibilityState: "visible", referrer: "", querySelector: () => null };
+    Object.defineProperty(doc, "cookie", { set: v => jar.push(v), get: () => "" });
+    const win = {};
+    const fn = new Function("window", "document", "location", "navigator", "localStorage", "Blob", "fetch", s);
+    const ls = { m: {}, getItem(k) { return this.m[k] ?? null; }, setItem(k, v) { this.m[k] = String(v); } };
+    fn(win, doc, { pathname: "/kingdoms", search, hostname: "eagleeye-ks.com" }, { webdriver: false, sendBeacon: () => true }, ls, function () {}, () => {});
+    return jar;
+  };
+  assert.deepEqual(run("?ref=tt").map(c => c.split(";")[0]), ["ee_src=tiktok"]);
+  assert.match(run("?ref=x")[0], /max-age=2592000/);
+  assert.deepEqual(run("?ref=abcd1234"), [], "招待コードやほかの文字列では付けない");
+  assert.deepEqual(run(""), []);
+  assert.equal(SIGNUP_SOURCE_COOKIE, "ee_src");
+  for (const k of ["x", "discord", "youtube", "tiktok", "instagram"]) assert.ok(SIGNUP_SOURCES.includes(k));
+});
+
+test("新規ログインのとき、決まったSNS名だけ funnel_daily に1つ足す", async () => {
+  const runs = [];
+  const db = { prepare: sql => ({ bind: (...a) => ({ run: async () => { runs.push([sql, a]); return {}; } }), run: async () => { runs.push([sql, []]); return {}; } }) };
+  assert.equal(await recordSignupSource(db, "tiktok", SIGNUP_SOURCES, Date.parse("2026-11-14T12:00:00+09:00")), true);
+  const insert = runs.find(([sql]) => sql.startsWith("INSERT INTO funnel_daily"));
+  assert.deepEqual(insert[1], ["2026-11-14", "new_src:tiktok"]);
+  assert.equal(await recordSignupSource(db, "evil';--", SIGNUP_SOURCES), false);
+  assert.equal(await recordSignupSource(db, "", SIGNUP_SOURCES), false);
+});
+
+test("ログイン処理：新規のときだけ数えて、Cookie を消す（Discord・Google の両方）", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.equal((src.match(/isNew\)? await recordSignupSource\(env\.DB, /g) || []).length, 2);
+  assert.equal((src.match(/serializeCookie\(SIGNUP_SOURCE_COOKIE, "", \{ maxAge: 0/g) || []).length, 2);
+});
+
+test("成長ダッシュボード：SNSごとの新規登録（7日）と登録率", () => {
+  const events = { "2026-11-14": { funnel: { "new_src:tiktok": 2, login_new: 5 } }, "2026-11-13": { funnel: { "new_src:tiktok": 1, "new_src:x": 1 } } };
+  assert.deepEqual(signupsBySource(events), { tiktok: 3, x: 1 });
+  const card = sourcesCard({ sources: { all: { tiktok: 30, search: 50 }, last7: { tiktok: 30, search: 50 } }, landing: { all: {}, last7: {} } }, events);
+  assert.match(card, /新規登録（7日）/);
+  assert.match(card, /<td>TikTok<\/td><td>30<\/td><td>[^<]*<\/td><td>30<\/td><td>3<\/td><td>10%<\/td>/);
+  assert.match(card, /検索[^<]*<\/td>(<td>[^<]*<\/td>){3}<td>—<\/td><td>—<\/td>/, "SNS以外は登録を数えない");
+});

@@ -43,6 +43,20 @@ export async function recordFunnel(db, step, nowMs = Date.now()) {
   }
 }
 
+// SNSから来た人の新規登録（Cookie ee_src に残したSNSの名前）。決まった名前だけ数える。失敗してもログインは止めない。
+export async function recordSignupSource(db, source, allowed, nowMs = Date.now()) {
+  const key = String(source || "").toLowerCase();
+  if (!db || !key || !(allowed || []).includes(key)) return false;
+  try {
+    await ensureSchema(db);
+    await db.prepare("INSERT INTO funnel_daily (day, step, n) VALUES (?, ?, 1) ON CONFLICT(day, step) DO UPDATE SET n = n + 1").bind(jstDay(nowMs), "new_src:" + key).run();
+    return true;
+  } catch (error) {
+    console.warn("funnel_signup_source_failed", error?.message || error);
+    return false;
+  }
+}
+
 export async function loadFunnel(db, { days = 14, nowMs = Date.now() } = {}) {
   await ensureSchema(db);
   const since = jstDay(nowMs - (days - 1) * 86400 * 1000);
