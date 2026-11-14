@@ -6,6 +6,7 @@
 
 import { compactNumber } from "./public-pages.js";
 import { currentKvkSeason, loadSeasonMatchups } from "./kvk-matchups-page.js";
+import { kvkEndedAt } from "./home-summary.js";
 
 export const SOCIAL_FORMATS = Object.freeze({ story: { w: 1080, h: 1920, rows: 10 }, square: { w: 1080, h: 1080, rows: 5 } });
 export const SOCIAL_PLATFORMS = Object.freeze(["x", "discord", "youtube", "tiktok", "instagram"]);
@@ -65,9 +66,13 @@ export function closeKvkPairs(pairs, limit = 10) {
     .map(x => x.p);
 }
 
-async function kvkItem(db) {
+async function kvkItem(db, nowMs = Date.now()) {
   const season = await currentKvkSeason(db).catch(() => null);
   if (!season) return null;
+  // KvK が終わっていたら出さない（終わった組み合わせの「接戦」は意味がない）。
+  // 日程（days_json）は王国ごとに同じなので、最近取った1行だけ見る（D1 の読み取りを増やさない）。
+  const latest = await db.prepare("SELECT days_json FROM kvk_scores WHERE season = ? AND days_json IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").bind(season).first().catch(() => null);
+  if (kvkEndedAt(latest?.days_json, Math.floor(nowMs / 1000)) != null) return null;
   const { pairs, observedAt } = await loadSeasonMatchups(db, season).catch(() => ({ pairs: [], observedAt: 0 }));
   const close = closeKvkPairs(pairs);
   if (!close.length) return null;
@@ -86,9 +91,9 @@ export function socialCaptions(item, { origin = "https://eagleeye-ks.com" } = {}
   const top3 = item.rows.slice(0, 3).map(r => `${r.rank}位 ${r.label} ${r.value}`).join("\n");
   const tags = [...HASHTAGS, ...(item.id === "kvk" ? ["#KvK"] : [])].join(" ");
   return {
-    x: `${item.hook}📊\n\n${top3}\n\n全部はこちら（ログイン不要）\n${link("x")}\n${tags}`,
+    x: `${item.hook}📊\n\n${top3}\n\n全部はこちら\n${link("x")}\n${tags}`,
     discord: `**${item.title}**（${item.subtitle}）\n${top3}\n\n全部はこちら → ${link("discord")}`,
-    youtube: { title: `${item.title}｜キングショット ${item.subtitle}`.slice(0, 95), description: `${item.hook}。\n\n${item.rows.map(r => `${r.rank}位 ${r.label} ${r.value}（${r.sub}）`).join("\n")}\n\n詳しいデータ（ログイン不要）：${link("youtube")}\nデータ：EagleEye（KingShot非公式データサイト・毎日更新）\n${tags} #Shorts` },
+    youtube: { title: `${item.title}｜キングショット ${item.subtitle}`.slice(0, 95), description: `${item.hook}。\n\n${item.rows.map(r => `${r.rank}位 ${r.label} ${r.value}（${r.sub}）`).join("\n")}\n\n詳しいデータ：${link("youtube")}\nデータ：EagleEye（KingShot非公式データサイト・毎日更新）\n${tags} #Shorts` },
     tiktok: `${item.hook}📊 全部のデータはプロフィールのリンクから！ ${tags} #ゲーム`,
     instagram: `${item.hook}📊\n\n${top3}\n\n全部のデータはプロフィールのリンク（eagleeye-ks.com）から。\n${tags} #ゲーム #スマホゲーム`
   };
@@ -97,7 +102,7 @@ export function socialCaptions(item, { origin = "https://eagleeye-ks.com" } = {}
 export async function loadSocialPack(env, { nowMs = Date.now(), origin = "https://eagleeye-ks.com" } = {}) {
   const db = env.DB;
   const items = [...await kingdomItems(db)];
-  const kvk = await kvkItem(db);
+  const kvk = await kvkItem(db, nowMs);
   if (kvk) items.push(kvk);
   // 3位まで並ばないネタは出さない（データが少ない週・シーズンの切り替わり）。
   for (let i = items.length - 1; i >= 0; i--) if (items[i].rows.length < SOCIAL_MIN_ROWS) items.splice(i, 1);
@@ -144,7 +149,7 @@ li.top{background:linear-gradient(90deg,#123047,#0f2238);border-color:#22d3ee88}
 <div class="brand"><i></i>EagleEye<span>${esc(item.dataDate ? item.dataDate + " 時点" : week)}</span></div>
 <h1>${esc(item.title)}</h1><h2>${esc(item.subtitle)}</h2>
 <ol>${list}</ol>
-<div class="foot"><b>eagleeye-ks.com</b><span>キングショット非公式データサイト・ログイン不要</span></div>
+<div class="foot"><b>eagleeye-ks.com</b><span>キングショット非公式データサイト</span></div>
 </div></body></html>`;
 }
 

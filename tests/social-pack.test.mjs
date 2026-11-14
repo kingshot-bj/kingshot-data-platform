@@ -135,3 +135,42 @@ test("毎週の自動実行：月曜9:13（日本時間）。投稿は定期実�
   const build = readFileSync(new URL("../scripts/social/build.mjs", import.meta.url), "utf8");
   assert.match(build, /anullsrc/, "BGMなし（無音トラックだけ）");
 });
+
+// 2026-11-14：KvK が終わった後も「接戦の組み合わせ」の動画・投稿文が作られていた。
+function kvkDb({ endTs }) {
+  const sqls = [];
+  const matchup = { kid: 9, opponent: 10, p1: 1e9, p2: 1e9, o1: 1794100000, o2: 1794100000 };
+  const db = { sqls, prepare: sql => { sqls.push(sql); const s = {
+    bind: () => s, run: async () => ({}),
+    first: async () => {
+      if (/kvk_state/.test(sql)) return { value: JSON.stringify({ season: 23 }) };
+      if (/kvk_scores/.test(sql)) return endTs == null ? null : { days_json: JSON.stringify([{ day: 1, end_ts: endTs - 86400 }, { day: 6, end_ts: endTs }]) };
+      return null;
+    },
+    all: async () => ({ results: /kvk_matchups/.test(sql) ? [matchup] : [] })
+  }; return s; } };
+  return db;
+}
+
+test("KvK：全日程が終わっていたら接戦のネタを出さない。日程は1行だけ読む", async () => {
+  const nowSec = Math.floor(NOW / 1000);
+  const ended = kvkDb({ endTs: nowSec - 60 });
+  const pack = await loadSocialPack({ DB: ended }, { nowMs: NOW });
+  assert.ok(!pack.items.some(i => i.id === "kvk"), "終わった KvK は出さない");
+  assert.ok(!ended.sqls.some(s => /kvk_matchups/.test(s)), "終わっていたら組み合わせは読まない");
+  const scoreSql = ended.sqls.find(s => /kvk_scores/.test(s));
+  assert.match(scoreSql, /LIMIT 1/, "D1 の読み取りを増やさない");
+  // 開催中は今までどおり判定に進む（組み合わせを読む）。
+  const running = kvkDb({ endTs: nowSec + 3600 });
+  await loadSocialPack({ DB: running }, { nowMs: NOW });
+  assert.ok(running.sqls.some(s => /kvk_matchups/.test(s)), "開催中は組み合わせを読む");
+});
+
+test("投稿文・カード：「ログイン不要」はわざわざ書かない", async () => {
+  const pack = await loadSocialPack({ DB: fakeDb() }, { nowMs: NOW });
+  for (const item of pack.items) {
+    assert.doesNotMatch(JSON.stringify(item.captions), /ログイン不要/);
+    assert.doesNotMatch(renderSocialCard(item), /ログイン不要/);
+  }
+  assert.doesNotMatch(renderSocialCover(pack), /ログイン不要/);
+});
