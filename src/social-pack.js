@@ -81,7 +81,7 @@ async function kvkItem(db, nowMs = Date.now()) {
     id: "kvk", title: `KvK S${season} 接戦の組み合わせ`, subtitle: "秘境の試練の1位記録が拮抗", path: `/kvk/s${season}`, observedAt,
     rows: close.map((p, i) => {
       const m = p.mystic, n = m.wins + m.losses + m.even;
-      return { rank: i + 1, label: `王国 ${p.a.kid} vs ${p.b.kid}`, kid: p.a.kid, value: `${m.wins}-${m.losses}`, sub: `${n}ステージ中${m.even ? `・同点${m.even}` : ""}` };
+      return { rank: i + 1, label: `王国 ${p.a.kid} vs ${p.b.kid}`, kid: p.a.kid, value: `${m.wins}-${m.losses}`, sub: `秘境の試練${n}種類中${m.even ? `・同点${m.even}` : ""}` };
     }),
     hook: `KvK S${season}、秘境の試練の記録で拮抗している組み合わせ`
   };
