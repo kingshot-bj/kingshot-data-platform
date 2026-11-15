@@ -269,7 +269,7 @@ function kingdomsIntro(boards) {
   const lb = kingdomBoard("総戦力が大きい王国", boards.power, "power") + kingdomBoard("7日間でいちばん伸びた王国", boards.gain, "gain") + kingdomBoard(`開設${YOUNG_KINGDOM_DAYS}日以内で伸びている王国`, boards.young, "gain");
   return `${lb ? `<h2>王国ランキング</h2><p class="lead" style="margin-top:-4px">${esc(asOf)}毎日更新。王国を押すと、その王国の分析が見られます。</p><div class="lbs">${lb}</div>` : ""}
 <h2>数字の見方</h2><dl class="howto">
-<dt>総戦力</dt><dd>王国の全領主の戦力の合計です。</dd>
+<dt>総戦力</dt><dd>王国の全領主の戦力（ゲーム内の総力）の合計です。総力は兵士の数・兵士の段階・建物・研究などを足した点数なので、<b>強さとは比例しません</b>。総力が近くても、英雄・装備・兵種の組み合わせで戦闘の強さは大きく変わります。強さの目安には、<a href="/kvk/matchups">KvK の組み合わせ</a>で使っている秘境の試練の記録のほうが近いです。</dd>
 <dt>7日間の伸び</dt><dd>1週間前と比べて増えた総戦力です。減っているときはマイナスになります。</dd>
 <dt>開設日数</dt><dd>王国ができてからの日数です。新しい英雄や黄金が解放される目安になります（<a href="/kingdom-timeline">王国タイムライン</a>）。</dd>
 <dt>開設時期が近い王国</dt><dd>開設日数が前後30日以内の王国です。王国ページでは、同じくらいの時期に始まった王国の中で何位かを出しています。</dd>
