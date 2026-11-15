@@ -1,3 +1,4 @@
+import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights } from "./kingdom-insights.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
 //   /k/{kid}       one kingdom: power & growth, top players / alliances, KvK
@@ -70,6 +71,7 @@ h2{margin:22px 0 8px;font-size:17px}
 .range h2{font-size:14px;color:var(--ee-subtext)}.grid{display:flex;flex-wrap:wrap;gap:6px}.grid a{min-width:52px;padding:7px 8px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-align:center;text-decoration:none;font-size:13px;font-variant-numeric:tabular-nums}
 .kingdom-timeline h2{margin:22px 0 8px;font-size:17px}
 ${KINGDOM_TIMELINE_CSS}
+.insights{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;line-height:1.6}.insights b{color:var(--ee-text)}
 .note{margin-top:20px;font-size:11px;color:var(--ee-subtext);line-height:1.6}
 .related{display:grid;gap:10px}.rel-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.rel-group small{flex:0 0 100%;font-size:12px;color:var(--ee-subtext)}.rel-group a{padding:8px 10px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none;font-weight:800;font-size:13px}.rel-group a em{display:block;font-style:normal;font-weight:600;font-size:11px;color:var(--ee-subtext)}
 </style></head><body><main class="wrap">${body}</main></body></html>`;
@@ -86,7 +88,7 @@ const fmtDate = at => new Date(Number(at) * 1000).toISOString().slice(0, 10);
 
 export async function loadPublicKingdom(env, kid) {
   const db = env.DB;
-  const [catalog, players, alliances, matchup, score, growth, near, statsRow] = await Promise.all([
+  const [catalog, players, alliances, matchup, score, growth, near, allStats] = await Promise.all([
     db.prepare("SELECT kid, name, status, region, language, last_seen_at, r2_latest_key FROM kingdom_catalog WHERE kid = ? LIMIT 1").bind(kid).first().catch(() => null),
     db.prepare("SELECT rank, nick_name, score, aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10").bind(kid).all().catch(() => ({ results: [] })),
     db.prepare("SELECT rank, abbr, name, score, COALESCE(target_id, aid) AS aid FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] })),
@@ -95,15 +97,12 @@ export async function loadPublicKingdom(env, kid) {
     env.ARCHIVE ? loadKingdomGrowthHistory(env.ARCHIVE, kid).catch(() => null) : null,
     // 関連王国：近い番号（主キーの範囲で最大8行）
     db.prepare("SELECT kid FROM kingdom_catalog WHERE kid BETWEEN ? AND ? AND kid <> ? ORDER BY kid ASC").bind(kid - 4, kid + 4, kid).all().catch(() => ({ results: [] })),
-    db.prepare("SELECT power_rank FROM kingdom_stats_current WHERE kid = ?").bind(kid).first().catch(() => null)
+    // 王国の分析と「総戦力が近い王国」：全王国の集計（isolate で1時間覚える）から計算する。
+    loadAllKingdomStats(db).catch(() => null)
   ]);
-  // 関連王国：戦力順位が近い王国（power_rank の索引で前後3つ）
-  let similar = [];
-  const myRank = Number(statsRow?.power_rank) || null;
-  if (myRank) {
-    const rows = await db.prepare("SELECT kid, power, power_rank FROM kingdom_stats_current WHERE power_rank BETWEEN ? AND ? AND kid <> ? ORDER BY power_rank ASC LIMIT 6").bind(Math.max(1, myRank - 3), myRank + 3, kid).all().catch(() => ({ results: [] }));
-    similar = rows?.results || [];
-  }
+  // power_rank（戦力順位）は意味が未確認なので使わない（2026-11-15）。近い王国は総戦力の並びで出す。
+  const insights = allStats ? computeKingdomInsights(kid, allStats) : null;
+  const similar = insights?.nearPower || [];
   // Personal boards carry only the alliance id; resolve tags from the alliance boards.
   let playerRows = players?.results || [];
   if (playerRows.some(p => !p.abbr && p.aid)) {
@@ -128,7 +127,7 @@ export async function loadPublicKingdom(env, kid) {
     const dir = await db.prepare("SELECT rank, abbr, name, power AS score, aid FROM alliance_directory WHERE kid = ? ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] }));
     allianceList = dir?.results || [];
   }
-  return { catalog, players: playerRows, alliances: allianceList, matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar };
+  return { catalog, players: playerRows, alliances: allianceList, matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar, insights };
 }
 
 // 存在しない王国番号（カタログにない）は404にする。どんな番号でも中身のないページを返すと、検索エンジンに「中身のないページが無限にある」と見られる。
@@ -144,6 +143,16 @@ export function renderPublicKingdomNotFound(kid) {
 <p class="lead">この番号の王国はまだ記録されていません。新しい王国は毎日自動で取得しています。</p>
 <p><a href="/kingdoms">王国一覧から探す →</a></p>`;
   return shell({ title: `王国${kid}は見つかりません | EagleEye`, description: "", canonical: "", body, noindex: true });
+}
+
+// どのページにも当たらない URL。トップページを 200 で返すと「中身が同じページが無限にある」（ソフト404）と見られるので、
+// 404・noindex・canonical なし（＝広告タグも入らない）で返す（2026-11-15・AdSense の品質対応）。
+export function renderNotFoundPage() {
+  const body = `<nav class="crumbs"><a href="/">EagleEye</a></nav>
+<h1>ページが見つかりません</h1>
+<p class="lead">URL が間違っているか、ページが移動しました。</p>
+<p><a href="/">トップページへ →</a>　<a href="/kingdoms">王国一覧 →</a>　<a href="/guide">使い方 →</a></p>`;
+  return shell({ title: "ページが見つかりません | EagleEye", description: "", canonical: "", body, noindex: true });
 }
 
 export function renderPublicTimelinePage({ origin = "" } = {}) {
@@ -172,11 +181,11 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
     const diffHtml = diff == null ? "" : `<em class="${diff === 0 ? "" : better ? "up" : "down"}">7日 ${rank ? signed(diff, v => String(v)) : signed(diff)}</em>`;
     return `<div class="stat"><small>${esc(label)}</small><b>${esc(rank ? latest[key] + "位" : compactNumber(latest[key]))}</b>${diffHtml}</div>`;
   };
-  const stats = latest ? `<div class="stats">${stat("総戦力", "power")}${stat("戦力順位", "power_rank", true)}${stat("7日間の戦力増加", "power_gain_7d")}${stat("7日間の役場上昇", "tc_pushers_7d")}${stat("領主数", "player_count")}${stat("平均戦力", "avg_power")}${stat("英雄戦力", "hero_power")}${stat("秘境の試練", "mystic_trial")}</div>`
+  const stats = latest ? `<div class="stats">${stat("総戦力", "power")}${stat("7日間の戦力増加", "power_gain_7d")}${stat("7日間の役場上昇", "tc_pushers_7d")}${stat("領主数", "player_count")}${stat("平均戦力", "avg_power")}${stat("英雄戦力", "hero_power")}${stat("秘境の試練", "mystic_trial")}</div>`
     : `<div class="empty">この王国の集計データはまだありません（毎日自動で取得しています）。</div>`;
 
   const playerRows = players.length ? `<div class="list">${players.map(p => `<div class="row"><b>${esc(p.rank)}</b><span>${esc(p.nick_name || "-")}${p.abbr ? `<small>[${esc(p.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(p.score))}</em></div>`).join("")}</div>`
-    : `<div class="empty">個人ランキングは、この王国が誰かのウォッチリストに入ると自動で取得されます。</div>`;
+    : "";
   const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const label = `${esc(a.name || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
 
   let kvk = "";
@@ -186,12 +195,13 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   }
 
   const nearKids = data.nearKids || [], similar = data.similar || [];
-  const related = nearKids.length || similar.length ? `<h2>関連する王国</h2><div class="related">${similar.length ? `<div class="rel-group"><small>戦力順位が近い王国</small>${similar.map(k => `<a href="/k/${encodeURIComponent(k.kid)}">王国 ${esc(k.kid)}<em>${esc(k.power_rank)}位・${esc(compactNumber(k.power))}</em></a>`).join("")}</div>` : ""}${nearKids.length ? `<div class="rel-group"><small>近い番号の王国（開設時期が近い）</small>${nearKids.map(k => `<a href="/k/${k}">王国 ${k}</a>`).join("")}</div>` : ""}</div>` : "";
+  const related = nearKids.length || similar.length ? `<h2>関連する王国</h2><div class="related">${similar.length ? `<div class="rel-group"><small>総戦力が近い王国</small>${similar.map(k => `<a href="/k/${encodeURIComponent(k.kid)}">王国 ${esc(k.kid)}<em>${esc(compactNumber(k.power))}</em></a>`).join("")}</div>` : ""}${nearKids.length ? `<div class="rel-group"><small>近い番号の王国（開設時期が近い）</small>${nearKids.map(k => `<a href="/k/${k}">王国 ${k}</a>`).join("")}</div>` : ""}</div>` : "";
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a> › 王国 ${esc(kid)}</nav>
 <h1>キングショット 王国 ${esc(kid)}${esc(name)}</h1>
 <p class="lead">KingShot 王国${esc(kid)}の戦力・成長・ランキング・KvK情報。${growth?.latestAt ? esc(fmtDate(growth.latestAt)) + " 時点。" : ""}データは毎日更新されます。</p>
 ${stats}
-<h2>戦力ランキング（上位10人）</h2>${playerRows}
+${renderKingdomInsights(kid, data.insights, compactNumber)}
+${playerRows ? `<h2>戦力ランキング（上位10人）</h2>${playerRows}` : ""}
 ${allianceRows ? `<h2>同盟ランキング（上位5）</h2>${allianceRows}` : ""}
 ${kvk}
 ${related}
