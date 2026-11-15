@@ -757,3 +757,136 @@ export async function reopenSupportTicket(env, options) {
     operation: "REOPEN_SUPPORT_TICKET", targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null
   }, () => reopenSupportTicketInternal(env, options));
 }
+
+// ---- ログインしていない人の問い合わせ（2026-11-15）----
+// ・受け取る場所は今までと同じ Discord のサポートサーバー。運営ロールだけが見る共有チャンネル「web問い合わせ」に1件ずつ投稿する
+//   （サポートのカテゴリの中に、無ければ Bot が作る）。相手の Discord アカウントは分からないので、返信先は任意で書いてもらう。
+// ・いたずら対策：同じ IP（ハッシュだけ使い、保存はしない）からは10分に1件、全体で1日50件まで。URL は2個まで。隠し項目（website）に何か入っていたら捨てる。
+// ・Discord の @everyone などは鳴らさない（allowed_mentions: none）。
+export const GUEST_SUPPORT_CHANNEL_NAME = "web問い合わせ";
+export const GUEST_SUPPORT_LIMITS = Object.freeze({ perIpSeconds: 600, perDay: 50, maxUrls: 2, contactMax: 200 });
+let guestChannelCache = null;
+export function resetGuestSupportCache() { guestChannelCache = null; }
+
+export function validateGuestInquiry(body) {
+  if (String(body?.website || "").trim()) return { error: "SPAM" };
+  const category = String(body?.category || "").trim().toUpperCase();
+  const parent = SUPPORT_CATALOG.find(x => x.key === category);
+  if (!parent) return { error: "INVALID_CATEGORY" };
+  const subject = String(body?.subject || "").trim();
+  const message = String(body?.message || "").trim();
+  const contact = String(body?.contact || "").trim();
+  if (!subject) return { error: "SUBJECT_REQUIRED" };
+  if (subject.length > 120) return { error: "SUBJECT_TOO_LONG" };
+  if (!message) return { error: "MESSAGE_REQUIRED" };
+  if (message.length > 4000) return { error: "MESSAGE_TOO_LONG" };
+  if (contact.length > GUEST_SUPPORT_LIMITS.contactMax) return { error: "CONTACT_TOO_LONG" };
+  const urls = (subject + " " + message + " " + contact).match(/https?:\/\//gi) || [];
+  if (urls.length > GUEST_SUPPORT_LIMITS.maxUrls) return { error: "TOO_MANY_LINKS" };
+  return { category, categoryLabel: parent.label, subject, message, contact };
+}
+
+async function guestRateLimit(db, ipHash, now) {
+  if (!db) return { ok: false, error: "DB_NOT_CONFIGURED" };
+  const lock = await db.prepare(
+    "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at WHERE api_request_locks.lock_until <= ?"
+  ).bind("SUPPORT_GUEST:" + ipHash, crypto.randomUUID(), now + GUEST_SUPPORT_LIMITS.perIpSeconds, now, now).run();
+  if (Number(lock?.meta?.changes || 0) !== 1) return { ok: false, error: "RATE_LIMITED" };
+  const day = new Date(now * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  await db.prepare("CREATE TABLE IF NOT EXISTS support_guest_daily (day TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0)").run();
+  const row = await db.prepare("INSERT INTO support_guest_daily (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1 RETURNING n").bind(day).first();
+  if (Number(row?.n || 0) > GUEST_SUPPORT_LIMITS.perDay) return { ok: false, error: "DAILY_LIMIT" };
+  return { ok: true };
+}
+
+async function resolveGuestChannel(env) {
+  if (guestChannelCache) return guestChannelCache;
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  const botUserId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
+  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+  if (!botUserId) throw new Error("DISCORD_CLIENT_ID_NOT_CONFIGURED");
+  const { categoryId, supportRoleId } = await resolveSupportDiscordConfig(env, guildId);
+  const channels = await discordRequest(env, `/guilds/${guildId}/channels`);
+  const found = (Array.isArray(channels) ? channels : []).find(c => Number(c?.type) === 0 && String(c?.name) === GUEST_SUPPORT_CHANNEL_NAME && String(c?.parent_id || "") === String(categoryId));
+  if (found?.id) return (guestChannelCache = String(found.id));
+  const created = await discordRequest(env, `/guilds/${guildId}/channels`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: GUEST_SUPPORT_CHANNEL_NAME, type: 0, parent_id: categoryId,
+      topic: "EagleEye：ログインしていない人からの問い合わせ（サイトのフォームから。返信は返信先が書いてあるときだけ）",
+      permission_overwrites: [
+        permissionOverwrite(guildId, 0, "0", "1024"),
+        permissionOverwrite(supportRoleId, 0, "68608", "0"),
+        permissionOverwrite(botUserId, 1, "68608", "0")
+      ]
+    })
+  });
+  if (!created?.id) throw new Error("GUEST_CHANNEL_CREATE_FAILED");
+  return (guestChannelCache = String(created.id));
+}
+
+export function buildGuestInquiryMessage(input, { at = new Date() } = {}) {
+  const line = s => String(s).replace(/```/g, "'''");
+  return [
+    `📮 **web問い合わせ**（ログインなし）`,
+    `**種類：** ${line(input.categoryLabel)}`,
+    `**件名：** ${line(input.subject)}`,
+    `**返信先：** ${input.contact ? line(input.contact) : "（なし）"}`,
+    `**受付：** ${at.toISOString().replace("T", " ").slice(0, 16)} UTC`,
+    "```",
+    line(input.message).slice(0, 1800),
+    "```"
+  ].join("\n").slice(0, 1990);
+}
+
+// POST /api/support/guest。ipHash は呼び出し側で作る（IP そのものは渡さない・保存しない）。
+export async function handleGuestSupportApi(request, env, { ipHash, now = Math.floor(Date.now() / 1000) } = {}) {
+  if (request.method !== "POST") return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (Number(request.headers.get("content-length") || 0) > 16000) return supportJson({ ok: false, error: "TOO_LARGE" }, 413);
+  let body;
+  try { body = await request.json(); } catch { return supportJson({ ok: false, error: "INVALID_JSON" }, 400); }
+  const input = validateGuestInquiry(body);
+  if (input.error === "SPAM") return supportJson({ ok: true }, 200); // いたずらには成功したように見せて捨てる
+  if (input.error) return supportJson({ ok: false, error: input.error }, 400);
+  const limit = await guestRateLimit(env.DB, String(ipHash || "unknown"), now).catch(() => ({ ok: false, error: "RATE_LIMIT_UNAVAILABLE" }));
+  if (!limit.ok) return supportJson({ ok: false, error: limit.error }, 429);
+  try {
+    const channelId = await resolveGuestChannel(env);
+    await discordRequest(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content: buildGuestInquiryMessage(input, { at: new Date(now * 1000) }), allowed_mentions: { parse: [] } }) });
+    await recordSupportDiagnostic(env, { operation: "GUEST_INQUIRY", status: "SUCCESS", targetType: "CHANNEL", targetId: channelId, message: "ログインなしの問い合わせを受付", metadata: { category: input.category } });
+    return supportJson({ ok: true }, 201);
+  } catch (error) {
+    guestChannelCache = null;
+    const code = String(error?.message || "GUEST_INQUIRY_FAILED");
+    await recordSupportDiagnostic(env, { operation: "GUEST_INQUIRY", status: "FAILED", errorCode: code.split(":")[0], message: code.slice(0, 500) });
+    return supportJson({ ok: false, error: "SEND_FAILED" }, 503);
+  }
+}
+
+// ログインしていない人向けの /support。ログインしている人は今までどおりの画面（専用チャンネル）。
+export function renderGuestSupportPage() {
+  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const options = SUPPORT_CATALOG.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join("");
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>お問い合わせ | EagleEye</title><style>
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:640px;margin:0 auto;padding:18px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
+h1{font-size:22px;margin:8px 0 6px}.lead{font-size:13px;line-height:1.7;color:var(--ee-subtext,#91a7bf);margin:0 0 12px}
+.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 5px}label small{font-weight:400;color:var(--ee-subtext,#91a7bf)}
+input,select,textarea{width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit;font:15px system-ui}textarea{min-height:140px;resize:vertical}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:11px;background:var(--ee-cyan,#22d3ee);color:#04202a;font:800 15px system-ui}button:disabled{opacity:.6}
+.msg{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.6}.ok{border:1px solid var(--ee-success,#22c55e)}.ng{border:1px solid var(--ee-danger,#f87171)}.note{font-size:12px;color:var(--ee-subtext,#91a7bf);line-height:1.7}
+</style></head><body><main class="wrap"><a href="/">← ホーム</a>
+<h1>お問い合わせ</h1><p class="lead">ご質問・不具合の報告・データの削除依頼などは、このフォームから送れます（ログイン不要）。返事が必要な場合は返信先を書いてください。ログインすると、Discord の専用チャンネルで運営とやり取りできます（<a href="/login">ログイン</a>）。</p>
+<form class="card" id="gf"><label for="gc">種類</label><select id="gc" name="category" required>${options}</select>
+<label for="gs">件名</label><input id="gs" name="subject" maxlength="120" required>
+<label for="gm">内容</label><textarea id="gm" name="message" maxlength="4000" required></textarea>
+<label for="gt">返信先 <small>（任意・メールアドレスや Discord のユーザー名など）</small></label><input id="gt" name="contact" maxlength="200">
+<div class="hp" aria-hidden="true"><label>website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<button type="submit" id="gb">送信する</button><div id="gr" role="status"></div></form>
+<p class="note">送られた内容は運営だけが見る場所に届きます。返信先を書いた場合だけ、そこに連絡することがあります。</p>
+<script>(function(){var f=document.getElementById("gf"),b=document.getElementById("gb"),r=document.getElementById("gr");var M={RATE_LIMITED:"続けて送れません。10分ほどあけてから送ってください。",DAILY_LIMIT:"今日の受付の上限に達しました。明日もう一度お試しください。",TOO_MANY_LINKS:"リンク（URL）は2つまでにしてください。",SUBJECT_REQUIRED:"件名を入れてください。",MESSAGE_REQUIRED:"内容を入れてください。",SEND_FAILED:"送信できませんでした。時間をおいてもう一度お試しください。"};
+f.addEventListener("submit",function(e){e.preventDefault();b.disabled=true;b.textContent="送信中…";var d={};new FormData(f).forEach(function(v,k){d[k]=v});
+fetch("/api/support/guest",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(d)}).then(function(x){return x.json().catch(function(){return {ok:false}})}).then(function(j){if(j&&j.ok){r.className="msg ok";r.textContent="送信しました。ありがとうございます。";f.reset();}else{r.className="msg ng";r.textContent=M[j&&j.error]||"送信できませんでした。入力を確かめてください。";}}).catch(function(){r.className="msg ng";r.textContent=M.SEND_FAILED}).finally(function(){b.disabled=false;b.textContent="送信する"})})})()</script>
+</main></body></html>`;
+}
