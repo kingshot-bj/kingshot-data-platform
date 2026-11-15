@@ -1,4 +1,4 @@
-import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights } from "./kingdom-insights.js";
+import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
@@ -72,6 +72,8 @@ h2{margin:22px 0 8px;font-size:17px}
 .range h2{font-size:14px;color:var(--ee-subtext)}.grid{display:flex;flex-wrap:wrap;gap:6px}.grid a{min-width:52px;padding:7px 8px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-align:center;text-decoration:none;font-size:13px;font-variant-numeric:tabular-nums}
 .kingdom-timeline h2{margin:22px 0 8px;font-size:17px}
 ${KINGDOM_TIMELINE_CSS}
+.lbs{display:grid;gap:10px}@media(min-width:760px){.lbs{grid-template-columns:repeat(3,minmax(0,1fr))}}.lb{border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);padding:10px 12px 4px}.lb h3{margin:0 0 4px;font-size:14px}.lb-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--ee-border-soft);color:var(--ee-text);text-decoration:none}.lb h3+.lb-row{border-top:0}.lb-row i{font-style:normal;font-weight:900;color:var(--ee-subtext);text-align:center}.lb-row b{font-size:14px}.lb-row small{display:block;font-size:11px;color:var(--ee-subtext)}.lb-row em{font-style:normal;font-weight:800}
+.howto{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px;line-height:1.6}.howto dt{font-weight:800}.howto dd{margin:0;color:var(--ee-subtext)}@media(max-width:480px){.howto{grid-template-columns:1fr}.howto dd{margin-bottom:6px}}
 .insights{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;line-height:1.6}.insights b{color:var(--ee-text)}
 .note{margin-top:20px;font-size:11px;color:var(--ee-subtext);line-height:1.6}
 .related{display:grid;gap:10px}.rel-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.rel-group small{flex:0 0 100%;font-size:12px;color:var(--ee-subtext)}.rel-group a{padding:8px 10px;border:1px solid var(--ee-border-soft);border-radius:10px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none;font-weight:800;font-size:13px}.rel-group a em{display:block;font-style:normal;font-weight:600;font-size:11px;color:var(--ee-subtext)}
@@ -251,7 +253,30 @@ export async function loadPublicKingdomIds(db) {
   return (rows?.results || []).map(r => Number(r.kid)).filter(Number.isInteger);
 }
 
-export function renderPublicKingdomsIndex(kids, { origin = "" } = {}) {
+// 王国一覧の上に出す「王国ランキング」と「数字の見方」（2026-11-15・AdSense の品質対応）。数字は全王国の一覧（キャッシュ）から。
+function kingdomBoard(title, list, kind) {
+  if (list.length < 3) return "";
+  const rows = list.map((r, i) => {
+    const main = kind === "power" ? compactNumber(r.power) : `${r.gain < 0 ? "" : "+"}${compactNumber(r.gain)}`;
+    const sub = [r.age != null ? `開設${r.age}日` : "", kind === "power" ? (r.gain != null ? `7日 ${r.gain < 0 ? "" : "+"}${compactNumber(r.gain)}` : "") : `総戦力 ${compactNumber(r.power)}`].filter(Boolean).join("・");
+    return `<a class="lb-row" href="/k/${encodeURIComponent(r.kid)}"><i>${i + 1}</i><span><b>王国 ${esc(r.kid)}</b><small>${esc(sub)}</small></span><em class="${kind !== "power" && r.gain < 0 ? "down" : kind === "power" ? "" : "up"}">${esc(main)}</em></a>`;
+  }).join("");
+  return `<section class="lb"><h3>${esc(title)}</h3>${rows}</section>`;
+}
+function kingdomsIntro(boards) {
+  if (!boards || !boards.total) return "";
+  const asOf = boards.observedAt ? new Date(boards.observedAt * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) + " 時点・" : "";
+  const lb = kingdomBoard("総戦力が大きい王国", boards.power, "power") + kingdomBoard("7日間でいちばん伸びた王国", boards.gain, "gain") + kingdomBoard(`開設${YOUNG_KINGDOM_DAYS}日以内で伸びている王国`, boards.young, "gain");
+  return `${lb ? `<h2>王国ランキング</h2><p class="lead" style="margin-top:-4px">${esc(asOf)}毎日更新。王国を押すと、その王国の分析が見られます。</p><div class="lbs">${lb}</div>` : ""}
+<h2>数字の見方</h2><dl class="howto">
+<dt>総戦力</dt><dd>王国の全領主の戦力の合計です。</dd>
+<dt>7日間の伸び</dt><dd>1週間前と比べて増えた総戦力です。減っているときはマイナスになります。</dd>
+<dt>開設日数</dt><dd>王国ができてからの日数です。新しい英雄や黄金が解放される目安になります（<a href="/kingdom-timeline">王国タイムライン</a>）。</dd>
+<dt>開設時期が近い王国</dt><dd>開設日数が前後30日以内の王国です。王国ページでは、同じくらいの時期に始まった王国の中で何位かを出しています。</dd>
+</dl>`;
+}
+
+export function renderPublicKingdomsIndex(kids, { origin = "", stats = null } = {}) {
   const groups = new Map();
   for (const kid of kids) {
     const start = Math.floor((kid - 1) / 100) * 100 + 1;
@@ -261,9 +286,10 @@ export function renderPublicKingdomsIndex(kids, { origin = "" } = {}) {
   const sections = [...groups.entries()].map(([start, list]) => `<section class="range"><h2>王国 ${start}〜${start + 99}</h2><div class="grid">${list.map(k => `<a href="/k/${k}">${k}</a>`).join("")}</div></section>`).join("");
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › 王国一覧</nav>
 <h1>キングショット 王国一覧</h1>
-<p class="lead">KingShotの全${kids.length.toLocaleString("ja-JP")}王国の戦力・成長・ランキング・KvK情報。王国番号を選ぶか、検索してください。</p>
+<p class="lead">KingShotの全${kids.length.toLocaleString("ja-JP")}王国の総戦力・7日間の伸び・開設日数を毎日集めています。王国番号を押すと、その王国の分析（全王国の中の順位、開設時期が近い王国との比較、上位10人など）が見られます。</p>
 <form class="search" action="/kingdoms" method="get" onsubmit="var v=this.kid.value.trim();if(/^\\d+$/.test(v)){location.href='/k/'+v;return false}"><input name="kid" inputmode="numeric" placeholder="王国番号（例：1524）"><button type="submit">表示</button></form>
-${sections || '<div class="empty">王国データを読み込めませんでした。</div>'}
+${kingdomsIntro(stats ? kingdomLeaderboards(stats, 10) : null)}
+${sections ? `<h2>王国番号から探す</h2>${sections}` : '<div class="empty">王国データを読み込めませんでした。</div>'}
 <p class="note">データ提供：MightPulse。KingShotの公式サイトではありません。</p>`;
   return shell({ title: "キングショット 王国一覧・戦力ランキング | EagleEye", description: `キングショット（KingShot）の全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin, jsonLd: origin ? { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "王国一覧", item: origin + "/kingdoms" }] } : null });
 }

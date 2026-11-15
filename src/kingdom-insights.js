@@ -85,3 +85,19 @@ export function renderKingdomInsights(kid, ins, compact) {
   }
   return `<h2>王国${esc(kid)}の分析</h2><ul class="insights">${items.map(t => `<li>${t}</li>`).join("")}</ul><p class="note" style="margin-top:6px">全王国の毎日の集計から EagleEye が計算しています。開設時期が近い王国＝開設日数が前後${COHORT_DAYS}日以内の王国。</p>`;
 }
+
+// 王国一覧の「王国ランキング」：総戦力・7日の伸び・開設180日以内の伸び（各 n 位まで）。全王国の一覧（キャッシュ）から作る。
+export const YOUNG_KINGDOM_DAYS = 180;
+export function kingdomLeaderboards(rows, n = 10) {
+  const ok = (rows || []).filter(r => r && Number.isInteger(r.kid) && r.power != null);
+  const at = Math.max(0, ...ok.map(r => Number(r.at) || 0));
+  const withGain = ok.filter(r => r.gain != null);
+  const byGain = (a, b) => b.gain - a.gain || a.kid - b.kid;
+  return {
+    total: ok.length,
+    observedAt: at || null,
+    power: ok.slice().sort((a, b) => b.power - a.power || a.kid - b.kid).slice(0, n),
+    gain: withGain.slice().sort(byGain).slice(0, n),
+    young: withGain.filter(r => r.age != null && r.age <= YOUNG_KINGDOM_DAYS).sort(byGain).slice(0, n)
+  };
+}
