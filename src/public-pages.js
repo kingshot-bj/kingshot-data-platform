@@ -1,4 +1,5 @@
 import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights } from "./kingdom-insights.js";
+import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
 //   /k/{kid}       one kingdom: power & growth, top players / alliances, KvK
@@ -105,7 +106,27 @@ export async function loadPublicKingdom(env, kid) {
   const similar = insights?.nearPower || [];
   // Personal boards carry only the alliance id; resolve tags from the alliance boards.
   let playerRows = players?.results || [];
-  if (playerRows.some(p => !p.abbr && p.aid)) {
+  let allianceRows = alliances?.results || [];
+  // 誰もウォッチしていない王国のランキングは、14日で R2 に移して D1 から消している（kingdom-ranking-archive.js）。
+  // 公開ページも R2 の写しを読む（isolate で10分覚える）。日付をはっきり出す（2026-11-15）。
+  let rankingsAsOf = null, archiveTags = null, playersFromArchive = false;
+  if ((!playerRows.length || !allianceRows.length) && env.ARCHIVE) {
+    const arch = await loadArchivedKingdomRankings(env.ARCHIVE, kid).catch(() => null);
+    if (arch?.rows?.length) {
+      const pick = (board, type, n) => arch.rows.filter(r => r.board === board && r.target_type === type).sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, n);
+      const norm = v => String(v ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+      archiveTags = new Map(arch.rows.filter(r => r.target_type === "ALLIANCE" && r.abbr && r.aid != null).map(r => [norm(r.aid), String(r.abbr)]));
+      if (!playerRows.length) {
+        playerRows = pick("personal_power", "PLAYER", 10).map(r => ({ rank: r.rank, nick_name: r.nick_name, score: r.score, aid: r.aid, abbr: r.abbr || archiveTags.get(norm(r.aid)) || null }));
+        if (playerRows.length) { rankingsAsOf = arch.lastUpdatedAt || arch.archivedAt || null; playersFromArchive = true; }
+      }
+      if (!allianceRows.length) {
+        allianceRows = pick("alliance_power", "ALLIANCE", 5).map(r => ({ rank: r.rank, abbr: r.abbr, name: r.name, score: r.score, aid: r.target_id ?? r.aid }));
+        if (allianceRows.length && !rankingsAsOf) rankingsAsOf = arch.lastUpdatedAt || arch.archivedAt || null;
+      }
+    }
+  }
+  if (!playersFromArchive && playerRows.some(p => !p.abbr && p.aid)) {
     const tags = await db.prepare("SELECT aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'ALLIANCE' AND abbr IS NOT NULL AND abbr <> '' AND aid IS NOT NULL").bind(kid).all().catch(() => ({ results: [] }));
     const norm = v => String(v ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
     const byAid = new Map((tags?.results || []).map(t => [norm(t.aid), String(t.abbr)]));
@@ -122,12 +143,12 @@ export async function loadPublicKingdom(env, kid) {
     } catch { age = null; }
   }
   // ウォッチされていない王国は、裏で集めた同盟一覧（alliance_directory）から上位5を出す。
-  let allianceList = alliances?.results || [];
+  let allianceList = allianceRows;
   if (!allianceList.length) {
     const dir = await db.prepare("SELECT rank, abbr, name, power AS score, aid FROM alliance_directory WHERE kid = ? ORDER BY rank ASC LIMIT 5").bind(kid).all().catch(() => ({ results: [] }));
     allianceList = dir?.results || [];
   }
-  return { catalog, players: playerRows, alliances: allianceList, matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar, insights };
+  return { catalog, players: playerRows, alliances: allianceList, rankingsAsOf, matchup, score, growth, age, nearKids: (near?.results || []).map(r => Number(r.kid)).filter(Number.isInteger), similar, insights };
 }
 
 // 存在しない王国番号（カタログにない）は404にする。どんな番号でも中身のないページを返すと、検索エンジンに「中身のないページが無限にある」と見られる。
@@ -194,6 +215,8 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
     kvk = `<h2>KvK</h2><div class="kvk">シーズン${esc(matchup.season)}の対戦相手：<a href="/k/${encodeURIComponent(matchup.opponent)}">王国 ${esc(matchup.opponent)}</a>（<a href="/kvk/s${encodeURIComponent(matchup.season)}">全組み合わせと戦力差</a>）${live && score.score != null ? `<br>スコア ${esc(compactNumber(score.score))} : ${esc(compactNumber(score.opponent_score))}` : ""}</div>`;
   }
 
+  // R2 に移したランキングを使ったときは、その時点の日付を見出しに出す（今のデータと誤解されないように）。
+  const asOfLabel = data.rankingsAsOf ? `<small style="display:block;font-size:12px;font-weight:600;color:var(--ee-subtext)">${esc(formatArchiveDate(data.rankingsAsOf))}時点（この王国は毎月取り直しています）</small>` : "";
   const nearKids = data.nearKids || [], similar = data.similar || [];
   const related = nearKids.length || similar.length ? `<h2>関連する王国</h2><div class="related">${similar.length ? `<div class="rel-group"><small>総戦力が近い王国</small>${similar.map(k => `<a href="/k/${encodeURIComponent(k.kid)}">王国 ${esc(k.kid)}<em>${esc(compactNumber(k.power))}</em></a>`).join("")}</div>` : ""}${nearKids.length ? `<div class="rel-group"><small>近い番号の王国（開設時期が近い）</small>${nearKids.map(k => `<a href="/k/${k}">王国 ${k}</a>`).join("")}</div>` : ""}</div>` : "";
   const body = `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/kingdoms">王国一覧</a> › 王国 ${esc(kid)}</nav>
@@ -201,8 +224,8 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
 <p class="lead">KingShot 王国${esc(kid)}の戦力・成長・ランキング・KvK情報。${growth?.latestAt ? esc(fmtDate(growth.latestAt)) + " 時点。" : ""}データは毎日更新されます。</p>
 ${stats}
 ${renderKingdomInsights(kid, data.insights, compactNumber)}
-${playerRows ? `<h2>戦力ランキング（上位10人）</h2>${playerRows}` : ""}
-${allianceRows ? `<h2>同盟ランキング（上位5）</h2>${allianceRows}` : ""}
+${playerRows ? `<h2>戦力ランキング（上位10人）${asOfLabel}</h2>${playerRows}` : ""}
+${allianceRows ? `<h2>同盟ランキング（上位5）${asOfLabel}</h2>${allianceRows}` : ""}
 ${kvk}
 ${related}
 ${data.age != null ? renderKingdomTimelineSection(data.age, { kid, fullHref: "/kingdom-timeline" }) : ""}
