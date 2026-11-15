@@ -112,6 +112,40 @@ export async function saveMatchup(db, { season, kid, aid, userId, oppKid, oppTag
     .bind(season, kid, normAid(aid), String(userId), oppKid, String(oppTag).slice(0, 24), now, now).run();
 }
 
+// オーナーだけ：全同盟の登録済みの対戦相手（直近 days 日に登録・更新されたもの）。登録した人は出さない（人数だけ）。
+// 読むのは swordland_matchups を1文（期間で絞る・最大300組）。
+export const SWORDLAND_OWNER_LIST_DAYS = 14;
+export async function loadAllMatchupsForOwner(db, { nowMs = Date.now(), days = SWORDLAND_OWNER_LIST_DAYS, limit = 300 } = {}) {
+  await ensureSwordlandSchema(db);
+  const since = Math.floor(nowMs / 1000) - days * 86400;
+  const rows = (await db.prepare(
+    "SELECT m.season, m.kid, m.aid, m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, " +
+    "(SELECT c.abbr FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS abbr, " +
+    "(SELECT c.name FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS name " +
+    "FROM swordland_matchups m WHERE m.updated_at >= ? GROUP BY m.season, m.kid, m.aid, m.opp_kid, lower(m.opp_tag) ORDER BY at DESC LIMIT ?"
+  ).bind(since, limit).all().catch(() => ({ results: [] })))?.results || [];
+  // 同じ同盟・同じ回で相手が割れていたら印を付ける（多い方を先に）。
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.season + ":" + r.kid + ":" + r.aid;
+    if (!groups.has(k)) groups.set(k, { season: Number(r.season), kid: Number(r.kid), aid: String(r.aid), abbr: r.abbr || "", name: r.name || "", at: 0, opps: [] });
+    const g = groups.get(k);
+    g.opps.push({ opp_kid: Number(r.opp_kid), opp_tag: String(r.opp_tag), count: Number(r.n) || 0 });
+    g.at = Math.max(g.at, Number(r.at) || 0);
+  }
+  return [...groups.values()].map(g => ({ ...g, opps: g.opps.sort((a, b) => b.count - a.count), disputed: g.opps.length > 1 })).sort((a, b) => b.season - a.season || b.at - a.at);
+}
+
+export function renderOwnerMatchups(list) {
+  if (!list) return "";
+  const items = list.map(g => {
+    const self = `王国${esc(g.kid)} ${esc(g.abbr || "（タグ不明 aid " + g.aid + "）")}${g.name ? `<small>${esc(g.name)}</small>` : ""}`;
+    const opps = g.opps.map(o => `<li>王国${esc(o.opp_kid)} ${esc(o.opp_tag)}（${esc(o.count)}人）${g.abbr ? ` <a href="${esc(compareUrl(g.kid, g.abbr, o.opp_kid, o.opp_tag))}">比べる</a>` : ""}</li>`).join("");
+    return `<div class="om"><div class="om-h"><b>${self}</b><span class="note">${esc(jstDate(g.season))}〜の回</span></div><ul>${opps}</ul>${g.disputed ? `<p class="note">登録が分かれています</p>` : ""}</div>`;
+  }).join("");
+  return `<section class="card"><h2 class="oh">オーナー：全同盟の対戦相手（直近${SWORDLAND_OWNER_LIST_DAYS}日・${list.length}同盟）</h2>${items || `<p class="note">直近${SWORDLAND_OWNER_LIST_DAYS}日の登録はありません。</p>`}<p class="note">登録した人は表示しません（人数だけ）。</p></section>`;
+}
+
 export function compareUrl(kid, abbr, oppKid, oppTag) {
   return "/alliance/compare?a=" + encodeURIComponent(kid + ":" + abbr) + "&a=" + encodeURIComponent(oppKid + ":" + oppTag);
 }
@@ -119,7 +153,7 @@ export function compareUrl(kid, abbr, oppKid, oppTag) {
 const jstDate = sec => new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slice(5, 10).replace("-", "/");
 
 // 登録ページ。
-export function renderSwordlandPage({ state, message = "", isOwner = false }) {
+export function renderSwordlandPage({ state, message = "", isOwner = false, ownerMatchups = null }) {
   const s = state || {};
   const period = s.showdown ? `${jstDate(s.showdown.begin_ts)}〜${jstDate(s.showdown.end_ts - 1)}` : "";
   const mine = s.mine ? `王国${esc(s.mine.kid)}の ${esc(s.mine.alliance_abbr || "")}${s.mine.alliance_name ? "（" + esc(s.mine.alliance_name) + "）" : ""}` : "";
@@ -133,9 +167,11 @@ export function renderSwordlandPage({ state, message = "", isOwner = false }) {
 body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:640px;margin:0 auto;padding:18px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
 h1{font-size:22px;margin:6px 0 2px}.sub{font-size:13px;color:var(--ee-subtext,#91a7bf);margin:0 0 12px}.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0;font-size:14px;line-height:1.6}
 .f{display:grid;gap:8px}.f input{padding:10px;border-radius:9px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit;font:15px system-ui}.f button,.btn{display:inline-block;padding:11px 14px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#04202a;font:800 14px system-ui;text-decoration:none;text-align:center}
+.oh{font-size:15px;margin:0 0 8px}.om{border-top:1px solid var(--ee-border-soft,#223b57);padding:8px 0;overflow-wrap:anywhere}.om-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.om-h small{display:block;font-size:12px;font-weight:400;color:var(--ee-subtext,#91a7bf)}.om ul{margin:4px 0 0;padding-left:18px}
 .now{font-size:15px}.note{font-size:12px;color:var(--ee-subtext,#91a7bf)}.msg{padding:9px 11px;border-radius:9px;border:1px dashed currentColor;font-size:13px}
 </style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>⚔️ 聖剣争奪</h1><p class="sub">${period ? "開催期間 " + esc(period) : ""}${mine ? "・" + mine : ""}</p>
 ${message ? `<p class="msg">${esc(message)}</p>` : ""}<section class="card">${body}</section>
+${isOwner ? renderOwnerMatchups(ownerMatchups) : ""}
 ${isOwner ? `<form method="post" action="/swordland/refresh-events" class="card"><p class="note">オーナー：登録ユーザーの王国のイベント日程（Mighty対応のキー）を今すぐ取り直します（最大10王国）。</p><button type="submit" class="btn">今すぐ日程を取得</button></form>` : ""}
 <p class="note">組み合わせはゲームの外からは分からないため、同盟のR4・R5の人に登録してもらっています。登録が分かれたときは、多く登録された方を表示します。</p></main></body></html>`;
 }

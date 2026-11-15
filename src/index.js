@@ -90,7 +90,7 @@ import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } fro
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
-import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
+import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
@@ -5227,7 +5227,7 @@ export default {
         await writeOwnerAuditLog(env, guard.auth, "SWORDLAND_EVENTS_REFRESH", null, null, r).catch(() => {});
         const msg = r.error ? "取得に失敗しました：" + r.error : "日程を取り直しました（" + (r.kingdoms || 0) + "王国・聖剣の日程 " + (r.saved || 0) + "件" + ((r.errors || []).length ? "・失敗 " + r.errors.map(e => "王国" + e.kid + " " + e.status).join("、") : "") + "）。";
         const state = await loadSwordlandState(env, guard.auth);
-        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true }));
+        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true, ownerMatchups: await loadAllMatchupsForOwner(env.DB).catch(() => []) }));
       }
       // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
       if (url.pathname === "/alliance/compare") {
@@ -5826,7 +5826,10 @@ async function handleSwordlandPage(request, env) {
     await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
     return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
   }
-  return eagleEyeHtmlResponse(renderSwordlandPage({ state: await loadSwordlandState(env, auth), isOwner: auth.role === "OWNER" }));
+  const isOwner = auth.role === "OWNER";
+  // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。
+  const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
+  return eagleEyeHtmlResponse(renderSwordlandPage({ state, isOwner, ownerMatchups }));
 }
 
 async function servePublicCached(request, executionContext, build, maxAge = PUBLIC_CACHE_SECONDS) {
