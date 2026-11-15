@@ -94,7 +94,7 @@ import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, 
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
-import { loadAllianceForCompare } from "./kingdom-portal.js";
+import { loadAllianceForCompare, ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
@@ -5233,6 +5233,21 @@ export default {
       if (url.pathname === "/alliance/compare") {
         const auth = await getAuthenticatedUser(request, env);
         if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "同盟比較", "同盟比較を使うにはログインしてください。"));
+        // 「最新を取得」（POST）：メンバー表は10分、秘境の試練は1時間より古いものだけ取り直して、同じページに戻る。
+        if (request.method === "POST") {
+          if (!canUseAllianceCompare(auth.role)) return json({ ok: false, error: "ADVANCED_REQUIRED" }, 403);
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
+          const back = new URL(url); back.searchParams.delete("refreshed");
+          if (targets.length >= 2 && !isQuietAgentRequest(request, auth)) {
+            const got = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true, maxAgeSeconds: ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS }).catch(() => null)));
+            const kids = got.filter(a => a && !a.error).map(a => a.kid);
+            await scheduleKingdomRankingFetch(env, executionContext, kids, MYSTIC_COMPARE_BOARDS.map(b => b[0]), { staleSeconds: ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS }).catch(() => []);
+            await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_REFRESH", { metadata: { count: targets.length, fetched: got.filter(a => a?.fetched).length } });
+            back.searchParams.set("refreshed", "1");
+          }
+          return new Response(null, { status: 303, headers: { Location: back.pathname + back.search, "Cache-Control": "no-store" } });
+        }
         if (!canUseAllianceCompare(auth.role)) return eagleEyeHtmlResponse(renderAllianceComparePage({ message: "同盟比較はADVANCED以上の機能です。マイKingShotで領主を登録し、MightPulseのAPIキーを登録するとADVANCEDになります（/my-player）。" }));
         const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
         const topParam = Number(url.searchParams.get("top"));
@@ -5260,7 +5275,7 @@ export default {
         const shareFound = alliances.filter(a => a && !a.error);
         const newestRoster = Math.max(0, ...shareFound.map(a => Number(a.observedAt) || 0));
         const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
-        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml }));
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1" }));
       }
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
@@ -8015,14 +8030,16 @@ async function handlePlayerCompareRefreshCapacityApi(request, env) {
 // プレイヤー単体のデータには入っておらず、王国ランキング（各上位100人）からしか取れない項目。
 const COMPARE_KINGDOM_ONLY_BOARDS = Object.freeze(["rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power", "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm", "pet_power", "island_prosperity", "master_power"]);
 const COMPARE_RANKING_STALE_SECONDS = 24 * 3600;
+// 同盟比較の「最新を取得」：秘境の試練（王国ランキング）はこれより古ければ取り直す（API Pool を使いすぎない下限）。
+const ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS = 3600;
 const COMPARE_RANKING_MAX_BOARDS = 26;
 // 画面を開いたときに、足りない／古い（24時間より前）王国ランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
 // 実際の取得は refreshKingdomRankingOnDemand（6時間以内に取ったものは取り直さない・10分以内の再試行もしない）。
 // 戻り値は「取りに行った王国と種類の数」（画面で「取得中」を出す）。
-async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS } = {}) {
+async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS, staleSeconds = COMPARE_RANKING_STALE_SECONDS } = {}) {
   const kids = [...new Set((kidList || []).map(Number).filter(k => Number.isInteger(k) && k > 0))].slice(0, 6); // プレイヤー比較は最大6人＝最大6王国
   if (!kids.length || !boards?.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
-  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs);
+  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs, staleSeconds);
   const jobs = todo.slice(0, maxBoards);
   if (!jobs.length) return [];
   executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs }));
@@ -8030,13 +8047,13 @@ async function scheduleKingdomRankingFetch(env, executionContext, kidList, board
   for (const [kid] of jobs) byKid.set(kid, (byKid.get(kid) || 0) + 1);
   return [...byKid].map(([kid, n]) => ({ kid, boards: n }));
 }
-async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now()) {
+async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now(), staleSeconds = COMPARE_RANKING_STALE_SECONDS) {
   const now = Math.floor(nowMs / 1000);
   const state = await db.prepare("SELECT kid, board, last_checked_at FROM kingdom_ranking_board_state WHERE kid IN (" + kids.map(() => "?").join(",") + ") AND board IN (" + boards.map(() => "?").join(",") + ")")
     .bind(...kids, ...boards).all().catch(() => ({ results: [] }));
   const checked = new Map((state.results || []).map(r => [r.kid + ":" + r.board, Number(r.last_checked_at) || 0]));
   const todo = [];
-  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > COMPARE_RANKING_STALE_SECONDS) todo.push([kid, board]);
+  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > staleSeconds) todo.push([kid, board]);
   return todo;
 }
 async function runKingdomRankingJobs(env, jobs, options = {}) {
