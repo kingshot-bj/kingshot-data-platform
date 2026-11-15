@@ -113,12 +113,22 @@ export function resetKingdomMysticCache() { mysticCache = { at: 0, value: null }
 
 export async function loadAllMysticSummaries(db, nowMs = Date.now()) {
   if (mysticCache.value && nowMs - mysticCache.at < INSIGHTS_CACHE_MS) return mysticCache.value;
-  const res = await db.prepare("SELECT kid, season, boards_json, fetched_at FROM kvk_mystic_summary WHERE status = 'OK' AND season = (SELECT MAX(season) FROM kvk_mystic_summary WHERE status = 'OK')").all();
+  // KvK 用（シーズンごと）と、月1回の取り直し（kingdom_mystic_current）の新しい方を使う。
+  const [res, cur] = await Promise.all([
+    db.prepare("SELECT kid, season, boards_json, fetched_at FROM kvk_mystic_summary WHERE status = 'OK' AND season = (SELECT MAX(season) FROM kvk_mystic_summary WHERE status = 'OK')").all(),
+    db.prepare("SELECT kid, boards_json, fetched_at FROM kingdom_mystic_current WHERE status = 'OK'").all().catch(() => ({ results: [] }))
+  ]);
   const map = new Map();
   let season = null;
-  for (const r of res?.results || []) {
-    try { map.set(Number(r.kid), { boards: JSON.parse(r.boards_json || "{}"), fetchedAt: Number(r.fetched_at) || null }); season = Number(r.season); } catch {}
-  }
+  const put = (r, s) => {
+    try {
+      const at = Number(r.fetched_at) || 0, prev = map.get(Number(r.kid));
+      if (prev && (prev.fetchedAt || 0) >= at) return;
+      map.set(Number(r.kid), { boards: JSON.parse(r.boards_json || "{}"), fetchedAt: at || null, season: s });
+    } catch {}
+  };
+  for (const r of res?.results || []) { put(r, Number(r.season)); season = Number(r.season); }
+  for (const r of cur?.results || []) put(r, null);
   mysticCache = { at: nowMs, value: { season, map } };
   return mysticCache.value;
 }
@@ -140,7 +150,7 @@ export function computeMysticInsights(kid, all) {
     stages.push({ key, label: MYSTIC_LABELS[key], best: b.best, bestLabel: (Array.isArray(b.labels) && b.labels[0]) || stageLabelFromValue(b.best), rank: above + 1, count, top10: b.top10 ?? null, top10Label: b.top10 != null ? stageLabelFromValue(Math.round(b.top10)) : null });
   }
   if (!stages.length) return null;
-  return { season: all.season, fetchedAt: mine.fetchedAt, stages };
+  return { season: mine.season ?? null, fetchedAt: mine.fetchedAt, stages };
 }
 
 export function renderMysticInsights(kid, m) {
@@ -151,5 +161,5 @@ export function renderMysticInsights(kid, m) {
   const when = m.fetchedAt ? new Date(m.fetchedAt * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "";
   return `<h2>王国${esc(kid)}の秘境の試練（強さの目安）</h2><p class="lead" style="margin-top:-4px">${lead}</p>
 <div class="mys-wrap"><table class="mys"><thead><tr><th>種類</th><th>1位の記録</th><th>全王国中</th><th>上位10人の平均</th></tr></thead><tbody>${rows}</tbody></table></div>
-<p class="note" style="margin-top:6px">秘境の試練は月〜土を全員同じ兵士で挑むので、兵士の数ではなく英雄・装備・研究などの育成の差が出やすい記録です。KvK や聖剣争奪は集結を主催するトップ層の強さで決まりやすいため、1位の記録を中心に見ています。記録は「章-ステージ」。${m.season ? `KvKシーズン${esc(m.season)}の組み合わせ用に` : ""}${when ? esc(when) + " ごろ" : ""}取得したものです（<a href="/kvk/matchups">KvK の組み合わせ</a>でも比べられます）。</p>`;
+<p class="note" style="margin-top:6px">秘境の試練は月〜土を全員同じ兵士で挑むので、兵士の数ではなく英雄・装備・研究などの育成の差が出やすい記録です。KvK や聖剣争奪は集結を主催するトップ層の強さで決まりやすいため、1位の記録を中心に見ています。記録は「章-ステージ」。${m.season ? `KvKシーズン${esc(m.season)}の組み合わせ用に` : ""}${when ? esc(when) + " ごろ" : ""}取得したものです（毎月取り直しています）（<a href="/kvk/matchups">KvK の組み合わせ</a>でも比べられます）。</p>`;
 }
