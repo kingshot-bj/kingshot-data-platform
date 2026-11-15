@@ -29,7 +29,8 @@ test("ページ：説明・王国ランキング（日付つき）・数字の�
   assert.match(html, /2026-11-21 時点・毎日更新/);
   assert.match(html, /<a class="lb-row" href="\/k\/1"><i>1<\/i>/);
   assert.match(html, /<h3>開設180日以内で伸びている王国<\/h3>/);
-  assert.match(html, /<dt>総戦力<\/dt><dd>王国の全領主の戦力の合計です。<\/dd>/);
+  // 総力は強さと比例しない（オーナー確認・docs/KINGSHOT_GAME_KNOWLEDGE.md）。
+  assert.match(html, /<dt>総戦力<\/dt><dd>王国の全領主の戦力（ゲーム内の総力）の合計です。[^<]*<b>強さとは比例しません<\/b>/);
   assert.match(html, /<h2>王国番号から探す<\/h2>/);
   assert.match(html, /href="\/k\/6">6<\/a>/);
 });

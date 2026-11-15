@@ -31,6 +31,7 @@ test("全王国の中の順位・開設時期が近い王国の中の順位・�
 test("文章は実際の数字から。戦力が減っていればそう書く。同じ時期の王国が少なければ比べない", () => {
   const html = renderKingdomInsights(3, computeKingdomInsights(3, rows), compact);
   assert.match(html, /<h2>王国3の分析<\/h2>/);
+  assert.match(html, /強さとは比例しません。順位は規模の目安です/, "総力の順位を強さの順位として見せない");
   assert.match(html, /総戦力は全6王国中 <b>5位<\/b>/);
   assert.match(html, /7日間で総戦力が <b>減っています<\/b>（伸びは全6王国中6位）/);
   assert.match(html, /開設時期が近い王国（開設535〜595日・5王国）の中で、総戦力は <b>5位<\/b>・中央値より33%少ない/);

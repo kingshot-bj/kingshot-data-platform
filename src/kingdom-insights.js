@@ -83,7 +83,7 @@ export function renderKingdomInsights(kid, ins, compact) {
     items.push(`開設時期が近い王国（開設${esc(c.fromAge)}〜${esc(c.toAge)}日・${esc(c.size)}王国）の中で、総戦力は <b>${esc(c.powerRank)}位</b>${vs ? `・${esc(vs)}` : ""}`);
     if (c.gainRank != null) items.push(`同じ時期の王国の中で、7日間の伸びは <b>${esc(c.gainRank)}位</b>（中央値 ${esc(compact(c.medianGain))}）`);
   }
-  return `<h2>王国${esc(kid)}の分析</h2><ul class="insights">${items.map(t => `<li>${t}</li>`).join("")}</ul><p class="note" style="margin-top:6px">全王国の毎日の集計から EagleEye が計算しています。開設時期が近い王国＝開設日数が前後${COHORT_DAYS}日以内の王国。</p>`;
+  return `<h2>王国${esc(kid)}の分析</h2><ul class="insights">${items.map(t => `<li>${t}</li>`).join("")}</ul><p class="note" style="margin-top:6px">総戦力（ゲーム内の総力）は兵士の数や建物の強化でも大きく増えるので、強さとは比例しません。順位は規模の目安です。全王国の毎日の集計から EagleEye が計算しています。開設時期が近い王国＝開設日数が前後${COHORT_DAYS}日以内の王国。</p>`;
 }
 
 // 王国一覧の「王国ランキング」：総戦力・7日の伸び・開設180日以内の伸び（各 n 位まで）。全王国の一覧（キャッシュ）から作る。
