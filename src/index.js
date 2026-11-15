@@ -5383,6 +5383,11 @@ export default {
       console.error("user_kingdom_ranking_refresh_failed", error?.message || error);
     }
     try {
+      await runPublicKingdomMonthlyRanking(env);
+    } catch (error) {
+      console.error("public_kingdom_monthly_ranking_failed", error?.message || error);
+    }
+    try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
     } catch (error) {
       console.error("kingdom_discord_notifications_failed", error?.message || error);
@@ -8076,7 +8081,7 @@ async function runKingdomRankingJobs(env, jobs, options = {}) {
     try { await refreshKingdomRankingOnDemand(env, kid, board, options); done++; }
     catch (error) {
       console.warn("kingdom_ranking_fetch_failed", kid, board, error?.code || error?.message || error);
-      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) break; // キーが空いていなければやめる
+      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) { if (options.report) options.report.noKey = true; break; } // キーが空いていなければやめる
     }
   }
   return done;
@@ -8106,6 +8111,32 @@ async function runUserKingdomRankingRefresh(env, { nowMs = Date.now() } = {}) {
   for (let i = 0; i < kids.length; i += 10) todo.push(...await staleKingdomRankingBoards(env.DB, kids.slice(i, i + 10), USER_KINGDOM_RANKING_BOARDS, nowMs));
   const fetched = await runKingdomRankingJobs(env, todo.slice(0, USER_KINGDOM_RANKING_PER_RUN), { nowMs, purpose: "KINGDOM_RANKING_USER_KINGDOM", reserveApiKeys: BACKGROUND_KEY_RESERVE });
   return { kingdoms: kids.length, pending: todo.length, fetched };
+}
+
+// 公開の王国ページ用：全王国の「個人の戦力ランキング」と「同盟の戦力ランキング」を月1回取り直す（2026-11-15）。
+// ・5分ごとに、王国番号の順に10王国ずつ見て（位置は public_ranking_refresh_state に覚える）、30日より古いものだけ取る。
+//   1周（約2,600王国）は1日ほどで回り、実際に取るのは30日に1回だけ。1回の実行で最大20件。
+// ・取ったランキングも14日で R2 に移る（kingdom-ranking-archive.js）。公開ページは R2 の写しも読む。
+// ・API Pool はユーザー用に BACKGROUND_KEY_RESERVE 本を残す。キーが空いていなければその回はやめる。
+const PUBLIC_MONTHLY_RANKING_BOARDS = Object.freeze(["personal_power", "alliance_power"]);
+const PUBLIC_MONTHLY_RANKING_SECONDS = 30 * 86400;
+const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 10;
+async function runPublicKingdomMonthlyRanking(env, { nowMs = Date.now() } = {}) {
+  if (!env?.DB) return { skipped: "NO_DB" };
+  const db = env.DB, now = Math.floor(nowMs / 1000);
+  await db.prepare("CREATE TABLE IF NOT EXISTS public_ranking_refresh_state (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)").run();
+  const cursorRow = await db.prepare("SELECT value FROM public_ranking_refresh_state WHERE key = 'cursor'").first().catch(() => null);
+  const cursor = Number(cursorRow?.value) || 0;
+  let rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > ? ORDER BY kid LIMIT ?").bind(cursor, PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  if (!rows.length && cursor > 0) rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > 0 ORDER BY kid LIMIT ?").bind(PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  const kids = rows.map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
+  if (!kids.length) return { kingdoms: 0, fetched: 0 };
+  const todo = await staleKingdomRankingBoards(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS);
+  const report = {};
+  const fetched = todo.length ? await runKingdomRankingJobs(env, todo, { nowMs, purpose: "KINGDOM_RANKING_PUBLIC_MONTHLY", reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report }) : 0;
+  // キーが空いていなくて止まったときだけ、同じ王国から次の回にやり直す（ほかの失敗では先へ進む＝1つの王国で止まり続けない）。
+  if (!report.noKey) await db.prepare("INSERT INTO public_ranking_refresh_state (key, value, updated_at) VALUES ('cursor', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").bind(String(kids[kids.length - 1]), now).run();
+  return { kingdoms: kids.length, pending: todo.length, fetched, noKey: Boolean(report.noKey) };
 }
 
 async function handlePlayerCompareApi(request, env, executionContext = null) {

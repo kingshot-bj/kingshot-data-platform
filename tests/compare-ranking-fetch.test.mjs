@@ -21,7 +21,7 @@ test("配線：比較APIは王国番号（権限に関係なく）で予約し�
   const fn = index.slice(index.indexOf("async function scheduleKingdomRankingFetch("), index.indexOf("async function handlePlayerCompareApi("));
   assert.match(fn, /refreshKingdomRankingOnDemand\(env, kid, board, options\)/);
   assert.match(fn, /maxBoards = COMPARE_RANKING_MAX_BOARDS/);
-  assert.match(fn, /NO_API_POOL_KEY_AVAILABLE"\)\) break;/);
+  assert.match(fn, /NO_API_POOL_KEY_AVAILABLE"\)\) \{ if \(options\.report\) options\.report\.noKey = true; break; \}/, "キーが空いていなければやめる（止まった理由を呼び出し元に返す）");
   assert.match(fn, /return scheduleKingdomRankingFetch\(env, executionContext, kidList, COMPARE_KINGDOM_ONLY_BOARDS, options\);/);
   assert.match(index, /const COMPARE_RANKING_MAX_BOARDS = 26;/);
   assert.match(index, /window\.__eeRankRetry=1/, "読み直しは1回だけ");
