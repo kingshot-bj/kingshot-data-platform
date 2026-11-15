@@ -48,7 +48,7 @@ test("配線：ログイン開始・取消・新規/再ログインを数える�
   assert.match(cancel, /recordFunnel\(env\.DB, "login_cancelled"\)/);
   assert.match(cancel, /status: 302/);
   assert.doesNotMatch(cancel, /SESSION_COOKIE/, "取消ではセッションを出さない");
-  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);
+  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep[,} ]/);
 });
 
 test("どこで離れたか：Discord・Googleの画面から戻った回数、Googleで完了、戻ってきて失敗を数える", () => {

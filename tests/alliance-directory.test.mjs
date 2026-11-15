@@ -128,7 +128,7 @@ test("配線：/a/ のルート（見つからなければ404・noindex）、王
   assert.match(index, /async signedIn => \{ const data = await loadPublicAlliance\(env\.DB, kid, m\[2\]\)\.catch\(\(\) => null\); if \(!data\) return eagleEyeHtmlResponse\(publicShell\([\s\S]*?noindex: true \}\), 404\); return renderPublicAlliancePage/);
   assert.match(index, /loadAllianceSitemapPaths\(env\.DB\)/);
   assert.match(index, /runAllianceSweep\(env, \{ collect: collectMightPulseThroughGuards, extractEntries: extractKingdomRankingEntries, d1, api, quota: d1MonthlyQuota\(env\) \}\)/);
-  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);
+  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep[,} ]/);
   const kp = renderPublicKingdomPage(1524, { catalog: { kid: 1524 }, players: [], alliances: [{ rank: 1, abbr: "TNC", name: "にゃっぷ！", score: 1e10, aid: "153300050.0" }], matchup: null, score: null, growth: null }, { origin: "" });
   assert.match(kp, /href="\/a\/1524\/153300050"/);
   resetAllianceDirectorySchemaCache();
