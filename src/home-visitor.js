@@ -32,7 +32,7 @@ export function homeHighlights(rows) {
 
 function rankCard(title, icon, list, moreHref, moreLabel) {
   if (list.length < 3) return "";
-  const rows = list.map((r, i) => `<a class="rk" href="/k/${encodeURIComponent(r.kid)}"><i>${i + 1}</i><span><b>王国 ${esc(r.kid)}</b><small>${r.age != null ? `開設${esc(r.age)}日・` : ""}総戦力 ${esc(compact(r.power))}</small></span><em class="${r.gain < 0 ? "down" : "up"}">${r.gain < 0 ? "" : "+"}${esc(compact(r.gain))}</em></a>`).join("");
+  const rows = list.map((r, i) => `<a class="rk" href="/k/${encodeURIComponent(r.kid)}"><i>${i + 1}</i><span><b>王国 ${esc(r.kid)}</b><small>${r.age != null ? `開設${esc(r.age)}日・` : ""}総力 ${esc(compact(r.power))}</small></span><em class="${r.gain < 0 ? "down" : "up"}">${r.gain < 0 ? "" : "+"}${esc(compact(r.gain))}</em></a>`).join("");
   return `<div class="hcard"><h3>${icon} ${esc(title)}</h3>${rows}<a class="more" href="${esc(moreHref)}">${esc(moreLabel)} →</a></div>`;
 }
 
@@ -45,7 +45,7 @@ const TOOLS = [
 ];
 
 const FEATURES = [
-  ["🏰", "王国の分析", "free", "総戦力・7日の伸びが全王国の何位か、開設時期が近い王国の中でどうか。", "/kingdoms"],
+  ["🏰", "王国の分析", "free", "総力・7日の伸びが全王国の何位か、開設時期が近い王国の中でどうか。", "/kingdoms"],
   ["⚔️", "KvK の組み合わせ", "free", "全組み合わせを秘境の試練の記録で比較。", "/kvk/matchups"],
   ["👥", "プレイヤー詳細・最大6人の比較", "login", "英雄・部隊・秘境の試練まで並べて、どこで差がついているか。画像で共有も。", "/login"],
   ["👀", "ウォッチ", "login", "気になるプレイヤー・王国の変化をホームでまとめて確認。", "/login"]
@@ -57,7 +57,7 @@ export function renderVisitorHome({ origin = "", highlights = null, kvkSeason = 
   const tools = TOOLS.map(([href, icon, name, sub, wide]) => `<a class="tl${wide ? " wide" : ""}" href="${href}"><span class="ic">${icon}</span><b>${esc(name)}</b><small>${esc(sub)}</small></a>`).join("");
   const cards = rankCard("7日間でいちばん伸びた王国", "📈", h.gain, "/kingdoms", "全王国の一覧を見る") + rankCard(`開設${YOUNG_DAYS}日以内で伸びている王国`, "🌱", h.young, "/kingdoms", "新しい王国をもっと見る");
   const week = cards ? `<h2>今週のデータ</h2><p class="hsub">${h.observedAt ? esc(jstDate(h.observedAt)) + " 時点・" : ""}毎日更新</p>${cards}` : "";
-  const kvk = kvkSeason ? `<h2>KvK</h2><div class="hcard pad"><div class="hkvk"><div class="vs">⚔</div><p><b>シーズン${esc(kvkSeason)}の組み合わせ</b><br>総戦力ではなく、秘境の試練の6種類で両王国の1位の記録を比べています。</p></div><a class="hbtn" href="/kvk/s${encodeURIComponent(kvkSeason)}">組み合わせを見る →</a></div>` : "";
+  const kvk = kvkSeason ? `<h2>KvK</h2><div class="hcard pad"><div class="hkvk"><div class="vs">⚔</div><p><b>シーズン${esc(kvkSeason)}の組み合わせ</b><br>総力ではなく、秘境の試練の6種類で両王国の1位の記録を比べています。</p></div><a class="hbtn" href="/kvk/s${encodeURIComponent(kvkSeason)}">組み合わせを見る →</a></div>` : "";
   const feats = FEATURES.map(([icon, name, kind, text, href]) => `<a class="ft" href="${href}"><span class="ic">${icon}</span><span><b>${esc(name)}</b> <span class="tag ${kind}">${kind === "free" ? "ログインなし" : "無料登録"}</span><small>${esc(text)}</small></span></a>`).join("");
   // ログインは一番上にも置く（下までスクロールしないと無かったため・2026-11-15）。
   const body = `<div class="htop"><span class="hbrand">🦅 <b>EagleEye</b><small>キングショット非公式</small></span><a class="hlogin" href="/login">ログイン</a></div>

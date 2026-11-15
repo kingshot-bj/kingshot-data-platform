@@ -39,18 +39,18 @@ async function kingdomItems(db) {
   const age = r => r.age_days != null ? `開設${r.age_days}日` : "";
   const items = [];
   if (gain.length) items.push({
-    id: "gain", title: "今週いちばん伸びた王国", subtitle: "7日間の戦力増加 TOP10", path: "/kingdoms", observedAt: at(gain),
-    rows: gain.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総戦力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
+    id: "gain", title: "今週いちばん伸びた王国", subtitle: "7日間の総力増加 TOP10", path: "/kingdoms", observedAt: at(gain),
+    rows: gain.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
     hook: `今週いちばん戦力が伸びたのは王国${gain[0].kid}（7日間で+${compactNumber(gain[0].power_gain_7d)}）`
   });
   if (power.length) items.push({
-    id: "power", title: "総戦力ランキング", subtitle: "全王国の総戦力 TOP10", path: "/kingdoms", observedAt: at(power),
+    id: "power", title: "総力ランキング", subtitle: "全王国の総力 TOP10", path: "/kingdoms", observedAt: at(power),
     rows: power.map((r, i) => kingdomRow(r, i, compactNumber(r.power), [age(r), r.power_gain_7d > 0 ? "7日間 +" + compactNumber(r.power_gain_7d) : ""].filter(Boolean).join("・"))),
-    hook: `総戦力1位は王国${power[0].kid}（${compactNumber(power[0].power)}）`
+    hook: `総力1位は王国${power[0].kid}（${compactNumber(power[0].power)}）`
   });
   if (young.length) items.push({
-    id: "young", title: "新しい王国の成長ランキング", subtitle: "開設180日以内・7日間の戦力増加 TOP10", path: "/kingdoms", observedAt: at(young),
-    rows: young.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総戦力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
+    id: "young", title: "新しい王国の成長ランキング", subtitle: "開設180日以内・7日間の総力増加 TOP10", path: "/kingdoms", observedAt: at(young),
+    rows: young.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
     hook: `開設180日以内でいちばん伸びたのは王国${young[0].kid}（${age(young[0])}・+${compactNumber(young[0].power_gain_7d)}）`
   });
   return items;

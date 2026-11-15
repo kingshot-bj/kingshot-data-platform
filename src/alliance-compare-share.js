@@ -8,7 +8,7 @@ import { topByPower, rankTopPlayersByStage, MYSTIC_COMPARE_BOARDS, MYSTIC_TOP } 
 
 export const ALLIANCE_SHARE_METRICS = Object.freeze([
   // [キー, 表示名, 書式, 大きい方が良いか]
-  ["power", "同盟総戦力", "big", true],
+  ["power", "同盟総力", "big", true],
   ["power_rank", "王国内順位", "rank", false],
   ["members", "メンバー数", "int", true],
   ["top_sum", "上位3人の合計", "big", true],

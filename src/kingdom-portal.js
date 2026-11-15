@@ -120,7 +120,7 @@ export async function renderKingdomDetailPage(request, env, auth = null, { onDem
     : currentKingdomAge(detail.age_days, archived?.observed_at);
   const timelineHtml = timelineAge != null ? renderKingdomTimelineSection(timelineAge, { kid }) + "<style>" + KINGDOM_TIMELINE_CSS + "</style>" : "";
   const fields = [
-    ["総戦力",detail.power],["平均戦力",detail.avg_power],["領主数",detail.player_count],["マップ上の領主",detail.active_players],
+    ["総力",detail.power],["平均戦力",detail.avg_power],["領主数",detail.player_count],["マップ上の領主",detail.active_players],
     ["7日間の活動者",detail.active_7d],["30日間の活動者",detail.active_30d],["同盟数",detail.alliance_count],["健全度",detail.health],
     ["戦力順位",detail.power_rank],["活動順位",detail.activity_rank],["7日間の戦力の伸び",detail.power_gain_7d],
     ["7日間で役場を上げた人",detail.tc_pushers_7d],["領主戦力",detail.gov_power],["同盟戦力",detail.alliance_power],
@@ -579,7 +579,7 @@ export async function renderKingdomComparePage(request, env) {
   }));
   // [キー, 表示名, 書式, 大きい方が良いか]
   const METRICS = [
-    ["power", "総戦力", "big", true], ["power_rank", "戦力順位（全王国）", "rank", false], ["gain", "7日間の戦力の伸び", "big", true],
+    ["power", "総力", "big", true], ["power_rank", "戦力順位（全王国）", "rank", false], ["gain", "7日間の戦力の伸び", "big", true],
     ["gain_pct", "7日間の伸び率", "pct", true], ["players", "領主数", "int", true], ["avg", "1人あたりの戦力", "big", true],
     ["age", "開設からの日数", "int", null], ["alliances", "同盟数", "int", null], ["tc_pushers", "7日間で役場を上げた人", "int", true],
     ["hero", "英雄戦力", "big", true], ["troop", "兵士戦力", "big", true], ["research", "研究戦力", "big", true]

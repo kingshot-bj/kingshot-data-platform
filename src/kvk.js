@@ -157,7 +157,7 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   await setState(db, "matchups", { sha, season, stage, count: normalized.length, changedAt: now, checkedAt: now }, now);
   if (Number(previous?.season) !== season) {
     const own = ((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all()).results || []).map(r => Number(r.kid));
-    // 総戦力（カタログ巡回で保存済み）をカードに載せる。自国＋相手国だけ、bind上限内で。
+    // 総力（カタログ巡回で保存済み）をカードに載せる。自国＋相手国だけ、bind上限内で。
     const ownSet = new Set(own);
     const related = [...new Set(normalized.filter(m => ownSet.has(Number(m.kid)) || ownSet.has(Number(m.opponent))).flatMap(m => [Number(m.kid), Number(m.opponent)]).filter(Number.isFinite))].slice(0, 90);
     const powers = {};

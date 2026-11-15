@@ -10,11 +10,11 @@
 export const KINGDOM_GROWTH_PREFIX = "history/kingdom_growth/v1/";
 
 export const KINGDOM_GROWTH_FIELDS = Object.freeze([
-  ["power", "総戦力"],
+  ["power", "総力"],
   ["avg_power", "平均戦力"],
   ["player_count", "領主数"],
   ["power_rank", "戦力順位"],
-  ["power_gain_7d", "7日間の戦力増加"],
+  ["power_gain_7d", "7日間の総力増加"],
   ["tc_pushers_7d", "7日間の役場上昇人数"],
   ["gov_power", "領主戦力"],
   ["alliance_power", "同盟戦力"],

@@ -32,7 +32,7 @@ test("ネタは実データから。戦力順位（power_rank）は使わない�
   assert.equal(gain.rows[0].label, "王国 1085");
   assert.equal(gain.rows[0].value, "+29.4B");
   assert.equal(gain.dataDate, "2026-11-08", "データの時点（日本時間）");
-  assert.equal(pack.items[1].rows[0].label, "王国 232", "総戦力は power の値で並べる");
+  assert.equal(pack.items[1].rows[0].label, "王国 232", "総力は power の値で並べる");
   assert.ok(db.sqls.every(s => !/power_rank/.test(s)), "power_rank は使わない（意味が未確認）");
   assert.ok(pack.items.every(i => i.rows.length >= SOCIAL_MIN_ROWS));
   const thin = { prepare: sql => { const s = { bind: () => s, all: async () => ({ results: /kingdom_stats_current/.test(sql) ? [{ kid: 1, power: 1e9, power_gain_7d: 1e8, age_days: 10, observed_at: 1 }] : [] }), first: async () => null }; return s; } };
