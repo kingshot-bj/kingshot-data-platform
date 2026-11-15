@@ -981,7 +981,9 @@ function page(title, body){
 // 同盟比較用：同盟の情報とメンバー表を読む。メンバー表が無いか24時間より古く、取得してよい時（ログイン中）は
 // 同盟詳細と同じしくみで取りに行く（同じ同盟は10分に1回まで）。
 export const ALLIANCE_COMPARE_STALE_SECONDS = 24 * 3600;
-export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, nowMs = Date.now() } = {}) {
+// 「最新を取得」ボタン：メンバー表がこれより古ければ取り直す（同じ同盟は10分に1回まで＝claimAllianceRefresh）。
+export const ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS = 600;
+export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, nowMs = Date.now(), maxAgeSeconds = ALLIANCE_COMPARE_STALE_SECONDS } = {}) {
   const db = env.DB;
   const normalizeAid = v => String(v ?? "").replace(/^(\d+)\.0+$/, "$1");
   let row = await db.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid, tag, tag).first().catch(() => null);
@@ -1004,7 +1006,7 @@ export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, 
   }
   let members = getMembers(payload), fetched = false, status = "";
   const now = Math.floor(nowMs / 1000);
-  const stale = !members.length || !observedAt || now - observedAt > ALLIANCE_COMPARE_STALE_SECONDS;
+  const stale = !members.length || !observedAt || now - observedAt > maxAgeSeconds;
   if (canFetch && stale && env.ARCHIVE && await claimAllianceRefresh(db, kid, row.aid || row.abbr || tag, now).catch(() => false)) {
     try {
       const collected = await collectAllianceDetail(env, kid, row.abbr || tag, { purpose: "ALLIANCE_COMPARE_ON_DEMAND" });
