@@ -37,12 +37,16 @@ test("同盟タグなし→その王国の同盟一覧、領主IDなし→プレ
 });
 
 test("未ログインでもエラーの文字（JSON）ではなくログイン画面", async () => {
-  for (const p of ["/player/compare", "/kingdom-watchlist/analytics", "/kingdom-watchlist", "/support"]) {
+  for (const p of ["/player/compare", "/kingdom-watchlist/analytics", "/kingdom-watchlist"]) {
     const { res, text } = await open(p);
     assert.match(res.headers.get("content-type") || "", /text\/html/, p);
     assert.match(text, /ログインが必要です/, p);
     assert.doesNotMatch(text, /"error":"UNAUTHORIZED"/, p);
   }
+  // お問い合わせはログインしていなくても送れる（2026-11-15）。
+  const support = await open("/support");
+  assert.match(support.res.headers.get("content-type") || "", /text\/html/);
+  assert.match(support.text, /<form class="card" id="gf">/);
 });
 
 test("データの無い王国の同盟一覧：ログイン中は取得して再読み込み、未ログインは案内", async () => {
