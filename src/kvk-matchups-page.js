@@ -72,7 +72,7 @@ export function kvkPairHtml(r) {
     if (kid == null) return '<div class="sd bye">不戦（対戦相手なし）</div>';
     return '<a class="sd' + (up ? " up" : "") + '" href="/k/' + e(kid) + '"><b>王国 ' + e(kid) + '</b><small>総戦力 ' + e(pow || "—") + '（参考）・開設' + (age != null ? e(age) + "日" : "—") + '</small></a>';
   };
-  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>' + e(r[8]) + 'ステージ中</small><a class="more" href="/kvk?kid=' + e(r[0]) + '" rel="nofollow">2位以降を見る</a>' : '<small>集計中</small>';
+  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>秘境の試練<br>' + e(r[8]) + '種類の1位で比較</small><a class="more" href="/kvk?kid=' + e(r[0]) + '" rel="nofollow">スコアと詳細を見る</a>' : '<small>集計中</small>';
   return '<li class="pair">' + side(r[0], r[1], r[2], aUp) + '<div class="vs"><span>VS</span>' + mid + '</div>' + side(r[3], r[4], r[5], bUp) + '</li>';
 }
 
@@ -135,7 +135,7 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 <div class="facts"><span>組み合わせ <b>${pairs.length}</b>組</span><span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>${rows.length > KVK_INITIAL_ROWS ? `<button type="button" class="more-btn" id="moreBtn">残り${rows.length - KVK_INITIAL_ROWS}組を表示</button>` : ""}` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
-<p class="note">ステージごとの1位の記録と上位10人の平均、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「2位以降を見る」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+<p class="note">真ん中の数字は、秘境の試練の6種類（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）それぞれで、両王国の1位の記録を比べて勝った種類の数です（KvKの日程とは関係ありません）。KvKのスコア・準備フェーズの日ごとのスコア・秘境の試練の2〜10位の記録は、<a href="/kvk">KvKページ</a>（各組み合わせの「スコアと詳細を見る」）で見られます（自分の王国はADVANCED以上、ほかの王国はVIP以上）。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
 <script type="application/json" id="kvkRows">${JSON.stringify(rows).replace(/</g, "\\u003c")}</script>
 <script>var __name=function(f){return f};(${kvkMatchupsClient.toString()})(${KVK_INITIAL_ROWS},${kvkPairHtml.toString()});</script>
 </main></body></html>`;
