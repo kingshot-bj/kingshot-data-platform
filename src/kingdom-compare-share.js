@@ -6,7 +6,7 @@ import { shareCardPalettes } from "./themes.js";
 
 export const KINGDOM_SHARE_METRICS = Object.freeze([
   // [キー, 表示名, 書式, 大きい方が良いか（null は優劣なし）]
-  ["power", "総戦力", "big", true],
+  ["power", "総力", "big", true],
   ["power_rank", "戦力順位", "rank", false],
   ["gain", "7日間の伸び", "big", true],
   ["gain_pct", "伸び率（7日）", "pct", true],

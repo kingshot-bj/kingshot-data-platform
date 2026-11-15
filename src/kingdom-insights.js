@@ -1,6 +1,6 @@
 // 王国ページの「この王国の分析」。すでに D1 にある王国の集計（kingdom_stats_current）だけで計算する（MightPulse は呼ばない）。
-// ・全王国の中での位置（総戦力・7日の伸び）と、開設時期が近い王国（±30日）の中での位置。
-// ・「総戦力が近い王国」も同じ一覧から出す（意味が未確認の power_rank は使わない）。
+// ・全王国の中での位置（総力・7日の伸び）と、開設時期が近い王国（±30日）の中での位置。
+// ・「総力が近い王国」も同じ一覧から出す（意味が未確認の power_rank は使わない）。
 // ・全王国の一覧（約2,600行）は isolate ごとに1時間だけ覚えておき、ページを開くたびには読まない。
 // ・文章は実際の数字から組み立てる。数字が無いところは書かない（水増しの文章は作らない）。
 
@@ -56,7 +56,7 @@ export function computeKingdomInsights(kid, rows) {
       };
     }
   }
-  // 総戦力が近い王国：自分の上と下から3つずつ。
+  // 総力が近い王国：自分の上と下から3つずつ。
   const sorted = all.slice().sort((a, b) => b.power - a.power || a.kid - b.kid);
   const i = sorted.findIndex(r => r.kid === me.kid);
   out.nearPower = [...sorted.slice(Math.max(0, i - 3), i), ...sorted.slice(i + 1, i + 4)].map(r => ({ kid: r.kid, power: r.power }));
@@ -70,23 +70,23 @@ const pctTop = (rank, total) => total ? Math.max(1, Math.ceil(rank / total * 100
 export function renderKingdomInsights(kid, ins, compact) {
   if (!ins) return "";
   const items = [];
-  items.push(`総戦力は全${esc(ins.total)}王国中 <b>${esc(ins.powerRank)}位</b>（上位${esc(pctTop(ins.powerRank, ins.total))}%）`);
+  items.push(`総力は全${esc(ins.total)}王国中 <b>${esc(ins.powerRank)}位</b>（上位${esc(pctTop(ins.powerRank, ins.total))}%）`);
   if (ins.gainRank != null) {
     // 金額は上の数字タイル（成長の記録）と出どころが違うので、ここでは順位だけを書く。
     items.push(ins.gain < 0
-      ? `7日間で総戦力が <b>減っています</b>（伸びは全${esc(ins.gainTotal)}王国中${esc(ins.gainRank)}位）`
+      ? `7日間で総力が <b>減っています</b>（伸びは全${esc(ins.gainTotal)}王国中${esc(ins.gainRank)}位）`
       : `7日間の伸びは全${esc(ins.gainTotal)}王国中 <b>${esc(ins.gainRank)}位</b>（上位${esc(pctTop(ins.gainRank, ins.gainTotal))}%）`);
   }
   const c = ins.cohort;
   if (c) {
     const vs = c.powerVsMedian == null ? "" : Math.abs(c.powerVsMedian) < 0.05 ? "中央値とほぼ同じ" : `中央値より${Math.round(Math.abs(c.powerVsMedian) * 100)}%${c.powerVsMedian > 0 ? "多い" : "少ない"}`;
-    items.push(`開設時期が近い王国（開設${esc(c.fromAge)}〜${esc(c.toAge)}日・${esc(c.size)}王国）の中で、総戦力は <b>${esc(c.powerRank)}位</b>${vs ? `・${esc(vs)}` : ""}`);
+    items.push(`開設時期が近い王国（開設${esc(c.fromAge)}〜${esc(c.toAge)}日・${esc(c.size)}王国）の中で、総力は <b>${esc(c.powerRank)}位</b>${vs ? `・${esc(vs)}` : ""}`);
     if (c.gainRank != null) items.push(`同じ時期の王国の中で、7日間の伸びは <b>${esc(c.gainRank)}位</b>（中央値 ${esc(compact(c.medianGain))}）`);
   }
-  return `<h2>王国${esc(kid)}の分析</h2><ul class="insights">${items.map(t => `<li>${t}</li>`).join("")}</ul><p class="note" style="margin-top:6px">総戦力（ゲーム内の総力）は兵士の数や建物の強化でも大きく増えるので、強さとは比例しません。順位は規模の目安です。全王国の毎日の集計から EagleEye が計算しています。開設時期が近い王国＝開設日数が前後${COHORT_DAYS}日以内の王国。</p>`;
+  return `<h2>王国${esc(kid)}の分析</h2><ul class="insights">${items.map(t => `<li>${t}</li>`).join("")}</ul><p class="note" style="margin-top:6px">総力は兵士の数や建物の強化でも大きく増えるので、強さとは比例しません。順位は規模の目安です。全王国の毎日の集計から EagleEye が計算しています。開設時期が近い王国＝開設日数が前後${COHORT_DAYS}日以内の王国。</p>`;
 }
 
-// 王国一覧の「王国ランキング」：総戦力・7日の伸び・開設180日以内の伸び（各 n 位まで）。全王国の一覧（キャッシュ）から作る。
+// 王国一覧の「王国ランキング」：総力・7日の伸び・開設180日以内の伸び（各 n 位まで）。全王国の一覧（キャッシュ）から作る。
 export const YOUNG_KINGDOM_DAYS = 180;
 export function kingdomLeaderboards(rows, n = 10) {
   const ok = (rows || []).filter(r => r && Number.isInteger(r.kid) && r.power != null);
@@ -100,4 +100,56 @@ export function kingdomLeaderboards(rows, n = 10) {
     gain: withGain.slice().sort(byGain).slice(0, n),
     young: withGain.filter(r => r.age != null && r.age <= YOUNG_KINGDOM_DAYS).sort(byGain).slice(0, n)
   };
+}
+
+// ---- 秘境の試練（強さの目安・2026-11-15）----
+// 総力は強さと比例しない（docs/KINGSHOT_GAME_KNOWLEDGE.md）。秘境の試練は月〜土を同じ兵士で挑むので育成の差が出やすい。
+// KvK の組み合わせ用に、シーズンごとに王国ごとの上位10人の記録を集めている（kvk_mystic_summary・新しい API は使わない）。
+// 一番新しいシーズンの全王国分（約2,400行）を isolate で1時間だけ覚えて、王国ごとの順位を出す。
+import { MYSTIC_STAGE_KEYS, stageLabelFromValue } from "./kvk-mystic.js";
+export const MYSTIC_LABELS = Object.freeze({ coliseum: "闘技場", forest_of_life: "生命の森", crystal_cave: "水晶鉱山", knowledge_nexus: "知識の枢軸", molten_fort: "溶岩要塞", radiant_spire: "輝光の塔" });
+let mysticCache = { at: 0, value: null };
+export function resetKingdomMysticCache() { mysticCache = { at: 0, value: null }; }
+
+export async function loadAllMysticSummaries(db, nowMs = Date.now()) {
+  if (mysticCache.value && nowMs - mysticCache.at < INSIGHTS_CACHE_MS) return mysticCache.value;
+  const res = await db.prepare("SELECT kid, season, boards_json, fetched_at FROM kvk_mystic_summary WHERE status = 'OK' AND season = (SELECT MAX(season) FROM kvk_mystic_summary WHERE status = 'OK')").all();
+  const map = new Map();
+  let season = null;
+  for (const r of res?.results || []) {
+    try { map.set(Number(r.kid), { boards: JSON.parse(r.boards_json || "{}"), fetchedAt: Number(r.fetched_at) || null }); season = Number(r.season); } catch {}
+  }
+  mysticCache = { at: nowMs, value: { season, map } };
+  return mysticCache.value;
+}
+
+export function computeMysticInsights(kid, all) {
+  const mine = all?.map?.get(Number(kid));
+  if (!mine) return null;
+  const stages = [];
+  for (const key of MYSTIC_STAGE_KEYS) {
+    const b = mine.boards?.[key];
+    if (!b || b.best == null) continue;
+    let above = 0, count = 0;
+    for (const other of all.map.values()) {
+      const v = other.boards?.[key]?.best;
+      if (v == null) continue;
+      count++;
+      if (v > b.best) above++;
+    }
+    stages.push({ key, label: MYSTIC_LABELS[key], best: b.best, bestLabel: (Array.isArray(b.labels) && b.labels[0]) || stageLabelFromValue(b.best), rank: above + 1, count, top10: b.top10 ?? null, top10Label: b.top10 != null ? stageLabelFromValue(Math.round(b.top10)) : null });
+  }
+  if (!stages.length) return null;
+  return { season: all.season, fetchedAt: mine.fetchedAt, stages };
+}
+
+export function renderMysticInsights(kid, m) {
+  if (!m) return "";
+  const top10pct = m.stages.filter(s => s.count && s.rank / s.count <= 0.1).length;
+  const lead = `6種類のうち <b>${m.stages.length}種類</b>の記録があり、そのうち <b>${top10pct}種類</b>で1位の記録が全王国の上位10%に入っています。`;
+  const rows = m.stages.map(s => `<tr><th>${esc(s.label)}</th><td><b>${esc(s.bestLabel || "—")}</b></td><td>${esc(s.rank)}位<small>/${esc(s.count)}</small></td><td>${esc(s.top10Label || "—")}</td></tr>`).join("");
+  const when = m.fetchedAt ? new Date(m.fetchedAt * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10) : "";
+  return `<h2>王国${esc(kid)}の秘境の試練（強さの目安）</h2><p class="lead" style="margin-top:-4px">${lead}</p>
+<div class="mys-wrap"><table class="mys"><thead><tr><th>種類</th><th>1位の記録</th><th>全王国中</th><th>上位10人の平均</th></tr></thead><tbody>${rows}</tbody></table></div>
+<p class="note" style="margin-top:6px">秘境の試練は月〜土を全員同じ兵士で挑むので、兵士の数ではなく英雄・装備・研究などの育成の差が出やすい記録です。KvK や聖剣争奪は集結を主催するトップ層の強さで決まりやすいため、1位の記録を中心に見ています。記録は「章-ステージ」。${m.season ? `KvKシーズン${esc(m.season)}の組み合わせ用に` : ""}${when ? esc(when) + " ごろ" : ""}取得したものです（<a href="/kvk/matchups">KvK の組み合わせ</a>でも比べられます）。</p>`;
 }

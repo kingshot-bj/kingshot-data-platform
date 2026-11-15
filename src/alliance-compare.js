@@ -177,7 +177,7 @@ var K=A.map(known),T=K.map(function(k){return cur>0?k.slice(0,cur):k});
 var head="<thead><tr><th></th>"+A.map(function(a){return "<td>"+e(a.abbr||"")+"<small>王国"+e(a.kid)+(a.name?" · "+e(a.name):"")+"</small></td>"}).join("")+"</tr></thead>";
 var label=cur>0?"上位"+cur+"人":"全員";
 var h="<table class=\\"tbl\\">"+head+"<tbody>"+
-row("同盟総戦力",A.map(function(a){return a.power}),cp)+
+row("同盟総力",A.map(function(a){return a.power}),cp)+
 row("王国内順位",A.map(function(a){return a.power_rank}),function(v){return v==null?"—":e(v)+"位"},"min")+
 row("メンバー数",A.map(function(a){return (a.members||[]).length||null}),function(v){return v==null?"—":e(v)+"人"})+
 row(label+"の合計",T.map(function(t){return t.length?t.reduce(function(s,m){return s+m.power},0):null}),cp)+

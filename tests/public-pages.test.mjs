@@ -15,7 +15,7 @@ const data = {
 test("public kingdom page: SEO tags, escaped content, KvK link and a login call to action", () => {
   const html = renderPublicKingdomPage(1524, data, { origin: "https://eagleeye-ks.com" });
   assert.match(html, /<title>王国1524の戦力・ランキング・KvK情報｜キングショット \| EagleEye<\/title>/);
-  assert.match(html, /<meta name="description" content="キングショット（KingShot）王国1524の総戦力123B/);
+  assert.match(html, /<meta name="description" content="キングショット（KingShot）王国1524の総力123B/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/k\/1524">/);
   assert.match(html, /application\/ld\+json[\s\S]*BreadcrumbList/);
   assert.ok(!html.includes("<script>x</script>"), "player names are escaped");
@@ -88,10 +88,10 @@ test("SEO：タイムラインの全体表は専用ページへ（王国ペー�
   assert.match(portal, /renderKingdomTimelineSection\(timelineAge, \{ kid \}\)/);
 });
 
-test("SEO：関連する王国（総戦力が近い・近い番号）へのリンク。読み取りは主キーの範囲と全王国の集計（キャッシュ）だけ", async () => {
+test("SEO：関連する王国（総力が近い・近い番号）へのリンク。読み取りは主キーの範囲と全王国の集計（キャッシュ）だけ", async () => {
   const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11 }] }, { origin: "" });
   assert.match(html, /<h2>関連する王国<\/h2>/);
-  assert.match(html, /<small>総戦力が近い王国<\/small><a href="\/k\/1530">王国 1530<em>120B<\/em>/);
+  assert.match(html, /<small>総力が近い王国<\/small><a href="\/k\/1530">王国 1530<em>120B<\/em>/);
   assert.doesNotMatch(html, /戦力順位/);
   assert.match(html, /href="\/k\/1523">王国 1523<\/a>/);
   assert.doesNotMatch(renderPublicKingdomPage(1524, data, { origin: "" }), /関連する王国/);
