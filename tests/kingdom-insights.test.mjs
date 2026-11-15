@@ -42,7 +42,7 @@ test("文章は実際の数字から。戦力が減っていればそう書く�
 test("全王国の一覧は1時間だけ覚えて、ページごとには読まない", async () => {
   resetKingdomInsightsCache();
   let reads = 0;
-  const db = { prepare: sql => ({ all: async () => { reads++; assert.match(sql, /^SELECT kid, power, power_gain_7d, age_days, player_count FROM kingdom_stats_current$/); return { results: [{ kid: 1, power: 5, power_gain_7d: 1, age_days: 10, player_count: 3 }] }; } }) };
+  const db = { prepare: sql => ({ all: async () => { reads++; assert.match(sql, /^SELECT kid, power, power_gain_7d, age_days, player_count, observed_at FROM kingdom_stats_current$/); return { results: [{ kid: 1, power: 5, power_gain_7d: 1, age_days: 10, player_count: 3 }] }; } }) };
   const t = 1_800_000_000_000;
   await loadAllKingdomStats(db, t);
   await loadAllKingdomStats(db, t + 59 * 60 * 1000);

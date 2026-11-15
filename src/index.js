@@ -68,6 +68,8 @@ import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-p
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
+import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
+import { loadAllKingdomStats } from "./kingdom-insights.js";
 import { enhanceSeo, websiteJsonLd } from "./seo.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
@@ -11475,6 +11477,12 @@ async function renderHome(request, env) {
   const inviteBanner = !inviter ? "" : inviter.special
     ? '<a class="ee-invited ee-invited-special" href="/api/auth/discord"><b>👑 EagleEye運営からの特別招待</b><span>ログインするとウォッチ枠 +' + OWNER_INVITE_BONUS.invitedSignup + '・限定の着せ替え「ゴールド」・運営招待バッジ。ADVANCEDになるとさらにウォッチ枠 +' + OWNER_INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS
     : '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS;
+  // ログインしていない人（と検索エンジン・AdSense の審査）には、何のサイトか分かるトップを見せる（2026-11-15）。
+  // 数字は王国ページの分析と同じ全王国の一覧（isolate で1時間覚える）から。MightPulse は呼ばない。
+  if (!session) {
+    const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
+    return renderVisitorHome({ origin: publicOrigin(request, env), highlights: stats ? homeHighlights(stats) : null, kvkSeason, inviteBanner });
+  }
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar

@@ -11,8 +11,8 @@ export function resetKingdomInsightsCache() { cache = { at: 0, rows: null }; }
 
 export async function loadAllKingdomStats(db, nowMs = Date.now()) {
   if (cache.rows && nowMs - cache.at < INSIGHTS_CACHE_MS) return cache.rows;
-  const res = await db.prepare("SELECT kid, power, power_gain_7d, age_days, player_count FROM kingdom_stats_current").all();
-  const rows = (res?.results || []).map(r => ({ kid: Number(r.kid), power: num(r.power), gain: num(r.power_gain_7d), age: num(r.age_days), players: num(r.player_count) })).filter(r => Number.isInteger(r.kid));
+  const res = await db.prepare("SELECT kid, power, power_gain_7d, age_days, player_count, observed_at FROM kingdom_stats_current").all();
+  const rows = (res?.results || []).map(r => ({ kid: Number(r.kid), power: num(r.power), gain: num(r.power_gain_7d), age: num(r.age_days), players: num(r.player_count), at: num(r.observed_at) })).filter(r => Number.isInteger(r.kid));
   cache = { at: nowMs, rows };
   return rows;
 }
