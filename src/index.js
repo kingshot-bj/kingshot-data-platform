@@ -65,7 +65,7 @@ import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
 import { runKvkMysticCollection } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
-import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { enhanceSeo, websiteJsonLd } from "./seo.js";
@@ -5339,7 +5339,11 @@ export default {
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
       if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
       if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env, executionContext));
-      return eagleEyeHtmlResponse(await renderHome(request, env));
+      // トップページは "/" だけ。ほかの知らない URL は 404（ソフト404をやめる）。
+      // /account はメニューにあるがページが無く、今までトップページを出していたので、同じくトップへ送る。
+      if (url.pathname === "/") return eagleEyeHtmlResponse(await renderHome(request, env));
+      if (url.pathname === "/index.html" || url.pathname === "/account") return Response.redirect(new URL("/", url).toString(), 302);
+      return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);

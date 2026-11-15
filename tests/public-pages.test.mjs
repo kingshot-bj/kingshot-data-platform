@@ -20,7 +20,8 @@ test("public kingdom page: SEO tags, escaped content, KvK link and a login call 
   assert.match(html, /application\/ld\+json[\s\S]*BreadcrumbList/);
   assert.ok(!html.includes("<script>x</script>"), "player names are escaped");
   assert.match(html, /href="\/k\/1530">王国 1530/);
-  assert.match(html, /7日 −2位|7日 \+?−?2/);
+  // 戦力順位（power_rank）は意味が未確認なので出さない（2026-11-15・AdSense の品質対応）。
+  assert.doesNotMatch(html, /戦力順位/);
   assert.match(html, /Discordでログイン/);
   assert.match(html, /APIキー/);
   assert.match(renderPublicKingdomPage(1524, data, { origin: "", signedIn: true }), /\/kingdom\?kid=1524/);
@@ -29,7 +30,8 @@ test("public kingdom page: SEO tags, escaped content, KvK link and a login call 
 test("pages without data still render helpful text", () => {
   const html = renderPublicKingdomPage(9, { catalog: null, players: [], alliances: [], matchup: null, score: null, growth: null }, {});
   assert.match(html, /集計データはまだありません/);
-  assert.match(html, /ウォッチリストに入ると自動で取得/);
+  // 個人ランキングが無い王国では、空の欄（「自動で取得されます」）を出さない（2026-11-15・AdSense の品質対応）。
+  assert.doesNotMatch(html, /ウォッチリストに入ると自動で取得|戦力ランキング（上位10人）/);
 });
 
 test("index, robots and sitemap", () => {
@@ -86,15 +88,17 @@ test("SEO：タイムラインの全体表は専用ページへ（王国ペー�
   assert.match(portal, /renderKingdomTimelineSection\(timelineAge, \{ kid \}\)/);
 });
 
-test("SEO：関連する王国（戦力順位が近い・近い番号）へのリンク。読み取りは主キーと索引の範囲だけ", async () => {
-  const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11, power_rank: 9 }] }, { origin: "" });
+test("SEO：関連する王国（総戦力が近い・近い番号）へのリンク。読み取りは主キーの範囲と全王国の集計（キャッシュ）だけ", async () => {
+  const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11 }] }, { origin: "" });
   assert.match(html, /<h2>関連する王国<\/h2>/);
-  assert.match(html, /href="\/k\/1530">王国 1530<em>9位/);
+  assert.match(html, /<small>総戦力が近い王国<\/small><a href="\/k\/1530">王国 1530<em>120B<\/em>/);
+  assert.doesNotMatch(html, /戦力順位/);
   assert.match(html, /href="\/k\/1523">王国 1523<\/a>/);
   assert.doesNotMatch(renderPublicKingdomPage(1524, data, { origin: "" }), /関連する王国/);
   const src = readFileSync(new URL("../src/public-pages.js", import.meta.url), "utf8");
   assert.match(src, /FROM kingdom_catalog WHERE kid BETWEEN \? AND \? AND kid <> \?/);
-  assert.match(src, /FROM kingdom_stats_current WHERE power_rank BETWEEN \? AND \? AND kid <> \? ORDER BY power_rank ASC LIMIT 6/);
+  assert.doesNotMatch(src, /power_rank BETWEEN/, "power_rank は使わない");
+  assert.match(src, /loadAllKingdomStats\(db\)/);
   const mig = readFileSync(new URL("../migrations/0072_kingdom_stats_power_rank_index.sql", import.meta.url), "utf8");
   assert.match(mig, /CREATE INDEX IF NOT EXISTS idx_kingdom_stats_current_power_rank ON kingdom_stats_current \(power_rank\)/);
   const stats = readFileSync(new URL("../src/kingdom-stats.js", import.meta.url), "utf8");
