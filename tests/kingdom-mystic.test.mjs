@@ -68,3 +68,20 @@ test("月1回の秘境の試練：1回の呼び出しで6種類を取り、保�
   assert.equal(await fetchAndStoreKingdomMystic(env, 9, { now: 100, collect: async () => { throw nf; } }), "NOT_FOUND");
   await assert.rejects(fetchAndStoreKingdomMystic(env, 9, { now: 100, collect: async () => { throw new Error("NO_API_POOL_KEY_AVAILABLE"); } }), /NO_API_POOL_KEY_AVAILABLE/);
 });
+
+import { loadPublicDataProgress, renderPublicDataProgressCard } from "../src/traffic-stats.js";
+test("オーナー画面：公開の王国ページのデータ集めの進み具合（30日以内に取れている割合）", async () => {
+  const answers = { kingdom_stats_current: 2600, personal_power: 1300, alliance_power: 1300, kingdom_mystic_current: 2470 };
+  const db = { prepare: sql => ({ bind: () => ({ first: async () => {
+    if (/public_ranking_refresh_state/.test(sql)) return { value: "1200", updated_at: 1795190400 };
+    const k = Object.keys(answers).find(x => sql.includes(x));
+    return { n: answers[k] };
+  } }) }) };
+  const p = await loadPublicDataProgress(db);
+  assert.deepEqual([p.total, p.personal, p.mystic, p.cursor], [2600, 1300, 2470, 1200]);
+  const html = renderPublicDataProgressCard(p);
+  assert.match(html, /上位10人（個人の総力）<\/span><i style="width:50%"><\/i><b>50%（1,300 \/ 2,600王国）/);
+  assert.match(html, /秘境の試練<\/span><i style="width:95%"><\/i>/);
+  assert.match(html, /今の周：王国1,200まで（約46.1%）/);
+  assert.equal(renderPublicDataProgressCard(null), "");
+});
