@@ -37,9 +37,27 @@ test("ルート：POST はADVANCED以上・同じサイトから。メンバー�
   const post = route.slice(route.indexOf('if (request.method === "POST")'), route.indexOf("const targets = parseAllianceCompareTargets", route.indexOf('if (request.method === "POST")') + 400));
   assert.ok(post.indexOf("canUseAllianceCompare") < post.indexOf("loadAllianceForCompare"));
   assert.ok(post.indexOf("isSameOriginRequest") < post.indexOf("loadAllianceForCompare"));
-  assert.match(post, /maxAgeSeconds: ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS/);
-  assert.match(post, /staleSeconds: ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS/);
+  assert.match(post, /maxAgeSeconds: isOwner \? 0 : ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS, force: isOwner/);
+  assert.match(post, /staleSeconds: isOwner \? 0 : ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS, ignoreRecentAttempt: isOwner/);
+  assert.match(post, /const isOwner = String\(auth\.role \|\| ""\)\.toUpperCase\(\) === "OWNER";/);
   assert.match(post, /isQuietAgentRequest\(request, auth\)/, "撮影・Claude の確認用アクセスでは取りに行かない");
   assert.match(post, /status: 303/);
   assert.match(index, /const ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS = 3600;/);
+});
+
+test("オーナーは下限なし：画面の説明もオーナー用", () => {
+  const targets = [{ kid: 1524, tag: "Pen" }, { kid: 1537, tag: "LOL" }];
+  const html = renderAllianceComparePage({ alliances: [alliance(1524, "Pen"), alliance(1537, "LOL")], targets, ownerRefresh: true });
+  assert.match(html, /オーナーは毎回すべて取り直します/);
+});
+
+// 2026-11-15：取りに行く側（refreshKingdomRankingOnDemand）に「6時間以内なら取らない」があり、
+// 「最新を取得」の1時間（オーナーは0）が効いていなかった。下限を取りに行く側まで渡す。
+test("秘境の試練：取りに行く側の6時間の制限も、最新を取得の下限に合わせる", () => {
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /minIntervalSeconds = RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS, ignoreRecentAttempt = false \} = \{\}\) \{/);
+  assert.match(index, /now - Number\(state\.last_checked_at\) < minIntervalSeconds\) return \{ skipped: true, reason: "FRESH" \}/);
+  assert.match(index, /if \(!ignoreRecentAttempt && nowMs - last < 10 \* 60 \* 1000\)/);
+  assert.match(index, /const minIntervalSeconds = Math\.min\(staleSeconds, RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS\);/);
+  assert.match(index, /runKingdomRankingJobs\(env, jobs, \{ nowMs, minIntervalSeconds, ignoreRecentAttempt \}\)/);
 });

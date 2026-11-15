@@ -5240,9 +5240,11 @@ export default {
           const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
           const back = new URL(url); back.searchParams.delete("refreshed");
           if (targets.length >= 2 && !isQuietAgentRequest(request, auth)) {
-            const got = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true, maxAgeSeconds: ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS }).catch(() => null)));
+            // オーナーは下限なし（毎回取り直す）。ほかの人はメンバー表10分・秘境の試練1時間。
+            const isOwner = String(auth.role || "").toUpperCase() === "OWNER";
+            const got = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true, maxAgeSeconds: isOwner ? 0 : ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS, force: isOwner }).catch(() => null)));
             const kids = got.filter(a => a && !a.error).map(a => a.kid);
-            await scheduleKingdomRankingFetch(env, executionContext, kids, MYSTIC_COMPARE_BOARDS.map(b => b[0]), { staleSeconds: ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS }).catch(() => []);
+            await scheduleKingdomRankingFetch(env, executionContext, kids, MYSTIC_COMPARE_BOARDS.map(b => b[0]), { staleSeconds: isOwner ? 0 : ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS, ignoreRecentAttempt: isOwner }).catch(() => []);
             await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_REFRESH", { metadata: { count: targets.length, fetched: got.filter(a => a?.fetched).length } });
             back.searchParams.set("refreshed", "1");
           }
@@ -5275,7 +5277,7 @@ export default {
         const shareFound = alliances.filter(a => a && !a.error);
         const newestRoster = Math.max(0, ...shareFound.map(a => Number(a.observedAt) || 0));
         const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
-        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1" }));
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1", ownerRefresh: String(auth.role || "").toUpperCase() === "OWNER" }));
       }
       if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
@@ -7532,16 +7534,17 @@ async function fetchThroughWatchlistApiPool(env, {
 // 同じ王国・ボードは6時間に1回まで（D1の最終確認時刻）＋同じisolate内で10分に1回まで（失敗の連打防止）。
 const RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS = 6 * 3600;
 const rankingOnDemandAttempts = new Map();
-async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0 } = {}) {
+// minIntervalSeconds：これより新しければ取らない（ふだん6時間）。ignoreRecentAttempt：同じ isolate で10分以内に試していても取る（オーナーの「最新を取得」だけ）。
+async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0, minIntervalSeconds = RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS, ignoreRecentAttempt = false } = {}) {
   if (!env?.DB || !Number.isInteger(kid) || kid < 1 || !KINGDOM_RANKING_BOARDS.includes(board)) return { skipped: true, reason: "INVALID" };
   const key = kid + ":" + board;
   const last = rankingOnDemandAttempts.get(key) || 0;
-  if (nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
+  if (!ignoreRecentAttempt && nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
   rankingOnDemandAttempts.set(key, nowMs);
   if (rankingOnDemandAttempts.size > 2000) rankingOnDemandAttempts.clear();
   const now = Math.floor(nowMs / 1000);
   const state = await env.DB.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
-  if (state?.last_checked_at && now - Number(state.last_checked_at) < RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS) return { skipped: true, reason: "FRESH" };
+  if (state?.last_checked_at && now - Number(state.last_checked_at) < minIntervalSeconds) return { skipped: true, reason: "FRESH" };
   const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, purpose, reserveApiKeys ? { reserveApiKeys } : {});
   const payload = fetched.result?.data;
   const entries = extractKingdomRankingEntries(payload).slice(0, WATCHLIST_RANKING_LIMIT);
@@ -8036,13 +8039,15 @@ const COMPARE_RANKING_MAX_BOARDS = 26;
 // 画面を開いたときに、足りない／古い（24時間より前）王国ランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
 // 実際の取得は refreshKingdomRankingOnDemand（6時間以内に取ったものは取り直さない・10分以内の再試行もしない）。
 // 戻り値は「取りに行った王国と種類の数」（画面で「取得中」を出す）。
-async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS, staleSeconds = COMPARE_RANKING_STALE_SECONDS } = {}) {
+async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS, staleSeconds = COMPARE_RANKING_STALE_SECONDS, ignoreRecentAttempt = false } = {}) {
   const kids = [...new Set((kidList || []).map(Number).filter(k => Number.isInteger(k) && k > 0))].slice(0, 6); // プレイヤー比較は最大6人＝最大6王国
   if (!kids.length || !boards?.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
   const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs, staleSeconds);
   const jobs = todo.slice(0, maxBoards);
   if (!jobs.length) return [];
-  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs }));
+  // staleSeconds が6時間より短いとき（同盟比較の「最新を取得」）は、取りに行く側の「6時間以内なら取らない」もそれに合わせる。
+  const minIntervalSeconds = Math.min(staleSeconds, RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS);
+  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs, minIntervalSeconds, ignoreRecentAttempt }));
   const byKid = new Map();
   for (const [kid] of jobs) byKid.set(kid, (byKid.get(kid) || 0) + 1);
   return [...byKid].map(([kid, n]) => ({ kid, boards: n }));
