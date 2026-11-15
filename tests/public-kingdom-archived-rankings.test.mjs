@@ -43,16 +43,18 @@ test("R2 にも無ければ、今までどおり欄を出さない", async () =>
   assert.doesNotMatch(renderPublicKingdomPage(154, data, { origin: "" }), /戦力ランキング（上位10人）/);
 });
 
-test("月1回の取り直し：5分ごとに10王国ずつ・30日より古い2種類だけ・ユーザー用のキーを残す・毎回の実行に入っている", () => {
+test("月1回の取り直し：5分ごとに30王国ずつ・30日より古いものだけ（ランキング2種類＋秘境の試練）・5件ずつ並べる・ユーザー用のキーを残す", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /const PUBLIC_MONTHLY_RANKING_BOARDS = Object\.freeze\(\["personal_power", "alliance_power"\]\);/);
   assert.match(src, /const PUBLIC_MONTHLY_RANKING_SECONDS = 30 \* 86400;/);
-  assert.match(src, /const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 10;/);
+  assert.match(src, /const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 30;/);
+  assert.match(src, /const PUBLIC_MONTHLY_PARALLEL = 5;/);
   const fn = src.slice(src.indexOf("async function runPublicKingdomMonthlyRanking("), src.indexOf("async function handlePlayerCompareApi("));
   assert.match(fn, /SELECT kid FROM kingdom_stats_current WHERE kid > \? ORDER BY kid LIMIT \?/, "位置を覚えて、主キーの範囲だけ読む");
   assert.match(fn, /staleKingdomRankingBoards\(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS\)/);
   assert.match(fn, /reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report/);
+  assert.match(fn, /FROM kingdom_mystic_current WHERE kid IN \(\$\{ph\}\) AND fetched_at > \? UNION SELECT kid FROM kvk_mystic_summary/, "秘境の試練は KvK 用か月1回のどちらかが新しければ取らない");
+  assert.match(fn, /fetchAndStoreKingdomMystic\(env, kid, \{ now \}\)/);
   assert.match(fn, /if \(!report\.noKey\) await db/, "キーが無いときだけ同じ場所からやり直す");
   assert.match(src, /await runPublicKingdomMonthlyRanking\(env\);/);
-  assert.match(src, /if \(options\.report\) options\.report\.noKey = true; break;/);
 });

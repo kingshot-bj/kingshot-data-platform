@@ -63,7 +63,7 @@ import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
-import { runKvkMysticCollection } from "./kvk-mystic.js";
+import { runKvkMysticCollection, ensureKingdomMysticCurrent, fetchAndStoreKingdomMystic } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
@@ -8121,30 +8121,53 @@ async function runUserKingdomRankingRefresh(env, { nowMs = Date.now() } = {}) {
   return { kingdoms: kids.length, pending: todo.length, fetched };
 }
 
-// 公開の王国ページ用：全王国の「個人の戦力ランキング」と「同盟の戦力ランキング」を月1回取り直す（2026-11-15）。
-// ・5分ごとに、王国番号の順に10王国ずつ見て（位置は public_ranking_refresh_state に覚える）、30日より古いものだけ取る。
-//   1周（約2,600王国）は1日ほどで回り、実際に取るのは30日に1回だけ。1回の実行で最大20件。
+// 公開の王国ページ用：全王国の「個人の総力」「同盟の総力」のランキングと「秘境の試練」を月1回取り直す（2026-11-15）。
+// ・5分ごとに、王国番号の順に30王国ずつ見て（位置は public_ranking_refresh_state に覚える）、30日より古いものだけ取る。
+//   1周（約2,600王国）は約7時間で回り、実際に取るのは各王国30日に1回だけ（AdSense の審査前に一気にそろえるため・オーナー了承）。
+// ・ランキングは2種類（個人の総力・同盟の総力）を王国ごとに1回ずつ、秘境の試練は1回の呼び出しで6種類の上位10人。5件ずつ並べて取る。
 // ・取ったランキングも14日で R2 に移る（kingdom-ranking-archive.js）。公開ページは R2 の写しも読む。
-// ・API Pool はユーザー用に BACKGROUND_KEY_RESERVE 本を残す。キーが空いていなければその回はやめる。
+// ・API Pool はユーザー用に BACKGROUND_KEY_RESERVE 本を残す。キーが空いていなければその回はやめ、同じ位置からやり直す。
 const PUBLIC_MONTHLY_RANKING_BOARDS = Object.freeze(["personal_power", "alliance_power"]);
 const PUBLIC_MONTHLY_RANKING_SECONDS = 30 * 86400;
-const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 10;
+const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 30;
+const PUBLIC_MONTHLY_PARALLEL = 5;
 async function runPublicKingdomMonthlyRanking(env, { nowMs = Date.now() } = {}) {
   if (!env?.DB) return { skipped: "NO_DB" };
   const db = env.DB, now = Math.floor(nowMs / 1000);
   await db.prepare("CREATE TABLE IF NOT EXISTS public_ranking_refresh_state (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)").run();
+  await ensureKingdomMysticCurrent(db);
   const cursorRow = await db.prepare("SELECT value FROM public_ranking_refresh_state WHERE key = 'cursor'").first().catch(() => null);
   const cursor = Number(cursorRow?.value) || 0;
   let rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > ? ORDER BY kid LIMIT ?").bind(cursor, PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
   if (!rows.length && cursor > 0) rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > 0 ORDER BY kid LIMIT ?").bind(PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
   const kids = rows.map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
   if (!kids.length) return { kingdoms: 0, fetched: 0 };
-  const todo = await staleKingdomRankingBoards(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS);
   const report = {};
-  const fetched = todo.length ? await runKingdomRankingJobs(env, todo, { nowMs, purpose: "KINGDOM_RANKING_PUBLIC_MONTHLY", reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report }) : 0;
+  // ランキング（2種類）
+  const todo = await staleKingdomRankingBoards(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS);
+  let fetched = 0;
+  for (let i = 0; i < todo.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+    const done = await Promise.all(todo.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(job => runKingdomRankingJobs(env, [job], { nowMs, purpose: "KINGDOM_RANKING_PUBLIC_MONTHLY", reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report })));
+    fetched += done.reduce((a, b) => a + b, 0);
+  }
+  // 秘境の試練：KvK 用（シーズンごと）か月1回の取り直しのどちらかが30日以内なら取らない。
+  let mystic = 0;
+  if (!report.noKey) {
+    const ph = kids.map(() => "?").join(",");
+    const fresh = new Set(((await db.prepare(`SELECT kid FROM kingdom_mystic_current WHERE kid IN (${ph}) AND fetched_at > ? UNION SELECT kid FROM kvk_mystic_summary WHERE kid IN (${ph}) AND status = 'OK' AND fetched_at > ?`).bind(...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS, ...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)));
+    const need = kids.filter(k => !fresh.has(k));
+    for (let i = 0; i < need.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+      const res = await Promise.all(need.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(kid => fetchAndStoreKingdomMystic(env, kid, { now }).then(() => 1).catch(error => {
+        if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) report.noKey = true;
+        else console.warn("public_kingdom_mystic_failed", kid, error?.code || error?.message || error);
+        return 0;
+      })));
+      mystic += res.reduce((a, b) => a + b, 0);
+    }
+  }
   // キーが空いていなくて止まったときだけ、同じ王国から次の回にやり直す（ほかの失敗では先へ進む＝1つの王国で止まり続けない）。
   if (!report.noKey) await db.prepare("INSERT INTO public_ranking_refresh_state (key, value, updated_at) VALUES ('cursor', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").bind(String(kids[kids.length - 1]), now).run();
-  return { kingdoms: kids.length, pending: todo.length, fetched, noKey: Boolean(report.noKey) };
+  return { kingdoms: kids.length, pending: todo.length, fetched, mystic, noKey: Boolean(report.noKey) };
 }
 
 async function handlePlayerCompareApi(request, env, executionContext = null) {
