@@ -59,7 +59,9 @@ export function renderVisitorHome({ origin = "", highlights = null, kvkSeason = 
   const week = cards ? `<h2>今週のデータ</h2><p class="hsub">${h.observedAt ? esc(jstDate(h.observedAt)) + " 時点・" : ""}毎日更新</p>${cards}` : "";
   const kvk = kvkSeason ? `<h2>KvK</h2><div class="hcard pad"><div class="hkvk"><div class="vs">⚔</div><p><b>シーズン${esc(kvkSeason)}の組み合わせ</b><br>総戦力ではなく、秘境の試練の6種類で両王国の1位の記録を比べています。</p></div><a class="hbtn" href="/kvk/s${encodeURIComponent(kvkSeason)}">組み合わせを見る →</a></div>` : "";
   const feats = FEATURES.map(([icon, name, kind, text, href]) => `<a class="ft" href="${href}"><span class="ic">${icon}</span><span><b>${esc(name)}</b> <span class="tag ${kind}">${kind === "free" ? "ログインなし" : "無料登録"}</span><small>${esc(text)}</small></span></a>`).join("");
-  const body = `${inviteBanner}<section class="hero">
+  // ログインは一番上にも置く（下までスクロールしないと無かったため・2026-11-15）。
+  const body = `<div class="htop"><span class="hbrand">🦅 <b>EagleEye</b><small>キングショット非公式</small></span><a class="hlogin" href="/login">ログイン</a></div>
+${inviteBanner}<section class="hero">
 <h1>キングショットの王国・KvK・英雄を、データで比べる</h1>
 <p>${esc(total)}の戦力と成長を毎日集めて、順位や伸び、開設時期が近い王国との比較までまとめています。王国番号を入れると、その王国の分析が見られます。</p>
 <form class="hsearch" action="/kingdoms" method="get" onsubmit="var k=(this.k.value||'').replace(/\\D/g,'');if(k){location.href='/k/'+k;return false}"><input name="k" placeholder="王国番号（例：1524）" inputmode="numeric" aria-label="王国番号"><button type="submit">見る</button></form>
@@ -72,6 +74,7 @@ ${kvk}
 <div class="hcta"><b>自分の王国をもっと詳しく</b><p>無料登録すると、プレイヤーの比較やウォッチが使えます。</p><a href="/login">無料で登録する</a></div>
 <p class="hfoot"><a href="/guide">使い方</a>・<a href="/terms">利用規約</a>・<a href="/privacy">プライバシーポリシー</a>・<a href="/about">運営者情報</a></p>
 <style>
+.htop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.hbrand{display:flex;align-items:baseline;gap:8px;font-size:15px;min-width:0}.hbrand small{font-size:11px;color:var(--ee-subtext);white-space:nowrap}.hlogin{flex:none;padding:9px 16px;border-radius:999px;background:var(--ee-cyan);color:#04202a;font:800 13px system-ui;text-decoration:none}
 .hero{margin:6px 0 4px;padding:20px 16px;border:1px solid color-mix(in srgb,var(--ee-cyan) 35%,transparent);border-radius:18px;background:linear-gradient(140deg,color-mix(in srgb,var(--ee-cyan) 14%,var(--ee-panel)),var(--ee-panel))}
 .hero h1{margin:0 0 8px;font-size:23px;line-height:1.35}.hero p{margin:0 0 14px;font-size:13.5px;line-height:1.7;color:var(--ee-subtext)}
 .hsearch{display:flex;gap:8px}.hsearch input{flex:1;min-width:0;padding:12px;border-radius:12px;border:1px solid var(--ee-border);background:var(--ee-panel-deep,var(--ee-bg));color:var(--ee-text);font:15px system-ui}.hsearch button{padding:12px 16px;border:0;border-radius:12px;background:var(--ee-cyan);color:#04202a;font:800 14px system-ui}

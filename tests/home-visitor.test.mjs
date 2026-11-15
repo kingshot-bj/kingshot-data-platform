@@ -36,6 +36,8 @@ test("ページ：何のサイトか・王国番号の検索・ツール・今�
   assert.match(html, /MightPulse/);
   assert.match(html, /公式サイトではありません/);
   assert.match(html, /href="\/login">無料で登録する/);
+  // ログインは一番上にもある（下までスクロールしないと無かった）。
+  assert.ok(html.indexOf('class="hlogin" href="/login"') > 0 && html.indexOf('class="hlogin"') < html.indexOf('class="hero"'), "ログインボタンが説明より上にある");
   assert.doesNotMatch(html, /ログインなしで使えるツール|通信中|ウォッチ中のプレイヤー/, "ログインしていないと意味のない表示は出さない");
 });
 
