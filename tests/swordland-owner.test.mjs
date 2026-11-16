@@ -32,7 +32,11 @@ test("全同盟の対戦相手：同盟ごとにまとめ、相手が割れて�
   const q = db.seen.filter(([sql]) => /FROM swordland_matchups/.test(sql));
   assert.equal(q.length, 1);
   assert.equal(q[0][1][0], 1794200000 - SWORDLAND_OWNER_LIST_DAYS * 86400);
-  assert.doesNotMatch(q[0][0], /reporter_user_id/, "登録した人は読まない");
+  // 2026-11-16 オーナーの判断：登録した人をゲーム内の名前で出す（Discord の名前・ID は出さない）。
+  assert.match(q[0][0], /GROUP_CONCAT\(\(SELECT p\.nick_name FROM user_player_links l JOIN players p/);
+  // オーナーの一覧だけ Discord の表示名も（オーナーしか見られない）。Discord の ID は出さない。
+  assert.match(q[0][0], /COALESCE\(NULLIF\(u\.global_name, ''\), u\.username\)/);
+  assert.doesNotMatch(q[0][0], /discord_id/);
   const html = renderOwnerMatchups(list);
   assert.match(html, /王国1524 Pen<small>Penguins<\/small>/);
   assert.match(html, /王国1537 LOL（3人） <a href="\/alliance\/compare\?a=1524%3APen&amp;a=1537%3ALOL">比べる<\/a>/);

@@ -1,7 +1,7 @@
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
 import { breadcrumbJsonLd } from "./seo.js";
 import { HERO_SLUGS as HERO_PAGE_SLUGS } from "./hero-slugs.js";
-import { canonicalHeroName, heroRarity } from "./hero-shards.js";
+import { canonicalHeroName, heroRarity, heroNameVariants } from "./hero-shards.js";
 import { heroGeneration } from "./hero-pages.js";
 
 function esc(value) {
@@ -85,7 +85,7 @@ export function renderHeroCatalogPage(iconByName = {}, { origin = "" } = {}) {
   const heroes = Object.entries(HERO_SKILLS_JA).map(([name, data]) => {
     const groups = data.groups || [];
     const count = groups.reduce((sum, group) => sum + (group.skills || []).length, 0);
-    const iconPath = typeof iconByName?.[name] === "string" && /^[a-f0-9]{64}\.(?:png|jpg|webp|gif|avif)$/.test(iconByName[name]) ? iconByName[name] : "";
+    const iconPath = heroNameVariants(name).map(k => iconByName?.[k]).find(v => typeof v === "string" && /^[a-f0-9]{64}\.(?:png|jpg|webp|gif|avif)$/.test(v)) || "";
     const detailAvatar = iconPath
       ? '<img class="hero-avatar hero-avatar-large hero-avatar-image" src="/hero-icons/assets/' + esc(iconPath) + '" alt="' + esc(name) + '" loading="lazy">'
       : '<div class="hero-avatar hero-avatar-large">' + esc(heroInitial(name)) + '</div>';
@@ -98,7 +98,7 @@ export function renderHeroCatalogPage(iconByName = {}, { origin = "" } = {}) {
       ? '<img class="hero-avatar hero-avatar-image" src="/hero-icons/assets/' + esc(iconPath) + '" alt="' + esc(name) + '" loading="lazy">'
       : '<span class="hero-avatar">' + esc(heroInitial(name)) + '</span>';
     const slug = HERO_PAGE_SLUGS[name] || "";
-    const alias = canonicalHeroName(name) !== name ? canonicalHeroName(name) : "";
+    const alias = heroNameVariants(name).filter(v => v !== name).join(" ");
     // 個別ページへのリンクはカードの外（開閉の summary とは別の要素）。slug がある英雄だけ。
     const pageLink = slug ? '<a class="hero-go" href="/heroes/' + esc(slug) + '" aria-label="' + esc(name) + 'の個別ページ（スキル・世代・欠片）">' + esc(name) + 'のページ <b>→</b></a>' : '';
     const group = heroCatalogGroup(name);

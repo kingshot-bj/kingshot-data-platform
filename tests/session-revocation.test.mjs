@@ -42,7 +42,7 @@ test("revocation is enforced everywhere a session is read; relogin API is OWNER 
   const auth = index.slice(index.indexOf("async function getAuthenticatedUser"), index.indexOf("async function trackServiceUsage"));
   assert.ok(auth.includes("if (await isSessionRevoked(env.DB, session)) return null;"));
   assert.ok(index.includes("if (!session || await isSessionRevoked(env.DB, session)) return json({ ok: true, authenticated: false });"));
-  assert.ok(index.includes("const session = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;"));
+  assert.ok(index.includes("const cookieSession = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;"));
   assert.ok(index.includes("if (env.DB) await onKvkUserSignedIn(env.DB, String(discordUser.id));"));
   const api = index.slice(index.indexOf("async function handleKvkReloginMissingApi"), index.indexOf("// OWNER only: copy archive objects"));
   assert.ok(api.includes("await requireOwner(request, env)") && api.includes('request.method !== "POST"'));

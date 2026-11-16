@@ -7,7 +7,7 @@ import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
 import { HERO_TROOPS_JA, skillCard, skillGroupLabel, heroSourceLineHtml } from "./hero-catalog-page.js";
 import { HERO_SLUGS } from "./hero-slugs.js";
 export { HERO_SLUGS };
-import { canonicalHeroName, heroRarity, isDedicatedShardHero, MAX_STEPS, shardsBetween } from "./hero-shards.js";
+import { canonicalHeroName, heroRarity, isDedicatedShardHero, MAX_STEPS, shardsBetween, heroNameVariants } from "./hero-shards.js";
 import { KINGDOM_TIMELINE } from "./kingdom-timeline.js";
 
 const BY_SLUG = Object.fromEntries(Object.entries(HERO_SLUGS).map(([name, slug]) => [slug, name]));
@@ -32,7 +32,7 @@ export function heroGeneration(name) {
 }
 
 function iconFor(name, iconByName) {
-  const candidates = [iconByName?.[name], iconByName?.[canonicalHeroName(name)]];
+  const candidates = heroNameVariants(name).map(k => iconByName?.[k]);
   return candidates.find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
 }
 

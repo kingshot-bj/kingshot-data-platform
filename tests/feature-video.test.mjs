@@ -9,9 +9,12 @@ const src = readFileSync(new URL("../scripts/social/feature-video.mjs", import.m
 
 test("場面ファイル：どのセットも読める（ページは / から、秒数は20秒まで）", () => {
   const sets = readdirSync(new URL("../scripts/social/scenes/", import.meta.url)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5));
-  assert.ok(sets.includes("features") && sets.includes("alliance-compare"));
+  assert.ok(sets.includes("features") && sets.includes("alliance-compare") && sets.includes("governor-duel"));
+  // 場面セットを足したら、Actions の選択肢にも足す（2026-11-16 領主対決）
+  const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
+  for (const name of sets) assert.match(wf, new RegExp("options: \\[[^\\]]*\\b" + name + "\\b"), name);
   for (const name of sets) { const set = loadSceneSet(name); assert.equal(set.name, name); assert.ok(set.output.endsWith(".mp4")); }
-  assert.deepEqual(parseArgs(["out", "--set", "alliance-compare", "--fade", "9"]), { out: "out", set: "alliance-compare", bgm: "", fade: 1.5 });
+  assert.deepEqual(parseArgs(["out", "--set", "alliance-compare", "--fade", "9"]), { out: "out", set: "alliance-compare", bgm: "", fade: 1.5, scenesFile: "" });
   assert.throws(() => parseArgs(["--set", "../x"]), /名前/);
 });
 
@@ -21,6 +24,9 @@ test("通信：広告・解析・アクセス記録は止める。撮影の印�
   assert.equal(routeDecision("https://googleads.g.doubleclick.net/pagead/ads", host), "block");
   assert.equal(routeDecision("https://ep1.adtrafficquality.google/getconfig", host), "block");
   assert.equal(routeDecision("https://eagleeye-ks.com/api/pv", host), "block");
+  // アイコンは EagleEye の中継から（撮影環境でゲームの画像サーバーにつながらなくても映るように）
+  assert.equal(routeDecision("https://got-global-avatar.akamaized.net/avatar/2026/07/09/EQREDv_1783592533.png", host), "avatar");
+  assert.equal(routeDecision("https://got-global-avatar.akamaized.net/avatar/x.svg", host), "pass");
   assert.equal(routeDecision("https://eagleeye-ks.com/api/funnel-event", host), "block");
   assert.equal(routeDecision("https://eagleeye-ks.com/player?governor_id=1", host), "eagle");
   assert.equal(routeDecision("https://cdn.example.com/x.js", host), "pass");
@@ -43,7 +49,7 @@ test("つなぎ方：フェードの位置、BGMあり／なし、長さ", () =>
   assert.match(f, /anullsrc|anull\[a\]/);
   const b = ffmpegConcatArgs(["a.mp4"], [3], { fade: 0, bgm: "music.mp3", out: "o.mp4" });
   assert.ok(b.args.includes("music.mp3") && b.args.includes("-stream_loop"));
-  assert.match(b.args[b.args.indexOf("-filter_complex") + 1], /volume=0\.35,afade=t=out:st=1\.50:d=1\.5\[a\]/);
+  assert.match(b.args[b.args.indexOf("-filter_complex") + 1], /volume=0\.7,afade=t=out:st=1\.50:d=1\.5\[a\]/);
 });
 
 test("サーバー：撮影の印は Claude 用の鍵と一緒のときだけ効く（普通のユーザーには関係しない）", () => {
@@ -58,4 +64,13 @@ test("サーバー：撮影の印は Claude 用の鍵と一緒のときだけ効
   const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
   assert.match(wf, /EAGLEEYE_VIDEO_TOKEN: \$\{\{ secrets\.EAGLEEYE_VIDEO_TOKEN \}\}/);
   assert.match(wf, /workflow_dispatch/);
+});
+
+test("BGM：既定の曲がリポジトリにある（自作・make-bgm.py で作り直せる）", async () => {
+  const { existsSync } = await import("node:fs");
+  const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
+  const def = wf.match(/default: "(scripts\/social\/bgm\/[^"]+)"/)?.[1];
+  assert.ok(def, "BGM の既定");
+  assert.ok(existsSync(new URL("../" + def, import.meta.url)), def);
+  assert.ok(existsSync(new URL("../scripts/social/bgm/make-bgm.py", import.meta.url)));
 });

@@ -29,7 +29,7 @@ export const KINGDOM_TIMELINE = Object.freeze([
   [315, 315, "truegold", "G6・G7・G8（精製黄金）", "超精錬"],
   [350, 350, "pet", "第6世代ペット", "アイアンクラッド戦象・リーガルホワイトライオン"],
   [350, 360, "hero", "第6世代 SSR英雄", "トリトン・ソフィア・ヤン"],
-  [440, 440, "hero", "第7世代 SSR英雄", "チャールズ・エヴァ・レン&ロン"],
+  [440, 440, "hero", "第7世代 SSR英雄", "チャールズ・アイヴァ・レン&ロン"],
   [440, 440, "pet", "第7世代ペット", "アイアンクラッド戦熊"]
 ].map(([from, to, category, title, detail]) => Object.freeze({ from, to, category, title, detail })));
 

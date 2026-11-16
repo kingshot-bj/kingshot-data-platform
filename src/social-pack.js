@@ -164,7 +164,9 @@ export function renderSocialCover(pack) {
 export const SOCIAL_R2_PREFIX = "social/";
 export const SOCIAL_MANIFEST_KEY = "social/latest.json";
 const MEDIA_KEY = /^social\/\d{4}-\d{2}-\d{2}\/[a-z0-9_-]{1,40}\.(png|mp4|json)$/;
-export function isSocialMediaKey(key) { return MEDIA_KEY.test(String(key || "")); }
+// 動画（CM）：social/videos/out/<id>/video.mp4・caption.txt（/owner/social/video で作ったもの）
+const VIDEO_MEDIA_KEY = /^social\/videos\/out\/\d{8}-\d{6}-[a-z0-9][a-z0-9-]{0,39}\/(video\.mp4|caption\.txt)$/;
+export function isSocialMediaKey(key) { const k = String(key || ""); return MEDIA_KEY.test(k) || VIDEO_MEDIA_KEY.test(k); }
 
 export async function loadSocialManifest(bucket) {
   if (!bucket) return null;
@@ -196,7 +198,7 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}.lead{color:v
 .plan{border-top:1px solid var(--ee-border-soft,#223b57);padding:10px 0}.plan summary{cursor:pointer;font-size:14px;line-height:1.6}.plan .caps{margin-top:8px}.badge{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:11px;background:rgba(250,204,21,.14);color:var(--ee-gold,#facc15)}
 @media (max-width:640px){.row{flex-direction:column}}
 </style></head><body><main class="wrap"><a href="/owner">← OWNER管理</a>・<a href="/owner/growth">成長ダッシュボード</a>
-<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">実際のデータから毎週月曜に自動で作ります。下の「今すぐ作る」でいつでも作れます（投稿はしません）。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
+<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">🎬 <a href="/owner/social/video">動画（CM）を作る</a>：台本を書き換えて縦長の動画を作れます。</p><p class="lead">実際のデータから毎週月曜に自動で作ります。下の「今すぐ作る」でいつでも作れます（投稿はしません）。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
 <section class="card" id="run"><h2>今すぐ作る<small>最新のデータで画像・動画・投稿文を作り直します（10分ほど）。SNSへの投稿はしません。同じ週の分は上書きされます。</small></h2><button type="button" class="copy" id="run-btn" disabled>今すぐ作る</button> <span class="muted" id="run-msg">状態を確認しています…</span></section>
 <section class="card"><h2>ショート動画（YouTube・TikTok・Instagram 用）</h2>${video ? `<video src="${video}" controls playsinline style="width:216px;border-radius:10px"></video><p class="dl"><a href="${video}" download>動画をダウンロード</a></p>` : '<p class="muted">まだ作られていません（毎週月曜に自動で作ります。GitHub の「SNS weekly pack」から手動でも動かせます）。</p>'}</section>
 <section class="card"><h2>自動投稿の結果</h2>${postRows}</section>

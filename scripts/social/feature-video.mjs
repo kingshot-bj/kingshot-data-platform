@@ -15,6 +15,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { ADVANCED_BENEFITS } from "../../src/role-upgrade.js";
+import { normalizeSceneSet } from "../../src/social-video-scenes.js";
+import { avatarProxyTarget } from "../../src/compare-share.js";
+import { EAGLEEYE_THEMES } from "../../src/themes.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FPS = 10;
@@ -25,11 +28,12 @@ export const BLOCK_HOSTS = /(^|\.)(googlesyndication\.com|doubleclick\.net|googl
 export const BLOCK_PATHS = /^\/api\/(pv|funnel-event|client-error|telemetry)(\/|$)/;
 
 export function parseArgs(argv) {
-  const opt = { out: "feature-video-out", set: "features", bgm: "", fade: 0.4 };
+  const opt = { out: "feature-video-out", set: "features", bgm: "", fade: 0.4, scenesFile: "" };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--set") opt.set = argv[++i];
+    else if (a === "--scenes-file") opt.scenesFile = argv[++i] || "";
     else if (a === "--bgm") opt.bgm = argv[++i] || "";
     else if (a === "--fade") opt.fade = Math.max(0, Math.min(1.5, Number(argv[++i]) || 0));
     else rest.push(a);
@@ -37,6 +41,13 @@ export function parseArgs(argv) {
   if (rest[0]) opt.out = rest[0];
   if (!/^[a-z0-9-]{1,40}$/.test(opt.set)) throw new Error("場面セットの名前が正しくありません: " + opt.set);
   return opt;
+}
+
+// オーナー画面（/owner/social/video）で書いた台本。必ず normalizeSceneSet を通す（タグ・ページの制限）。
+export function loadSceneSetFile(path) {
+  const r = normalizeSceneSet(JSON.parse(readFileSync(path, "utf8")));
+  if (!r.ok) throw new Error("台本が正しくありません: " + r.error);
+  return r.set;
 }
 
 export function loadSceneSet(name) {
@@ -56,6 +67,14 @@ background:radial-gradient(120% 60% at 50% 0%,rgba(34,211,238,.25),rgba(34,211,2
 .k{color:#22d3ee;font-weight:800;font-size:15px;letter-spacing:2px}h1{font-size:30px;line-height:1.35;margin:10px 0 14px}img{width:170px;margin:6px 0}
 .box{width:100%;text-align:left;background:rgba(15,32,53,.9);border:1px solid #2a4664;border-radius:16px;padding:14px 16px;margin:8px 0;font-size:15px;line-height:1.7}
 .box b{color:#fde68a}.box ol,.box ul{margin:4px 0;padding-left:1.3em}.url{font-size:24px;font-weight:900;color:#22d3ee;margin-top:8px}.s{font-size:13px;color:#91a7bf}`;
+
+// 文字だけの画面も着せ替えの色にする（背景・見出しの色）。色は themes.js の固定値だけ（#rrggbb を確かめる）。
+export function slideSkinCss(skinId) {
+  const t = EAGLEEYE_THEMES.find(x => x.id === skinId)?.tokens;
+  const hex = v => /^#[0-9a-fA-F]{6}$/.test(String(v || "")) ? v : null;
+  if (!t || !hex(t.bg) || !hex(t.panel) || !hex(t.accent)) return "";
+  return `body{background:radial-gradient(120% 60% at 50% 0%,${t.accent}40,${t.accent}00 60%),linear-gradient(180deg,${t.panel},${t.bg})}.k,.url{color:${t.accent}}.box{background:${t.panel}e6;border-color:${hex(t.border) || t.accent}}`;
+}
 
 // 文字だけの画面。heading・sub は場面ファイルに書く（自分たちで書いた文なので、そのまま HTML として使う）。
 export function slideHtml(sc, base) {
@@ -84,6 +103,9 @@ export function routeDecision(urlString, eagleHost) {
   if (BLOCK_HOSTS.test(u.hostname)) return "block";
   if (u.host === eagleHost && BLOCK_PATHS.test(u.pathname)) return "block";
   if (u.host === eagleHost) return "eagle";
+  // プレイヤーのアイコン（ゲームの画像サーバー）は EagleEye の中継（/api/avatar）から読む。
+  // 撮影する環境によってはゲームの画像サーバーに直接つながらず、アイコンが空になっていた（2026-11-16）。
+  if (avatarProxyTarget(urlString)) return "avatar";
   return "pass";
 }
 
@@ -103,22 +125,34 @@ async function record(set, opt, base) {
       if (token) headers.authorization = "Bearer " + token;
       return route.continue({ headers });
     }
+    if (decision === "avatar") {
+      const relay = base + "/api/avatar?u=" + encodeURIComponent(route.request().url());
+      return route.fetch({ url: relay }).then(res => route.fulfill({ response: res })).catch(() => route.continue());
+    }
     return route.continue();
   });
   const page = await ctx.newPage();
   const segments = [];
+  let lastSkin = null;
   for (const [idx, sc] of set.scenes.entries()) {
     const dir = join(opt.out, "frames", String(idx).padStart(2, "0"));
     mkdirSync(dir, { recursive: true });
     let n = 0;
     const snap = () => page.screenshot({ path: join(dir, String(n++).padStart(5, "0") + ".jpg"), type: "jpeg", quality: 88 });
     const count = Math.round(sc.seconds * FPS);
+    const skin = sc.skin || set.skin || "";
     if (sc.slide) {
-      await page.setContent(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>${SLIDE_CSS}</style></head><body>${slideHtml(sc, base)}</body></html>`);
+      await page.setContent(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><style>${SLIDE_CSS}${slideSkinCss(skin)}</style></head><body>${slideHtml(sc, base)}</body></html>`);
       await page.waitForTimeout(800);
       for (let i = 0; i < count; i++) await snap();
       segments.push({ dir, label: sc.slide, seconds: count / FPS });
       continue;
+    }
+    // 着せ替え：EagleEye のページは表示の前に localStorage を読むので、同じサイトの軽いページで先に書いておく。
+    if (skin !== lastSkin) {
+      await page.goto(base + "/robots.txt", { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null);
+      await page.evaluate(v => { try { if (v) localStorage.setItem("eagleeye-skin", v); else localStorage.removeItem("eagleeye-skin"); } catch (e) {} }, skin).catch(() => {});
+      lastSkin = skin;
     }
     const res = await page.goto(base + sc.page, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => null);
     await page.waitForTimeout(3000);
@@ -163,7 +197,7 @@ export function ffmpegConcatArgs(segFiles, seconds, { fade = 0.4, bgm = "", out 
   const audioIndex = segFiles.length;
   if (bgm) {
     args.push("-stream_loop", "-1", "-i", bgm);
-    filter += `[${audioIndex}:a]volume=0.35,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[a]`;
+    filter += `[${audioIndex}:a]volume=0.7,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[a]`;
   } else {
     args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
     filter += `[${audioIndex}:a]anull[a]`;
@@ -174,7 +208,7 @@ export function ffmpegConcatArgs(segFiles, seconds, { fade = 0.4, bgm = "", out 
 
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
-  const set = loadSceneSet(opt.set);
+  const set = opt.scenesFile ? loadSceneSetFile(opt.scenesFile) : loadSceneSet(opt.set);
   const base = (process.env.EAGLEEYE_BASE || "https://eagleeye-ks.com").replace(/\/$/, "");
   if (opt.bgm && !existsSync(opt.bgm)) throw new Error("BGMのファイルが見つかりません: " + opt.bgm);
   rmSync(opt.out, { recursive: true, force: true });

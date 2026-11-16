@@ -168,11 +168,11 @@ const TERMS_SECTIONS = [
   }
 ];
 
-export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "" }) {
+export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "", jsonLd = null }) {
   const body = sections.map((section, i) =>
     `<section class="legal-section"><h2>${i + 1}. ${section.title}</h2>${section.body}</section>`
   ).join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>` : ""}
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -299,6 +299,11 @@ export function renderAboutPage(origin = "") {
     description: "EagleEye（KingShot非公式データサービス）の運営者情報とお問い合わせ先。",
     canonical: origin ? origin + "/about" : "",
     updatedAt: ABOUT_UPDATED_AT,
+    jsonLd: origin ? { "@context": "https://schema.org", "@graph": [
+      { "@type": "AboutPage", name: "運営者情報", url: origin + "/about", inLanguage: "ja", about: { "@id": origin + "/#org" } },
+      { "@type": "Organization", "@id": origin + "/#org", name: "EagleEye", alternateName: "イーグルアイ", url: origin + "/", logo: origin + "/apple-touch-icon.png", contactPoint: { "@type": "ContactPoint", contactType: "customer support", url: origin + "/support", availableLanguage: "ja" } },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "運営者情報", item: origin + "/about" }] }
+    ] } : null,
     sections: ABOUT_SECTIONS,
     related: '関連：<a href="/privacy">プライバシーポリシー</a>・<a href="/terms">利用規約</a>'
   });
