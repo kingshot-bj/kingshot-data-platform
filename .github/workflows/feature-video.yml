@@ -9,7 +9,7 @@ on:
       scene_set:
         description: "場面セット"
         type: choice
-        options: [features, alliance-compare, governor-duel]
+        options: [features, alliance-compare, governor-duel, duel-data, duel-short, duel-howto]
         default: features
       bgm:
         description: "BGMのファイル（リポジトリ内のパス。空ならBGMなし）"
