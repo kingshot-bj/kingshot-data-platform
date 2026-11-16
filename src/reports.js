@@ -116,20 +116,21 @@ ${GROWTH_BUCKETS.map(b => bar(b.label, b.gainPct, maxPct, b.gainPct.toFixed(1) +
 }
 
 export const REPORTS = Object.freeze([
-  { slug: "mystic-trial-distribution-2026-11", title: "全2,621王国の秘境の試練：1位の記録はどこまで進んでいる？", lead: "6種類ごとに、各王国の1位の記録の分布と、開設日数による違いをまとめました。", body: body1 },
-  { slug: "power-vs-mystic-2026-11", title: "総力と秘境の試練は比例する？ 同じ時期の王国で比べてみた", lead: "王国の総力と、秘境の試練の1位の記録の関係を、全王国と開設時期をそろえた王国で確かめました。", body: body2 },
-  { slug: "kvk-s23-matchups", title: "KvK シーズン23の組み合わせ分析：総力が大きい王国は秘境の試練でも上か", lead: "全1,219組で秘境の試練の6種類を比べ、総力の大小との関係を数えました。", body: body3 },
-  { slug: "young-kingdom-growth-2026-11", title: "新しい王国はどれくらい伸びる？ 開設日数ごとの総力の増え方", lead: "全2,621王国を開設日数で分けて、7日間の総力の増え方を比べました。", body: body4 }
+  { slug: "mystic-trial-distribution-2026-11", title: "全2,621王国の秘境の試練：1位の記録はどこまで進んでいる？", lead: "6種類ごとに、各王国の1位の記録の分布と、開設日数による違いをまとめました。", findings: ["真ん中の王国の1位の記録は、輝光の塔で70-1、闘技場で66-8。生命の森（26-9）・知識の枢軸（29-2）は進みが遅い。", "開設180日以内と366日以上の王国では、輝光の塔の1位の平均が34-8と84-6で大きく違う。比べるなら開設日数が近い王国どうしで。"], body: body1 },
+  { slug: "power-vs-mystic-2026-11", title: "総力と秘境の試練は比例する？ 同じ時期の王国で比べてみた", lead: "王国の総力と、秘境の試練の1位の記録の関係を、全王国と開設時期をそろえた王国で確かめました。", findings: ["順位の相関は全王国で0.66〜0.74、開設500〜600日の王国だけでも0.69。関係はあるが比例ではない。", "輝光の塔の1位の記録が上位10%の52王国のうち、7王国は総力が下半分。総力400位台で記録は50位前後の王国もある。"], body: body2 },
+  { slug: "kvk-s23-matchups", title: "KvK シーズン23の組み合わせ分析：総力が大きい王国は秘境の試練でも上か", lead: "全1,219組で秘境の試練の6種類を比べ、総力の大小との関係を数えました。", findings: ["総力が大きい方が秘境の試練でも上だった組は44.8%（1,073組中481組）。半分に届かない。", "6種類すべてで片方が上の組が319組（26.2%）、3-3の互角は146組（12%）。"], body: body3 },
+  { slug: "young-kingdom-growth-2026-11", title: "新しい王国はどれくらい伸びる？ 開設日数ごとの総力の増え方", lead: "全2,621王国を開設日数で分けて、7日間の総力の増え方を比べました。", findings: ["開設30日以内の王国は、1週間で総力が平均46%増える。31〜60日で9%、61日以降は5〜6%前後で落ち着く。", "増える量は古い王国ほど大きい（366日以上で平均約5.0B）。"], body: body4 }
 ]);
 
 const CSS = `<style>.rmeta{font-size:12px;color:var(--ee-subtext)}.rbar{display:grid;grid-template-columns:minmax(0,9.5em) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}.rbar span{color:var(--ee-subtext);overflow-wrap:anywhere}.rbar i{display:block;height:10px;border-radius:5px;background:var(--ee-cyan)}.rbar b{font-size:12px;white-space:nowrap}
 .rtable{overflow-x:auto;margin:8px 0}.rtable table{width:100%;border-collapse:collapse;font-size:13px}.rtable th,.rtable td{padding:7px 6px;border-bottom:1px solid var(--ee-border-soft);text-align:left;white-space:nowrap}.rtable thead th{font-size:11px;color:var(--ee-subtext)}.rtable small{color:var(--ee-subtext);font-size:11px;margin-left:2px}
-article p,article li{font-size:14px;line-height:1.85}article ul{padding-left:20px}.rnote{margin-top:22px;font-size:11px;color:var(--ee-subtext);line-height:1.7}.rlinks{font-size:13px}.rlist{display:grid;gap:10px}.rcard{display:block;padding:14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none}.rcard b{display:block;font-size:15px;line-height:1.5}.rcard small{display:block;margin-top:4px;font-size:12px;color:var(--ee-subtext);line-height:1.6}</style>`;
+article p,article li{font-size:14px;line-height:1.85}article ul{padding-left:20px}.rnote{margin-top:22px;font-size:11px;color:var(--ee-subtext);line-height:1.7}.rlinks{font-size:13px}.rlist{display:grid;gap:10px}.rcard{display:block;padding:14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none}.rcard b{display:block;font-size:15px;line-height:1.5}.rcard small{display:block;margin-top:4px;font-size:12px;color:var(--ee-subtext);line-height:1.6}.rfind{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7}.rcard em{display:block;margin-top:6px;font-style:normal;font-size:12px;color:var(--ee-cyan)}</style>`;
 
 export function renderReportsIndex({ origin = "" } = {}) {
-  const list = REPORTS.map(r => `<a class="rcard" href="/reports/${r.slug}"><b>${esc(r.title)}</b><small>${esc(r.lead)}</small></a>`).join("");
+  // 一覧にも主な結論を出す（一覧だけ見ても中身が分かるように・2026-11-16）。
+  const list = REPORTS.map(r => `<a class="rcard" href="/reports/${r.slug}"><b>${esc(r.title)}</b><small>${esc(r.lead)}</small>${(r.findings || []).length ? `<ul class="rfind">${r.findings.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}<em>レポートを読む →</em></a>`).join("");
   const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › データレポート</nav>
-<h1>データレポート</h1><p class="lead">EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。</p>
+<h1>データレポート</h1><p class="lead">EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。各レポートの主な結論を下に載せています。</p>
 <div class="rlist">${list}</div>${SOURCE_NOTE}`;
   return shell({ title: "キングショット データレポート | EagleEye", description: "キングショット（KingShot）の全王国のデータから分かったこと。秘境の試練の記録の分布、総力との関係、KvKの組み合わせ分析、新しい王国の伸び方。", canonical: origin + "/reports", body, origin });
 }
