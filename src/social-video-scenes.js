@@ -3,7 +3,12 @@
 // ・字幕・見出しで使える装飾は <b> と <br> だけ（ほかのタグはすべて文字として表示）。
 // ・映せるページは EagleEye の中（/ から始まるパス）だけ。
 
+import { EAGLEEYE_THEMES } from "./themes.js";
+
 export const SLIDE_TYPES = Object.freeze(["title", "text", "signup", "outro"]);
+// 着せ替え（themes.js の id）。台本全体（skin）と場面ごと（scene.skin）に指定できる。
+export const VIDEO_SKINS = Object.freeze(EAGLEEYE_THEMES.map(t => t.id));
+const skinOf = v => VIDEO_SKINS.includes(String(v || "")) ? String(v) : "";
 export const SCENE_LIMITS = Object.freeze({ scenes: 12, seconds: 20, total: 90, text: 120, page: 300, scroll: 20000, post: 12, postLine: 400, name: 40, title: 60 });
 export const SCENE_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
@@ -46,6 +51,7 @@ export function normalizeSceneSet(input) {
       const slide = String(sc.slide);
       if (!SLIDE_TYPES.includes(slide)) return { ok: false, error: `${i + 1}番目の場面：種類が正しくありません` };
       const out = { slide, seconds };
+      if (skinOf(sc.skin)) out.skin = skinOf(sc.skin);
       if (slide === "text") { out.heading = sanitizeRich(sc.heading); out.sub = sanitizeRich(sc.sub); if (!plainText(out.heading).trim()) return { ok: false, error: `${i + 1}番目の場面：見出しを入れてください` }; }
       scenes.push(out);
     } else {
@@ -53,6 +59,7 @@ export function normalizeSceneSet(input) {
       if (!page) return { ok: false, error: `${i + 1}番目の場面：ページは EagleEye の中のパス（/ から始まる）にしてください` };
       const out = { page, caption: sanitizeRich(sc.caption), seconds, scroll: Math.round(num(sc.scroll, 0, SCENE_LIMITS.scroll, 0)) };
       if (sc.login) out.login = true;
+      if (skinOf(sc.skin)) out.skin = skinOf(sc.skin);
       scenes.push(out);
     }
   }
@@ -60,5 +67,7 @@ export function normalizeSceneSet(input) {
   if (total > SCENE_LIMITS.total) return { ok: false, error: `合計は${SCENE_LIMITS.total}秒までです（今は${Math.round(total)}秒）` };
   const post = (Array.isArray(input.post) ? input.post : String(input.post || "").split("\n")).slice(0, SCENE_LIMITS.post).map(l => String(l ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").slice(0, SCENE_LIMITS.postLine));
   const title = String(input.title || name).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, SCENE_LIMITS.title);
-  return { ok: true, set: { name, title, output: `eagleeye-${name}.mp4`, post, scenes } };
+  const set = { name, title, output: `eagleeye-${name}.mp4`, post, scenes };
+  if (skinOf(input.skin)) set.skin = skinOf(input.skin);
+  return { ok: true, set };
 }
