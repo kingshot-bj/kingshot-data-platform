@@ -85,3 +85,17 @@ test("オーナー画面：公開の王国ページのデータ集めの進み�
   assert.match(html, /今の周：王国1,200まで（約46.1%）/);
   assert.equal(renderPublicDataProgressCard(null), "");
 });
+
+// 2026-11-16：KvK の組み合わせページ（約2,400王国）で秘境の試練を90件ずつ28回読んでいて、表示に10秒以上かかっていた。
+import { loadMysticSummaries, resetKvkMysticSchemaCache } from "../src/kvk-mystic.js";
+test("秘境の試練の記録：多いときはシーズン全体を1回で読む", async () => {
+  resetKvkMysticSchemaCache();
+  const queries = [];
+  const db = { batch: async () => [], prepare: sql => { const s = { bind: (...a) => { queries.push([sql, a.length]); return s; }, run: async () => ({}), all: async () => ({ results: [{ kid: 5, boards_json: "{\"coliseum\":{\"best\":1}}" }, { kid: 99999, boards_json: "{}" }] }), first: async () => null }; return s; } };
+  const kids = Array.from({ length: 2400 }, (_, i) => i + 1);
+  const out = await loadMysticSummaries(db, 23, kids);
+  const reads = queries.filter(([sql]) => /FROM kvk_mystic_summary/.test(sql));
+  assert.equal(reads.length, 1);
+  assert.equal(reads[0][1], 1, "シーズンだけで絞る");
+  assert.ok(out.has(5) && !out.has(99999), "頼まれた王国だけ返す");
+});

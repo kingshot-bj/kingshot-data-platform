@@ -31,7 +31,7 @@ test("pages without data still render helpful text", () => {
   const html = renderPublicKingdomPage(9, { catalog: null, players: [], alliances: [], matchup: null, score: null, growth: null }, {});
   assert.match(html, /集計データはまだありません/);
   // 個人ランキングが無い王国では、空の欄（「自動で取得されます」）を出さない（2026-11-15・AdSense の品質対応）。
-  assert.doesNotMatch(html, /ウォッチリストに入ると自動で取得|戦力ランキング（上位10人）/);
+  assert.doesNotMatch(html, /ウォッチリストに入ると自動で取得|個人総力ランキング（上位10人）/);
 });
 
 test("index, robots and sitemap", () => {

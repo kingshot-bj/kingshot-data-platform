@@ -160,6 +160,14 @@ export async function loadMysticSummaries(db, season, kids) {
   await ensureKvkMysticSchema(db);
   const out = new Map();
   const list = [...new Set(kids.map(Number).filter(Number.isFinite))];
+  // シーズンの全組み合わせ（約2,400王国）を90件ずつ順に読むと28回の問い合わせになり、ページの表示に10秒以上かかっていた。
+  // 多いときはシーズン全体を1回で読む（読む行数は同じ）。2026-11-16。
+  if (list.length > 300) {
+    const want = new Set(list);
+    const rows = (await db.prepare("SELECT kid, boards_json FROM kvk_mystic_summary WHERE season = ? AND status = 'OK'").bind(season).all())?.results || [];
+    for (const r of rows) { if (!want.has(Number(r.kid))) continue; try { out.set(Number(r.kid), JSON.parse(r.boards_json)); } catch {} }
+    return out;
+  }
   for (let i = 0; i < list.length; i += 90) {
     const chunk = list.slice(i, i + 90);
     const rows = (await db.prepare(`SELECT kid, boards_json FROM kvk_mystic_summary WHERE season = ? AND status = 'OK' AND kid IN (${chunk.map(() => "?").join(",")})`).bind(season, ...chunk).all())?.results || [];
