@@ -89,7 +89,7 @@ export function renderHeroCatalogPage(iconByName = {}, { origin = "" } = {}) {
     const detailAvatar = iconPath
       ? '<img class="hero-avatar hero-avatar-large hero-avatar-image" src="/hero-icons/assets/' + esc(iconPath) + '" alt="' + esc(name) + '" loading="lazy">'
       : '<div class="hero-avatar hero-avatar-large">' + esc(heroInitial(name)) + '</div>';
-    const detail = '<div class="hero-detail-head">' + detailAvatar + '<div><p class="eyebrow">英雄</p><h2>' + esc(name) + '</h2><p class="hero-source">出典：' + heroSourceLineHtml(data) + '（確認日 ' + esc(data.checkedAt || "未記録") + '）</p></div></div>' +
+    const detail = '<div class="hero-detail-head">' + detailAvatar + '<div><p class="eyebrow">英雄</p><h2>' + esc(name) + '</h2><p class="hero-source">出典：' + heroSourceLineHtml(data) + '</p></div></div>' +
       (HERO_PAGE_SLUGS[name] ? '<p class="hero-page-link"><a href="/heroes/' + HERO_PAGE_SLUGS[name] + '">' + esc(name) + 'の個別ページ（世代・欠片・同じ兵種の英雄） →</a></p>' : '') +
       '<p class="data-note">ゲーム内の表記をもとにしたスキル情報です。アップデートで数値や説明が変わることがあります。</p>' +
       groups.map(group => '<section class="skill-group"><div class="group-heading"><h3>' + esc(group.type) + '</h3><span>' + (group.skills || []).length + ' SKILLS</span></div><div class="skill-grid">' +

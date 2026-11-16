@@ -126,9 +126,11 @@ test("出典：アルテマ（ゲーム内表記の転記）は名前もリン�
   const catalog = await renderHeroCatalogPage({}).text();
   assert.doesNotMatch(catalog, /アルテマ|altema/i);
   assert.match(catalog, /出典：ゲーム内の表記/);
+  assert.doesNotMatch(catalog, /確認日/, "見直さない日付は出さない（古く見えるだけ）");
   for (const n of NAMES) {
     const html = renderHeroPage(n, { origin: "" });
     assert.doesNotMatch(html, /アルテマ|altema/i, n);
     assert.match(html, /スキル情報の出典：ゲーム内の表記/, n);
+    assert.doesNotMatch(html, /確認日/, n);
   }
 });
