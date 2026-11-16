@@ -72,3 +72,17 @@ test("同時開催：両方を返す・相手の登録は別々（頂上リー�
   assert.match(src, /const target = state\.events\.find\(e => e\.event\.kind === String\(form\?\.get\("event"\) \|\| ""\)\) \|\| state\.events\[0\];/);
   assert.match(src, /await saveMatchup\(env\.DB, \{ season: target\.event\.season,/);
 });
+
+// 2026-11-16：誰が登録したか分かるように（ゲーム内の名前・同盟の人とオーナー）。
+test("登録した人：自分の同盟のページとオーナーの一覧にゲーム内の名前", async () => {
+  const { REPORTER_NAME_SQL } = await import("../src/swordland.js");
+  assert.match(REPORTER_NAME_SQL, /SELECT p\.nick_name FROM user_player_links l JOIN players p/);
+  assert.doesNotMatch(REPORTER_NAME_SQL, /discord|username|global_name/i, "Discord の名前は出さない");
+  const ev = { kind: "league", label: "聖剣頂上リーグ", league: true, begin_ts: 1794700800, end_ts: 1795305600, season_end_ts: 1797292800, season: 1794700801 };
+  const html = renderSwordlandPage({ state: { events: [{ event: ev, matchup: { opp_kid: 1546, opp_tag: "MIT", count: 3, disputed: true, reporters: ["らすかる", "<b>x</b>"], other: { opp_kid: 1547, opp_tag: "ABC", count: 1, reporters: ["エリザベス"] } } }], mine: { kid: 1524, alliance_abbr: "Pen" } } });
+  assert.match(html, /登録してくれた人：らすかる、&lt;b&gt;x&lt;\/b&gt; ほか/);
+  assert.match(html, /ほかの登録：王国1547の ABC（1人：エリザベス）/);
+  const owner = renderOwnerMatchups([{ season: 1794700801, kid: 1524, aid: "1", abbr: "Pen", opps: [{ opp_kid: 1546, opp_tag: "MIT", count: 2, reporters: ["らすかる", "BJ"] }] }]);
+  assert.match(owner, /王国1546 MIT（2人：らすかる、BJ）/);
+  assert.match(owner, /登録した人はゲーム内の名前/);
+});
