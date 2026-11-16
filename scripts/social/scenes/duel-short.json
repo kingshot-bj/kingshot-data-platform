@@ -1,0 +1,18 @@
+{
+  "name": "duel-short",
+  "title": "領主対決：15秒ショート",
+  "output": "eagleeye-duel-short.mp4",
+  "post": [
+    "相手の総力、信じてる？👀",
+    "見るべきは秘境の試練。EagleEye でステージごとに比べられる。",
+    "{host}",
+    "",
+    "#キングショット #KingShot #領主対決"
+  ],
+  "scenes": [
+    { "slide": "text", "heading": "相手の総力<br>信じてる？", "sub": "領主対決⚔️", "seconds": 2.5 },
+    { "page": "/player/compare?governor_id=222916605&governor_id=227081160", "caption": "見るべきは<br><b>秘境の試練</b>", "seconds": 5.5, "scroll": 2600, "login": true },
+    { "slide": "text", "heading": "相手の実力を<br>先にチェック", "sub": "EagleEye（無料）", "seconds": 2.5 },
+    { "slide": "outro", "seconds": 3 }
+  ]
+}

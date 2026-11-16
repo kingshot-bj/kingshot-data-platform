@@ -1,0 +1,19 @@
+{
+  "name": "duel-data",
+  "title": "領主対決：データで見る（総力≠強さ）",
+  "output": "eagleeye-duel-data.mp4",
+  "post": [
+    "総力が大きい方が、秘境の試練では負けていた——KvK S23 の決着がついた1,073組のうち592組（55%）。",
+    "領主対決の相手も、総力だけで判断しないで秘境の試練で比べよう⚔️",
+    "{host}",
+    "",
+    "#キングショット #KingShot #領主対決"
+  ],
+  "scenes": [
+    { "slide": "text", "heading": "総力で勝ってる<br>＝勝てる？", "sub": "KvK S23 の組み合わせを調べた", "seconds": 3 },
+    { "slide": "text", "heading": "総力が大きい方が<br>秘境の試練で負けた<br>55%", "sub": "1,073組中592組（EagleEye 調べ）", "seconds": 4 },
+    { "page": "/reports/kvk-s23-matchups", "caption": "総力に2割以上の差があっても<br><b>360組</b>は秘境の試練で逆転", "seconds": 5, "scroll": 900 },
+    { "page": "/player/compare?governor_id=222916605&governor_id=227081160", "caption": "領主対決の相手も<br><b>秘境の試練</b>で比べよう", "seconds": 5, "scroll": 2600, "login": true },
+    { "slide": "outro", "seconds": 3 }
+  ]
+}
