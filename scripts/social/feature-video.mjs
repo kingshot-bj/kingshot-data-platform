@@ -163,7 +163,7 @@ export function ffmpegConcatArgs(segFiles, seconds, { fade = 0.4, bgm = "", out 
   const audioIndex = segFiles.length;
   if (bgm) {
     args.push("-stream_loop", "-1", "-i", bgm);
-    filter += `[${audioIndex}:a]volume=0.35,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[a]`;
+    filter += `[${audioIndex}:a]volume=0.7,afade=t=out:st=${Math.max(0, total - 1.5).toFixed(2)}:d=1.5[a]`;
   } else {
     args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
     filter += `[${audioIndex}:a]anull[a]`;
