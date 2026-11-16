@@ -9113,7 +9113,7 @@ const HERO_NAME_JA = {
   Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペーラ",
   Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
   Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
-  Triton: "トリトン", Sophia: "ソフィア", Ava: "エヴァ", Charles: "チャールズ",
+  Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
   "Wee & Woo": "レン&ロン", Yeonwoo: "インウー", Amane: "あまね",
   Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
   Fahd: "ファハド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",

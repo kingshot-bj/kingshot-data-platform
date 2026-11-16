@@ -54,7 +54,8 @@ function esc(value) {
 // ---- Hero list for the free picker -------------------------------------
 // Names follow the in-game Japanese names used by the player data (HERO_NAME_JA
 // in index.js). The skill catalog spells a couple of them differently.
-export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "アイヴァ": "エヴァ", "セス": "スミス" });
+// 別の表記 → EagleEye での表記。2026-11-16：ゲーム内の表記は「アイヴァ」（「エヴァ」は英語名 Ava からの読み）。
+export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "エヴァ": "アイヴァ", "セス": "スミス" });
 const EXTRA_HEROES = [];
 // Rarity decides which general shards a hero takes (gold / purple / blue). Every
 // rarity uses the same per-step table. Roster checked against kingshotmastery.com
@@ -73,6 +74,13 @@ export function canonicalHeroName(name) {
   return HERO_NAME_ALIASES[n] || n;
 }
 
+// アイコンなどを名前で探すときの候補（EagleEye の表記・元の表記・別の表記）。保存済みのデータが古い表記でも見つかる。
+export function heroNameVariants(name) {
+  const n = String(name ?? "").trim();
+  const c = canonicalHeroName(n);
+  return [...new Set([n, c, ...Object.keys(HERO_NAME_ALIASES).filter(a => HERO_NAME_ALIASES[a] === c)].filter(Boolean))];
+}
+
 export function isDedicatedShardHero(name) {
   return DEDICATED_SHARD_HEROES.includes(String(name ?? "")) || DEDICATED_SHARD_HEROES.includes(canonicalHeroName(name));
 }
@@ -87,7 +95,7 @@ export function shardHeroList(iconByName = {}) {
     const n = canonicalHeroName(raw);
     if (!n || seen.has(n)) continue;
     seen.add(n);
-    const file = [iconByName?.[n], iconByName?.[raw], iconByName?.[reverse[n]]].find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
+    const file = [...heroNameVariants(raw).map(k => iconByName?.[k]), iconByName?.[reverse[n]]].find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
     out.push({ n, i: file, d: isDedicatedShardHero(n), r: heroRarity(n) });
   }
   return out;
