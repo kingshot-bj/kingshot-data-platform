@@ -111,7 +111,10 @@ export function playerShareClient(cfg) {
   function currentPalette() { var id = document.documentElement.getAttribute("data-ee-skin") || "navy"; return PALS[id] || PALS.navy || { bg: "#0b1424", panel: "#0f1f36", raised: "#13263d", border: "#1d344d", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee" }; }
   var P = currentPalette();
   function alpha(hex, a) { var n = parseInt(String(hex).slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
-  host.innerHTML = '<button type="button" id="pshImg">📤 画像で共有</button><button type="button" id="pshLink">リンクをコピー</button><span id="pshMsg" aria-live="polite"></span>';
+  host.innerHTML = '<button type="button" id="pshImg">📤 画像で共有</button><button type="button" id="pshLink">リンクをコピー</button>' + (/^\d{7,12}$/.test(String(d.gid || "")) ? '<button type="button" id="pshCmp">⚔️ 自分と比べる</button>' : '') + '<span id="pshMsg" aria-live="polite"></span>';
+  // 自分と比べる：比較ページは自分の領主を自動で入れる（2026-11-16）。
+  var cmp = document.getElementById("pshCmp");
+  if (cmp) cmp.addEventListener("click", function () { location.href = "/player/compare?governor_id=" + encodeURIComponent(String(d.gid)); });
   var msg = document.getElementById("pshMsg");
   function say(t) { msg.textContent = t; if (t) setTimeout(function () { if (msg.textContent === t) msg.textContent = ""; }, 4000); }
   var refPromise = null;
