@@ -7,6 +7,7 @@
 import { ensureKingdomStatsSchema } from "./kingdom-stats.js";
 import { loadMysticSummaries, compareMystic } from "./kvk-mystic.js";
 import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+import { kvkDataNote } from "./data-note.js";
 
 function esc(v) { return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 export function compactPower(v) {
@@ -139,6 +140,7 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>${rows.length > KVK_INITIAL_ROWS ? `<button type="button" class="more-btn" id="moreBtn">残り${rows.length - KVK_INITIAL_ROWS}組を表示</button>` : ""}` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
 <p class="note">真ん中の数字は、秘境の試練の6種類（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）それぞれで、両王国の1位の記録を比べて勝った種類の数です（KvKの日程とは関係ありません）。KvKのスコア・準備フェーズの日ごとのスコア・秘境の試練の2〜10位の記録は、<a href="/kvk">KvKページ</a>（各組み合わせの「スコアと詳細を見る」）で見られます（自分の王国はADVANCED以上、ほかの王国はVIP以上）。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+${kvkDataNote({ season, matched, solo, ready })}
 <script type="application/json" id="kvkRows">${JSON.stringify(rows).replace(/</g, "\\u003c")}</script>
 <script>var __name=function(f){return f};(${kvkMatchupsClient.toString()})(${KVK_INITIAL_ROWS},${kvkPairHtml.toString()});</script>
 </main></body></html>`;
