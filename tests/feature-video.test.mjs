@@ -9,7 +9,10 @@ const src = readFileSync(new URL("../scripts/social/feature-video.mjs", import.m
 
 test("場面ファイル：どのセットも読める（ページは / から、秒数は20秒まで）", () => {
   const sets = readdirSync(new URL("../scripts/social/scenes/", import.meta.url)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5));
-  assert.ok(sets.includes("features") && sets.includes("alliance-compare"));
+  assert.ok(sets.includes("features") && sets.includes("alliance-compare") && sets.includes("governor-duel"));
+  // 場面セットを足したら、Actions の選択肢にも足す（2026-11-16 領主対決）
+  const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
+  for (const name of sets) assert.match(wf, new RegExp("options: \\[[^\\]]*\\b" + name + "\\b"), name);
   for (const name of sets) { const set = loadSceneSet(name); assert.equal(set.name, name); assert.ok(set.output.endsWith(".mp4")); }
   assert.deepEqual(parseArgs(["out", "--set", "alliance-compare", "--fade", "9"]), { out: "out", set: "alliance-compare", bgm: "", fade: 1.5 });
   assert.throws(() => parseArgs(["--set", "../x"]), /名前/);
