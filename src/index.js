@@ -67,6 +67,7 @@ import { runKvkMysticCollection, ensureKingdomMysticCurrent, fetchAndStoreKingdo
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
+import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
 import { renderReportsIndex, renderReport } from "./reports.js";
@@ -5011,6 +5012,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
 
 export default {
   async fetch(request, env, executionContext) {
+    // プレビューは本番の D1・R2 を読むだけ（書き込み・Queue・外部 fetch を止める）。preview-readonly.js
+    if (isPreviewEnv(env)) { env = previewReadOnlyEnv(env); installPreviewFetchGuard(); }
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
@@ -5365,6 +5368,7 @@ export default {
     }
   },
   async scheduled(event, env, executionContext) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     try {
       await runApiPoolAutoRecovery(env, { limit: 4 });
     } catch (error) {
@@ -5466,6 +5470,7 @@ export default {
     }
   },
   async queue(batch, env) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const messages = batch?.messages || [];
     const systemEventMessages = messages.filter(message => message?.body?.type === "SYSTEM_EVENT");
