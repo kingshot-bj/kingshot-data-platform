@@ -47,3 +47,12 @@ test("一覧ページとトップ・王国一覧からのリンク", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /if \(url\.pathname === "\/reports"\) return await servePublicCached/);
 });
+
+test("一覧ページにも各レポートの主な結論を載せる（一覧だけ見ても中身が分かる）", () => {
+  const idx = renderReportsIndex({ origin: "" });
+  for (const r of REPORTS) {
+    assert.ok(r.findings?.length >= 2, r.slug);
+    for (const f of r.findings) assert.ok(idx.includes(f.replace(/&/g, "&amp;")), f);
+  }
+  assert.match(idx, /総力が大きい方が秘境の試練でも上だった組は44\.8%/);
+});
