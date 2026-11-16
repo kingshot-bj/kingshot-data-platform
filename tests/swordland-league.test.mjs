@@ -1,0 +1,55 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { eventsToSave, extractEvents, leagueWeekStart, activeShowdown, activeGovernorDuel, resetSwordlandSchemaCache, renderSwordlandPage, WEEK_SECONDS } from "../src/swordland.js";
+
+// 2026-11-16：聖剣頂上リーグ（10/30〜12/15）が拾えずホームの聖剣カードが消えていた。実際の API の形（王国1524）。
+const payload = { categories: [
+  { name: "Swordland Summit League", events: [{ name: "Summit Contest", begin_ts: 1793318400, end_ts: 1797292800 }, { name: "Match Missions", begin_ts: 1793577600, end_ts: 1797206400 }] },
+  { name: "Events", events: [{ name: "Governor Duel", begin_ts: 1794700800, end_ts: 1795305600 }, { name: "Hero Rally", begin_ts: 1794182400, end_ts: 1795392000 }] }
+] };
+
+test("保存するイベント：頂上リーグは分類全体の期間・領主対決・それ以外は保存しない", () => {
+  assert.deepEqual(eventsToSave(extractEvents(payload)), [
+    { name: "Governor Duel", begin_ts: 1794700800, end_ts: 1795305600 },
+    { name: "Swordland Summit League", begin_ts: 1793318400, end_ts: 1797292800 }
+  ]);
+});
+
+test("1週間の区切り：月曜 9:00（日本時間）", () => {
+  const mon = Date.parse("2026-11-16T00:00:00Z") / 1000; // 11/16(月) 9:00 JST
+  assert.equal(leagueWeekStart(mon), mon);
+  assert.equal(leagueWeekStart(mon + 5 * 86400 + 3600), mon, "土曜でも同じ週");
+  assert.equal(leagueWeekStart(mon - 1), mon - WEEK_SECONDS, "月曜 8:59 は前の週");
+  assert.equal(new Date(mon * 1000).getUTCDay(), 1);
+});
+
+function fakeDb(rows) {
+  return { batch: async () => [], prepare: sql => { const st = { bind: (...a) => { st.args = a; return st; }, first: async () => { const [kid, name, now] = st.args; return rows.find(r => r.kid === kid && r.name === name && r.begin_ts <= now && r.end_ts >= now) || null; } }; return st; } };
+}
+
+test("開催中：聖剣争奪があればそれ、なければ頂上リーグの今週（相手は週ごと）。領主対決も分かる", async () => {
+  resetSwordlandSchemaCache();
+  const at = Date.parse("2026-11-16T12:00:00Z");
+  const rows = [{ kid: 1524, name: "Swordland Summit League", begin_ts: 1793318400, end_ts: 1797292800 }, { kid: 1524, name: "Governor Duel", begin_ts: 1794700800, end_ts: 1795305600 }];
+  const s = await activeShowdown(fakeDb(rows), 1524, at);
+  assert.equal(s.league, true);
+  assert.equal(s.label, "聖剣頂上リーグ");
+  assert.equal(s.begin_ts, Date.parse("2026-11-16T00:00:00Z") / 1000, "対戦相手の登録は週ごと（season＝週の始まり）");
+  assert.equal(s.end_ts, s.begin_ts + WEEK_SECONDS);
+  assert.equal(s.season_end_ts, 1797292800);
+  const both = [...rows, { kid: 1524, name: "Swordland Showdown", begin_ts: 1794700800, end_ts: 1795305600 }];
+  assert.equal((await activeShowdown(fakeDb(both), 1524, at)).label, "聖剣争奪", "聖剣争奪を優先");
+  assert.equal(await activeShowdown(fakeDb([]), 1524, at), null);
+  assert.equal((await activeGovernorDuel(fakeDb(rows), 1524, at)).name, "Governor Duel");
+  const html = renderSwordlandPage({ state: { showdown: s, mine: { kid: 1524, alliance_abbr: "Pen" } } });
+  assert.match(html, /<h1>⚔️ 聖剣頂上リーグ<\/h1>/);
+  assert.match(html, /相手は毎週変わります/);
+});
+
+test("ホーム：見出しをイベントに合わせる・領主対決のカード", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /label: showdown\.label \|\| "聖剣争奪", league: Boolean\(showdown\.league\), duel: duelInfo/);
+  assert.match(src, /if\(d\.label\)document\.getElementById\('homeSwordTitle'\)\.textContent='⚔️ '\+d\.label;/);
+  assert.match(src, /<a class="ee-onboard" id="homeDuel" href="\/players" hidden><b>⚔️ 領主対決 開催中<\/b>/);
+});
