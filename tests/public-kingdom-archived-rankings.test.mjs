@@ -31,7 +31,7 @@ test("D1 に無ければ R2 の写しから上位10人・同盟上位5を出す�
   assert.deepEqual(data.alliances.map(a => [a.rank, a.abbr]), [[1, "ABC"]]);
   assert.equal(data.rankingsAsOf, 1791305313);
   const html = renderPublicKingdomPage(154, data, { origin: "" });
-  assert.match(html, /<h2>戦力ランキング（上位10人）<small[^>]*>2026\/10\/7時点（この王国は毎月取り直しています）<\/small><\/h2>/);
+  assert.match(html, /<h2>個人総力ランキング（上位10人）<small[^>]*>2026\/10\/7時点（この王国は毎月取り直しています）<\/small><\/h2>/);
   assert.match(html, /Ann/);
 });
 
@@ -40,7 +40,7 @@ test("R2 にも無ければ、今までどおり欄を出さない", async () =>
   const data = await loadPublicKingdom(fakeEnv({ archived: false }), 154);
   assert.equal(data.players.length, 0);
   assert.equal(data.rankingsAsOf, null);
-  assert.doesNotMatch(renderPublicKingdomPage(154, data, { origin: "" }), /戦力ランキング（上位10人）/);
+  assert.doesNotMatch(renderPublicKingdomPage(154, data, { origin: "" }), /個人総力ランキング（上位10人）/);
 });
 
 test("月1回の取り直し：5分ごとに30王国ずつ・30日より古いものだけ（ランキング2種類＋秘境の試練）・5件ずつ並べる・ユーザー用のキーを残す", () => {

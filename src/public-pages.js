@@ -232,7 +232,7 @@ ${stats}
 ${renderKingdomInsights(kid, data.insights, compactNumber)}
 ${renderMysticInsights(kid, data.mystic)}
 ${renderKingdomTrend(kid, kingdomTrend(data.growth), compactNumber)}
-${playerRows ? `<h2>戦力ランキング（上位10人）${asOfLabel}</h2>${playerRows}` : ""}
+${playerRows ? `<h2>個人総力ランキング（上位10人）${asOfLabel}</h2>${playerRows}` : ""}
 ${allianceRows ? `<h2>同盟ランキング（上位5）${asOfLabel}</h2>${allianceRows}` : ""}
 ${kvk}
 ${related}
