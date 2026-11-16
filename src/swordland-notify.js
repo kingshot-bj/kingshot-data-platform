@@ -1,13 +1,14 @@
 // 聖剣争奪・聖剣頂上リーグ：同盟の R4・R5 に「対戦相手を登録して」と Discord の個チャで知らせる（2026-11-16）。
 // ・対象：EagleEye に領主を登録していて（ACTIVE）、保存済みのプレイヤーデータで同盟の役職が R4・R5、権限が ADVANCED 以上の人。
 //   役職は players.alliance_rank（保存済み）を使うので、API Pool は使わない。
-// ・いつ：毎時（5分の cron のうち毎時5〜9分の回）、日本時間 9時〜22時台だけ。開催中の回ごとに、1人1回まで。
+// ・いつ：朝だけ（日本時間 8時〜10時台の毎時5〜9分の回・2026-11-16 オーナーの判断で朝に寄せた）。開催中の回ごとに、1人1回まで。
 // ・送らない：同じ同盟の誰かがもう相手を登録している、本人が通知を止めている、前に送った（届かなかった場合も含む）。
-// ・届かない人（サーバーにいない・個チャを拒否）は記録して次へ。1回の実行で個チャは最大5人まで（Discord の制限に配慮）。
+// ・届かない人（サーバーにいない・個チャを拒否）は記録して次へ。1回の実行で個チャは最大6人まで（朝3回で18人・Discord の制限に配慮）。
 import { discordApiRequest } from "./discord-support.js";
 import { activeSwordlandEvents, ensureSwordlandSchema, currentMatchup, SWORDLAND_EVENT_NAME, SWORDLAND_LEAGUE_NAME, SWORDLAND_REGISTER_ROLES } from "./swordland.js";
 
-export const SWORDLAND_NOTIFY_MAX_DMS = 5;
+export const SWORDLAND_NOTIFY_MAX_DMS = 6;
+export const NOTIFY_JST_HOURS = Object.freeze([8, 9, 10]);
 const OFFICER_RANKS = [4, 5];
 
 let ready = null;
@@ -25,7 +26,7 @@ export async function ensureSwordlandNotifySchema(db) {
 export function isNotifyTick(nowSec) {
   const minute = Math.floor((nowSec % 3600) / 60);
   const jstHour = Math.floor(((nowSec + 9 * 3600) % 86400) / 3600);
-  return minute >= 5 && minute < 10 && jstHour >= 9 && jstHour <= 22;
+  return minute >= 5 && minute < 10 && NOTIFY_JST_HOURS.includes(jstHour);
 }
 
 const jstDate = sec => { const d = new Date(sec * 1000 + 9 * 3600 * 1000); return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); };
