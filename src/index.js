@@ -10948,12 +10948,19 @@ async function renderPublicStatusPage(request, env) {
     Number(operational.apiPool.activeLeases || 0) === 0 &&
     terminalKeyStates >= Number(operational.apiPool.totalKeys || 0);
   const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
-  const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
-  const usageWarning = usage.status === "WARNING";
+  // Workers Paid（$5枠）では込み枠を超えても止まらず従量課金になるだけなので「障害」にしない（2026-11-16）。
+  // 請求サイクル（月）の合計で判定するため、すでに直った急増でもサイクル末まで残る。Free枠は上限で止まるので従来どおり障害。
+  const paidProfile = String(monitoringProfileSetting.profile || "").toUpperCase().startsWith("PAID");
+  const usageOver = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
+  const usageCritical = usageOver && !paidProfile;
+  const usageOverage = usageOver && paidProfile;
+  const usageWarning = usage.status === "WARNING" || usageOverage;
   const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
     ? {label:"障害が発生しています",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
     : data.overall === "WAITING" && !usageWarning && !watchlistWarning
       ? {label:"空き待ち",tone:"neutral",icon:"…",desc:"API Poolの空き待ちです。収集処理は自動再試行の対象で、障害とは区別されています。"}
+      : usageOverage && data.overall !== "DEGRADED" && !watchlistWarning
+        ? {label:"正常に稼働中（込み枠を超過）",tone:"warn",icon:"i",desc:"サービスは正常に動いています。Cloudflareの今月の込み枠を超えたため、超えた分は従量課金になります（下のサーバーの状態に内訳）。"}
       : usageWarning || data.overall === "DEGRADED" || watchlistWarning
         ? {label:"一部注意",tone:"warn",icon:"i",desc:"一部のサービス（データ取得・ウォッチリスト・サーバー）で注意が必要です。"}
         : {label:"正常に稼働中",tone:"good",icon:"✓",desc:"EagleEyeのサービス（データ取得・ウォッチリスト・サーバー）は正常範囲です。"};
@@ -10963,7 +10970,7 @@ async function renderPublicStatusPage(request, env) {
     return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
   }).join("");
 
-  const usageLabel = cloudflareUsageLabel(usage.status);
+  const usageLabel = cloudflareUsageLabel(usage.status, { paid: paidProfile });
   const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
   const formatBytes = value => {
     const bytes = Number(value || 0);
@@ -11002,7 +11009,7 @@ async function renderPublicStatusPage(request, env) {
     ? "最大使用率（CPU推定を含む）"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
-    const item = cloudflareUsageLabel(stateValue);
+    const item = cloudflareUsageLabel(stateValue, { paid: paidProfile });
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
   };
 
