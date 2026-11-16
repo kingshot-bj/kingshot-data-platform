@@ -163,3 +163,41 @@ export function renderMysticInsights(kid, m) {
 <div class="mys-wrap"><table class="mys"><thead><tr><th>種類</th><th>1位の記録</th><th>全王国中</th><th>上位10人の平均</th></tr></thead><tbody>${rows}</tbody></table></div>
 <p class="note" style="margin-top:6px">秘境の試練は月〜土を全員同じ兵士で挑むので、兵士の数ではなく英雄・装備・研究などの育成の差が出やすい記録です。KvK や聖剣争奪は集結を主催するトップ層の強さで決まりやすいため、1位の記録を中心に見ています。記録は「章-ステージ」。${m.season ? `KvKシーズン${esc(m.season)}の組み合わせ用に` : ""}${when ? esc(when) + " ごろ" : ""}取得したものです（毎月取り直しています）（<a href="/kvk/matchups">KvK の組み合わせ</a>でも比べられます）。</p>`;
 }
+
+// ---- この30日の動き（2026-11-16）----
+// R2 の成長の記録（7日前・30日前との比較）から、その王国の動きを文章にする。API は使わない。
+// 項目ごとの値の意味（合計が総力と一致しない）は未確認なので、項目の「内訳」としては扱わず、同じ項目どうしの増え方だけを比べる。
+const TREND_PARTS = Object.freeze([["hero_power", "英雄戦力"], ["troop_power", "兵士戦力"], ["research_power", "研究戦力"], ["governor_gear_power", "領主装備戦力"], ["governor_charm_power", "領主宝石戦力"], ["pet_power", "ペット戦力"], ["building_power", "建築戦力"]]);
+const signed = (v, f) => (v > 0 ? "+" : v < 0 ? "−" : "±") + f(Math.abs(v));
+const pctText = (d, base) => base ? `${d >= 0 ? "+" : "−"}${(Math.round(Math.abs(d) / base * 1000) / 10)}%` : "";
+
+export function kingdomTrend(growth) {
+  const latest = growth?.latest;
+  const c30 = (growth?.comparisons || []).find(c => c.label === "30日前")?.snapshot;
+  if (!latest || !c30) return null;
+  const c7 = (growth?.comparisons || []).find(c => c.label === "7日前")?.snapshot;
+  const out = { power: null, players: null, kills: null, parts: [] };
+  if (latest.power != null && c30.power != null) out.power = { d30: latest.power - c30.power, base: c30.power, d7: c7?.power != null ? latest.power - c7.power : null };
+  if (latest.player_count != null && c30.player_count != null) out.players = latest.player_count - c30.player_count;
+  if (latest.kills != null && c30.kills != null) out.kills = latest.kills - c30.kills;
+  for (const [key, label] of TREND_PARTS) {
+    const a = latest[key], b = c30[key];
+    if (a != null && b != null && b > 0) out.parts.push({ key, label, rate: (a - b) / b });
+  }
+  out.parts.sort((x, y) => y.rate - x.rate);
+  return out;
+}
+
+export function renderKingdomTrend(kid, t, compact) {
+  if (!t) return "";
+  const items = [];
+  if (t.power) items.push(`総力は30日で <b>${esc(signed(t.power.d30, compact))}</b>（${esc(pctText(t.power.d30, t.power.base))}）${t.power.d7 != null ? `、そのうち直近7日で ${esc(signed(t.power.d7, compact))}` : ""}。${t.power.d7 != null && t.power.d7 < 0 && t.power.d30 >= 0 ? "直近の1週間は減っています。" : ""}`);
+  if (t.players != null) items.push(`領主数は30日で ${esc(signed(t.players, v => Number(v).toLocaleString("ja-JP")))}人。`);
+  if (t.kills != null && t.kills > 0) items.push(`撃破数は30日で <b>+${esc(compact(t.kills))}</b>（戦闘で倒した兵士の数なので、戦いが多い時期ほど増えます）。`);
+  if (t.parts.length >= 3) {
+    const top = t.parts[0], low = t.parts[t.parts.length - 1];
+    items.push(`30日でいちばん伸びた項目は「${esc(top.label)}」（${esc(pctText(top.rate, 1))}）、いちばん伸びが小さかったのは「${esc(low.label)}」（${esc(pctText(low.rate, 1))}）。`);
+  }
+  if (!items.length) return "";
+  return `<h2>王国${esc(kid)}のこの30日の動き</h2><ul class="insights">${items.map(x => `<li>${x}</li>`).join("")}</ul><p class="note" style="margin-top:6px">毎日の記録の、30日前・7日前との比較です。総力は兵士を失うなどで減ることもあります。どの項目も、強さをそのまま表すものではありません。</p>`;
+}

@@ -61,3 +61,20 @@ test("どこにも当たらない URL は 404・noindex・canonical なし（広
   assert.match(index, /return eagleEyeHtmlResponse\(renderNotFoundPage\(\), 404\);/);
   assert.doesNotMatch(index, /\n      return eagleEyeHtmlResponse\(await renderHome\(request, env\)\);\n    \} catch/, "最後にトップページを返さない");
 });
+
+import { kingdomTrend, renderKingdomTrend } from "../src/kingdom-insights.js";
+test("この30日の動き：総力・領主数・撃破数の変化と、いちばん伸びた項目（成長の記録から）", () => {
+  const growth = { latest: { power: 145e9, player_count: 4400, kills: 6.2e9, research_power: 4.2e9, troop_power: 36.9e9, hero_power: 0.972e9, building_power: 1.0e9 },
+    comparisons: [{ label: "7日前", snapshot: { power: 149.1e9 } }, { label: "30日前", snapshot: { power: 145.66e9, player_count: 4221, kills: 5.8e9, research_power: 3.931e9, troop_power: 36.05e9, hero_power: 0.9245e9, building_power: 0.9941e9 } }] };
+  const t = kingdomTrend(growth);
+  assert.equal(t.parts[0].key, "research_power");
+  assert.equal(t.parts.at(-1).key, "building_power");
+  const html = renderKingdomTrend(154, t, compact);
+  assert.match(html, /<h2>王国154のこの30日の動き<\/h2>/);
+  assert.match(html, /総力は30日で <b>−0\.7B<\/b>（−0\.5%）、そのうち直近7日で −4\.1B。/);
+  assert.match(html, /領主数は30日で \+179人。/);
+  assert.match(html, /撃破数は30日で <b>\+0\.4B<\/b>/);
+  assert.match(html, /いちばん伸びた項目は「研究戦力」（\+6\.8%）/);
+  assert.match(html, /強さをそのまま表すものではありません/);
+  assert.equal(renderKingdomTrend(1, kingdomTrend({ latest: { power: 1 }, comparisons: [] }), compact), "", "30日前の記録が無ければ出さない");
+});
