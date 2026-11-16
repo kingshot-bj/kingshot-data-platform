@@ -164,13 +164,16 @@ function enhance(){
   radarHost.append(svg,legend,totals);
  }
 
- const candidateRows=new Map();
- [...document.querySelectorAll('.compare-player-card')].forEach(playerCard=>{
+ // 2026-11-16：同じプレイヤーが2回数えられて「BJにゃん vs BJにゃん」「4人を比較」になっていた。プレイヤーごとに1回だけ数える。
+ const candidateRows=new Map();const seenPlayerLabel=new Set();
+ [...document.querySelectorAll('.compare-player-card')].forEach((playerCard,cardIndex)=>{
   const name=safeText(playerCard.querySelector('.pname'))||'プレイヤー';
+  const who=playerCard.dataset.governorId||name||String(cardIndex);
   playerCard.querySelectorAll('.compare-metric[data-rank-score]').forEach(metric=>{
    const label=metric.getAttribute('data-compare-label')||'';
    const score=Number(metric.dataset.rankScore);
    if(!label.startsWith('ランキング：')||!Number.isFinite(score))return;
+   const dedupe=label+'|'+who;if(seenPlayerLabel.has(dedupe))return;seenPlayerLabel.add(dedupe);
    if(!candidateRows.has(label))candidateRows.set(label,[]);
    candidateRows.get(label).push({name,score});
   });
