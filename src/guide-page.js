@@ -137,6 +137,10 @@ export function renderGuidePage(origin = "") {
     description: "EagleEye（キングショット非公式データサービス）の使い方。はじめかた、権限、ランキング・検索・ウォッチ・比較・KvK・聖剣争奪などの機能の説明。",
     canonical: origin ? origin + "/guide" : "",
     updatedAt: GUIDE_UPDATED_AT,
+    jsonLd: origin ? { "@context": "https://schema.org", "@graph": [
+      { "@type": "WebPage", name: "EagleEye の使い方（トリセツ）", url: origin + "/guide", inLanguage: "ja", isPartOf: { "@type": "WebSite", name: "EagleEye", url: origin + "/" } },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "使い方", item: origin + "/guide" }] }
+    ] } : null,
     sections: GUIDE_SECTIONS,
     related: '関連：<a href="/about">運営者情報</a>・<a href="/terms">利用規約</a>・<a href="/privacy">プライバシーポリシー</a>'
   });

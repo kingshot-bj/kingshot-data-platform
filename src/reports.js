@@ -132,7 +132,13 @@ export function renderReportsIndex({ origin = "" } = {}) {
   const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › データレポート</nav>
 <h1>データレポート</h1><p class="lead">EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。各レポートの主な結論を下に載せています。</p>
 <div class="rlist">${list}</div>${SOURCE_NOTE}`;
-  return shell({ title: "キングショット データレポート | EagleEye", description: "キングショット（KingShot）の全王国のデータから分かったこと。秘境の試練の記録の分布、総力との関係、KvKの組み合わせ分析、新しい王国の伸び方。", canonical: origin + "/reports", body, origin });
+  // 検索結果向け：レポートの一覧（CollectionPage + ItemList）とパンくず。2026-11-16
+  const jsonLd = origin ? { "@context": "https://schema.org", "@graph": [
+    { "@type": "CollectionPage", name: "キングショット データレポート", url: origin + "/reports", inLanguage: "ja", isPartOf: { "@type": "WebSite", name: "EagleEye", url: origin + "/" },
+      mainEntity: { "@type": "ItemList", itemListElement: REPORTS.map((x, i) => ({ "@type": "ListItem", position: i + 1, url: origin + "/reports/" + x.slug, name: x.title })) } },
+    { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "データレポート", item: origin + "/reports" }] }
+  ] } : null;
+  return shell({ title: "キングショット データレポート | EagleEye", description: "キングショット（KingShot）の全王国のデータから分かったこと。秘境の試練の記録の分布、総力との関係、KvKの組み合わせ分析、新しい王国の伸び方。", canonical: origin + "/reports", body, jsonLd, origin });
 }
 
 export function renderReport(slug, { origin = "" } = {}) {
