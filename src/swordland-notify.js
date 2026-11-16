@@ -1,13 +1,16 @@
 // 聖剣争奪・聖剣頂上リーグ：同盟の R4・R5 に「対戦相手を登録して」と Discord の個チャで知らせる（2026-11-16）。
 // ・対象：EagleEye に領主を登録していて（ACTIVE）、保存済みのプレイヤーデータで同盟の役職が R4・R5、権限が ADVANCED 以上の人。
 //   役職は players.alliance_rank（保存済み）を使うので、API Pool は使わない。
-// ・いつ：朝だけ（日本時間 8時〜10時台の毎時5〜9分の回・2026-11-16 オーナーの判断で朝に寄せた）。開催中の回ごとに、1人1回まで。
+// ・いつ：朝だけ（日本時間 8時〜10時台・5分ごとの cron の毎回）。開催中の回ごとに、1人1回まで。
 // ・送らない：同じ同盟の誰かがもう相手を登録している、本人が通知を止めている、前に送った（届かなかった場合も含む）。
-// ・届かない人（サーバーにいない・個チャを拒否）は記録して次へ。1回の実行で個チャは最大6人まで（朝3回で18人・Discord の制限に配慮）。
+// ・届かない人（サーバーにいない・個チャを拒否）は記録して次へ。
+// ・送る量：1回20人まで、1人ごとに1.5秒あける（朝36回で最大720人）。Discord はスパム判定の基準を公開していないので、
+//   一度にまとめず小分け・間隔をあけて送る（2026-11-16）。429 が来たらその回はやめる。
 import { discordApiRequest } from "./discord-support.js";
 import { activeSwordlandEvents, ensureSwordlandSchema, currentMatchup, SWORDLAND_EVENT_NAME, SWORDLAND_LEAGUE_NAME, SWORDLAND_REGISTER_ROLES } from "./swordland.js";
 
-export const SWORDLAND_NOTIFY_MAX_DMS = 6;
+export const SWORDLAND_NOTIFY_MAX_DMS = 20;
+export const SWORDLAND_NOTIFY_GAP_MS = 1500;
 export const NOTIFY_JST_HOURS = Object.freeze([8, 9, 10]);
 const OFFICER_RANKS = [4, 5];
 
@@ -24,9 +27,8 @@ export async function ensureSwordlandNotifySchema(db) {
 }
 
 export function isNotifyTick(nowSec) {
-  const minute = Math.floor((nowSec % 3600) / 60);
   const jstHour = Math.floor(((nowSec + 9 * 3600) % 86400) / 3600);
-  return minute >= 5 && minute < 10 && NOTIFY_JST_HOURS.includes(jstHour);
+  return NOTIFY_JST_HOURS.includes(jstHour);
 }
 
 const jstDate = sec => { const d = new Date(sec * 1000 + 9 * 3600 * 1000); return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); };
@@ -36,7 +38,7 @@ export function swordlandNotifyText(ev, { abbr = "", origin = "https://eagleeye-
   return `**⚔️ ${ev.label}（${period}）**\n${abbr ? abbr + " の" : ""}${ev.league ? "今週の" : "今回の"}対戦相手がまだ登録されていません。ゲーム内で相手を確認して、EagleEye に登録してください（R4・R5 向けのお知らせです）。\n${origin}/swordland\n\n通知を止める：${origin}/settings/notifications`;
 }
 
-export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), request = discordApiRequest, maxDms = SWORDLAND_NOTIFY_MAX_DMS, force = false, origin = "https://eagleeye-ks.com" } = {}) {
+export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), request = discordApiRequest, maxDms = SWORDLAND_NOTIFY_MAX_DMS, gapMs = SWORDLAND_NOTIFY_GAP_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), force = false, origin = "https://eagleeye-ks.com" } = {}) {
   const db = env?.DB;
   if (!db) return { skipped: "NO_DB" };
   if (!env?.DISCORD_BOT_TOKEN) return { skipped: "NO_BOT_TOKEN" };
@@ -66,6 +68,7 @@ export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), reque
       if (done) continue;
       if (await currentMatchup(db, ev.season, kid, o.alliance_aid)) { skippedRegistered++; continue; }
       let status = "SENT";
+      if (sent + closed + failed > 0 && gapMs > 0) await sleep(gapMs); // 1人ごとに間をあける
       try {
         const channel = await request(env, "/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: String(o.discord_id) }) });
         await request(env, `/channels/${channel.id}/messages`, { method: "POST", body: JSON.stringify({ content: swordlandNotifyText(ev, { abbr: o.alliance_abbr || "", origin }), allowed_mentions: { parse: [] } }) });

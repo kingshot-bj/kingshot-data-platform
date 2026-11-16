@@ -51,7 +51,7 @@ test("送る：未登録の同盟の R4・R5 に個チャ（1回の回につき1
   resetSwordlandSchemaCache(); resetSwordlandNotifySchemaCache();
   const db = makeDb({ officers: [officer(1), officer(2)], events: [league] });
   const request = fakeRequest();
-  const r = await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request });
+  const r = await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request, gapMs: 0 });
   assert.equal(r.sent, 2);
   const msgs = request.calls.filter(c => c[0].startsWith("/channels/")).map(c => JSON.parse(c[1].body));
   assert.match(msgs[0].content, /⚔️ 聖剣頂上リーグ（11\/16〜11\/23）/);
@@ -62,7 +62,7 @@ test("送る：未登録の同盟の R4・R5 に個チャ（1回の回につき1
   assert.equal([...db.logged.values()][0].season, week + 1, "頂上リーグの回");
   // 2回目は送らない
   const again = fakeRequest();
-  assert.equal((await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at + 3600 * 1000, request: again })).sent, 0);
+  assert.equal((await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at + 3600 * 1000, gapMs: 0, request: again })).sent, 0);
   assert.equal(again.calls.length, 0);
 });
 
@@ -73,21 +73,25 @@ test("送らない：同盟の誰かが登録済み・個チャを拒否は記�
   assert.equal(r1.sent, 0); assert.equal(r1.skippedRegistered, 1);
   const closedErr = Object.assign(new Error("closed"), { status: 403, discord: { code: 50007 } });
   const db2 = makeDb({ officers: [officer(1), officer(2)], events: [league] });
-  const r2 = await runSwordlandOfficerNotify({ DB: db2, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(id => id.endsWith("1") ? closedErr : null) });
+  const r2 = await runSwordlandOfficerNotify({ DB: db2, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, gapMs: 0, request: fakeRequest(id => id.endsWith("1") ? closedErr : null) });
   assert.equal(r2.closed, 1); assert.equal(r2.sent, 1);
   assert.deepEqual([...db2.logged.values()].map(l => l.status).sort(), ["DM_CLOSED", "SENT"]);
   const many = makeDb({ officers: Array.from({ length: 9 }, (_, i) => officer(i)), events: [league] });
-  assert.equal((await runSwordlandOfficerNotify({ DB: many, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest() })).sent, 6);
+  const { SWORDLAND_NOTIFY_MAX_DMS, SWORDLAND_NOTIFY_GAP_MS } = await import("../src/swordland-notify.js");
+  assert.equal(SWORDLAND_NOTIFY_MAX_DMS, 20); assert.equal(SWORDLAND_NOTIFY_GAP_MS, 1500);
+  const waits = [];
+  assert.equal((await runSwordlandOfficerNotify({ DB: many, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(), maxDms: 6, sleep: async ms => waits.push(ms) })).sent, 6);
+  assert.deepEqual(waits, [1500, 1500, 1500, 1500, 1500], "1人ごとに1.5秒あける（最初の1人は待たない）");
   const rl = makeDb({ officers: [officer(1), officer(2)], events: [league] });
-  const r4 = await runSwordlandOfficerNotify({ DB: rl, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(() => Object.assign(new Error("rl"), { status: 429 })) });
+  const r4 = await runSwordlandOfficerNotify({ DB: rl, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, gapMs: 0, request: fakeRequest(() => Object.assign(new Error("rl"), { status: 429 })) });
   assert.equal(r4.rateLimited, true); assert.equal(rl.logged.size, 0, "429 のときは記録しない（あとで送る）");
 });
 
-test("時間：朝だけ（日本時間 8〜10時台の毎時5〜9分）／鍵が無ければ何もしない", async () => {
+test("時間：朝だけ（日本時間 8〜10時台・5分ごとの毎回）／鍵が無ければ何もしない", async () => {
   assert.equal(isNotifyTick(week - 3600 + 6 * 60), true, "8時台");
   assert.equal(isNotifyTick(week + 6 * 60), true, "9時台");
   assert.equal(isNotifyTick(week + 3600 + 6 * 60), true, "10時台");
-  assert.equal(isNotifyTick(week + 3600 + 12 * 60), false, "毎時5〜9分だけ");
+  assert.equal(isNotifyTick(week + 3600 + 52 * 60), true, "10時台なら何分でも（5分ごとに送る）");
   assert.equal(isNotifyTick(week - 2 * 3600 + 6 * 60), false, "7時台は送らない");
   assert.equal(isNotifyTick(week + 2 * 3600 + 6 * 60), false, "11時台は送らない");
   assert.equal(isNotifyTick(week + 13 * 3600 + 6 * 60), false, "夜は送らない");
