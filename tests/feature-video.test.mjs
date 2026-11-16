@@ -24,6 +24,9 @@ test("通信：広告・解析・アクセス記録は止める。撮影の印�
   assert.equal(routeDecision("https://googleads.g.doubleclick.net/pagead/ads", host), "block");
   assert.equal(routeDecision("https://ep1.adtrafficquality.google/getconfig", host), "block");
   assert.equal(routeDecision("https://eagleeye-ks.com/api/pv", host), "block");
+  // アイコンは EagleEye の中継から（撮影環境でゲームの画像サーバーにつながらなくても映るように）
+  assert.equal(routeDecision("https://got-global-avatar.akamaized.net/avatar/2026/07/09/EQREDv_1783592533.png", host), "avatar");
+  assert.equal(routeDecision("https://got-global-avatar.akamaized.net/avatar/x.svg", host), "pass");
   assert.equal(routeDecision("https://eagleeye-ks.com/api/funnel-event", host), "block");
   assert.equal(routeDecision("https://eagleeye-ks.com/player?governor_id=1", host), "eagle");
   assert.equal(routeDecision("https://cdn.example.com/x.js", host), "pass");
