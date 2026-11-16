@@ -5,7 +5,7 @@
 
 export const READONLY_MIN_TOKEN_LENGTH = 32;
 export const READONLY_RATE_PER_HOUR = 60;
-export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage", "probe"]);
+export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage", "probe", "d1"]);
 export const SNAPSHOT_DEFAULT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users"]);
 
 const enc = new TextEncoder();
@@ -132,4 +132,26 @@ export async function loadSnapshotProbe(db, bucket, { probeId = "" } = {}) {
     out.detail = { request_id: row.request_id, endpoint: row.endpoint, created_at: row.created_at, record };
   }
   return out;
+}
+
+// d1：今日（UTC）と前日の D1 の読み取りが多いクエリ（Cloudflare Analytics。D1 は読まない）。2026-11-17
+// 「今日 D1 の読み取りが多い」ときに原因の SQL を特定するため。SQL は先頭 300 文字だけ（値はバインドなので含まれない）。
+export async function loadSnapshotD1(env, { nowMs = Date.now(), fetchImpl = fetch, limit = 15 } = {}) {
+  const token = String(env?.CLOUDFLARE_ANALYTICS_TOKEN || "").trim(), account = String(env?.CLOUDFLARE_ACCOUNT_ID || "").trim(), db = String(env?.CLOUDFLARE_D1_DATABASE_ID || "").trim();
+  if (!token || !account || !db) return { configured: false };
+  const day = new Date(nowMs).toISOString().slice(0, 10), prev = new Date(nowMs - 86400000).toISOString().slice(0, 10);
+  const query = "query($a:String!,$s:Date,$e:Date,$d:String){viewer{accounts(filter:{accountTag:$a}){d1QueriesAdaptiveGroups(limit:1000,filter:{date_geq:$s,date_leq:$e,databaseId:$d}){count sum{rowsRead rowsWritten} dimensions{date query}}}}}";
+  const res = await fetchImpl("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: JSON.stringify({ query, variables: { a: account, s: prev, e: day, d: db } }) });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || body.errors?.length) return { configured: true, error: String(body?.errors?.[0]?.message || "HTTP " + res.status).slice(0, 160) };
+  const groups = body?.data?.viewer?.accounts?.[0]?.d1QueriesAdaptiveGroups || [];
+  const summarize = d => {
+    const rows = groups.filter(g => g?.dimensions?.date === d);
+    const total = rows.reduce((a, g) => a + Number(g?.sum?.rowsRead || 0), 0);
+    const top = rows.map(g => ({ rowsRead: Number(g?.sum?.rowsRead || 0), rowsWritten: Number(g?.sum?.rowsWritten || 0), count: Number(g?.count || 0), query: String(g?.dimensions?.query || "").replace(/\s+/g, " ").slice(0, 300) }))
+      .sort((a, b) => b.rowsRead - a.rowsRead).slice(0, limit)
+      .map(q => ({ ...q, share: total ? Math.round(q.rowsRead / total * 1000) / 10 : 0, rowsPerQuery: q.count ? Math.round(q.rowsRead / q.count) : 0 }));
+    return { day: d, rowsRead: total, queries: rows.length, top };
+  };
+  return { configured: true, today: summarize(day), yesterday: summarize(prev) };
 }

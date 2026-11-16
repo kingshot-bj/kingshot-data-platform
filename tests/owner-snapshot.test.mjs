@@ -29,7 +29,7 @@ test("Discord IDの伏せ字・セクションの指定・秘密の項目を落�
   assert.equal(maskDiscordId("12345"), "*****");
   assert.equal(maskDiscordId(null), null);
   assert.deepEqual(parseSections(null), ["overview", "traffic", "growth", "users"]);
-  assert.deepEqual(parseSections("all").length, 8);
+  assert.deepEqual(parseSections("all").length, 9); // d1 を追加（2026-11-17）
   assert.deepEqual(parseSections("audit,nope,audit"), ["audit"]);
   const out = scrubSecrets({ api_key: "k", nested: { access_token: "t", clientSecret: "s", encrypted_key: "e", sessions: 5, pvPerSession: 2, keys: 30 }, list: [{ password: "p", n: 1 }] });
   assert.deepEqual(out, { nested: { sessions: 5, pvPerSession: 2, keys: 30 }, list: [{ n: 1 }] });
