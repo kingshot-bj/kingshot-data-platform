@@ -68,6 +68,7 @@ import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-p
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
 import { renderReportsIndex, renderReport } from "./reports.js";
@@ -5043,7 +5044,21 @@ export default {
       if (url.pathname === "/owner/social") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [pack, manifest] = await Promise.all([loadSocialPack(env, { origin: publicOrigin(request, env) }), loadSocialManifest(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialOwnerPage(pack, manifest)); }
       // 「今すぐ作る」：GET は作成中かどうか、POST で GitHub Actions を動かす（投稿はしない）。D1 は使わない。
       if (url.pathname === "/owner/social/run") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; if (request.method === "GET") return json(await socialRunStatus(env)); if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); const r = await triggerSocialRun(env); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : 502); }
-      if (url.pathname.startsWith("/owner/social/media/")) { const guard = await requireOwner(request, env); if (guard.error) return guard.error; const key = "social/" + url.pathname.slice("/owner/social/media/".length).split("/").map(decodeURIComponent).join("/"); if (!isSocialMediaKey(key) || !env.ARCHIVE) return json({ ok: false, error: "NOT_FOUND" }, 404); const obj = await env.ARCHIVE.get(key); if (!obj) return json({ ok: false, error: "NOT_FOUND" }, 404); const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".png") ? "image/png" : "application/json"; return new Response(obj.body, { headers: { "content-type": type, "cache-control": "private, max-age=300", "content-disposition": "inline; filename=\"" + key.split("/").pop() + "\"" } }); }
+      // 動画（CM）を作る：台本の編集・保存（R2）と、GitHub Actions での作成。D1 は使わない。social-video.js
+      if (url.pathname === "/owner/social/video" || url.pathname.startsWith("/owner/social/video/")) {
+        const guard = await requireOwner(request, env);
+        if (url.pathname === "/owner/social/video") { if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [saved, videos] = await Promise.all([loadSavedVideoSets(env.ARCHIVE), loadVideos(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialVideoPage({ saved, videos })); }
+        if (guard.error) return guard.error;
+        if (url.pathname === "/owner/social/video/run" && request.method === "GET") return json(await videoRunStatus(env));
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        if (url.pathname === "/owner/social/video/scenes") { const r = await saveVideoSet(env.ARCHIVE, body?.set); return json(r.ok ? r : { ok: false, error: "INVALID_SCENES", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/scenes/delete") { const r = await deleteVideoSet(env.ARCHIVE, String(body?.name || "")); return json(r.ok ? r : { ok: false, error: "INVALID", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/run") { const r = await triggerVideoRun(env, body?.set, { bgm: body?.bgm !== false }); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : r.error === "INVALID_SCENES" ? 400 : 502); }
+        return json({ ok: false, error: "NOT_FOUND" }, 404);
+      }
+      if (url.pathname.startsWith("/owner/social/media/")) { const guard = await requireOwner(request, env); if (guard.error) return guard.error; const key = "social/" + url.pathname.slice("/owner/social/media/".length).split("/").map(decodeURIComponent).join("/"); if (!isSocialMediaKey(key) || !env.ARCHIVE) return json({ ok: false, error: "NOT_FOUND" }, 404); const range = parseByteRange(request.headers.get("range")); const obj = await env.ARCHIVE.get(key, range ? { range } : undefined); if (!obj) return json({ ok: false, error: "NOT_FOUND" }, 404); const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".png") ? "image/png" : key.endsWith(".txt") ? "text/plain; charset=utf-8" : "application/json"; const h = { "content-type": type, "cache-control": "private, max-age=300", "accept-ranges": "bytes", "content-disposition": "inline; filename=\"" + key.split("/").pop() + "\"" }; if (range && obj.range) { const sfx = obj.range.suffix != null ? Math.min(obj.size, obj.range.suffix) : null; const start = sfx != null ? obj.size - sfx : (obj.range.offset ?? 0); const len = sfx != null ? sfx : Math.min(obj.range.length ?? (obj.size - start), obj.size - start); h["content-range"] = `bytes ${start}-${start + len - 1}/${obj.size}`; h["content-length"] = String(len); return new Response(obj.body, { status: 206, headers: h }); } h["content-length"] = String(obj.size); return new Response(obj.body, { headers: h }); }
       if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => (await publicKingdomExists(env.DB, kid)) ? renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn }) : eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404), PUBLIC_CACHE_TTL.data); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
@@ -9589,6 +9604,15 @@ async function handleKingdomRankingPreferencesApi(request, env) {
     ON CONFLICT(user_id) DO UPDATE SET kid=excluded.kid,boards_json=excluded.boards_json,primary_board=excluded.primary_board,updated_at=excluded.updated_at`)
     .bind(String(auth.user_id), kid, JSON.stringify(boards), primary, now, now).run();
   return json({ ok: true, kid, boards, primary_board: primary });
+}
+
+// 「Range: bytes=a-b」を R2 の range に（iPhone の Safari は動画を部分ごとに読みに来る）。suffix（bytes=-N）にも対応。
+function parseByteRange(header) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || "").trim());
+  if (!m || (m[1] === "" && m[2] === "")) return null;
+  if (m[1] === "") return { suffix: Number(m[2]) };
+  const offset = Number(m[1]);
+  return m[2] === "" ? { offset } : { offset, length: Math.max(1, Number(m[2]) - offset + 1) };
 }
 
 async function getAuthenticatedUser(request, env) {

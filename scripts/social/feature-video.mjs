@@ -15,6 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { ADVANCED_BENEFITS } from "../../src/role-upgrade.js";
+import { normalizeSceneSet } from "../../src/social-video-scenes.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FPS = 10;
@@ -25,11 +26,12 @@ export const BLOCK_HOSTS = /(^|\.)(googlesyndication\.com|doubleclick\.net|googl
 export const BLOCK_PATHS = /^\/api\/(pv|funnel-event|client-error|telemetry)(\/|$)/;
 
 export function parseArgs(argv) {
-  const opt = { out: "feature-video-out", set: "features", bgm: "", fade: 0.4 };
+  const opt = { out: "feature-video-out", set: "features", bgm: "", fade: 0.4, scenesFile: "" };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--set") opt.set = argv[++i];
+    else if (a === "--scenes-file") opt.scenesFile = argv[++i] || "";
     else if (a === "--bgm") opt.bgm = argv[++i] || "";
     else if (a === "--fade") opt.fade = Math.max(0, Math.min(1.5, Number(argv[++i]) || 0));
     else rest.push(a);
@@ -37,6 +39,13 @@ export function parseArgs(argv) {
   if (rest[0]) opt.out = rest[0];
   if (!/^[a-z0-9-]{1,40}$/.test(opt.set)) throw new Error("場面セットの名前が正しくありません: " + opt.set);
   return opt;
+}
+
+// オーナー画面（/owner/social/video）で書いた台本。必ず normalizeSceneSet を通す（タグ・ページの制限）。
+export function loadSceneSetFile(path) {
+  const r = normalizeSceneSet(JSON.parse(readFileSync(path, "utf8")));
+  if (!r.ok) throw new Error("台本が正しくありません: " + r.error);
+  return r.set;
 }
 
 export function loadSceneSet(name) {
@@ -174,7 +183,7 @@ export function ffmpegConcatArgs(segFiles, seconds, { fade = 0.4, bgm = "", out 
 
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
-  const set = loadSceneSet(opt.set);
+  const set = opt.scenesFile ? loadSceneSetFile(opt.scenesFile) : loadSceneSet(opt.set);
   const base = (process.env.EAGLEEYE_BASE || "https://eagleeye-ks.com").replace(/\/$/, "");
   if (opt.bgm && !existsSync(opt.bgm)) throw new Error("BGMのファイルが見つかりません: " + opt.bgm);
   rmSync(opt.out, { recursive: true, force: true });

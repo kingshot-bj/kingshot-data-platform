@@ -19,6 +19,14 @@ on:
         description: "場面の切り替えのフェード（秒）"
         type: string
         default: "0.4"
+      scenes_json:
+        description: "（EagleEye の画面から）台本の JSON。入っていれば scene_set の代わりに使う"
+        type: string
+        default: ""
+      video_id:
+        description: "（EagleEye の画面から）R2 に保存するときの名前。空なら R2 に保存しない"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -40,13 +48,31 @@ jobs:
           SCENE_SET: ${{ inputs.scene_set }}
           BGM: ${{ inputs.bgm }}
           FADE: ${{ inputs.fade }}
+          SCENES_JSON: ${{ inputs.scenes_json }}
         run: |
           args=(feature-video-out --set "$SCENE_SET" --fade "$FADE")
           if [ -n "$BGM" ]; then args+=(--bgm "$BGM"); fi
+          # 画面で書いた台本は環境変数からファイルに書く（シェルに展開しない）。中身はスクリプトが normalizeSceneSet で検証する。
+          if [ -n "$SCENES_JSON" ]; then printf '%s' "$SCENES_JSON" > "$RUNNER_TEMP/scenes.json"; args+=(--scenes-file "$RUNNER_TEMP/scenes.json"); fi
           node scripts/social/feature-video.mjs "${args[@]}"
       - name: Keep the video as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: feature-video-${{ inputs.scene_set }}
+          name: feature-video-${{ inputs.video_id || inputs.scene_set }}
           path: feature-video-out
           retention-days: 30
+      # EagleEye の画面（/owner/social/video）から頼まれたときは R2 に保存して、画面で再生・ダウンロードできるようにする。
+      - name: Save to R2 (shown on /owner/social/video)
+        if: inputs.video_id != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VIDEO_ID: ${{ inputs.video_id }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VIDEO_ID" | grep -Eq '^[0-9]{8}-[0-9]{6}-[a-z0-9][a-z0-9-]{0,39}$'; then echo "::error::video_id が正しくありません"; exit 1; fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::warning::Secrets に CLOUDFLARE_R2_API_TOKEN がないので R2 に保存しません（Artifact には残ります）"; exit 0; fi
+          npm install --global wrangler@4 >/dev/null
+          mp4=$(ls feature-video-out/*.mp4 | head -n 1)
+          wrangler r2 object put "eagleeye-archive/social/videos/out/$VIDEO_ID/video.mp4" --file "$mp4" --content-type video/mp4 --remote
+          wrangler r2 object put "eagleeye-archive/social/videos/out/$VIDEO_ID/caption.txt" --file feature-video-out/caption.txt --content-type "text/plain; charset=utf-8" --remote
