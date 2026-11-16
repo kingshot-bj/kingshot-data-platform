@@ -121,3 +121,14 @@ test("サイトマップ：更新日は毎日変わるページだけ（英雄�
   assert.match(xml, /<loc>https:\/\/x\/heroes\/alcar<\/loc><\/url>/);
   assert.doesNotMatch(xml, /changefreq/);
 });
+
+test("出典：アルテマ（ゲーム内表記の転記）は名前もリンクも出さず「ゲーム内の表記」とする", async () => {
+  const catalog = await renderHeroCatalogPage({}).text();
+  assert.doesNotMatch(catalog, /アルテマ|altema/i);
+  assert.match(catalog, /出典：ゲーム内の表記/);
+  for (const n of NAMES) {
+    const html = renderHeroPage(n, { origin: "" });
+    assert.doesNotMatch(html, /アルテマ|altema/i, n);
+    assert.match(html, /スキル情報の出典：ゲーム内の表記/, n);
+  }
+});

@@ -108,6 +108,9 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
   const rank = p => { const l = lead(p); return l == null ? -1 : Math.abs(l); };
   const sorted = [...pairs].sort((x, y) => rank(y) - rank(x));
   const ready = pairs.filter(p => p.mystic && p.mystic.stages.length).length;
+  // 相手のいない王国（その期は対戦なし）は「組」に数えない。以前は 1,227組 と出ていたが実際の組数は 1,219組。
+  const matched = pairs.filter(p => p.b).length;
+  const solo = pairs.length - matched;
   const even = pairs.filter(p => p.mystic && p.mystic.stages.length && p.mystic.wins === p.mystic.losses).length;
   const asOf = observedAt ? new Date(observedAt * 1000).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric" }) : "";
   // 最初の60組だけHTMLで出し、残りは小さなデータ（1組 約40バイト）で渡して、検索・並べ替え・「もっと見る」のときに画面側で表示する。
@@ -119,7 +122,7 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
   });
   const cards = rows.slice(0, KVK_INITIAL_ROWS).map(kvkPairHtml).join("");
   const title = `キングショット KvK S${season} 組み合わせ一覧（秘境の試練で比較） | EagleEye`;
-  const description = `キングショット（KingShot）KvK シーズン${season}の全${pairs.length}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の1位の記録で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
+  const description = `キングショット（KingShot）KvK シーズン${season}の全${matched}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の1位の記録で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み合わせ`, `/kvk/s${season}`]]) : ""}
@@ -132,7 +135,7 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 <nav class="crumbs"><a href="/">EagleEye</a> › KvK 組み合わせ</nav>
 <h1>KvK シーズン${esc(season)} 組み合わせ</h1>
 <p class="lead">キングショットのKvK（王国対抗戦）シーズン${esc(season)}の全組み合わせです。総力は兵士の数で大きく変わり、実際の戦闘力とは一致しないため、秘境の試練の6ステージ（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）の1位の記録で比べています。KvKは集結を主催するトップ層の強さで決まりやすいためです。真ん中の「4-2」は、それぞれが上回っているステージの数です。</p>
-<div class="facts"><span>組み合わせ <b>${pairs.length}</b>組</span><span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
+<div class="facts"><span>組み合わせ <b>${matched}</b>組</span>${solo ? `<span>相手なし <b>${solo}</b>王国</span>` : ""}<span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>${rows.length > KVK_INITIAL_ROWS ? `<button type="button" class="more-btn" id="moreBtn">残り${rows.length - KVK_INITIAL_ROWS}組を表示</button>` : ""}` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
 <p class="note">真ん中の数字は、秘境の試練の6種類（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）それぞれで、両王国の1位の記録を比べて勝った種類の数です（KvKの日程とは関係ありません）。KvKのスコア・準備フェーズの日ごとのスコア・秘境の試練の2〜10位の記録は、<a href="/kvk">KvKページ</a>（各組み合わせの「スコアと詳細を見る」）で見られます（自分の王国はADVANCED以上、ほかの王国はVIP以上）。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
