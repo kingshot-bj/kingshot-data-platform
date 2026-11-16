@@ -5,6 +5,7 @@
 // ・鍵は Worker のシークレット SOCIAL_GITHUB_DISPATCH_TOKEN（SNS投稿セットの「今すぐ作る」と同じ）。D1 は使わない。
 import { VIDEO_PRESETS } from "./social-video-presets.js";
 import { normalizeSceneSet, SLIDE_TYPES, SCENE_LIMITS } from "./social-video-scenes.js";
+import { EAGLEEYE_THEMES } from "./themes.js";
 import { SOCIAL_WORKFLOW } from "./social-run.js";
 import { SOCIAL_PLATFORMS } from "./social-pack.js";
 
@@ -99,7 +100,7 @@ const PLATFORM_LABELS = { x: "X", discord: "Discord", youtube: "YouTube", tiktok
 
 export function renderSocialVideoPage({ saved = [], videos = [] } = {}) {
   const presets = Object.values(VIDEO_PRESETS);
-  const data = { presets, saved, limits: SCENE_LIMITS, slides: SLIDE_TYPES };
+  const data = { presets, saved, limits: SCENE_LIMITS, slides: SLIDE_TYPES, skins: EAGLEEYE_THEMES.map(t => [t.id, t.name]) };
   const videoCards = videos.length ? videos.map(v => {
     const src = `/owner/social/media/videos/out/${encodeURIComponent(v.id)}/video.mp4`;
     return `<article class="vid"><div class="vh"><b>${esc(v.name)}</b><small>${esc(v.id.slice(0, 4) + "/" + v.id.slice(4, 6) + "/" + v.id.slice(6, 8) + " " + v.id.slice(9, 11) + ":" + v.id.slice(11, 13))}</small></div>
@@ -112,7 +113,7 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}h2{font-size:
 .card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0}
 label{display:block;font-size:12px;font-weight:700;margin:8px 0 3px;color:var(--ee-subtext,#91a7bf)}input,select,textarea{width:100%;box-sizing:border-box;font:14px/1.5 system-ui;padding:8px 10px;border-radius:9px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit}
 textarea{resize:vertical}.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.scene{border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;padding:10px;margin:8px 0;background:var(--ee-panel-raised,#172a40)}.scene-h{display:flex;gap:6px;align-items:center;justify-content:space-between}.scene-h b{font-size:13px}
+.scene{border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;padding:10px;margin:8px 0;background:var(--ee-panel-raised,#172a40)}.scene-h{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:space-between}.scene-h select{max-width:46%}.scene-h b{font-size:13px}
 .btn{font:700 13px system-ui;padding:8px 12px;border-radius:9px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-panel-raised,#172a40);color:inherit}.btn.main{background:var(--ee-cyan,#22d3ee);color:#04202a;border:0}.btn.sm{padding:4px 9px;font-size:12px}.btn:disabled{opacity:.5}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}.chk{display:flex;gap:6px;align-items:center;font-size:13px;margin:0}.chk input{width:auto}
 .msg{font-size:13px;margin-top:8px;min-height:1.2em}.err{color:#fda4af}.vids{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}.vid video{width:100%;max-height:420px;border-radius:10px;background:#000}.vh{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:6px}.vh small{color:var(--ee-subtext,#91a7bf)}
@@ -123,6 +124,7 @@ textarea{resize:vertical}.row{display:grid;grid-template-columns:repeat(2,minmax
 <section class="card"><h2>台本</h2>
 <label for="pick">ひな形・保存した台本</label><select id="pick"></select>
 <div class="row"><div><label for="f-name">名前（半角小文字・数字・ハイフン）</label><input id="f-name" maxlength="40"></div><div><label for="f-title">タイトル（メモ）</label><input id="f-title" maxlength="60"></div></div>
+<label for="f-skin">着せ替え（全体）</label><select id="f-skin"></select>
 <div id="scenes"></div>
 <div class="bar"><button type="button" class="btn" id="add">＋ 場面を追加</button><span class="hint" id="total"></span></div>
 <label for="f-post">投稿文（{host} がサイトのアドレスになります。SNSごとの ?ref= はコピーのときに付きます）</label><textarea id="f-post" rows="6"></textarea>
@@ -143,7 +145,8 @@ const plain=v=>String(v||"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/
 function sceneEl(sc,i){const box=document.createElement("div");box.className="scene";const type=sc.slide||"page";
 const h=document.createElement("div");h.className="scene-h";const b=document.createElement("b");b.textContent=(i+1)+".";const sel=document.createElement("select");sel.style.width="auto";TYPES.forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;sel.appendChild(o)});sel.value=type;
 const tools=document.createElement("span");[["↑",-1],["↓",1]].forEach(([t,d])=>{const x=document.createElement("button");x.type="button";x.className="btn sm";x.textContent=t;x.onclick=()=>{const s=read();const j=i+d;if(j<0||j>=s.scenes.length)return;[s.scenes[i],s.scenes[j]]=[s.scenes[j],s.scenes[i]];load(s)};tools.appendChild(x)});const del=document.createElement("button");del.type="button";del.className="btn sm";del.textContent="削除";del.onclick=()=>{const s=read();s.scenes.splice(i,1);load(s)};tools.appendChild(del);
-h.append(b,sel,tools);box.appendChild(h);
+const sk=document.createElement("select");sk.style.width="auto";sk.dataset.k="skin";sk.title="この場面の着せ替え";[["","（全体と同じ）"],...D.skins].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;sk.appendChild(o)});sk.value=sc.skin||"";
+h.append(b,sel,sk,tools);box.appendChild(h);
 const field=(key,label,val,opt={})=>{const l=document.createElement("label");l.textContent=label;const inp=document.createElement(opt.area?"textarea":"input");if(opt.area)inp.rows=2;if(opt.type)inp.type=opt.type;if(opt.step)inp.step=opt.step;inp.value=val==null?"":val;inp.dataset.k=key;const w=document.createElement("div");w.append(l,inp);return w};
 const body=document.createElement("div");box.appendChild(body);
 const draw=()=>{body.innerHTML="";const t=sel.value;if(t==="text"){body.append(field("heading","見出し",plain(sc.heading),{area:1}),field("sub","小さい文字",plain(sc.sub)))}
@@ -151,10 +154,10 @@ if(t==="page"){body.append(field("page","ページ（/ から）",sc.page||"/"),
 else{body.append(field("seconds","秒数",sc.seconds||3,{type:"number",step:"0.5"}))}};
 sel.onchange=()=>{draw();total()};draw();box.dataset.type=type;return box}
 function read(){const scenes=[...$("scenes").children].map(box=>{const t=box.querySelector(".scene-h select").value;const g=k=>{const el=box.querySelector("[data-k="+k+"]");return el?(el.type==="checkbox"?el.checked:el.value):undefined};
-const sc={seconds:Number(g("seconds"))||0};if(t==="page"){sc.page=g("page");sc.caption=g("caption");sc.scroll=Number(g("scroll"))||0;if(g("login"))sc.login=true}else{sc.slide=t;if(t==="text"){sc.heading=g("heading");sc.sub=g("sub")}}return sc});
-return{name:$("f-name").value.trim(),title:$("f-title").value.trim(),post:$("f-post").value.split("\\n"),scenes}}
+const sc={seconds:Number(g("seconds"))||0};if(g("skin"))sc.skin=g("skin");if(t==="page"){sc.page=g("page");sc.caption=g("caption");sc.scroll=Number(g("scroll"))||0;if(g("login"))sc.login=true}else{sc.slide=t;if(t==="text"){sc.heading=g("heading");sc.sub=g("sub")}}return sc});
+const out={name:$("f-name").value.trim(),title:$("f-title").value.trim(),post:$("f-post").value.split("\\n"),scenes};if($("f-skin").value)out.skin=$("f-skin").value;return out}
 function total(){const s=read();$("total").textContent="合計 "+s.scenes.reduce((a,x)=>a+(x.seconds||0),0).toFixed(1)+" 秒・"+s.scenes.length+" 場面"}
-function load(s){cur=s;$("f-name").value=s.name||"";$("f-title").value=s.title||"";$("f-post").value=(s.post||[]).join("\\n");const box=$("scenes");box.innerHTML="";(s.scenes||[]).forEach((sc,i)=>box.appendChild(sceneEl(sc,i)));total()}
+function load(s){cur=s;$("f-skin").value=s.skin||"";$("f-name").value=s.name||"";$("f-title").value=s.title||"";$("f-post").value=(s.post||[]).join("\\n");const box=$("scenes");box.innerHTML="";(s.scenes||[]).forEach((sc,i)=>box.appendChild(sceneEl(sc,i)));total()}
 $("scenes").addEventListener("input",total);
 $("pick").onchange=()=>{const it=all()[Number($("pick").value)];if(!it)return;load(JSON.parse(JSON.stringify(it.s)));$("del").hidden=it.kind!=="保存";msg("")};
 $("add").onclick=()=>{const s=read();s.scenes.push({page:"/",caption:"",seconds:4,scroll:0});load(s)};
@@ -167,4 +170,5 @@ let timer=null;const poll=async()=>{const d=await fetch("/owner/social/video/run
 if(d.running){$("run").disabled=true;msg("作成中です…（終わったらこのページを再読み込みすると下に出ます）");timer=setTimeout(poll,20000)}else{$("run").disabled=false;if(d.last&&timer){msg(d.last.conclusion==="success"?"できました。再読み込みすると下に出ます":"失敗しました（GitHub の実行の詳細を確認）",d.last.conclusion!=="success")}timer=null}};
 $("run").onclick=async()=>{$("run").disabled=true;msg("依頼しています…");const d=await post("/owner/social/video/run",{set:read(),bgm:$("bgm").checked});if(d.ok){msg("作り始めました（2〜3分）");timer=setTimeout(poll,20000)}else{$("run").disabled=false;msg(d.message||ERR[d.error]||"依頼できませんでした",1)}};
 document.querySelectorAll(".vid").forEach(v=>{const ta=v.querySelector("textarea");v.querySelectorAll(".copy").forEach(b=>b.onclick=async()=>{const p=b.dataset.p;const t=ta.value.replace(/(https?:\\/\\/)?eagleeye-ks\\.com\\/?(?![\\w?])/g,"eagleeye-ks.com/?ref="+p);try{await navigator.clipboard.writeText(t);b.textContent="コピーしました"}catch{ta.select()}})});
+[["","ネイビー（標準）"],...D.skins.filter(([v])=>v!=="navy")].forEach(([v,l])=>{const o=document.createElement("option");o.value=v;o.textContent=l;$("f-skin").appendChild(o)});
 fillPick(0);$("pick").onchange();poll();})();`;

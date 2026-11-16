@@ -109,3 +109,22 @@ test("Actions：台本は環境変数からファイルへ・保存先の名前�
   writeFileSync(join(dir, "ok.json"), JSON.stringify({ name: "a", scenes: [{ slide: "text", heading: "<i>x</i>", seconds: 1 }] }));
   assert.equal(loadSceneSetFile(join(dir, "ok.json")).scenes[0].heading, "&lt;i&gt;x&lt;/i&gt;");
 });
+
+test("着せ替え：台本全体と場面ごとに指定できる・知らない名前は外す・文字の画面も着せ替えの色", async () => {
+  const r = normalizeSceneSet({ name: "s", skin: "gold", scenes: [{ page: "/", caption: "", seconds: 2, skin: "wine" }, { slide: "outro", seconds: 1, skin: "evil\"><x" }, { slide: "text", heading: "a", seconds: 1, skin: "sakura" }] });
+  assert.equal(r.set.skin, "gold");
+  assert.equal(r.set.scenes[0].skin, "wine");
+  assert.equal(r.set.scenes[1].skin, undefined);
+  assert.equal(r.set.scenes[2].skin, "sakura");
+  assert.equal(normalizeSceneSet({ name: "s", skin: "nope", scenes: [{ slide: "outro", seconds: 1 }] }).set.skin, undefined);
+  const { slideSkinCss } = await import("../scripts/social/feature-video.mjs");
+  assert.match(slideSkinCss("sakura"), /^body\{background:radial-gradient\(120% 60% at 50% 0%,#[0-9a-f]{6}40/i);
+  assert.equal(slideSkinCss("navy"), "", "標準はそのまま");
+  assert.equal(slideSkinCss("nope"), "");
+  const src = readFileSync(new URL("../scripts/social/feature-video.mjs", import.meta.url), "utf8");
+  assert.match(src, /const skin = sc\.skin \|\| set\.skin \|\| "";/);
+  assert.match(src, /localStorage\.setItem\("eagleeye-skin", v\)/);
+  const html = renderSocialVideoPage({});
+  assert.match(html, /<select id="f-skin"><\/select>/);
+  assert.match(html, /"skins":\[\["navy","ネイビー"\]/);
+});
