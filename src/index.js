@@ -1736,6 +1736,8 @@ async function handleMyAdvancedApi(request, env) {
   try {
     if (request.method === "GET") {
       const eligibility = await getAdvancedEligibility(env.DB, auth.user_id);
+      // プレビューの疑似ログインで「表示する権限」を選んだときは、その権限で返す（メニューの「オーナー管理」なども消える）。
+      if (isPreviewEnv(env) && eligibility && auth.role) eligibility.role = auth.role;
       return json({ ok: true, ...eligibility });
     }
 

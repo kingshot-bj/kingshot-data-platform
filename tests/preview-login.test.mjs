@@ -61,3 +61,14 @@ test("プレビュー全体の合言葉：通すのはログイン画面と robo
   assert.match(renderPreviewLoginPage({ configured: true }), /<option value="guest">ログインしない（ゲストとして見る）<\/option>/);
   assert.equal(applyPreviewRole({ role: "OWNER" }, { preview_role: "guest" }, true).role, "OWNER", "guest は権限ではない");
 });
+
+test("表示する権限：メニューの役割（/api/me/advanced）もその権限で返す（BASIC なのにオーナー管理が出ていた）", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("async function handleMyAdvancedApi"), src.indexOf("async function handleMyAdvancedApi") + 1500);
+  assert.match(fn, /if \(isPreviewEnv\(env\) && eligibility && auth\.role\) eligibility\.role = auth\.role;/);
+  // オーナー・管理者の入口のチェックは上書き後の権限（getAuthenticatedUser）を使う
+  for (const name of ["requireOwner", "requireAdmin"]) {
+    const g = src.slice(src.indexOf(`async function ${name}(`), src.indexOf(`async function ${name}(`) + 300);
+    assert.match(g, /const auth = await getAuthenticatedUser\(request, env\);/, name);
+  }
+});
