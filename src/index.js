@@ -68,6 +68,7 @@ import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-p
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
 import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
@@ -5066,6 +5067,19 @@ export default {
       if (url.pathname === "/guide") return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidePage(publicOrigin(request, env))), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
+      // 通知の設定（聖剣の登録のお知らせを止める・受け取る）。ログインが必要。
+      if (url.pathname === "/settings/notifications") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "通知の設定", "通知の設定を変えるにはログインしてください。"));
+        if (request.method === "POST") {
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const form = await request.formData().catch(() => null);
+          const off = String(form?.get("swordland") || "") === "off";
+          await setSwordlandNotifyOff(env.DB, auth.user_id, off);
+          return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, message: off ? "聖剣の登録のお知らせを止めました。" : "聖剣の登録のお知らせを受け取るようにしました。" }));
+        }
+        return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off: await isSwordlandNotifyOff(env.DB, auth.user_id) }));
+      }
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname === "/api/funnel-event") {
@@ -5408,6 +5422,12 @@ export default {
       await runSwordlandEventsRefresh(env);
     } catch (error) {
       console.error("swordland_events_refresh_failed", error?.message || error);
+    }
+    // 聖剣：同盟の R4・R5 に「対戦相手を登録して」と個チャ（毎時・昼間だけ・1回の回につき1人1回）。swordland-notify.js
+    try {
+      await runSwordlandOfficerNotify(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("swordland_officer_notify_failed", error?.message || error);
     }
     try {
       await runUserKingdomRankingRefresh(env);
