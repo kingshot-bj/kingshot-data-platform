@@ -28,3 +28,17 @@ test("秘境の試練のカード：API値・rank_type などの開発用の表�
   assert.doesNotMatch(index, /rawLabel\.textContent=\\"API値: \\"/);
   assert.doesNotMatch(index, /API値はステージ表記を符号化した生データです/);
 });
+
+test("リング：秘境の試練の合計は%を出さない・ステージはオフセットを引いて比べる・元の値は隠し属性から読む", () => {
+  assert.match(index, /score\.dataset\.api=entry\.value\.score==null\?\\"\\":String\(entry\.value\.score\);/, "API値の表示を消しても、レーダー・リングが元の値を読めるように");
+  assert.match(enh, /const apiText=n&&n\.dataset\.api\?String\(n\.dataset\.api\)/);
+  assert.match(enh, /const NO_PERCENT=new Set\(\['秘境の試練'\]\);/);
+  // leaderOf を取り出して動かす
+  const src = enh.slice(enh.indexOf(" const STAGE_OFFSETS="), enh.indexOf(" function renderCard(card){"));
+  const make = new Function("safeText", src + "; return leaderOf;");
+  const leaderOf = make(el => el?.textContent || "");
+  const card = title => ({ querySelector: () => ({ textContent: title }) });
+  assert.deepEqual(leaderOf(card("秘境の試練"), [{ name: "BJ", score: 1286 }, { name: "Eddy", score: 735 }]), { title: "👑BJ", note: "記録が上" });
+  assert.equal(leaderOf(card("闘技場"), [{ name: "BJ", score: 10256 }, { name: "Eddy", score: 10134 }]).note, "+122ステージ リード");
+  assert.equal(leaderOf(card("総力"), [{ name: "A", score: 200 }, { name: "B", score: 100 }]).note, "+100% リード");
+});
