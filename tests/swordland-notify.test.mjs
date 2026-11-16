@@ -6,7 +6,7 @@ import { resetSwordlandSchemaCache, WEEK_SECONDS } from "../src/swordland.js";
 
 // 2026-11-16：聖剣争奪・頂上リーグで対戦相手が登録されないと、ホームに相手が出ない。R4・R5 に個チャで知らせる。
 const week = Date.parse("2026-11-16T00:00:00Z") / 1000; // 11/16(月) 9:00 JST
-const at = (week + 5 * 3600 + 6 * 60) * 1000;          // 14:06 JST（毎時5〜9分）
+const at = (week + 6 * 60) * 1000;                     // 9:06 JST（朝・毎時5〜9分）
 
 function makeDb({ officers, events, matchups = [], log = [] }) {
   const logged = new Map(log.map(l => [l.season + ":" + l.user_id, l]));
@@ -76,19 +76,21 @@ test("送らない：同盟の誰かが登録済み・個チャを拒否は記�
   const r2 = await runSwordlandOfficerNotify({ DB: db2, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(id => id.endsWith("1") ? closedErr : null) });
   assert.equal(r2.closed, 1); assert.equal(r2.sent, 1);
   assert.deepEqual([...db2.logged.values()].map(l => l.status).sort(), ["DM_CLOSED", "SENT"]);
-  const many = makeDb({ officers: Array.from({ length: 8 }, (_, i) => officer(i)), events: [league] });
-  assert.equal((await runSwordlandOfficerNotify({ DB: many, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest() })).sent, 5);
+  const many = makeDb({ officers: Array.from({ length: 9 }, (_, i) => officer(i)), events: [league] });
+  assert.equal((await runSwordlandOfficerNotify({ DB: many, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest() })).sent, 6);
   const rl = makeDb({ officers: [officer(1), officer(2)], events: [league] });
   const r4 = await runSwordlandOfficerNotify({ DB: rl, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(() => Object.assign(new Error("rl"), { status: 429 })) });
   assert.equal(r4.rateLimited, true); assert.equal(rl.logged.size, 0, "429 のときは記録しない（あとで送る）");
 });
 
-test("時間：毎時5〜9分・日本時間 9時〜22時台だけ／鍵が無ければ何もしない", async () => {
-  assert.equal(isNotifyTick(week + 5 * 3600 + 6 * 60), true);
-  assert.equal(isNotifyTick(week + 5 * 3600 + 12 * 60), false);
-  assert.equal(isNotifyTick(week - 3 * 3600 + 6 * 60), false, "6時台は送らない");
-  assert.equal(isNotifyTick(week + 13 * 3600 + 6 * 60), true, "22時台は送る");
-  assert.equal(isNotifyTick(week + 14 * 3600 + 6 * 60), false, "23時台は送らない");
+test("時間：朝だけ（日本時間 8〜10時台の毎時5〜9分）／鍵が無ければ何もしない", async () => {
+  assert.equal(isNotifyTick(week - 3600 + 6 * 60), true, "8時台");
+  assert.equal(isNotifyTick(week + 6 * 60), true, "9時台");
+  assert.equal(isNotifyTick(week + 3600 + 6 * 60), true, "10時台");
+  assert.equal(isNotifyTick(week + 3600 + 12 * 60), false, "毎時5〜9分だけ");
+  assert.equal(isNotifyTick(week - 2 * 3600 + 6 * 60), false, "7時台は送らない");
+  assert.equal(isNotifyTick(week + 2 * 3600 + 6 * 60), false, "11時台は送らない");
+  assert.equal(isNotifyTick(week + 13 * 3600 + 6 * 60), false, "夜は送らない");
   assert.equal((await runSwordlandOfficerNotify({ DB: makeDb({ officers: [], events: [] }) }, { nowMs: at })).skipped, "NO_BOT_TOKEN");
 });
 
