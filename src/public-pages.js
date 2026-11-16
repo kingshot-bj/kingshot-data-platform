@@ -1,5 +1,6 @@
 import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
+import { REPORT_PATHS } from "./reports-paths.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
 //   /k/{kid}       one kingdom: power & growth, top players / alliances, KvK
@@ -277,7 +278,8 @@ function kingdomsIntro(boards) {
 <dt>7日間の伸び</dt><dd>1週間前と比べて増えた総力です。減っているときはマイナスになります。</dd>
 <dt>開設日数</dt><dd>王国ができてからの日数です。新しい英雄や黄金が解放される目安になります（<a href="/kingdom-timeline">王国タイムライン</a>）。</dd>
 <dt>開設時期が近い王国</dt><dd>開設日数が前後30日以内の王国です。王国ページでは、同じくらいの時期に始まった王国の中で何位かを出しています。</dd>
-</dl>`;
+</dl>
+<p class="lead" style="margin-top:10px">全王国のデータから分かったことは <a href="/reports">データレポート</a> にまとめています（秘境の試練の記録の分布、総力との関係、新しい王国の伸び方など）。</p>`;
 }
 
 export function renderPublicKingdomsIndex(kids, { origin = "", stats = null } = {}) {
@@ -324,7 +326,7 @@ export function renderAdsTxt(publisherId) {
 // （全部「今日」にすると、検索エンジンが更新日を信用しなくなる）。changefreq は Google が使わないので出さない。
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
   const daily = [...extraPaths, "/", "/kingdoms", ...kids.map(k => `/k/${k}`)];
-  const fixed = ["/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...heroPagePaths()];
+  const fixed = ["/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...heroPagePaths()];
   const urls = [...daily.map(p => `<url><loc>${esc(origin + p)}</loc><lastmod>${today}</lastmod></url>`), ...fixed.map(p => `<url><loc>${esc(origin + p)}</loc></url>`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }
