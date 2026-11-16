@@ -12,7 +12,7 @@ const STYLE = "margin:22px 0 8px;padding:12px 14px;border:1px dashed var(--ee-bo
 // items: [[見出し, HTML], ...]（HTML は呼び出し側で esc 済みの前提）
 export function renderDataNote(items) {
   const rows = [["取得元", SOURCE], ...items.filter(([, v]) => v)];
-  return `<section class="data-note-box" style="${STYLE}"><h2 style="margin:0 0 6px;font-size:14px;color:var(--ee-text,#e8f3ff)">データについて</h2><dl style="margin:0">${rows.map(([k, v]) => `<dt style="margin-top:6px;font-weight:800;color:var(--ee-text,#e8f3ff)">${esc(k)}</dt><dd style="margin:0">${v}</dd>`).join("")}</dl><p style="margin:8px 0 0">${UNOFFICIAL} <a href="/support">お問い合わせ</a>・<a href="/about">運営者情報</a></p></section>`;
+  return `<section class="data-note-box" style="${STYLE}"><h2 style="margin:0 0 6px;font-size:14px;color:var(--ee-text,#e8f3ff)">データについて</h2><dl style="margin:0">${rows.map(([k, v]) => `<dt style="margin-top:6px;font-weight:800;color:var(--ee-text,#e8f3ff)">${esc(k)}</dt><dd style="margin:0">${v}</dd>`).join("")}</dl><p style="margin:8px 0 0">${UNOFFICIAL} <a href="/guide">使い方（ページの見方・用語集）</a>・<a href="/support">お問い合わせ</a>・<a href="/about">運営者情報</a></p></section>`;
 }
 
 const n = v => Number(v || 0).toLocaleString("ja-JP");

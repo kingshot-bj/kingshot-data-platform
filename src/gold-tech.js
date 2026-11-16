@@ -5,6 +5,7 @@
 
 import { goldIconSvg } from "./gold-calculator.js";
 import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+import { goldTechExplainer } from "./tool-explainers.js";
 
 export const DUST_NAME = "黄金微粒子";
 export const COIN_NAME = "コイン";
@@ -100,6 +101,7 @@ export function renderGoldTechPage({ origin = "" } = {}) {
 <div id="ttotal" class="total" aria-live="polite"></div></section>
 <h2>研究ごとの合計（1兵種あたり）</h2><div class="tbl"><table><thead><tr>${head}</tr></thead><tbody>${table}<tr class="sum"><th>合計</th><td></td><td>${fmt(sumDust)}</td><td>${fmt(sumCoin)}</td><td></td></tr></tbody></table></div>
 <details class="lvs"><summary>レベルごとの必要数を見る（${DUST_NAME} / ${COIN_NAME}）</summary><div class="tbl"><table><tbody>${levels}</tbody></table></div></details>
+${goldTechExplainer()}
 <p class="note">${DUST_NAME}は黄金テクノロジー研究画面の「交換」で${COIN_NAME}から交換できます（例：5,000${COIN_NAME}で1個、回数は週ごとにリセット）。研究時間は加速なしの合計です。数値はコミュニティ資料「T11 COST」（作成：Pandafather）によるもので、各研究の合計は資料の合計行と一致しています。3兵種とも同じコストとして計算しています。ゲーム内で名前が表示されない研究は、ツリー上の位置で表記しています。</p>
 <p class="note"><a href="/tools/gold">黄金（G）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${techClient.toString()})(${cfgJson});</script>`;

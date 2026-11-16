@@ -4,6 +4,7 @@
 // TG6–8 additionally need the refined material (英語版 Tempered Truegold).
 
 import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+import { goldExplainer } from "./tool-explainers.js";
 
 export const GOLD_NAME = "黄金";
 // Japanese in-game name of Tempered Truegold (confirmed in game by the operator).
@@ -108,6 +109,7 @@ export function renderGoldCalculatorPage({ origin = "" } = {}) {
 <div class="have"><label>手持ちの${GOLD_NAME}<input id="hg" type="number" min="0" inputmode="numeric" placeholder="0"></label><label>手持ちの${REFINED_GOLD_NAME}<input id="hr" type="number" min="0" inputmode="numeric" placeholder="0"></label></div>
 <div id="gtotal" class="total" aria-live="polite"></div></section>
 <h2>Gごとの必要数</h2><div class="tbl"><table><thead><tr><th></th>${head}</tr></thead><tbody>${table}</tbody></table></div>
+${goldExplainer()}
 <p class="note">数字は${GOLD_NAME}の必要数で、「+」は${REFINED_GOLD_NAME}です。戦争学院はG2から。各列の合計は表の合計行と一致し、役場のG1〜5は外部の資料（kingshotguide.org）とも一致しています。G6〜8はコミュニティ資料の値です。ゲームの更新で変わる場合があります。</p>
 <p class="note"><a href="/tools/gold-tech">黄金テクノロジー研究（T11）計算</a>・<a href="/tools/hero-shards">英雄の欠片計算</a>・<a href="/hero-catalog">英雄カタログ</a>もどうぞ。</p>
 <script>var __name=function(f){return f};(${goldClient.toString()})(${cfgJson});</script>`;
