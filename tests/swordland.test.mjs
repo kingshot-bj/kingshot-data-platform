@@ -27,7 +27,8 @@ test("日程の取得：1時間に1回・登録ユーザーの王国・聖剣の
   assert.equal(collects[0].path, "/kingdoms/1524/events");
   assert.equal(collects[0].purpose, "SWORDLAND_EVENTS");
   const saved = writes.filter(w => w[0].startsWith("INSERT INTO swordland_events")).map(w => w[1][1]);
-  assert.deepEqual(saved, ["Swordland Showdown"], "聖剣以外（Summit Contest・Hero Rally）は保存しない… Summit は名前に Swordland を含まない");
+  // 2026-11-16：聖剣頂上リーグ（分類 Swordland Summit League）も分類全体の期間で保存する。Hero Rally などは保存しない。
+  assert.deepEqual(saved, ["Swordland Showdown", "Swordland Summit League"]);
   assert.equal((await runSwordlandEventsRefresh({ DB: db }, { nowMs: at + 600 * 1000, collect })).skipped, "NOT_THIS_TICK");
   const src = readFileSync(new URL("../src/swordland.js", import.meta.url), "utf8");
   assert.match(src, /import \{ collectMightyOnly \} from "\.\/data-collection-engine\.js";/);
@@ -82,7 +83,7 @@ test("オーナーの手動取得：いつでも（毎時の制限なし）・�
   const collect = async (env, o) => { if (o.targetId === "1001") { const e = new Error("MIGHTPULSE_NOT_FOUND"); e.code = "MIGHTPULSE_NOT_FOUND"; throw e; } return { result: { data: payload } }; };
   const at = Date.parse("2026-11-09T01:30:00Z");
   const r = await runSwordlandEventsRefresh({ DB: db }, { nowMs: at, collect, force: true });
-  assert.equal(r.kingdoms, 2); assert.equal(r.saved, 1);
+  assert.equal(r.kingdoms, 2); assert.equal(r.saved, 2);
   assert.deepEqual(r.errors, [{ kid: 1001, status: "MIGHTPULSE_NOT_FOUND" }]);
   assert.equal(binds[0][1], 10, "最大10王国");
   assert.ok(binds[0][0] > Math.floor(at / 1000), "取得済みの王国も取り直す");
