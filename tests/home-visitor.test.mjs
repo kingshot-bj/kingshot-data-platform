@@ -29,7 +29,7 @@ test("ページ：何のサイトか・王国番号の検索・ツール・今�
   assert.match(html, /<h1>キングショットの王国・KvK・英雄を、データで比べる<\/h1>/);
   assert.match(html, /全6王国の戦力と成長/);
   assert.match(html, /<h2>ツール<\/h2>/);
-  for (const href of ["/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/hero-catalog", "/kingdom-timeline"]) assert.ok(html.includes(`href="${href}"`), href);
+  for (const href of ["/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/hero-catalog", "/kingdom-timeline", "/guide"]) assert.ok(html.includes(`href="${href}"`), href);
   assert.match(html, /<a class="rk" href="\/k\/2"><i>1<\/i>/);
   assert.match(html, /2026-11-21 時点/);
   assert.match(html, /href="\/kvk\/s23"/);

@@ -34,3 +34,7 @@ test("運営者情報：正確性の方針・不具合の報告先・更新履�
   assert.match(html, /1,227組→1,219組/);
   assert.equal(ABOUT_UPDATED_AT, "2026年11月16日");
 });
+
+test("使い方への入口：データについて欄から /guide へ", () => {
+  for (const html of [kingdomDataNote(), kingdomsIndexDataNote(), kvkDataNote({ season: 23 })]) assert.match(html, /<a href="\/guide">使い方（ページの見方・用語集）<\/a>/);
+});
