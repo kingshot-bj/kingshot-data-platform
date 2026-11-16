@@ -1,4 +1,4 @@
-import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights } from "./kingdom-insights.js";
+import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights, kingdomTrend, renderKingdomTrend } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { REPORT_PATHS } from "./reports-paths.js";
 // Public, search-engine friendly pages (no login needed):
@@ -231,6 +231,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
 ${stats}
 ${renderKingdomInsights(kid, data.insights, compactNumber)}
 ${renderMysticInsights(kid, data.mystic)}
+${renderKingdomTrend(kid, kingdomTrend(data.growth), compactNumber)}
 ${playerRows ? `<h2>戦力ランキング（上位10人）${asOfLabel}</h2>${playerRows}` : ""}
 ${allianceRows ? `<h2>同盟ランキング（上位5）${asOfLabel}</h2>${allianceRows}` : ""}
 ${kvk}
