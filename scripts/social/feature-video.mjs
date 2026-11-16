@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { ADVANCED_BENEFITS } from "../../src/role-upgrade.js";
 import { normalizeSceneSet } from "../../src/social-video-scenes.js";
+import { avatarProxyTarget } from "../../src/compare-share.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FPS = 10;
@@ -93,6 +94,9 @@ export function routeDecision(urlString, eagleHost) {
   if (BLOCK_HOSTS.test(u.hostname)) return "block";
   if (u.host === eagleHost && BLOCK_PATHS.test(u.pathname)) return "block";
   if (u.host === eagleHost) return "eagle";
+  // プレイヤーのアイコン（ゲームの画像サーバー）は EagleEye の中継（/api/avatar）から読む。
+  // 撮影する環境によってはゲームの画像サーバーに直接つながらず、アイコンが空になっていた（2026-11-16）。
+  if (avatarProxyTarget(urlString)) return "avatar";
   return "pass";
 }
 
@@ -111,6 +115,10 @@ async function record(set, opt, base) {
       const headers = { ...route.request().headers(), "x-eagleeye-video": "1" };
       if (token) headers.authorization = "Bearer " + token;
       return route.continue({ headers });
+    }
+    if (decision === "avatar") {
+      const relay = base + "/api/avatar?u=" + encodeURIComponent(route.request().url());
+      return route.fetch({ url: relay }).then(res => route.fulfill({ response: res })).catch(() => route.continue());
     }
     return route.continue();
   });
