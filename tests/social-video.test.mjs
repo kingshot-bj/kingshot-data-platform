@@ -128,3 +128,12 @@ test("着せ替え：台本全体と場面ごとに指定できる・知らな�
   assert.match(html, /<select id="f-skin"><\/select>/);
   assert.match(html, /"skins":\[\["navy","ネイビー"\]/);
 });
+
+test("撮影用：作業用の鍵が付いているときだけ、ホームはログイン後の画面（Cookie が無くても）", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("async function renderHome("), src.indexOf("if (!session) {", src.indexOf("async function renderHome(")));
+  assert.match(fn, /const agent = !cookieSession \? agentTokenState\(request, env\) : undefined;/);
+  assert.match(fn, /const auth = cookieSession \? await getAuthenticatedUser\(request, env\) : \(agent \|\| null\);/);
+  assert.match(src, /if \(url\.pathname === "\/"\) return eagleEyeHtmlResponse\(await renderHome\(request, env\)\);/, "ホームは共有キャッシュに載せない");
+  assert.ok(VIDEO_PRESETS.skins.scenes.filter(s => s.page === "/").every(s => s.login === true && s.skin));
+});

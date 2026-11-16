@@ -11563,8 +11563,12 @@ async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   const verifiedSession = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
-  const session = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;
-  const auth = session ? await getAuthenticatedUser(request, env) : null;
+  const cookieSession = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;
+  // 作業用の鍵（Claude・動画の撮影）が付いているときは、ログイン後のホームを見せる（2026-11-16 着せ替えの撮影用）。
+  // 鍵が無い普通の人には関係しない。ホームは共有キャッシュに載せていない。
+  const agent = !cookieSession ? agentTokenState(request, env) : undefined;
+  const session = cookieSession || (agent ? { sub: agent.discord_id, username: agent.username, global_name: agent.global_name, agent: true } : null);
+  const auth = cookieSession ? await getAuthenticatedUser(request, env) : (agent || null);
   // Only an ACTIVE database-backed user may receive role-gated drawer links.
   const menuAuth = auth?.status === "ACTIVE" ? auth : (session ? { role: "BASIC" } : null);
   const role = menuAuth?.role || "BASIC";
