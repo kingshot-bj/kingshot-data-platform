@@ -34,7 +34,9 @@ test("全同盟の対戦相手：同盟ごとにまとめ、相手が割れて�
   assert.equal(q[0][1][0], 1794200000 - SWORDLAND_OWNER_LIST_DAYS * 86400);
   // 2026-11-16 オーナーの判断：登録した人をゲーム内の名前で出す（Discord の名前・ID は出さない）。
   assert.match(q[0][0], /GROUP_CONCAT\(\(SELECT p\.nick_name FROM user_player_links l JOIN players p/);
-  assert.doesNotMatch(q[0][0], /discord_id|username|global_name/);
+  // オーナーの一覧だけ Discord の表示名も（オーナーしか見られない）。Discord の ID は出さない。
+  assert.match(q[0][0], /COALESCE\(NULLIF\(u\.global_name, ''\), u\.username\)/);
+  assert.doesNotMatch(q[0][0], /discord_id/);
   const html = renderOwnerMatchups(list);
   assert.match(html, /王国1524 Pen<small>Penguins<\/small>/);
   assert.match(html, /王国1537 LOL（3人） <a href="\/alliance\/compare\?a=1524%3APen&amp;a=1537%3ALOL">比べる<\/a>/);

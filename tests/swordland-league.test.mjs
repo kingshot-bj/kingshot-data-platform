@@ -85,4 +85,9 @@ test("登録した人：自分の同盟のページとオーナーの一覧に�
   const owner = renderOwnerMatchups([{ season: 1794700801, kid: 1524, aid: "1", abbr: "Pen", opps: [{ opp_kid: 1546, opp_tag: "MIT", count: 2, reporters: ["らすかる", "BJ"] }] }]);
   assert.match(owner, /王国1546 MIT（2人：らすかる、BJ）/);
   assert.match(owner, /登録した人はゲーム内の名前/);
+  const owner2 = renderOwnerMatchups([{ season: 1794700801, kid: 1524, aid: "1", abbr: "Pen", opps: [{ opp_kid: 1546, opp_tag: "MIT", count: 1, reporters: ["らすかる"], ownerNames: ["らすかる（Discord：rasu）"] }] }]);
+  assert.match(owner2, /王国1546 MIT（1人：らすかる（Discord：rasu））/);
+  // 同盟の人向けのページには Discord の名前を出さない
+  const { currentMatchup } = await import("../src/swordland.js");
+  assert.doesNotMatch(currentMatchup.toString(), /REPORTER_DISCORD_SQL/);
 });
