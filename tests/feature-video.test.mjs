@@ -46,7 +46,7 @@ test("つなぎ方：フェードの位置、BGMあり／なし、長さ", () =>
   assert.match(f, /anullsrc|anull\[a\]/);
   const b = ffmpegConcatArgs(["a.mp4"], [3], { fade: 0, bgm: "music.mp3", out: "o.mp4" });
   assert.ok(b.args.includes("music.mp3") && b.args.includes("-stream_loop"));
-  assert.match(b.args[b.args.indexOf("-filter_complex") + 1], /volume=0\.35,afade=t=out:st=1\.50:d=1\.5\[a\]/);
+  assert.match(b.args[b.args.indexOf("-filter_complex") + 1], /volume=0\.7,afade=t=out:st=1\.50:d=1\.5\[a\]/);
 });
 
 test("サーバー：撮影の印は Claude 用の鍵と一緒のときだけ効く（普通のユーザーには関係しない）", () => {
@@ -61,4 +61,13 @@ test("サーバー：撮影の印は Claude 用の鍵と一緒のときだけ効
   const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
   assert.match(wf, /EAGLEEYE_VIDEO_TOKEN: \$\{\{ secrets\.EAGLEEYE_VIDEO_TOKEN \}\}/);
   assert.match(wf, /workflow_dispatch/);
+});
+
+test("BGM：既定の曲がリポジトリにある（自作・make-bgm.py で作り直せる）", async () => {
+  const { existsSync } = await import("node:fs");
+  const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
+  const def = wf.match(/default: "(scripts\/social\/bgm\/[^"]+)"/)?.[1];
+  assert.ok(def, "BGM の既定");
+  assert.ok(existsSync(new URL("../" + def, import.meta.url)), def);
+  assert.ok(existsSync(new URL("../scripts/social/bgm/make-bgm.py", import.meta.url)));
 });

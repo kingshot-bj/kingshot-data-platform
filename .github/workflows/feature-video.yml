@@ -14,7 +14,7 @@ on:
       bgm:
         description: "BGMのファイル（リポジトリ内のパス。空ならBGMなし）"
         type: string
-        default: ""
+        default: "scripts/social/bgm/battle.mp3"
       fade:
         description: "場面の切り替えのフェード（秒）"
         type: string
