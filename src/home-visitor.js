@@ -4,6 +4,7 @@
 // ・数字は王国ページの分析と同じ「全王国の一覧」（kingdom-insights.js・isolate で1時間覚える）から作る。MightPulse は呼ばない。
 // ・「0人」「通信中」のような、ログインしていないと意味のない表示は出さない。
 import { shell } from "./public-pages.js";
+import { REPORTS } from "./reports.js";
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = n => Number(n).toLocaleString("ja-JP");
@@ -69,6 +70,7 @@ ${inviteBanner}<section class="hero">
 <h2>ツール</h2><div class="tools">${tools}</div>
 ${week}
 ${kvk}
+<h2>データレポート</h2><div class="feats">${REPORTS.map(r => `<a class="ft" href="/reports/${r.slug}"><span class="ic">📊</span><span><b>${esc(r.title)}</b><small>${esc(r.lead)}</small></span></a>`).join("")}</div><p style="margin:8px 0 0;font-size:12px"><a href="/reports" style="color:var(--ee-cyan)">レポートの一覧 →</a></p>
 <h2>EagleEyeでできること</h2><div class="feats">${feats}</div>
 <h2>データについて</h2><div class="about">ゲーム内の公開データを MightPulse の API から取得し、毎日更新しています。順位・比較・分析は EagleEye が計算したものです。EagleEye はキングショットの公式サイトではありません。<a href="/about">運営者情報</a></div>
 <div class="hcta"><b>自分の王国をもっと詳しく</b><p>無料登録すると、プレイヤーの比較やウォッチが使えます。</p><a href="/login">無料で登録する</a></div>
