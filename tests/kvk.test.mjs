@@ -157,7 +157,7 @@ test("page access: login, ADVANCED for own kingdom, VIP for others and the full 
   assert.equal(mp.calls.length, callsBefore, "cached for an hour");
 
   const all = await page("/kvk?all=1", { status: "ACTIVE", role: "VIP", user_id: "u1" });
-  assert.ok(all.includes("全体の対戦表（2組）"), "pairs are de-duplicated");
+  assert.ok(all.includes("全体の対戦表（1組）"), "pairs are de-duplicated; 相手のいない王国は組に数えない");
   assert.ok((await page("/kvk?kid=abc", { status: "ACTIVE", role: "VIP", user_id: "u1" })).includes("王国番号が正しくありません"));
   assert.ok(!(await page("/kvk?kid=1524", { status: "ACTIVE", role: "VIP", user_id: "u1" })).includes("<script>alert"));
 });

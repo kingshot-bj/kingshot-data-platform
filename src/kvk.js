@@ -597,7 +597,7 @@ async function allMatchupsSection(db, season, url) {
     seen.add(key);
     pairs.push([k, o]);
   }
-  return `<h2 id="all">全体の対戦表（${esc(num(pairs.length))}組）</h2><input id="kvk-filter" class="find" style="width:100%;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit" inputmode="numeric" placeholder="王国番号で絞り込み">
+  return `<h2 id="all">全体の対戦表（${esc(num(pairs.filter(([, o]) => o != null).length))}組）</h2><input id="kvk-filter" class="find" style="width:100%;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit" inputmode="numeric" placeholder="王国番号で絞り込み">
 <div class="table" id="kvk-table">${pairs.map(([k, o]) => `<a href="/kvk?kid=${k}" data-k="${k} ${o ?? ""}"><span>王国 ${k}</span><b>VS</b><span>${o == null ? "不戦" : "王国 " + o}</span></a>`).join("")}</div>
 <script>(function(){var f=document.getElementById("kvk-filter"),rows=[].slice.call(document.querySelectorAll("#kvk-table a"));f.addEventListener("input",function(){var q=f.value.trim();rows.forEach(function(r){r.style.display=!q||(" "+r.getAttribute("data-k")+" ").indexOf(" "+q)>=0?"":"none"})})})();</script>`;
 }

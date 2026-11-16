@@ -60,6 +60,9 @@ test("matchups: pairs once, Mystic tally decides order; no KvK scores, no total-
   assert.match(html, /総力 .*（参考）/);
   assert.match(html, /不戦/);
   assert.doesNotMatch(html, /score|スコア \d/i, "no KvK scores");
+  // 2026-11-16：相手のいない王国まで「組」に数えて 1,227組 と出ていた（実際は 1,219組）。
+  assert.match(html, /<span>組み合わせ <b>2<\/b>組<\/span><span>相手なし <b>1<\/b>王国<\/span>/);
+  assert.match(html, /全2組の組み合わせ/);
 });
 
 test("wiring: routes, sitemap, links, share card", () => {
