@@ -94,18 +94,27 @@ async function markFetched(db, kid, now, status) {
   await db.prepare("INSERT INTO swordland_fetch_state (kid, fetched_at, status) VALUES (?, ?, ?) ON CONFLICT(kid) DO UPDATE SET fetched_at = excluded.fetched_at, status = excluded.status").bind(kid, now, status).run().catch(() => {});
 }
 
-// 今開催中の聖剣争奪（その王国）。シーズンの印は開始時刻。
-// 聖剣争奪が無いときは、聖剣頂上リーグの「今週」（月曜 9:00〜）を返す（league: true）。label は画面の見出し。
-export async function activeShowdown(db, kid, nowMs = Date.now()) {
-  if (!kid) return null;
+// 今開催中の聖剣争奪・聖剣頂上リーグ（その王国）。両方が同時に開催されることがあるので、開催中のものをすべて返す（2026-11-16）。
+// season（対戦相手の登録の区切り）：聖剣争奪は開始時刻。頂上リーグは「今週の月曜 9:00 ＋1秒」
+// （聖剣争奪の開始と同じ時刻になることがあるため、1秒ずらして別の回として保存する）。
+export const LEAGUE_SEASON_OFFSET = 1;
+export const isLeagueSeason = season => Number(season) % 60 === LEAGUE_SEASON_OFFSET;
+export async function activeSwordlandEvents(db, kid, nowMs = Date.now()) {
+  if (!kid) return [];
   await ensureSwordlandSchema(db);
   const now = Math.floor(nowMs / 1000);
-  const showdown = await activeEvent(db, kid, SWORDLAND_EVENT_NAME, now);
-  if (showdown) return { ...showdown, label: "聖剣争奪" };
-  const league = await activeEvent(db, kid, SWORDLAND_LEAGUE_NAME, now);
-  if (!league) return null;
-  const week = Math.max(league.begin_ts, leagueWeekStart(now));
-  return { name: league.name, begin_ts: week, end_ts: Math.min(league.end_ts, leagueWeekStart(now) + WEEK_SECONDS), season_end_ts: league.end_ts, league: true, label: "聖剣頂上リーグ" };
+  const [showdown, league] = await Promise.all([activeEvent(db, kid, SWORDLAND_EVENT_NAME, now), activeEvent(db, kid, SWORDLAND_LEAGUE_NAME, now)]);
+  const out = [];
+  if (showdown) out.push({ ...showdown, kind: "showdown", label: "聖剣争奪", season: showdown.begin_ts });
+  if (league) {
+    const week = leagueWeekStart(now);
+    out.push({ name: league.name, kind: "league", label: "聖剣頂上リーグ", league: true, begin_ts: Math.max(league.begin_ts, week), end_ts: Math.min(league.end_ts, week + WEEK_SECONDS), season_end_ts: league.end_ts, season: week + LEAGUE_SEASON_OFFSET });
+  }
+  return out;
+}
+// 互換：開催中のうち最初のもの（聖剣争奪を優先）。
+export async function activeShowdown(db, kid, nowMs = Date.now()) {
+  return (await activeSwordlandEvents(db, kid, nowMs))[0] || null;
 }
 
 // 領主対決の開催中（その王国）。
@@ -178,7 +187,7 @@ export function renderOwnerMatchups(list) {
   const items = list.map(g => {
     const self = `王国${esc(g.kid)} ${esc(g.abbr || "（タグ不明 aid " + g.aid + "）")}${g.name ? `<small>${esc(g.name)}</small>` : ""}`;
     const opps = g.opps.map(o => `<li>王国${esc(o.opp_kid)} ${esc(o.opp_tag)}（${esc(o.count)}人）${g.abbr ? ` <a href="${esc(compareUrl(g.kid, g.abbr, o.opp_kid, o.opp_tag))}">比べる</a>` : ""}</li>`).join("");
-    return `<div class="om"><div class="om-h"><b>${self}</b><span class="note">${esc(jstDate(g.season))}〜の回</span></div><ul>${opps}</ul>${g.disputed ? `<p class="note">登録が分かれています</p>` : ""}</div>`;
+    return `<div class="om"><div class="om-h"><b>${self}</b><span class="note">${isLeagueSeason(g.season) ? "聖剣頂上リーグ " + esc(jstDate(g.season)) + "〜の週" : "聖剣争奪 " + esc(jstDate(g.season)) + "〜の回"}</span></div><ul>${opps}</ul>${g.disputed ? `<p class="note">登録が分かれています</p>` : ""}</div>`;
   }).join("");
   return `<section class="card"><h2 class="oh">オーナー：全同盟の対戦相手（直近${SWORDLAND_OWNER_LIST_DAYS}日・${list.length}同盟）</h2>${items || `<p class="note">直近${SWORDLAND_OWNER_LIST_DAYS}日の登録はありません。</p>`}<p class="note">登録した人は表示しません（人数だけ）。</p></section>`;
 }
@@ -192,23 +201,28 @@ const jstDate = sec => new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slic
 // 登録ページ。
 export function renderSwordlandPage({ state, message = "", isOwner = false, ownerMatchups = null }) {
   const s = state || {};
-  const label = s.showdown?.label || "聖剣争奪";
-  const period = s.showdown ? (s.showdown.league ? `今週 ${jstDate(s.showdown.begin_ts)}〜${jstDate(s.showdown.end_ts - 1)}（シーズンは${jstDate(s.showdown.season_end_ts - 1)}まで・相手は毎週変わります）` : `${jstDate(s.showdown.begin_ts)}〜${jstDate(s.showdown.end_ts - 1)}`) : "";
+  // 開催中のイベントごとに1つずつ（聖剣争奪と頂上リーグが同時のときは2つ）。古い形（showdown・matchup）も受け付ける。
+  const events = Array.isArray(s.events) ? s.events : s.showdown ? [{ event: s.showdown, matchup: s.matchup }] : [];
+  const label = events.map(e => e.event.label || "聖剣争奪").join("・") || "聖剣争奪";
   const mine = s.mine ? `王国${esc(s.mine.kid)}の ${esc(s.mine.alliance_abbr || "")}${s.mine.alliance_name ? "（" + esc(s.mine.alliance_name) + "）" : ""}` : "";
-  const cur = s.matchup ? `<p class="now">今回の相手：<b>王国${esc(s.matchup.opp_kid)}の ${esc(s.matchup.opp_tag)}</b>（${esc(s.matchup.count)}人が登録${s.matchup.disputed ? "・登録が分かれています" : ""}）</p>` + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, s.matchup.opp_kid, s.matchup.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
-  let body;
-  if (!s.showdown) body = `<p>今は聖剣争奪・聖剣頂上リーグの開催期間ではありません（日程はMightPulseから1日1回確認しています）。開催中はここで対戦相手を登録・確認できます。</p><p><a class="btn" href="/alliance/compare">⚔️ 同盟比較はいつでも使えます</a></p>`;
-  else if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
-  else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required value="${esc(s.mine?.opp_kid || "")}"><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">登録する</button></form>`;
-  else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>`;
+  const periodOf = ev => ev.league ? `今週 ${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}（シーズンは${jstDate(ev.season_end_ts - 1)}まで・相手は毎週変わります）` : `${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}`;
+  const section = ({ event: ev, matchup: m }) => {
+    const cur = m ? `<p class="now">今回の相手：<b>王国${esc(m.opp_kid)}の ${esc(m.opp_tag)}</b>（${esc(m.count)}人が登録${m.disputed ? "・登録が分かれています" : ""}）</p>` + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, m.opp_kid, m.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
+    let body;
+    if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
+    else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><input type="hidden" name="event" value="${esc(ev.kind || "showdown")}"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">${m ? "登録し直す" : "登録する"}</button></form>`;
+    else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>`;
+    return `<section class="card"><h2 class="oh">⚔️ ${esc(ev.label || "聖剣争奪")}<small class="note" style="display:block;font-weight:400">${esc(periodOf(ev))}</small></h2>${body}</section>`;
+  };
+  const sections = events.length ? events.map(section).join("") : `<section class="card"><p>今は聖剣争奪・聖剣頂上リーグの開催期間ではありません（日程はMightPulseから1日1回確認しています）。開催中はここで対戦相手を登録・確認できます。</p><p><a class="btn" href="/alliance/compare">⚔️ 同盟比較はいつでも使えます</a></p></section>`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(label)} | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:640px;margin:0 auto;padding:18px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
 h1{font-size:22px;margin:6px 0 2px}.sub{font-size:13px;color:var(--ee-subtext,#91a7bf);margin:0 0 12px}.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0;font-size:14px;line-height:1.6}
 .f{display:grid;gap:8px}.f input{padding:10px;border-radius:9px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit;font:15px system-ui}.f button,.btn{display:inline-block;padding:11px 14px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#04202a;font:800 14px system-ui;text-decoration:none;text-align:center}
 .oh{font-size:15px;margin:0 0 8px}.om{border-top:1px solid var(--ee-border-soft,#223b57);padding:8px 0;overflow-wrap:anywhere}.om-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.om-h small{display:block;font-size:12px;font-weight:400;color:var(--ee-subtext,#91a7bf)}.om ul{margin:4px 0 0;padding-left:18px}
 .now{font-size:15px}.note{font-size:12px;color:var(--ee-subtext,#91a7bf)}.msg{padding:9px 11px;border-radius:9px;border:1px dashed currentColor;font-size:13px}
-</style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>⚔️ ${esc(label)}</h1><p class="sub">${period ? "開催期間 " + esc(period) : ""}${mine ? "・" + mine : ""}</p>
-${message ? `<p class="msg">${esc(message)}</p>` : ""}<section class="card">${body}</section>
+</style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>⚔️ ${esc(label)}</h1><p class="sub">${mine}</p>
+${message ? `<p class="msg">${esc(message)}</p>` : ""}${sections}
 ${isOwner ? renderOwnerMatchups(ownerMatchups) : ""}
 ${isOwner ? `<form method="post" action="/swordland/refresh-events" class="card"><p class="note">オーナー：登録ユーザーの王国のイベント日程（Mighty対応のキー）を今すぐ取り直します（最大10王国）。</p><button type="submit" class="btn">今すぐ日程を取得</button></form>` : ""}
 <p class="note">組み合わせはゲームの外からは分からないため、同盟のR4・R5の人に登録してもらっています。登録が分かれたときは、多く登録された方を表示します。</p></main></body></html>`;
