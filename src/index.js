@@ -68,6 +68,7 @@ import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-p
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure } from "./preview-login.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
 import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
 import { renderReportsIndex, renderReport } from "./reports.js";
@@ -5023,6 +5024,7 @@ export default {
     // 招待リンク（/?ref=コード）：コードを30日だけCookieに覚えて、きれいなURLへ。DBは読まない。
     { const ref = url.searchParams.get("ref"); if (request.method === "GET" && isReferralCode(ref) && !url.pathname.startsWith("/api/")) { const clean = new URL(url); clean.searchParams.delete("ref"); const h = new Headers({ Location: clean.pathname + clean.search, "Cache-Control": "no-store" }); h.append("Set-Cookie", serializeCookie(REF_COOKIE, ref, { maxAge: REF_COOKIE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" })); return new Response(null, { status: 302, headers: h }); } }
     try {
+      if (isPreviewEnv(env) && (url.pathname === "/preview/login" || url.pathname === "/preview/logout")) return await handlePreviewLogin(request, env, url);
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
@@ -5599,7 +5601,7 @@ const EAGLEEYE_THEME_SCRIPT = `
             if(document.body&&!document.querySelector(".eagle-preview-banner")){
               var banner=document.createElement("div");
               banner.className="eagle-preview-banner";
-              banner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
+              banner.innerHTML="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません ・ <a href='/preview/login' style='color:inherit;text-decoration:underline'>疑似ログイン</a>";
               document.body.appendChild(banner);
             }
           } catch(e) {}
@@ -9591,6 +9593,37 @@ async function handleKingdomRankingPreferencesApi(request, env) {
   return json({ ok: true, kid, boards, primary_board: primary });
 }
 
+// プレビュー専用の疑似ログイン（preview-login.js）。本番では呼ばれない（ルートで isPreviewEnv を見ている）。
+async function handlePreviewLogin(request, env, url) {
+  const html = (body, status = 200, headers = {}) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...headers } });
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  if (url.pathname === "/preview/logout") {
+    const h = new Headers({ Location: "/preview/login", "Cache-Control": "no-store" });
+    h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+    return new Response(null, { status: 302, headers: h });
+  }
+  const configured = Boolean(env.PREVIEW_LOGIN_KEY && secret);
+  let current = null;
+  try {
+    const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+    const session = token && secret ? await verifyPayload(token, secret) : null;
+    if (session) current = (PREVIEW_ROLES.find(([v]) => v === previewRoleOf(session)) || PREVIEW_ROLES[0])[1];
+  } catch {}
+  if (request.method !== "POST") return html(renderPreviewLoginPage({ configured, current }));
+  if (!configured) return html(renderPreviewLoginPage({ configured }), 503);
+  if (previewLoginLimited()) return html(renderPreviewLoginPage({ configured, message: "しばらく待ってからやり直してください。" }), 429);
+  const form = await request.formData().catch(() => null);
+  if (!safeEqual(form?.get("key"), env.PREVIEW_LOGIN_KEY)) { notePreviewLoginFailure(); return html(renderPreviewLoginPage({ configured, message: "合言葉が違います。" }), 401); }
+  const owner = env.DB ? await env.DB.prepare("SELECT discord_id, username, global_name FROM users WHERE role = 'OWNER' ORDER BY user_id LIMIT 1").first().catch(() => null) : null;
+  if (!owner?.discord_id) return html(renderPreviewLoginPage({ configured, message: "オーナーのアカウントが見つかりません。" }), 500);
+  const now = Math.floor(Date.now() / 1000);
+  const role = previewRoleOf({ preview_role: form.get("role") });
+  const session = await signPayload({ sub: String(owner.discord_id), username: owner.username || null, global_name: owner.global_name || null, avatar: null, iat: now, exp: now + 60 * 60 * 12, preview: true, ...(role ? { preview_role: role } : {}) }, secret);
+  const h = new Headers({ Location: "/", "Cache-Control": "no-store" });
+  h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, { maxAge: 60 * 60 * 12, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  return new Response(null, { status: 302, headers: h });
+}
+
 async function getAuthenticatedUser(request, env) {
   // 作業用の鍵（X-EagleEye-Agent-Token）：決められた操作だけオーナーとして通す。鍵が付いていればCookieは見ない。
   const agent = agentTokenState(request, env);
@@ -9614,7 +9647,7 @@ async function getAuthenticatedUser(request, env) {
     ).bind(session.sub).first();
     // ログインユーザーの1日の利用者数（1人1日1行、同じisolate内は2回目以降書かない）。
     if (user) await recordDailyActive(env.DB, user);
-    return user || null;
+    return applyPreviewRole(user, session, isPreviewEnv(env)) || null;
   } catch (error) {
     // D1 outage must not turn the public/home page into a 500.
     // Protected routes still fail closed because they require a DB-backed user.
@@ -10670,11 +10703,11 @@ async function handleMe(request, env) {
   const session = await verifyPayload(token, secret);
   if (!session || await isSessionRevoked(env.DB, session)) return json({ ok: true, authenticated: false });
 
-  const dbUser = env.DB
+  const dbUser = applyPreviewRole(env.DB
     ? await env.DB.prepare(
         "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
       ).bind(session.sub).first()
-    : null;
+    : null, session, isPreviewEnv(env));
 
   return json({
     ok: true,
