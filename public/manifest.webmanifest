@@ -1,0 +1,16 @@
+{
+  "name": "EagleEye",
+  "short_name": "EagleEye",
+  "description": "KingShot の王国・同盟・プレイヤーのデータを見やすくまとめる非公式ファンサービス",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "lang": "ja",
+  "background_color": "#0b1424",
+  "theme_color": "#0b1424",
+  "icons": [
+    { "src": "/assets/eagleeye/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/eagleeye/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

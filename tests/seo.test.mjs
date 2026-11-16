@@ -65,7 +65,19 @@ test("全ページにファビコン・ホーム画面アイコン・theme-color
   const o2 = enhanceSeo(has);
   assert.equal((o2.match(/rel="icon"/g) || []).length, 1);
   assert.equal((o2.match(/theme-color/g) || []).length, 1);
-  for (const f of ["favicon.ico", "apple-touch-icon.png", "assets/eagleeye/icons/icon-192.png", "assets/eagleeye/icons/favicon-48.png"]) assert.ok(existsSync(new URL("../public/" + f, import.meta.url)), f);
+  assert.match(out, /<link rel="manifest" href="\/manifest\.webmanifest">/);
+  assert.equal((enhanceSeo(out).match(/rel="manifest"/g) || []).length, 1);
+  for (const f of ["favicon.ico", "apple-touch-icon.png", "manifest.webmanifest", "assets/eagleeye/icons/icon-192.png", "assets/eagleeye/icons/icon-512.png", "assets/eagleeye/icons/favicon-48.png"]) assert.ok(existsSync(new URL("../public/" + f, import.meta.url)), f);
+});
+
+test("manifest：Androidでインストールできる中身（名前・全画面・192/512のアイコン）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const m = JSON.parse(readFileSync(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
+  assert.equal(m.name, "EagleEye");
+  assert.equal(m.start_url, "/");
+  assert.equal(m.display, "standalone");
+  const sizes = m.icons.map(i => i.sizes);
+  assert.ok(sizes.includes("192x192") && sizes.includes("512x512"));
 });
 
 test("王国一覧：日本語H1と構造化データ（パンくず）", async () => {

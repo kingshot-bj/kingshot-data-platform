@@ -20,13 +20,16 @@ export function ogImagePath(pathname) {
 
 function attr(html, re) { const m = html.match(re); return m ? m[1] : ""; }
 
-// サイトのアイコン（検索結果・ブラウザのタブ・iPhoneのホーム画面）と theme-color。全ページ共通。
+// サイトのアイコン（検索結果・ブラウザのタブ・iPhoneのホーム画面）・theme-color・manifest。全ページ共通。
 export const HEAD_ICON_TAGS = '<link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" type="image/png" sizes="192x192" href="/assets/eagleeye/icons/icon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">';
+// Android（Chrome）でホーム画面に「インストール」できるようにする。ブラウザで見るときの動きは変わらない（2026-11-16）。
+export const MANIFEST_TAG = '<link rel="manifest" href="/manifest.webmanifest">';
 export function addHeadIcons(html) {
   if (typeof html !== "string" || !html.includes("</head>")) return html;
   let add = "";
   if (!/<link rel="(shortcut )?icon"/.test(html)) add += HEAD_ICON_TAGS;
   if (!/<meta name="theme-color"/.test(html)) add += '<meta name="theme-color" content="#0b1424">';
+  if (!/<link rel="manifest"/.test(html)) add += MANIFEST_TAG;
   return add ? html.replace("</head>", add + "</head>") : html;
 }
 
