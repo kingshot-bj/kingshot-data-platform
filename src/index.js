@@ -95,7 +95,7 @@ import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } fro
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
-import { runSwordlandEventsRefresh, activeShowdown, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
+import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
@@ -5828,12 +5828,19 @@ async function handleSwordlandHomeApi(request, env) {
   if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: true, active: false });
   await ensureSwordlandSchema(env.DB).catch(() => {});
   const mine = await myAlliance(env.DB, auth.user_id);
-  const [showdown, duel] = mine?.kid ? await Promise.all([activeShowdown(env.DB, Number(mine.kid)), activeGovernorDuel(env.DB, Number(mine.kid)).catch(() => null)]) : [null, null];
+  const [active, duel] = mine?.kid ? await Promise.all([activeSwordlandEvents(env.DB, Number(mine.kid)), activeGovernorDuel(env.DB, Number(mine.kid)).catch(() => null)]) : [[], null];
   const duelInfo = duel ? { endTs: duel.end_ts } : null;
-  if (!showdown) return json({ ok: true, active: false, duel: duelInfo });
-  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid) : null;
+  if (!active.length) return json({ ok: true, active: false, duel: duelInfo, events: [] });
+  // 聖剣争奪と頂上リーグが同時のときは両方のカードを出す（events）。下の active/label/matchup は1つ目（互換）。
+  const canCmp = canUseAllianceCompare(auth.role) && Boolean(mine.alliance_abbr);
+  const events = await Promise.all(active.map(async ev => {
+    const m = mine.alliance_aid ? await currentMatchup(env.DB, ev.season, Number(mine.kid), mine.alliance_aid) : null;
+    return { kind: ev.kind, label: ev.label, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
+  }));
+  const showdown = active[0];
+  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.season, Number(mine.kid), mine.alliance_aid) : null;
   const canCompare = canUseAllianceCompare(auth.role);
-  return json({ ok: true, active: true, label: showdown.label || "聖剣争奪", league: Boolean(showdown.league), duel: duelInfo, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
+  return json({ ok: true, active: true, events, label: showdown.label || "聖剣争奪", league: Boolean(showdown.league), duel: duelInfo, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
     matchup: matchup ? { kid: matchup.opp_kid, tag: matchup.opp_tag, count: matchup.count, disputed: matchup.disputed, compareUrl: canCompare && mine.alliance_abbr ? compareUrl(mine.kid, mine.alliance_abbr, matchup.opp_kid, matchup.opp_tag) : null } : null,
     canRegister: canRegisterRole(auth.role) && Boolean(mine.alliance_abbr) });
 }
@@ -5841,10 +5848,11 @@ async function handleSwordlandHomeApi(request, env) {
 async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
   await ensureSwordlandSchema(env.DB);
   const mine = await myAlliance(env.DB, auth.user_id);
-  const showdown = mine?.kid ? await activeShowdown(env.DB, Number(mine.kid)) : null;
-  const state = { mine, showdown, matchup: null, canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
-  if (!showdown || !mine?.alliance_aid) return state;
-  state.matchup = await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid);
+  const active = mine?.kid ? await activeSwordlandEvents(env.DB, Number(mine.kid)) : [];
+  // 聖剣争奪と頂上リーグが同時のときは両方（それぞれ相手を登録する）。
+  const state = { mine, events: active.map(event => ({ event, matchup: null })), canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
+  if (!active.length || !mine?.alliance_aid) return state;
+  for (const e of state.events) e.matchup = await currentMatchup(env.DB, e.event.season, Number(mine.kid), mine.alliance_aid);
   if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
     // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
     const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
@@ -5867,7 +5875,9 @@ async function handleSwordlandPage(request, env) {
     if (!Number.isInteger(oppKid) || oppKid < 1 || oppKid > 999999 || !/^[^\s:：,<>"']{1,24}$/.test(oppTag)) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "相手の王国番号と同盟タグを正しく入れてください。" }), 400);
     const opp = await loadAllianceForCompare(env, oppKid, oppTag, { canFetch: true }).catch(() => ({ error: "FAILED" }));
     if (opp?.error) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "王国" + oppKid + "の「" + oppTag + "」が見つかりませんでした。王国番号と同盟タグを確かめてください。" }), 404);
-    await saveMatchup(env.DB, { season: state.showdown.begin_ts, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
+    const target = state.events.find(e => e.event.kind === String(form?.get("event") || "")) || state.events[0];
+    if (!target) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "今は開催期間ではありません。" }), 400);
+    await saveMatchup(env.DB, { season: target.event.season, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
     await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
     return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
   }
@@ -11921,7 +11931,7 @@ ${EAGLEEYE_NAV_CSS}
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
 ${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
-${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var a=document.getElementById('homeSword'),b=document.getElementById('homeSwordBody');if(d.label)document.getElementById('homeSwordTitle').textContent='⚔️ '+d.label;if(d.matchup){b.textContent='今回の相手：王国'+d.matchup.kid+'の '+d.matchup.tag+'（'+d.matchup.count+'人が登録）';if(d.matchup.compareUrl)a.href=d.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'R4以上の人が対戦相手を登録すると、ここに表示されます'}a.hidden=false}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var base=document.getElementById('homeSword');var evs=(d.events&&d.events.length)?d.events:[{label:d.label,matchup:d.matchup}];evs.forEach(function(ev,i){var a=i?base.cloneNode(true):base;if(i){a.removeAttribute('id');base.parentNode.insertBefore(a,base.nextSibling)}var b=a.querySelector('span');a.querySelector('b').textContent='⚔️ '+(ev.label||'聖剣争奪');a.href='/swordland';if(ev.matchup){b.textContent='今回の相手：王国'+ev.matchup.kid+'の '+ev.matchup.tag+'（'+ev.matchup.count+'人が登録）';if(ev.matchup.compareUrl)a.href=ev.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'R4以上の人が対戦相手を登録すると、ここに表示されます'}a.hidden=false})}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
 <section class="ee-mainmenu" data-menu="signed-in">
   <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>
