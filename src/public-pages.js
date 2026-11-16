@@ -1,6 +1,7 @@
 import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights, kingdomTrend, renderKingdomTrend } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { REPORT_PATHS } from "./reports-paths.js";
+import { kingdomDataNote, kingdomsIndexDataNote } from "./data-note.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
 //   /k/{kid}       one kingdom: power & growth, top players / alliances, KvK
@@ -238,7 +239,7 @@ ${kvk}
 ${related}
 ${data.age != null ? renderKingdomTimelineSection(data.age, { kid, fullHref: "/kingdom-timeline" }) : ""}
 ${loginCta(kid, signedIn)}
-<p class="note">データ提供：MightPulse。ゲーム内の公開情報をもとに集計しています。KingShotの公式サイトではありません。</p>`;
+${kingdomDataNote({ total: data.insights?.total })}`;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -297,7 +298,7 @@ export function renderPublicKingdomsIndex(kids, { origin = "", stats = null } = 
 <form class="search" action="/kingdoms" method="get" onsubmit="var v=this.kid.value.trim();if(/^\\d+$/.test(v)){location.href='/k/'+v;return false}"><input name="kid" inputmode="numeric" placeholder="王国番号（例：1524）"><button type="submit">表示</button></form>
 ${kingdomsIntro(stats ? kingdomLeaderboards(stats, 10) : null)}
 ${sections ? `<h2>王国番号から探す</h2>${sections}` : '<div class="empty">王国データを読み込めませんでした。</div>'}
-<p class="note">データ提供：MightPulse。KingShotの公式サイトではありません。</p>`;
+${kingdomsIndexDataNote({ total: stats?.length || kids.length })}`;
   return shell({ title: "キングショット 王国一覧・戦力ランキング | EagleEye", description: `キングショット（KingShot）の全${kids.length}王国の戦力・成長・ランキング・KvK対戦相手を毎日更新。王国番号から検索できます。`, canonical: origin + "/kingdoms", body, origin, jsonLd: origin ? { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "王国一覧", item: origin + "/kingdoms" }] } : null });
 }
 
