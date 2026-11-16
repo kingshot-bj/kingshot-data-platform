@@ -137,11 +137,16 @@ export async function myAlliance(db, userId) {
 }
 
 // その同盟の今シーズンの相手（多く登録された方）。
+// 登録した人の名前：その人がマイKingShotに登録したメイン領主のゲーム内の名前（Discord の名前は出さない・2026-11-16）。
+export const REPORTER_NAME_SQL = "(SELECT p.nick_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = m.reporter_user_id AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1)";
+const splitNames = v => String(v || "").split("\u001f").map(s => s.trim()).filter(Boolean).slice(0, 10);
+
 export async function currentMatchup(db, season, kid, aid) {
-  const rows = (await db.prepare("SELECT opp_kid, opp_tag, COUNT(*) AS n, MAX(updated_at) AS at FROM swordland_matchups WHERE season = ? AND kid = ? AND aid = ? GROUP BY opp_kid, lower(opp_tag) ORDER BY n DESC, at DESC LIMIT 2")
+  const rows = (await db.prepare("SELECT m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, GROUP_CONCAT(" + REPORTER_NAME_SQL + ", char(31)) AS names FROM swordland_matchups m WHERE m.season = ? AND m.kid = ? AND m.aid = ? GROUP BY m.opp_kid, lower(m.opp_tag) ORDER BY n DESC, at DESC LIMIT 2")
     .bind(season, kid, normAid(aid)).all().catch(() => ({ results: [] })))?.results || [];
   if (!rows.length) return null;
-  return { opp_kid: Number(rows[0].opp_kid), opp_tag: rows[0].opp_tag, count: Number(rows[0].n), disputed: rows.length > 1 };
+  return { opp_kid: Number(rows[0].opp_kid), opp_tag: rows[0].opp_tag, count: Number(rows[0].n), disputed: rows.length > 1, reporters: splitNames(rows[0].names),
+    other: rows[1] ? { opp_kid: Number(rows[1].opp_kid), opp_tag: rows[1].opp_tag, count: Number(rows[1].n), reporters: splitNames(rows[1].names) } : null };
 }
 
 // 登録できるか：ADVANCED以上で、メンバー表でその人の領主が R4・R5。
@@ -165,7 +170,7 @@ export async function loadAllMatchupsForOwner(db, { nowMs = Date.now(), days = S
   await ensureSwordlandSchema(db);
   const since = Math.floor(nowMs / 1000) - days * 86400;
   const rows = (await db.prepare(
-    "SELECT m.season, m.kid, m.aid, m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, " +
+    "SELECT m.season, m.kid, m.aid, m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, GROUP_CONCAT(" + REPORTER_NAME_SQL + ", char(31)) AS names, " +
     "(SELECT c.abbr FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS abbr, " +
     "(SELECT c.name FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS name " +
     "FROM swordland_matchups m WHERE m.updated_at >= ? GROUP BY m.season, m.kid, m.aid, m.opp_kid, lower(m.opp_tag) ORDER BY at DESC LIMIT ?"
@@ -176,7 +181,7 @@ export async function loadAllMatchupsForOwner(db, { nowMs = Date.now(), days = S
     const k = r.season + ":" + r.kid + ":" + r.aid;
     if (!groups.has(k)) groups.set(k, { season: Number(r.season), kid: Number(r.kid), aid: String(r.aid), abbr: r.abbr || "", name: r.name || "", at: 0, opps: [] });
     const g = groups.get(k);
-    g.opps.push({ opp_kid: Number(r.opp_kid), opp_tag: String(r.opp_tag), count: Number(r.n) || 0 });
+    g.opps.push({ opp_kid: Number(r.opp_kid), opp_tag: String(r.opp_tag), count: Number(r.n) || 0, reporters: splitNames(r.names) });
     g.at = Math.max(g.at, Number(r.at) || 0);
   }
   return [...groups.values()].map(g => ({ ...g, opps: g.opps.sort((a, b) => b.count - a.count), disputed: g.opps.length > 1 })).sort((a, b) => b.season - a.season || b.at - a.at);
@@ -186,10 +191,10 @@ export function renderOwnerMatchups(list) {
   if (!list) return "";
   const items = list.map(g => {
     const self = `王国${esc(g.kid)} ${esc(g.abbr || "（タグ不明 aid " + g.aid + "）")}${g.name ? `<small>${esc(g.name)}</small>` : ""}`;
-    const opps = g.opps.map(o => `<li>王国${esc(o.opp_kid)} ${esc(o.opp_tag)}（${esc(o.count)}人）${g.abbr ? ` <a href="${esc(compareUrl(g.kid, g.abbr, o.opp_kid, o.opp_tag))}">比べる</a>` : ""}</li>`).join("");
+    const opps = g.opps.map(o => `<li>王国${esc(o.opp_kid)} ${esc(o.opp_tag)}（${esc(o.count)}人${o.reporters?.length ? "：" + o.reporters.map(esc).join("、") : ""}）${g.abbr ? ` <a href="${esc(compareUrl(g.kid, g.abbr, o.opp_kid, o.opp_tag))}">比べる</a>` : ""}</li>`).join("");
     return `<div class="om"><div class="om-h"><b>${self}</b><span class="note">${isLeagueSeason(g.season) ? "聖剣頂上リーグ " + esc(jstDate(g.season)) + "〜の週" : "聖剣争奪 " + esc(jstDate(g.season)) + "〜の回"}</span></div><ul>${opps}</ul>${g.disputed ? `<p class="note">登録が分かれています</p>` : ""}</div>`;
   }).join("");
-  return `<section class="card"><h2 class="oh">オーナー：全同盟の対戦相手（直近${SWORDLAND_OWNER_LIST_DAYS}日・${list.length}同盟）</h2>${items || `<p class="note">直近${SWORDLAND_OWNER_LIST_DAYS}日の登録はありません。</p>`}<p class="note">登録した人は表示しません（人数だけ）。</p></section>`;
+  return `<section class="card"><h2 class="oh">オーナー：全同盟の対戦相手（直近${SWORDLAND_OWNER_LIST_DAYS}日・${list.length}同盟）</h2>${items || `<p class="note">直近${SWORDLAND_OWNER_LIST_DAYS}日の登録はありません。</p>`}<p class="note">登録した人はゲーム内の名前（マイKingShotのメイン領主）で表示します。</p></section>`;
 }
 
 export function compareUrl(kid, abbr, oppKid, oppTag) {
@@ -207,7 +212,8 @@ export function renderSwordlandPage({ state, message = "", isOwner = false, owne
   const mine = s.mine ? `王国${esc(s.mine.kid)}の ${esc(s.mine.alliance_abbr || "")}${s.mine.alliance_name ? "（" + esc(s.mine.alliance_name) + "）" : ""}` : "";
   const periodOf = ev => ev.league ? `今週 ${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}（シーズンは${jstDate(ev.season_end_ts - 1)}まで・相手は毎週変わります）` : `${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}`;
   const section = ({ event: ev, matchup: m }) => {
-    const cur = m ? `<p class="now">今回の相手：<b>王国${esc(m.opp_kid)}の ${esc(m.opp_tag)}</b>（${esc(m.count)}人が登録${m.disputed ? "・登録が分かれています" : ""}）</p>` + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, m.opp_kid, m.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
+    const who = list => list?.length ? list.map(esc).join("、") + (list.length < (m?.count || 0) ? " ほか" : "") : "";
+    const cur = m ? `<p class="now">今回の相手：<b>王国${esc(m.opp_kid)}の ${esc(m.opp_tag)}</b>（${esc(m.count)}人が登録${m.disputed ? "・登録が分かれています" : ""}）</p>` + (m.reporters?.length ? `<p class="note">登録してくれた人：${who(m.reporters)}</p>` : "") + (m.other ? `<p class="note">ほかの登録：王国${esc(m.other.opp_kid)}の ${esc(m.other.opp_tag)}（${esc(m.other.count)}人${m.other.reporters?.length ? "：" + m.other.reporters.map(esc).join("、") : ""}）</p>` : "") + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, m.opp_kid, m.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
     let body;
     if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
     else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><input type="hidden" name="event" value="${esc(ev.kind || "showdown")}"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">${m ? "登録し直す" : "登録する"}</button></form>`;
