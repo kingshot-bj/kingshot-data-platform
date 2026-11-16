@@ -14,7 +14,7 @@ test("場面ファイル：どのセットも読める（ページは / から�
   const wf = readFileSync(new URL("../.github/workflows/feature-video.yml", import.meta.url), "utf8");
   for (const name of sets) assert.match(wf, new RegExp("options: \\[[^\\]]*\\b" + name + "\\b"), name);
   for (const name of sets) { const set = loadSceneSet(name); assert.equal(set.name, name); assert.ok(set.output.endsWith(".mp4")); }
-  assert.deepEqual(parseArgs(["out", "--set", "alliance-compare", "--fade", "9"]), { out: "out", set: "alliance-compare", bgm: "", fade: 1.5 });
+  assert.deepEqual(parseArgs(["out", "--set", "alliance-compare", "--fade", "9"]), { out: "out", set: "alliance-compare", bgm: "", fade: 1.5, scenesFile: "" });
   assert.throws(() => parseArgs(["--set", "../x"]), /名前/);
 });
 
