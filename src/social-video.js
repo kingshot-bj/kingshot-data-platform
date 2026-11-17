@@ -124,7 +124,7 @@ textarea{resize:vertical}.row{display:grid;grid-template-columns:repeat(2,minmax
 <section class="card"><h2>台本</h2>
 <label for="pick">ひな形・保存した台本</label><select id="pick"></select>
 <div class="row"><div><label for="f-name">名前（半角小文字・数字・ハイフン）</label><input id="f-name" maxlength="40"></div><div><label for="f-title">タイトル（メモ）</label><input id="f-title" maxlength="60"></div></div>
-<label for="f-skin">着せ替え（全体）</label><select id="f-skin"></select>
+<div class="row"><div><label for="f-mode">画面の色</label><select id="f-mode"><option value="light">ライト（標準）</option><option value="dark">ダーク（着せ替えを見せるとき）</option></select></div><div><label for="f-skin">着せ替え（全体・ダークのとき）</label><select id="f-skin"></select></div></div>
 <div id="scenes"></div>
 <div class="bar"><button type="button" class="btn" id="add">＋ 場面を追加</button><span class="hint" id="total"></span></div>
 <label for="f-post">投稿文（{host} がサイトのアドレスになります。SNSごとの ?ref= はコピーのときに付きます）</label><textarea id="f-post" rows="6"></textarea>
@@ -155,9 +155,9 @@ else{body.append(field("seconds","秒数",sc.seconds||3,{type:"number",step:"0.5
 sel.onchange=()=>{draw();total()};draw();box.dataset.type=type;return box}
 function read(){const scenes=[...$("scenes").children].map(box=>{const t=box.querySelector(".scene-h select").value;const g=k=>{const el=box.querySelector("[data-k="+k+"]");return el?(el.type==="checkbox"?el.checked:el.value):undefined};
 const sc={seconds:Number(g("seconds"))||0};if(g("skin"))sc.skin=g("skin");if(t==="page"){sc.page=g("page");sc.caption=g("caption");sc.scroll=Number(g("scroll"))||0;if(g("login"))sc.login=true}else{sc.slide=t;if(t==="text"){sc.heading=g("heading");sc.sub=g("sub")}}return sc});
-const out={name:$("f-name").value.trim(),title:$("f-title").value.trim(),post:$("f-post").value.split("\\n"),scenes};if($("f-skin").value)out.skin=$("f-skin").value;return out}
+const out={name:$("f-name").value.trim(),title:$("f-title").value.trim(),post:$("f-post").value.split("\\n"),scenes};if($("f-skin").value)out.skin=$("f-skin").value;out.mode=$("f-mode").value;return out}
 function total(){const s=read();$("total").textContent="合計 "+s.scenes.reduce((a,x)=>a+(x.seconds||0),0).toFixed(1)+" 秒・"+s.scenes.length+" 場面"}
-function load(s){cur=s;$("f-skin").value=s.skin||"";$("f-name").value=s.name||"";$("f-title").value=s.title||"";$("f-post").value=(s.post||[]).join("\\n");const box=$("scenes");box.innerHTML="";(s.scenes||[]).forEach((sc,i)=>box.appendChild(sceneEl(sc,i)));total()}
+function load(s){cur=s;$("f-skin").value=s.skin||"";$("f-mode").value=s.mode==="dark"?"dark":"light";$("f-name").value=s.name||"";$("f-title").value=s.title||"";$("f-post").value=(s.post||[]).join("\\n");const box=$("scenes");box.innerHTML="";(s.scenes||[]).forEach((sc,i)=>box.appendChild(sceneEl(sc,i)));total()}
 $("scenes").addEventListener("input",total);
 $("pick").onchange=()=>{const it=all()[Number($("pick").value)];if(!it)return;load(JSON.parse(JSON.stringify(it.s)));$("del").hidden=it.kind!=="保存";msg("")};
 $("add").onclick=()=>{const s=read();s.scenes.push({page:"/",caption:"",seconds:4,scroll:0});load(s)};

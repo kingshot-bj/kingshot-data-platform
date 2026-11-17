@@ -73,7 +73,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "scroll": 900
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "領主対決の相手も<br><b>秘境の試練</b>で比べよう",
     "seconds": 5,
     "scroll": 2600,
@@ -118,7 +118,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "③ 自分と並べて<br><b>秘境の試練</b>を比較",
     "seconds": 5,
     "scroll": 2600,
@@ -153,7 +153,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 2.5
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "見るべきは<br><b>秘境の試練</b>",
     "seconds": 5.5,
     "scroll": 2600,
@@ -213,7 +213,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160&governor_id=224984906&governor_id=228822223&governor_id=227052663&governor_id=227331459",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&governor_id=224984906&governor_id=228822223&governor_id=227052663&governor_id=227331459&me=0",
     "caption": "最大6人を比較して、画像で共有",
     "seconds": 5,
     "scroll": 900,
@@ -268,14 +268,14 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 3.5
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "相手と<b>並べて比べる</b><br>画像で共有もできる",
     "seconds": 4.5,
     "scroll": 350,
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "<b>秘境の試練</b>をステージごとに<br>どこで差がついているか",
     "seconds": 6,
     "scroll": 2600,
@@ -433,6 +433,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 3,
     "skin": "gold"
    }
-  ]
+  ],
+  "mode": "dark"
  }
 });

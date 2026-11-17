@@ -73,5 +73,7 @@ export function normalizeSceneSet(input) {
   const title = String(input.title || name).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, SCENE_LIMITS.title);
   const set = { name, title, output: `eagleeye-${name}.mp4`, post, scenes };
   if (skinOf(input.skin)) set.skin = skinOf(input.skin);
+  // 画面の色（EagleEye のページ）：light（標準）か dark。着せ替えを見せるときは dark。
+  if (input.mode === "dark" || input.mode === "light") set.mode = input.mode;
   return { ok: true, set };
 }
