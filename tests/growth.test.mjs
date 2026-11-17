@@ -104,7 +104,7 @@ test("ブラウザ側のスクリプト：1ページ1回・個人IDは送らな�
   // 個人のID（user_id・Discord のID）は送らない。SNSの名前としての "discord" は Cookie の印に使う（11/14〜）。
   assert.doesNotMatch(s, /user_id|discord_id|discordId|governor|Math\.random/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\);/);
+  assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\) \+ \(pageHasShareButton\(themed\) \? shareFabScript\(\) : ""\);/, "共有ボタンのあるページだけ浮かぶ共有ボタンも（2026-11-17）");
   assert.match(index, /url\.pathname === "\/api\/pv"\) return await handlePageViewBeacon\(request, env, \{ isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView\(request, env, path\) \}\)/);
 });
 

@@ -25,7 +25,8 @@ const W = 360, H = 640, SCALE = 3; // 画面 360×640 を3倍で撮る → 1080�
 
 // 撮影中に止める通信：広告・解析（表示の水増しを防ぐ）と、EagleEye のアクセス記録（PV・ログインの流れ）。
 export const BLOCK_HOSTS = /(^|\.)(googlesyndication\.com|doubleclick\.net|googleadservices\.com|adservice\.google\.com|adtrafficquality\.google|fundingchoicesmessages\.google\.com|google-analytics\.com|googletagmanager\.com)$/i;
-export const BLOCK_PATHS = /^\/api\/(pv|funnel-event|client-error|telemetry)(\/|$)/;
+// milestones：共有ボタンを押す場面で「共有した」と記録しない（2026-11-17）。
+export const BLOCK_PATHS = /^\/api\/(pv|funnel-event|client-error|telemetry|milestones)(\/|$)/;
 
 export function parseArgs(argv) {
   const opt = { out: "feature-video-out", set: "features", bgm: "", fade: 0.4, scenesFile: "" };
@@ -160,6 +161,7 @@ async function record(set, opt, base) {
     for (let i = 0; i < 25 && /読み込み中|取得中です/.test(await page.textContent("body").catch(() => "")); i++) await page.waitForTimeout(1000);
     if (!res || res.status() >= 400 || (sc.login && /ログインしてください|ログインが必要/.test(await page.textContent("body").catch(() => "")))) { console.log("skip", sc.page); rmSync(dir, { recursive: true, force: true }); continue; }
     for (const sel of sc.click || []) { await page.click(sel, { timeout: 5000 }).catch(() => console.log("click failed", sel)); await page.waitForTimeout(800); }
+    if (sc.afterClickMs) await page.waitForTimeout(Math.min(10000, Number(sc.afterClickMs) || 0)); // 押したあとに画面ができるのを待つ（共有画像など）
     await page.evaluate(overlay(sc.caption));
     const max = Math.min(sc.scroll || 0, await page.evaluate(() => Math.max(0, document.documentElement.scrollHeight - innerHeight)));
     const hold = Math.round(count * 0.25);
