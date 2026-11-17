@@ -1,20 +1,37 @@
 // 王国ページの「この王国の分析」。すでに D1 にある王国の集計（kingdom_stats_current）だけで計算する（MightPulse は呼ばない）。
 // ・全王国の中での位置（総力・7日の伸び）と、開設時期が近い王国（±30日）の中での位置。
 // ・「総力が近い王国」も同じ一覧から出す（意味が未確認の power_rank は使わない）。
-// ・全王国の一覧（約2,600行）は isolate ごとに1時間だけ覚えておき、ページを開くたびには読まない。
+// ・全王国の一覧（約2,600行）は isolate ごとと Cloudflare のキャッシュ（共有）に1時間だけ覚えておき、ページを開くたびには読まない。
 // ・文章は実際の数字から組み立てる。数字が無いところは書かない（水増しの文章は作らない）。
 
 export const INSIGHTS_CACHE_MS = 60 * 60 * 1000;
+
+// 2026-11-17：isolate ごとに覚えるだけだと、クローラーなどでインスタンスが増えると全王国（約2,600行）を何百回も読み直していた。
+// Cloudflare のキャッシュ（同じデータセンターの全インスタンスで共有）にも1時間置く。キャッシュが使えない環境では今までどおり D1 を読む。
+const SHARED_CACHE_BASE = "https://eagleeye-shared-cache.internal/";
+export async function sharedJsonCache(key, ttlSeconds, load, { cacheStore = globalThis.caches?.default } = {}) {
+  const req = cacheStore ? new Request(SHARED_CACHE_BASE + key) : null;
+  if (cacheStore) {
+    const hit = await cacheStore.match(req).catch(() => null);
+    if (hit) { try { return await hit.json(); } catch {} }
+  }
+  const value = await load();
+  if (cacheStore && value != null) await cacheStore.put(req, new Response(JSON.stringify(value), { headers: { "content-type": "application/json", "cache-control": "public, max-age=" + ttlSeconds } })).catch(() => {});
+  return value;
+}
 export const COHORT_DAYS = 30;
 let cache = { at: 0, rows: null };
 export function resetKingdomInsightsCache() { cache = { at: 0, rows: null }; }
 
-export async function loadAllKingdomStats(db, nowMs = Date.now()) {
+export async function loadAllKingdomStats(db, nowMs = Date.now(), { cacheStore } = {}) {
   if (cache.rows && nowMs - cache.at < INSIGHTS_CACHE_MS) return cache.rows;
-  const res = await db.prepare("SELECT kid, power, power_gain_7d, age_days, player_count, observed_at FROM kingdom_stats_current").all();
-  const rows = (res?.results || []).map(r => ({ kid: Number(r.kid), power: num(r.power), gain: num(r.power_gain_7d), age: num(r.age_days), players: num(r.player_count), at: num(r.observed_at) })).filter(r => Number.isInteger(r.kid));
+  const rows = await sharedJsonCache("kingdom-stats-v1", INSIGHTS_CACHE_MS / 1000, () => loadAllKingdomStatsFromDb(db), cacheStore === undefined ? {} : { cacheStore });
   cache = { at: nowMs, rows };
   return rows;
+}
+async function loadAllKingdomStatsFromDb(db) {
+  const res = await db.prepare("SELECT kid, power, power_gain_7d, age_days, player_count, observed_at FROM kingdom_stats_current").all();
+  return (res?.results || []).map(r => ({ kid: Number(r.kid), power: num(r.power), gain: num(r.power_gain_7d), age: num(r.age_days), players: num(r.player_count), at: num(r.observed_at) })).filter(r => Number.isInteger(r.kid));
 }
 const num = v => v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
 
@@ -111,8 +128,17 @@ export const MYSTIC_LABELS = Object.freeze({ coliseum: "闘技場", forest_of_li
 let mysticCache = { at: 0, value: null };
 export function resetKingdomMysticCache() { mysticCache = { at: 0, value: null }; }
 
-export async function loadAllMysticSummaries(db, nowMs = Date.now()) {
+export async function loadAllMysticSummaries(db, nowMs = Date.now(), { cacheStore } = {}) {
   if (mysticCache.value && nowMs - mysticCache.at < INSIGHTS_CACHE_MS) return mysticCache.value;
+  // 共有キャッシュ（Map は配列にして保存）
+  const stored = await sharedJsonCache("mystic-summaries-v1", INSIGHTS_CACHE_MS / 1000, async () => {
+    const v = await loadAllMysticSummariesFromDb(db);
+    return { season: v.season, entries: [...v.map.entries()] };
+  }, cacheStore === undefined ? {} : { cacheStore });
+  mysticCache = { at: nowMs, value: { season: stored?.season ?? null, map: new Map((stored?.entries || []).map(([k, v]) => [Number(k), v])) } };
+  return mysticCache.value;
+}
+async function loadAllMysticSummariesFromDb(db) {
   // KvK 用（シーズンごと）と、月1回の取り直し（kingdom_mystic_current）の新しい方を使う。
   const [res, cur] = await Promise.all([
     db.prepare("SELECT kid, season, boards_json, fetched_at FROM kvk_mystic_summary WHERE status = 'OK' AND season = (SELECT MAX(season) FROM kvk_mystic_summary WHERE status = 'OK')").all(),
@@ -129,8 +155,7 @@ export async function loadAllMysticSummaries(db, nowMs = Date.now()) {
   };
   for (const r of res?.results || []) { put(r, Number(r.season)); season = Number(r.season); }
   for (const r of cur?.results || []) put(r, null);
-  mysticCache = { at: nowMs, value: { season, map } };
-  return mysticCache.value;
+  return { season, map };
 }
 
 export function computeMysticInsights(kid, all) {

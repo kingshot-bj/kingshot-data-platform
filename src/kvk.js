@@ -42,6 +42,8 @@ export async function ensureKvkSchema(db) {
       days_json TEXT, source_updated_at TEXT, payload_sha TEXT, fetched_at INTEGER NOT NULL, changed_at INTEGER)`).run();
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_scores_fetched ON kvk_scores(fetched_at)").run();
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_matchups_opponent ON kvk_matchups(season, opponent)").run();
+    // 王国ごとの「直近のKvKの相手」（WHERE kid = ? ORDER BY season DESC）用。主キーは season が先なので、無いと毎回全件を読む（2026-11-17）。
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_matchups_kid_season ON kvk_matchups(kid, season)").run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_state (
       key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)`).run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_score_points (

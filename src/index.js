@@ -377,7 +377,8 @@ async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } 
   // Stale, unfollowed kingdom rankings: same verified R2 + Drive backup
   // before D1 delete; pages read the R2 copy afterwards.
   try {
-    const kingdomArchive = await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now });
+    // 毎時の最初の回だけ（14日以上前のものを探すので5分ごとは要らない。2026-11-17 D1 の読み取りを減らす）。
+    const kingdomArchive = firstTickOfHour ? await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now }) : { checked: 0, archivedKingdoms: 0, deletedRows: 0, batches: [], notThisTick: true };
     const failed = (kingdomArchive.batches || []).some(b => b.status === "FAILED");
     if (failed || kingdomArchive.archivedKingdoms > 0 || (kingdomArchive.skipped && firstTickOfHour)) {
       await recordDiagnostic(env.DB, {
