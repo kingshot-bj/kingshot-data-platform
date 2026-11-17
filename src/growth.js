@@ -86,7 +86,8 @@ export function classifyTrafficSource({ refHost = "", tag = "", selfHost = "" } 
   return "site";
 }
 
-const BOT_UA = /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch|go-http/i;
+// 2026-11-17：AdSense のクローラー（Mediapartners-Google）など、名前に bot を含まない Google のクローラーも。
+const BOT_UA = /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|embedly|monitor|curl|wget|python|axios|node-fetch|go-http|mediapartners|googleother|google-inspectiontool|google-read-aloud|apis-google|feedfetcher/i;
 export function isLikelyBot(ua) { return !ua || BOT_UA.test(ua); }
 
 // 1回のPVで足す行。flags：v=今日初めて, w=今週初めて, m=今月初めて, s=新しいセッション, r=前回来た日からの日数（初回は -1）

@@ -41,7 +41,7 @@ test("日本時間の日ごとに数え、知らない段階は数えない", as
 
 test("配線：ログイン開始・取消・新規/再ログインを数える、取消はエラー画面でなく元のページへ", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /if \(env\.DB\) await recordFunnel\(env\.DB, "login_start"\);/);
+  assert.match(index, /if \(env\.DB && !isLikelyBot\(request\.headers\.get\("user-agent"\)\)\) await recordFunnel\(env\.DB, "login_start"\);/, "クローラーは数えない");
   assert.match(index, /await recordFunnel\(env\.DB, userResult\?\.isNew \? "login_new" : "login_returning"\);/);
   const cb = index.slice(index.indexOf("async function handleDiscordCallback"), index.indexOf("async function upsertUser"));
   const cancel = cb.slice(cb.indexOf('if (url.searchParams.get("error") && !code)'), cb.indexOf('if (!code || !state)'));
