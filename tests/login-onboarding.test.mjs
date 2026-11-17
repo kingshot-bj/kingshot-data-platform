@@ -34,6 +34,6 @@ test("Discord・Google の両方のログインで案内を通す／マイKingSh
 });
 
 test("案内はマイKingShot の見出しと説明のすぐ後に入る（差し込み先が変わったら気づける）", () => {
-  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/my-player-page.js", import.meta.url), "utf8");
   assert.match(src, /<h1 class="title">マイKingShot<\/h1><p class="sub">[^<]*<\/p>/);
 });

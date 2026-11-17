@@ -45,7 +45,8 @@ test("配線：プレイヤー画面・マイKingShot・ホーム・全ページ
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /visibleProfile\.locked_advanced = lockedAdvancedItems\(visibilitySettings, auth\.role, visibilityEnabled\)/);
   assert.match(src, /\$\{renderLockedSection\(profile\?\.locked_advanced \|\| \[\]\)\}/);
-  assert.ok(src.includes("(promoted?'':'" + advancedBenefitsHtml() + "')"), "マイKingShotに特典一覧（埋め込みなしの固定文字列）");
+  const myPage = readFileSync(new URL("../src/my-player-page.js", import.meta.url), "utf8"); // 2026-11-17 に index.js から移動
+  assert.ok(myPage.includes("(promoted?'':'" + advancedBenefitsHtml() + "')"), "マイKingShotに特典一覧（埋め込みなしの固定文字列）");
   assert.match(src, /id="homeOnboard" href="\/my-player" hidden/);
   assert.match(src, /return json\(\{ ok: true, \.\.\.counts, onboarding \}\)/);
   const ui = readFileSync(new URL("../src/eagleeye-ui.js", import.meta.url), "utf8");
