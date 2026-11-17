@@ -437,6 +437,8 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   let body = head + mineHtml + movedNote + finder + (fetchNote ? `<div class="notice">${esc(fetchNote)}</div>` : "");
   if (matchup) {
     body += `<h2>シーズン ${esc(season)} の対戦相手</h2><div class="vs"><div class="side"><small>あなたの王国</small><b><a href="/kingdom?kid=${kid}">${kid}</a></b><small>${esc(matchup.kingdom_name || "")}</small></div><div class="vs-mark">VS</div><div class="side opp"><small>対戦相手</small><b>${matchup.opponent != null ? `<a href="/kingdom?kid=${Number(matchup.opponent)}">${Number(matchup.opponent)}</a>` : "—"}</b><small>${esc(matchup.opponent_name || "")}</small></div></div>`;
+    // 相手王国との比較（総力・伸び・領主数など）を画像で共有できる王国比較へ（2026-11-17）。
+    if (matchup.opponent != null) body += `<p><a class="btn kvk-share" href="${kvkCompareHref(kid, matchup.opponent)}">📤 相手王国と比べて画像で共有</a></p>`;
   }
   body += renderCountdown(score, now);
   const mysticOpponent = matchup?.opponent ?? score?.opponent ?? null;
@@ -602,4 +604,9 @@ async function allMatchupsSection(db, season, url) {
   return `<h2 id="all">全体の対戦表（${esc(num(pairs.filter(([, o]) => o != null).length))}組）</h2><input id="kvk-filter" class="find" style="width:100%;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit" inputmode="numeric" placeholder="王国番号で絞り込み">
 <div class="table" id="kvk-table">${pairs.map(([k, o]) => `<a href="/kvk?kid=${k}" data-k="${k} ${o ?? ""}"><span>王国 ${k}</span><b>VS</b><span>${o == null ? "不戦" : "王国 " + o}</span></a>`).join("")}</div>
 <script>(function(){var f=document.getElementById("kvk-filter"),rows=[].slice.call(document.querySelectorAll("#kvk-table a"));f.addEventListener("input",function(){var q=f.value.trim();rows.forEach(function(r){r.style.display=!q||(" "+r.getAttribute("data-k")+" ").indexOf(" "+q)>=0?"":"none"})})})();</script>`;
+}
+
+// KvK の相手王国との王国比較（画像で共有できる）への URL。2026-11-17
+export function kvkCompareHref(kid, opponent) {
+  return "/kingdom/compare?kid=" + encodeURIComponent(Number(kid)) + "&kid=" + encodeURIComponent(Number(opponent));
 }

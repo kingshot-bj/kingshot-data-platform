@@ -12079,6 +12079,7 @@ async function renderHome(request, env) {
 .ee-me-label{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-weight:900;letter-spacing:.06em;color:var(--ee-cyan)}
 .ee-me-label small{font-weight:600;letter-spacing:0;color:var(--ee-subtext)}
 .ee-me-name{font-size:17px;font-weight:900;line-height:1.35}
+.ee-kvk-share{display:block;margin:6px 2px 0;font-size:13px;font-weight:800;color:var(--ee-cyan);text-decoration:none}.ee-kvk-share[hidden]{display:none}
 .ee-me-cta .ee-me-name{font-size:13px;font-weight:700;color:var(--ee-subtext)}
 .ee-me-go{font-size:12px;font-weight:800;color:var(--ee-cyan)}
 .ee-me-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px}
@@ -12144,6 +12145,7 @@ ${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id
   <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
+<a class="ee-kvk-share" id="homeKvkShare" href="/kvk" hidden>📤 相手王国と比べて画像で共有 →</a>
 ${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
 ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live ee-mission-card" href="/milestones#missions" id="homeMissions">
@@ -12231,6 +12233,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(d.milestones){var mt=document.getElementById("homeMilestoneText"),ms=document.getElementById("homeMilestoneStatus"),mu=d.milestones.unseen||[];if(ms)ms.textContent=d.milestones.achieved+" / "+d.milestones.total+" 達成";if(mt&&mu.length)mt.textContent="🎉 達成："+mu.slice(0,2).map(function(u){return u.title}).join("、")+(mu.length>2?" ほか"+(mu.length-2)+"件":"")}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus"),card=document.getElementById("homeKvk");var w=Number(k.score),l=Number(k.opponent_score),has=isFinite(w)&&isFinite(l)&&(w||l);
       // KvK終了から3日より後はカードを隠す（主要メニューの「KvK」からは見られる）。3日以内は結果だけ。
+      var ks=document.getElementById("homeKvkShare");if(ks&&k.opponent!=null&&!(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400)){ks.href="/kingdom/compare?kid="+encodeURIComponent(k.kid)+"&kid="+encodeURIComponent(k.opponent);ks.hidden=false}
       if(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400){if(card)card.hidden=true}
       else if(k.ended){if(t)t.textContent="シーズン"+(k.season||"")+" 終了 · 王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"勝利":w<l?"敗北":"引き分け"):"終了"}
       else{if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
