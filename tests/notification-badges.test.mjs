@@ -102,3 +102,16 @@ test("scheduled posts appear only when due; ADMIN posts wait for OWNER approval"
   assert.ok(!page.includes('class="news-approve'), "only OWNER gets approve buttons");
   assert.match(renderNewsPage([], { canPost: true, isOwner: true, queued: [{ ...pending, status: "PENDING" }], viewerId: "1" }), /news-approve/);
 });
+
+test("お知らせに画像・動画を付けられる（本文なしでも可・変なファイル名は捨てる）", async () => {
+  resetBadgeSchemaCache();
+  const db = d1();
+  const img = "12345678-1234-1234-1234-123456789abc.png", vid = "12345678-1234-1234-1234-123456789abd.mp4";
+  await assert.rejects(createAnnouncement(db, { title: "画像だけ", body: "", now: 60 }), /TITLE_AND_BODY_REQUIRED/);
+  const a = await createAnnouncement(db, { title: "画像だけ", body: "", role: "OWNER", media: [{ file: img }, { file: vid }, { file: "../x.png" }], now: 60 });
+  assert.deepEqual(a.media.map(m => m.file), [img, vid]);
+  const html = renderNewsPage(await listAnnouncements(db), { canPost: true });
+  assert.match(html, new RegExp(`<img src="/news/media/${img}"`));
+  assert.match(html, new RegExp(`<video src="/news/media/${vid}"`));
+  assert.match(html, /id="news-files"[^>]*multiple/);
+});

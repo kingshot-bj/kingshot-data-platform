@@ -70,6 +70,7 @@ import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
 import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
+import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
@@ -5125,6 +5126,17 @@ export default {
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
       if (url.pathname === "/news") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+      // お知らせの画像・動画（news-media.js）。表示はだれでも、アップロードは ADMIN・OWNER。
+      if (url.pathname.startsWith("/news/media/")) return await serveNewsMedia(request, env.ARCHIVE, url.pathname.slice("/news/media/".length));
+      if (url.pathname === "/api/admin/announcements/media") {
+        const guard = await requireAdmin(request, env);
+        if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const r = await handleNewsMediaUpload(request, env.ARCHIVE);
+        if (r.body.ok) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_MEDIA_UPLOAD", null, null, { file: r.body.file }).catch(() => {});
+        return json(r.body, r.status);
+      }
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, requestTraceId);
@@ -11594,7 +11606,7 @@ async function handleAnnouncementsApi(request, env) {
   try {
     if (body?.action === "create") {
       await ensureAnnouncementDiscordSchema(env.DB);
-      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null });
+      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null, media: body.media });
       await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title, status: item.status, publish_at: item.publish_at }).catch(() => {});
       // ADMIN post → DM every OWNER (sent from the cron queue).
       if (item.status === "PENDING") await enqueueApprovalRequestDms(env, { ...item, created_by: guard.auth?.discord_id || null }).catch(error => console.error("announcement_dm_enqueue_failed", error?.message || error));
