@@ -293,45 +293,52 @@ export const VIDEO_PRESETS = Object.freeze({
  },
  "share-card": {
   "name": "share-card",
-  "title": "比較を画像で共有",
+  "title": "同盟比較を画像で共有",
   "output": "eagleeye-share-card.mp4",
   "post": [
-   "比較を1枚の画像にして、同盟の Discord にそのまま貼れる📤",
-   "領主対決・聖剣の相手との差もひと目で。",
+   "聖剣の相手の同盟と、上位の人の秘境の試練までまとめて比較⚔️",
+   "「画像で共有」を押すと、比較の画像とリンクがそのまま同盟の Discord や X に送れる📤",
    "{host}",
    "",
-   "#キングショット #KingShot"
+   "#キングショット #KingShot #聖剣争奪"
   ],
   "scenes": [
    {
     "slide": "text",
-    "heading": "比較を<br><b>画像でシェア</b>📤",
-    "sub": "同盟の Discord にそのまま貼れる",
+    "heading": "聖剣の相手と<br><b>同盟ごと</b>比べる",
+    "sub": "EagleEye の同盟比較",
     "seconds": 3
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
-    "caption": "比べたい人を選んで<br><b>画像で共有</b>を押すだけ",
-    "seconds": 3.5,
-    "scroll": 0,
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "違う王国の同盟どうしを比較<br><b>総力・人数・上位の人</b>",
+    "seconds": 4.5,
+    "scroll": 900,
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
-    "caption": "1枚の画像に<br><b>まとめてくれる</b>",
-    "seconds": 6,
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "上位の人の<b>秘境の試練</b>を<br>ステージごとに並べて",
+    "seconds": 5,
+    "scroll": 2400,
+    "login": true
+   },
+   {
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "<b>画像で共有</b>を押すと<br>1枚の比較画像に",
+    "seconds": 5.5,
     "scroll": 0,
     "login": true,
     "click": [
-     "#eeShareImg"
+     "#acImg"
     ],
-    "afterClickMs": 3500
+    "afterClickMs": 4000
    },
    {
     "slide": "text",
-    "heading": "長押しで保存<br>そのまま<b>貼るだけ</b>",
-    "sub": "Discord・X・LINE に",
-    "seconds": 3
+    "heading": "画像とリンクを<br><b>Discord・X</b>へ<br>そのまま送れる",
+    "sub": "スマホの共有メニューから送るだけ",
+    "seconds": 3.5
    },
    {
     "slide": "outro",
