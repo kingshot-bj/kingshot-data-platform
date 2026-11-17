@@ -73,6 +73,7 @@ import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
+import { runWeeklyReport, isWeeklyReportOn, setWeeklyReportOn } from "./weekly-report.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
@@ -5086,11 +5087,21 @@ const worker = {
         if (request.method === "POST") {
           if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
           const form = await request.formData().catch(() => null);
-          const off = String(form?.get("swordland") || "") === "off";
-          await setSwordlandNotifyOff(env.DB, auth.user_id, off);
-          return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, message: off ? "聖剣の登録のお知らせを止めました。" : "聖剣の登録のお知らせを受け取るようにしました。" }));
+          let message = "";
+          if (form?.has("weekly")) {
+            const on = String(form.get("weekly")) === "on";
+            await setWeeklyReportOn(env.DB, auth.user_id, on);
+            message = on ? "週1回の領主の変化を受け取るようにしました。" : "週1回の領主の変化を止めました。";
+          } else {
+            const off = String(form?.get("swordland") || "") === "off";
+            await setSwordlandNotifyOff(env.DB, auth.user_id, off);
+            message = off ? "聖剣の登録のお知らせを止めました。" : "聖剣の登録のお知らせを受け取るようにしました。";
+          }
+          const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+          return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn, message }));
         }
-        return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off: await isSwordlandNotifyOff(env.DB, auth.user_id) }));
+        const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+        return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn }));
       }
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
@@ -5480,6 +5491,12 @@ const worker = {
       await runSwordlandOfficerNotify(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
     } catch (error) {
       console.error("swordland_officer_notify_failed", error?.message || error);
+    }
+    // 週1回：希望した人に自分の領主の先週の変化を個チャ（月曜の日本時間11時台だけ）。weekly-report.js
+    try {
+      await runWeeklyReport(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("weekly_report_failed", error?.message || error);
     }
     try {
       await runUserKingdomRankingRefresh(env);

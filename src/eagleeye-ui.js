@@ -132,6 +132,7 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "goldCalc", href: "/tools/gold", label: "黄金計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "goldTech", href: "/tools/gold-tech", label: "黄金研究計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingShot", image: EAGLEEYE_BJNYAN.dashboard }),
+  Object.freeze({ key: "notifySettings", href: "/settings/notifications", label: "通知の設定", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "invite", href: "/invite", label: "友だち招待", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "guide", href: "/guide", label: "使い方", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),

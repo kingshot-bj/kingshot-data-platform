@@ -96,7 +96,7 @@ export async function setSwordlandNotifyOff(db, userId, off, nowMs = Date.now())
 }
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-export function renderNotificationSettingsPage({ off = false, message = "" } = {}) {
+export function renderNotificationSettingsPage({ off = false, weeklyOn = false, message = "" } = {}) {
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>通知の設定 | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:560px;margin:0 auto;padding:20px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
 h1{font-size:22px}.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0;font-size:14px;line-height:1.7}
@@ -104,5 +104,7 @@ button{padding:11px 14px;border:0;border-radius:10px;background:var(--ee-cyan,#2
 </style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>通知の設定</h1>${message ? `<p class="msg">${esc(message)}</p>` : ""}
 <section class="card"><b>聖剣争奪・聖剣頂上リーグの登録のお知らせ（Discord の個チャ）</b><p>同盟の R4・R5 の人に、対戦相手がまだ登録されていないときに1回だけ届きます。</p><p>今は <b>${off ? "止めています" : "受け取る"}</b></p>
 <form method="post" action="/settings/notifications"><input type="hidden" name="swordland" value="${off ? "on" : "off"}"><button type="submit">${off ? "受け取るにする" : "止める"}</button></form></section>
+<section class="card"><b>📈 週1回：自分の領主の変化（Discord の個チャ）</b><p>毎週月曜の昼ごろ、マイKingShot のメイン領主の先週の変化（総力・役場・撃破数・同盟など）を1通にまとめて届けます。変化が記録されなかった週は届きません。</p><p>今は <b>${weeklyOn ? "受け取る" : "受け取らない"}</b></p>
+<form method="post" action="/settings/notifications"><input type="hidden" name="weekly" value="${weeklyOn ? "off" : "on"}"><button type="submit">${weeklyOn ? "止める" : "受け取るにする"}</button></form></section>
 <p class="note">KvK の通知（EagleEye Support サーバーのスレッド）は、Discord のスレッドの通知設定で変えられます。</p></main></body></html>`;
 }
