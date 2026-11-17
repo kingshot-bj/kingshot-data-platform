@@ -201,6 +201,31 @@ export function renderOwnerMatchups(list) {
   return `<section class="card"><h2 class="oh">オーナー：全同盟の対戦相手（直近${SWORDLAND_OWNER_LIST_DAYS}日・${list.length}同盟）</h2>${items || `<p class="note">直近${SWORDLAND_OWNER_LIST_DAYS}日の登録はありません。</p>`}<p class="note">登録した人はゲーム内の名前（マイKingShotのメイン領主）と、オーナーだけ Discord の表示名も出します。</p></section>`;
 }
 
+// 自分の同盟の過去の対戦相手（2026-11-17）。回ごとに多く登録された相手を1つ。今開催中の回は除く。
+// 読むのは swordland_matchups を1文だけ（その同盟の行・最大 limit 回）。
+export async function loadMatchupHistory(db, kid, aid, { exclude = [], limit = 20 } = {}) {
+  if (!db || !kid || !aid) return [];
+  await ensureSwordlandSchema(db);
+  const rows = (await db.prepare(
+    "SELECT season, opp_kid, opp_tag, COUNT(*) AS n FROM swordland_matchups WHERE kid = ? AND aid = ? GROUP BY season, opp_kid, lower(opp_tag) ORDER BY season DESC, n DESC LIMIT ?"
+  ).bind(Number(kid), String(aid), limit * 3).all().catch(() => ({ results: [] })))?.results || [];
+  const skip = new Set(exclude.map(Number));
+  const out = [];
+  for (const r of rows) {
+    const season = Number(r.season);
+    if (skip.has(season) || out.some(o => o.season === season)) continue;
+    out.push({ season, league: isLeagueSeason(season), opp_kid: Number(r.opp_kid), opp_tag: String(r.opp_tag), count: Number(r.n) || 0 });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export function renderMatchupHistory(history, { mine = null, canCompare = false } = {}) {
+  if (!history?.length) return "";
+  const items = history.map(h => `<li><span class="note">${h.league ? "頂上リーグ " + esc(jstDate(h.season)) + "〜の週" : "聖剣争奪 " + esc(jstDate(h.season))}</span> 王国${esc(h.opp_kid)} <b>${esc(h.opp_tag)}</b>${canCompare && mine?.alliance_abbr ? ` <a href="${esc(compareUrl(mine.kid, mine.alliance_abbr, h.opp_kid, h.opp_tag))}">今と比べる</a>` : ""}</li>`).join("");
+  return `<section class="card"><h2 class="oh">📜 過去の対戦相手（${esc(history.length)}回）</h2><ul class="hist">${items}</ul><p class="note">同盟のR4・R5が登録した相手です（回ごとに多く登録された方）。「今と比べる」は今のデータでの比較です。</p></section>`;
+}
+
 export function compareUrl(kid, abbr, oppKid, oppTag) {
   return "/alliance/compare?a=" + encodeURIComponent(kid + ":" + abbr) + "&a=" + encodeURIComponent(oppKid + ":" + oppTag);
 }
@@ -229,10 +254,11 @@ export function renderSwordlandPage({ state, message = "", isOwner = false, owne
 body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:640px;margin:0 auto;padding:18px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
 h1{font-size:22px;margin:6px 0 2px}.sub{font-size:13px;color:var(--ee-subtext,#91a7bf);margin:0 0 12px}.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0;font-size:14px;line-height:1.6}
 .f{display:grid;gap:8px}.f input{padding:10px;border-radius:9px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit;font:15px system-ui}.f button,.btn{display:inline-block;padding:11px 14px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#04202a;font:800 14px system-ui;text-decoration:none;text-align:center}
-.oh{font-size:15px;margin:0 0 8px}.om{border-top:1px solid var(--ee-border-soft,#223b57);padding:8px 0;overflow-wrap:anywhere}.om-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.om-h small{display:block;font-size:12px;font-weight:400;color:var(--ee-subtext,#91a7bf)}.om ul{margin:4px 0 0;padding-left:18px}
+.oh{font-size:15px;margin:0 0 8px}.hist{margin:0;padding-left:18px}.hist li{margin:4px 0;overflow-wrap:anywhere}.hist .note{display:inline}.om{border-top:1px solid var(--ee-border-soft,#223b57);padding:8px 0;overflow-wrap:anywhere}.om-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.om-h small{display:block;font-size:12px;font-weight:400;color:var(--ee-subtext,#91a7bf)}.om ul{margin:4px 0 0;padding-left:18px}
 .now{font-size:15px}.note{font-size:12px;color:var(--ee-subtext,#91a7bf)}.msg{padding:9px 11px;border-radius:9px;border:1px dashed currentColor;font-size:13px}
 </style></head><body><main class="wrap"><a href="/">← ホーム</a><h1>⚔️ ${esc(label)}</h1><p class="sub">${mine}</p>
 ${message ? `<p class="msg">${esc(message)}</p>` : ""}${sections}
+${renderMatchupHistory(s.history, { mine: s.mine, canCompare: s.canCompare })}
 ${isOwner ? renderOwnerMatchups(ownerMatchups) : ""}
 ${isOwner ? `<form method="post" action="/swordland/refresh-events" class="card"><p class="note">オーナー：登録ユーザーの王国のイベント日程（Mighty対応のキー）を今すぐ取り直します（最大10王国）。</p><button type="submit" class="btn">今すぐ日程を取得</button></form>` : ""}
 <p class="note">組み合わせはゲームの外からは分からないため、同盟のR4・R5の人に登録してもらっています。登録が分かれたときは、多く登録された方を表示します。</p></main></body></html>`;

@@ -103,6 +103,7 @@ import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } fro
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
+import { loadMatchupHistory } from "./swordland.js";
 import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
@@ -5959,9 +5960,10 @@ async function handleSwordlandPage(request, env) {
     return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
   }
   const isOwner = auth.role === "OWNER";
-  // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。
+  // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。過去の対戦相手は自分の同盟の分（だれでも）。
   const recheck = new URL(request.url).searchParams.get("recheck") === "1";
   const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth, { verifyOfficer: recheck }), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
+  if (state.mine?.alliance_aid) state.history = await loadMatchupHistory(env.DB, Number(state.mine.kid), state.mine.alliance_aid, { exclude: state.events.map(e => e.event.season) }).catch(() => []);
   return eagleEyeHtmlResponse(renderSwordlandPage({ state, isOwner, ownerMatchups }));
 }
 
