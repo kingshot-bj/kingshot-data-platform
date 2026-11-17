@@ -102,7 +102,8 @@ test("Worker全体：未設定なら今までどおりDiscordへ直行、設定�
   try {
     const r6 = await worker.fetch(new Request(`https://eagleeye-ks.com/api/auth/google/callback?code=c&state=${encodeURIComponent(state)}`, { headers: { cookie: "eagleeye_login_return=%2Fwatchlist" } }), env, ctx);
     assert.equal(r6.status, 302);
-    assert.equal(r6.headers.get("location"), "https://eagleeye-ks.com/watchlist");
+    // 新しい人で領主が未登録 → マイKingShotの登録欄へ（元のページは next に残す・2026-11-17）
+    assert.equal(r6.headers.get("location"), "https://eagleeye-ks.com/my-player?welcome=1&next=%2Fwatchlist");
     const cookies = r6.headers.getSetCookie().join("\n");
     assert.match(cookies, /eagleeye_session=/);
     assert.doesNotMatch(cookies, /gsecret|at;/);

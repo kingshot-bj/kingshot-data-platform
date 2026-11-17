@@ -72,6 +72,7 @@ import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES,
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
+import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
@@ -5409,7 +5410,12 @@ const worker = {
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
-      if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
+      if (url.pathname === "/my-player") {
+        // ログイン直後の案内（?welcome=1・login-onboarding.js）。next は自サイトのパスだけ。
+        const page = await renderMyPlayerPage(request, env);
+        const welcome = url.searchParams.get("welcome") === "1" && page.includes('<h1 class="title">マイKingShot</h1>') ? welcomeBannerHtml(sanitizeLoginReturnPath(url.searchParams.get("next"))) : "";
+        return eagleEyeHtmlResponse(welcome ? page.replace(/(<h1 class="title">マイKingShot<\/h1><p class="sub">[^<]*<\/p>)/, m => m + welcome) : page);
+      }
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
       if (url.pathname === "/api/player-compare/refresh-capacity") return await handlePlayerCompareRefreshCapacityApi(request, env);
       if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env, executionContext);
@@ -6171,9 +6177,11 @@ async function handleDiscordCallback(request, env) {
     iat: now,
     exp: now + SESSION_MAX_AGE
   };
+  let loginUser = null;
   if (env.DB) {
     try {
       const userResult = await upsertUser(env.DB, discordUser, now);
+      loginUser = userResult;
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
@@ -6199,6 +6207,8 @@ async function handleDiscordCallback(request, env) {
 
   let returnPath = null;
   try { returnPath = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
+  // 領主をまだ登録していない人は、マイKingShotの登録欄へ（login-onboarding.js）。
+  if (loginUser?.user_id) returnPath = await postLoginPath(env.DB, { userId: loginUser.user_id, isNew: Boolean(loginUser.isNew), returnPath }).catch(() => returnPath);
   const responseHeaders = new Headers({
     Location: new URL(returnPath || "/", request.url).toString(),
     "Cache-Control": "no-store"
@@ -6271,6 +6281,7 @@ async function handleGoogleCallback(request, env) {
   const refCode = cookies[REF_COOKIE];
   if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
   const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
+  returnPath = await postLoginPath(env.DB, { userId: result.user_id, isNew: Boolean(result.isNew), returnPath }).catch(() => returnPath);
   const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
   clearReturn(h);
   if (refCode) h.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
