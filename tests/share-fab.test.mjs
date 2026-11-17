@@ -25,3 +25,14 @@ test("聖剣の通知に共有の1行・動画の台本で「押す」場面・�
   assert.equal(r.set.scenes[0].afterClickMs, 10000);
   assert.ok(BLOCK_PATHS.test("/api/milestones/share"));
 });
+
+test("PC の共有：共有メニューが無いときは「画像をコピー」「保存」・長押しの説明はタッチの端末だけ（4画面とも）", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["compare-share", "alliance-compare-share", "kingdom-compare-share", "player-share"]) {
+    const s = readFileSync(new URL(`../src/${f}.js`, import.meta.url), "utf8");
+    assert.match(s, /navigator\.clipboard\.write\(\[new ClipboardItem\(\{ "image\/png": blob \}\)\]\)/, f);
+    assert.match(s, /<a data-act="save" download="eagleeye-[a-z-]+\.png"/, f);
+    assert.match(s, /touch \? "画像を長押しして保存・共有できます" :/, f);
+    assert.doesNotMatch(s, /'<p>画像を長押しして保存・共有できます<\/p>/, f + "：PC にも長押しと出していた");
+  }
+});
