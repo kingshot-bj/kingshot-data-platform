@@ -1,21 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { normalizeMightPulseApiKey } from "../src/user-eligibility.js";
 
-const indexSource = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
+import { MY_PLAYER_PAGE_HTML } from "../src/my-player-page.js";
+const indexSource = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
 
-// Render the My KingShot page template the same way the Worker does, with
-// interpolations removed, so we test the HTML/JS the browser actually gets.
+// マイKingShot のページ本体は src/my-player-page.js（2026-11-17 に index.js から移動）。差し込みは無い。
 function renderMyPlayerTemplate() {
-  const fnAt = indexSource.indexOf("async function renderMyPlayerPage");
-  // The login screen is now the shared renderLoginRequiredPage, so the first template is the page itself.
-  const start = indexSource.indexOf("return `<!doctype html>", fnAt);
-  const endMarker = "</script></body></html>`";
-  const end = indexSource.indexOf(endMarker, start) + endMarker.length;
-  const template = indexSource.slice(start + "return ".length, end);
-  assert.ok(!/\$\{/.test(template), "page template is expected to have no interpolations");
-  return (0, eval)(template);
+  const source = readFileSync(new URL("../src/my-player-page.js", import.meta.url), "utf8");
+  assert.ok(!/\$\{/.test(source), "page template is expected to have no interpolations");
+  return MY_PLAYER_PAGE_HTML;
 }
 
 const html = renderMyPlayerTemplate();
@@ -65,4 +60,9 @@ test("rate-limit and temporary MightPulse errors are not reported as 500", () =>
   assert.ok(indexSource.includes('code === "MIGHTPULSE_API_KEY_RATE_LIMITED" ? 429'));
   assert.ok(indexSource.includes('code === "MIGHTPULSE_API_TEMPORARY_ERROR" ? 503'));
   assert.ok(indexSource.includes("const apiKey = normalizeMightPulseApiKey(body?.api_key);"));
+});
+
+test("マイKingShot は src/my-player-page.js の本体をそのまま返す（index.js から移した・2026-11-17）", () => {
+  assert.match(indexSource, /return MY_PLAYER_PAGE_HTML;/);
+  assert.ok(!indexSource.includes("setupKeyGuide"), "本体（script 含む）は index.js に残さない");
 });
