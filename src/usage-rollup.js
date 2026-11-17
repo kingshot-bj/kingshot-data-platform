@@ -21,9 +21,11 @@ export const OPERATION_LABELS = Object.freeze({
   KINGDOM_WATCHLIST_ADD: "王国ウォッチに追加", KINGDOM_WATCHLIST_REMOVE: "王国ウォッチから外す", KINGDOM_WATCHLIST_REFRESH: "王国ウォッチの更新",
   KINGDOM_RANKING_VIEW: "王国ランキング", PLAYER_EXPORT: "プレイヤーの出力", KINGDOM_EXPORT: "王国の出力",
   KINGSHOT_ID_REGISTER: "領主IDの登録", KINGSHOT_ID_CHANGE: "領主IDの変更", KINGSHOT_ID_REMOVE: "領主IDの削除", ADVANCED_PROMOTED: "ADVANCED になった",
-  MIGHTPULSE_API_KEY_CONTRIBUTE: "APIキーの登録"
+  MIGHTPULSE_API_KEY_CONTRIBUTE: "APIキーの登録",
+  KINGSHOT_ID_CONFLICT: "領主IDの重複", KINGSHOT_ID_SUPPORT_REQUEST: "領主IDのサポート依頼", OWNER_KINGDOM_LOAD_TEST: "王国の負荷テスト（オーナー）"
 });
-export const operationLabel = op => OPERATION_LABELS[op] || op;
+// 名前の無い操作も英語のまま出さない（2026-11-17）。新しい操作を足したら上に日本語の名前を足す（テストで確認）。
+export const operationLabel = op => OPERATION_LABELS[op] || "その他の操作";
 
 async function gunzipText(body) {
   const stream = new Blob([body]).stream().pipeThrough(new DecompressionStream("gzip"));
