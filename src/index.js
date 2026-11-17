@@ -113,7 +113,7 @@ import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, load
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
-import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
+import { handlePageViewBeacon, pageViewBeaconScript, isLikelyBot, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -6008,7 +6008,8 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
-  if (env.DB) await recordFunnel(env.DB, "login_start");
+  // クローラーがログインのリンクをたどった分は数えない（2026-11-17：AdSense のクローラーで「Googleへ進んだ」が膨らんでいた）。
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "login_start");
   const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
@@ -6177,7 +6178,7 @@ async function startGoogleLogin(request, env) {
     return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), url).toString(), 302);
   }
   const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
-  if (env.DB) await recordFunnel(env.DB, "google_start");
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "google_start");
   const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(url.searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", { maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
