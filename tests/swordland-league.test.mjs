@@ -100,9 +100,9 @@ test("その他メニューの入口は聖剣争奪と頂上リーグの両方�
   assert.match(item.label, /リーグ/);
 });
 
-test("ホームの聖剣カードは相手が登録済みでも聖剣のページを開く（同盟比較へ飛ばない・2026-11-17）", () => {
+test("ホームの聖剣カード：相手が登録済みで比べられるときは同盟比較へ直接、未登録なら聖剣のページ（2026-11-17・オーナーの希望）", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const script = src.slice(src.indexOf("evs.forEach(function(ev,i)"), src.indexOf("evs.forEach(function(ev,i)") + 900);
   assert.match(script, /a\.href='\/swordland'/);
-  assert.doesNotMatch(script, /a\.href=ev\.matchup\.compareUrl/);
+  assert.match(script, /if\(ev\.matchup\.compareUrl\)a\.href=ev\.matchup\.compareUrl/);
 });
