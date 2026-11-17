@@ -37,7 +37,7 @@ test("通信：広告・解析・アクセス記録は止める。撮影の印�
 
 test("映さないもの：活動情報・ログイン表示・CSV出力ボタン。登録特典はサイトと同じ定数", () => {
   assert.match(src, /オンライン\|最終活動\|最終ログイン/);
-  assert.match(src, /\.ee-profile,\.ee-login-trigger,\.section-export\{visibility:hidden!important\}/);
+  assert.match(src, /\.ee-profile,\.ee-login-trigger,\.section-export,\.ac-refresh \.note,#acPreview p,#acPreview button,#eeSharePreview p,#eeSharePreview button\{visibility:hidden!important\}#eeShareHint\{display:none!important\}/, "オーナーだけの説明・共有画像の見本の説明・案内の吹き出しも隠す（2026-11-17）");
   assert.match(slideHtml({ slide: "signup" }, "https://eagleeye-ks.com"), /ADVANCEDになると/);
 });
 
