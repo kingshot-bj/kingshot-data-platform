@@ -63,3 +63,11 @@ test("年のページ・使ったユーザーの「よく使った機能」・�
   assert.match(src, /await runUsageRollup\(env\);/);
   assert.match(src, /if \(url\.pathname === "\/owner\/usage" \|\| url\.pathname === "\/owner\/usage\/run"\) \{\n        const guard = await requireOwner\(request, env\);/);
 });
+
+test("機能の名前：すべて日本語（英語のまま出さない）", async () => {
+  const { SERVICE_USAGE_EVENTS } = await import("../src/service-usage.js");
+  const { OPERATION_LABELS, operationLabel } = await import("../src/usage-rollup.js");
+  for (const op of Object.keys(SERVICE_USAGE_EVENTS)) assert.ok(OPERATION_LABELS[op], "日本語の名前が無い：" + op);
+  assert.equal(operationLabel("SOMETHING_NEW"), "その他の操作");
+  for (const label of Object.values(OPERATION_LABELS)) assert.doesNotMatch(label, /[A-Z]{2,}_[A-Z]/, label);
+});
