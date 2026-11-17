@@ -69,6 +69,8 @@ background:radial-gradient(120% 60% at 50% 0%,rgba(34,211,238,.25),rgba(34,211,2
 .box{width:100%;text-align:left;background:rgba(15,32,53,.9);border:1px solid #2a4664;border-radius:16px;padding:14px 16px;margin:8px 0;font-size:15px;line-height:1.7}
 .box b{color:#fde68a}.box ol,.box ul{margin:4px 0;padding-left:1.3em}.url{font-size:24px;font-weight:900;color:#22d3ee;margin-top:8px}.s{font-size:13px;color:#91a7bf}`;
 
+export function videoMode(set) { return set?.mode === "dark" ? "dark" : "light"; }
+
 // 文字だけの画面も着せ替えの色にする（背景・見出しの色）。色は themes.js の固定値だけ（#rrggbb を確かめる）。
 export function slideSkinCss(skinId) {
   const t = EAGLEEYE_THEMES.find(x => x.id === skinId)?.tokens;
@@ -93,7 +95,7 @@ export function slideHtml(sc, base) {
 const overlay = caption => `(() => {
   const s = document.createElement("style");
   // 2026-11-17：撮影の鍵はオーナー扱いなので、オーナーだけの説明（同盟比較の「毎回取り直す」）を隠す。共有画像の見本の「長押しで保存」（共有メニューが無いときの代わりの表示）・案内の吹き出しも隠す。
-  s.textContent = ".ee-profile,.ee-login-trigger,.section-export,.ac-refresh .note,#acPreview p,#acPreview button,#eeSharePreview p,#eeSharePreview button{visibility:hidden!important}#eeShareHint{display:none!important}#__cap{position:fixed;left:12px;right:12px;bottom:86px;z-index:2147483647;padding:12px 14px;border-radius:14px;background:rgba(2,6,23,.82);color:#fff;font:800 19px/1.45 'Noto Sans CJK JP','Hiragino Sans',sans-serif;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18)}#__cap b{color:#fde68a}";
+  s.textContent = ".ee-profile,.ee-login-trigger,.section-export,.ac-refresh .note,#acPreview p,#acPreview button,#eeSharePreview p,#eeSharePreview button{visibility:hidden!important}#eeShareHint,#eeShareFab{display:none!important}#__cap{position:fixed;left:12px;right:12px;bottom:86px;z-index:2147483647;padding:12px 14px;border-radius:14px;background:rgba(2,6,23,.82);color:#fff;font:800 19px/1.45 'Noto Sans CJK JP','Hiragino Sans',sans-serif;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.18)}#__cap b{color:#fde68a}";
   document.head.appendChild(s);
   const d = document.createElement("div"); d.id = "__cap"; d.innerHTML = ${JSON.stringify(caption || "")}; if (d.innerHTML) document.body.appendChild(d);
   for (const el of document.querySelectorAll("tr,div,li,.row")) { const t = (el.firstElementChild?.textContent || "").trim(); if (/^(オンライン|最終活動|最終ログイン)/.test(t) && el.textContent.length < 80) el.style.visibility = "hidden"; }
@@ -115,7 +117,9 @@ async function record(set, opt, base) {
   const { chromium } = createRequire(import.meta.url)("playwright");
   const browser = await chromium.launch(process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY } } : {});
   const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: SCALE, ignoreHTTPSErrors: true, locale: "ja-JP" });
-  await ctx.addInitScript(() => { try { localStorage.setItem("eagleeye-theme", "dark"); localStorage.setItem("eagleeye-share-hint-v1", "1"); } catch (e) {} });
+  // 画面の色：これからはライトモードが標準（分かりやすい・2026-11-17）。台本で mode: "dark" にもできる。着せ替えはダークのときだけ効く。
+  const mode = videoMode(set);
+  await ctx.addInitScript(m => { try { localStorage.setItem("eagleeye-theme", m); localStorage.setItem("eagleeye-share-hint-v1", "1"); } catch (e) {} }, mode);
   const token = process.env.EAGLEEYE_VIDEO_TOKEN || "";
   const eagleHost = new URL(base).host;
   let blocked = 0;

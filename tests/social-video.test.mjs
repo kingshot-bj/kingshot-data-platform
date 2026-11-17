@@ -137,3 +137,18 @@ test("撮影用：作業用の鍵が付いているときだけ、ホームは�
   assert.match(src, /if \(url\.pathname === "\/"\) return eagleEyeHtmlResponse\(await renderHome\(request, env\)\);/, "ホームは共有キャッシュに載せない");
   assert.ok(VIDEO_PRESETS.skins.scenes.filter(s => s.page === "/").every(s => s.login === true && s.skin));
 });
+
+test("画面の色：これからはライトが標準・台本で dark も・着せ替え紹介は dark", async () => {
+  const { videoMode } = await import("../scripts/social/feature-video.mjs");
+  assert.equal(videoMode({}), "light");
+  assert.equal(videoMode({ mode: "dark" }), "dark");
+  assert.equal(videoMode({ mode: "evil" }), "light");
+  assert.equal(normalizeSceneSet({ name: "a", mode: "dark", scenes: [{ slide: "outro", seconds: 1 }] }).set.mode, "dark");
+  assert.equal(normalizeSceneSet({ name: "a", mode: "<x>", scenes: [{ slide: "outro", seconds: 1 }] }).set.mode, undefined);
+  assert.equal(VIDEO_PRESETS.skins.mode, "dark", "着せ替えはダークのときだけ効く");
+  assert.match(renderSocialVideoPage({}), /<select id="f-mode"><option value="light">ライト（標準）<\/option>/);
+});
+
+test("動画のプレイヤー比較は me=0（撮影の鍵の領主を自動で入れない）", () => {
+  for (const set of Object.values(VIDEO_PRESETS)) for (const sc of set.scenes) if (String(sc.page || "").startsWith("/player/compare")) assert.match(sc.page, /[?&]me=0(&|$)/, set.name);
+});
