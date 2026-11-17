@@ -71,6 +71,7 @@ import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly
 import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
+import { withSecurityHeaders } from "./security-headers.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
@@ -5020,7 +5021,7 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
   return { checked, recovered, disabled, failed };
 }
 
-export default {
+const worker = {
   async fetch(request, env, executionContext) {
     // プレビューは本番の D1・R2 を読むだけ（書き込み・Queue・外部 fetch を止める）。preview-readonly.js
     if (isPreviewEnv(env)) { env = previewReadOnlyEnv(env); installPreviewFetchGuard(); }
@@ -12299,3 +12300,6 @@ function constantTimeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
+
+// すべての応答に安全のための設定を付ける（security-headers.js）。
+export default { ...worker, async fetch(request, env, executionContext) { return withSecurityHeaders(await worker.fetch(request, env, executionContext)); } };
