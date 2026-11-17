@@ -5127,7 +5127,13 @@ const worker = {
       if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
-      if (url.pathname === "/news") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+      if (url.pathname === "/news") {
+        // ログインなしでも読める公開ページ（2026-11-17）。ログイン中は既読の印など今まで通り。公開版は5分キャッシュ。
+        const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+        const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+        if (auth?.status === "ACTIVE") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+        return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderNewsPage(env.DB ? await listAnnouncements(env.DB, 50).catch(() => []) : [], { publicView: true, origin: publicOrigin(request, env) })), 300);
+      }
       // お知らせの画像・動画（news-media.js）。表示はだれでも、アップロードは ADMIN・OWNER。
       if (url.pathname.startsWith("/news/media/")) return await serveNewsMedia(request, env.ARCHIVE, url.pathname.slice("/news/media/".length));
       if (url.pathname === "/api/admin/announcements/media") {

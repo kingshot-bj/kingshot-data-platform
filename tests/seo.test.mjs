@@ -34,7 +34,9 @@ test("Japanese search term キングショット in titles; structured data on t
 
 test("sitemap lists only public (canonical) pages", () => {
   const map = renderSitemapXml("https://x", []);
-  assert.doesNotMatch(map, /\/news</, "news needs a login");
+  // お知らせは 2026-11-17 からログインなしで読める公開ページ
+  assert.match(map, /\/news</);
+  assert.doesNotMatch(map, /\/watchlist</, "watchlist needs a login");
   assert.match(map, /\/tools\/gold-tech</);
 });
 

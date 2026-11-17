@@ -306,7 +306,7 @@ ${kingdomsIndexDataNote({ total: stats?.length || kids.length })}`;
 // （ClaudeBot が /player・/alliance などのログイン画面を1日30万回以上読んでいた。公開ページ /k/・/kingdoms・/kvk/s… などは今まで通り）
 export const ROBOTS_LOGIN_ONLY_PATHS = Object.freeze([
   "/player", "/alliance", "/kingdom?", "/kingdom/", "/kingdom-catalog", "/kingdom-watchlist", "/kvk?", "/kvk$",
-  "/watchlist", "/news", "/settings", "/milestones", "/invite", "/login", "/status-json-comparator", "/social/", "/swordland"
+  "/watchlist", "/settings", "/milestones", "/invite", "/login", "/status-json-comparator", "/social/", "/swordland"
 ]);
 
 export function renderRobotsTxt(origin, { preview = false } = {}) {
@@ -328,7 +328,7 @@ export function renderAdsTxt(publisherId) {
 // （全部「今日」にすると、検索エンジンが更新日を信用しなくなる）。changefreq は Google が使わないので出さない。
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
   const daily = [...extraPaths, "/", "/kingdoms", ...kids.map(k => `/k/${k}`)];
-  const fixed = ["/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...heroPagePaths()];
+  const fixed = ["/news", "/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...heroPagePaths()];
   const urls = [...daily.map(p => `<url><loc>${esc(origin + p)}</loc><lastmod>${today}</lastmod></url>`), ...fixed.map(p => `<url><loc>${esc(origin + p)}</loc></url>`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }

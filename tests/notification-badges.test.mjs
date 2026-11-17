@@ -132,3 +132,17 @@ test("聖剣：ふだんは保存済みの役職で登録欄を出し、メン�
   assert.match(sw, /p\.alliance_name, p\.alliance_rank FROM user_player_links/);
   assert.match(sw, /\/swordland\?recheck=1/);
 });
+
+test("お知らせはログインなしでも読める公開ページ（2026-11-17）", async () => {
+  const worker = (await import("../src/index.js")).default;
+  resetBadgeSchemaCache();
+  const db = d1();
+  await createAnnouncement(db, { title: "公開テスト", body: "だれでも読める", role: "OWNER", now: 10 });
+  const res = await worker.fetch(new Request("https://eagleeye-ks.com/news"), { DB: db }, { waitUntil() {}, passThroughOnException() {} });
+  const html = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(html, /公開テスト/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/news">/);
+  assert.match(html, /ログイン<\/a>すると/);
+  assert.ok(!html.includes("news-submit"), "投稿欄は出ない");
+});
