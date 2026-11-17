@@ -19,3 +19,16 @@ test("d1：今日と前日の読み取りが多いクエリ・割合・1回あ�
   assert.deepEqual(r.today.top[0], { rowsRead: 900, rowsWritten: 0, count: 10, query: "SELECT * FROM big", share: 90, rowsPerQuery: 90 });
   assert.equal(r.yesterday.rowsRead, 50);
 });
+
+test("ae：Analytics Engine を読めるか（SHOW TABLES）・トークンの値は返さない", async () => {
+  const { loadSnapshotAnalyticsEngine } = await import("../src/owner-snapshot.js");
+  assert.deepEqual(await loadSnapshotAnalyticsEngine({}), { configured: false });
+  let sent;
+  const ok = await loadSnapshotAnalyticsEngine({ CLOUDFLARE_ANALYTICS_TOKEN: "secret-token", CLOUDFLARE_ACCOUNT_ID: "acc" }, { fetchImpl: async (url, opt) => { sent = [url, opt]; return new Response(JSON.stringify({ data: [{ dataset: "x" }] }), { status: 200 }); } });
+  assert.equal(sent[0], "https://api.cloudflare.com/client/v4/accounts/acc/analytics_engine/sql");
+  assert.equal(sent[1].body, "SHOW TABLES");
+  assert.deepEqual(ok, { configured: true, ok: true, status: 200, tables: ["x"], error: null });
+  const ng = await loadSnapshotAnalyticsEngine({ CLOUDFLARE_ANALYTICS_TOKEN: "secret-token", CLOUDFLARE_ACCOUNT_ID: "acc" }, { fetchImpl: async () => new Response("Authentication error", { status: 403 }) });
+  assert.equal(ng.ok, false); assert.equal(ng.status, 403);
+  assert.doesNotMatch(JSON.stringify(ng), /secret-token/);
+});

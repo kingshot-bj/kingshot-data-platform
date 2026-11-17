@@ -5,7 +5,7 @@
 
 export const READONLY_MIN_TOKEN_LENGTH = 32;
 export const READONLY_RATE_PER_HOUR = 60;
-export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage", "probe", "d1"]);
+export const SNAPSHOT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users", "audit", "system", "coverage", "probe", "d1", "ae"]);
 export const SNAPSHOT_DEFAULT_SECTIONS = Object.freeze(["overview", "traffic", "growth", "users"]);
 
 const enc = new TextEncoder();
@@ -154,4 +154,16 @@ export async function loadSnapshotD1(env, { nowMs = Date.now(), fetchImpl = fetc
     return { day: d, rowsRead: total, queries: rows.length, top };
   };
   return { configured: true, today: summarize(day), yesterday: summarize(prev) };
+}
+
+// ae：分析用のトークンで Analytics Engine の集計（SQL API）を読めるか確かめる（2026-11-17）。読むだけ・トークンの値は返さない。
+export async function loadSnapshotAnalyticsEngine(env, { fetchImpl = fetch } = {}) {
+  const token = String(env?.CLOUDFLARE_ANALYTICS_TOKEN || "").trim(), account = String(env?.CLOUDFLARE_ACCOUNT_ID || "").trim();
+  if (!token || !account) return { configured: false };
+  const res = await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(account)}/analytics_engine/sql`, { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "text/plain" }, body: "SHOW TABLES" }).catch(() => null);
+  if (!res) return { configured: true, ok: false, error: "NETWORK" };
+  const text = await res.text().catch(() => "");
+  let tables = null;
+  try { const j = JSON.parse(text); tables = Array.isArray(j?.data) ? j.data.map(r => r.dataset || r.name || Object.values(r)[0]).slice(0, 20) : null; } catch {}
+  return { configured: true, ok: res.ok, status: res.status, tables, error: res.ok ? null : text.replace(/\s+/g, " ").slice(0, 200) };
 }
