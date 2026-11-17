@@ -43,7 +43,10 @@ export async function loadActiveUsers(db, day, nowMs = Date.now()) {
 const ROLE_JA = { OWNER: "オーナー", ADMIN: "管理者", VIP: "VIP", ADVANCED: "ADVANCED", BASIC: "BASIC" };
 const date = sec => sec ? new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, "/") : "—";
 
-export function renderActiveUsersPage({ day, users = [], counts = [] } = {}, nowMs = Date.now()) {
+import { topOps } from "./usage-rollup.js";
+
+// usage：その日の操作の集計（user_id → { actions, ops }）。無ければ「—」。
+export function renderActiveUsersPage({ day, users = [], counts = [], usage = {} } = {}, nowMs = Date.now()) {
   const today = jstDay(nowMs);
   const chips = Array.from({ length: 7 }, (_, i) => shiftDay(today, -i)).map(d => `<a class="chip${d === day ? " on" : ""}" href="/owner/users/active?day=${d}">${d === today ? "今日" : d.slice(5).replace("-", "/")}</a>`).join("");
   const max = Math.max(1, ...counts.map(c => c.n));
@@ -51,7 +54,7 @@ export function renderActiveUsersPage({ day, users = [], counts = [] } = {}, now
   const newCount = users.filter(u => u.isNew).length;
   const rows = users.map(u => `<tr><td><b>${esc(u.name)}</b>${u.isNew ? ' <span class="new">新規</span>' : ""}<small>${esc(ROLE_JA[u.role] || u.role || "")}・登録 ${esc(date(u.createdAt))}</small></td>
 <td>${u.governors.length ? u.governors.map(g => `${esc(g.name || "（名前未取得）")}<small>王国${esc(g.kid ?? "?")}${g.abbr ? "・" + esc(g.abbr) : ""}${g.rank ? "・" + esc(g.rank) : ""}</small>`).join("") : '<small class="muted">領主の登録なし</small>'}</td>
-<td class="num">${esc(u.logins)}</td><td class="num">${esc(u.days7)}日</td></tr>`).join("");
+<td class="num">${esc(u.logins)}</td><td class="num">${esc(u.days7)}日</td><td>${usage[u.userId] ? `<small>${esc(topOps(usage[u.userId].ops, 3))}</small>` : '<small class="muted">—</small>'}</td></tr>`).join("");
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>使ったユーザー | EagleEye</title><style>
 body{margin:0;font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:900px;margin:0 auto;padding:20px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
 h1{font-size:22px;margin:10px 0 4px}.lead,.muted,small{color:var(--ee-subtext,#91a7bf)}.lead{font-size:13px;margin:0 0 12px}
@@ -61,9 +64,9 @@ h1{font-size:22px;margin:10px 0 4px}.lead,.muted,small{color:var(--ee-subtext,#9
 .bars{display:flex;align-items:flex-end;gap:4px;height:90px}.bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;text-decoration:none}.bar i{display:block;width:100%;min-height:2px;border-radius:4px 4px 0 0;background:var(--ee-border-soft,#223b57)}.bar.on i{background:var(--ee-cyan,#22d3ee)}.bar small{font-size:10px}
 .tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 6px;border-bottom:1px solid var(--ee-border-soft,#223b57);text-align:left;vertical-align:top}td small{display:block;font-size:11px}th{font-size:11px;color:var(--ee-subtext,#91a7bf);font-weight:700}.num{text-align:right;white-space:nowrap}.new{display:inline-block;padding:0 6px;border-radius:999px;background:#22c55e33;color:#4ade80;font-size:11px;font-weight:800}
 </style></head><body><main class="wrap"><a href="/owner/users">← ユーザー管理</a>
-<h1>使ったユーザー</h1><p class="lead">その日に EagleEye を開いたログインユーザー（1人1日1回の記録・90日分）。ログイン回数はその日にログインし直した回数です。</p>
+<h1>使ったユーザー</h1><p class="lead"><a href="/owner/usage">📈 月ごと・年間の推移 →</a></p><p class="lead">その日に EagleEye を開いたログインユーザー（1人1日1回の記録・90日分）。ログイン回数はその日にログインし直した回数です。</p>
 <section class="card"><div class="chips">${chips}</div><div class="sum"><span>この日 <b>${users.length}</b> 人</span><span>うち新規 <b>${newCount}</b> 人</span></div></section>
 <section class="card"><div class="bars" aria-label="直近14日の人数">${bars}</div><p class="muted" style="font-size:12px;margin:6px 0 0">直近14日（棒を押すとその日を表示）</p></section>
-<section class="card"><div class="tbl"><table><thead><tr><th>ユーザー</th><th>領主（メイン）</th><th class="num">ログイン</th><th class="num">直近7日</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">この日に使ったログインユーザーはいません。</td></tr>'}</tbody></table></div></section>
+<section class="card"><div class="tbl"><table><thead><tr><th>ユーザー</th><th>領主（メイン）</th><th class="num">ログイン</th><th class="num">直近7日</th><th>よく使った機能</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">この日に使ったログインユーザーはいません。</td></tr>'}</tbody></table></div></section>
 </main></body></html>`;
 }

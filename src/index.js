@@ -71,6 +71,7 @@ import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly
 import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
+import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
 import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
@@ -5211,7 +5212,17 @@ export default {
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
       if (url.pathname === "/owner/users") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env, { view: "users" }));
       // その日に使ったログインユーザー（owner-active-users.js）。オーナーだけ。
-      if (url.pathname === "/owner/users/active") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const day = normalizeActiveDay(url.searchParams.get("day")); return eagleEyeHtmlResponse(renderActiveUsersPage(await loadActiveUsers(env.DB, day))); }
+      if (url.pathname === "/owner/users/active") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const day = normalizeActiveDay(url.searchParams.get("day")); const [data, usage] = await Promise.all([loadActiveUsers(env.DB, day), env.ARCHIVE ? loadDayUsage(env.ARCHIVE, day, rollupJstDay()).catch(() => ({})) : {}]); return eagleEyeHtmlResponse(renderActiveUsersPage({ ...data, usage })); }
+      // 利用の推移（月ごと・年間）。R2 の集計（usage-rollup.js）を読む。POST /owner/usage/run で集計を今すぐ（まだの日を最大30日）。
+      if (url.pathname === "/owner/usage" || url.pathname === "/owner/usage/run") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return url.pathname === "/owner/usage" ? eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)) : guard.error;
+        if (url.pathname === "/owner/usage/run") { if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); return json({ ok: true, ...(await runUsageRollup(env, { force: true, perRun: 30 })) }); }
+        const thisYear = Number(rollupJstDay().slice(0, 4));
+        const year = Math.min(thisYear, Math.max(2025, Number(url.searchParams.get("year")) || thisYear));
+        const [months, names] = await Promise.all([loadYear(env.ARCHIVE, year), env.DB.prepare("SELECT user_id, COALESCE(NULLIF(global_name, ''), username) AS name FROM users").all().then(r => Object.fromEntries((r?.results || []).map(x => [x.user_id, x.name]))).catch(() => ({}))]);
+        return eagleEyeHtmlResponse(renderUsageYearPage({ year, months, names, thisYear }));
+      }
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
@@ -5431,6 +5442,12 @@ export default {
       await runSwordlandEventsRefresh(env);
     } catch (error) {
       console.error("swordland_events_refresh_failed", error?.message || error);
+    }
+    // 利用の集計：毎晩（日本時間0時台）前日の分を R2 に（usage-rollup.js。D1 には書かない）
+    try {
+      await runUsageRollup(env);
+    } catch (error) {
+      console.error("usage_rollup_failed", error?.message || error);
     }
     // 聖剣：同盟の R4・R5 に「対戦相手を登録して」と個チャ（毎時・昼間だけ・1回の回につき1人1回）。swordland-notify.js
     try {
