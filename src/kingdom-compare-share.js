@@ -115,9 +115,18 @@ export function kingdomShareClient(cfg) {
   function preview(blob) {
     var url = URL.createObjectURL(blob), box = document.createElement("div");
     box.id = "kcmpPreview";
-    box.innerHTML = '<p>画像を長押しして保存・共有できます</p><img alt="王国比較の画像"><button type="button">閉じる</button>';
+    // 共有メニューが無いとき（PC の一部のブラウザなど）の代わり。2026-11-17：PC には長押しが無いので、コピー・保存のボタンを付ける。
+    var touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    var canCopy = !!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+    box.innerHTML = '<p></p><img alt="王国比較の画像"><div class="ee-pv-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">' + (canCopy ? '<button type="button" data-act="copy">📋 画像をコピー</button>' : '') + '<a data-act="save" download="eagleeye-kingdom-compare.png" style="border-radius:10px;padding:9px 18px;font-weight:700;background:#e2e8f0;color:#0f172a;text-decoration:none">💾 保存</a><button type="button" data-act="close">閉じる</button></div>';
+    box.querySelector("p").textContent = touch ? "画像を長押しして保存・共有できます" : (canCopy ? "「画像をコピー」して、Discord や X にそのまま貼り付けられます（Ctrl+V / ⌘V）" : "「保存」して、Discord や X に添付してください");
     box.querySelector("img").src = url;
-    box.querySelector("button").onclick = function () { box.remove(); URL.revokeObjectURL(url); };
+    box.querySelector('[data-act="save"]').href = url;
+    box.querySelector('[data-act="close"]').onclick = function () { box.remove(); URL.revokeObjectURL(url); };
+    var copyBtn = box.querySelector('[data-act="copy"]');
+    if (copyBtn) copyBtn.onclick = function () {
+      navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(function () { copyBtn.textContent = "✅ コピーしました"; }, function () { copyBtn.textContent = "コピーできませんでした（保存を使ってください）"; });
+    };
     document.body.appendChild(box);
   }
   window.__kcmpBuild = build;
