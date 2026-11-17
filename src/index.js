@@ -70,6 +70,7 @@ import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
 import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
+import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
 import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
@@ -5209,6 +5210,8 @@ export default {
       if (url.pathname === "/owner/discord-diagnostics") return eagleEyeHtmlResponse(await renderOwnerDiscordDiagnosticsPage(request, env));
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
       if (url.pathname === "/owner/users") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env, { view: "users" }));
+      // その日に使ったログインユーザー（owner-active-users.js）。オーナーだけ。
+      if (url.pathname === "/owner/users/active") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const day = normalizeActiveDay(url.searchParams.get("day")); return eagleEyeHtmlResponse(renderActiveUsersPage(await loadActiveUsers(env.DB, day))); }
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
@@ -10527,7 +10530,7 @@ async function renderOwnerMenuPage(env){
   const group=g=>g.open
     ? '<div class="card"><h2>'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'</span></h2><div class="links">'+g.links.map(link).join("")+'</div></div>'
     : '<details class="card"><summary style="cursor:pointer;font-weight:800;font-size:1.1em">'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'（'+g.links.length+'）</span></summary><div class="links" style="margin-top:12px">'+g.links.map(link).join("")+'</div></details>';
-  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a></div></div>';
+  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a><a class="link" href="/owner/users/active"><b>使ったユーザー</b><span>今日（日ごと）EagleEye を開いた人・新規・領主・ログイン回数</span></a></div></div>';
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OWNER管理 | EagleEye</title>
 <style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
 ${OWNER_MENU_GROUPS.map(group).join("")}${users}</main></body></html>`;
@@ -10572,7 +10575,7 @@ async function renderOwnerAdminPage(request,env,{ view = "menu" } = {}){
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ユーザー・権限管理 | EagleEye</title>
 <style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>ユーザー・権限管理</h1><p class="sub">ユーザーのロール・状態・ウォッチ件数とOWNER監査ログ</p>
-<p class="sub"><a href="/owner" style="color:#7dd3fc">← オーナー管理メニューへ</a></p>
+<p class="sub"><a href="/owner" style="color:#7dd3fc">← オーナー管理メニューへ</a>・<a href="/owner/users/active" style="color:#7dd3fc">今日使ったユーザー →</a></p>
 <div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
