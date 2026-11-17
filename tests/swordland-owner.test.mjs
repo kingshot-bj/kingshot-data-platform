@@ -83,3 +83,25 @@ test("全同盟の対戦相手：SQL が本物の SQLite で動き、名前・Di
   assert.deepEqual(list[0].opps[0].reporters, ["BJにゃん"]);
   assert.deepEqual(list[0].opps[0].ownerNames, ["BJにゃん（Discord：ネコ）", "（領主未登録）（Discord：inu）"]);
 });
+
+test("過去の対戦相手：回ごとに多く登録された相手を1つ・開催中の回は除く・比べるリンク（2026-11-17）", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { loadMatchupHistory, renderMatchupHistory, resetSwordlandSchemaCache } = await import("../src/swordland.js");
+  const raw = new DatabaseSync(":memory:");
+  const db = { prepare: sql => { let a = []; const st = { bind: (...x) => { a = x; return st; }, all: async () => ({ results: raw.prepare(sql).all(...a) }), first: async () => raw.prepare(sql).get(...a) ?? null, run: async () => { raw.prepare(sql).run(...a); return {}; } }; return st; },
+    batch: async list => { for (const s of list) await s.run(); return []; } };
+  resetSwordlandSchemaCache();
+  await loadMatchupHistory(db, 1524, "77"); // 表を作る
+  const showdown = 1763341200, league = 1762736401, current = 1763946000;
+  raw.exec(`INSERT INTO swordland_matchups VALUES
+    (${showdown},1524,'77','u1',1600,'ABC',1,1),(${showdown},1524,'77','u2',1600,'abc',1,1),(${showdown},1524,'77','u3',1700,'ZZZ',1,1),
+    (${league},1524,'77','u1',1555,'LGE',1,1),(${current},1524,'77','u1',1999,'NOW',1,1),(${showdown},1524,'88','u9',1,'OTHER',1,1)`);
+  const h = await loadMatchupHistory(db, 1524, "77", { exclude: [current] });
+  assert.deepEqual(h.map(x => [x.opp_tag, x.league]), [["ABC", false], ["LGE", true]]);
+  const html = renderMatchupHistory(h, { mine: { kid: 1524, alliance_abbr: "PAN" }, canCompare: true });
+  assert.match(html, /過去の対戦相手（2回）/);
+  assert.match(html, /頂上リーグ/);
+  assert.match(html, /href="\/alliance\/compare\?a=1524%3APAN&amp;a=1600%3AABC"/);
+  assert.ok(!renderMatchupHistory(h, { mine: { kid: 1524, alliance_abbr: "PAN" }, canCompare: false }).includes("今と比べる</a>"));
+  assert.equal(renderMatchupHistory([]), "");
+});
