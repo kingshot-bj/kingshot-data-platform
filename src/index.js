@@ -10637,7 +10637,7 @@ function draw(){
     var self=u.user_id===ownerId;
     var actions=button("履歴","history",u.user_id,"secondary",false);
     ["BASIC","ADVANCED","VIP","ADMIN","OWNER"].forEach(function(role){
-      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
+      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"secondary",self&&role!=="OWNER",role); // 権限の変更はたまにしか使わないので目立たせない（2026-11-17）
     });
     if(u.status==="ACTIVE"){
       actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER","DISABLED");
