@@ -5921,7 +5921,7 @@ async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
 
 async function handleSwordlandPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪", "聖剣争奪の対戦相手を見るにはログインしてください。"));
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪・聖剣頂上リーグ", "聖剣争奪・聖剣頂上リーグの対戦相手を見るにはログインしてください。"));
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   if (request.method === "POST") {
     if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);

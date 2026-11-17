@@ -91,3 +91,11 @@ test("登録した人：自分の同盟のページとオーナーの一覧に�
   const { currentMatchup } = await import("../src/swordland.js");
   assert.doesNotMatch(currentMatchup.toString(), /REPORTER_DISCORD_SQL/);
 });
+
+test("その他メニューの入口は聖剣争奪と頂上リーグの両方だと分かる名前（2026-11-17）", async () => {
+  const { EAGLEEYE_OTHER_MENU } = await import("../src/eagleeye-ui.js");
+  const item = EAGLEEYE_OTHER_MENU.find(m => m.key === "swordland");
+  assert.equal(item.href, "/swordland");
+  assert.match(item.label, /争奪/);
+  assert.match(item.label, /リーグ/);
+});
