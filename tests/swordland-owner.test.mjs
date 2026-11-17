@@ -33,7 +33,9 @@ test("全同盟の対戦相手：同盟ごとにまとめ、相手が割れて�
   assert.equal(q.length, 1);
   assert.equal(q[0][1][0], 1794200000 - SWORDLAND_OWNER_LIST_DAYS * 86400);
   // 2026-11-16 オーナーの判断：登録した人をゲーム内の名前で出す（Discord の名前・ID は出さない）。
-  assert.match(q[0][0], /GROUP_CONCAT\(\(SELECT p\.nick_name FROM user_player_links l JOIN players p/);
+  // 名前は1行につき1回だけ調べてから GROUP_CONCAT する（2026-11-17・速さのため）
+  assert.match(q[0][0], /\(SELECT p\.nick_name FROM user_player_links l JOIN players p[^]*AS pn/);
+  assert.match(q[0][0], /GROUP_CONCAT\(r\.pn, char\(31\)\)/);
   // オーナーの一覧だけ Discord の表示名も（オーナーしか見られない）。Discord の ID は出さない。
   assert.match(q[0][0], /COALESCE\(NULLIF\(u\.global_name, ''\), u\.username\)/);
   assert.doesNotMatch(q[0][0], /discord_id/);
@@ -53,4 +55,31 @@ test("オーナー以外の画面には出さない", () => {
 test("ルート：オーナーのときだけ読む", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /isOwner \? loadAllMatchupsForOwner\(env\.DB\)\.catch\(\(\) => \[\]\) : null/);
+});
+
+test("全同盟の対戦相手：SQL が本物の SQLite で動き、名前・Discord 名・同盟タグが入る（2026-11-17）", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { loadAllMatchupsForOwner, resetSwordlandSchemaCache } = await import("../src/swordland.js");
+  const raw = new DatabaseSync(":memory:");
+  raw.exec(`CREATE TABLE users (user_id TEXT, global_name TEXT, username TEXT);
+    CREATE TABLE user_player_links (user_id TEXT, governor_id TEXT, status TEXT, account_type TEXT, created_at INTEGER);
+    CREATE TABLE players (governor_id TEXT, nick_name TEXT);
+    CREATE TABLE alliance_catalog (kid INTEGER, aid TEXT, abbr TEXT, name TEXT);
+    CREATE TABLE swordland_events (kid INTEGER, name TEXT, begin_ts INTEGER, end_ts INTEGER, season INTEGER);
+    INSERT INTO users VALUES ('u1','ネコ','neko'),('u2','','inu');
+    INSERT INTO user_player_links VALUES ('u1','g1','ACTIVE','MAIN',1);
+    INSERT INTO players VALUES ('g1','BJにゃん');
+    INSERT INTO alliance_catalog VALUES (1524,'77.0','PAN','Pandora');`);
+  const db = { prepare: sql => { let a = []; const st = { bind: (...x) => { a = x; return st; }, all: async () => ({ results: raw.prepare(sql).all(...a) }), first: async () => raw.prepare(sql).get(...a) ?? null, run: async () => { raw.prepare(sql).run(...a); return {}; } }; return st; },
+    batch: async list => { for (const s of list) await s.run(); return []; } };
+  resetSwordlandSchemaCache?.();
+  const now = Date.now();
+  await loadAllMatchupsForOwner(db, { nowMs: now }); // 表を作る
+  raw.exec(`INSERT INTO swordland_matchups VALUES (5, 1524, '77', 'u1', 1600, 'ABC', ${Math.floor(now / 1000)}, ${Math.floor(now / 1000)}), (5, 1524, '77', 'u2', 1600, 'abc', ${Math.floor(now / 1000)}, ${Math.floor(now / 1000)})`);
+  const list = await loadAllMatchupsForOwner(db, { nowMs: now });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].abbr, "PAN");
+  assert.equal(list[0].opps[0].count, 2);
+  assert.deepEqual(list[0].opps[0].reporters, ["BJにゃん"]);
+  assert.deepEqual(list[0].opps[0].ownerNames, ["BJにゃん（Discord：ネコ）", "（領主未登録）（Discord：inu）"]);
 });

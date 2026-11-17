@@ -115,3 +115,20 @@ test("お知らせに画像・動画を付けられる（本文なしでも可�
   assert.match(html, new RegExp(`<video src="/news/media/${vid}"`));
   assert.match(html, /id="news-files"[^>]*multiple/);
 });
+
+test("お知らせを開いたときの既読の書き込みは、新しいお知らせがあるときだけ（2026-11-17）", async () => {
+  const { newsNeedsSeenWrite } = await import("../src/index.js");
+  assert.equal(newsNeedsSeenWrite(null, []), true, "初めては書く");
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, [{ created_at: 90 }, { publish_at: 100, created_at: 50 }]), false);
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, [{ created_at: 90 }, { publish_at: 120, created_at: 50 }]), true);
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, []), false);
+});
+
+test("聖剣：ふだんは保存済みの役職で登録欄を出し、メンバー表は「最新の役職で確かめる」と登録時だけ（2026-11-17）", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /loadSwordlandState\(env, auth, \{ verifyOfficer: recheck \}\)/);
+  assert.match(src, /state\.canRegister = Number\(mine\.alliance_rank\) >= 4;/);
+  const sw = readFileSync(new URL("../src/swordland.js", import.meta.url), "utf8");
+  assert.match(sw, /p\.alliance_name, p\.alliance_rank FROM user_player_links/);
+  assert.match(sw, /\/swordland\?recheck=1/);
+});

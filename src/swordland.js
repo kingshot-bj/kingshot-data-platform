@@ -131,7 +131,7 @@ async function activeEvent(db, kid, name, now) {
 // ログイン中の人の「メイン領主」と同盟（players の最新）。
 export async function myAlliance(db, userId) {
   return await db.prepare(
-    "SELECT p.governor_id, p.kid, p.alliance_aid, p.alliance_abbr, p.alliance_name FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
+    "SELECT p.governor_id, p.kid, p.alliance_aid, p.alliance_abbr, p.alliance_name, p.alliance_rank FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
     "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
   ).bind(String(userId)).first().catch(() => null);
 }
@@ -172,10 +172,12 @@ export async function loadAllMatchupsForOwner(db, { nowMs = Date.now(), days = S
   await ensureSwordlandSchema(db);
   const since = Math.floor(nowMs / 1000) - days * 86400;
   const rows = (await db.prepare(
-    "SELECT m.season, m.kid, m.aid, m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, GROUP_CONCAT(" + REPORTER_NAME_SQL + ", char(31)) AS names, GROUP_CONCAT(COALESCE(" + REPORTER_NAME_SQL + ", '（領主未登録）') || '（Discord：' || COALESCE(" + REPORTER_DISCORD_SQL + ", '?') || '）', char(31)) AS owner_names, " +
-    "(SELECT c.abbr FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS abbr, " +
-    "(SELECT c.name FROM alliance_catalog c WHERE c.kid = m.kid AND (c.aid = m.aid OR c.aid = m.aid || '.0') LIMIT 1) AS name " +
-    "FROM swordland_matchups m WHERE m.updated_at >= ? GROUP BY m.season, m.kid, m.aid, m.opp_kid, lower(m.opp_tag) ORDER BY at DESC LIMIT ?"
+    // 登録した人の名前は1行につき1回だけ調べる（内側）。同盟名もまとめた後に1回だけ（2026-11-17・速さのため）。
+    "SELECT g.*, (SELECT c.abbr FROM alliance_catalog c WHERE c.kid = g.kid AND (c.aid = g.aid OR c.aid = g.aid || '.0') LIMIT 1) AS abbr, " +
+    "(SELECT c.name FROM alliance_catalog c WHERE c.kid = g.kid AND (c.aid = g.aid OR c.aid = g.aid || '.0') LIMIT 1) AS name FROM (" +
+    "SELECT r.season, r.kid, r.aid, r.opp_kid, r.opp_tag, COUNT(*) AS n, MAX(r.updated_at) AS at, GROUP_CONCAT(r.pn, char(31)) AS names, GROUP_CONCAT(COALESCE(r.pn, '（領主未登録）') || '（Discord：' || COALESCE(r.dn, '?') || '）', char(31)) AS owner_names FROM (" +
+    "SELECT m.season, m.kid, m.aid, m.opp_kid, m.opp_tag, m.updated_at, " + REPORTER_NAME_SQL + " AS pn, " + REPORTER_DISCORD_SQL + " AS dn FROM swordland_matchups m WHERE m.updated_at >= ?" +
+    ") r GROUP BY r.season, r.kid, r.aid, r.opp_kid, lower(r.opp_tag) ORDER BY at DESC LIMIT ?) g ORDER BY g.at DESC"
   ).bind(since, limit).all().catch(() => ({ results: [] })))?.results || [];
   // 同じ同盟・同じ回で相手が割れていたら印を付ける（多い方を先に）。
   const groups = new Map();
@@ -219,7 +221,7 @@ export function renderSwordlandPage({ state, message = "", isOwner = false, owne
     let body;
     if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
     else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><input type="hidden" name="event" value="${esc(ev.kind || "showdown")}"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">${m ? "登録し直す" : "登録する"}</button></form>`;
-    else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>`;
+    else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>${s.canRecheck ? `<p class="note">R4・R5 なのに登録欄が出ないとき：<a href="/swordland?recheck=1">最新の役職で確かめる →</a></p>` : ""}`;
     return `<section class="card"><h2 class="oh">⚔️ ${esc(ev.label || "聖剣争奪")}<small class="note" style="display:block;font-weight:400">${esc(periodOf(ev))}</small></h2>${body}</section>`;
   };
   const sections = events.length ? events.map(section).join("") : `<section class="card"><p>今は聖剣争奪・聖剣頂上リーグの開催期間ではありません（日程はMightPulseから1日1回確認しています）。開催中はここで対戦相手を登録・確認できます。</p><p><a class="btn" href="/alliance/compare">⚔️ 同盟比較はいつでも使えます</a></p></section>`;
