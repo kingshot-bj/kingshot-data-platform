@@ -195,9 +195,28 @@ test("re-followed kingdom gets its archived rows restored before the first fetch
 test("archive job is wired into Cron, restore into new watchlist jobs, and pages use the fallback", async () => {
   const index = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
   const portal = await readFile(new URL("../src/kingdom-portal.js", import.meta.url), "utf8");
-  assert.ok(index.includes("await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now });"));
+  // 2026-11-17：毎時の最初の回だけ動かす（5分ごとに同じ王国を確かめ直して D1 を読んでいた）。
+  assert.ok(index.includes("const kingdomArchive = firstTickOfHour ? await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now }) :"));
   assert.ok(index.includes("await restoreArchivedKingdomRankingsIfMissing(env, row.kid);"));
   assert.ok(index.includes("async function getLatestPlayerHeroRankings(env, kid, governorId)"));
   assert.ok((portal.match(/withArchivedRankings\(env, kid/g) || []).length >= 7);
   assert.ok(portal.includes("時点のデータ（アーカイブ）です"));
+});
+
+test("新しさの確認：ボードごとの状態が新しければランキング本体を読まない（D1 の読み取りを減らす）", async () => {
+  const { archiveStaleKingdomRankings } = await import("../src/kingdom-ranking-archive.js");
+  const now = 2_000_000_000;
+  const sqls = [];
+  const db = { prepare: sql => { sqls.push(sql); const st = { bind: (...a) => { st.args = a; return st; },
+    all: async () => ({ results: [] }),
+    first: async () => {
+      if (sql.startsWith("SELECT kid FROM kingdom_ranking_current WHERE kid > ?")) return st.args[0] < 5 ? { kid: 5 } : null;
+      if (sql.includes("FROM kingdom_ranking_board_state")) return { last_updated_at: now - 3600 };
+      if (sql.includes("MAX(updated_at) AS last_updated_at FROM kingdom_ranking_current")) throw new Error("must not read current");
+      return null;
+    } }; return st; } };
+  const r = await archiveStaleKingdomRankings({ DB: db, ARCHIVE: {} }, null, { now });
+  assert.equal(r.archivedKingdoms, 0);
+  assert.equal(r.checked, 1);
+  assert.ok(!sqls.some(s => s.includes("MAX(updated_at) AS last_updated_at FROM kingdom_ranking_current")));
 });
