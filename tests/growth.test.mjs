@@ -104,7 +104,7 @@ test("ブラウザ側のスクリプト：1ページ1回・個人IDは送らな�
   // 個人のID（user_id・Discord のID）は送らない。SNSの名前としての "discord" は Cookie の印に使う（11/14〜）。
   assert.doesNotMatch(s, /user_id|discord_id|discordId|governor|Math\.random/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\);/);
+  assert.match(index, /const telemetry = clientTelemetryScript\(\) \+ pageViewBeaconScript\(\) \+ \(pageHasShareButton\(themed\) \? shareFabScript\(\) : ""\);/, "共有ボタンのあるページだけ浮かぶ共有ボタンも（2026-11-17）");
   assert.match(index, /url\.pathname === "\/api\/pv"\) return await handlePageViewBeacon\(request, env, \{ isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView\(request, env, path\) \}\)/);
 });
 
@@ -304,4 +304,14 @@ test("今日の成果：今日・昨日・7日平均、登録まわりとログ�
   assert.match(html, /押した <b>6<\/b><\/span>→<span>画面から戻った <b>3<\/b><\/span>→<span>完了 <b>3<\/b><\/span><span class="down">失敗 <b>1<\/b>/);
   assert.ok(html.indexOf('id="today"') < html.indexOf('id="week"'), "今日の成果がいちばん上");
   assert.match(html, /<details class="card"><summary>広告収益の試算/, "収益・比較・作戦は閉じておく");
+});
+
+test("ログインの数：クローラーがリンクをたどった分は数えない（AdSense のクローラーも）", async () => {
+  const { isLikelyBot } = await import("../src/growth.js");
+  for (const ua of ["Mediapartners-Google", "Mozilla/5.0 (compatible; Googlebot/2.1)", "Mozilla/5.0 (Linux; Android 6.0.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99 Mobile Safari/537.36 (compatible; GoogleOther)", "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)", "AdsBot-Google (+http://www.google.com/adsbot.html)", "", null]) assert.equal(isLikelyBot(ua), true, String(ua));
+  assert.equal(isLikelyBot("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1"), false);
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /if \(env\.DB && !isLikelyBot\(request\.headers\.get\("user-agent"\)\)\) await recordFunnel\(env\.DB, "google_start"\);/);
+  assert.match(src, /if \(env\.DB && !isLikelyBot\(request\.headers\.get\("user-agent"\)\)\) await recordFunnel\(env\.DB, "login_start"\);/);
 });

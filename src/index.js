@@ -69,6 +69,7 @@ import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell 
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
 import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
+import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
 import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
@@ -110,11 +111,11 @@ import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { socialRunStatus, triggerSocialRun } from "./social-run.js";
 import { playerShareEmbed } from "./player-share.js";
-import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe } from "./owner-snapshot.js";
+import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe, loadSnapshotD1 } from "./owner-snapshot.js";
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
-import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
+import { handlePageViewBeacon, pageViewBeaconScript, isLikelyBot, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -378,7 +379,8 @@ async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } 
   // Stale, unfollowed kingdom rankings: same verified R2 + Drive backup
   // before D1 delete; pages read the R2 copy afterwards.
   try {
-    const kingdomArchive = await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now });
+    // 毎時の最初の回だけ（14日以上前のものを探すので5分ごとは要らない。2026-11-17 D1 の読み取りを減らす）。
+    const kingdomArchive = firstTickOfHour ? await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now }) : { checked: 0, archivedKingdoms: 0, deletedRows: 0, batches: [], notThisTick: true };
     const failed = (kingdomArchive.batches || []).some(b => b.status === "FAILED");
     if (failed || kingdomArchive.archivedKingdoms > 0 || (kingdomArchive.skipped && firstTickOfHour)) {
       await recordDiagnostic(env.DB, {
@@ -5978,7 +5980,8 @@ async function servePublicPage(request, env, executionContext, render, maxAge = 
 
 function eagleEyeHtmlResponse(html, status = 200) {
   const themed = injectAdsense(enhanceSeo(applyEagleEyeTheme(html)));
-  const telemetry = clientTelemetryScript() + pageViewBeaconScript();
+  // 共有ボタンがあるページだけ、右下に浮かぶ「画像で共有」と1回だけの案内（share-fab.js）。
+  const telemetry = clientTelemetryScript() + pageViewBeaconScript() + (pageHasShareButton(themed) ? shareFabScript() : "");
   const instrumented = themed.includes("</body>")
     ? themed.replace("</body>", telemetry + "</body>")
     : themed + telemetry;
@@ -6011,7 +6014,8 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
-  if (env.DB) await recordFunnel(env.DB, "login_start");
+  // クローラーがログインのリンクをたどった分は数えない（2026-11-17：AdSense のクローラーで「Googleへ進んだ」が膨らんでいた）。
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "login_start");
   const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
@@ -6180,7 +6184,7 @@ async function startGoogleLogin(request, env) {
     return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), url).toString(), 302);
   }
   const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
-  if (env.DB) await recordFunnel(env.DB, "google_start");
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "google_start");
   const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(url.searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", { maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
@@ -10184,6 +10188,7 @@ async function handleOwnerSnapshotApi(request, env) {
   if (want("audit")) jobs.push(settle(loadSnapshotAudit(env.DB)).then(v => { out.audit = v; }));
   if (want("system")) jobs.push(settle(loadSnapshotSystem(env.DB)).then(v => { out.system = v; }));
   if (want("coverage")) jobs.push(settle(loadSnapshotCoverage(env.DB)).then(v => { out.coverage = v; }));
+  if (want("d1")) jobs.push(settle(loadSnapshotD1(env)).then(v => { out.d1 = v; }));
   if (want("probe")) jobs.push(settle(loadSnapshotProbe(env.DB, env.ARCHIVE, { probeId: new URL(request.url).searchParams.get("probe_id") || "" })).then(v => { out.probe = v; }));
   await Promise.all(jobs);
   await writeOwnerAuditLog(env, { user_id: "readonly-token", discord_id: "readonly-token" }, "READONLY_SNAPSHOT", null, null, { sections }).catch(() => {});

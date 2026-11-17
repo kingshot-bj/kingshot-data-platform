@@ -10,11 +10,40 @@
     "#キングショット #KingShot #領主対決"
   ],
   "scenes": [
-    { "slide": "text", "heading": "領主対決の相手を<br>3ステップで下見", "sub": "EagleEye の使い方", "seconds": 3 },
-    { "page": "/players", "caption": "① 相手の<b>名前</b>や領主IDで検索", "seconds": 4, "scroll": 200, "login": true },
-    { "page": "/player?governor_id=222916605", "caption": "② <b>英雄・部隊</b>までチェック", "seconds": 5, "scroll": 700, "login": true },
-    { "page": "/player/compare?governor_id=222916605&governor_id=227081160", "caption": "③ 自分と並べて<br><b>秘境の試練</b>を比較", "seconds": 5, "scroll": 2600, "login": true },
-    { "slide": "signup", "seconds": 5 },
-    { "slide": "outro", "seconds": 3 }
+    {
+      "slide": "text",
+      "heading": "領主対決の相手を<br>3ステップで下見",
+      "sub": "EagleEye の使い方",
+      "seconds": 3
+    },
+    {
+      "page": "/players",
+      "caption": "① 相手の<b>名前</b>や領主IDで検索",
+      "seconds": 4,
+      "scroll": 200,
+      "login": true
+    },
+    {
+      "page": "/player?governor_id=222916605",
+      "caption": "② <b>英雄・部隊</b>までチェック",
+      "seconds": 5,
+      "scroll": 700,
+      "login": true
+    },
+    {
+      "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
+      "caption": "③ 自分と並べて<br><b>秘境の試練</b>を比較",
+      "seconds": 5,
+      "scroll": 2600,
+      "login": true
+    },
+    {
+      "slide": "signup",
+      "seconds": 5
+    },
+    {
+      "slide": "outro",
+      "seconds": 3
+    }
   ]
 }

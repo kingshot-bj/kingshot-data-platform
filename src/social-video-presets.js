@@ -73,7 +73,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "scroll": 900
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "領主対決の相手も<br><b>秘境の試練</b>で比べよう",
     "seconds": 5,
     "scroll": 2600,
@@ -118,7 +118,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "③ 自分と並べて<br><b>秘境の試練</b>を比較",
     "seconds": 5,
     "scroll": 2600,
@@ -153,7 +153,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 2.5
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "見るべきは<br><b>秘境の試練</b>",
     "seconds": 5.5,
     "scroll": 2600,
@@ -213,7 +213,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160&governor_id=224984906&governor_id=228822223&governor_id=227052663&governor_id=227331459",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&governor_id=224984906&governor_id=228822223&governor_id=227052663&governor_id=227331459&me=0",
     "caption": "最大6人を比較して、画像で共有",
     "seconds": 5,
     "scroll": 900,
@@ -268,14 +268,14 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 3.5
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "相手と<b>並べて比べる</b><br>画像で共有もできる",
     "seconds": 4.5,
     "scroll": 350,
     "login": true
    },
    {
-    "page": "/player/compare?governor_id=222916605&governor_id=227081160",
+    "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
     "caption": "<b>秘境の試練</b>をステージごとに<br>どこで差がついているか",
     "seconds": 6,
     "scroll": 2600,
@@ -284,6 +284,61 @@ export const VIDEO_PRESETS = Object.freeze({
    {
     "slide": "signup",
     "seconds": 5
+   },
+   {
+    "slide": "outro",
+    "seconds": 3
+   }
+  ]
+ },
+ "share-card": {
+  "name": "share-card",
+  "title": "同盟比較を画像で共有",
+  "output": "eagleeye-share-card.mp4",
+  "post": [
+   "聖剣の相手の同盟と、上位の人の秘境の試練までまとめて比較⚔️",
+   "「画像で共有」を押すと、比較の画像とリンクがそのまま同盟の Discord や X に送れる📤",
+   "{host}",
+   "",
+   "#キングショット #KingShot #聖剣争奪"
+  ],
+  "scenes": [
+   {
+    "slide": "text",
+    "heading": "聖剣の相手と<br><b>同盟ごと</b>比べる",
+    "sub": "EagleEye の同盟比較",
+    "seconds": 3
+   },
+   {
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "違う王国の同盟どうしを比較<br><b>総力・人数・上位の人</b>",
+    "seconds": 4.5,
+    "scroll": 900,
+    "login": true
+   },
+   {
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "上位の人の<b>秘境の試練</b>を<br>ステージごとに並べて",
+    "seconds": 5,
+    "scroll": 2400,
+    "login": true
+   },
+   {
+    "page": "/alliance/compare?a=1524:Pen&a=1537:LOL",
+    "caption": "<b>画像で共有</b>を押すと<br>1枚の比較画像に",
+    "seconds": 5.5,
+    "scroll": 0,
+    "login": true,
+    "click": [
+     "#acImg"
+    ],
+    "afterClickMs": 4000
+   },
+   {
+    "slide": "text",
+    "heading": "画像とリンクを<br><b>Discord・X</b>へ<br>そのまま送れる",
+    "sub": "スマホの共有メニューから送るだけ",
+    "seconds": 3.5
    },
    {
     "slide": "outro",
@@ -378,6 +433,7 @@ export const VIDEO_PRESETS = Object.freeze({
     "seconds": 3,
     "skin": "gold"
    }
-  ]
+  ],
+  "mode": "dark"
  }
 });

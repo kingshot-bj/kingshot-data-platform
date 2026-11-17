@@ -60,6 +60,10 @@ export function normalizeSceneSet(input) {
       const out = { page, caption: sanitizeRich(sc.caption), seconds, scroll: Math.round(num(sc.scroll, 0, SCENE_LIMITS.scroll, 0)) };
       if (sc.login) out.login = true;
       if (skinOf(sc.skin)) out.skin = skinOf(sc.skin);
+      // 押すボタン（#id か .class だけ・3つまで）と、押したあとに待つ時間（共有画像などができるまで）。2026-11-17
+      const click = (Array.isArray(sc.click) ? sc.click : []).map(String).filter(x => /^[#.][A-Za-z][A-Za-z0-9_-]{0,40}$/.test(x)).slice(0, 3);
+      if (click.length) out.click = click;
+      if (Number(sc.afterClickMs) > 0) out.afterClickMs = Math.round(num(sc.afterClickMs, 0, 10000, 0));
       scenes.push(out);
     }
   }
@@ -69,5 +73,7 @@ export function normalizeSceneSet(input) {
   const title = String(input.title || name).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, SCENE_LIMITS.title);
   const set = { name, title, output: `eagleeye-${name}.mp4`, post, scenes };
   if (skinOf(input.skin)) set.skin = skinOf(input.skin);
+  // 画面の色（EagleEye のページ）：light（標準）か dark。着せ替えを見せるときは dark。
+  if (input.mode === "dark" || input.mode === "light") set.mode = input.mode;
   return { ok: true, set };
 }

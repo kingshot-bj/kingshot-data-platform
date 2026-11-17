@@ -132,6 +132,11 @@ export async function archiveStaleKingdomRankings(env, drive, {
     if (followed.has(kid)) continue;
     summary.checked++;
 
+    // まずボードごとの状態（王国あたり数行）で新しいかを見る。新しければ、ランキング本体（王国あたり約400行）は読まない（2026-11-17）。
+    const board = await db.prepare(
+      "SELECT MAX(updated_at) AS last_updated_at FROM kingdom_ranking_board_state WHERE kid = ?"
+    ).bind(kid).first().catch(() => null);
+    if (Number(board?.last_updated_at || 0) >= staleBefore) continue;
     const state = await db.prepare(
       "SELECT MAX(updated_at) AS last_updated_at FROM kingdom_ranking_current WHERE kid = ?"
     ).bind(kid).first();

@@ -35,7 +35,7 @@ const jstDate = sec => { const d = new Date(sec * 1000 + 9 * 3600 * 1000); retur
 
 export function swordlandNotifyText(ev, { abbr = "", origin = "https://eagleeye-ks.com" } = {}) {
   const period = `${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}`;
-  return `**⚔️ ${ev.label}（${period}）**\n${abbr ? abbr + " の" : ""}${ev.league ? "今週の" : "今回の"}対戦相手がまだ登録されていません。ゲーム内で相手を確認して、EagleEye に登録してください（R4・R5 向けのお知らせです）。\n${origin}/swordland\n\n通知を止める：${origin}/settings/notifications`;
+  return `**⚔️ ${ev.label}（${period}）**\n${abbr ? abbr + " の" : ""}${ev.league ? "今週の" : "今回の"}対戦相手がまだ登録されていません。ゲーム内で相手を確認して、EagleEye に登録してください（R4・R5 向けのお知らせです）。\n${origin}/swordland\n登録すると相手の同盟と上位の人を比べられて、比較は「画像で共有」で同盟の Discord にそのまま貼れます📤\n\n通知を止める：${origin}/settings/notifications`;
 }
 
 export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), request = discordApiRequest, maxDms = SWORDLAND_NOTIFY_MAX_DMS, gapMs = SWORDLAND_NOTIFY_GAP_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), force = false, origin = "https://eagleeye-ks.com" } = {}) {
