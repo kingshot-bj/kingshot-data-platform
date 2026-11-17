@@ -5904,7 +5904,10 @@ async function handleSwordlandHomeApi(request, env) {
     canRegister: canRegisterRole(auth.role) && Boolean(mine.alliance_abbr) });
 }
 
-async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
+// 役職の確かめ方（2026-11-17・速さのため）：
+// ・ふだん開くとき：保存済みの役職（players.alliance_rank）が R4・R5 なら登録欄を出す（メンバー表は読まない）。
+// ・登録するとき（POST）と「最新の役職で確かめる」（?recheck=1）：メンバー表で確かめる（従来どおり）。
+async function loadSwordlandState(env, auth, { checkOfficer = true, verifyOfficer = true } = {}) {
   await ensureSwordlandSchema(env.DB);
   const mine = await myAlliance(env.DB, auth.user_id);
   const active = mine?.kid ? await activeSwordlandEvents(env.DB, Number(mine.kid)) : [];
@@ -5912,7 +5915,10 @@ async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
   const state = { mine, events: active.map(event => ({ event, matchup: null })), canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
   if (!active.length || !mine?.alliance_aid) return state;
   for (const e of state.events) e.matchup = await currentMatchup(env.DB, e.event.season, Number(mine.kid), mine.alliance_aid);
-  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
+  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr && !verifyOfficer) {
+    state.canRegister = Number(mine.alliance_rank) >= 4;
+    state.canRecheck = !state.canRegister;
+  } else if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
     // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
     const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
     state.canRegister = Boolean(a && !a.error && isOfficer(a.members, mine.governor_id));
@@ -5942,7 +5948,8 @@ async function handleSwordlandPage(request, env) {
   }
   const isOwner = auth.role === "OWNER";
   // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。
-  const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
+  const recheck = new URL(request.url).searchParams.get("recheck") === "1";
+  const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth, { verifyOfficer: recheck }), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
   return eagleEyeHtmlResponse(renderSwordlandPage({ state, isOwner, ownerMatchups }));
 }
 
@@ -11587,14 +11594,24 @@ async function markWatchBadgeSeen(request, env) {
   }
 }
 
+export function newsNeedsSeenWrite(state, items) {
+  if (!state || state.news_seen_at == null) return true;
+  const newest = Math.max(0, ...(items || []).map(i => Number(i.publish_at ?? i.created_at) || 0));
+  return newest > Number(state.news_seen_at);
+}
+
 async function renderNewsRoute(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お知らせ", "お知らせを見るにはログインしてください。");
   await ensureBadgeSchema(env.DB);
-  const state = await env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null);
   const canPost = auth.role === "OWNER" || auth.role === "ADMIN";
-  const [items, queued] = await Promise.all([listAnnouncements(env.DB, 50), canPost ? listQueuedAnnouncements(env.DB, auth) : []]);
-  await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
+  // まとめて読む。既読の書き込みは「前に見た後に新しいお知らせが出たとき」だけ（2026-11-17・速さと D1 の書き込みを減らす）。
+  const [state, items, queued] = await Promise.all([
+    env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null),
+    listAnnouncements(env.DB, 50),
+    canPost ? listQueuedAnnouncements(env.DB, auth) : []
+  ]);
+  if (newsNeedsSeenWrite(state, items)) await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
   return renderNewsPage(items, { canPost, isOwner: auth.role === "OWNER", queued, viewerId: auth.discord_id, unreadSince: state?.news_seen_at ?? null });
 }
 
