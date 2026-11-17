@@ -12,7 +12,7 @@ import { isDiscordUserId } from "./google-auth.js";
 import { announcementEmbed, discordMessageBody } from "./discord-embeds.js";
 import { discordApiRequest } from "./discord-support.js";
 import { kvkPublicOrigin } from "./kvk-discord.js";
-import { ensureBadgeSchema } from "./notification-badges.js";
+import { ensureBadgeSchema, parseMedia } from "./notification-badges.js";
 
 export const ANNOUNCE_CHANNEL_NAME = "📢お知らせ";
 const MAX_CALLS_PER_RUN = 8;
@@ -129,7 +129,7 @@ export async function runAnnouncementDiscordSync(env, { now = Math.floor(Date.no
 
   // 1) Due announcements → #お知らせ
   const due = (await db.prepare(
-    "SELECT id, title, body FROM announcements WHERE status = 'PUBLISHED' AND discord_posted_at IS NULL AND COALESCE(publish_at, created_at) <= ? ORDER BY COALESCE(publish_at, created_at) LIMIT 3"
+    "SELECT id, title, body, media_json FROM announcements WHERE status = 'PUBLISHED' AND discord_posted_at IS NULL AND COALESCE(publish_at, created_at) <= ? ORDER BY COALESCE(publish_at, created_at) LIMIT 3"
   ).bind(now).all())?.results || [];
   if (due.length) {
     try {
@@ -138,9 +138,13 @@ export async function runAnnouncementDiscordSync(env, { now = Math.floor(Date.no
       for (const item of due) {
         if (budget.calls + 1 > maxCalls) break;
         budget.calls++;
-        // カード形式（タイトル・本文・BJにゃんの共有カード画像）。
-        const embed = announcementEmbed({ ...item, image_url: origin ? origin + "/assets/og/common.jpg" : null }, origin);
-        await request(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify(discordMessageBody(announcementChannelMessage(item, origin), embed)) });
+        // カード形式（タイトル・本文・画像）。お知らせに画像があれば1枚目、無ければ BJにゃんの共有カード画像。
+        // 動画は URL を本文の最後に付ける（Discord がその場で再生できる形で表示する）。2026-11-17
+        const media = parseMedia(item);
+        const firstImage = media.find(m => m.kind === "image"), video = media.find(m => m.kind === "video");
+        const embed = announcementEmbed({ ...item, image_url: origin ? origin + (firstImage ? "/news/media/" + firstImage.file : "/assets/og/common.jpg") : null }, origin);
+        const content = announcementChannelMessage(item, origin) + (video && origin ? "\n" + origin + "/news/media/" + video.file : "");
+        await request(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify(discordMessageBody(content, embed)) });
         await db.prepare("UPDATE announcements SET discord_posted_at = ? WHERE id = ?").bind(now, item.id).run();
         summary.posted++;
       }
