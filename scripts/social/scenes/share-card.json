@@ -1,0 +1,19 @@
+{
+  "name": "share-card",
+  "title": "比較を画像で共有",
+  "output": "eagleeye-share-card.mp4",
+  "post": [
+    "比較を1枚の画像にして、同盟の Discord にそのまま貼れる📤",
+    "領主対決・聖剣の相手との差もひと目で。",
+    "{host}",
+    "",
+    "#キングショット #KingShot"
+  ],
+  "scenes": [
+    { "slide": "text", "heading": "比較を<br><b>画像でシェア</b>📤", "sub": "同盟の Discord にそのまま貼れる", "seconds": 3 },
+    { "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0", "caption": "比べたい人を選んで<br><b>画像で共有</b>を押すだけ", "seconds": 3.5, "scroll": 0, "login": true },
+    { "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0", "caption": "1枚の画像に<br><b>まとめてくれる</b>", "seconds": 6, "scroll": 0, "login": true, "click": ["#eeShareImg"], "afterClickMs": 3500 },
+    { "slide": "text", "heading": "長押しで保存<br>そのまま<b>貼るだけ</b>", "sub": "Discord・X・LINE に", "seconds": 3 },
+    { "slide": "outro", "seconds": 3 }
+  ]
+}

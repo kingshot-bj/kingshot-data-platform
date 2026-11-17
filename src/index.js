@@ -68,6 +68,7 @@ import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-p
 import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
 import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
 import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
@@ -5975,7 +5976,8 @@ async function servePublicPage(request, env, executionContext, render, maxAge = 
 
 function eagleEyeHtmlResponse(html, status = 200) {
   const themed = injectAdsense(enhanceSeo(applyEagleEyeTheme(html)));
-  const telemetry = clientTelemetryScript() + pageViewBeaconScript();
+  // 共有ボタンがあるページだけ、右下に浮かぶ「画像で共有」と1回だけの案内（share-fab.js）。
+  const telemetry = clientTelemetryScript() + pageViewBeaconScript() + (pageHasShareButton(themed) ? shareFabScript() : "");
   const instrumented = themed.includes("</body>")
     ? themed.replace("</body>", telemetry + "</body>")
     : themed + telemetry;
