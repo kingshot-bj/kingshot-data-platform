@@ -69,8 +69,10 @@ export async function runSwordlandEventsRefresh(env, { nowMs = Date.now(), colle
   if (!force && now % 3600 >= 300) return { skipped: "NOT_THIS_TICK" }; // 1時間に1回（毎時の最初の5分）。オーナーの手動実行（force）はいつでも
   await ensureSwordlandSchema(db);
   const kids = ((await db.prepare(
-    "SELECT DISTINCT p.kid AS kid FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
-    "LEFT JOIN swordland_fetch_state s ON s.kid = p.kid WHERE l.status = 'ACTIVE' AND p.kid IS NOT NULL AND (s.fetched_at IS NULL OR s.fetched_at < ?) LIMIT ?"
+    "SELECT p.kid AS kid FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
+    // まだ一度も取っていない王国（新しく登録した人の王国）を先に、あとは古い順（2026-11-19）
+    "LEFT JOIN swordland_fetch_state s ON s.kid = p.kid WHERE l.status = 'ACTIVE' AND p.kid IS NOT NULL AND (s.fetched_at IS NULL OR s.fetched_at < ?) " +
+    "GROUP BY p.kid ORDER BY MAX(s.fetched_at IS NULL) DESC, MIN(COALESCE(s.fetched_at, 0)) ASC LIMIT ?"
   ).bind(force ? now + 1 : now - SWORDLAND_EVENTS_STALE_SECONDS, force ? 10 : SWORDLAND_EVENTS_PER_RUN).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)).filter(k => k > 0);
   let saved = 0; const errors = [];
   for (const kid of kids) {
@@ -91,6 +93,34 @@ export async function runSwordlandEventsRefresh(env, { nowMs = Date.now(), colle
   }
   return { kingdoms: kids.length, saved, errors };
 }
+// 1つの王国の日程をすぐ取る（まだ一度も取っていない王国の人が聖剣のページ・ホームを開いたとき）。2026-11-19
+// 取るのはその王国につき最初の1回だけ（swordland_fetch_state があれば何もしない）。MightPulse を1回使う。
+const onDemandTried = new Set(); // 失敗したときに毎回 MightPulse を呼ばない（同じ isolate では1王国1回）
+export function resetSwordlandOnDemandCache() { onDemandTried.clear(); }
+export async function ensureSwordlandEventsFetched(env, kid, { nowMs = Date.now(), collect = collectMightyOnly } = {}) {
+  const db = env?.DB;
+  if (!db || !kid || onDemandTried.has(Number(kid))) return false;
+  await ensureSwordlandSchema(db);
+  const state = await db.prepare("SELECT fetched_at FROM swordland_fetch_state WHERE kid = ?").bind(Number(kid)).first().catch(() => ({ fetched_at: 1 }));
+  if (state) return false;
+  onDemandTried.add(Number(kid));
+  const now = Math.floor(nowMs / 1000);
+  let status = "OK";
+  try {
+    const collected = await collect(env, { path: `/kingdoms/${Number(kid)}/events`, endpoint: "/kingdoms/:kid/events", targetType: "KINGDOM", targetId: String(kid), purpose: "SWORDLAND_EVENTS", timeoutMs: 8000, maxRetries: 0 });
+    const r = collected?.result; const data = r?.data ?? r;
+    for (const e of eventsToSave(extractEvents(data))) {
+      await db.prepare("INSERT INTO swordland_events (kid, name, begin_ts, end_ts, fetched_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(kid, name, begin_ts) DO UPDATE SET end_ts = excluded.end_ts, fetched_at = excluded.fetched_at")
+        .bind(Number(kid), e.name, e.begin_ts, e.end_ts, now).run();
+    }
+  } catch (error) {
+    status = String(error?.code || error?.message || "FAILED").slice(0, 40);
+  }
+  // 失敗したときは記録しない（1時間ごとの取得でまた先に取りに行く）
+  if (status === "OK") await markFetched(db, Number(kid), now, status);
+  return status === "OK";
+}
+
 async function markFetched(db, kid, now, status) {
   await db.prepare("INSERT INTO swordland_fetch_state (kid, fetched_at, status) VALUES (?, ?, ?) ON CONFLICT(kid) DO UPDATE SET fetched_at = excluded.fetched_at, status = excluded.status").bind(kid, now, status).run().catch(() => {});
 }
