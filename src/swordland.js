@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 // 聖剣争奪（Swordland Showdown）・聖剣頂上リーグ（Swordland Summit League）：対戦相手の登録と表示。
 // ・MightPulse では組み合わせは取れない（/kingdoms/:kid/events は日程だけ）。日程は Mighty 対応のキーで1日1回取り、
 //   開催期間中だけホームに入口を出す。
@@ -130,9 +131,10 @@ async function activeEvent(db, kid, name, now) {
 
 // ログイン中の人の「メイン領主」と同盟（players の最新）。
 export async function myAlliance(db, userId) {
+  await ensureActiveGovernorSchema(db).catch(() => {});
   return await db.prepare(
     "SELECT p.governor_id, p.kid, p.alliance_aid, p.alliance_abbr, p.alliance_name, p.alliance_rank FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id " +
-    "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
+    "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1"
   ).bind(String(userId)).first().catch(() => null);
 }
 

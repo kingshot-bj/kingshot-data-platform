@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 import { townCenterBadgeHtml } from "./town-center-level.js";
 import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
 import { loadKingdomGrowthHistory, renderKingdomGrowthSection, KINGDOM_GROWTH_CSS } from "./kingdom-growth-history.js";
@@ -179,7 +180,8 @@ export async function renderKingdomRankingsPage(request, env, auth = null, { onD
   let pref = null, linked = null;
   if (auth?.status === "ACTIVE" && env.DB) {
     pref = await env.DB.prepare("SELECT kid, boards_json, primary_board FROM user_kingdom_ranking_preferences WHERE user_id = ? LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
-    linked = await env.DB.prepare("SELECT kingdom_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    await ensureActiveGovernorSchema(env.DB).catch(() => {});
+    linked = await env.DB.prepare("SELECT kingdom_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
   }
   const requestedKid = String(url.searchParams.get("kid") || "").trim();
   const savedKid = Number(pref?.kid || linked?.kingdom_id || 0);

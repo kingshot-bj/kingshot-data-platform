@@ -74,6 +74,7 @@ import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
+import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
 import { runWeeklyReport, isWeeklyReportOn, setWeeklyReportOn } from "./weekly-report.js";
 import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
 import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
@@ -96,7 +97,7 @@ import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken, restoreR2ObjectFromGoogleDrive, restoreMissingR2ObjectsFromGoogleDrive, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
 import { countStaleActivity, readStaleBackupManifest, runStaleActivityBackup, runStaleActivityPurge, stalePurgeBlocker } from "./stale-activity-cleanup.js";
-import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
+import { maxAccountsForRole, getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, normalizeMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
 import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
 import { handleGuestSupportApi, renderGuestSupportPage, handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
@@ -1954,11 +1955,15 @@ async function handleMyPlayerApi(request, env) {
         const key = String(row.kingdom_id);
         byKingdom[key] = (byKingdom[key] || 0) + 1;
       }
+      const maxAccounts = maxAccountsForRole(auth.role);
       return json({
         ok: true,
         links,
         link: links.find(row => row.account_type === "MAIN" && row.status === "ACTIVE") || active[0] || null,
+        // 今使っている領主（切り替え・active-governor.js）
+        active_governor_id: active.length ? await getActiveGovernorId(env.DB, auth.user_id).catch(() => null) : null,
         limits: {
+          maxAccounts,
           freeKingdoms: 2,
           freeAccountsPerKingdom: 2,
           freeSubAccountsPerKingdom: 1,
@@ -1993,7 +1998,8 @@ async function handleMyPlayerApi(request, env) {
         }
 
         link = await saveUserPlayerLink(env.DB, auth.user_id, governorId, accountType, {
-          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true"
+          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true",
+          maxAccounts: maxAccountsForRole(auth.role)
         });
       } catch (error) {
         if (error?.code === "GOVERNOR_ID_ALREADY_LINKED") {
@@ -5076,6 +5082,21 @@ const worker = {
       }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
+      // 使う領主の切り替え（active-governor.js）。自分が登録している領主だけ選べる。
+      if (url.pathname === "/api/me/active-governor") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: false, error: "LOGIN_REQUIRED" }, 401);
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => null);
+        try {
+          const governorId = await setActiveGovernor(env.DB, auth.user_id, body?.governor_id);
+          return json({ ok: true, active_governor_id: governorId });
+        } catch (error) {
+          if (error?.code === "GOVERNOR_NOT_LINKED") return json({ ok: false, error: error.code, message: error.message }, 400);
+          throw error;
+        }
+      }
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
       if (url.pathname === "/api/me/vip/mighty-check") return await handleMyMightyCheckApi(request, env);
       if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
@@ -5675,7 +5696,7 @@ async function renderHeroShardRoute(request, env, executionContext) {
     if (!visibilityEnabled(settings, "heroes_list", auth.role)) {
       heroesNote = "現在の権限では英雄の一覧は表示されません。";
     } else {
-      const link = await env.DB.prepare("SELECT governor_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(auth.user_id).first();
+      const link = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(auth.user_id).first();
       if (!link) heroesNote = "マイKingShotで領主IDを登録すると、あなたの英雄が表示されます。";
       else {
         const observation = await getLatestPlayerObservation(env.DB, link.governor_id);
@@ -8127,7 +8148,7 @@ async function renderPlayerComparePage(request, env) {
   // 自分の領主（マイKingShot のメイン）を最初に入れる（ウォッチリストに入れなくても自分と比べられる・2026-11-16）。me=0 で外す。
   let meNote = "";
   if (pageUrl.searchParams.get("me") !== "0" && env.DB && auth.user_id) {
-    const mine = await env.DB.prepare("SELECT governor_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    const mine = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
     const own = normalizeCompareGovernorIds([String(mine?.governor_id || "")])[0];
     if (own) {
       const others = ids.filter(id => id !== own);
@@ -9461,6 +9482,7 @@ async function getAuthenticatedUser(request, env) {
   if (agent !== undefined) {
     if (!agent || agentRateLimited() || !env.DB) return null;
     await auditAgentRequest(request, env, writeOwnerAuditLog);
+    await ensureActiveGovernorSchema(env.DB).catch(() => {});
     return agent;
   }
   const secret = env.EAGLEEYE_SESSION_SECRET;
@@ -9478,6 +9500,8 @@ async function getAuthenticatedUser(request, env) {
     ).bind(session.sub).first();
     // ログインユーザーの1日の利用者数（1人1日1行、同じisolate内は2回目以降書かない）。
     if (user) await recordDailyActive(env.DB, user);
+    // 使う領主の切り替え（active-governor.js）の表を、ログイン中の人の最初の1回だけ用意する（同じ isolate では2回目以降しない）。
+    if (user) await ensureActiveGovernorSchema(env.DB).catch(() => {});
     return applyPreviewRole(user, session, isPreviewEnv(env)) || null;
   } catch (error) {
     // D1 outage must not turn the public/home page into a 500.
@@ -11881,7 +11905,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
     if(me){
       if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+tcBadge(m.town_center_level)+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
-        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
+        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'+(m.link_count>1?'<a class="ee-kvk-share" href="/my-player">⇄ 使う領主を切り替える（'+esc(m.link_count)+'件登録中）</a>':'')}
       else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
     }
     if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}

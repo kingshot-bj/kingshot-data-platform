@@ -30,6 +30,7 @@ body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,r
 .badge{padding:5px 9px;border-radius:999px;background:#1b344b;color:#c5d9e9;font-size:10px;font-weight:900;white-space:nowrap}
 .badge.main{background:rgba(246,200,75,.15);color:#f9d66d;border:1px solid rgba(246,200,75,.3)}
 .badge.sub{background:rgba(78,169,255,.14);color:#8cc7ff;border:1px solid rgba(78,169,255,.28)}
+.badge.using{background:rgba(73,230,154,.14);color:#6ff0ad;border:1px solid rgba(73,230,154,.3);margin-left:4px}.use-gov{margin:0 0 10px}
 .check{display:flex;align-items:center;gap:10px;margin:11px 0;color:#d7e7f5;font-size:13px}
 .check-icon{flex:0 0 23px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#1a3045;color:#7893aa;font-size:12px;font-weight:900;border:1px solid #2d4b65}
 .check-icon.ok{background:rgba(73,230,154,.13);border-color:rgba(73,230,154,.35);color:var(--ee-green)}
@@ -187,7 +188,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
   function render(d){
     const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
     const limits=d.player.limits||{};
-    let html='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">登録アカウント</span><h2>登録済みの領主</h2></div><span class="section-count">'+esc(rows.length)+'件</span></div><p class="muted section-note">無料枠：最大2王国・各王国メイン1＋サブ1</p><div class="card account-list">';
+    let html='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">登録アカウント</span><h2>登録済みの領主</h2></div><span class="section-count">'+esc(rows.length)+'件</span></div><p class="muted section-note">'+(limits.maxAccounts?'登録できる数：合わせて'+esc(limits.maxAccounts)+'件まで（王国は自由・各王国のメインは1つ）':'無料枠：最大2王国・各王国メイン1＋サブ1')+(rows.length>1?'<br>「この領主を使う」で、ホーム・聖剣・比較の「自分」・KvK などで使う領主を切り替えられます。':'')+'</p><div class="card account-list">';
     if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
     for(const l of rows){
       const p=l.player||{};
@@ -196,7 +197,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       const allianceLabel=String(p.alliance_abbr||p.alliance_name||"同盟未取得");
       const playerUrl="/player?governor_id="+encodeURIComponent(l.governor_id);
       const allianceUrl="/alliance?kid="+encodeURIComponent(p.kid??l.kingdom_id??"")+"&tag="+encodeURIComponent(p.alliance_abbr||p.alliance_name||"");
-      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small><a class="account-summary-player" href="'+playerUrl+'">♙ '+esc(playerName)+'</a>　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+(allianceName?'<a class="account-summary-player" href="'+allianceUrl+'">⚑ '+esc(allianceLabel)+'</a>':'⚑ '+esc(allianceLabel))+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
+      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small><a class="account-summary-player" href="'+playerUrl+'">♙ '+esc(playerName)+'</a>　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+(allianceName?'<a class="account-summary-player" href="'+allianceUrl+'">⚑ '+esc(allianceLabel)+'</a>':'⚑ '+esc(allianceLabel))+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span>'+(rows.length>1&&String(d.player.active_governor_id||"")===String(l.governor_id)?'<span class="badge using">使用中</span>':'')+'<span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+(rows.length>1&&String(d.player.active_governor_id||"")!==String(l.governor_id)?'<button class="btn use-gov" data-governor="'+esc(l.governor_id)+'">この領主を使う</button>':'')+
         '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
         '<div class="row"><span>プレイヤー名</span><a class="account-link" href="'+playerUrl+'"><span class="account-link-icon" aria-hidden="true">♙</span>'+esc(playerName)+'</a></div>'+
         '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
@@ -204,7 +205,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
         '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
         '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div></details>';
     }
-    html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
+    html+='<div class="usage-line"><span>登録状況</span><strong>'+(limits.maxAccounts?esc(limits.activeAccounts||0)+' / '+esc(limits.maxAccounts)+' アカウント <i>・</i> '+esc(limits.registeredKingdoms||0)+' 王国':esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント')+'</strong></div></div></section>';
     html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
     const a=d.advanced||{}; const role=String(d.vip?.role||a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
     const keyCount=Number(a.mightPulseKeyCount||0);
@@ -240,6 +241,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
     app.innerHTML=html;
     document.getElementById("save").onclick=save;
     document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor,b));
+    document.querySelectorAll(".use-gov").forEach(b=>b.onclick=()=>useGovernor(b.dataset.governor,b));
     if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
     setupKeyGuide();
     const mightyButton=document.getElementById("mighty-check");
@@ -259,6 +261,18 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-of
       await load();
     }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
     finally{button.disabled=false;}
+  }
+  async function useGovernor(governorId,button){
+    if(button){button.disabled=true;button.textContent="切り替えています…";}
+    try{
+      const r=await fetch("/api/me/active-governor",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
+      await load();
+    }catch(error){
+      alert(error.message||"切り替えに失敗しました");
+      if(button){button.disabled=false;button.textContent="この領主を使う";}
+    }
   }
   async function remove(governorId,button){
     if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
