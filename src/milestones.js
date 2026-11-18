@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 // マイルストーン①：EagleEye編（使い方の一歩ずつ）と成長編（ゲーム内の到達点）。
 // 判定は表示時に、すでにD1にあるデータ（players・kingdom_ranking_current・ウォッチ数）だけで行う。
 // MightPulse への新しい呼び出しはしない。一度達成したら記録（user_milestones）に残り、戦力が下がっても消えない。
@@ -127,12 +128,13 @@ export async function recordMilestone(db, userId, key, now = Math.floor(Date.now
 export async function loadMilestones(db, auth, { visible = () => true, now = Math.floor(Date.now() / 1000), markSeen = false } = {}) {
   if (!db || !auth?.user_id) return null;
   await ensureMilestoneSchema(db);
+  await ensureActiveGovernorSchema(db).catch(() => {});
   const userId = String(auth.user_id);
   const [storedRows, link, watch, invited, rewards, missions] = await Promise.all([
     db.prepare("SELECT key, achieved_at, seen FROM user_milestones WHERE user_id = ?").bind(userId).all(),
     db.prepare(
       "SELECT l.governor_id, l.kingdom_id, p.kid, p.power, p.town_center_level FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
-      "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
+      "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1"
     ).bind(userId).first(),
     auth.discord_id ? db.prepare("SELECT COUNT(*) AS n FROM player_watchlists WHERE discord_id = ? AND enabled = 1").bind(String(auth.discord_id)).first() : Promise.resolve({ n: 0 }),
     ensureReferralSchema(db).then(() => db.prepare("SELECT COUNT(*) AS n FROM referrals WHERE inviter_user_id = ? AND qualified_at IS NOT NULL").bind(userId).first()).catch(() => ({ n: 0 })),

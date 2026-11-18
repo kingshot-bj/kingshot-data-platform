@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 // KvK (Kingdom vs Kingdom) collection and page.
 //
 // Collection (Cron, every 5 minutes):
@@ -397,7 +398,8 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   await ensureKvkSchema(db);
   const isVip = rank >= ROLE_RANK.VIP;
   const now = nowOverride ?? Math.floor(Date.now() / 1000);
-  const links = (await db.prepare(`SELECT l.kingdom_id AS registered, ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.user_id = ? AND l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.kingdom_id`).bind(auth.user_id).all()).results || [];
+  await ensureActiveGovernorSchema(db).catch(() => {});
+  const links = (await db.prepare(`SELECT l.kingdom_id AS registered, ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.user_id = ? AND l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL ORDER BY ${myGovernorOrderSql("l", { oldestFirst: false })}, l.kingdom_id`).bind(auth.user_id).all()).results || [];
   const mine = [...new Set(links.map(r => Number(r.kid)).filter(Number.isInteger))];
   const moved = links.filter(r => r.registered != null && Number(r.registered) !== Number(r.kid));
   const movedNote = moved.length ? `<div class="notice">移民を検知しました：${moved.map(r => `登録時 王国${Number(r.registered)} → 現在 王国${Number(r.kid)}`).join("、")}。KvKは現在の王国で表示します。</div>` : "";
