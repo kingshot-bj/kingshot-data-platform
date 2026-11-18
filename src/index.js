@@ -106,7 +106,7 @@ import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } fro
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
-import { loadMatchupHistory } from "./swordland.js";
+import { loadMatchupHistory, ensureSwordlandEventsFetched } from "./swordland.js";
 import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
@@ -5596,6 +5596,7 @@ async function handleSwordlandHomeApi(request, env) {
   if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: true, active: false });
   await ensureSwordlandSchema(env.DB).catch(() => {});
   const mine = await myAlliance(env.DB, auth.user_id);
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
   const [active, duel] = mine?.kid ? await Promise.all([activeSwordlandEvents(env.DB, Number(mine.kid)), activeGovernorDuel(env.DB, Number(mine.kid)).catch(() => null)]) : [[], null];
   const duelInfo = duel ? { endTs: duel.end_ts } : null;
   if (!active.length) return json({ ok: true, active: false, duel: duelInfo, events: [] });
@@ -5619,6 +5620,8 @@ async function handleSwordlandHomeApi(request, env) {
 async function loadSwordlandState(env, auth, { checkOfficer = true, verifyOfficer = true } = {}) {
   await ensureSwordlandSchema(env.DB);
   const mine = await myAlliance(env.DB, auth.user_id);
+  // まだ一度も日程を取っていない王国なら、ここで1回だけ取る（新しく登録した人・2026-11-19）
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
   const active = mine?.kid ? await activeSwordlandEvents(env.DB, Number(mine.kid)) : [];
   // 聖剣争奪と頂上リーグが同時のときは両方（それぞれ相手を登録する）。
   const state = { mine, events: active.map(event => ({ event, matchup: null })), canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
