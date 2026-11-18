@@ -4,6 +4,8 @@
 // ・いつ：朝だけ（日本時間 8時〜10時台・5分ごとの cron の毎回）。開催中の回ごとに、1人1回まで。
 // ・送らない：同じ同盟の誰かがもう相手を登録している、本人が通知を止めている、前に送った（届かなかった場合も含む）。
 // ・届かない人（サーバーにいない・個チャを拒否）は記録して次へ。
+// ・2026-11-18：領主IDを複数登録している人には、R4・R5 になっている同盟ごとに1通（同じ同盟の領主が2人いても1通）。
+//   記録は swordland_notify_sent（回・人・王国・同盟ごと）。前の swordland_notify_log（回・人ごと）に同じ同盟の記録があれば送らない。
 // ・送る量：1回20人まで、1人ごとに1.5秒あける（朝36回で最大720人）。Discord はスパム判定の基準を公開していないので、
 //   一度にまとめず小分け・間隔をあけて送る（2026-11-16）。429 が来たらその回はやめる。
 import { discordApiRequest } from "./discord-support.js";
@@ -20,7 +22,8 @@ export async function ensureSwordlandNotifySchema(db) {
   if (!ready) {
     ready = db.batch([
       db.prepare("CREATE TABLE IF NOT EXISTS swordland_notify_log (season INTEGER NOT NULL, user_id TEXT NOT NULL, kid INTEGER NOT NULL, aid TEXT NOT NULL, sent_at INTEGER NOT NULL, status TEXT NOT NULL, PRIMARY KEY (season, user_id))"),
-      db.prepare("CREATE TABLE IF NOT EXISTS swordland_notify_optout (user_id TEXT PRIMARY KEY, created_at INTEGER NOT NULL)")
+      db.prepare("CREATE TABLE IF NOT EXISTS swordland_notify_optout (user_id TEXT PRIMARY KEY, created_at INTEGER NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS swordland_notify_sent (season INTEGER NOT NULL, user_id TEXT NOT NULL, kid INTEGER NOT NULL, aid TEXT NOT NULL, sent_at INTEGER NOT NULL, status TEXT NOT NULL, PRIMARY KEY (season, user_id, kid, aid))")
     ]).catch(error => { ready = null; throw error; });
   }
   return ready;
@@ -33,9 +36,11 @@ export function isNotifyTick(nowSec) {
 
 const jstDate = sec => { const d = new Date(sec * 1000 + 9 * 3600 * 1000); return (d.getUTCMonth() + 1) + "/" + d.getUTCDate(); };
 
-export function swordlandNotifyText(ev, { abbr = "", origin = "https://eagleeye-ks.com" } = {}) {
+export function swordlandNotifyText(ev, { abbr = "", origin = "https://eagleeye-ks.com", governor = "", kid = null } = {}) {
   const period = `${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}`;
-  return `**⚔️ ${ev.label}（${period}）**\n${abbr ? abbr + " の" : ""}${ev.league ? "今週の" : "今回の"}対戦相手がまだ登録されていません。ゲーム内で相手を確認して、EagleEye に登録してください（R4・R5 向けのお知らせです）。\n${origin}/swordland\n登録すると相手の同盟と上位の人を比べられて、比較は「画像で共有」で同盟の Discord にそのまま貼れます📤\n\n通知を止める：${origin}/settings/notifications`;
+  // 領主を複数登録している人向けに、どの領主の同盟の話かを書く
+  const who = governor ? `領主：${governor}${kid ? `（王国${kid}）` : ""}\n` : "";
+  return `**⚔️ ${ev.label}（${period}）**\n${who}${abbr ? abbr + " の" : ""}${ev.league ? "今週の" : "今回の"}対戦相手がまだ登録されていません。ゲーム内で相手を確認して、EagleEye に登録してください（R4・R5 向けのお知らせです）。\n${origin}/swordland\n登録すると相手の同盟と上位の人を比べられて、比較は「画像で共有」で同盟の Discord にそのまま貼れます📤\n\n通知を止める：${origin}/settings/notifications`;
 }
 
 export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), request = discordApiRequest, maxDms = SWORDLAND_NOTIFY_MAX_DMS, gapMs = SWORDLAND_NOTIFY_GAP_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), force = false, origin = "https://eagleeye-ks.com" } = {}) {
@@ -51,34 +56,45 @@ export async function runSwordlandOfficerNotify(env, { nowMs = Date.now(), reque
   if (!kids.length) return { kingdoms: 0, sent: 0 };
   const roles = SWORDLAND_REGISTER_ROLES.map(() => "?").join(",");
   const officers = ((await db.prepare(
-    "SELECT DISTINCT u.user_id, u.discord_id, p.kid, p.alliance_aid, p.alliance_abbr FROM users u " +
+    "SELECT DISTINCT u.user_id, u.discord_id, p.kid, p.alliance_aid, p.alliance_abbr, p.nick_name FROM users u " +
     "JOIN user_player_links l ON l.user_id = u.user_id AND l.status = 'ACTIVE' JOIN players p ON p.governor_id = l.governor_id " +
     `LEFT JOIN swordland_notify_optout o ON o.user_id = u.user_id WHERE u.status = 'ACTIVE' AND u.role IN (${roles}) AND p.alliance_rank IN (${OFFICER_RANKS.join(",")}) ` +
     `AND p.alliance_aid IS NOT NULL AND o.user_id IS NULL AND p.kid IN (${kids.map(() => "?").join(",")})`
   ).bind(...SWORDLAND_REGISTER_ROLES, ...kids).all().catch(() => ({ results: [] })))?.results || []).filter(o => /^\d{5,25}$/.test(String(o.discord_id || "")));
   const eventsByKid = new Map();
+  // 同盟が2つ以上ある人（領主を複数登録）には、どの領主の話かを本文に書く
+  const allianceCount = new Map();
+  for (const o of officers) { const s = allianceCount.get(String(o.user_id)) || new Set(); s.add(o.kid + ":" + o.alliance_aid); allianceCount.set(String(o.user_id), s); }
+  const multiple = new Set([...allianceCount].filter(([, s]) => s.size > 1).map(([u]) => u));
   let sent = 0, closed = 0, failed = 0, skippedRegistered = 0;
+  const seen = new Set(); // 同じ人・同じ同盟は1回の実行で1通
   for (const o of officers) {
     if (sent + closed + failed >= maxDms) break;
     const kid = Number(o.kid);
     if (!eventsByKid.has(kid)) eventsByKid.set(kid, await activeSwordlandEvents(db, kid, nowMs));
     for (const ev of eventsByKid.get(kid)) {
       if (sent + closed + failed >= maxDms) break;
-      const done = await db.prepare("SELECT 1 AS x FROM swordland_notify_log WHERE season = ? AND user_id = ?").bind(ev.season, String(o.user_id)).first().catch(() => null);
+      const key = [ev.season, o.user_id, kid, o.alliance_aid].join(":");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const done = await db.prepare(
+        "SELECT 1 AS x FROM swordland_notify_sent WHERE season = ? AND user_id = ? AND kid = ? AND aid = ? " +
+        "UNION ALL SELECT 1 AS x FROM swordland_notify_log WHERE season = ? AND user_id = ? AND kid = ? AND aid = ? LIMIT 1"
+      ).bind(ev.season, String(o.user_id), kid, String(o.alliance_aid), ev.season, String(o.user_id), kid, String(o.alliance_aid)).first().catch(() => null);
       if (done) continue;
       if (await currentMatchup(db, ev.season, kid, o.alliance_aid)) { skippedRegistered++; continue; }
       let status = "SENT";
       if (sent + closed + failed > 0 && gapMs > 0) await sleep(gapMs); // 1人ごとに間をあける
       try {
         const channel = await request(env, "/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: String(o.discord_id) }) });
-        await request(env, `/channels/${channel.id}/messages`, { method: "POST", body: JSON.stringify({ content: swordlandNotifyText(ev, { abbr: o.alliance_abbr || "", origin }), allowed_mentions: { parse: [] } }) });
+        await request(env, `/channels/${channel.id}/messages`, { method: "POST", body: JSON.stringify({ content: swordlandNotifyText(ev, { abbr: o.alliance_abbr || "", origin, governor: multiple.has(String(o.user_id)) ? (o.nick_name || "") : "", kid }), allowed_mentions: { parse: [] } }) });
         sent++;
       } catch (error) {
         if (Number(error?.status) === 429) return { kingdoms: kids.length, officers: officers.length, sent, closed, failed, skippedRegistered, rateLimited: true };
         status = Number(error?.discord?.code) === 50007 ? "DM_CLOSED" : "FAILED";
         if (status === "DM_CLOSED") closed++; else failed++;
       }
-      await db.prepare("INSERT INTO swordland_notify_log (season, user_id, kid, aid, sent_at, status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(season, user_id) DO NOTHING")
+      await db.prepare("INSERT INTO swordland_notify_sent (season, user_id, kid, aid, sent_at, status) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(season, user_id, kid, aid) DO NOTHING")
         .bind(ev.season, String(o.user_id), kid, String(o.alliance_aid), now, status).run().catch(() => {});
     }
   }
