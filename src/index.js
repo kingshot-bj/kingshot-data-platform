@@ -111,6 +111,7 @@ import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
 import { loadAllianceForCompare, ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS } from "./kingdom-portal.js";
+import { allianceLabel } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
@@ -9652,7 +9653,7 @@ function adminKingdomRankingName(row) {
   if (row?.target_type === "ALLIANCE") {
     const abbr = String(row.abbr || "").trim();
     const name = String(row.name || "").trim();
-    return abbr && name ? "[" + abbr + "] " + name : abbr || name || row.target_id || "-";
+    return abbr && name ? "[" + abbr + "] " + name : abbr || name || (row.target_id ? allianceLabel(row) : "-");
   }
   return String(row?.nick_name || row?.governor_id || row?.uid || row?.target_id || "-");
 }
