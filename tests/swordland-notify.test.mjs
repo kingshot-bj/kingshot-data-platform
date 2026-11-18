@@ -9,7 +9,9 @@ const week = Date.parse("2026-11-16T00:00:00Z") / 1000; // 11/16(月) 9:00 JST
 const at = (week + 6 * 60) * 1000;                     // 9:06 JST（朝・毎時5〜9分）
 
 function makeDb({ officers, events, matchups = [], log = [] }) {
-  const logged = new Map(log.map(l => [l.season + ":" + l.user_id, l]));
+  // 送った記録：新しい表（回・人・王国・同盟）は logged、前の表（回・人ごと）は oldLog（2026-11-18）
+  const logged = new Map();
+  const oldLog = new Map(log.map(l => [[l.season, l.user_id, l.kid, l.aid].join(":"), l]));
   const db = {
     logged,
     batch: async () => [],
@@ -23,10 +25,10 @@ function makeDb({ officers, events, matchups = [], log = [] }) {
         },
         first: async () => {
           if (sql.includes("FROM swordland_events")) { const [kid, name, now] = st.args; return events.find(e => e.kid === kid && e.name === name && e.begin_ts <= now && e.end_ts >= now) || null; }
-          if (sql.includes("FROM swordland_notify_log")) return logged.has(st.args[0] + ":" + st.args[1]) ? { x: 1 } : null;
+          if (sql.includes("FROM swordland_notify_sent")) { const a = st.args; return logged.has(a.slice(0, 4).join(":")) || oldLog.has(a.slice(4, 8).join(":")) ? { x: 1 } : null; }
           return null;
         },
-        run: async () => { if (sql.startsWith("INSERT INTO swordland_notify_log")) { const [season, user_id, kid, aid, sent_at, status] = st.args; const k = season + ":" + user_id; if (!logged.has(k)) logged.set(k, { season, user_id, kid, aid, status }); } return {}; } };
+        run: async () => { if (sql.startsWith("INSERT INTO swordland_notify_sent")) { const [season, user_id, kid, aid, sent_at, status] = st.args; const k = [season, user_id, kid, aid].join(":"); if (!logged.has(k)) logged.set(k, { season, user_id, kid, aid, status }); } return {}; } };
       return st;
     }
   };
@@ -110,4 +112,31 @@ test("対象の選び方：R4・R5・ADVANCED以上・止めていない人／�
   assert.match(index, /await runSwordlandOfficerNotify\(env, \{ origin: env\.PUBLIC_ORIGIN \|\| "https:\/\/eagleeye-ks\.com" \}\);/);
   assert.match(index, /if \(url\.pathname === "\/settings\/notifications"\) \{\n        const auth = await getAuthenticatedUser\(request, env\);/);
   assert.match(swordlandNotifyText({ label: "聖剣争奪", begin_ts: week, end_ts: week + WEEK_SECONDS }, { abbr: "PAN" }), /PAN の今回の対戦相手/);
+});
+
+
+test("領主を複数登録している人：R4・R5 の同盟ごとに1通・どの領主か本文に書く・同じ同盟は1通（2026-11-18）", async () => {
+  resetSwordlandSchemaCache(); resetSwordlandNotifySchemaCache();
+  const a = { user_id: "u1", discord_id: "100000000000000001", kid: 1524, alliance_aid: "153300205", alliance_abbr: "PAN", nick_name: "BJにゃん" };
+  const b = { user_id: "u1", discord_id: "100000000000000001", kid: 1524, alliance_aid: "153300999", alliance_abbr: "SUB", nick_name: "サブにゃん" };
+  const dup = { ...a, nick_name: "同じ同盟のサブ" };
+  const db = makeDb({ officers: [a, b, dup], events: [league] });
+  const request = fakeRequest();
+  const r = await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request, gapMs: 0 });
+  assert.equal(r.sent, 2, "同盟2つに1通ずつ");
+  const msgs = request.calls.filter(c => c[0].startsWith("/channels/")).map(c => JSON.parse(c[1].body).content);
+  assert.match(msgs[0], /領主：BJにゃん（王国1524）\nPAN の/);
+  assert.match(msgs[1], /領主：サブにゃん（王国1524）\nSUB の/);
+  const again = fakeRequest();
+  assert.equal((await runSwordlandOfficerNotify({ DB: db, DISCORD_BOT_TOKEN: "x" }, { nowMs: at + 300000, request: again, gapMs: 0 })).sent, 0, "同じ回はもう送らない");
+  // 前の記録（回・人ごとの表）に同じ同盟の記録があれば送らない。別の同盟には送る
+  resetSwordlandNotifySchemaCache();
+  const old = makeDb({ officers: [a, b], events: [league], log: [{ season: week + 1, user_id: "u1", kid: 1524, aid: "153300205" }] });
+  const r3 = await runSwordlandOfficerNotify({ DB: old, DISCORD_BOT_TOKEN: "x" }, { nowMs: at, request: fakeRequest(), gapMs: 0 });
+  assert.equal(r3.sent, 1);
+});
+
+test("領主が1つの人の本文には領主名を書かない（今まで通り）", () => {
+  const ev = { label: "聖剣争奪", begin_ts: 1793318400, end_ts: 1793318400 + 86400 * 2 };
+  assert.doesNotMatch(swordlandNotifyText(ev, { abbr: "PAN" }), /領主：/);
 });
