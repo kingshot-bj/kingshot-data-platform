@@ -74,6 +74,7 @@ import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { renderGuidesIndex, renderGuide } from "./guides.js";
 import { splitLang, canSeeEnglish } from "./i18n.js";
+import { translateHomeToEnglish, translateHomeResponse, englishSummaryTitles } from "./home-en.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
 import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
@@ -4722,6 +4723,8 @@ const worker = {
         const enAuth = await getAuthenticatedUser(request, env).catch(() => null);
         if (!canSeeEnglish(enAuth?.status === "ACTIVE" ? enAuth.role : null)) return toJa();
         const origin = publicOrigin(request, env);
+        // ログイン中（オーナー・アドミン）：ログイン後のホームの英語版（home-en.js）
+        if (path === "/" && enAuth?.status === "ACTIVE") return await translateHomeResponse(eagleEyeHtmlResponse(translateHomeToEnglish(await renderHome(request, env))));
         if (path === "/") {
           const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
           return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
@@ -5652,7 +5655,7 @@ async function handleSwordlandHomeApi(request, env) {
   const canCmp = canUseAllianceCompare(auth.role) && Boolean(mine.alliance_abbr);
   const events = await Promise.all(active.map(async ev => {
     const m = mine.alliance_aid ? await currentMatchup(env.DB, ev.season, Number(mine.kid), mine.alliance_aid) : null;
-    return { kind: ev.kind, label: ev.label, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, memberReported: Boolean(m.memberReported), compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
+    return { kind: ev.kind, label: ev.label, name: ev.name || null, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, memberReported: Boolean(m.memberReported), compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
   }));
   const showdown = active[0];
   const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.season, Number(mine.kid), mine.alliance_aid) : null;
@@ -11530,6 +11533,8 @@ async function handleHomeSummary(request, env, executionContext) {
         }
       })());
     }
+    // 英語のホーム（/en）から：ミッション・マイルストーンの名前を英語に（home-en.js）
+    if (new URL(request.url).searchParams.get("lang") === "en") englishSummaryTitles(summary);
     return json({ ok: true, ...summary });
   } catch (error) {
     console.error("home_summary_failed", error?.message || error);
@@ -11542,7 +11547,7 @@ const TC_BADGE_CLIENT_SOURCE = "(function(){var __name=function(f){return f};ret
 
 const INVITE_BANNER_CSS = "<style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}.ee-invited-special{border-color:rgba(251,191,36,.9);background:linear-gradient(110deg,#5a410c,#2a1e07)!important;color:#fff8e6!important;box-shadow:0 0 22px rgba(251,191,36,.3)}.ee-invited-special b{color:#fde68a}.ee-invited-special span{color:#f3e2b3!important}.ee-invited-special em{color:#fbbf24!important}</style>";
 
-async function renderHome(request, env) {
+export async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   const verifiedSession = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
