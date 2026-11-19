@@ -1,3 +1,4 @@
+import { allianceShareEmbed } from "./alliance-share.js";
 import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 import { townCenterBadgeHtml } from "./town-center-level.js";
 import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
@@ -359,6 +360,8 @@ export function vipSummaryHtml(members, vips, { canFetch = false, kid = 0, tag =
       "<script>(function(){var b=document.querySelector('.vip-fetch');if(!b)return;b.onclick=function(){if(!confirm('メンバー全員のプレイヤー情報を MightPulse から取り直します。よろしいですか？'))return;b.disabled=true;var msg=document.querySelector('.vip-msg');msg.textContent='取得中…（1分ほどかかることがあります）';fetch('/api/alliance/member-vips',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(b.dataset.kid),tag:b.dataset.tag})}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.message||d.error||'失敗しました');msg.textContent=d.fetched+'人分を取得しました'+(d.failed?'（'+d.failed+'人は失敗）':'')+'。再読み込みします…';setTimeout(function(){location.reload()},800)}).catch(function(e){msg.textContent=e.message;b.disabled=false})}})()</script>" : "");
 }
 
+const shareDate = sec => Number(sec) > 0 ? new Date((Number(sec) + 9 * 3600) * 1000).toISOString().slice(0, 10).replace(/-/g, "/") : "";
+
 export async function renderAlliancePage(request, env, auth = null, opts = {}) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
@@ -553,6 +556,8 @@ export async function renderAlliancePage(request, env, auth = null, opts = {}) {
   const loginLink=signedIn?"":" <a class='notice-login' href='"+esc(loginHref)+"'>Discordでログイン →</a>";
   const html="<main class='wrap alliance-page'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a>"+
     "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>同盟</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div>"+refreshButton+"</header>"+"<p style='margin:8px 0 0;font-size:13px'><a href='/alliance/compare?a="+encodeURIComponent(kid+":"+(allianceAbbr||tag))+"'>⚔️ この同盟をほかの同盟と比べる（聖剣の下見）→</a></p>"+
+    // 同盟カード（画像で共有・alliance-share.js・2026-11-19）。VIP は見られる人のカードにだけ載せる。
+    allianceShareEmbed({ kid, tag: allianceAbbr || tag, name: allianceName, power: alliancePower, powerRank, memberCount, members: normalized, vips: opts.showVip ? vips : null, date: shareDate(row.last_seen_at || row.updated_at || historyFallbackAt) })+
     (statusMessage?"<div class='notice'>"+esc(statusMessage)+loginLink+"</div>":"")+
     "<section><div class='section-title'><h2>同盟概要</h2><small>取得 "+esc(ts(row.last_seen_at||row.updated_at||historyFallbackAt))+"</small></div><div class='metrics'>"+
       "<div class='metric'><small>同盟戦力</small><strong>"+compact(alliancePower)+"</strong><span>"+(powerRank==null?"順位データなし":"戦力順位 "+esc(powerRank)+"位")+"</span></div>"+

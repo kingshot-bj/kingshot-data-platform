@@ -6,8 +6,9 @@ import { swordlandNotifyText } from "../src/swordland-notify.js";
 import { BLOCK_PATHS } from "../scripts/social/feature-video.mjs";
 
 // 2026-11-17：共有カードを使ったのは6人だけ。ボタンが下の方で気づかれていなかった。
-test("浮かぶ共有ボタン：共有ボタンがあるページだけ・4種類の画面", () => {
-  assert.deepEqual([...SHARE_BUTTON_IDS], ["eeShareImg", "pshImg", "acImg", "kcmpImg"]);
+test("浮かぶ共有ボタン：共有ボタンがあるページだけ・5種類の画面（2026-11-19 に同盟カード）", () => {
+  assert.deepEqual([...SHARE_BUTTON_IDS], ["eeShareImg", "pshImg", "acImg", "kcmpImg", "ashImg"]);
+  assert.equal(pageHasShareButton("<div id='ashShare'></div>"), true);
   assert.equal(pageHasShareButton("<div id='kcmpShare'></div>"), true);
   assert.equal(pageHasShareButton('<div id="pshShare"></div>'), true);
   assert.equal(pageHasShareButton("<script>document.getElementById('eeShareImg')</script>"), true);
