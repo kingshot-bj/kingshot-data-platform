@@ -1,7 +1,8 @@
+import { splitLang, hreflangLinks } from "./i18n.js";
 import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights, kingdomTrend, renderKingdomTrend } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { REPORT_PATHS } from "./reports-paths.js";
-import { GUIDE_PATHS } from "./guides-paths.js";
+import { GUIDE_PATHS, GUIDE_PATHS_EN } from "./guides-paths.js";
 import { kingdomDataNote, kingdomsIndexDataNote } from "./data-note.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
@@ -53,8 +54,12 @@ export function publicOrigin(request, env = null) {
 }
 
 // noindex: 検索に載せない（canonical・OGを出さず robots noindex）。存在しない王国・データがまだない王国に使う。
-export function shell({ title, description, canonical, body, jsonLd = null, origin = "", noindex = false }) {
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+// lang：ページの言語（"ja"・"en"）。英語版があるページ（i18n.js の EN_PAGES）は hreflang を出す（2026-11-19）。
+export function shell({ title, description, canonical, body, jsonLd = null, origin = "", noindex = false, lang = "ja" }) {
+  let jaPath = null;
+  try { if (canonical) jaPath = splitLang(new URL(canonical).pathname).path; } catch {}
+  const alternates = !noindex && jaPath ? hreflangLinks(origin || (canonical ? new URL(canonical).origin : ""), jaPath) : "";
+  return `<!doctype html><html lang="${lang === "en" ? "en" : "ja"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${alternates}${lang === "en" ? '<meta property="og:locale" content="en_US">' : ""}
 <title>${esc(title)}</title>${noindex ? '<meta name="robots" content="noindex">' : `<meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 <meta property="og:type" content="website"><meta property="og:site_name" content="EagleEye"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="${esc(canonical)}">`}
 ${jsonLd ? '<script type="application/ld+json">' + JSON.stringify(jsonLd).replace(/</g, "\\u003c") + "</script>" : ""}
@@ -329,7 +334,7 @@ export function renderAdsTxt(publisherId) {
 // （全部「今日」にすると、検索エンジンが更新日を信用しなくなる）。changefreq は Google が使わないので出さない。
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
   const daily = [...extraPaths, "/", "/kingdoms", ...kids.map(k => `/k/${k}`)];
-  const fixed = ["/news", "/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...GUIDE_PATHS, ...heroPagePaths()];
+  const fixed = ["/news", "/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...GUIDE_PATHS, "/en", ...GUIDE_PATHS_EN, ...heroPagePaths()];
   const urls = [...daily.map(p => `<url><loc>${esc(origin + p)}</loc><lastmod>${today}</lastmod></url>`), ...fixed.map(p => `<url><loc>${esc(origin + p)}</loc></url>`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }

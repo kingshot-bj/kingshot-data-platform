@@ -5,6 +5,7 @@
 // ・EagleEye のデータで分かることは、データの日付つきで書く（独自の内容）。
 import { shell } from "./public-pages.js";
 import { GUIDE_PATHS, GUIDE_SLUGS } from "./guides-paths.js";
+import { GUIDES_EN } from "./guides-en.js";
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 export const GUIDE_DATE = "2026-11-19";
@@ -144,10 +145,24 @@ const GUIDES = [
 ];
 if (GUIDES.map(g => g.slug).join(",") !== GUIDE_SLUGS.join(",")) throw new Error("GUIDE_SLUGS mismatch");
 export const GUIDE_LIST = Object.freeze(GUIDES.map(({ slug, title, lead, points }) => ({ slug, title, lead, points })));
+if (GUIDES_EN.map(g => g.slug).join(",") !== GUIDE_SLUGS.join(",")) throw new Error("GUIDES_EN slugs mismatch");
+export const GUIDE_LIST_EN = Object.freeze(GUIDES_EN.map(({ slug, title, lead, points }) => ({ slug, title, lead, points })));
+const NOTE_EN = `<p class="gnote">EagleEye compared publicly available guides and the official help, and summarized the points they agree on (as of ${GUIDE_DATE}). Event rules can change with updates — always check the in-game event info for the latest rules. EagleEye is an unofficial Kingshot service.</p>`;
 
 const CSS = `<style>article h2{font-size:18px;margin:26px 0 8px}article p,article li{font-size:14px;line-height:1.9}article ul,article ol{padding-left:20px}.gmeta{font-size:12px;color:var(--ee-subtext)}.gpoints{border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);padding:10px 14px 10px 30px;margin:12px 0}.gpoints li{font-size:13px}.gnote{margin-top:24px;font-size:11px;color:var(--ee-subtext);line-height:1.7}.gwarn{font-size:13px;padding:10px 12px;border-radius:10px;border:1px dashed var(--ee-border-soft)}.glist{display:grid;gap:10px}.gcard{display:block;padding:14px;border:1px solid var(--ee-border-soft);border-radius:12px;background:var(--ee-panel);text-decoration:none;color:inherit}.gcard b{display:block;font-size:15px;margin-bottom:4px}.gcard small{display:block;color:var(--ee-subtext);font-size:12px;line-height:1.6}.gcard em{display:inline-block;margin-top:6px;font-style:normal;font-size:12px;color:var(--ee-cyan)}</style>`;
 
-export function renderGuidesIndex({ origin = "" } = {}) {
+export function renderGuidesIndex({ origin = "", lang = "ja" } = {}) {
+  if (lang === "en") {
+    const list = GUIDE_LIST_EN.map(g => `<a class="gcard" href="/en/guides/${g.slug}"><b>${esc(g.title)}</b><small>${esc(g.lead)}</small><em>Read →</em></a>`).join("");
+    const body = `${CSS}<nav class="crumbs"><a href="/en">EagleEye</a> › Event basics</nav>
+<h1>Event basics</h1><p class="lead">How the main Kingshot events work, and how to use EagleEye with them.</p>
+<div class="glist">${list}</div>${NOTE_EN}`;
+    const jsonLd = origin ? { "@context": "https://schema.org", "@graph": [
+      { "@type": "CollectionPage", name: "Kingshot event basics", url: origin + "/en/guides", inLanguage: "en", mainEntity: { "@type": "ItemList", itemListElement: GUIDE_LIST_EN.map((g, i) => ({ "@type": "ListItem", position: i + 1, url: origin + "/en/guides/" + g.slug, name: g.title })) } },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/en" }, { "@type": "ListItem", position: 2, name: "Event basics", item: origin + "/en/guides" }] }
+    ] } : null;
+    return shell({ title: "Kingshot event basics — Swordland Showdown, Summit League, KvK | EagleEye", description: "How Kingshot's Swordland Showdown, Swordland Summit League and KvK work, summarized from guides and the official help.", canonical: origin + "/en/guides", body, jsonLd, origin, lang: "en" });
+  }
   const list = GUIDE_LIST.map(g => `<a class="gcard" href="/guides/${g.slug}"><b>${esc(g.title)}</b><small>${esc(g.lead)}</small><em>読む →</em></a>`).join("");
   const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › イベントの基本</nav>
 <h1>イベントの基本</h1><p class="lead">キングショットの主なイベントの流れと、EagleEye での使い方をまとめた読み物です。数字の分析は <a href="/reports">データレポート</a> にあります。</p>
@@ -159,7 +174,23 @@ export function renderGuidesIndex({ origin = "" } = {}) {
   return shell({ title: "キングショット イベントの基本（聖剣争奪・頂上リーグ・KvK） | EagleEye", description: "キングショット（KingShot）の聖剣争奪・聖剣頂上リーグ・KvK の流れと準備を、攻略サイトや公式ヘルプを読み比べてまとめました。", canonical: origin + "/guides", body, jsonLd, origin });
 }
 
-export function renderGuide(slug, { origin = "" } = {}) {
+export function renderGuide(slug, { origin = "", lang = "ja" } = {}) {
+  if (lang === "en") {
+    const g = GUIDES_EN.find(x => x.slug === slug);
+    if (!g) return null;
+    const others = GUIDES_EN.filter(x => x !== g).map(x => `<li><a href="/en/guides/${x.slug}">${esc(x.title)}</a></li>`).join("");
+    const body = `${CSS}<nav class="crumbs"><a href="/en">EagleEye</a> › <a href="/en/guides">Event basics</a></nav>
+<article><h1>${esc(g.title)}</h1><p class="gmeta">Published ${GUIDE_DATE} · EagleEye</p><p class="lead">${esc(g.lead)}</p>
+<ul class="gpoints">${g.points.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+${g.body(GUIDE_DATE)}
+${NOTE_EN}</article>
+<h2>More guides</h2><ul>${others}</ul>`;
+    const jsonLd = { "@context": "https://schema.org", "@graph": [
+      { "@type": "Article", headline: g.title, description: g.lead, datePublished: GUIDE_DATE, dateModified: GUIDE_DATE, inLanguage: "en", author: { "@type": "Organization", name: "EagleEye" }, publisher: { "@type": "Organization", name: "EagleEye" }, mainEntityOfPage: origin + "/en/guides/" + g.slug },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/en" }, { "@type": "ListItem", position: 2, name: "Event basics", item: origin + "/en/guides" }, { "@type": "ListItem", position: 3, name: g.title, item: origin + "/en/guides/" + g.slug }] }
+    ] };
+    return shell({ title: `${g.title} | Kingshot | EagleEye`, description: g.lead, canonical: origin + "/en/guides/" + g.slug, body, jsonLd, origin, lang: "en" });
+  }
   const g = GUIDES.find(x => x.slug === slug);
   if (!g) return null;
   const others = GUIDES.filter(x => x !== g).map(x => `<li><a href="/guides/${x.slug}">${esc(x.title)}</a></li>`).join("");
