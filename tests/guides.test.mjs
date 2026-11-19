@@ -30,3 +30,11 @@ test("サイトマップに入り、robots で止めない", () => {
   const blocked = p => rules.some(r => r.endsWith("$") ? p === r.slice(0, -1) : p.startsWith(r));
   for (const p of GUIDE_PATHS) assert.equal(blocked(p), false, p);
 });
+
+test("トップページ（ログインなし）とすべてのページの下から、読み物に1クリックで行ける（AdSense の審査向け・2026-11-19）", async () => {
+  const worker = (await import("../src/index.js")).default;
+  const res = await worker.fetch(new Request("https://eagleeye-ks.com/", { headers: { "user-agent": "Mozilla/5.0" } }), { EAGLEEYE_SESSION_SECRET: "x".repeat(40) }, { waitUntil() {}, passThroughOnException() {} });
+  const html = await res.text();
+  for (const g of GUIDE_LIST) assert.ok(html.includes(`href="/guides/${g.slug}"`), g.slug);
+  assert.match(html, /<a href="\/guides">イベントの基本<\/a><a href="\/reports">データレポート<\/a>/, "共通のフッター");
+});

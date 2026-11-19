@@ -5,6 +5,7 @@
 // ・「0人」「通信中」のような、ログインしていないと意味のない表示は出さない。
 import { shell } from "./public-pages.js";
 import { REPORTS } from "./reports.js";
+import { GUIDE_LIST } from "./guides.js";
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const nf = n => Number(n).toLocaleString("ja-JP");
@@ -71,11 +72,12 @@ ${inviteBanner}<section class="hero">
 <h2>ツール</h2><div class="tools">${tools}</div>
 ${week}
 ${kvk}
+<h2>イベントの基本</h2><div class="feats">${GUIDE_LIST.map(g => `<a class="ft" href="/guides/${g.slug}"><span class="ic">📖</span><span><b>${esc(g.title)}</b><small>${esc(g.lead)}</small></span></a>`).join("")}</div><p style="margin:8px 0 0;font-size:12px"><a href="/guides">イベントの基本の一覧 →</a></p>
 <h2>データレポート</h2><div class="feats">${REPORTS.map(r => `<a class="ft" href="/reports/${r.slug}"><span class="ic">📊</span><span><b>${esc(r.title)}</b><small>${esc(r.lead)}</small></span></a>`).join("")}</div><p style="margin:8px 0 0;font-size:12px"><a href="/reports" style="color:var(--ee-cyan)">レポートの一覧 →</a></p>
 <h2>EagleEyeでできること</h2><div class="feats">${feats}</div>
 <h2>データについて</h2><div class="about">ゲーム内の公開データを MightPulse の API から取得し、毎日更新しています。順位・比較・分析は EagleEye が計算したものです。EagleEye はキングショットの公式サイトではありません。<a href="/about">運営者情報</a></div>
 <div class="hcta"><b>自分の王国をもっと詳しく</b><p>無料登録すると、プレイヤーの比較やウォッチが使えます。</p><a href="/login">無料で登録する</a></div>
-<p class="hfoot"><a href="/guide">使い方</a>・<a href="/terms">利用規約</a>・<a href="/privacy">プライバシーポリシー</a>・<a href="/about">運営者情報</a></p>
+<p class="hfoot"><a href="/guide">使い方</a>・<a href="/guides">イベントの基本</a>・<a href="/reports">データレポート</a>・<a href="/terms">利用規約</a>・<a href="/privacy">プライバシーポリシー</a>・<a href="/about">運営者情報</a></p>
 <style>
 .htop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.hbrand{display:flex;align-items:baseline;gap:8px;font-size:15px;min-width:0}.hbrand small{font-size:11px;color:var(--ee-subtext);white-space:nowrap}.hlogin{flex:none;padding:9px 16px;border-radius:999px;background:var(--ee-cyan);color:#04202a;font:800 13px system-ui;text-decoration:none}
 .hero{margin:6px 0 4px;padding:20px 16px;border:1px solid color-mix(in srgb,var(--ee-cyan) 35%,transparent);border-radius:18px;background:linear-gradient(140deg,color-mix(in srgb,var(--ee-cyan) 14%,var(--ee-panel)),var(--ee-panel))}
