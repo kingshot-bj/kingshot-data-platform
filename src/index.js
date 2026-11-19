@@ -72,6 +72,7 @@ import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES,
 import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
+import { renderGuidesIndex, renderGuide } from "./guides.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
 import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
@@ -4712,6 +4713,9 @@ const worker = {
       if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       // データレポート（読み物・静的）。2026-11-16。
+      // 読み物：イベントの基本（guides.js・2026-11-19）
+      if (url.pathname === "/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderGuide(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
       if (url.pathname === "/reports") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderReportsIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       { const m = url.pathname.match(/^\/reports\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderReport(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
       if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => { const [kids, stats] = await Promise.all([loadPublicKingdomIds(env.DB), loadAllKingdomStats(env.DB).catch(() => null)]); return renderPublicKingdomsIndex(kids, { origin: publicOrigin(request, env), stats }); }, PUBLIC_CACHE_TTL.data);

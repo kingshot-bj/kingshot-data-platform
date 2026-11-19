@@ -1,6 +1,7 @@
 import { loadAllKingdomStats, computeKingdomInsights, renderKingdomInsights, kingdomLeaderboards, YOUNG_KINGDOM_DAYS, loadAllMysticSummaries, computeMysticInsights, renderMysticInsights, kingdomTrend, renderKingdomTrend } from "./kingdom-insights.js";
 import { loadArchivedKingdomRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
 import { REPORT_PATHS } from "./reports-paths.js";
+import { GUIDE_PATHS } from "./guides-paths.js";
 import { kingdomDataNote, kingdomsIndexDataNote } from "./data-note.js";
 // Public, search-engine friendly pages (no login needed):
 //   /kingdoms      every kingdom, grouped by number, with a search box
@@ -328,7 +329,7 @@ export function renderAdsTxt(publisherId) {
 // （全部「今日」にすると、検索エンジンが更新日を信用しなくなる）。changefreq は Google が使わないので出さない。
 export function renderSitemapXml(origin, kids, today = new Date().toISOString().slice(0, 10), extraPaths = []) {
   const daily = [...extraPaths, "/", "/kingdoms", ...kids.map(k => `/k/${k}`)];
-  const fixed = ["/news", "/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...heroPagePaths()];
+  const fixed = ["/news", "/guide", "/hero-catalog", "/tools/hero-shards", "/tools/gold", "/tools/gold-tech", "/about", "/kingdom-timeline", ...REPORT_PATHS, ...GUIDE_PATHS, ...heroPagePaths()];
   const urls = [...daily.map(p => `<url><loc>${esc(origin + p)}</loc><lastmod>${today}</lastmod></url>`), ...fixed.map(p => `<url><loc>${esc(origin + p)}</loc></url>`)];
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }
