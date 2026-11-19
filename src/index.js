@@ -9414,7 +9414,7 @@ function translateLastLogin(value) {
     .replace(/^Last active (just now)$/i, "直近");
 }
 
-function formatCompactNumber(value) {
+export function formatCompactNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -9428,7 +9428,9 @@ function formatCompactNumber(value) {
 function formatCompactUnit(value, divisor, suffix) {
   const scaled = value / divisor;
   const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-  return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + suffix;
+  // 小数点の後ろの0だけ消す（「330M」の0を消して「33M」にしていた・2026-11-19）
+  const text = scaled.toFixed(decimals);
+  return (text.includes(".") ? text.replace(/\.?0+$/, "") : text) + suffix;
 }
 
 function formatNumber(value) {
