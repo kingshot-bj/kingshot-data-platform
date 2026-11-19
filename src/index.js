@@ -112,7 +112,7 @@ import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
 import { loadAllianceForCompare, ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS } from "./kingdom-portal.js";
-import { allianceLabel } from "./kingdom-portal.js";
+import { allianceLabel, loadAllianceRosterIds, loadMemberVips } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
@@ -5042,7 +5042,18 @@ const worker = {
         const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
         return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1", ownerRefresh: String(auth.role || "").toUpperCase() === "OWNER" }));
       }
-      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
+      // 同盟メンバー全員の VIP を MightPulse から取り直す（ADMIN・OWNER・2026-11-19）。メンバーは保存済みのメンバー表から（画面からは受け取らない）。
+      if (url.pathname === "/api/alliance/member-vips") {
+        const guard = await requireAdmin(request, env); if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        const r = await refreshAllianceMemberVips(env, Number(body?.kid), String(body?.tag || "").trim());
+        if (r.error) return json({ ok: false, error: r.error, message: r.message }, r.status || 400);
+        await writeOwnerAuditLog(env, guard.auth, "ALLIANCE_MEMBER_VIPS_REFRESH", null, null, { kid: Number(body?.kid), tag: String(body?.tag || ""), fetched: r.fetched, failed: r.failed }).catch(() => {});
+        return json({ ok: true, ...r });
+      }
+      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const vipSettings = auth ? await getPlayerVisibilitySettings(env.DB).catch(() => null) : null; const showVip = Boolean(auth && vipSettings && visibilityEnabled(vipSettings, "base_vip", auth.role)); const out = await renderAlliancePage(request, env, auth, { showVip, canFetchVip: showVip && ["ADMIN", "OWNER"].includes(String(auth?.role || "").toUpperCase()) }); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
       if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
@@ -7428,6 +7439,37 @@ async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGD
     query: { include: "base,heroes,ranks,gov_gear" },
     ...correlation
   });
+}
+
+// 同盟メンバー全員の VIP を取り直す（1人につき MightPulse 1回）。同じ同盟は30分に1回まで。直近6時間以内に取った人は取らない。
+const ALLIANCE_VIP_REFRESH_GAP_SECONDS = 30 * 60;
+const allianceVipRefreshAt = new Map();
+async function refreshAllianceMemberVips(env, kid, tag, { concurrency = 4, freshSeconds = 6 * 3600 } = {}) {
+  if (!Number.isInteger(kid) || kid < 1 || !tag) return { error: "BAD_REQUEST", message: "王国と同盟を指定してください。" };
+  const { row, ids } = await loadAllianceRosterIds(env, kid, tag);
+  if (!ids.length) return { error: "NO_ROSTER", message: "メンバー表がまだ保存されていません。先に同盟のページで「最新にする」を押してください。", status: 404 };
+  const key = kid + ":" + String(row?.aid || tag);
+  const now = Math.floor(Date.now() / 1000);
+  if (now - (allianceVipRefreshAt.get(key) || 0) < ALLIANCE_VIP_REFRESH_GAP_SECONDS) return { error: "TOO_SOON", message: "この同盟は30分以内に取り直したばかりです。少し待ってからもう一度押してください。", status: 429 };
+  allianceVipRefreshAt.set(key, now);
+  const vips = await loadMemberVips(env.DB, ids);
+  const targets = ids.slice(0, 100).filter(id => !(vips.get(id)?.at > now - freshSeconds));
+  let fetched = 0, failed = 0, i = 0;
+  const worker = async () => {
+    while (i < targets.length) {
+      const id = targets[i++];
+      try {
+        const got = await fetchPlayerThroughApiPool(env, id, "ALLIANCE_MEMBER_VIP");
+        await materializePlayer(env.DB, got.observation, null, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+        fetched++;
+      } catch (error) {
+        failed++;
+        if (/NO_API_POOL_KEY|RATE_LIMIT|429/i.test(String(error?.code || error?.message || ""))) { i = targets.length; }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  return { members: ids.length, skippedFresh: Math.min(ids.length, 100) - targets.length, fetched, failed };
 }
 
 async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP", include = "base") {
