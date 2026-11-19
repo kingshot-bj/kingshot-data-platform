@@ -45,7 +45,8 @@ test("ログインなし・VIP は日本語版へ。英語版は共有キャッ�
 });
 
 test("オーナー・アドミン：英語版が見られる（noindex・日本語へのリンク・日本語の下のメニューなし・見える日本語は「日本語」だけ）", async () => {
-  for (const role of ["OWNER", "ADMIN"]) for (const p of ["/en", "/en/guides", "/en/guides/swordland-showdown", "/en/guides/swordland-summit-league", "/en/guides/kvk"]) {
+  // /en はログイン中ならログイン後のホームの英語版（tests/english-home.test.mjs）
+  for (const role of ["OWNER", "ADMIN"]) for (const p of ["/en/guides", "/en/guides/swordland-showdown", "/en/guides/swordland-summit-league", "/en/guides/kvk"]) {
     const res = await get(p, role);
     assert.equal(res.status, 200, p);
     assert.doesNotMatch(String(res.headers.get("cache-control")), /public/, "共有キャッシュに入れない");
