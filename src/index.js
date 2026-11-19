@@ -106,7 +106,7 @@ import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } fro
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
 import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
-import { loadMatchupHistory, ensureSwordlandEventsFetched } from "./swordland.js";
+import { loadMatchupHistory, ensureSwordlandEventsFetched, allianceHasOfficerUser } from "./swordland.js";
 import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
@@ -5604,7 +5604,7 @@ async function handleSwordlandHomeApi(request, env) {
   const canCmp = canUseAllianceCompare(auth.role) && Boolean(mine.alliance_abbr);
   const events = await Promise.all(active.map(async ev => {
     const m = mine.alliance_aid ? await currentMatchup(env.DB, ev.season, Number(mine.kid), mine.alliance_aid) : null;
-    return { kind: ev.kind, label: ev.label, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
+    return { kind: ev.kind, label: ev.label, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, memberReported: Boolean(m.memberReported), compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
   }));
   const showdown = active[0];
   const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.season, Number(mine.kid), mine.alliance_aid) : null;
@@ -5634,6 +5634,12 @@ async function loadSwordlandState(env, auth, { checkOfficer = true, verifyOffice
     // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
     const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
     state.canRegister = Boolean(a && !a.error && isOfficer(a.members, mine.governor_id));
+  }
+  // 同盟に EagleEye を使っている R4・R5 がいなければ、ADVANCED 以上のメンバーも登録できる（「メンバーの報告」・2026-11-19）
+  if (checkOfficer && !state.canRegister && canRegisterRole(auth.role) && mine.alliance_abbr && !(await allianceHasOfficerUser(env.DB, Number(mine.kid), mine.alliance_aid))) {
+    state.canRegister = true;
+    state.memberMode = true;
+    state.canRecheck = false;
   }
   return state;
 }
@@ -11802,7 +11808,7 @@ ${EAGLEEYE_NAV_CSS}
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
 ${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
-${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var base=document.getElementById('homeSword');var evs=(d.events&&d.events.length)?d.events:[{label:d.label,matchup:d.matchup}];evs.forEach(function(ev,i){var a=i?base.cloneNode(true):base;if(i){a.removeAttribute('id');base.parentNode.insertBefore(a,base.nextSibling)}var b=a.querySelector('span');a.querySelector('b').textContent='⚔️ '+(ev.label||'聖剣争奪');a.href='/swordland';if(ev.matchup){b.textContent='今回の相手：王国'+ev.matchup.kid+'の '+ev.matchup.tag+'（'+ev.matchup.count+'人が登録）';if(ev.matchup.compareUrl)a.href=ev.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'R4以上の人が対戦相手を登録すると、ここに表示されます'}a.hidden=false})}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var base=document.getElementById('homeSword');var evs=(d.events&&d.events.length)?d.events:[{label:d.label,matchup:d.matchup}];evs.forEach(function(ev,i){var a=i?base.cloneNode(true):base;if(i){a.removeAttribute('id');base.parentNode.insertBefore(a,base.nextSibling)}var b=a.querySelector('span');a.querySelector('b').textContent='⚔️ '+(ev.label||'聖剣争奪');a.href='/swordland';if(ev.matchup){b.textContent='今回の相手：王国'+ev.matchup.kid+'の '+ev.matchup.tag+'（'+ev.matchup.count+'人が登録'+(ev.matchup.memberReported?'・メンバーの報告':'')+'）';if(ev.matchup.compareUrl)a.href=ev.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'対戦相手が登録されると、ここに表示されます（R4・R5 が使っていない同盟はメンバーも登録できます）'}a.hidden=false})}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
 <section class="ee-mainmenu" data-menu="signed-in">
   <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>

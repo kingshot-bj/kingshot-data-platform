@@ -175,12 +175,33 @@ export const REPORTER_NAME_SQL = "(SELECT p.nick_name FROM user_player_links l J
 export const REPORTER_DISCORD_SQL = "(SELECT COALESCE(NULLIF(u.global_name, ''), u.username) FROM users u WHERE u.user_id = m.reporter_user_id LIMIT 1)";
 const splitNames = v => String(v || "").split("\u001f").map(s => s.trim()).filter(Boolean).slice(0, 10);
 
+// 登録した人がその同盟の R4・R5 か（保存済みの役職）。2026-11-19
+export const REPORTER_OFFICER_SQL = "(SELECT MAX(CASE WHEN p.alliance_rank >= 4 THEN 1 ELSE 0 END) FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.user_id = m.reporter_user_id AND l.status = 'ACTIVE' AND p.kid = m.kid AND (p.alliance_aid = m.aid OR p.alliance_aid = m.aid || '.0'))";
+
+// その同盟の今シーズンの相手。R4・R5 の登録があればそちらを優先（2026-11-19）、その中で多く登録された方。
+// R4・R5 の登録が無く、メンバーの登録だけのときは memberReported: true（「メンバーの報告」と表示する）。
 export async function currentMatchup(db, season, kid, aid) {
-  const rows = (await db.prepare("SELECT m.opp_kid, m.opp_tag, COUNT(*) AS n, MAX(m.updated_at) AS at, GROUP_CONCAT(" + REPORTER_NAME_SQL + ", char(31)) AS names FROM swordland_matchups m WHERE m.season = ? AND m.kid = ? AND m.aid = ? GROUP BY m.opp_kid, lower(m.opp_tag) ORDER BY n DESC, at DESC LIMIT 2")
-    .bind(season, kid, normAid(aid)).all().catch(() => ({ results: [] })))?.results || [];
+  const rows = (await db.prepare(
+    "SELECT r.opp_kid, r.opp_tag, COUNT(*) AS n, SUM(COALESCE(r.off, 0)) AS officers, MAX(r.updated_at) AS at, GROUP_CONCAT(r.pn, char(31)) AS names FROM (" +
+    "SELECT m.opp_kid, m.opp_tag, m.updated_at, " + REPORTER_NAME_SQL + " AS pn, " + REPORTER_OFFICER_SQL + " AS off FROM swordland_matchups m WHERE m.season = ? AND m.kid = ? AND m.aid = ?" +
+    ") r GROUP BY r.opp_kid, lower(r.opp_tag) ORDER BY (SUM(COALESCE(r.off, 0)) > 0) DESC, n DESC, at DESC LIMIT 2"
+  ).bind(season, kid, normAid(aid)).all().catch(() => ({ results: [] })))?.results || [];
   if (!rows.length) return null;
-  return { opp_kid: Number(rows[0].opp_kid), opp_tag: rows[0].opp_tag, count: Number(rows[0].n), disputed: rows.length > 1, reporters: splitNames(rows[0].names),
-    other: rows[1] ? { opp_kid: Number(rows[1].opp_kid), opp_tag: rows[1].opp_tag, count: Number(rows[1].n), reporters: splitNames(rows[1].names) } : null };
+  const top = rows[0], officerBacked = Number(top.officers) > 0;
+  // R4・R5 の登録があるときは、メンバーだけの別の登録は「分かれている」に数えない
+  const second = rows[1] && (!officerBacked || Number(rows[1].officers) > 0) ? rows[1] : null;
+  return { opp_kid: Number(top.opp_kid), opp_tag: top.opp_tag, count: Number(top.n), disputed: Boolean(second), reporters: splitNames(top.names), memberReported: !officerBacked,
+    other: second ? { opp_kid: Number(second.opp_kid), opp_tag: second.opp_tag, count: Number(second.n), reporters: splitNames(second.names) } : null };
+}
+
+// その同盟に、EagleEye を使っている R4・R5 がいるか（保存済みの役職）。いなければメンバーも相手を登録できる（2026-11-19）。
+export async function allianceHasOfficerUser(db, kid, aid) {
+  const a = normAid(aid);
+  const row = await db.prepare(
+    "SELECT 1 AS x FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id JOIN users u ON u.user_id = l.user_id " +
+    "WHERE l.status = 'ACTIVE' AND u.status = 'ACTIVE' AND p.kid = ? AND (p.alliance_aid = ? OR p.alliance_aid = ?) AND p.alliance_rank >= 4 LIMIT 1"
+  ).bind(Number(kid), a, a + ".0").first().catch(() => ({ x: 1 }));
+  return Boolean(row);
 }
 
 // 登録できるか：ADVANCED以上で、メンバー表でその人の領主が R4・R5。
@@ -274,11 +295,11 @@ export function renderSwordlandPage({ state, message = "", isOwner = false, owne
   const periodOf = ev => ev.league ? `今週 ${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}（シーズンは${jstDate(ev.season_end_ts - 1)}まで・相手は毎週変わります）` : `${jstDate(ev.begin_ts)}〜${jstDate(ev.end_ts - 1)}`;
   const section = ({ event: ev, matchup: m }) => {
     const who = list => list?.length ? list.map(esc).join("、") + (list.length < (m?.count || 0) ? " ほか" : "") : "";
-    const cur = m ? `<p class="now">今回の相手：<b>王国${esc(m.opp_kid)}の ${esc(m.opp_tag)}</b>（${esc(m.count)}人が登録${m.disputed ? "・登録が分かれています" : ""}）</p>` + (m.reporters?.length ? `<p class="note">登録してくれた人：${who(m.reporters)}</p>` : "") + (m.other ? `<p class="note">ほかの登録：王国${esc(m.other.opp_kid)}の ${esc(m.other.opp_tag)}（${esc(m.other.count)}人${m.other.reporters?.length ? "：" + m.other.reporters.map(esc).join("、") : ""}）</p>` : "") + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, m.opp_kid, m.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
+    const cur = m ? `<p class="now">今回の相手：<b>王国${esc(m.opp_kid)}の ${esc(m.opp_tag)}</b>（${esc(m.count)}人が登録${m.memberReported ? "・メンバーの報告" : ""}${m.disputed ? "・登録が分かれています" : ""}）</p>` + (m.reporters?.length ? `<p class="note">登録してくれた人：${who(m.reporters)}</p>` : "") + (m.other ? `<p class="note">ほかの登録：王国${esc(m.other.opp_kid)}の ${esc(m.other.opp_tag)}（${esc(m.other.count)}人${m.other.reporters?.length ? "：" + m.other.reporters.map(esc).join("、") : ""}）</p>` : "") + (s.canCompare ? `<p><a class="btn" href="${esc(compareUrl(s.mine.kid, s.mine.alliance_abbr, m.opp_kid, m.opp_tag))}">⚔️ 上位3人を比べる</a></p>` : "") : "";
     let body;
     if (!s.mine?.alliance_abbr) body = `<p>マイKingShotで領主を登録すると、自分の同盟の対戦相手を登録・確認できます。</p><p><a href="/my-player">マイKingShotへ →</a></p>`;
-    else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><input type="hidden" name="event" value="${esc(ev.kind || "showdown")}"><p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">${m ? "登録し直す" : "登録する"}</button></form>`;
-    else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。R4以上の人が登録すると、こことホームに表示されます。</p>${s.canRecheck ? `<p class="note">R4・R5 なのに登録欄が出ないとき：<a href="/swordland?recheck=1">最新の役職で確かめる →</a></p>` : ""}`;
+    else if (s.canRegister) body = `${cur}<form method="post" action="/swordland" class="f"><input type="hidden" name="event" value="${esc(ev.kind || "showdown")}">${s.memberMode ? `<p class="note">この同盟には EagleEye を使っている R4・R5 がいないので、メンバーも登録できます（「メンバーの報告」と表示。R4・R5 が登録したらそちらを優先します）。</p>` : ""}<p>相手の同盟（ゲーム内で確認したもの）を入れてください。</p><input name="opp_kid" inputmode="numeric" pattern="\\d*" placeholder="相手の王国番号" required><input name="opp_tag" placeholder="相手の同盟タグ" required maxlength="24"><button type="submit">${m ? "登録し直す" : "登録する"}</button></form>`;
+    else body = `${cur || `<p>まだ登録されていません。</p>`}<p class="note">対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です（EagleEye を使っている R4・R5 がいない同盟は、ADVANCED 以上のメンバーも登録できます）。登録すると、こことホームに表示されます。</p>${s.canRecheck ? `<p class="note">R4・R5 なのに登録欄が出ないとき：<a href="/swordland?recheck=1">最新の役職で確かめる →</a></p>` : ""}`;
     return `<section class="card"><h2 class="oh">⚔️ ${esc(ev.label || "聖剣争奪")}<small class="note" style="display:block;font-weight:400">${esc(periodOf(ev))}</small></h2>${body}</section>`;
   };
   const sections = events.length ? events.map(section).join("") : `<section class="card"><p>今は聖剣争奪・聖剣頂上リーグの開催期間ではありません（日程はMightPulseから1日1回確認しています）。開催中はここで対戦相手を登録・確認できます。</p><p><a class="btn" href="/alliance/compare">⚔️ 同盟比較はいつでも使えます</a></p></section>`;
