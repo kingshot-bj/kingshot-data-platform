@@ -130,7 +130,7 @@ export function renderReportsIndex({ origin = "" } = {}) {
   // 一覧にも主な結論を出す（一覧だけ見ても中身が分かるように・2026-11-16）。
   const list = REPORTS.map(r => `<a class="rcard" href="/reports/${r.slug}"><b>${esc(r.title)}</b><small>${esc(r.lead)}</small>${(r.findings || []).length ? `<ul class="rfind">${r.findings.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}<em>レポートを読む →</em></a>`).join("");
   const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › データレポート</nav>
-<h1>データレポート</h1><p class="lead">EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。各レポートの主な結論を下に載せています。</p>
+<h1>データレポート</h1><p class="lead">イベントの流れは <a href="/guides">イベントの基本</a> にまとめています。EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。各レポートの主な結論を下に載せています。</p>
 <div class="rlist">${list}</div>${SOURCE_NOTE}`;
   // 検索結果向け：レポートの一覧（CollectionPage + ItemList）とパンくず。2026-11-16
   const jsonLd = origin ? { "@context": "https://schema.org", "@graph": [
