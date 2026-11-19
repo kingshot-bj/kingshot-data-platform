@@ -2,12 +2,12 @@
 // ・ページの「画像で共有」ボタンが画面に見えていないあいだ、右下（下のメニューの上）に「📤 画像で共有」を浮かべる。押すと元のボタンを押す。
 // ・初めて見た人には1回だけ「この比較を画像にして Discord や X に貼れます」と吹き出しで案内（ブラウザに覚える）。
 // ・対象：プレイヤー比較・プレイヤー詳細・同盟比較・王国比較（それぞれの共有ボタンの id）。サーバーは何も読まない。
-export const SHARE_BUTTON_IDS = Object.freeze(["eeShareImg", "pshImg", "acImg", "kcmpImg"]);
+export const SHARE_BUTTON_IDS = Object.freeze(["eeShareImg", "pshImg", "acImg", "kcmpImg", "ashImg"]);
 export const SHARE_HINT_KEY = "eagleeye-share-hint-v1";
 
 export function pageHasShareButton(html) {
   const s = String(html || "");
-  return SHARE_BUTTON_IDS.some(id => s.includes(id)) || s.includes('id="pshShare"') || s.includes("id='acShare'") || s.includes("id='kcmpShare'");
+  return SHARE_BUTTON_IDS.some(id => s.includes(id)) || s.includes('id="pshShare"') || s.includes("id='acShare'") || s.includes("id='kcmpShare'") || s.includes("id='ashShare'");
 }
 
 function client(ids, hintKey) {
