@@ -360,6 +360,20 @@ export function vipSummaryHtml(members, vips, { canFetch = false, kid = 0, tag =
       "<script>(function(){var b=document.querySelector('.vip-fetch');if(!b)return;b.onclick=function(){if(!confirm('メンバー全員のプレイヤー情報を MightPulse から取り直します。よろしいですか？'))return;b.disabled=true;var msg=document.querySelector('.vip-msg');msg.textContent='取得中…（1分ほどかかることがあります）';fetch('/api/alliance/member-vips',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(b.dataset.kid),tag:b.dataset.tag})}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.message||d.error||'失敗しました');msg.textContent=d.fetched+'人分を取得しました'+(d.failed?'（'+d.failed+'人は失敗）':'')+'。再読み込みします…';setTimeout(function(){location.reload()},800)}).catch(function(e){msg.textContent=e.message;b.disabled=false})}})()</script>" : "");
 }
 
+// 総力などを短く（330M・46.6M・1.25B）。小数点の後ろの0だけ消す（「330M」の0を消して「33M」にしていた・2026-11-19）。
+export function compactPower(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const abs = Math.abs(n);
+  const unit = abs >= 1e9 ? [1e9,"B"] : abs >= 1e6 ? [1e6,"M"] : abs >= 1e3 ? [1e3,"K"] : null;
+  if (!unit) return n.toLocaleString("ja-JP");
+  const scaled = n / unit[0];
+  const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+  const text = scaled.toFixed(decimals);
+  return (text.includes(".") ? text.replace(/\.?0+$/, "") : text) + unit[1];
+}
+
 const shareDate = sec => Number(sec) > 0 ? new Date((Number(sec) + 9 * 3600) * 1000).toISOString().slice(0, 10).replace(/-/g, "/") : "";
 
 export async function renderAlliancePage(request, env, auth = null, opts = {}) {
@@ -474,17 +488,7 @@ export async function renderAlliancePage(request, env, auth = null, opts = {}) {
   const totalPower = known.reduce((n,m)=>n+m.power,0);
   const average = known.length ? Math.round(totalPower/known.length) : null;
   const topTenShare = totalPower>0 ? Math.round(powerSorted.slice(0,10).reduce((n,m)=>n+(m.power??0),0)/totalPower*100) : null;
-  const compact = value => {
-    if (value === null || value === undefined || value === "") return "—";
-    const n = Number(value);
-    if (!Number.isFinite(n)) return String(value);
-    const abs = Math.abs(n);
-    const unit = abs >= 1e9 ? [1e9,"B"] : abs >= 1e6 ? [1e6,"M"] : abs >= 1e3 ? [1e3,"K"] : null;
-    if (!unit) return n.toLocaleString("ja-JP");
-    const scaled = n / unit[0];
-    const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-    return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + unit[1];
-  };
+  const compact = compactPower;
   const townCenterDisplay = townCenterBadgeHtml;
 
   const bucketSize = 100_000_000;
