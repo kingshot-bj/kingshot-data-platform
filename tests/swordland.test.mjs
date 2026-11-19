@@ -51,7 +51,7 @@ test("登録ページ：開催外・領主未登録・登録できる・登録�
   const view = renderSwordlandPage({ state: { showdown, mine: { kid: 1524, alliance_abbr: "Pen" }, canRegister: false, canCompare: true, matchup: { opp_kid: 1537, opp_tag: "LOL<b>", count: 2, disputed: true } } });
   assert.doesNotMatch(view, /<form/);
   assert.match(view, /王国1537の LOL&lt;b&gt;<\/b>（2人が登録・登録が分かれています）/);
-  assert.match(view, /R4以上の人が登録すると、こことホームに表示されます/);
+  assert.match(view, /R4・R5 がいない同盟は、ADVANCED 以上のメンバーも登録できます）。登録すると、こことホームに表示されます/);
 });
 
 test("配線：ホームの入口（ログイン中だけ・開催中だけ表示）、登録は同じサイトからのPOSTだけ・R4/R5を確かめる、毎時の日程取得、検索に載せない", () => {
