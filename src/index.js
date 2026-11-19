@@ -73,7 +73,7 @@ import { pageHasShareButton, shareFabScript } from "./share-fab.js";
 import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { renderGuidesIndex, renderGuide } from "./guides.js";
-import { splitLang } from "./i18n.js";
+import { splitLang, canSeeEnglish } from "./i18n.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
 import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
@@ -4714,16 +4714,23 @@ const worker = {
       if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       // データレポート（読み物・静的）。2026-11-16。
-      // 英語版（i18n.js・2026-11-19）。英語版があるページだけ。ほかの /en/... は日本語版へ（英語版ができたら EN_PAGES に足す）。
-      if (url.pathname === "/en" || url.pathname === "/en/") {
-        return await servePublicCached(request, executionContext, async () => {
+      // 英語版（i18n.js・2026-11-19）。公開前（EN_PUBLIC=false）はオーナー・アドミンだけ。ほかの人は日本語版へ。
+      // 英語版は共有キャッシュに入れない（見られる人が限られるため）。英語版がまだないページの /en/... も日本語版へ。
+      if (url.pathname === "/en" || url.pathname.startsWith("/en/")) {
+        const { path } = splitLang(url.pathname);
+        const toJa = () => Response.redirect(new URL(path + url.search, url).toString(), 302);
+        const enAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(enAuth?.status === "ACTIVE" ? enAuth.role : null)) return toJa();
+        const origin = publicOrigin(request, env);
+        if (path === "/") {
           const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
-          return eagleEyeHtmlResponse(renderVisitorHome({ origin: publicOrigin(request, env), highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
-        }, PUBLIC_CACHE_TTL.data);
+          return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
+        }
+        if (path === "/guides" || path === "/guides/") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
+        const gm = path.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/);
+        if (gm) { const html = renderGuide(gm[1], { origin, lang: "en" }); return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
+        return toJa();
       }
-      if (url.pathname === "/en/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env), lang: "en" })), PUBLIC_CACHE_TTL.static);
-      { const m = url.pathname.match(/^\/en\/guides\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderGuide(m[1], { origin: publicOrigin(request, env), lang: "en" }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
-      if (url.pathname.startsWith("/en/")) { const { path } = splitLang(url.pathname); return Response.redirect(new URL(path + url.search, url).toString(), 302); }
       // 読み物：イベントの基本（guides.js・2026-11-19）
       if (url.pathname === "/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       { const m = url.pathname.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderGuide(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
@@ -5556,7 +5563,7 @@ const EAGLEEYE_SITE_FOOTER_EN = '<footer id="ee-site-footer" class="ee-site-foot
 // 言語の切り替え：hreflang があるページだけ、フッターにもう一方の言語へのリンクを足す。
 export function footerWithLanguageSwitch(html, footer) {
   const isEn = /<html lang="en"/.test(html);
-  const m = html.match(new RegExp('<link rel="alternate" hreflang="' + (isEn ? "ja" : "en") + '" href="([^"]+)"'));
+  const m = html.match(new RegExp('<link rel="alternate" hreflang="' + (isEn ? "ja" : "en") + '" href="([^"]+)"')) || (isEn ? html.match(/<meta name="ee-alt-ja" content="([^"]+)"/) : null);
   if (!m) return footer;
   let path = m[1];
   try { const u = new URL(m[1]); path = u.pathname + u.search; } catch {}

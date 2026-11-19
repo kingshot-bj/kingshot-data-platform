@@ -4,6 +4,11 @@
 // ・言語の切り替えリンクは、共通のフッター（index.js）が hreflang を見て出す。
 // ・英語版は少しずつ増やす（公開ページとログイン後の画面を交互に）。
 export const EN_PREFIX = "/en";
+// 公開するまでは false：英語版はオーナー・アドミンだけが見られる（オーナーの指示・2026-11-19）。
+// false の間は、hreflang・サイトマップ・日本語版のフッターの English を出さず、英語ページは noindex。
+export const EN_PUBLIC = false;
+export const EN_PREVIEW_ROLES = Object.freeze(["OWNER", "ADMIN"]);
+export function canSeeEnglish(role) { return EN_PUBLIC || EN_PREVIEW_ROLES.includes(String(role || "").toUpperCase()); }
 
 // 英語版があるページ（日本語版のパス）。完全一致か、末尾が "*" なら前方一致。
 export const EN_PAGES = Object.freeze(["/", "/guides", "/guides/*"]);
@@ -33,7 +38,7 @@ export function langPath(lang, jaPath) {
 
 // <head> に入れる hreflang。日本語版のパスを受け取る。英語版がないページは空。
 export function hreflangLinks(origin, jaPath) {
-  if (!origin || !hasEnglish(jaPath)) return "";
+  if (!EN_PUBLIC || !origin || !hasEnglish(jaPath)) return "";
   const ja = origin + jaPath, en = origin + enPath(jaPath);
   return `<link rel="alternate" hreflang="ja" href="${ja}"><link rel="alternate" hreflang="en" href="${en}"><link rel="alternate" hreflang="x-default" href="${ja}">`;
 }
