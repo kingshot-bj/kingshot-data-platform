@@ -10,6 +10,8 @@ import { EN_PUBLIC } from "./i18n.js";
 import { COMMON_EN, COMMON_RULES } from "./i18n-en-common.js";
 import { DATA_EN, DATA_RULES, DATA_EARLY } from "./i18n-en-data.js";
 import { APP_EN, APP_RULES, APP_EARLY, APP2_EN, APP2_EARLY } from "./i18n-en-app.js";
+import { MISC_EN } from "./i18n-en-misc.js";
+import { TERMS_EN } from "./i18n-en-terms.js";
 
 const DICTS = [];
 const RULES = [];
@@ -28,6 +30,8 @@ registerEnglish(COMMON_EN, COMMON_RULES);
 registerEnglish(DATA_EN, DATA_RULES, DATA_EARLY);
 registerEnglish(APP_EN, APP_RULES, APP_EARLY);
 registerEnglish(APP2_EN, [], APP2_EARLY);
+registerEnglish(MISC_EN);
+registerEnglish(TERMS_EN);
 
 function orderedEntries() {
   if (!ordered) {
@@ -42,7 +46,7 @@ function orderedEntries() {
 }
 
 // /en に書き換えないリンク（英語版を作らない・作れないもの）。
-const NO_EN = /^\/(?:api\/|assets\/|login|logout|admin|owner|preview|news\/media\/|social\/|account|status-json|kingdom-watchlist-lab|en(?:\/|$)|robots\.txt|sitemap\.xml|ads\.txt|favicon)/;
+const NO_EN = /^\/(?:api\/|assets\/|logout|admin|owner|preview|news\/media\/|social\/|account|status-json|kingdom-watchlist-lab|en(?:\/|$)|robots\.txt|sitemap\.xml|ads\.txt|favicon)/;
 export function enHref(path) {
   const p = String(path || "");
   if (!p.startsWith("/") || p.startsWith("//") || NO_EN.test(p) || /\.[a-z0-9]{2,5}(?:[?#]|$)/i.test(p.split("?")[0])) return p;
@@ -83,6 +87,14 @@ function englishPunctuation(s) {
     .replace(new RegExp("([" + A + "])。", "g"), "$1.");
 }
 
+const BEFORE = "^|[>\"'\\s(（【「:：・,、/|+=\\-—–#\\]\\)\\dA-Za-z]";
+const AFTER = "$|[<\"'\\s)）】」:：・,、/|.。!?！？\\-—–(（\\dA-Za-z]";
+const shortRes = new Map();
+function shortWordRe(ja) {
+  if (!shortRes.has(ja)) shortRes.set(ja, new RegExp("(" + BEFORE + ")" + ja.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?=" + AFTER + ")", "g"));
+  return shortRes.get(ja);
+}
+
 export function translateHtmlToEnglish(html) {
   let out = String(html).replace(/<html lang=["']ja["']/i, '<html lang="en"');
   out = translateProgressUi(out);
@@ -92,7 +104,13 @@ export function translateHtmlToEnglish(html) {
   const isLong = ja => ja.length >= LONG || /\d/.test(ja);
   for (const [ja, en] of entries) if (isLong(ja) && out.includes(ja)) out = out.split(ja).join(en);
   for (const [re, to] of RULES) out = out.replace(re, to);
-  for (const [ja, en] of entries) if (!isLong(ja) && out.includes(ja)) out = out.split(ja).join(en);
+  // 短い語（2文字以下）は、前後が区切り（タグ・引用符・空白・記号・数字）のときだけ置き換える。
+  // 日本語のまま残る部分（プレイヤー名・同盟名・管理用の表示）の途中を書き換えないため（例：「日本国同盟」「実行」）。
+  for (const [ja, en] of entries) {
+    if (isLong(ja) || !out.includes(ja)) continue;
+    if (ja.length > 2) { out = out.split(ja).join(en); continue; }
+    out = out.replace(shortWordRe(ja), (m, before) => before + en);
+  }
   out = englishPunctuation(out);
   out = out.replace(/fetch\("\/api\/home\/summary"/g, 'fetch("/api/home/summary?lang=en"');
   out = out.replace('<meta property="og:locale" content="ja_JP">', '<meta property="og:locale" content="en_US">');

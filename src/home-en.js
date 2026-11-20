@@ -167,7 +167,7 @@ export const HOME_EN = [
   ['"まず領主IDを登録しよう（30秒）":"あと1ステップでADVANCED：APIキーを登録"', '"Start by registering your Governor ID (30 sec)":"One step to ADVANCED: register an API key"'],
   ['isKey?"あと1ステップでADVANCED":"まず領主IDを登録しよう"', 'isKey?"One step to ADVANCED":"Start by registering your Governor ID"'],
   ['"MightPulseのAPIキー（無料・約1分）を登録すると、見られる情報が一気に増えます。":"領主IDを登録すると（30秒）、自分の戦力や役場の推移がホームに出て、ADVANCEDへの最初の一歩になります。"', '"Register a MightPulse API key (free, about 1 min) to unlock much more data.":"Register your Governor ID (30 sec) to see your power and Town Center trend on your home screen — the first step to ADVANCED."'],
-  ['["英雄スキル・専用装備・英雄の装備","領主装備・宝石","プレイヤーの座標","KvK画面（対戦相手・スコア推移・秘境の比較）","ウォッチ：プレイヤー3人→20人、王国1→3"]', '["Hero skills, exclusive gear and hero gear","Governor gear and gems","Governor coordinates","KvK screen (opponent, score trend, Mystic Trial comparison)","Watchlist: governors 3→20, kingdoms 1→3"]'],
+  ['["英雄スキル・専用装備・英雄の装備","領主装備・宝石","プレイヤーの座標","KvK画面（対戦相手・スコア推移・秘境の比較）","ウォッチ：プレイヤー3人→20人、王国1→3"]', '["Hero skills, exclusive gear and hero gear","Governor gear and charms","Governor coordinates","KvK screen (opponent, score trend, Mystic Trial comparison)","Watchlist: governors 3→20, kingdoms 1→3"]'],
   ['["自分の戦力・役場の推移がホームに","ウォッチ中の変化のお知らせ","あと1ステップでADVANCED"]', '["Your power and Town Center trend on your home screen","Alerts for watchlist changes","One step to ADVANCED"]'],
   ['(button.textContent||"ボタン").trim()+"、処理中"', '(button.textContent||"Button").trim()+", processing"'],
   ['endsWith("、処理中")', 'endsWith(", processing")'],
