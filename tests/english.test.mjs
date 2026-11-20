@@ -59,8 +59,9 @@ test("オーナー・アドミン：英語版が見られる（noindex・日本�
     const ja = [...new Set([...visibleText(h).matchAll(/[぀-ヿ一-鿿]+/g)].map(m => m[0]))];
     assert.deepEqual(ja, ["日本語"], p + "：" + ja.join(" "));
   }
-  const r = await get("/en/k/1524", "OWNER");
-  assert.equal(r.status, 302, "英語版がまだないページは日本語版へ");
+  const r = await get("/en/admin", "OWNER");
+  assert.equal(r.status, 302, "管理画面など英語版を作らないページは日本語版へ");
+  assert.equal(r.headers.get("location"), "https://eagleeye-ks.com/admin");
 });
 
 test("公開前：日本語版に English のリンク・hreflang を出さない。サイトマップにも英語版を入れない", async () => {

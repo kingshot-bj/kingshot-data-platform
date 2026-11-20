@@ -1,0 +1,78 @@
+// 英語版の訳す仕組み（/en/...・2026-11-20）。
+// ・/en/〇〇 は、日本語の〇〇ページを作ってから、ここで英語に置き換える（ページの作りを二重にしない）。
+// ・辞書（[日本語, 英語]）は長いものから順に置き換える。数字が入る文は RULES（正規表現）で置き換える。
+// ・ゲームの用語は MightPulse の API の英語に合わせる（Power・Town Center・Kills・Governor ID・Mystic Trial・
+//   Swordland Showdown・Swordland Summit League・Governor Duel・Kingdom of Power・TG など）。
+// ・ページの中のリンクは /en/... に書き換える（ログイン・API・画像・管理画面などは除く）。
+// ・訳し漏れは tests/english-pages.test.mjs が「英語のページに日本語が残っていないか」で見つける。
+import { HOME_EN } from "./home-en.js";
+import { EN_PUBLIC } from "./i18n.js";
+import { COMMON_EN, COMMON_RULES } from "./i18n-en-common.js";
+
+const DICTS = [];
+const RULES = [];
+let ordered = null;
+// 辞書を足す（ページごとのファイルから呼ぶ）。
+export function registerEnglish(entries = [], rules = []) {
+  DICTS.push(...entries);
+  RULES.push(...rules);
+  ordered = null;
+}
+registerEnglish(HOME_EN);
+registerEnglish(COMMON_EN, COMMON_RULES);
+
+function orderedEntries() {
+  if (!ordered) {
+    const seen = new Map();
+    for (const [ja, en] of DICTS) if (ja && !seen.has(ja)) seen.set(ja, en);
+    ordered = [...seen.entries()].sort((a, b) => b[0].length - a[0].length);
+  }
+  return ordered;
+}
+
+// /en に書き換えないリンク（英語版を作らない・作れないもの）。
+const NO_EN = /^\/(?:api\/|assets\/|login|logout|admin|owner|preview|news\/media\/|social\/|account|status-json|kingdom-watchlist-lab|en(?:\/|$)|robots\.txt|sitemap\.xml|ads\.txt|favicon)/;
+export function enHref(path) {
+  const p = String(path || "");
+  if (!p.startsWith("/") || p.startsWith("//") || NO_EN.test(p) || /\.[a-z0-9]{2,5}(?:[?#]|$)/i.test(p.split("?")[0])) return p;
+  return p === "/" ? "/en" : p.startsWith("/?") ? "/en" + p.slice(1) : "/en" + p;
+}
+export function rewriteLinks(html) {
+  return String(html)
+    .replace(/(\s(?:href|action)=)(["'])(\/[^"']*)\2/g, (m, a, q, p) => a + q + enHref(p) + q);
+}
+
+// 読み込み中の表示（全ページ共通・index.js が差し込む）：英語では文をまとめて「Loading…」に。
+function translateProgressUi(html) {
+  return html
+    .replace('<span class="ee-gp-label">通信中…</span>', '<span class="ee-gp-label">Loading…</span>')
+    .replace('<span class="ee-gp-time">0秒</span>', '<span class="ee-gp-time">0s</span>')
+    .replace(/(<script id="eagleeye-global-progress-init">)([\s\S]*?)(<\/script>)/, (m, a, body, c) => a + body
+      .replace(/function describe\(input,init\)\{[\s\S]*?\}function paint\(\)\{/, 'function describe(input,init){return "Loading…"}function paint(){')
+      .replace(/\+"秒/g, '+"s')
+      .replace(/" \("\+count\+"件\)"/g, '" ("+count+")"')
+      .replace(/"ページの読み込みに時間がかかっています。[^"]*"/g, '"This page is taking a while to load. Please check your connection."')
+      .replace(/"[^"\n]*[぀-ヿ一-鿿][^"\n]*"/g, '"Loading…"')
+      .replace(/'[^'\n]*[぀-ヿ一-鿿][^'\n]*'/g, "'Loading…'") + c);
+}
+
+export function translateHtmlToEnglish(html) {
+  let out = String(html).replace(/<html lang="ja"/i, '<html lang="en"');
+  out = translateProgressUi(out);
+  for (const [ja, en] of orderedEntries()) if (out.includes(ja)) out = out.split(ja).join(en);
+  for (const [re, to] of RULES) out = out.replace(re, to);
+  out = out.replace(/fetch\("\/api\/home\/summary"/g, 'fetch("/api/home/summary?lang=en"');
+  out = out.replace('<meta property="og:locale" content="ja_JP">', '<meta property="og:locale" content="en_US">');
+  // 公開前は検索に載せない
+  if (!EN_PUBLIC && !/<meta name="robots"[^>]*noindex/.test(out)) out = out.replace(/<head>/i, '<head><meta name="robots" content="noindex">');
+  return rewriteLinks(out);
+}
+
+// 画面に出る日本語（HTML と画面内のスクリプトの文字列）を拾う。コメントは除く。テストと作業用。
+export function japaneseLeft(html) {
+  const x = String(html)
+    .replace(/(^|\n)\s*\/\/[^\n]*/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s\/\/\s[^\n]*[぀-ヿ一-鿿][^\n]*/g, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
+  return [...new Set([...x.matchAll(/[^<>"'`\n]*[぀-ヿ一-鿿　-〿＀-￯][^<>"'`\n]*/g)].map(m => m[0].trim()).filter(Boolean))];
+}

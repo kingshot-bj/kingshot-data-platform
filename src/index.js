@@ -74,7 +74,8 @@ import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { renderGuidesIndex, renderGuide } from "./guides.js";
 import { splitLang, canSeeEnglish } from "./i18n.js";
-import { translateHomeToEnglish, translateHomeResponse, englishSummaryTitles } from "./home-en.js";
+import { englishSummaryTitles } from "./home-en.js";
+import { translateHtmlToEnglish, enHref } from "./i18n-en.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
 import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
 import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
@@ -4723,16 +4724,16 @@ const worker = {
         const enAuth = await getAuthenticatedUser(request, env).catch(() => null);
         if (!canSeeEnglish(enAuth?.status === "ACTIVE" ? enAuth.role : null)) return toJa();
         const origin = publicOrigin(request, env);
-        // ログイン中（オーナー・アドミン）：ログイン後のホームの英語版（home-en.js）
-        if (path === "/" && enAuth?.status === "ACTIVE") return await translateHomeResponse(eagleEyeHtmlResponse(translateHomeToEnglish(await renderHome(request, env))));
-        if (path === "/") {
+        if (path === "/" && enAuth?.status !== "ACTIVE") {
           const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
           return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
         }
         if (path === "/guides" || path === "/guides/") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
         const gm = path.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/);
         if (gm) { const html = renderGuide(gm[1], { origin, lang: "en" }); return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
-        return toJa();
+        // そのほかのページ：日本語のページを作ってから英語に置き換える（i18n-en.js）。英語版を作らないページ（管理画面など）は日本語版へ。
+        if (enHref(path) === path) return toJa();
+        return await englishProxy(request, env, executionContext, path + url.search);
       }
       // 読み物：イベントの基本（guides.js・2026-11-19）
       if (url.pathname === "/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
@@ -12132,6 +12133,22 @@ function constantTimeEqual(a, b) {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
+}
+
+// 英語版（/en/...）：日本語のページを作ってから英語に置き換える。共有キャッシュには入れない。2026-11-20
+async function englishProxy(request, env, executionContext, jaPathWithQuery) {
+  const inner = new Request(new URL(jaPathWithQuery, request.url).toString(), request);
+  const res = await worker.fetch(inner, env, executionContext);
+  const location = res.headers.get("location");
+  if (location && res.status >= 300 && res.status < 400) {
+    let to = location;
+    try { const u = new URL(location, request.url); if (u.origin === new URL(request.url).origin) to = enHref(u.pathname) + u.search; } catch {}
+    const headers = new Headers(res.headers); headers.set("location", to); headers.set("cache-control", "no-store");
+    return new Response(null, { status: res.status, headers });
+  }
+  if (!String(res.headers.get("content-type") || "").includes("text/html")) return res;
+  const headers = new Headers(res.headers); headers.set("cache-control", "no-store"); headers.delete("content-length");
+  return new Response(translateHtmlToEnglish(await res.text()), { status: res.status, headers });
 }
 
 // すべての応答に安全のための設定を付ける（security-headers.js）。
