@@ -58,6 +58,7 @@ export const HEROES_EARLY = [
 ];
 
 export const HEROES_EN = [
+  ["マイKingShotで領主IDを登録すると、あなたの英雄が表示されます。", "Register your governor ID in My Kingshot to see your heroes."],
   ["キングショット 英雄一覧・スキルカタログ | EagleEye", "Kingshot Hero List & Skill Catalog | EagleEye"],
   ["キングショット（KingShot）の英雄のスキル一覧。討伐スキル・遠征スキルの効果と初期値・最大値を英雄ごとに日本語でまとめています。", "Every Kingshot hero's skills: conquest and expedition skill effects with base and max values, hero by hero."],
   ["キングショット 英雄一覧", "Kingshot Hero List"],
