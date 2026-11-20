@@ -12,6 +12,8 @@ import { DATA_EN, DATA_RULES, DATA_EARLY } from "./i18n-en-data.js";
 import { APP_EN, APP_RULES, APP_EARLY, APP2_EN, APP2_EARLY } from "./i18n-en-app.js";
 import { MISC_EN } from "./i18n-en-misc.js";
 import { TERMS_EN } from "./i18n-en-terms.js";
+import { HERO_SKILL_EARLY } from "./hero-skills-en.js";
+import { HEROES_EN, HEROES_EARLY } from "./i18n-en-heroes.js";
 
 const DICTS = [];
 const RULES = [];
@@ -32,6 +34,7 @@ registerEnglish(APP_EN, APP_RULES, APP_EARLY);
 registerEnglish(APP2_EN, [], APP2_EARLY);
 registerEnglish(MISC_EN);
 registerEnglish(TERMS_EN);
+registerEnglish(HEROES_EN, [], [...HERO_SKILL_EARLY, ...HEROES_EARLY]);
 
 function orderedEntries() {
   if (!ordered) {

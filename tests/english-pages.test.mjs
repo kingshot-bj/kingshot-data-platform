@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { japaneseLeft, translateHtmlToEnglish, enHref } from "../src/i18n-en.js";
+import { heroPagePaths } from "../src/hero-pages.js";
 
 const worker = (await import("../src/index.js")).default;
 const secret = "s".repeat(40), b64 = b => Buffer.from(b).toString("base64url");
@@ -19,7 +20,9 @@ export const EN_TEST_PAGES = ["/en/kingdoms", "/en/k/1524", "/en/kvk/s23", "/en/
   // ログイン後の画面（2026-11-20）
   "/en/my-player", "/en/player?governor_id=249629710", "/en/players", "/en/alliance?kid=1524&tag=Pen", "/en/alliance/compare?a=1524%3APen&a=1546%3AMIT", "/en/watchlist", "/en/player-watchlist",
   "/en/kingdom-watchlist", "/en/swordland", "/en/kvk", "/en/news", "/en/settings/notifications", "/en/invite", "/en/milestones", "/en/kingdom?kid=1524", "/en/kingdom/rankings?kid=1524",
-  "/en/kingdom/alliances?kid=1524", "/en/kingdom/compare?kid=1524&kid=1546", "/en/kingdom-catalog", "/en/settings/theme", "/en/player/compare?governor_id=249629710"];
+  "/en/kingdom/alliances?kid=1524", "/en/kingdom/compare?kid=1524&kid=1546", "/en/kingdom-catalog", "/en/settings/theme", "/en/player/compare?governor_id=249629710",
+  // 英雄カタログ・英雄ページ（2026-11-20）
+  "/en/hero-catalog", ...heroPagePaths().map(p => "/en" + p)];
 
 test("データの画面・ログイン後の画面：英語で開ける・日本語が残っていない・スクリプトが日本語版より壊れていない", async () => {
   for (const p of EN_TEST_PAGES) {
@@ -42,4 +45,19 @@ test("訳文の ' はスクリプトを壊さないよう ’ に・ページ内
   assert.match(out, /href="\/en"/);
   assert.equal(enHref("/assets/a.png"), "/assets/a.png");
   assert.match(out, /<meta name="robots" content="noindex">/, "公開前は noindex");
+});
+
+test("英雄スキル：日本語版と同じ数・順番で英訳がある・スキル名はスキルカードの中だけで置き換える", async () => {
+  const { HERO_SKILLS_JA } = await import("../src/hero-skills-ja.js");
+  const { HERO_SKILLS_EN, heroSkillValueEn } = await import("../src/hero-skills-en.js");
+  const ja = Object.values(HERO_SKILLS_JA).flatMap(h => h.groups.flatMap(g => g.skills));
+  assert.equal(HERO_SKILLS_EN.length, ja.length);
+  for (const [name, desc] of HERO_SKILLS_EN) { assert.ok(name && desc); assert.doesNotMatch(name + desc, /[぀-ヿ一-鿿]/); }
+  // 「信頼」はスキル名（Trust）だが、ふつうの文の中では書き換えない
+  const out = translateHtmlToEnglish('<html lang="ja"><head></head><body><h4>信頼</h4><p>信頼</p></body></html>');
+  assert.match(out, /<h4>Trust<\/h4>/);
+  assert.match(out, /<p>信頼<\/p>/);
+  assert.equal(heroSkillValueEn("集結部隊の攻撃力+15%"), "Rally Attack+15%");
+  assert.equal(heroSkillValueEn("8回ごと / 0.2秒眩暈"), "every 8 hits / 0.2s stun");
+  assert.equal(heroSkillValueEn("160%"), "160%");
 });
