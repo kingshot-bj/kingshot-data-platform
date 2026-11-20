@@ -72,6 +72,7 @@ const A = "A-Za-z0-9%+)\\]>";
 function englishPunctuation(s) {
   return s
     .replace(/\u3000/g, " ")
+    .replace(/([A-Za-z0-9:.)]) ?〜 ?(?=[A-Za-z0-9])/g, "$1 – ")
     .replace(new RegExp("([" + A + "]) ?・ ?(?=[A-Za-z0-9<(])", "g"), "$1, ")
     .replace(/・(?=[A-Za-z])/g, " · ")
     .replace(new RegExp("([" + A + "])：", "g"), "$1: ")
