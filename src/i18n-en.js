@@ -9,6 +9,7 @@ import { HOME_EN } from "./home-en.js";
 import { EN_PUBLIC } from "./i18n.js";
 import { COMMON_EN, COMMON_RULES } from "./i18n-en-common.js";
 import { DATA_EN, DATA_RULES, DATA_EARLY } from "./i18n-en-data.js";
+import { APP_EN, APP_RULES, APP_EARLY, APP2_EN, APP2_EARLY } from "./i18n-en-app.js";
 
 const DICTS = [];
 const RULES = [];
@@ -25,12 +26,16 @@ export function registerEnglish(entries = [], rules = [], early = []) {
 registerEnglish(HOME_EN);
 registerEnglish(COMMON_EN, COMMON_RULES);
 registerEnglish(DATA_EN, DATA_RULES, DATA_EARLY);
+registerEnglish(APP_EN, APP_RULES, APP_EARLY);
+registerEnglish(APP2_EN, [], APP2_EARLY);
 
 function orderedEntries() {
   if (!ordered) {
     const seen = new Map();
     // 訳文の ' はスクリプトの文字列の区切りとぶつかるので ’ に（コードの置き換えで ' を使うものは除く）
-    for (const [ja, en] of DICTS) if (ja && !seen.has(ja)) seen.set(ja, ja.includes("'") ? en : String(en).replace(/'/g, "’"));
+    // 訳文の " も同じ理由で “ ” に（コードの置き換えで " を使うものは除く）
+    const safe = (ja, en) => { let t = String(en); if (!ja.includes("'")) t = t.replace(/'/g, "’"); if (!ja.includes('"')) t = t.replace(/"([^"]*)"/g, "“$1”").replace(/"/g, "”"); return t; };
+    for (const [ja, en] of DICTS) if (ja && !seen.has(ja)) seen.set(ja, safe(ja, en));
     ordered = [...seen.entries()].sort((a, b) => b[0].length - a[0].length);
   }
   return ordered;
@@ -66,6 +71,7 @@ function translateProgressUi(html) {
 const A = "A-Za-z0-9%+)\\]>";
 function englishPunctuation(s) {
   return s
+    .replace(/\u3000/g, " ")
     .replace(new RegExp("([" + A + "]) ?・ ?(?=[A-Za-z0-9<(])", "g"), "$1, ")
     .replace(/・(?=[A-Za-z])/g, " · ")
     .replace(new RegExp("([" + A + "])：", "g"), "$1: ")
@@ -77,7 +83,7 @@ function englishPunctuation(s) {
 }
 
 export function translateHtmlToEnglish(html) {
-  let out = String(html).replace(/<html lang="ja"/i, '<html lang="en"');
+  let out = String(html).replace(/<html lang=["']ja["']/i, '<html lang="en"');
   out = translateProgressUi(out);
   // 順番：長い文（6文字以上）→ 数字の入る文型 → 短い語。短い語（「王国」など）を先に訳すと文型が当たらなくなるため。
   const entries = orderedEntries();
@@ -100,5 +106,7 @@ export function japaneseLeft(html) {
     .replace(/(^|\n)\s*\/\/[^\n]*/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\s\/\/\s[^\n]*[぀-ヿ一-鿿][^\n]*/g, "")
     .replace(/<!--[\s\S]*?-->/g, "");
-  return [...new Set([...x.matchAll(/[^<>"'`\n]*[぀-ヿ一-鿿　-〿＀-￯][^<>"'`\n]*/g)].map(m => m[0].trim()).filter(Boolean))];
+  // 画面内のスクリプトが日本語のデータを読み取るための正規表現（コード）は文ではないので除く
+  const isCode = t => /\.test\(|\\d|\/\^|\$\/|\.match\(/.test(t);
+  return [...new Set([...x.matchAll(/[^<>"'`\n]*[぀-ヿ一-鿿　-〿＀-￯][^<>"'`\n]*/g)].map(m => m[0].trim()).filter(t => t && !isCode(t)))];
 }

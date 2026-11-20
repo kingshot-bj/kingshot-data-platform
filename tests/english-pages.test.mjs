@@ -15,9 +15,13 @@ const open = path => worker.fetch(new Request("https://eagleeye-ks.com" + path, 
 const scriptsOf = h => [...h.matchAll(/<script(?![^>]*type=["']?application\/(?:ld\+)?json)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).filter(s => s.trim());
 const broken = h => scriptsOf(h).filter(code => { try { new Function(code); return false; } catch { return true; } }).length;
 
-export const EN_TEST_PAGES = ["/en/kingdoms", "/en/k/1524", "/en/kvk/s23", "/en/tools/gold", "/en/tools/gold-tech", "/en/tools/hero-shards", "/en/kingdom-timeline"];
+export const EN_TEST_PAGES = ["/en/kingdoms", "/en/k/1524", "/en/kvk/s23", "/en/tools/gold", "/en/tools/gold-tech", "/en/tools/hero-shards", "/en/kingdom-timeline",
+  // ログイン後の画面（2026-11-20）
+  "/en/my-player", "/en/player?governor_id=249629710", "/en/players", "/en/alliance?kid=1524&tag=Pen", "/en/alliance/compare?a=1524%3APen&a=1546%3AMIT", "/en/watchlist", "/en/player-watchlist",
+  "/en/kingdom-watchlist", "/en/swordland", "/en/kvk", "/en/news", "/en/settings/notifications", "/en/invite", "/en/milestones", "/en/kingdom?kid=1524", "/en/kingdom/rankings?kid=1524",
+  "/en/kingdom/alliances?kid=1524", "/en/kingdom/compare?kid=1524&kid=1546", "/en/kingdom-catalog", "/en/settings/theme", "/en/player/compare?governor_id=249629710"];
 
-test("データの画面：英語で開ける・日本語が残っていない・スクリプトが日本語版より壊れていない", async () => {
+test("データの画面・ログイン後の画面：英語で開ける・日本語が残っていない・スクリプトが日本語版より壊れていない", async () => {
   for (const p of EN_TEST_PAGES) {
     const res = await open(p);
     assert.ok(res.status === 200 || res.status === 404, p + " " + res.status);
