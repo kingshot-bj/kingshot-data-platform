@@ -168,11 +168,11 @@ const TERMS_SECTIONS = [
   }
 ];
 
-export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "", jsonLd = null }) {
+export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "", jsonLd = null, lang = "ja", back = "← ホーム", updated = "最終更新日：" }) {
   const body = sections.map((section, i) =>
     `<section class="legal-section"><h2>${i + 1}. ${section.title}</h2>${section.body}</section>`
   ).join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>` : ""}
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>` : ""}
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -195,9 +195,9 @@ html[data-eagle-theme="light"] .legal-section h2{color:#0e7490}
 html[data-eagle-theme="light"] .legal-section code{background:#f1f5f9;color:#92400e}
 html[data-eagle-theme="light"] .legal-back,html[data-eagle-theme="light"] .legal-section a,html[data-eagle-theme="light"] .legal-related a{color:#0369a1}
 </style></head><body><main class="legal-wrap">
-<a class="legal-back" href="/">← ホーム</a>
+<a class="legal-back" href="/">${back}</a>
 <h1>${title}</h1>
-<p class="legal-updated">最終更新日：${updatedAt}</p>
+<p class="legal-updated">${updated}${updatedAt}</p>
 ${body}
 <p class="legal-related">${related}</p>
 </main></body></html>`;

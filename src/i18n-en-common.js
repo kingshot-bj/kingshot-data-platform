@@ -1,6 +1,9 @@
 // 英語版の辞書：全ページ共通（下のメニュー・その他メニュー・フッター・ログインの案内など）。2026-11-20
 // [日本語, 英語]。ゲームの用語は MightPulse の API の英語に合わせる。
 export const COMMON_EN = [
+  // 見つからないページ（renderNotFoundPage）
+  ["ページが見つかりません | EagleEye", "Page not found | EagleEye"], ["ページが見つかりません", "Page not found"],
+  ["URL が間違っているか、ページが移動しました。", "The URL may be wrong, or the page has moved."], ["トップページへ →", "Go to the home page →"],
   // <head>（seo.js が説明文の最初の文から作る og:description）
   ["キングショット（KingShot）の分析・攻略に役立つ非公式ファンサイト。", "Unofficial Kingshot analysis and tools fan site."],
   // フッター

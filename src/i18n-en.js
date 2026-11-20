@@ -127,7 +127,9 @@ export function japaneseLeft(html) {
   const x = String(html)
     .replace(/(^|\n)\s*\/\/[^\n]*/g, "\n").replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\s\/\/\s[^\n]*[぀-ヿ一-鿿][^\n]*/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
+    .replace(/<!--[\s\S]*?-->/g, "")
+    // 言語の切り替え（「日本語」）は日本語で出すのが正しい
+    .replace(/<a [^>]*\blang="ja"[^>]*>[^<]*<\/a>/g, "");
   // 画面内のスクリプトが日本語のデータを読み取るための正規表現（コード）は文ではないので除く
   const isCode = t => /\.test\(|\\d|\/\^|\$\/|\.match\(/.test(t);
   return [...new Set([...x.matchAll(/[^<>"'`\n]*[぀-ヿ一-鿿　-〿＀-￯][^<>"'`\n]*/g)].map(m => m[0].trim()).filter(t => t && !isCode(t)))];

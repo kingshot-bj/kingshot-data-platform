@@ -122,14 +122,14 @@ export const REPORTS = Object.freeze([
   { slug: "young-kingdom-growth-2026-11", title: "新しい王国はどれくらい伸びる？ 開設日数ごとの総力の増え方", lead: "全2,621王国を開設日数で分けて、7日間の総力の増え方を比べました。", findings: ["開設30日以内の王国は、1週間で総力が平均46%増える。31〜60日で9%、61日以降は5〜6%前後で落ち着く。", "増える量は古い王国ほど大きい（366日以上で平均約5.0B）。"], body: body4 }
 ]);
 
-const CSS = `<style>.rmeta{font-size:12px;color:var(--ee-subtext)}.rbar{display:grid;grid-template-columns:minmax(0,9.5em) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}.rbar span{color:var(--ee-subtext);overflow-wrap:anywhere}.rbar i{display:block;height:10px;border-radius:5px;background:var(--ee-cyan)}.rbar b{font-size:12px;white-space:nowrap}
+export const REPORTS_CSS = `<style>.rmeta{font-size:12px;color:var(--ee-subtext)}.rbar{display:grid;grid-template-columns:minmax(0,9.5em) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px;margin:5px 0}.rbar span{color:var(--ee-subtext);overflow-wrap:anywhere}.rbar i{display:block;height:10px;border-radius:5px;background:var(--ee-cyan)}.rbar b{font-size:12px;white-space:nowrap}
 .rtable{overflow-x:auto;margin:8px 0}.rtable table{width:100%;border-collapse:collapse;font-size:13px}.rtable th,.rtable td{padding:7px 6px;border-bottom:1px solid var(--ee-border-soft);text-align:left;white-space:nowrap}.rtable thead th{font-size:11px;color:var(--ee-subtext)}.rtable small{color:var(--ee-subtext);font-size:11px;margin-left:2px}
 article p,article li{font-size:14px;line-height:1.85}article ul{padding-left:20px}.rnote{margin-top:22px;font-size:11px;color:var(--ee-subtext);line-height:1.7}.rlinks{font-size:13px}.rlist{display:grid;gap:10px}.rcard{display:block;padding:14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none}.rcard b{display:block;font-size:15px;line-height:1.5}.rcard small{display:block;margin-top:4px;font-size:12px;color:var(--ee-subtext);line-height:1.6}.rfind{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7}.rcard em{display:block;margin-top:6px;font-style:normal;font-size:12px;color:var(--ee-cyan)}</style>`;
 
 export function renderReportsIndex({ origin = "" } = {}) {
   // 一覧にも主な結論を出す（一覧だけ見ても中身が分かるように・2026-11-16）。
   const list = REPORTS.map(r => `<a class="rcard" href="/reports/${r.slug}"><b>${esc(r.title)}</b><small>${esc(r.lead)}</small>${(r.findings || []).length ? `<ul class="rfind">${r.findings.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}<em>レポートを読む →</em></a>`).join("");
-  const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › データレポート</nav>
+  const body = `${REPORTS_CSS}<nav class="crumbs"><a href="/">EagleEye</a> › データレポート</nav>
 <h1>データレポート</h1><p class="lead">イベントの流れは <a href="/guides">イベントの基本</a> にまとめています。EagleEye が集めたキングショットの全王国のデータから、分かったことをまとめています。攻略記事ではなく、数字とその読み方の記事です。各レポートの主な結論を下に載せています。</p>
 <div class="rlist">${list}</div>${SOURCE_NOTE}`;
   // 検索結果向け：レポートの一覧（CollectionPage + ItemList）とパンくず。2026-11-16
@@ -145,7 +145,7 @@ export function renderReport(slug, { origin = "" } = {}) {
   const r = REPORTS.find(x => x.slug === slug);
   if (!r) return null;
   const others = REPORTS.filter(x => x !== r).map(x => `<li><a href="/reports/${x.slug}">${esc(x.title)}</a></li>`).join("");
-  const body = `${CSS}<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/reports">データレポート</a></nav>
+  const body = `${REPORTS_CSS}<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/reports">データレポート</a></nav>
 <article><h1>${esc(r.title)}</h1><p class="rmeta">${REPORT_DATE} 公開・EagleEye</p><p class="lead">${esc(r.lead)}</p>
 ${r.body()}
 ${SOURCE_NOTE}</article>

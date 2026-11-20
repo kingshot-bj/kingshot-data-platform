@@ -74,6 +74,8 @@ import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { renderGuidesIndex, renderGuide } from "./guides.js";
 import { splitLang, canSeeEnglish } from "./i18n.js";
+import { renderPrivacyPolicyPageEn, renderTermsPageEn, renderAboutPageEn, renderGuidePageEn } from "./legal-pages-en.js";
+import { renderReportsIndexEn, renderReportEn } from "./reports-en.js";
 import { englishSummaryTitles } from "./home-en.js";
 import { translateHtmlToEnglish, enHref } from "./i18n-en.js";
 import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
@@ -4718,6 +4720,22 @@ const worker = {
       // データレポート（読み物・静的）。2026-11-16。
       // 英語版（i18n.js・2026-11-19）。公開前（EN_PUBLIC=false）はオーナー・アドミンだけ。ほかの人は日本語版へ。
       // 英語版は共有キャッシュに入れない（見られる人が限られるため）。英語版がまだないページの /en/... も日本語版へ。
+      // 英語で書いた読み物ページの中身（englishProxy から呼ぶ内部用・英語版を見られる人だけ）。
+      if (url.pathname.startsWith("/__en-prose/")) {
+        const proseAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(proseAuth?.status === "ACTIVE" ? proseAuth.role : null)) return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+        const origin = publicOrigin(request, env);
+        const p = url.pathname.slice("/__en-prose".length).replace(/\/$/, "") || "/";
+        const prose = { "/privacy": renderPrivacyPolicyPageEn, "/terms": renderTermsPageEn, "/about": renderAboutPageEn, "/guide": renderGuidePageEn }[p];
+        if (prose) return eagleEyeHtmlResponse(prose(origin));
+        if (p === "/reports") return eagleEyeHtmlResponse(renderReportsIndexEn({ origin }));
+        if (p === "/guides") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
+        const gm = p.match(/^\/guides\/([a-z0-9-]{1,80})$/);
+        if (gm) { const g = renderGuide(gm[1], { origin, lang: "en" }); return g ? eagleEyeHtmlResponse(g) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
+        const rm = p.match(/^\/reports\/([a-z0-9-]{1,80})$/);
+        const html = rm ? renderReportEn(rm[1], { origin }) : null;
+        return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+      }
       if (url.pathname === "/en" || url.pathname.startsWith("/en/")) {
         const { path } = splitLang(url.pathname);
         const toJa = () => Response.redirect(new URL(path + url.search, url).toString(), 302);
@@ -4728,9 +4746,9 @@ const worker = {
           const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
           return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
         }
-        if (path === "/guides" || path === "/guides/") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
-        const gm = path.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/);
-        if (gm) { const html = renderGuide(gm[1], { origin, lang: "en" }); return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
+        // 読み物（利用規約・プライバシー・運営者情報・使い方・データレポート）は英語で書いたページ（legal-pages-en.js・reports-en.js）。
+        // ログイン中の案内やメニューも英語にするため、内部の /__en-prose/... で作ってから、ほかの英語ページと同じ englishProxy を通す。
+        if (/^\/(?:privacy|terms|about|guides?|reports)(?:\/[a-z0-9-]{0,80})?\/?$/.test(path)) return await englishProxy(request, env, executionContext, "/__en-prose" + path);
         // そのほかのページ：日本語のページを作ってから英語に置き換える（i18n-en.js）。英語版を作らないページ（管理画面など）は日本語版へ。
         if (enHref(path) === path) return toJa();
         return await englishProxy(request, env, executionContext, path + url.search);
