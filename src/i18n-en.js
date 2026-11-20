@@ -8,23 +8,29 @@
 import { HOME_EN } from "./home-en.js";
 import { EN_PUBLIC } from "./i18n.js";
 import { COMMON_EN, COMMON_RULES } from "./i18n-en-common.js";
+import { DATA_EN, DATA_RULES, DATA_EARLY } from "./i18n-en-data.js";
 
 const DICTS = [];
 const RULES = [];
+const EARLY = []; // 数字の入る長い文：辞書より先に当てる
 let ordered = null;
+const LONG = 6;
 // 辞書を足す（ページごとのファイルから呼ぶ）。
-export function registerEnglish(entries = [], rules = []) {
+export function registerEnglish(entries = [], rules = [], early = []) {
   DICTS.push(...entries);
   RULES.push(...rules);
+  EARLY.push(...early);
   ordered = null;
 }
 registerEnglish(HOME_EN);
 registerEnglish(COMMON_EN, COMMON_RULES);
+registerEnglish(DATA_EN, DATA_RULES, DATA_EARLY);
 
 function orderedEntries() {
   if (!ordered) {
     const seen = new Map();
-    for (const [ja, en] of DICTS) if (ja && !seen.has(ja)) seen.set(ja, en);
+    // 訳文の ' はスクリプトの文字列の区切りとぶつかるので ’ に（コードの置き換えで ' を使うものは除く）
+    for (const [ja, en] of DICTS) if (ja && !seen.has(ja)) seen.set(ja, ja.includes("'") ? en : String(en).replace(/'/g, "’"));
     ordered = [...seen.entries()].sort((a, b) => b[0].length - a[0].length);
   }
   return ordered;
@@ -56,11 +62,31 @@ function translateProgressUi(html) {
       .replace(/'[^'\n]*[぀-ヿ一-鿿][^'\n]*'/g, "'Loading…'") + c);
 }
 
+// 英語の間に残った全角の記号を半角に（日本語の間のものはそのまま）。
+const A = "A-Za-z0-9%+)\\]>";
+function englishPunctuation(s) {
+  return s
+    .replace(new RegExp("([" + A + "]) ?・ ?(?=[A-Za-z0-9<(])", "g"), "$1, ")
+    .replace(/・(?=[A-Za-z])/g, " · ")
+    .replace(new RegExp("([" + A + "])：", "g"), "$1: ")
+    .replace(new RegExp("([" + A + "])）。", "g"), "$1).")
+    .replace(new RegExp("([" + A + "])）", "g"), "$1)")
+    .replace(new RegExp("([" + A + "]) ?（(?=[A-Za-z0-9#])", "g"), "$1 (")
+    .replace(new RegExp("([" + A + "])、(?=[A-Za-z0-9])", "g"), "$1, ")
+    .replace(new RegExp("([" + A + "])。", "g"), "$1.");
+}
+
 export function translateHtmlToEnglish(html) {
   let out = String(html).replace(/<html lang="ja"/i, '<html lang="en"');
   out = translateProgressUi(out);
-  for (const [ja, en] of orderedEntries()) if (out.includes(ja)) out = out.split(ja).join(en);
+  // 順番：長い文（6文字以上）→ 数字の入る文型 → 短い語。短い語（「王国」など）を先に訳すと文型が当たらなくなるため。
+  const entries = orderedEntries();
+  for (const [re, to] of EARLY) out = out.replace(re, to);
+  const isLong = ja => ja.length >= LONG || /\d/.test(ja);
+  for (const [ja, en] of entries) if (isLong(ja) && out.includes(ja)) out = out.split(ja).join(en);
   for (const [re, to] of RULES) out = out.replace(re, to);
+  for (const [ja, en] of entries) if (!isLong(ja) && out.includes(ja)) out = out.split(ja).join(en);
+  out = englishPunctuation(out);
   out = out.replace(/fetch\("\/api\/home\/summary"/g, 'fetch("/api/home/summary?lang=en"');
   out = out.replace('<meta property="og:locale" content="ja_JP">', '<meta property="og:locale" content="en_US">');
   // 公開前は検索に載せない
