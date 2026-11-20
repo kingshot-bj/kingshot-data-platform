@@ -225,6 +225,9 @@ export const APP2_EN = [
   ["）。再読み込みしてください。", "). Please reload."], ["。再読み込みします…", ". Reloading…"], ["（今取得）", " (fetched now)"], ["承認を依頼する", "Request approval"], ["（領主ID未登録）", " (no Governor ID)"], ["（15分以上前）", " (15+ min ago)"],
   ["ADMINの投稿はOWNERの承認後に公開されます（OWNERにDiscordで通知が届きます）。", "Posts by ADMINs are published after OWNER approval (the OWNER is notified on Discord). "],
   ["（王国", " (Kingdom "], ["）", ")"], ["（", " ("], ["・", " · "], ["：", ": "],
+  ["聖剣頂上リーグ", "Swordland Summit League"], ["聖剣争奪", "Swordland Showdown"], ["領主対決", "Governor Duel"],
+  ["優勢", "Ahead"], ["劣勢", "Behind"], ["終了", "Ended"], ["勝利", "Won"], ["敗北", "Lost"], ["対戦相手", "Opponent"],
+  ["KvK期間中、1時間ごとのスコアがたまるとグラフを表示します。", "During KvK, the chart appears once hourly scores build up."],
   ["、", ", "], ["月", ""], ["日", ""], ["位", ""], ["勝", " wins"], ["行", " rows"], ["本", ""], ["＋", "+"], ["－", "−"], ["【", "["], ["】", "]"],
   ["なら", ""], ["共有", "Share"], ["累計", "Total"], ["開設", "Opened"], ["以上", "+"], ["停止", "Stop"], ["再開", "Resume"], ["達成", "Done"], ["サブ", "Sub"], ["認証", "Verify"],
   ["本文", "Body"], ["精錬", "Refine"], ["強化", "Enhance"], ["基本", "Base"], ["戦闘", "Combat"], ["不明", "Unknown"], ["ほか", "others"], ["自動", "Auto"], ["比べる", "Compare"],
@@ -280,6 +283,16 @@ export const APP2_EN = [
 ];
 
 export const APP2_EARLY = [
+  // 王国ページの見出しと説明（「キングショット」などが先に訳されないよう、いちばん先に当てる）
+  [/王国 ?(\d+)の戦力・ランキング・KvK情報｜キングショット/g, "Kingdom $1 power, rankings and KvK | Kingshot"],
+  [/キングショット（KingShot）王国(\d+)の総力([\d.]+[KMB])、7日間の総力増加([\d.]+[KMB])、戦力ランキング上位、開設(\d+)日目。毎日更新のKingShot王国データ。/g, "Kingshot kingdom $1: power $2, 7-day gain $3, server day $4. Updated daily."],
+  [/KingShot 王国(\d+)の戦力・成長・ランキング・KvK情報。([\d-]+) 時点。データは毎日更新されます。/g, "Kingshot kingdom $1 power, growth, rankings and KvK, as of $2. Updated daily."],
+  [/スコア比 ([\d.]+)%/g, "Score ratio $1%"],
+  [/聖剣争奪 ([\d/]+)〜の回/g, "Swordland Showdown, round from $1"],
+  [/聖剣頂上リーグ ([\d/]+)〜の週/g, "Swordland Summit League, week from $1"],
+  [/記録 (\d+)シーズン · (\d+)勝 (\d+)敗/g, "Record: $1 seasons · $2W $3L"],
+  [/ · (\d+)点/g, " · $1 pts"],
+  [/シーズン (\d+) · ([a-z]+) · 組み合わせ確認 /g, "Season $1 · $2 · matchups checked "],
   // 数字の単位（億・万）：英語では B・M・K
   [/a >= 1e8 \? \(n \/ 1e8\)\.toFixed\(a >= 1e10 \? 0 : 1\) \+ "億" : a >= 1e4 \? Math\.round\(n \/ 1e4\)\.toLocaleString\("ja-JP"\) \+ "万"/g, 'a >= 1e9 ? (n / 1e9).toFixed(a >= 1e11 ? 0 : 1) + "B" : a >= 1e6 ? (n / 1e6).toFixed(1) + "M" : a >= 1e4 ? Math.round(n / 1e3) + "K"'],
   [/a>=1e8\?\(n\/1e8\)\.toFixed\(a>=1e10\?0:1\)\+'億':a>=1e4\?Math\.round\(n\/1e4\)\.toLocaleString\('ja-JP'\)\+'万'/g, "a>=1e9?(n/1e9).toFixed(a>=1e11?0:1)+'B':a>=1e6?(n/1e6).toFixed(1)+'M':a>=1e4?Math.round(n/1e3)+'K'"],
