@@ -5,14 +5,18 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { japaneseLeft, translateHtmlToEnglish, enHref } from "../src/i18n-en.js";
 import { heroPagePaths } from "../src/hero-pages.js";
+import { REPORTS } from "../src/reports.js";
+import { GUIDE_PATHS_EN } from "../src/guides-paths.js";
 
 const worker = (await import("../src/index.js")).default;
 const secret = "s".repeat(40), b64 = b => Buffer.from(b).toString("base64url");
 const body = b64(JSON.stringify({ sub: "123456789012345678", global_name: "Tester", exp: Math.floor(Date.now() / 1000) + 3600 }));
 const token = body + "." + b64(crypto.createHmac("sha256", secret).update(body).digest());
-const st = sql => { const s = { bind: () => s, first: async () => sql.includes("FROM users WHERE discord_id") ? { user_id: "u1", discord_id: "123456789012345678", username: "BJ", global_name: "Tester", role: "ADMIN", status: "ACTIVE" } : null, all: async () => ({ results: [] }), run: async () => ({ meta: { changes: 0 } }) }; return s; };
+let role = "ADMIN";
+const st = sql => { const s = { bind: () => s, first: async () => sql.includes("FROM users WHERE discord_id") ? { user_id: "u1", discord_id: "123456789012345678", username: "BJ", global_name: "Tester", role, status: "ACTIVE" } : null, all: async () => ({ results: [] }), run: async () => ({ meta: { changes: 0 } }) }; return s; };
 const env = { DB: { prepare: st, batch: async () => [] }, EAGLEEYE_SESSION_SECRET: secret, DISCORD_CLIENT_ID: "x", DISCORD_CLIENT_SECRET: "y" };
 const open = path => worker.fetch(new Request("https://eagleeye-ks.com" + path, { headers: { cookie: "eagleeye_session=" + token, "user-agent": "Mozilla/5.0" } }), env, { waitUntil() {}, passThroughOnException() {} });
+const openAs = async (r, path) => { role = r; try { return await open(path); } finally { role = "ADMIN"; } };
 const scriptsOf = h => [...h.matchAll(/<script(?![^>]*type=["']?application\/(?:ld\+)?json)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).filter(s => s.trim());
 const broken = h => scriptsOf(h).filter(code => { try { new Function(code); return false; } catch { return true; } }).length;
 
@@ -22,7 +26,9 @@ export const EN_TEST_PAGES = ["/en/kingdoms", "/en/k/1524", "/en/kvk/s23", "/en/
   "/en/kingdom-watchlist", "/en/swordland", "/en/kvk", "/en/news", "/en/settings/notifications", "/en/invite", "/en/milestones", "/en/kingdom?kid=1524", "/en/kingdom/rankings?kid=1524",
   "/en/kingdom/alliances?kid=1524", "/en/kingdom/compare?kid=1524&kid=1546", "/en/kingdom-catalog", "/en/settings/theme", "/en/player/compare?governor_id=249629710",
   // 英雄カタログ・英雄ページ（2026-11-20）
-  "/en/hero-catalog", ...heroPagePaths().map(p => "/en" + p)];
+  "/en/hero-catalog", ...heroPagePaths().map(p => "/en" + p),
+  // 英語で書いた読み物（2026-11-20）
+  "/en/guide", "/en/about", "/en/terms", "/en/privacy", "/en/reports", ...REPORTS.map(r => "/en/reports/" + r.slug), ...GUIDE_PATHS_EN];
 
 test("データの画面・ログイン後の画面：英語で開ける・日本語が残っていない・スクリプトが日本語版より壊れていない", async () => {
   for (const p of EN_TEST_PAGES) {
@@ -60,4 +66,20 @@ test("英雄スキル：日本語版と同じ数・順番で英訳がある・�
   assert.equal(heroSkillValueEn("集結部隊の攻撃力+15%"), "Rally Attack+15%");
   assert.equal(heroSkillValueEn("8回ごと / 0.2秒眩暈"), "every 8 hits / 0.2s stun");
   assert.equal(heroSkillValueEn("160%"), "160%");
+});
+
+test("英語の読み物：日本語版と同じ節の数・レポートが全部ある・内部用の /__en-prose は英語版を見られない人には出さない", async () => {
+  const ja = await import("../src/legal-pages.js");
+  const en = await import("../src/legal-pages-en.js");
+  const { GUIDE_SECTIONS } = await import("../src/guide-page.js");
+  const { REPORTS_EN } = await import("../src/reports-en.js");
+  const count = html => (html.match(/class="legal-section"/g) || []).length;
+  assert.equal(count(en.renderPrivacyPolicyPageEn()), count(ja.renderPrivacyPolicyPage()));
+  assert.equal(count(en.renderTermsPageEn()), count(ja.renderTermsPage()));
+  assert.equal(count(en.renderAboutPageEn()), count(ja.renderAboutPage()));
+  assert.equal(en.GUIDE_SECTIONS_EN.length, GUIDE_SECTIONS.length);
+  assert.deepEqual(Object.keys(REPORTS_EN), REPORTS.map(r => r.slug));
+  assert.equal(en.englishDate("2026年11月8日"), "November 8, 2026");
+  const res = await openAs("BASIC", "/__en-prose/privacy");
+  assert.equal(res.status, 404);
 });
