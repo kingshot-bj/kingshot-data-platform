@@ -4,10 +4,12 @@
 //   ログアウトさせる操作、ログイン・本人のアカウント設定、DELETE の操作すべて。
 // ・書き換えの操作（GET以外）は監査ログへ記録（1リクエスト1回）。isolate ごとに1時間300回まで。鍵の値は画面・ログに出さない。
 
-import { readonlyTokenOk } from "./owner-snapshot.js";
+import { readonlyTokenOk, jarvisTokenOk } from "./owner-snapshot.js";
 
 export const AGENT_RATE_PER_HOUR = 300;
 export const AGENT_USER = Object.freeze({ user_id: "claude-agent", discord_id: "claude-agent", username: "claude-agent", global_name: "Claude（作業用）", role: "OWNER", status: "ACTIVE", agent: true });
+// JARVIS 専用の鍵（JARVIS_AGENT_TOKEN）で来たとき。呼べる操作・回数制限は Claude と同じ。監査ログでは jarvis-agent として残る。
+export const JARVIS_AGENT_USER = Object.freeze({ user_id: "jarvis-agent", discord_id: "jarvis-agent", username: "jarvis-agent", global_name: "JARVIS（秘書）", role: "OWNER", status: "ACTIVE", agent: true });
 
 // 呼べない操作（パスの前方一致。method が書いてあるものはその method だけ）。
 export const AGENT_DENY = Object.freeze([
@@ -48,10 +50,11 @@ export function agentRouteAllowed(method, pathname) {
 
 // undefined：Claude 用の鍵が付いていない・違う（いつもどおりCookieで判定）。null：呼べない操作（拒否）。
 export function agentTokenState(request, env) {
-  if (!readonlyTokenOk(request, env)) return undefined;
+  const user = readonlyTokenOk(request, env) ? AGENT_USER : jarvisTokenOk(request, env) ? JARVIS_AGENT_USER : null;
+  if (!user) return undefined;
   const url = new URL(request.url);
   if (!agentRouteAllowed(request.method, url.pathname)) return null;
-  return AGENT_USER;
+  return user;
 }
 
 const hits = new Map();
@@ -67,12 +70,12 @@ export function resetAgentRate() { hits.clear(); hitHour = 0; }
 
 // 書き換えの操作（GET・HEAD以外）だけ、1リクエスト1回監査ログに書く（D1の書き込みを増やさない）。
 const audited = new WeakSet();
-export async function auditAgentRequest(request, env, writeAudit) {
+export async function auditAgentRequest(request, env, writeAudit, user = AGENT_USER) {
   const m = String(request.method || "GET").toUpperCase();
   if (m === "GET" || m === "HEAD" || audited.has(request)) return;
   audited.add(request);
   const url = new URL(request.url);
-  await Promise.resolve(writeAudit(env, AGENT_USER, "AGENT_REQUEST", null, null, { method: request.method, path: url.pathname, query: url.search.slice(0, 200) })).catch(() => {});
+  await Promise.resolve(writeAudit(env, user, "AGENT_REQUEST", null, null, { method: request.method, path: url.pathname, query: url.search.slice(0, 200) })).catch(() => {});
 }
 
 // 動画の撮影（scripts/social/feature-video.mjs）：Claude 用の鍵で来て、さらに X-EagleEye-Video: 1 が付いているときだけ「静かに見る」。
