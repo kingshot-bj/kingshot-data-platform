@@ -43,10 +43,15 @@ export function compactNumber(value) {
 }
 
 // 取得エラーが名前として保存されていることがある（例: "ERROR [404]"）。そのまま出さない。
+// 同盟タグの実際の値「404」（個人ランキングの [404]）とは別物。判定は ERROR で始まる文字列だけ（"404" 単独はエラー扱いにしない）。
 const ERROR_NAME_RE = /^\s*ERROR\b/i;
+export const ALLIANCE_FETCH_FAILED_TEXT = "同盟情報を取得できませんでした";
+export function isAllianceFetchError(value) {
+  return value != null && ERROR_NAME_RE.test(String(value));
+}
 export function allianceNameText(name) {
   if (name == null || String(name).trim() === "") return "";
-  return ERROR_NAME_RE.test(String(name)) ? "取得できず" : String(name);
+  return isAllianceFetchError(name) ? ALLIANCE_FETCH_FAILED_TEXT : String(name);
 }
 function signed(value, formatter = compactNumber) {
   const n = Number(value);
@@ -82,6 +87,7 @@ h2{margin:22px 0 8px;font-size:17px}
 .up{color:var(--ee-success,#22c55e)}.down{color:var(--ee-danger,#f87171)}
 .list{display:grid;gap:6px}.row{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 12px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel)}.row b{font-size:15px;text-align:center}.row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row small{color:var(--ee-subtext);font-size:11px;margin-left:4px}.row em{font-style:normal;font-weight:800;color:var(--ee-cyan)}
 .cta{margin:18px 0;padding:16px;border:1px solid color-mix(in srgb,var(--ee-cyan) 40%,transparent);border-radius:var(--ee-radius-lg,17px);background:linear-gradient(135deg,color-mix(in srgb,var(--ee-cyan) 12%,var(--ee-panel)),var(--ee-panel))}.cta h2{margin:0 0 6px;font-size:16px}.cta ul{margin:6px 0 12px;padding-left:18px;font-size:13px;line-height:1.7}.cta .cta-btn{display:inline-block;padding:11px 16px;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font-weight:900;text-decoration:none}.cta .sub{display:block;margin-top:10px;font-size:12px;color:var(--ee-subtext)}.cta .sub a{color:var(--ee-cyan)}
+.row .fetch-failed{color:var(--ee-subtext);font-style:italic}
 .empty{padding:14px;border:1px dashed var(--ee-border-soft);border-radius:13px;color:var(--ee-subtext);font-size:13px}
 .kvk{padding:14px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel);font-size:14px}.kvk a{color:var(--ee-cyan)}
 .search{display:flex;gap:8px;margin:10px 0 16px}.search input{flex:1;min-width:0;padding:12px;border:1px solid var(--ee-border);border-radius:12px;font:inherit;background:var(--ee-panel-deep);color:var(--ee-text)}.search button{padding:12px 16px;border:0;border-radius:12px;background:var(--ee-cyan);color:var(--ee-on-accent,#062033);font-weight:900}
@@ -227,9 +233,9 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
   const stats = latest ? `<div class="stats">${stat("総力", "power")}${stat("7日間の総力増加", "power_gain_7d")}${stat("7日間の役場上昇", "tc_pushers_7d")}${stat("領主数", "player_count")}${stat("平均戦力", "avg_power")}${stat("英雄戦力", "hero_power")}${stat("秘境の試練", "mystic_trial")}</div>`
     : `<div class="empty">この王国の集計データはまだありません（毎日自動で取得しています）。</div>`;
 
-  const playerRows = players.length ? `<div class="list">${players.map(p => `<div class="row"><b>${esc(p.rank)}</b><span>${esc(p.nick_name || "-")}${p.abbr ? `<small>[${esc(p.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(p.score))}</em></div>`).join("")}</div>`
+  const playerRows = players.length ? `<div class="list">${players.map(p => `<div class="row"><b>${esc(p.rank)}</b><span>${esc(p.nick_name || "-")}${p.abbr && !isAllianceFetchError(p.abbr) ? `<small>[${esc(p.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(p.score))}</em></div>`).join("")}</div>`
     : "";
-  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const label = `${esc(allianceNameText(a.name) || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
+  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const failed = isAllianceFetchError(a.name) || isAllianceFetchError(a.abbr); if (failed) return `<div class="row"><b>${esc(a.rank)}</b><span class="fetch-failed" title="データ元から同盟名を取得できなかったため、名前を表示していません">${esc(ALLIANCE_FETCH_FAILED_TEXT)}</span><em>${esc(compactNumber(a.score))}</em></div>`; const label = `${esc(allianceNameText(a.name) || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
 
   let kvk = "";
   if (matchup?.opponent) {
