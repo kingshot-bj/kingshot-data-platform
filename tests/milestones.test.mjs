@@ -111,7 +111,7 @@ test("画面・ホーム・メニュー・共有ボタンの配線", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /url\.pathname === "\/milestones"\) return eagleEyeHtmlResponse\(renderMilestonesPage\(\)\)/);
   assert.match(index, /milestonesAvailableFor\(role\) \? `<a class="ee-milestone-card ee-milestone-live" href="\/milestones"/);
-  assert.match(index, /<span class="ee-milestone-status">準備中<\/span>/);
+  assert.doesNotMatch(index, /<span class="ee-milestone-status">準備中<\/span>/);
   assert.doesNotMatch(index, /デイリー・累計目標と報酬/);
   const ui = readFileSync(new URL("../src/eagleeye-ui.js", import.meta.url), "utf8");
   assert.match(ui, /href="\/milestones" data-other-key="milestones"/);
@@ -129,7 +129,7 @@ test("公開前：オーナーだけ見られ、ほかは準備中（API 403・�
   assert.match(renderEagleEyeOtherMenu({ auth: { role: "OWNER" } }), /href="\/milestones"/);
   const basic = renderEagleEyeOtherMenu({ auth: { role: "ADVANCED" } });
   assert.doesNotMatch(basic, /href="\/milestones"/);
-  assert.match(basic, /準備中/);
+  assert.doesNotMatch(basic, /準備中|ee-drawer-milestone/);
   assert.doesNotMatch(renderEagleEyeOtherMenu({ auth: null }), /href="\/milestones"/);
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /if \(!milestonesAvailableFor\(auth\.role\)\) return json\(\{ ok: false, error: "COMING_SOON" \}, 403\)/);

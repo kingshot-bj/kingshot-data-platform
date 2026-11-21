@@ -176,9 +176,7 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
     ? (compact
       ? '<a href="/milestones" data-other-key="milestones">マイルストーン</a>'
       : '<a href="/milestones" data-other-key="milestones"><img src="' + EAGLEEYE_BJNYAN.success + '" alt=""><span>マイルストーン</span></a>')
-    : (compact
-      ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>準備中</small></button>'
-      : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>準備中</small></span></button>'));
+    : "");
 }
 
 

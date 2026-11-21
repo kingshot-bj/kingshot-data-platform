@@ -42,6 +42,12 @@ export function compactNumber(value) {
   return n.toLocaleString("ja-JP");
 }
 
+// 取得エラーが名前として保存されていることがある（例: "ERROR [404]"）。そのまま出さない。
+const ERROR_NAME_RE = /^\s*ERROR\b/i;
+export function allianceNameText(name) {
+  if (name == null || String(name).trim() === "") return "";
+  return ERROR_NAME_RE.test(String(name)) ? "取得できず" : String(name);
+}
 function signed(value, formatter = compactNumber) {
   const n = Number(value);
   if (!Number.isFinite(n) || n === 0) return "±0";
@@ -214,7 +220,8 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
     if (!latest || latest[key] == null) return "";
     const diff = week && week[key] != null ? latest[key] - week[key] : null;
     const better = rank ? diff < 0 : diff > 0;
-    const diffHtml = diff == null ? "" : `<em class="${diff === 0 ? "" : better ? "up" : "down"}">7日 ${rank ? signed(diff, v => String(v)) : signed(diff)}</em>`;
+    // 「7日間の総力増加」は MightPulse が出す値そのもの。その値の差は意味が分かりにくいので出さない（総力の7日前比と取り違えない）。
+    const diffHtml = diff == null || key === "power_gain_7d" ? "" : `<em class="${diff === 0 ? "" : better ? "up" : "down"}">7日前比 ${rank ? signed(diff, v => String(v)) : signed(diff)}</em>`;
     return `<div class="stat"><small>${esc(label)}</small><b>${esc(rank ? latest[key] + "位" : compactNumber(latest[key]))}</b>${diffHtml}</div>`;
   };
   const stats = latest ? `<div class="stats">${stat("総力", "power")}${stat("7日間の総力増加", "power_gain_7d")}${stat("7日間の役場上昇", "tc_pushers_7d")}${stat("領主数", "player_count")}${stat("平均戦力", "avg_power")}${stat("英雄戦力", "hero_power")}${stat("秘境の試練", "mystic_trial")}</div>`
@@ -222,7 +229,7 @@ export function renderPublicKingdomPage(kid, data, { origin = "", signedIn = fal
 
   const playerRows = players.length ? `<div class="list">${players.map(p => `<div class="row"><b>${esc(p.rank)}</b><span>${esc(p.nick_name || "-")}${p.abbr ? `<small>[${esc(p.abbr)}]</small>` : ""}</span><em>${esc(compactNumber(p.score))}</em></div>`).join("")}</div>`
     : "";
-  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const label = `${esc(a.name || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
+  const allianceRows = alliances.length ? `<div class="list">${alliances.map(a => { const aid = String(a.aid ?? "").replace(/^(\d+)\.0+$/, "$1"); const label = `${esc(allianceNameText(a.name) || a.abbr || "-")}${a.abbr && a.name ? `<small>[${esc(a.abbr)}]</small>` : ""}`; return `<div class="row"><b>${esc(a.rank)}</b><span>${/^\d+$/.test(aid) ? `<a href="/a/${encodeURIComponent(kid)}/${aid}" style="color:inherit">${label}</a>` : label}</span><em>${esc(compactNumber(a.score))}</em></div>`; }).join("")}</div>` : "";
 
   let kvk = "";
   if (matchup?.opponent) {

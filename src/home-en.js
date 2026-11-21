@@ -172,8 +172,7 @@ export const HOME_EN = [
   ['(button.textContent||"ボタン").trim()+"、処理中"', '(button.textContent||"Button").trim()+", processing"'],
   ['endsWith("、処理中")', 'endsWith(", processing")'],
   ['"同じ操作が現在実行中です。処理完了を待ってください。"', '"The same action is already running. Please wait for it to finish."'],
-  ["🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません ・ ", "🧪 PREVIEW — development build, not shown to production users · "],
-  ["ログイン切り替え", "Switch login"]
+  ["🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません", "🧪 PREVIEW — development build, not shown to production users"]
 ];
 
 // ミッション・マイルストーンの名前（/api/home/summary?lang=en）。
