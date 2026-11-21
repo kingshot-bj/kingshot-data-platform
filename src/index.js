@@ -127,7 +127,7 @@ import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
 import { socialRunStatus, triggerSocialRun } from "./social-run.js";
 import { playerShareEmbed } from "./player-share.js";
-import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe, loadSnapshotD1, loadSnapshotAnalyticsEngine } from "./owner-snapshot.js";
+import { readonlyTokenOk, jarvisTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe, loadSnapshotD1, loadSnapshotAnalyticsEngine } from "./owner-snapshot.js";
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
@@ -9593,7 +9593,7 @@ async function getAuthenticatedUser(request, env) {
   const agent = agentTokenState(request, env);
   if (agent !== undefined) {
     if (!agent || agentRateLimited() || !env.DB) return null;
-    await auditAgentRequest(request, env, writeOwnerAuditLog);
+    await auditAgentRequest(request, env, writeOwnerAuditLog, agent);
     await ensureActiveGovernorSchema(env.DB).catch(() => {});
     return agent;
   }
@@ -10043,7 +10043,7 @@ async function writeOwnerAuditLog(env, actor, action, targetUserId, targetDiscor
 // ?sections=overview,traffic,growth,users（既定）/ all / audit,system,coverage など。
 async function handleOwnerSnapshotApi(request, env) {
   if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  if (!readonlyTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!readonlyTokenOk(request, env) && !jarvisTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   if (readonlyRateLimited()) return json({ ok: false, error: "RATE_LIMITED" }, 429);
   const sections = parseSections(new URL(request.url).searchParams.get("sections"));

@@ -17,12 +17,20 @@ function timingSafeEqualStr(a, b) {
 }
 
 // 鍵が正しいか。鍵が設定されていない・短すぎるときは誰も使えない。
-export function readonlyTokenOk(request, env) {
-  const expected = String(env?.OWNER_READONLY_TOKEN || "");
+function bearerMatches(request, expectedValue) {
+  const expected = String(expectedValue || "");
   if (expected.length < READONLY_MIN_TOKEN_LENGTH) return false;
   const header = request.headers.get("authorization") || "";
   const m = header.match(/^Bearer\s+(\S+)$/i);
   return Boolean(m) && timingSafeEqualStr(m[1], expected);
+}
+export function readonlyTokenOk(request, env) {
+  return bearerMatches(request, env?.OWNER_READONLY_TOKEN);
+}
+// JARVIS（オーナーの AI 秘書）専用の鍵（2026-11-21）。Claude 用の鍵と同じ範囲を許すが、監査ログでは JARVIS として残り、
+// Claude 用の鍵とは別に止められる（Cloudflare のシークレット JARVIS_AGENT_TOKEN を消せば JARVIS だけ使えなくなる）。
+export function jarvisTokenOk(request, env) {
+  return bearerMatches(request, env?.JARVIS_AGENT_TOKEN);
 }
 
 const hits = new Map();
