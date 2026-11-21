@@ -81,18 +81,25 @@ export function computeKingdomInsights(kid, rows) {
 }
 
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const pctTop = (rank, total) => total ? Math.max(1, Math.ceil(rank / total * 100)) : null;
+const nf = v => Number(v).toLocaleString("ja-JP");
+// 順位の割合。下位の王国に「上位100%」と出さないよう、半分より下は「下位N%」で書く（最下位は下位1%）。
+export function rankPercentText(rank, total) {
+  rank = Number(rank); total = Number(total);
+  if (!total || !rank) return "";
+  if (rank / total <= 0.5) return `上位${Math.max(1, Math.ceil(rank / total * 100))}%`;
+  return `下位${Math.max(1, Math.ceil((total - rank + 1) / total * 100))}%`;
+}
 
 // 表示用：数字がある項目だけ。compact は数字を 1.2B のように短くする関数（王国ページと同じもの）。
 export function renderKingdomInsights(kid, ins, compact) {
   if (!ins) return "";
   const items = [];
-  items.push(`総力は全${esc(ins.total)}王国中 <b>${esc(ins.powerRank)}位</b>（上位${esc(pctTop(ins.powerRank, ins.total))}%）`);
+  items.push(`総力は全${esc(nf(ins.total))}王国中 <b>${esc(ins.powerRank)}位</b>（${esc(rankPercentText(ins.powerRank, ins.total))}）`);
   if (ins.gainRank != null) {
     // 金額は上の数字タイル（成長の記録）と出どころが違うので、ここでは順位だけを書く。
     items.push(ins.gain < 0
-      ? `7日間で総力が <b>減っています</b>（伸びは全${esc(ins.gainTotal)}王国中${esc(ins.gainRank)}位）`
-      : `7日間の伸びは全${esc(ins.gainTotal)}王国中 <b>${esc(ins.gainRank)}位</b>（上位${esc(pctTop(ins.gainRank, ins.gainTotal))}%）`);
+      ? `7日間で総力が <b>減っています</b>（伸びは全${esc(nf(ins.gainTotal))}王国中${esc(ins.gainRank)}位）`
+      : `7日間の伸びは全${esc(nf(ins.gainTotal))}王国中 <b>${esc(ins.gainRank)}位</b>（${esc(rankPercentText(ins.gainRank, ins.gainTotal))}）`);
   }
   const c = ins.cohort;
   if (c) {
@@ -194,7 +201,9 @@ export function renderMysticInsights(kid, m) {
 // 項目ごとの値の意味（合計が総力と一致しない）は未確認なので、項目の「内訳」としては扱わず、同じ項目どうしの増え方だけを比べる。
 const TREND_PARTS = Object.freeze([["hero_power", "英雄戦力"], ["troop_power", "兵士戦力"], ["research_power", "研究戦力"], ["governor_gear_power", "領主装備戦力"], ["governor_charm_power", "領主宝石戦力"], ["pet_power", "ペット戦力"], ["building_power", "建築戦力"]]);
 const signed = (v, f) => (v > 0 ? "+" : v < 0 ? "−" : "±") + f(Math.abs(v));
-const pctText = (d, base) => base ? `${d >= 0 ? "+" : "−"}${(Math.round(Math.abs(d) / base * 1000) / 10)}%` : "";
+// 基数が極端に小さいと「+156100.8%」のような意味のない数字になるので、10倍以上（+1000%）は出さない。
+const pctText = (d, base) => base && Math.abs(d) / base < 10 ? `${d >= 0 ? "+" : "−"}${(Math.round(Math.abs(d) / base * 1000) / 10)}%` : "";
+const pctParen = (d, base) => { const t = pctText(d, base); return t ? `（${t}）` : ""; };
 
 export function kingdomTrend(growth) {
   const latest = growth?.latest;
@@ -216,12 +225,12 @@ export function kingdomTrend(growth) {
 export function renderKingdomTrend(kid, t, compact) {
   if (!t) return "";
   const items = [];
-  if (t.power) items.push(`総力は30日で <b>${esc(signed(t.power.d30, compact))}</b>（${esc(pctText(t.power.d30, t.power.base))}）${t.power.d7 != null ? `、そのうち直近7日で ${esc(signed(t.power.d7, compact))}` : ""}。${t.power.d7 != null && t.power.d7 < 0 && t.power.d30 >= 0 ? "直近の1週間は減っています。" : ""}`);
+  if (t.power) items.push(`総力は30日で <b>${esc(signed(t.power.d30, compact))}</b>${esc(pctParen(t.power.d30, t.power.base))}${t.power.d7 != null ? `、そのうち直近7日で ${esc(signed(t.power.d7, compact))}` : ""}。${t.power.d7 != null && t.power.d7 < 0 && t.power.d30 >= 0 ? "直近の1週間は減っています。" : ""}`);
   if (t.players != null) items.push(`領主数は30日で ${esc(signed(t.players, v => Number(v).toLocaleString("ja-JP")))}人。`);
   if (t.kills != null && t.kills > 0) items.push(`撃破数は30日で <b>+${esc(compact(t.kills))}</b>（戦闘で倒した兵士の数なので、戦いが多い時期ほど増えます）。`);
   if (t.parts.length >= 3) {
     const top = t.parts[0], low = t.parts[t.parts.length - 1];
-    items.push(`30日でいちばん伸びた項目は「${esc(top.label)}」（${esc(pctText(top.rate, 1))}）、いちばん伸びが小さかったのは「${esc(low.label)}」（${esc(pctText(low.rate, 1))}）。`);
+    items.push(`30日でいちばん伸びた項目は「${esc(top.label)}」${esc(pctParen(top.rate, 1))}、いちばん伸びが小さかったのは「${esc(low.label)}」${esc(pctParen(low.rate, 1))}。`);
   }
   if (!items.length) return "";
   return `<h2>王国${esc(kid)}のこの30日の動き</h2><ul class="insights">${items.map(x => `<li>${x}</li>`).join("")}</ul><p class="note" style="margin-top:6px">毎日の記録の、30日前・7日前との比較です。総力は兵士を失うなどで減ることもあります。どの項目も、強さをそのまま表すものではありません。</p>`;

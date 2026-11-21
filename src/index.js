@@ -5437,7 +5437,7 @@ const EAGLEEYE_THEME_SCRIPT = `
             if(document.body&&!document.querySelector(".eagle-preview-banner")){
               var banner=document.createElement("div");
               banner.className="eagle-preview-banner";
-              banner.innerHTML="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません ・ <a href='/preview/login' style='color:inherit;text-decoration:underline'>ログイン切り替え</a>";
+              banner.innerHTML="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
               document.body.appendChild(banner);
             }
           } catch(e) {}
@@ -11953,11 +11953,7 @@ ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live"
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
   <span class="ee-milestone-status" id="homeMilestoneStatus">NEW</span>
-</a>` : `<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
-  <span class="ee-milestone-icon" aria-hidden="true">✦</span>
-  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>使い方と成長でバッジが増えていきます</small></span>
-  <span class="ee-milestone-status">準備中</span>
-</button>`}
+</a>` : ''}
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
