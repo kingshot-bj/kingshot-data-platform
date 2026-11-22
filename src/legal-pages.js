@@ -63,6 +63,7 @@ const PRIVACY_SECTIONS = [
 <li>Googleなどの第三者配信事業者は、Cookieを使用して、利用者の本サービスや他のウェブサイトへの過去のアクセス情報に基づいて広告を配信します。</li>
 <li>Googleは広告Cookieを使用することにより、利用者の本サービスや他のサイトへのアクセス情報に基づいて、適切な広告を表示できます。</li>
 <li>パーソナライズ広告は、<a href="https://adssettings.google.com/" target="_blank" rel="noopener noreferrer">Googleの広告設定</a>で無効にできます。また、<a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener noreferrer">www.aboutads.info</a> にアクセスすると、第三者配信事業者のCookieを無効にできます。</li>
+<li>EEA（欧州経済領域）・英国・スイスの利用者には、Googleの同意管理プラットフォーム（CMP）により、Cookie等の使用についての同意を確認するメッセージが表示される場合があります。同意の選択は、表示されるメッセージから後で変更できます。</li>
 <li>Googleによる情報の取り扱いは、<a href="https://policies.google.com/technologies/ads?hl=ja" target="_blank" rel="noopener noreferrer">Googleの広告に関するポリシー</a>をご覧ください。</li>
 </ul>`
   },
