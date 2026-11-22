@@ -62,5 +62,6 @@ test("配線：ログイン必須・ADVANCED以上・入口（同盟詳細・同
   assert.match(portal, /<a href='\/alliance\/compare'>⚔️ 同盟を比べる/);
   const fn = portal.slice(portal.indexOf("export async function loadAllianceForCompare"));
   // 10分ロックを使わないのはオーナーの「最新を取得」（force）だけ（11/15〜）。
-  assert.match(fn, /canFetch && stale && env\.ARCHIVE && \(force \|\| await claimAllianceRefresh\(db,/);
+  assert.match(fn, /canFetch && stale && env\.ARCHIVE/);
+  assert.match(fn, /force \|\| await claimAllianceRefresh\(db,/);
 });
