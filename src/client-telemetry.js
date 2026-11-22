@@ -37,15 +37,27 @@ function json(data, status = 200) {
   });
 }
 
+export function isSameOriginRequest(request) {
+  const host = new URL(request.url).host;
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+  if (fetchSite && !["same-origin", "none"].includes(fetchSite)) return false;
+  for (const header of ["Origin", "Referer"]) {
+    const value = request.headers.get(header);
+    if (!value) continue;
+    try { return new URL(value).host === host; } catch { return false; }
+  }
+  return false;
+}
+
 export async function handleClientTelemetry(request, env) {
   if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
   if (!env?.DB) return json({ ok: false, error: "D1_UNAVAILABLE" }, 503);
-  const origin = request.headers.get("Origin");
-  if (origin) {
-    try {
-      if (new URL(origin).host !== new URL(request.url).host) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
-    } catch { return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); }
-  }
+  // Browsers send Origin on same-origin POST (fetch and sendBeacon). Requests
+  // without a same-origin Origin/Referer are not from EagleEye pages and are
+  // rejected so anonymous scripts cannot inflate D1 writes.
+  if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > 64 * 1024) return json({ ok: false, error: "PAYLOAD_TOO_LARGE" }, 413);
   let body;
   try { body = await request.json(); } catch { return json({ ok: false, error: "INVALID_JSON" }, 400); }
   const incoming = Array.isArray(body?.events) ? body.events.slice(0, MAX_BATCH) : [];
@@ -53,6 +65,7 @@ export async function handleClientTelemetry(request, env) {
 
   const traceId = systemTraceId("browser");
   let accepted = 0;
+  let failed = 0;
   for (const item of incoming) {
     const type = clean(item?.type, 40).toUpperCase();
     if (!ALLOWED_TYPES.has(type)) continue;
@@ -60,7 +73,8 @@ export async function handleClientTelemetry(request, env) {
     const operation = clean(item?.operation, 120);
     const status = type === "JS_ERROR" || type === "UNHANDLED_REJECTION" ? "FAILED"
       : type === "FETCH_COMPLETE" && Number(item?.httpStatus) >= 400 ? "FAILED" : "INFO";
-    await recordSystemEvent(env.DB, {
+    const saved = await recordSystemEvent(env.DB, {
+      eventId: clean(item?.eventId, 100) || undefined,
       traceId: clean(item?.traceId, 100) || traceId,
       parentTraceId: clean(item?.parentTraceId, 100) || null,
       eventType: type,
@@ -84,9 +98,10 @@ export async function handleClientTelemetry(request, env) {
         ...(type === "APP_DIAGNOSTIC" ? { diagnostic: sanitizeDiagnostic(item?.diagnostic) } : {})
       }
     });
-    accepted++;
+    if (saved) accepted++;
+    else failed++;
   }
-  return json({ ok: true, accepted });
+  return json({ ok: failed === 0, accepted, failed }, failed ? 503 : 200);
 }
 
 export function clientTelemetryScript() {
@@ -99,7 +114,7 @@ export function clientTelemetryScript() {
   function page(){return location.pathname.slice(0,300)}
   function traceId(){return "browser-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,12)}
   function interactionTrace(){return activeInteractionTraceId&&Date.now()-activeInteractionAt<10000?activeInteractionTraceId:""}
-  function push(e){queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
+  function push(e){if(!e.eventId)e.eventId=traceId()+"-"+Math.random().toString(36).slice(2,10);queue.push(e);if(queue.length>=10)flush();else if(!timer)timer=setTimeout(flush,1200)}
   window.__eeTrackAction=function(type,operation,inputState){if(type!=="ACTION_START"&&type!=="ACTION_BLOCKED")return;push({type:type,traceId:interactionTrace()||traceId(),page:page(),operation:clip(operation,120),inputState:clip(inputState,40),message:type==="ACTION_BLOCKED"?"Browser action blocked by validation":"Browser action handler started"});};
   window.__eeTrackDiagnostic=function(stage,kind,diagnostic){
     var safe=diagnostic&&typeof diagnostic==="object"?diagnostic:{};
@@ -109,10 +124,13 @@ export function clientTelemetryScript() {
     if(timer){clearTimeout(timer);timer=null}
     if(!queue.length)return;
     var events=queue.splice(0,20),payload=JSON.stringify({events:events});
-    try{
-      if(navigator.sendBeacon){var blob=new Blob([payload],{type:"application/json"});if(navigator.sendBeacon("/api/client-telemetry",blob))return}
-    }catch(_){}
-    fetch("/api/client-telemetry",{method:"POST",headers:{"content-type":"application/json"},body:payload,keepalive:true,credentials:"same-origin"}).catch(function(){});
+    fetch("/api/client-telemetry",{method:"POST",headers:{"content-type":"application/json"},body:payload,keepalive:true,credentials:"same-origin"})
+      .then(function(res){if(!res.ok)throw new Error("TELEMETRY_HTTP_"+res.status);return res.json()})
+      .then(function(data){if(!data||data.ok!==true)throw new Error("TELEMETRY_NOT_SAVED")})
+      .catch(function(){
+        queue=events.concat(queue).slice(-100);
+        if(!timer)timer=setTimeout(flush,1500);
+      });
   }
   function describe(el){
     if(!el)return {};

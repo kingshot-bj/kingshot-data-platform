@@ -48,10 +48,9 @@ test("details collapsing cannot move a wrapper into its own descendant", () => {
 test("mobile chart layout keeps bars proportional and radar notice global", () => {
   assert.ok(script.includes("setProperty('width'"));
   assert.ok(script.includes("fill.style.setProperty('width'"));
-  assert.ok(script.includes("view.append(wrap,note)"));
   assert.ok(script.includes("function renderRadar()"));
   assert.ok(script.includes("fill.style.setProperty('width'"));
-  assert.ok(script.includes("radarHost.append(svg,legend)"));
+  assert.ok(script.includes("radarHost.append(svg,legend,totals)"));
   assert.ok(script.includes("view.appendChild(wrap)"));
 });
 test("successful compare render removes the stale loading status", () => {
@@ -64,11 +63,22 @@ test("remaining chart modes render every player supplied to the chart", () => {
   assert.ok(!script.includes("}}).slice(0,2)"));
 });
 
-test("ring, bar, and custom ranking modes retain up to four players", () => {
+test("ring, bar, and custom ranking modes retain up to six players", () => {
   assert.ok(script.includes("const players=available"));
   assert.ok(script.includes("players.forEach((e,i)=>{const row"));
-  assert.ok(script.includes("items.slice(0,4)"));
-  assert.ok(script.includes("players.length+'人'"));
+  assert.ok(script.includes("items.slice(0,6)"));
+  assert.ok(script.includes("players.length+'人を比較'"));
+});
+
+test("リングの真ん中はトップの人と差（秘境はステージ差・ほかは%）を出す", () => {
+  const start = script.indexOf("const STAGE_OFFSETS=");
+  const src = script.slice(start, script.indexOf(" function renderCard(card){"));
+  const leaderOf = new Function("safeText", src + "; return leaderOf;")(e => e ? e.t : "");
+  const card = t => ({ querySelector: () => ({ t }) });
+  assert.deepEqual(leaderOf(card("闘技場"), [{ name: "Choob", score: 10605 }, { name: "B", score: 10600 }]), { title: "👑Choob", note: "+5ステージ リード" });
+  assert.deepEqual(leaderOf(card("英雄総力"), [{ name: "A", score: 100 }, { name: "おーとオートAUTO！", score: 125 }]), { title: "👑おーとオー…", note: "+25% リード" });
+  assert.deepEqual(leaderOf(card("英雄総力"), [{ name: "A", score: 5 }, { name: "B", score: 5 }]), { title: "互角", note: "2人を比較" });
+  assert.match(script, /center\.textContent=lead\.title/);
 });
 
 
@@ -121,8 +131,8 @@ test("comparison refresh handler emits valid quote escapes for include checks", 
 
 test("redundant growth comparison section is removed while radar and detailed profile remain", () => {
   assert.ok(!script.includes("function buildGrowthComparison()"));
-  assert.ok(!script.includes("育成要素の比較"));
-  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+  assert.ok(!script.includes("className='ee-growth-comparison'"));
+  assert.ok(script.includes("svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));
 });
 test("player compare automatic and manual refresh requests have finite timeouts", () => {
@@ -133,10 +143,10 @@ test("player compare automatic and manual refresh requests have finite timeouts"
   assert.ok(indexSource.includes("timeoutMs||15000"));
 });
 
-test("growth comparison is collapsed by default and radar mode renders an SVG polygon chart", () => {
-  assert.ok(script.includes("document.createElement('details');panel.className='ee-build-compare'"));
-  assert.ok(!script.includes("title.textContent='育成要素の比較（詳細）'"));
-  assert.ok(script.includes("const svg=document.createElementNS(ns,'svg')"));
+test("duplicate build comparison panel is removed and radar mode renders an SVG polygon chart", () => {
+  assert.ok(!script.includes("ee-build-compare"));
+  assert.ok(!script.includes("育成要素の比較"));
+  assert.ok(script.includes("svg=document.createElementNS(ns,'svg')"));
   assert.ok(script.includes("const poly=document.createElementNS(ns,'polygon')"));
   assert.ok(script.includes("オフセット補正後の値を使用"));
 });
@@ -161,7 +171,7 @@ test("Mystic Trial radar keeps source offsets and uses the adjustable five-axis 
   for (const offset of ["'闘技場':10000","'生命の森':20000","'水晶鉱山':30000","'知識の枢軸':40000","'溶岩要塞':50000","'輝光の塔':60000"]) {
     assert.ok(script.includes(offset), "missing offset " + offset);
   }
-  assert.ok(script.includes("const maxPerAxis=2000"));
+  assert.ok(script.includes("let maxPerAxis="));
   assert.ok(script.includes("sum+row.entries[player].corrected"));
   assert.ok(script.includes("fmt(maxPerAxis*5)"));
   assert.ok(script.includes(".mystic-grid > .mystic-card.is-sub:not([data-ee-custom-board])"));
@@ -201,4 +211,25 @@ test("Mystic Trial radar excludes Radiant Spire and uses five-axis baseline", ()
   assert.ok(script.includes("fmt(maxPerAxis*5)"));
   assert.ok(!script.includes("fmt(maxPerAxis*6)"));
   assert.ok(script.includes("row.entries[player].corrected/maxPerAxis"));
+});
+
+test("プレイヤー比較は最大6人（選択・API・共有カード・色の数をそろえる）", async () => {
+  const { PLAYER_COMPARE_MAX, normalizeCompareGovernorIds } = await import("../src/player-compare.js");
+  assert.equal(PLAYER_COMPARE_MAX, 6);
+  assert.equal(normalizeCompareGovernorIds(Array.from({ length: 8 }, (_, i) => String(1000000 + i))).length, 6);
+  const { readFileSync } = await import("node:fs");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /0 \/ 6人選択/);
+  assert.match(index, /if\(selected\.size>=6\)\{input\.checked=false;alert\("比較できるのは最大6人です。"\)/);
+  const share = readFileSync(new URL("../src/compare-share.js", import.meta.url), "utf8");
+  assert.match(share, /getAll\("governor_id"\)\.slice\(0, 6\)/);
+  assert.equal((share.match(/var COLORS = \[([^\]]*)\]/)[1].match(/rgb\(/g) || []).length, 6, "6人ぶんの色");
+  assert.ok(script.includes("'#fb923c','#f472b6'"), "比較画面の色も6人ぶん");
+});
+
+test("比較ページの説明も6人（「2〜4人」の書き残しがない）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.doesNotMatch(index, /2〜4人/);
+  assert.match(index, /2〜6人を横並びで比較します/);
 });

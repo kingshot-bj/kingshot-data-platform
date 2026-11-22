@@ -1,10 +1,27 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
+
+// MightPulse marks online / last_active_at / last_login as stale; EagleEye
+// never stores them, not even in the raw player observations.
+const STALE_FIELDS = ["online", "last_active_at", "last_login"];
+export function stripStaleActivityFromPayloadJson(targetType, payloadJson) {
+  if (String(targetType || "").toUpperCase() !== "PLAYER" || typeof payloadJson !== "string") return payloadJson;
+  let payload;
+  try { payload = JSON.parse(payloadJson); } catch { return payloadJson; }
+  if (!payload || typeof payload !== "object") return payloadJson;
+  let changed = false;
+  for (const holder of [payload, payload.player]) {
+    if (!holder || typeof holder !== "object") continue;
+    for (const key of STALE_FIELDS) if (Object.prototype.hasOwnProperty.call(holder, key)) { delete holder[key]; changed = true; }
+  }
+  return changed ? JSON.stringify(payload) : payloadJson;
+}
 async function saveApiObservationInternal(db, observation) {
   if (!db) {
     throw new Error("D1 database binding is not configured.");
   }
 
   const observationId = crypto.randomUUID();
+  const payloadJson = stripStaleActivityFromPayloadJson(observation.target_type, observation.payload_json);
 
   await db.prepare(
     `INSERT INTO api_observations (
@@ -28,7 +45,7 @@ async function saveApiObservationInternal(db, observation) {
     observation.observed_at,
     observation.source_observed_at ?? null,
     observation.http_status,
-    observation.payload_json,
+    payloadJson,
     observation.created_at
   ).run();
 

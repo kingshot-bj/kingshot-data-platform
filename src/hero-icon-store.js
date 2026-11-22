@@ -196,6 +196,9 @@ export async function runHeroIconAssetWorker(env, { limit = 1 } = {}) {
   return { skipped: false, processed, saved, failed };
 }
 
+// Icons saved under an older Japanese name stay reachable by the current one.
+export const LEGACY_HERO_NAMES = Object.freeze({ "セス": "スミス" });
+
 /** Build an exact-name catalog map; ambiguous duplicate names are deliberately omitted. */
 export async function getSavedHeroIconMap(db) {
   if (!db) return {};
@@ -205,7 +208,8 @@ export async function getSavedHeroIconMap(db) {
   const map = {};
   const ambiguous = new Set();
   for (const row of result.results || []) {
-    const name = String(row.hero_name || "").trim();
+    const raw = String(row.hero_name || "").trim();
+    const name = LEGACY_HERO_NAMES[raw] || raw;
     const objectKey = String(row.object_key || "");
     const assetName = safeAssetName(objectKey);
     if (!name || !assetName) continue;

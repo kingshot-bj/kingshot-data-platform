@@ -1,0 +1,90 @@
+{
+  "name": "skins",
+  "title": "着せ替え紹介",
+  "output": "eagleeye-skins.mp4",
+  "post": [
+    "EagleEye は着せ替えで好きな色にできる🎨",
+    "ゴールドとワインレッドは運営招待の限定カラー✨",
+    "{host}",
+    "",
+    "#キングショット #KingShot"
+  ],
+  "scenes": [
+    {
+      "slide": "text",
+      "heading": "EagleEye の<br><b>着せ替え</b>",
+      "sub": "好きな色で使える",
+      "seconds": 2.5
+    },
+    {
+      "page": "/",
+      "caption": "<b>ネイビー</b><br>EagleEye標準",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "navy",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>ミッドナイトパープル</b><br>落ち着いた紫",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "midnight",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>さくら</b><br>やわらかいピンク",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "sakura",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>フォレスト</b><br>深い緑",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "forest",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>サンセット</b><br>あたたかいオレンジ",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "ember",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>グラファイト</b><br>色を抑えたモノトーン",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "graphite",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>ゴールド</b><br>運営招待の限定カラー",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "gold",
+      "login": true
+    },
+    {
+      "page": "/",
+      "caption": "<b>ワインレッド</b><br>運営招待の限定カラー",
+      "seconds": 2.5,
+      "scroll": 0,
+      "skin": "wine",
+      "login": true
+    },
+    {
+      "slide": "outro",
+      "seconds": 3,
+      "skin": "gold"
+    }
+  ],
+  "mode": "dark"
+}

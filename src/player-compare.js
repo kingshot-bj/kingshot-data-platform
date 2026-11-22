@@ -1,4 +1,4 @@
-export const PLAYER_COMPARE_MAX = 4;
+export const PLAYER_COMPARE_MAX = 6;
 
 export function normalizeCompareGovernorIds(values) {
   const raw = Array.isArray(values) ? values : [values];

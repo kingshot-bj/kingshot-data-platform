@@ -50,7 +50,9 @@ export async function collectMightPulseThroughGuards(env, {
   timeoutMs,
   maxRetries,
   mightyOnly = false,
-  userId = null
+  userId = null,
+  // 裏の収集は、ユーザー操作のために reserveKeys 本の空きを残す（足りなければキーを借りずに見送る）。
+  reserveKeys = 0
 } = {}) {
   if (!env?.DB) throw new Error("DB_NOT_CONFIGURED");
   if (!path) throw new Error("MIGHTPULSE_PATH_REQUIRED");
@@ -73,7 +75,9 @@ export async function collectMightPulseThroughGuards(env, {
       ? (userId
         ? leaseUserMightyApiKey(env.DB, { userId, purpose, targetType, targetId })
         : leaseMightyApiKey(env.DB, { poolTypes, purpose, targetType, targetId }))
-      : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId })));
+      : (reserveKeys > 0
+        ? leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true, reserveAvailableKeys: Math.floor(reserveKeys) })
+        : leaseApiKey(env.DB, { poolTypes, purpose, targetType, targetId, preferNonMighty: true }))));
 
     if (!lease) {
       const availability = await withD1TransientRetry(() => getApiPoolAvailability(env.DB, {
@@ -106,8 +110,8 @@ export async function collectMightPulseThroughGuards(env, {
       targetId,
       purpose,
       httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
     }));
 
     return {
@@ -244,6 +248,8 @@ export async function collectKingdomRanking(env, kid, board, {
 
 export async function collectPlayerDetail(env, governorId, {
   purpose = "PLAYER_COLLECTION",
+  wait = null,
+  maxAge = null,
   globalLimiter = null,
   useGlobalSemaphore = true
 } = {}) {
@@ -253,7 +259,11 @@ export async function collectPlayerDetail(env, governorId, {
     targetType: "PLAYER",
     targetId: String(governorId),
     purpose,
-    query: { include: "base,heroes,ranks,gov_gear" },
+    query: {
+      include: "base,heroes,ranks,gov_gear",
+      ...(wait !== null && wait !== undefined && wait !== "" ? { wait } : {}),
+      ...(maxAge !== null && maxAge !== undefined && maxAge !== "" ? { max_age: maxAge } : {})
+    },
     globalLimiter,
     useGlobalSemaphore
   });
@@ -262,6 +272,9 @@ export async function collectPlayerDetail(env, governorId, {
 
 export async function collectAllianceDetail(env, kid, abbr, {
   purpose = "ALLIANCE_COLLECTION",
+  include = "info,roster",
+  wait = null,
+  maxAge = null,
   globalLimiter = null,
   useGlobalSemaphore = true
 } = {}) {
@@ -271,7 +284,11 @@ export async function collectAllianceDetail(env, kid, abbr, {
     targetType: "ALLIANCE",
     targetId: `${kid}:${abbr}`,
     purpose,
-    query: { include: "info,roster" },
+    query: {
+      include,
+      ...(wait !== null && wait !== undefined && wait !== "" ? { wait } : {}),
+      ...(maxAge !== null && maxAge !== undefined && maxAge !== "" ? { max_age: maxAge } : {})
+    },
     globalLimiter,
     useGlobalSemaphore
   });

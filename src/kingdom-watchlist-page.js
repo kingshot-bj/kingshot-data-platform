@@ -5,7 +5,7 @@ export function renderKingdomWatchlistPageReplacement() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>王国ウォッチリスト｜EagleEye</title>
+<title>王国ウォッチリスト | EagleEye</title>
 <style>
 :root{color-scheme:dark;--bg:#0b1220;--panel:#162238;--line:#344154;--text:#f4f7fb;--muted:#aeb9c9;--accent:#73b7ff;--good:#71e0a2;--bad:#ff8585;--warn:#ffce73}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px 14px calc(28px + env(safe-area-inset-bottom))}
@@ -15,7 +15,7 @@ main{max-width:760px;margin:0 auto}.top{display:flex;justify-content:space-betwe
 </style>
 </head>
 <body><main>
-<div class="top"><div><a class="back" href="/">← EagleEye HOME</a><h1>王国ウォッチリスト</h1><div class="muted small">登録・一覧・更新状態を独立して管理します。</div></div></div>
+<div class="top"><div><a class="back" href="/">← ホーム</a><h1>王国ウォッチリスト</h1><div class="muted small">登録・一覧・更新状態を独立して管理します。</div></div></div>
 <div id="status" class="status busy" role="status" aria-live="polite">画面を準備しています…</div>
 <section class="panel">
 <h2>王国を監視対象に追加</h2>

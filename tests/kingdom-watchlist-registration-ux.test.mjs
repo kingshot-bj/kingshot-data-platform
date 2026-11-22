@@ -85,5 +85,5 @@ test("kingdom number regex survives template-string page generation", () => {
 
 test("home Kingdom Search tile opens the kingdom catalog instead of a detail page without a KID", async () => {
   const source = await readFile(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(source, /href="\/kingdom-catalog"><img src="\/assets\/eagleeye\/bjnyan\/11_kingdom_search\.png" alt=""><strong>王国検索<\/strong>/);
+  assert.match(source, /href="\/kingdom-catalog"><img src="\/assets\/eagleeye\/bjnyan\/11_kingdom_search\.png" alt=""><h3 class="ee-h"><strong>王国検索<\/strong><\/h3>/);
 });

@@ -2,7 +2,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 <style>
 .power-showcase-wrap{display:none!important}
 .compare-metric[hidden]{display:none!important}
-.ee-build-compare{margin:14px 0;padding:12px;border:1px solid var(--border,#29425e);border-radius:14px;background:var(--panel,#102238)}.ee-build-compare>summary{font-size:13px;font-weight:700;cursor:pointer;list-style:none}.ee-build-compare>summary::-webkit-details-marker{display:none}.ee-build-compare[open]{display:grid;gap:8px}.ee-build-compare>summary:before{content:'＋';margin-right:6px}.ee-build-compare[open]>summary:before{content:'−'}.ee-build-row{padding:8px 0;border-bottom:1px solid var(--border,#29425e)}.ee-build-name{display:block;font-size:12px;margin-bottom:6px;overflow-wrap:anywhere}.ee-build-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.ee-build-value{min-width:0;padding:7px;border:1px solid var(--border,#29425e);border-radius:8px}.ee-build-value span{display:block;font-size:10px;color:var(--sub,#91a7bf);margin-bottom:4px}.ee-build-value b{display:block;font-size:11px;font-weight:600;overflow-wrap:anywhere}@media(min-width:700px){.ee-build-values{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
 
 .ee-compare-details{margin:14px 0;border:1px solid var(--border,#29425e);border-radius:12px;padding:10px 12px;background:var(--panel,#102238)}.ee-compare-details>summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--text,#e8f3ff);padding:3px}.ee-compare-details[open]{display:grid;gap:12px}.ee-compare-details .compare-player-cards{margin-top:8px}
 .ee-compare-chart-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0 14px}
@@ -15,7 +15,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 .ee-split-ring .slice{transition:stroke-dasharray 2.2s cubic-bezier(.2,.8,.2,1),stroke-dashoffset 2.2s}
 .ee-split-ring .slice-a{stroke:#ffd166;filter:drop-shadow(0 0 4px #ffd166aa)}
 .ee-split-ring .slice-b{stroke:#42d9ff;filter:drop-shadow(0 0 4px #42d9ffaa)}
-.ee-split-ring .ee-center{position:absolute;text-align:center;max-width:76%;font-weight:800;font-size:clamp(15px,4vw,22px);line-height:1.15}
+.ee-split-ring .ee-center{position:absolute;text-align:center;max-width:80%;font-weight:800;font-size:clamp(12px,3.4vw,18px);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ee-split-ring .ee-center small{display:block;font-size:10px;font-weight:600;color:var(--sub,#91a7bf);margin-top:5px}
 .ee-spark-layer{position:absolute;inset:0;pointer-events:none}
 .ee-spark-layer i{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px 2px var(--spark);animation:ee-spark 3.6s ease-out var(--delay) infinite;transform:rotate(var(--angle)) translateY(-38px)}
@@ -31,7 +31,7 @@ export const PLAYER_COMPARE_ENHANCEMENTS = String.raw`
 @media(max-width:480px){}</style>
 <script>
 (function(){
-const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8'];
+const colors=['#ffd166','#42d9ff','#a18aff','#5ee6a8','#fb923c','#f472b6'];
 const fmt=v=>{if(v==null||!Number.isFinite(Number(v)))return '—';try{return new Intl.NumberFormat('ja-JP',{maximumFractionDigits:1}).format(Number(v))}catch{return String(v)}};
 const safeText=e=>String(e&&e.textContent||'').trim();
 function collapseDetails(){
@@ -57,22 +57,6 @@ function enhance(){
  document.querySelectorAll('.compare-metric').forEach(row=>{const label=safeText(row.querySelector('span'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))row.hidden=true});
  const table=document.querySelector('.table-wrap table');
  if(table){[...table.querySelectorAll('tr')].forEach(tr=>{const label=safeText(tr.querySelector('th,td'));if(/^(戦力|撃破数|役場レベル|役場|VIP|VIPレベル|30日間の戦力変化)$/.test(label))tr.hidden=true})}
- if(table&&!document.querySelector('.ee-build-compare')){
-  const rows=[...table.querySelectorAll('tr')].filter(tr=>/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/.test(safeText(tr.querySelector('th,td'))));
-  if(rows.length){
-   const panel=document.createElement('details');panel.className='ee-build-compare';
-   const title=document.createElement('summary');title.textContent='育成要素の比較（詳細）';panel.appendChild(title);
-   const headers=[...table.querySelectorAll('thead th')].slice(1).map(safeText);
-   let lastGroup='';
-   rows.forEach(tr=>{const cells=[...tr.children];const rawLabel=safeText(cells[0]);const group=(rawLabel.match(/^(闘技場防衛編成|防衛編成装備|英雄スキル|専用装備|領主装備)：/)||[])[1]||'';if(group!==lastGroup){const sub=document.createElement('h3');sub.textContent=group;panel.appendChild(sub);lastGroup=group}const card=document.createElement('article');card.className='ee-build-row';
-    const name=document.createElement('strong');name.className='ee-build-name';name.textContent=rawLabel.replace(/^(闘技場防衛編成：|防衛編成装備：|英雄スキル：|専用装備：|領主装備：)/,'');card.appendChild(name);
-    const values=document.createElement('div');values.className='ee-build-values';
-    cells.slice(1).forEach((cell,i)=>{const item=document.createElement('div');item.className='ee-build-value';const who=document.createElement('span');who.textContent=headers[i]||('プレイヤー'+(i+1));const val=document.createElement('b');val.textContent=safeText(cell)||'—';item.append(who,val);values.appendChild(item)});
-    card.appendChild(values);panel.appendChild(card);
-   });
-   const sec=document.querySelector('.mystic-section');if(sec)sec.before(panel);else table.before(panel);
-  }
- }
 
  const sec=document.querySelector('.mystic-section');
  if(!sec||sec.dataset.eeEnhanced==='1')return;
@@ -87,7 +71,24 @@ function enhance(){
  const buttons={};
  modes.forEach(([key,label])=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.mode=key;b.setAttribute('aria-pressed',String(key===mode));b.addEventListener('click',()=>{mode=key;try{localStorage.setItem('eagleeye-player-compare-chart-v1',mode)}catch{}Object.entries(buttons).forEach(([k,node])=>node.setAttribute('aria-pressed',String(k===mode)));renderAll()});buttons[key]=b;tools.appendChild(b)});
  sec.insertBefore(tools,sec.children[1]||null);sec.insertBefore(status,tools.nextSibling);
- const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const smalls=[...cell.querySelectorAll('small')];const name=safeText(smalls[0]);const n=cell.querySelector('.counter');const api=smalls.find(el=>safeText(el).startsWith('API値:'));const apiText=api?safeText(api).slice('API値:'.length).replace(/,/g,'').trim():'';const raw=apiText!==''&&Number.isFinite(Number(apiText))?Number(apiText):(n&&n.dataset.target!==''&&Number.isFinite(Number(n.dataset.target))?Number(n.dataset.target):null);return{name:name||('プレイヤー'+(i+1)),score:raw,display:n?safeText(n):'—',stage:false,color:colors[i%colors.length]}});
+ const readEntries=card=>[...card.querySelectorAll('.mystic-value')].map((cell,i)=>{const smalls=[...cell.querySelectorAll('small')];const name=safeText(smalls[0]);const n=cell.querySelector('.counter');const api=smalls.find(el=>safeText(el).startsWith('API値:'));const apiText=n&&n.dataset.api?String(n.dataset.api):(api?safeText(api).slice('API値:'.length).replace(/,/g,'').trim():'');const raw=apiText!==''&&Number.isFinite(Number(apiText))?Number(apiText):(n&&n.dataset.target!==''&&Number.isFinite(Number(n.dataset.target))?Number(n.dataset.target):null);return{name:name||('プレイヤー'+(i+1)),score:raw,display:n?safeText(n):'—',stage:false,color:colors[i%colors.length]}});
+ // リングの真ん中：だれがトップか、どれだけ差があるか（秘境はステージ数の差、ほかは%の差）。
+ const STAGE_OFFSETS={'闘技場':10000,'生命の森':20000,'水晶鉱山':30000,'知識の枢軸':40000,'溶岩要塞':50000,'輝光の塔':60000};
+ // 2026-11-16：秘境の試練の合計（「秘境の試練」）は強さのスコアではないので、%の差を出さない。
+ const NO_PERCENT=new Set(['秘境の試練']);
+ const correctedOf=card=>{const off=STAGE_OFFSETS[safeText(card.querySelector('.mystic-name'))];return e=>off&&e.score>off?e.score-off:e.score};
+ function leaderOf(card,players){
+  const title=safeText(card.querySelector('.mystic-name'));const off=STAGE_OFFSETS[title];
+  const val=correctedOf(card);
+  const sorted=players.slice().sort((a,b)=>val(b)-val(a));
+  const top=sorted[0],second=sorted[1];
+  if(!top||!second||val(top)===val(second))return{title:'互角',note:players.length+'人を比較'};
+  const short=Array.from(String(top.name)).length>5?Array.from(String(top.name)).slice(0,5).join('')+'…':String(top.name);
+  const diff=val(top)-val(second);
+  const note=off?'+'+diff+'ステージ':NO_PERCENT.has(title)?'記録が上':'+'+(val(second)>0?(Math.round(diff/val(second)*1000)/10):100)+'%';
+  if(NO_PERCENT.has(title))return{title:'👑'+short,note};
+  return{title:'👑'+short,note:note+' リード'};
+ }
  function renderCard(card){
   const entries=readEntries(card),available=entries.filter(x=>x.score!==null);
   const existing=card.querySelector('.mystic-ring');if(existing)existing.style.display='none';
@@ -95,18 +96,18 @@ function enhance(){
   if(!view){view=document.createElement('div');view.className='ee-chart-view';if(values)values.after(view);else card.appendChild(view)}
   view.replaceChildren();
   if(entries.some(e=>e.stage)){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='ステージ表記のランキングは数値グラフの対象外です。上のゲーム表示値で比較してください。';view.appendChild(msg);return}if(entries.length<2||available.length<2){const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='比較できる実スコアが2人分以上そろうと表示します。';view.appendChild(msg);return}
-  const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,e.score))),sum=players.reduce((total,e)=>total+Math.max(0,e.score),0);
+  const corrected=correctedOf(card);const players=available,maximum=Math.max(1,...players.map(e=>Math.max(0,corrected(e)))),sum=players.reduce((total,e)=>total+Math.max(0,corrected(e)),0);
   if(mode==='ring'){
    const ring=document.createElement('div');ring.className='ee-split-ring';
    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 120 120');svg.setAttribute('aria-hidden','true');
    const circ=2*Math.PI*48,track=document.createElementNS(ns,'circle');track.setAttribute('class','track');track.setAttribute('cx','60');track.setAttribute('cy','60');track.setAttribute('r','48');svg.appendChild(track);
-   let offset=0;players.forEach((e,i)=>{const circle=document.createElementNS(ns,'circle');circle.setAttribute('class','slice');circle.setAttribute('cx','60');circle.setAttribute('cy','60');circle.setAttribute('r','48');circle.style.stroke=colors[i%colors.length];circle.style.filter='drop-shadow(0 0 4px '+colors[i%colors.length]+'88)';const portion=sum>0?Math.max(0,e.score)/sum:1/players.length;circle.style.strokeDasharray=(portion*circ)+' '+(circ-portion*circ);circle.style.strokeDashoffset=String(-offset);offset+=portion*circ;svg.appendChild(circle)});
-   ring.appendChild(svg);const center=document.createElement('div');center.className='ee-center';center.textContent=players.length+'人';const sm=document.createElement('small');sm.textContent='比較中';center.appendChild(sm);ring.appendChild(center);
+   let offset=0;players.forEach((e,i)=>{const circle=document.createElementNS(ns,'circle');circle.setAttribute('class','slice');circle.setAttribute('cx','60');circle.setAttribute('cy','60');circle.setAttribute('r','48');circle.style.stroke=colors[i%colors.length];circle.style.filter='drop-shadow(0 0 4px '+colors[i%colors.length]+'88)';const portion=sum>0?Math.max(0,corrected(e))/sum:1/players.length;circle.style.strokeDasharray=(portion*circ)+' '+(circ-portion*circ);circle.style.strokeDashoffset=String(-offset);offset+=portion*circ;svg.appendChild(circle)});
+   ring.appendChild(svg);const lead=leaderOf(card,players);const center=document.createElement('div');center.className='ee-center';center.textContent=lead.title;const sm=document.createElement('small');sm.textContent=lead.note;center.appendChild(sm);ring.appendChild(center);
    if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){const layer=document.createElement('div');layer.className='ee-spark-layer';players.forEach((e,i)=>{const p=document.createElement('i');p.style.setProperty('--angle',(players.slice(0,i+1).reduce((n,x)=>n+(sum>0?Math.max(0,x.score)/sum:1/players.length),0)*360)+'deg');p.style.setProperty('--distance',(25+(i%4)*10)+'px');p.style.setProperty('--delay',(-i*240)+'ms');p.style.setProperty('--spark',colors[i%colors.length]);layer.appendChild(p)});ring.appendChild(layer)}
-   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=players.map((e,i)=>e.name+' '+fmt(e.score)).join(' ／ ');view.append(ring,legend);
+   const legend=document.createElement('div');legend.className='ee-compare-chart-note';legend.textContent=players.map((e,i)=>e.name+' '+(e.display&&e.display!=='—'?e.display:fmt(e.score))).join(' ／ ');view.append(ring,legend);
   }else if(mode==='bar'){
    const wrap=document.createElement('div');wrap.className='ee-compare-bars';
-   players.forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.background=colors[i%colors.length];fill.style.setProperty('width',(Math.max(0,e.score)/maximum*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
+   players.forEach((e,i)=>{const row=document.createElement('div');row.className='ee-compare-bar-row';const label=document.createElement('div');label.className='bar-label';const n=document.createElement('span');n.textContent=e.name;const v=document.createElement('strong');v.textContent=e.display&&e.display!=='—'?e.display:fmt(e.score);label.append(n,v);const track=document.createElement('div');track.className='ee-compare-bar-track';const fill=document.createElement('span');fill.className=i===0?'a':'b';fill.style.background=colors[i%colors.length];fill.style.setProperty('width',(Math.max(0,corrected(e))/maximum*100)+'%','important');track.appendChild(fill);row.append(label,track);wrap.appendChild(row)});view.appendChild(wrap);
   }else{const msg=document.createElement('div');msg.className='ee-compare-chart-note';msg.textContent='表示できる比較モードを選択してください。';view.appendChild(msg)}}
  const radarHost=document.createElement('div');radarHost.className='ee-radar-host';
  const radarSettings=document.createElement('div');radarSettings.className='ee-radar-settings';radarSettings.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;border:1px solid var(--border,#29425e);border-radius:10px;background:var(--panel,#102238)';const radarScaleLabel=document.createElement('label');radarScaleLabel.textContent='レーダー100%基準';radarScaleLabel.style.cssText='font-size:12px;color:var(--sub,#91a7bf)';const radarScale=document.createElement('input');radarScale.type='range';radarScale.min='500';radarScale.max='3000';radarScale.step='100';radarScale.style.cssText='flex:1;min-width:120px;accent-color:var(--accent,#39d8f4)';const radarScaleValue=document.createElement('strong');radarScaleValue.style.cssText='font-size:13px;min-width:58px;text-align:right';let savedScale=null;try{savedScale=Number(localStorage.getItem('ee-mystic-radar-scale-v1'))}catch{}let maxPerAxis=Number.isFinite(savedScale)&&savedScale>=500&&savedScale<=3000&&savedScale%100===0?savedScale:1500;radarScale.value=String(maxPerAxis);radarScaleValue.textContent=maxPerAxis.toLocaleString();radarScaleLabel.htmlFor='ee-mystic-radar-scale';radarScale.id='ee-mystic-radar-scale';radarScale.addEventListener('input',()=>{maxPerAxis=Number(radarScale.value);radarScaleValue.textContent=maxPerAxis.toLocaleString();try{localStorage.setItem('ee-mystic-radar-scale-v1',String(maxPerAxis))}catch{}renderRadar()});
@@ -167,18 +168,21 @@ function enhance(){
   radarHost.append(svg,legend,totals);
  }
 
- const candidateRows=new Map();
- [...document.querySelectorAll('.compare-player-card')].forEach(playerCard=>{
+ // 2026-11-16：同じプレイヤーが2回数えられて「BJにゃん vs BJにゃん」「4人を比較」になっていた。プレイヤーごとに1回だけ数える。
+ const candidateRows=new Map();const seenPlayerLabel=new Set();
+ [...document.querySelectorAll('.compare-player-card')].forEach((playerCard,cardIndex)=>{
   const name=safeText(playerCard.querySelector('.pname'))||'プレイヤー';
+  const who=playerCard.dataset.governorId||name||String(cardIndex);
   playerCard.querySelectorAll('.compare-metric[data-rank-score]').forEach(metric=>{
    const label=metric.getAttribute('data-compare-label')||'';
    const score=Number(metric.dataset.rankScore);
    if(!label.startsWith('ランキング：')||!Number.isFinite(score))return;
+   const dedupe=label+'|'+who;if(seenPlayerLabel.has(dedupe))return;seenPlayerLabel.add(dedupe);
    if(!candidateRows.has(label))candidateRows.set(label,[]);
    candidateRows.get(label).push({name,score});
   });
  });
- const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,4)}));
+ const candidates=[...candidateRows.entries()].filter(([label,items])=>items.length>=2).map(([label,items])=>({label,items:items.slice(0,6)}));
  const customPanel=document.createElement('details');customPanel.className='ee-custom-rankings';
  const customSummary=document.createElement('summary');customSummary.textContent='追加ランキング（取得済みスコアのみ）';customPanel.appendChild(customSummary);
  const customList=document.createElement('div');customList.className='ee-custom-rank-list';

@@ -74,6 +74,11 @@ export async function exchangeGoogleDriveOAuthCode(env, code) {
   });
 }
 
+// One access token can be reused for every upload in a Worker invocation.
+export async function getGoogleDriveAccessToken(env) {
+  return refreshGoogleDriveAccessToken(env);
+}
+
 async function refreshGoogleDriveAccessToken(env) {
   const { clientId, clientSecret } = googleConfig(env);
   const refreshToken = requireRefreshToken(env);
@@ -130,6 +135,72 @@ export async function getGoogleDriveConnectionStatus(env) {
   };
 }
 
+// drive.file can only reach folders this OAuth client created. If the
+// configured folder is not reachable (created by hand or under another
+// authorization), use an app-owned "EagleEye Archive" folder instead and
+// remember its ID in R2 so every run uses the same folder.
+export const DRIVE_FOLDER_CONFIG_KEY = "config/google-drive-archive-folder.json";
+const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
+let resolvedFolderCache = null;
+
+export function resetGoogleDriveFolderCache() {
+  resolvedFolderCache = null;
+}
+
+async function isReachableFolder(accessToken, folderId) {
+  if (!folderId) return false;
+  try {
+    const file = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "/" + encodeURIComponent(folderId) + "?fields=id,mimeType,trashed", { method: "GET" });
+    return Boolean(file?.id) && file.mimeType === DRIVE_FOLDER_MIME && !file.trashed;
+  } catch (error) {
+    if (error?.status === 404 || error?.status === 403) return false;
+    throw error;
+  }
+}
+
+export async function resolveArchiveFolderId(env, accessToken, archiveBucket = null) {
+  if (resolvedFolderCache) return resolvedFolderCache;
+  let savedId = null;
+  if (archiveBucket) {
+    const saved = await archiveBucket.get(DRIVE_FOLDER_CONFIG_KEY).catch(() => null);
+    if (saved) {
+      try { savedId = JSON.parse(await new Response(saved.body).text())?.folderId || null; } catch { savedId = null; }
+    }
+  }
+  const configuredId = String(env?.GOOGLE_DRIVE_FOLDER_ID || "").trim();
+  for (const [candidate, source] of [[savedId, "R2_CONFIG"], [configuredId, "ENV"]]) {
+    if (candidate && await isReachableFolder(accessToken, candidate)) {
+      resolvedFolderCache = { folderId: candidate, source };
+      return resolvedFolderCache;
+    }
+  }
+  const params = new URLSearchParams({
+    q: "trashed = false and mimeType = '" + DRIVE_FOLDER_MIME + "' and appProperties has { key = 'eagleeyeFolder' and value = 'archive' }",
+    spaces: "drive",
+    pageSize: "1",
+    fields: "files(id,name)"
+  });
+  const found = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
+  let folderId = found?.files?.[0]?.id || null;
+  let source = "APP_FOLDER";
+  if (!folderId) {
+    folderId = (await createGoogleDriveArchiveFolder(accessToken, "EagleEye Archive"))?.id || null;
+    source = "CREATED";
+  }
+  if (!folderId) {
+    const error = new Error("GOOGLE_DRIVE_FOLDER_UNAVAILABLE");
+    error.code = "GOOGLE_DRIVE_FOLDER_UNAVAILABLE";
+    throw error;
+  }
+  if (archiveBucket) {
+    await archiveBucket.put(DRIVE_FOLDER_CONFIG_KEY, JSON.stringify({ folderId, source, savedAt: Math.floor(Date.now() / 1000) }), {
+      httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" }
+    });
+  }
+  resolvedFolderCache = { folderId, source };
+  return resolvedFolderCache;
+}
+
 async function findExistingArchive(accessToken, folderId, sourceKey) {
   const escapedKey = encodeURIComponent(String(sourceKey).slice(0, 124));
   const q = [
@@ -147,25 +218,39 @@ async function findExistingArchive(accessToken, folderId, sourceKey) {
   return Array.isArray(data.files) ? data.files[0] || null : null;
 }
 
+// R2 ETags of single-part uploads are the MD5 of the object; Drive reports
+// md5Checksum for uploaded binary files. Comparing both proves byte equality.
+function r2EtagMd5(etag) {
+  const value = String(etag || "").replace(/"/g, "").trim().toLowerCase();
+  return /^[0-9a-f]{32}$/.test(value) ? value : null;
+}
+
+export function verifyDriveCopyMatchesR2({ sourceSize, sourceEtag, driveSize, driveMd5 }) {
+  const sizeMatches = Number(sourceSize) > 0 && Number(sourceSize) === Number(driveSize);
+  const sourceMd5 = r2EtagMd5(sourceEtag);
+  const md5 = String(driveMd5 || "").trim().toLowerCase();
+  const md5Checked = Boolean(sourceMd5 && md5);
+  const md5Matches = md5Checked ? sourceMd5 === md5 : null;
+  return { verified: sizeMatches && md5Matches !== false, sizeMatches, md5Checked, md5Matches };
+}
+
 /**
  * Upload one R2 object to the EagleEye folder in the personal Google Drive.
  * Authentication uses a user OAuth refresh token, not a Service Account.
- *
- * This remains an explicit transport/verification primitive. It is not wired
- * to cron, retention, or automatic R2 deletion.
+ * The result's `verified` is true only when size (and MD5, when both sides
+ * expose it) match the R2 object; callers must not delete source data unless
+ * `verified` is true.
  */
 export async function uploadR2ObjectToGoogleDrive(env, {
   archiveBucket,
   key,
   fileName = null,
   mimeType = "application/gzip",
-  folderId = null
+  folderId = null,
+  accessToken: providedAccessToken = null
 } = {}) {
   if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
   if (!key) throw new Error("GOOGLE_DRIVE_SOURCE_KEY_REQUIRED");
-
-  const parentFolderId = String(folderId || env.GOOGLE_DRIVE_FOLDER_ID || "").trim();
-  if (!parentFolderId) throw new Error("GOOGLE_DRIVE_FOLDER_NOT_CONFIGURED");
 
   const object = await archiveBucket.get(key);
   if (!object) {
@@ -174,10 +259,27 @@ export async function uploadR2ObjectToGoogleDrive(env, {
     throw error;
   }
 
-  const accessToken = await refreshGoogleDriveAccessToken(env);
-  const existing = await findExistingArchive(accessToken, parentFolderId, key);
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  let parentFolderId = String(folderId || "").trim();
+  if (!parentFolderId) {
+    try {
+      parentFolderId = (await resolveArchiveFolderId(env, accessToken, archiveBucket)).folderId;
+    } catch (error) {
+      error.driveStep = error.driveStep || "RESOLVE_FOLDER";
+      throw error;
+    }
+  }
+  let existing;
+  try {
+    existing = await findExistingArchive(accessToken, parentFolderId, key);
+  } catch (error) {
+    error.driveStep = "FIND_EXISTING";
+    throw error;
+  }
   if (existing?.id) {
+    const check = verifyDriveCopyMatchesR2({ sourceSize: object.size, sourceEtag: object.etag, driveSize: existing.size, driveMd5: existing.md5Checksum });
     return {
+      ...check,
       sourceKey: key,
       driveFileId: existing.id,
       name: existing.name || null,
@@ -186,7 +288,6 @@ export async function uploadR2ObjectToGoogleDrive(env, {
       parents: existing.parents || [],
       webViewLink: existing.webViewLink || null,
       duplicate: true,
-      verified: Number(existing.size || 0) === Number(object.size || 0),
       sourceSize: Number(object.size || 0),
       driveSize: Number(existing.size || 0),
       sourceEtag: object.etag || null,
@@ -219,27 +320,34 @@ export async function uploadR2ObjectToGoogleDrive(env, {
   const suffix = encoder.encode("\r\n--" + boundary + "--\r\n");
   const body = new Blob([prefix, sourceBytes, suffix]);
 
-  const data = await driveRequest(
-    accessToken,
-    GOOGLE_DRIVE_UPLOAD_URL + "?uploadType=multipart&fields=id,name,mimeType,size,parents,webViewLink,appProperties,md5Checksum",
-    {
-      method: "POST",
-      headers: { "content-type": "multipart/related; boundary=" + boundary },
-      body
-    }
-  );
+  let data;
+  try {
+    data = await driveRequest(
+      accessToken,
+      GOOGLE_DRIVE_UPLOAD_URL + "?uploadType=multipart&fields=id,name,mimeType,size,parents,webViewLink,appProperties,md5Checksum",
+      {
+        method: "POST",
+        headers: { "content-type": "multipart/related; boundary=" + boundary },
+        body
+      }
+    );
+  } catch (error) {
+    error.driveStep = "UPLOAD";
+    throw error;
+  }
 
   const sourceSize = Number(object.size || sourceBytes.byteLength || 0);
   const driveSize = Number(data.size || 0);
-  const verified = sourceSize === driveSize;
-  if (!verified) {
-    const error = new Error("GOOGLE_DRIVE_SIZE_VERIFICATION_FAILED");
-    error.code = "GOOGLE_DRIVE_SIZE_VERIFICATION_FAILED";
-    error.details = { sourceSize, driveSize, driveFileId: data.id };
+  const check = verifyDriveCopyMatchesR2({ sourceSize, sourceEtag: object.etag, driveSize, driveMd5: data.md5Checksum });
+  if (!check.verified) {
+    const error = new Error("GOOGLE_DRIVE_VERIFICATION_FAILED");
+    error.code = "GOOGLE_DRIVE_VERIFICATION_FAILED";
+    error.details = { sourceSize, driveSize, md5Matches: check.md5Matches, driveFileId: data.id };
     throw error;
   }
 
   return {
+    ...check,
     sourceKey: key,
     driveFileId: data.id,
     name: data.name,
@@ -248,7 +356,6 @@ export async function uploadR2ObjectToGoogleDrive(env, {
     parents: data.parents || [],
     webViewLink: data.webViewLink || null,
     duplicate: false,
-    verified: true,
     sourceSize,
     driveSize,
     sourceEtag: object.etag || null,
@@ -271,4 +378,131 @@ export async function verifyGoogleDriveRefreshToken(env) {
   });
   const data = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
   return { ok: true, sampleFolder: data.files?.[0] || null };
+}
+
+// ---------- Restore: Google Drive -> R2 ----------
+// Drive holds a verified copy of every archive object. If an R2 archive object
+// is lost, these functions copy it back. They never overwrite an existing R2
+// object, only touch keys under "archive/", and R2 verifies the bytes against
+// Drive's MD5 on write.
+
+const RESTORABLE_PREFIX = "archive/";
+
+function sourceKeyOf(file) {
+  try {
+    const key = decodeURIComponent(String(file?.appProperties?.eagleeyeSourceKey || ""));
+    return key || null;
+  } catch {
+    return null;
+  }
+}
+
+function isRestorableKey(key) {
+  return typeof key === "string" && key.startsWith(RESTORABLE_PREFIX) && key.endsWith(".ndjson.gz") && !key.includes("..");
+}
+
+export async function listGoogleDriveArchiveFiles(accessToken, folderId, { pageToken = null, pageSize = 50 } = {}) {
+  const params = new URLSearchParams({
+    q: ["trashed = false", "'" + String(folderId).replace(/'/g, "\\'") + "' in parents", "appProperties has { key = 'eagleeyeArchive' and value = '1' }"].join(" and "),
+    spaces: "drive",
+    pageSize: String(Math.min(Math.max(Number(pageSize) || 50, 1), 100)),
+    fields: "nextPageToken,files(id,name,size,md5Checksum,appProperties)"
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  const data = await driveRequest(accessToken, GOOGLE_DRIVE_API_URL + "?" + params.toString(), { method: "GET" });
+  return { files: Array.isArray(data.files) ? data.files : [], nextPageToken: data.nextPageToken || null };
+}
+
+async function downloadDriveFile(accessToken, fileId) {
+  const response = await fetch(GOOGLE_DRIVE_API_URL + "/" + encodeURIComponent(fileId) + "?alt=media", { headers: { authorization: "Bearer " + accessToken } });
+  if (!response.ok) {
+    const error = new Error("GOOGLE_DRIVE_DOWNLOAD_FAILED");
+    error.code = "GOOGLE_DRIVE_DOWNLOAD_FAILED";
+    error.status = response.status;
+    throw error;
+  }
+  return response.arrayBuffer();
+}
+
+// Restore one Drive file (already looked up) to its R2 key.
+async function restoreDriveFileToR2(archiveBucket, accessToken, file, key) {
+  if (!isRestorableKey(key)) return { key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" };
+  if (await archiveBucket.head(key)) return { key, status: "ALREADY_IN_R2" };
+  const md5 = String(file.md5Checksum || "").toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(md5)) return { key, status: "SKIPPED", reason: "DRIVE_MD5_MISSING" };
+  const bytes = await downloadDriveFile(accessToken, file.id);
+  if (Number(file.size || 0) && bytes.byteLength !== Number(file.size)) return { key, status: "FAILED", reason: "DRIVE_SIZE_MISMATCH" };
+  // R2 rejects the write if the bytes do not match this MD5.
+  await archiveBucket.put(key, bytes, {
+    md5,
+    httpMetadata: { contentType: "application/x-ndjson", contentEncoding: "gzip" },
+    customMetadata: { restoredFromDriveFileId: String(file.id), restoredAt: String(Math.floor(Date.now() / 1000)) }
+  });
+  const head = await archiveBucket.head(key);
+  const ok = head && Number(head.size) === bytes.byteLength && r2EtagMd5(head.etag) === md5;
+  if (!ok) return { key, status: "FAILED", reason: "R2_VERIFICATION_FAILED" };
+  await restoreKingdomArchivePointer(archiveBucket, key);
+  return { key, status: "RESTORED", size: bytes.byteLength, driveFileId: file.id };
+}
+
+// Kingdom ranking archives are served through a latest.json pointer that is
+// not mirrored to Drive; recreate it so pages can read the restored rows.
+const KINGDOM_ARCHIVE_KEY_RE = /^archive\/v1\/kingdom_ranking_current\/kid\/(\d+)\/(\d+)\.ndjson\.gz$/;
+async function restoreKingdomArchivePointer(archiveBucket, key) {
+  const match = KINGDOM_ARCHIVE_KEY_RE.exec(key);
+  if (!match) return;
+  const [, kid, lastUpdatedAt] = match;
+  const pointerKey = `archive/v1/kingdom_ranking_current/kid/${kid}/latest.json`;
+  const existing = await archiveBucket.get(pointerKey);
+  if (existing) {
+    let pointer = null;
+    try { pointer = JSON.parse(await new Response(existing.body).text()); } catch {}
+    const pointedExists = pointer?.key ? await archiveBucket.head(pointer.key) : null;
+    if (pointedExists && Number(pointer.lastUpdatedAt || 0) >= Number(lastUpdatedAt)) return;
+  }
+  await archiveBucket.put(pointerKey, JSON.stringify({ kid: Number(kid), key, lastUpdatedAt: Number(lastUpdatedAt), archivedAt: Math.floor(Date.now() / 1000), restoredFromDrive: true }), {
+    httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" }
+  });
+}
+
+export async function restoreR2ObjectFromGoogleDrive(env, { archiveBucket, key, accessToken: providedAccessToken = null } = {}) {
+  if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  if (!isRestorableKey(key)) return { key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" };
+  if (await archiveBucket.head(key)) return { key, status: "ALREADY_IN_R2" };
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  const { folderId } = await resolveArchiveFolderId(env, accessToken, archiveBucket);
+  const file = await findExistingArchive(accessToken, folderId, key);
+  if (!file?.id) return { key, status: "NOT_FOUND_ON_DRIVE" };
+  if (sourceKeyOf(file) !== key) return { key, status: "SKIPPED", reason: "DRIVE_KEY_MISMATCH" };
+  return restoreDriveFileToR2(archiveBucket, accessToken, file, key);
+}
+
+// Walk one page of Drive archive files and restore the ones missing from R2.
+export async function restoreMissingR2ObjectsFromGoogleDrive(env, { archiveBucket, pageToken = null, pageSize = 50, maxRestores = 10, accessToken: providedAccessToken = null } = {}) {
+  if (!archiveBucket) throw new Error("R2_ARCHIVE_NOT_CONFIGURED");
+  const accessToken = providedAccessToken || await refreshGoogleDriveAccessToken(env);
+  const { folderId } = await resolveArchiveFolderId(env, accessToken, archiveBucket);
+  const page = await listGoogleDriveArchiveFiles(accessToken, folderId, { pageToken, pageSize });
+  const summary = { checked: 0, present: 0, restored: 0, skipped: 0, failed: 0, deferred: 0, results: [], nextPageToken: page.nextPageToken };
+  let restores = 0;
+  const deferredFiles = [];
+  for (const file of page.files) {
+    summary.checked++;
+    const key = sourceKeyOf(file);
+    if (!isRestorableKey(key)) { summary.skipped++; summary.results.push({ key, status: "SKIPPED", reason: "KEY_NOT_RESTORABLE" }); continue; }
+    if (await archiveBucket.head(key)) { summary.present++; continue; }
+    if (restores >= maxRestores) { summary.deferred++; deferredFiles.push(file); continue; }
+    restores++;
+    try {
+      const result = await restoreDriveFileToR2(archiveBucket, accessToken, file, key);
+      if (result.status === "RESTORED") summary.restored++; else if (result.status === "ALREADY_IN_R2") summary.present++; else summary.failed++;
+      summary.results.push(result);
+    } catch (error) {
+      summary.failed++;
+      summary.results.push({ key, status: "FAILED", reason: String(error?.code || error?.message || "RESTORE_FAILED").slice(0, 80) });
+    }
+  }
+  // Missing files left on this page (per-request cap): the caller repeats the same page.
+  summary.repeatPage = deferredFiles.length > 0;
+  return summary;
 }
