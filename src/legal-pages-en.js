@@ -73,6 +73,7 @@ ${li([
   `Third-party vendors, including Google, use cookies to serve ads based on your prior visits to the Service or other websites.`,
   `Google's use of advertising cookies enables it and its partners to serve ads to you based on your visits to the Service and/or other sites on the Internet.`,
   `You can opt out of personalized advertising in <a href="https://adssettings.google.com/" target="_blank" rel="noopener noreferrer">Google Ads Settings</a>. You can also opt out of third-party vendors' cookies at <a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener noreferrer">www.aboutads.info</a>.`,
+  `For users in the EEA, the UK and Switzerland, Google's consent management platform (CMP) may show a message asking for your consent to the use of cookies and similar technologies. You can change your choice later from that message.`,
   `For how Google handles information, see <a href="https://policies.google.com/technologies/ads?hl=en" target="_blank" rel="noopener noreferrer">Google's advertising policies</a>.`
 ])}`
   },
