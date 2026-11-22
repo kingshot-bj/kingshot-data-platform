@@ -55,6 +55,11 @@ Progress is measured against 10 implementation/audit packages, not against the n
 - Still required: reload the affected route and visually verify on iPhone; check other routes using the shared page shell. No production deploy was performed.
 
 
+## Gold star unification — 2026-10-12
+- Added canonical shared-theme rules for star controls/icons (`.star`, `.rank-watch-star`, `.hero-star`, `.rank-star`, `.star-icon`, `.watch-star`) using `--ee-gold: #f0c75e`.
+- Normalized active/watched/hover/focus star states to gold without changing watchlist click handlers, state values, or ranking data.
+- Validation pending: source syntax checks, PR review, and browser/iPhone verification.
+
 ## Player comparison rebuild — 2026-10-12
 - Rebuilt the missing `renderPlayerComparePage` and `handlePlayerCompareApi` definitions in `src/index.js`, matching the existing routes.
 - Comparison supports 2–4 validated player IDs, side-by-side saved profile metrics, 30-day power change, and history bars where at least two stored observations exist.
