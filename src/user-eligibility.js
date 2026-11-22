@@ -1,3 +1,4 @@
+import { markReferralQualified } from "./referrals.js";
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { addApiPoolKey, decryptSecret, leaseApiKeyForHealthCheck, releaseApiLease, recordApiPoolSuccess, recordApiPoolFailure, setApiPoolMightyMetadata } from "./api-pool.js";
 import { ensureSchema as ensureUserPlayerLinkSchema } from "./user-player-link.js";
@@ -5,6 +6,12 @@ import { mightPulseFetch } from "./mightpulse.js";
 const ADVANCED_ROLE = "ADVANCED";
 const VIP_ROLE = "VIP";
 export const MAX_USER_CONTRIBUTED_MIGHTPULSE_KEYS = Number.POSITIVE_INFINITY;
+
+// Accepts what users typically paste from the MightPulse portal: surrounding
+// whitespace, line breaks, or an "Authorization: Bearer" style prefix.
+export function normalizeMightPulseApiKey(value) {
+  return String(value ?? "").replace(/^\s*(authorization:\s*)?bearer\s+/i, "").replace(/\s+/g, "");
+}
 
 async function registerUserMightPulseApiKeyInternal(db, {
   env,
@@ -25,7 +32,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
     throw error;
   }
 
-  const key = String(apiKey || "").trim();
+  const key = normalizeMightPulseApiKey(apiKey);
   if (!key) {
     const error = new Error("MIGHTPULSE_API_KEY_REQUIRED");
     error.code = "MIGHTPULSE_API_KEY_REQUIRED";
@@ -59,7 +66,7 @@ async function registerUserMightPulseApiKeyInternal(db, {
       "MIGHTPULSE_API_KEY_VALIDATION_FAILED";
     wrapped.userMessage =
       wrapped.code === "MIGHTPULSE_API_KEY_INVALID"
-        ? "MightPulse APIキーが無効、または認証に失敗しました。キーを確認してください。"
+        ? "MightPulse APIキーが無効、または認証に失敗しました。コピーしたキー全体（kss_ から最後まで）を貼り付けたか確認してください。分からない場合は、MightPulseで新しいキーを作成して登録してください。"
         : wrapped.code === "MIGHTPULSE_API_KEY_RATE_LIMITED"
         ? "MightPulse APIがレート制限中です。少し時間を置いて再試行してください。"
         : "MightPulseへの疎通確認に失敗しました。APIキーは登録していません。しばらくしてから再試行してください。";
@@ -253,6 +260,8 @@ async function evaluateAdvancedEligibilityInternal(db, userId) {
     "UPDATE users SET role = ?, updated_at = ? WHERE user_id = ? AND role = 'BASIC' AND status = 'ACTIVE'"
   ).bind(ADVANCED_ROLE, now, normalizedUserId).run();
 
+  // 招待された人なら、ADVANCEDになったこの月の招待として数える（失敗しても昇格は止めない）。
+  if (result?.meta?.changes === 1) await markReferralQualified(db, normalizedUserId, now).catch(error => console.warn("referral_qualify_failed", error?.message || error));
   return {
     ...eligibility,
     role: result?.meta?.changes === 1 ? ADVANCED_ROLE : eligibility.role,
@@ -329,6 +338,7 @@ export async function evaluateVipEligibility(db, { userId } = {}) {
     const result = await db.prepare(
       "UPDATE users SET role=?, updated_at=? WHERE user_id=? AND role IN ('BASIC','ADVANCED') AND status='ACTIVE'"
     ).bind(VIP_ROLE, now, normalizedUserId).run();
+    if (result?.meta?.changes === 1) await markReferralQualified(db, normalizedUserId, now).catch(error => console.warn("referral_qualify_failed", error?.message || error));
     return { ...eligibility, role: result?.meta?.changes === 1 ? VIP_ROLE : eligibility.role, changed: result?.meta?.changes === 1, promoted: result?.meta?.changes === 1, demoted: false, featureEligible: true };
   }
 

@@ -163,7 +163,7 @@ async function handleGatewayStatus(request, env) {
   const logRange = resolveGatewayLogRange(url.searchParams.get("range"));
 
   if (url.searchParams.get("full") === "1") {
-    return await handleGatewayFullLogExport(request, env, logRange);
+    return await handleGatewayFullStatusExport(request, env, logRange);
   }
 
   const retrievedAt = new Date();
@@ -183,7 +183,7 @@ async function handleGatewayStatus(request, env) {
       pageSize: 500
     }),
     env.DB
-      ? env.DB.prepare("SELECT COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
+      ? env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(systemLogFromUnix, retrievedAtUnix).first()
       : Promise.reject(new Error("D1_UNAVAILABLE"))
   ]);
 
@@ -194,13 +194,20 @@ async function handleGatewayStatus(request, env) {
   const systemLogTotalCount = systemLogCountResult.status === "fulfilled"
     ? Number(systemLogCountResult.value?.count || 0)
     : null;
+  const systemLogCountError = systemLogCountResult.status === "rejected"
+    ? sanitizeDiagnosticText(systemLogCountResult.reason?.message || String(systemLogCountResult.reason))
+    : null;
 
-  // /status intentionally returns only the newest 500 events. Full-window logs are
-  // exported as one R2-backed JSON file by /api/admin/system-log/export, avoiding
-  // giant Worker responses and isolate-memory pressure.
+  // Normal status is intentionally bounded. Its completeness flag must describe
+  // the actual result, never a constant: count-query failures and capped results
+  // must be visible to the investigator rather than silently looking complete.
   const systemLogSummary = (() => {
     const services = {};
     const statuses = {};
+    const eventTypes = {};
+    const errorCodes = {};
+    const operationCounts = {};
+    const failureSamples = [];
     let metadataParseFailures = 0;
     let traceCount = 0;
     const traceIds = new Set();
@@ -210,6 +217,31 @@ async function handleGatewayStatus(request, env) {
       const status = String(event?.status || "unknown");
       services[service] = (services[service] || 0) + 1;
       statuses[status] = (statuses[status] || 0) + 1;
+      const eventType = String(event?.event_type || "unknown");
+      const operation = String(event?.operation || "unknown");
+      eventTypes[eventType] = (eventTypes[eventType] || 0) + 1;
+      operationCounts[operation] = (operationCounts[operation] || 0) + 1;
+      if (event?.error_code) {
+        const errorCode = String(event.error_code);
+        errorCodes[errorCode] = (errorCodes[errorCode] || 0) + 1;
+      }
+      if ((status === "FAILED" || status === "WARNING" || event?.error_code) && failureSamples.length < 20) {
+        failureSamples.push({
+          created_at: event?.created_at ?? null,
+          service,
+          feature: event?.feature ?? null,
+          operation,
+          status,
+          event_type: eventType,
+          error_code: event?.error_code ?? null,
+          http_status: event?.http_status ?? null,
+          target_type: event?.target_type ?? null,
+          target_id: event?.target_id ?? null,
+          trace_id: event?.trace_id ?? null,
+          parent_trace_id: event?.parent_trace_id ?? null,
+          message: event?.message ?? null
+        });
+      }
       if (event?.trace_id) {
         traceIds.add(String(event.trace_id));
       }
@@ -219,12 +251,16 @@ async function handleGatewayStatus(request, env) {
     }
 
     return {
-      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      event_count: systemLogTotalCount,
       returned_event_count: systemLogEvents.length,
-      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
+      truncated: systemLogTotalCount == null ? null : systemLogTotalCount > systemLogEvents.length,
       trace_count: traceIds.size,
       services,
       statuses,
+      event_types: eventTypes,
+      operations: operationCounts,
+      error_codes: errorCodes,
+      failure_samples: failureSamples,
       metadata_parse_failures: metadataParseFailures,
       oldest_created_at: systemLogEvents.length
         ? systemLogEvents[systemLogEvents.length - 1]?.created_at ?? null
@@ -233,7 +269,12 @@ async function handleGatewayStatus(request, env) {
         ? systemLogEvents[0]?.created_at ?? null
         : null,
       page_size: 500,
-      complete_window_read: false,
+      complete_window_read: systemLogTotalCount != null
+        && systemLogTotalCount === systemLogEvents.length
+        && systemLogError == null
+        && systemLogCountError == null,
+      count_query_error: systemLogCountError,
+      event_query_error: systemLogError,
       full_window_available_via_export: true
     };
   })();
@@ -283,9 +324,10 @@ async function handleGatewayStatus(request, env) {
         to: retrievedAt.toISOString(),
         duration_seconds: logRange.seconds
       },
-      event_count: systemLogTotalCount ?? systemLogEvents.length,
+      event_count: systemLogTotalCount,
       returned_event_count: systemLogEvents.length,
-      truncated: systemLogTotalCount != null ? systemLogTotalCount > systemLogEvents.length : false,
+      truncated: systemLogTotalCount == null ? null : systemLogTotalCount > systemLogEvents.length,
+      complete_window_read: systemLogSummary.complete_window_read,
       summary: systemLogSummary,
       events: systemLogEvents,
       export: {
@@ -312,6 +354,127 @@ async function handleGatewayStatus(request, env) {
         GOOGLE_SHEETS_SERVICE_ACCOUNT: Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID),
         GATEWAY: Boolean(env.EAGLEEYE_GATEWAY_TOKEN)
       }
+    }
+  });
+}
+
+async function handleGatewayFullStatusExport(request, env, logRange) {
+  // Build the exact same state/diagnostic payload as the normal status endpoint,
+  // then stream the entire selected event window into that same JSON document.
+  const snapshotUrl = new URL(request.url);
+  snapshotUrl.searchParams.delete("full");
+  const snapshotResponse = await handleGatewayStatus(new Request(snapshotUrl.toString(), request), env);
+  if (!snapshotResponse.ok) return snapshotResponse;
+  let snapshot;
+  try { snapshot = await snapshotResponse.json(); }
+  catch { return jsonResponse({ ok: false, error: "STATUS_SNAPSHOT_INVALID" }, 502); }
+  if (!snapshot?.systemLog || !Array.isArray(snapshot.systemLog.events)) {
+    return jsonResponse({ ok: false, error: "STATUS_LOG_SECTION_UNAVAILABLE" }, 502);
+  }
+
+  const from = Math.floor(new Date(snapshot.systemLog.range.from).getTime() / 1000);
+  const until = Math.floor(new Date(snapshot.systemLog.range.to).getTime() / 1000);
+  const [countResult, serviceCountsResult, statusCountsResult, traceCountResult, eventTypeCountsResult, operationCountsResult, errorCodeCountsResult, failureSamplesResult] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count, MIN(created_at) AS oldest_created_at, MAX(created_at) AS newest_created_at, SUM(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json)=0 THEN 1 ELSE 0 END) AS metadata_parse_failures FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
+    env.DB.prepare("SELECT service, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY service").bind(from, until).all(),
+    env.DB.prepare("SELECT status, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY status").bind(from, until).all(),
+    env.DB.prepare("SELECT COUNT(DISTINCT trace_id) AS count FROM system_event_log WHERE created_at>=? AND created_at<=?").bind(from, until).first(),
+    env.DB.prepare("SELECT event_type, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY event_type").bind(from, until).all(),
+    env.DB.prepare("SELECT operation, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? GROUP BY operation").bind(from, until).all(),
+    env.DB.prepare("SELECT error_code, COUNT(*) AS count FROM system_event_log WHERE created_at>=? AND created_at<=? AND error_code IS NOT NULL AND error_code!='' GROUP BY error_code").bind(from, until).all(),
+    env.DB.prepare("SELECT created_at,service,feature,operation,status,event_type,error_code,http_status,target_type,target_id,trace_id,parent_trace_id,message FROM system_event_log WHERE created_at>=? AND created_at<=? AND (status IN ('FAILED','WARNING') OR (error_code IS NOT NULL AND error_code!='')) ORDER BY created_at DESC,event_id DESC LIMIT 20").bind(from, until).all()
+  ]);
+  const total = Number(countResult?.count || 0);
+  const allServices = Object.fromEntries((serviceCountsResult.results || []).map(row => [String(row.service || "unknown"), Number(row.count || 0)]));
+  const allStatuses = Object.fromEntries((statusCountsResult.results || []).map(row => [String(row.status || "unknown"), Number(row.count || 0)]));
+  const allEventTypes = Object.fromEntries((eventTypeCountsResult.results || []).map(row => [String(row.event_type || "unknown"), Number(row.count || 0)]));
+  const allOperations = Object.fromEntries((operationCountsResult.results || []).map(row => [String(row.operation || "unknown"), Number(row.count || 0)]));
+  const allErrorCodes = Object.fromEntries((errorCodeCountsResult.results || []).map(row => [String(row.error_code || "unknown"), Number(row.count || 0)]));
+  const failureSamples = (failureSamplesResult.results || []).map(row => ({ ...row }));
+  snapshot.systemLog.event_count = total;
+  snapshot.systemLog.returned_event_count = total;
+  snapshot.systemLog.events = [];
+  snapshot.systemLog.truncated = false;
+  snapshot.systemLog.summary = {
+    ...(snapshot.systemLog.summary || {}),
+    event_count: total,
+    returned_event_count: total,
+    truncated: false,
+    trace_count: Number(traceCountResult?.count || 0),
+    services: allServices,
+    statuses: allStatuses,
+    event_types: allEventTypes,
+    operations: allOperations,
+    error_codes: allErrorCodes,
+    failure_samples: failureSamples,
+    metadata_parse_failures: Number(countResult?.metadata_parse_failures || 0),
+    oldest_created_at: countResult?.oldest_created_at ?? null,
+    newest_created_at: countResult?.newest_created_at ?? null,
+    complete_window_read: true,
+    full_window_available_via_export: true
+  };
+
+  // Stream instead of holding all events in Worker memory. The resulting file is
+  // one complete status JSON, not a separate event-only document.
+  const serialized = JSON.stringify(snapshot);
+  const marker = '"events":[]';
+  const markerIndex = serialized.indexOf(marker, serialized.indexOf('"systemLog"'));
+  if (markerIndex < 0) return jsonResponse({ ok: false, error: "STATUS_EVENTS_MARKER_MISSING" }, 502);
+  const prefix = serialized.slice(0, markerIndex) + '"events":[';
+  const suffix = serialized.slice(markerIndex + marker.length);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let cursorCreatedAt = null;
+      let cursorEventId = null;
+      let first = true;
+      const enqueueText = value => controller.enqueue(encoder.encode(value));
+      try {
+        enqueueText(prefix);
+        while (true) {
+          let sql = `SELECT event_id,trace_id,parent_trace_id,event_type,service,feature,operation,status,
+            actor_type,actor_id,target_type,target_id,http_method,http_path,http_status,started_at,
+            completed_at,elapsed_ms,error_code,message,metadata_json,created_at
+            FROM system_event_log WHERE created_at>=? AND created_at<=?`;
+          const binds = [from, until];
+          if (cursorCreatedAt != null) {
+            sql += " AND (created_at < ? OR (created_at = ? AND event_id < ?))";
+            binds.push(cursorCreatedAt, cursorCreatedAt, cursorEventId);
+          }
+          sql += " ORDER BY created_at DESC, event_id DESC LIMIT ?";
+          binds.push(500);
+          const result = await env.DB.prepare(sql).bind(...binds).all();
+          const rows = result.results || [];
+          if (!rows.length) break;
+          for (const row of rows) {
+            const event = { ...row, metadata: row.metadata_json
+              ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })()
+              : null };
+            delete event.metadata_json;
+            enqueueText((first ? "" : ",") + JSON.stringify(event));
+            first = false;
+          }
+          if (rows.length < 500) break;
+          const last = rows[rows.length - 1];
+          cursorCreatedAt = Number(last.created_at);
+          cursorEventId = String(last.event_id);
+        }
+        enqueueText("]" + suffix);
+        controller.close();
+      } catch (error) {
+        console.error("gateway_full_status_export_failed", error?.message || error);
+        controller.error(error);
+      }
+    }
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=UTF-8",
+      "cache-control": "no-store",
+      "content-disposition": 'attachment; filename="status-full.json"',
+      "x-eagleeye-gateway": GATEWAY_VERSION,
+      "x-eagleeye-status-export": "complete-json-stream"
     }
   });
 }

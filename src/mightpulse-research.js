@@ -7,6 +7,16 @@ import {
 } from "./api-pool.js";
 
 export const MIGHTPULSE_RESEARCH_CANDIDATES = [
+  "buff",
+  "buffs",
+  "combat_stats",
+  "battle_stats",
+  "research",
+  "technology",
+  "tech",
+  "academy",
+  "war_academy",
+  "pet_stats",
   "pet",
   "pets",
   "mail",
@@ -79,7 +89,8 @@ export async function runMightPulseResearch(env, { governorId, candidate }) {
       poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"],
       purpose: "MIGHTPULSE_RESEARCH",
       targetType: "PLAYER",
-      targetId: id
+      targetId: id,
+      preferNonMighty: true
     });
 
     const startedAt = Date.now();
@@ -99,8 +110,8 @@ export async function runMightPulseResearch(env, { governorId, candidate }) {
       targetId: id,
       purpose: "MIGHTPULSE_RESEARCH",
       httpStatus: result.status,
-      remainingMinute: Number(result.headers?.get?.("x-ratelimit-remaining")) || null,
-      remainingDay: Number(result.headers?.get?.("x-ratelimit-day-remaining")) || null
+      remainingMinute: Number(result.headers?.get?.("x-ratelimit-remaining-minute")) || null,
+      remainingDay: Number(result.headers?.get?.("x-ratelimit-remaining-day")) || null
     });
 
     return {

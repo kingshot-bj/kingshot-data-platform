@@ -1,3 +1,4 @@
+import { isDiscordUserId } from "./google-auth.js";
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 import { recordDiagnostic } from "./diagnostics.js";
 
@@ -85,6 +86,20 @@ export async function handleSupportContextApi(request, env, auth) {
   return supportJson({ok:true, incident:await getSupportIncidentContext(env)});
 }
 
+export async function handleSupportMembershipApi(request, env, auth) {
+  if (!auth?.user_id || !auth?.discord_id || auth.status !== "ACTIVE") return supportJson({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (request.method !== "GET") return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  if (!guildId) return supportJson({ ok: false, error: "DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED" }, 503);
+  try {
+    const member = await getGuildMember(env, guildId, auth.discord_id);
+    return supportJson({ ok: true, member: Boolean(member) });
+  } catch (error) {
+    console.error("support_membership_check_failed", { discord_id: String(auth.discord_id), status: Number(error?.status || 0), discord_code: error?.discord?.code || null });
+    return supportJson({ ok: false, error: "DISCORD_MEMBERSHIP_CHECK_FAILED" }, 503);
+  }
+}
+
 
 
 
@@ -161,6 +176,8 @@ function discordHeaders(env) {
   };
 }
 
+export { discordRequest as discordApiRequest };
+
 async function discordRequest(env, path, options = {}) {
   const response = await fetch(DISCORD_API_BASE + path, {
     ...options,
@@ -186,6 +203,8 @@ async function discordRequest(env, path, options = {}) {
 }
 
 async function getGuildMember(env, guildId, discordUserId) {
+  // Googleなどでログインした人（仮のID）はDiscordのサーバーにいない。Discordには問い合わせない。
+  if (!isDiscordUserId(discordUserId)) return null;
   try {
     return await discordRequest(env, `/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`);
   } catch (error) {
@@ -397,11 +416,14 @@ async function closeSupportTicketInternal(env, {
   userOverwrite.allow = "0";
   userOverwrite.deny = "68608";
 
+  // Ticket state is the channel's category (archive = CLOSED). Do not edit the
+  // topic: Discord allows only 2 name/topic edits per channel per 10 minutes,
+  // so close → reopen → close would be rate limited. Category moves and
+  // permission overwrites are not subject to that limit.
   const payload = {
-    topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=CLOSED"),
-    permission_overwrites: overwrites
+    permission_overwrites: overwrites,
+    parent_id: archiveCategoryId
   };
-  if (archiveCategoryId) payload.parent_id = archiveCategoryId;
 
   const updated = await discordRequest(env, `/channels/${id}`, {
     method: "PATCH",
@@ -433,13 +455,12 @@ async function reopenSupportTicketInternal(env, {
   const topic = String(channel?.topic || "");
   const topicTicket = topic.match(/EagleEye Support (EE-\d{8}-[A-Z0-9]{4})/);
   const topicUser = topic.match(/\buser=(\d{15,25})\b/);
-  const statusMatch = topic.match(/status=(OPEN|WAITING|CLOSED)/);
   if (!configuredGuildId || String(channel?.guild_id || "") !== configuredGuildId) throw new Error("SUPPORT_CHANNEL_WRONG_GUILD");
   if (!topicTicket) throw new Error("NOT_EAGLEEYE_SUPPORT_CHANNEL");
-  if (!statusMatch || statusMatch[1] !== "CLOSED") throw new Error("SUPPORT_TICKET_NOT_CLOSED");
   if (![supportCategoryId, archiveCategoryId].filter(Boolean).includes(String(channel?.parent_id || ""))) {
     throw new Error("SUPPORT_CHANNEL_WRONG_CATEGORY");
   }
+  if (String(channel?.parent_id || "") !== String(archiveCategoryId)) throw new Error("SUPPORT_TICKET_NOT_CLOSED");
 
   const overwrites = Array.isArray(channel?.permission_overwrites)
     ? channel.permission_overwrites.map(item => ({ ...item }))
@@ -455,7 +476,6 @@ async function reopenSupportTicketInternal(env, {
   const updated = await discordRequest(env, `/channels/${id}`, {
     method: "PATCH",
     body: JSON.stringify({
-      topic: String(channel?.topic || "").replace(/status=(OPEN|WAITING|CLOSED)/, "status=OPEN"),
       parent_id: supportCategoryId,
       permission_overwrites: overwrites
     })
@@ -599,20 +619,46 @@ export async function handleSupportInteraction(request, env) {
     });
     return interactionJson(4, { content: "問い合わせをリオープンしました。ユーザーが再び投稿できます。", flags: 64 });
   } catch (error) {
+    const failure = describeSupportCommandFailure(error, commandName);
     await recordSupportDiagnostic(env, {
       operation: commandName === "close" ? "CLOSE_TICKET" : "REOPEN_TICKET",
       status: "FAILED",
-      errorCode: String(error?.message || "SUPPORT_COMMAND_FAILED").split(":")[0],
+      errorCode: failure.code,
       message: String(error?.message || error).slice(0, 2000),
       targetType: "CHANNEL",
-      targetId: channelId
+      targetId: channelId,
+      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code ?? null, retryAfterSeconds: failure.retryAfterSeconds }
     });
-    console.error(`support_${commandName}_failed`, error?.message || error);
-    const message = commandName === "close"
-      ? "問い合わせのクローズに失敗しました。"
-      : "問い合わせのリオープンに失敗しました。";
-    return interactionJson(4, { content: message, flags: 64 });
+    console.error(`support_${commandName}_failed`, failure.code, Number(error?.status || 0) || null);
+    return interactionJson(4, { content: failure.content, flags: 64 });
   }
+}
+
+// Maps a /close or /reopen failure to a diagnostic code and an operator-facing
+// message. Never includes token values; only Discord status/code are used.
+export function describeSupportCommandFailure(error, commandName) {
+  const action = commandName === "close" ? "クローズ" : "リオープン";
+  const status = Number(error?.status || 0);
+  const discordCode = Number(error?.discord?.code || 0);
+  const message = String(error?.message || "");
+  if (status === 429) {
+    const retryAfter = Number(error?.discord?.retry_after);
+    const retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : null;
+    const wait = retryAfterSeconds
+      ? (retryAfterSeconds >= 60 ? "約" + Math.ceil(retryAfterSeconds / 60) + "分後" : retryAfterSeconds + "秒後")
+      : "しばらくしてから";
+    return { code: "DISCORD_RATE_LIMITED", retryAfterSeconds, content: "Discordの回数制限中のため" + action + "できませんでした。" + wait + "に再実行してください。" };
+  }
+  if (discordCode === 50013 || message === "Missing Permissions") {
+    return { code: "DISCORD_MISSING_PERMISSIONS", retryAfterSeconds: null, content: "Botの権限が不足しているため" + action + "できませんでした。カテゴリー「サポート窓口」「サポート窓口クローズ」でBotの権限（チャンネルを見る・チャンネルの管理・権限の管理）を確認してください。" };
+  }
+  if (message === "SUPPORT_TICKET_NOT_CLOSED") {
+    return { code: message, retryAfterSeconds: null, content: "この問い合わせはクローズされていないため、リオープンできません。" };
+  }
+  if (["NOT_EAGLEEYE_SUPPORT_CHANNEL", "SUPPORT_CHANNEL_WRONG_CATEGORY", "SUPPORT_CHANNEL_WRONG_GUILD"].includes(message)) {
+    return { code: message, retryAfterSeconds: null, content: "このチャンネルはEagleEyeの問い合わせチャンネルではないため、" + action + "できません。" };
+  }
+  return { code: message.split(":")[0] || "SUPPORT_COMMAND_FAILED", retryAfterSeconds: null, content: "問い合わせの" + action + "に失敗しました。" };
 }
 
 async function registerOrUpdateSupportCommand(env, applicationId, guildId, command) {
@@ -710,4 +756,137 @@ export async function reopenSupportTicket(env, options) {
     eventType: "EXTERNAL_API", service: "discord_support", feature: "support",
     operation: "REOPEN_SUPPORT_TICKET", targetType: "SUPPORT_TICKET", targetId: options?.ticketId || null
   }, () => reopenSupportTicketInternal(env, options));
+}
+
+// ---- ログインしていない人の問い合わせ（2026-11-15）----
+// ・受け取る場所は今までと同じ Discord のサポートサーバー。運営ロールだけが見る共有チャンネル「web問い合わせ」に1件ずつ投稿する
+//   （サポートのカテゴリの中に、無ければ Bot が作る）。相手の Discord アカウントは分からないので、返信先は任意で書いてもらう。
+// ・いたずら対策：同じ IP（ハッシュだけ使い、保存はしない）からは10分に1件、全体で1日50件まで。URL は2個まで。隠し項目（website）に何か入っていたら捨てる。
+// ・Discord の @everyone などは鳴らさない（allowed_mentions: none）。
+export const GUEST_SUPPORT_CHANNEL_NAME = "web問い合わせ";
+export const GUEST_SUPPORT_LIMITS = Object.freeze({ perIpSeconds: 600, perDay: 50, maxUrls: 2, contactMax: 200 });
+let guestChannelCache = null;
+export function resetGuestSupportCache() { guestChannelCache = null; }
+
+export function validateGuestInquiry(body) {
+  if (String(body?.website || "").trim()) return { error: "SPAM" };
+  const category = String(body?.category || "").trim().toUpperCase();
+  const parent = SUPPORT_CATALOG.find(x => x.key === category);
+  if (!parent) return { error: "INVALID_CATEGORY" };
+  const subject = String(body?.subject || "").trim();
+  const message = String(body?.message || "").trim();
+  const contact = String(body?.contact || "").trim();
+  if (!subject) return { error: "SUBJECT_REQUIRED" };
+  if (subject.length > 120) return { error: "SUBJECT_TOO_LONG" };
+  if (!message) return { error: "MESSAGE_REQUIRED" };
+  if (message.length > 4000) return { error: "MESSAGE_TOO_LONG" };
+  if (contact.length > GUEST_SUPPORT_LIMITS.contactMax) return { error: "CONTACT_TOO_LONG" };
+  const urls = (subject + " " + message + " " + contact).match(/https?:\/\//gi) || [];
+  if (urls.length > GUEST_SUPPORT_LIMITS.maxUrls) return { error: "TOO_MANY_LINKS" };
+  return { category, categoryLabel: parent.label, subject, message, contact };
+}
+
+async function guestRateLimit(db, ipHash, now) {
+  if (!db) return { ok: false, error: "DB_NOT_CONFIGURED" };
+  const lock = await db.prepare(
+    "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at WHERE api_request_locks.lock_until <= ?"
+  ).bind("SUPPORT_GUEST:" + ipHash, crypto.randomUUID(), now + GUEST_SUPPORT_LIMITS.perIpSeconds, now, now).run();
+  if (Number(lock?.meta?.changes || 0) !== 1) return { ok: false, error: "RATE_LIMITED" };
+  const day = new Date(now * 1000 + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  await db.prepare("CREATE TABLE IF NOT EXISTS support_guest_daily (day TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0)").run();
+  const row = await db.prepare("INSERT INTO support_guest_daily (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1 RETURNING n").bind(day).first();
+  if (Number(row?.n || 0) > GUEST_SUPPORT_LIMITS.perDay) return { ok: false, error: "DAILY_LIMIT" };
+  return { ok: true };
+}
+
+async function resolveGuestChannel(env) {
+  if (guestChannelCache) return guestChannelCache;
+  const guildId = normalizeDiscordId(env.DISCORD_SUPPORT_GUILD_ID);
+  const botUserId = normalizeDiscordId(env.DISCORD_CLIENT_ID);
+  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
+  if (!botUserId) throw new Error("DISCORD_CLIENT_ID_NOT_CONFIGURED");
+  const { categoryId, supportRoleId } = await resolveSupportDiscordConfig(env, guildId);
+  const channels = await discordRequest(env, `/guilds/${guildId}/channels`);
+  const found = (Array.isArray(channels) ? channels : []).find(c => Number(c?.type) === 0 && String(c?.name) === GUEST_SUPPORT_CHANNEL_NAME && String(c?.parent_id || "") === String(categoryId));
+  if (found?.id) return (guestChannelCache = String(found.id));
+  const created = await discordRequest(env, `/guilds/${guildId}/channels`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: GUEST_SUPPORT_CHANNEL_NAME, type: 0, parent_id: categoryId,
+      topic: "EagleEye：ログインしていない人からの問い合わせ（サイトのフォームから。返信は返信先が書いてあるときだけ）",
+      permission_overwrites: [
+        permissionOverwrite(guildId, 0, "0", "1024"),
+        permissionOverwrite(supportRoleId, 0, "68608", "0"),
+        permissionOverwrite(botUserId, 1, "68608", "0")
+      ]
+    })
+  });
+  if (!created?.id) throw new Error("GUEST_CHANNEL_CREATE_FAILED");
+  return (guestChannelCache = String(created.id));
+}
+
+export function buildGuestInquiryMessage(input, { at = new Date() } = {}) {
+  const line = s => String(s).replace(/```/g, "'''");
+  return [
+    `📮 **web問い合わせ**（ログインなし）`,
+    `**種類：** ${line(input.categoryLabel)}`,
+    `**件名：** ${line(input.subject)}`,
+    `**返信先：** ${input.contact ? line(input.contact) : "（なし）"}`,
+    `**受付：** ${at.toISOString().replace("T", " ").slice(0, 16)} UTC`,
+    "```",
+    line(input.message).slice(0, 1800),
+    "```"
+  ].join("\n").slice(0, 1990);
+}
+
+// POST /api/support/guest。ipHash は呼び出し側で作る（IP そのものは渡さない・保存しない）。
+export async function handleGuestSupportApi(request, env, { ipHash, now = Math.floor(Date.now() / 1000) } = {}) {
+  if (request.method !== "POST") return supportJson({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (Number(request.headers.get("content-length") || 0) > 16000) return supportJson({ ok: false, error: "TOO_LARGE" }, 413);
+  let body;
+  try { body = await request.json(); } catch { return supportJson({ ok: false, error: "INVALID_JSON" }, 400); }
+  const input = validateGuestInquiry(body);
+  if (input.error === "SPAM") return supportJson({ ok: true }, 200); // いたずらには成功したように見せて捨てる
+  if (input.error) return supportJson({ ok: false, error: input.error }, 400);
+  const limit = await guestRateLimit(env.DB, String(ipHash || "unknown"), now).catch(() => ({ ok: false, error: "RATE_LIMIT_UNAVAILABLE" }));
+  if (!limit.ok) return supportJson({ ok: false, error: limit.error }, 429);
+  try {
+    const channelId = await resolveGuestChannel(env);
+    await discordRequest(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ content: buildGuestInquiryMessage(input, { at: new Date(now * 1000) }), allowed_mentions: { parse: [] } }) });
+    await recordSupportDiagnostic(env, { operation: "GUEST_INQUIRY", status: "SUCCESS", targetType: "CHANNEL", targetId: channelId, message: "ログインなしの問い合わせを受付", metadata: { category: input.category } });
+    return supportJson({ ok: true }, 201);
+  } catch (error) {
+    guestChannelCache = null;
+    const code = String(error?.message || "GUEST_INQUIRY_FAILED");
+    await recordSupportDiagnostic(env, { operation: "GUEST_INQUIRY", status: "FAILED", errorCode: code.split(":")[0], message: code.slice(0, 500) });
+    return supportJson({ ok: false, error: "SEND_FAILED" }, 503);
+  }
+}
+
+// ログインしていない人向けの /support。ログインしている人は今までどおりの画面（専用チャンネル）。
+export function renderGuestSupportPage() {
+  const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const options = SUPPORT_CATALOG.map(x => `<option value="${esc(x.key)}">${esc(x.label)}</option>`).join("");
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>お問い合わせ | EagleEye</title><style>
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff)}.wrap{max-width:640px;margin:0 auto;padding:18px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}
+h1{font-size:22px;margin:8px 0 6px}.lead{font-size:13px;line-height:1.7;color:var(--ee-subtext,#91a7bf);margin:0 0 12px}
+.card{border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel,#0f2035);padding:14px;margin:12px 0}
+label{display:block;font-size:13px;font-weight:700;margin:12px 0 5px}label small{font-weight:400;color:var(--ee-subtext,#91a7bf)}
+input,select,textarea{width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:inherit;font:15px system-ui}textarea{min-height:140px;resize:vertical}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:11px;background:var(--ee-cyan,#22d3ee);color:#04202a;font:800 15px system-ui}button:disabled{opacity:.6}
+.msg{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.6}.ok{border:1px solid var(--ee-success,#22c55e)}.ng{border:1px solid var(--ee-danger,#f87171)}.note{font-size:12px;color:var(--ee-subtext,#91a7bf);line-height:1.7}
+</style></head><body><main class="wrap"><a href="/">← ホーム</a>
+<h1>お問い合わせ</h1><p class="lead">ご質問・不具合の報告・データの削除依頼などは、このフォームから送れます（ログイン不要）。返事が必要な場合は返信先を書いてください。ログインすると、Discord の専用チャンネルで運営とやり取りできます（<a href="/login">ログイン</a>）。</p>
+<form class="card" id="gf"><label for="gc">種類</label><select id="gc" name="category" required>${options}</select>
+<label for="gs">件名</label><input id="gs" name="subject" maxlength="120" required>
+<label for="gm">内容</label><textarea id="gm" name="message" maxlength="4000" required></textarea>
+<label for="gt">返信先 <small>（任意・メールアドレスや Discord のユーザー名など）</small></label><input id="gt" name="contact" maxlength="200">
+<div class="hp" aria-hidden="true"><label>website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+<button type="submit" id="gb">送信する</button><div id="gr" role="status"></div></form>
+<p class="note">送られた内容は運営だけが見る場所に届きます。返信先を書いた場合だけ、そこに連絡することがあります。</p>
+<script>(function(){var f=document.getElementById("gf"),b=document.getElementById("gb"),r=document.getElementById("gr");var M={RATE_LIMITED:"続けて送れません。10分ほどあけてから送ってください。",DAILY_LIMIT:"今日の受付の上限に達しました。明日もう一度お試しください。",TOO_MANY_LINKS:"リンク（URL）は2つまでにしてください。",SUBJECT_REQUIRED:"件名を入れてください。",MESSAGE_REQUIRED:"内容を入れてください。",SEND_FAILED:"送信できませんでした。時間をおいてもう一度お試しください。"};
+f.addEventListener("submit",function(e){e.preventDefault();b.disabled=true;b.textContent="送信中…";var d={};new FormData(f).forEach(function(v,k){d[k]=v});
+fetch("/api/support/guest",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(d)}).then(function(x){return x.json().catch(function(){return {ok:false}})}).then(function(j){if(j&&j.ok){r.className="msg ok";r.textContent="送信しました。ありがとうございます。";f.reset();}else{r.className="msg ng";r.textContent=M[j&&j.error]||"送信できませんでした。入力を確かめてください。";}}).catch(function(){r.className="msg ng";r.textContent=M.SEND_FAILED}).finally(function(){b.disabled=false;b.textContent="送信する"})})})()</script>
+</main></body></html>`;
 }

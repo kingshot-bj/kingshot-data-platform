@@ -1,0 +1,69 @@
+name: SNS weekly pack
+
+# 毎週月曜 9:13（日本時間）に、実データから SNS 用の画像・ショート動画・投稿文を作り、R2 に保存する。
+# 自動投稿は Secrets に鍵があるSNSだけ。手動で動かすときは「投稿もする」を選んだ時だけ投稿する。
+on:
+  schedule:
+    - cron: "13 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      post:
+        description: "SNSへの投稿もする"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: social-weekly
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-media
+      - name: Build this week's pack
+        run: node scripts/social/build.mjs social-out
+      - name: Post to SNS
+        if: github.event_name == 'schedule' || inputs.post
+        env:
+          SOCIAL_DISCORD_WEBHOOK_URL: ${{ secrets.SOCIAL_DISCORD_WEBHOOK_URL }}
+          SOCIAL_X_API_KEY: ${{ secrets.SOCIAL_X_API_KEY }}
+          SOCIAL_X_API_SECRET: ${{ secrets.SOCIAL_X_API_SECRET }}
+          SOCIAL_X_ACCESS_TOKEN: ${{ secrets.SOCIAL_X_ACCESS_TOKEN }}
+          SOCIAL_X_ACCESS_SECRET: ${{ secrets.SOCIAL_X_ACCESS_SECRET }}
+          SOCIAL_YOUTUBE_CLIENT_ID: ${{ secrets.SOCIAL_YOUTUBE_CLIENT_ID }}
+          SOCIAL_YOUTUBE_CLIENT_SECRET: ${{ secrets.SOCIAL_YOUTUBE_CLIENT_SECRET }}
+          SOCIAL_YOUTUBE_REFRESH_TOKEN: ${{ secrets.SOCIAL_YOUTUBE_REFRESH_TOKEN }}
+          SOCIAL_TIKTOK_CLIENT_KEY: ${{ secrets.SOCIAL_TIKTOK_CLIENT_KEY }}
+          SOCIAL_TIKTOK_CLIENT_SECRET: ${{ secrets.SOCIAL_TIKTOK_CLIENT_SECRET }}
+          SOCIAL_TIKTOK_REFRESH_TOKEN: ${{ secrets.SOCIAL_TIKTOK_REFRESH_TOKEN }}
+          SOCIAL_INSTAGRAM_USER_ID: ${{ secrets.SOCIAL_INSTAGRAM_USER_ID }}
+          SOCIAL_INSTAGRAM_ACCESS_TOKEN: ${{ secrets.SOCIAL_INSTAGRAM_ACCESS_TOKEN }}
+        run: node scripts/social/publish.mjs social-out
+      - name: Keep files as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-pack
+          path: social-out
+          retention-days: 30
+      # R2 だけに書ける鍵（CLOUDFLARE_R2_API_TOKEN）を使う。D1 用の鍵（CLOUDFLARE_API_TOKEN）には R2 の権限がない。
+      # 保存に失敗したら実行全体を赤にする（continue-on-error は付けない）。鍵が未設定のときだけ警告で済ませる。
+      # 画像・動画はこの前の手順で Artifact に残してあるので、ここで止まっても失われない。
+      - name: Save to R2 (shown on /owner/social)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::warning::Secrets に CLOUDFLARE_R2_API_TOKEN がないので R2 に保存しません（Artifact には残ります）"; exit 0; fi
+          npm install --global wrangler@4 >/dev/null
+          week=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).week)')
+          for f in $(node -e 'console.log(JSON.parse(require("fs").readFileSync("social-out/manifest.json","utf8")).files.join(" "))') manifest.json; do
+            wrangler r2 object put "eagleeye-archive/social/$week/$f" --file "social-out/$f" --remote
+          done
+          wrangler r2 object put "eagleeye-archive/social/latest.json" --file social-out/manifest.json --content-type application/json --remote

@@ -13,6 +13,9 @@ const DIAGNOSTIC_SERVICES = [
   ["history_storage", "履歴ストレージ", "DEGRADED"]
 ];
 
+// サービスの状態の判定に使わない記録（想定どおりの動き）。
+export const INFORMATIONAL_ERROR_CODES = new Set(["RANKING_ENTRIES_EMPTY_SKIPPED", "KVK_MEMBER_NOT_IN_SERVER"]);
+
 let diagnosticSchemaPromise = null;
 
 export async function ensureDiagnosticSchema(db) {
@@ -35,7 +38,7 @@ export async function recordDiagnostic(db, input = {}) {
     const now = Math.floor(Date.now() / 1000);
     const startedAt = Number(input.startedAt || now);
     const completedAt = Number(input.completedAt || now);
-    const status = ["SUCCESS","WARNING","FAILED"].includes(String(input.status))
+    const status = ["SUCCESS","WARNING","FAILED","WAITING"].includes(String(input.status))
       ? String(input.status)
       : "WARNING";
     const throttleKey = [
@@ -104,9 +107,50 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
     metadata: row.metadata_json ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })() : null
   }));
 
+  // Include the watchlist audit trail in the downloadable diagnostic JSON.
+  // Bound the query to keep D1 reads and payload size predictable.
+  const systemEventsResult = await db.prepare(
+    "SELECT event_id, trace_id, parent_trace_id, event_type, service, feature, operation, status, target_type, target_id, started_at, completed_at, elapsed_ms, error_code, message, metadata_json, created_at FROM system_event_log WHERE service = 'watchlist' AND feature = 'kingdom_watchlist' ORDER BY created_at DESC LIMIT ?"
+  ).bind(Math.min(Math.max(Number(recentLimit) || 100, 1), 100)).all();
+  const systemEvents = (systemEventsResult.results || []).map(row => ({
+    ...row,
+    metadata: row.metadata_json ? (() => { try { return JSON.parse(row.metadata_json); } catch { return null; } })() : null
+  }));
+
+  // 想定どおりの「お知らせ」の記録（未解放ランキングのスキップ、サーバーにいない人をスレッドに追加できない等）は
+  // 一覧には残すが、サービスの状態（正常／注意）には使わない。
   const latestByService = new Map();
   for (const event of events) {
+    if (INFORMATIONAL_ERROR_CODES.has(String(event.error_code || ""))) continue;
     if (!latestByService.has(event.service)) latestByService.set(event.service, event);
+  }
+
+  // Operational activity is also recorded in system_event_log. If a critical
+  // service has no diagnostic_events heartbeat, use its latest operational
+  // event rather than reporting UNKNOWN while successful API calls are visible.
+  // Keep diagnostic_events authoritative whenever it has a record for the service.
+  const operationalResult = await db.prepare(
+    "SELECT service, status, event_type, trace_id, error_code, message, target_id, created_at FROM system_event_log WHERE service IN ('api_pool','mightpulse') ORDER BY created_at DESC LIMIT 100"
+  ).all();
+  for (const event of operationalResult.results || []) {
+    if (latestByService.has(event.service)) continue;
+    const status = String(event.status || "").toUpperCase();
+    const eventType = String(event.event_type || "").toUpperCase();
+    const normalizedStatus = status === "FAILED" || eventType.includes("FAIL") ? "FAILED"
+      : status === "WAITING" ? "WAITING"
+      : status === "WARNING" ? "WARNING"
+      : ["SUCCESS", "COMPLETED"].includes(status) ? "SUCCESS"
+      : null;
+    if (!normalizedStatus) continue;
+    latestByService.set(event.service, {
+      service: event.service,
+      status: normalizedStatus,
+      trace_id: event.trace_id || null,
+      error_code: event.error_code || null,
+      message: event.message || null,
+      target_id: event.target_id || null,
+      created_at: event.created_at || null
+    });
   }
 
   const services = DIAGNOSTIC_SERVICES.map(([key, label, severity]) => {
@@ -127,22 +171,25 @@ export async function getSystemDiagnostics(db, { recentLimit = 100 } = {}) {
   const failed = services.filter(item => item.status === "FAILED").length;
   const criticalFailed = services.filter(item => item.severity === "CRITICAL" && item.status === "FAILED").length;
   const warning = services.filter(item => item.status === "WARNING").length;
+  const waiting = services.filter(item => item.status === "WAITING").length;
   const unknown = services.filter(item => item.status === "UNKNOWN").length;
   const criticalUnknown = services.filter(item => item.severity === "CRITICAL" && item.status === "UNKNOWN").length;
   const degraded = failed > 0 || warning > 0 || unknown > 0;
 
   return {
-    overall: criticalFailed ? "CRITICAL" : degraded ? "DEGRADED" : "SUCCESS",
+    overall: criticalFailed ? "CRITICAL" : degraded ? "DEGRADED" : waiting > 0 ? "WAITING" : "SUCCESS",
     counts: {
       failed,
       criticalFailed,
       warning,
+      waiting,
       unknown,
       criticalUnknown,
       healthy: services.filter(item => item.status === "SUCCESS").length
     },
     services,
-    events
+    events,
+    systemEvents
   };
 }
 

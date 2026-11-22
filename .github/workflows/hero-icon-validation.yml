@@ -1,0 +1,41 @@
+name: Worker Build Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - "src/index.js"
+      - "src/player-compare-enhancements.js"
+      - "tests/player-compare-enhancements.test.mjs"
+      - "src/r2-archive.js"
+      - "src/ranking-store.js"
+      - "tests/player-rank-latest-index.test.mjs"
+      - "src/hero-icon-store.js"
+      - "src/hero-catalog-page.js"
+      - "src/hero-skills-ja.js"
+      - "migrations/0060_hero_icon_assets.sql"
+      - ".github/workflows/hero-icon-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  worker-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+      - name: Run player rank latest-index tests
+        run: node --test tests/player-rank-latest-index.test.mjs
+      - name: Run player compare enhancement tests
+        run: node --test tests/player-compare-enhancements.test.mjs
+      - name: Compile Worker without deploying
+        run: wrangler deploy --dry-run --outdir /tmp/eagleeye-worker-dry-run

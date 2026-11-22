@@ -15,6 +15,34 @@ export class MightPulseError extends Error {
   }
 }
 
+async function extendLeaseBeforeRetry(env, leaseId, requiredMs) {
+  if (!env?.DB || !leaseId) return;
+  const now = Math.floor(Date.now() / 1000);
+  const leaseUntil = now + Math.max(120, Math.ceil(Number(requiredMs || 0) / 1000));
+  try {
+    const result = await env.DB.prepare(
+      "UPDATE api_pool_keys SET leased_until = ?1, updated_at = ?2 WHERE lease_id = ?3 AND leased_until > ?2"
+    ).bind(leaseUntil, now, String(leaseId)).run();
+    if (Number(result?.meta?.changes || 0) !== 1) {
+      console.warn("mightpulse_lease_renewal_skipped", { leaseId: String(leaseId) });
+    }
+  } catch (error) {
+    // A renewal failure must not mask the upstream error or cancel a retry.
+    console.warn("mightpulse_lease_renewal_failed", {
+      leaseId: String(leaseId),
+      message: error?.message || String(error)
+    });
+  }
+}
+
+async function waitBeforeRetry(env, leaseId, timeoutMs, attempt, retryAfter = null) {
+  const delayMs = retryDelay(attempt, retryAfter);
+  // Keep the lease alive through the next full attempt plus a safety margin.
+  // Renew only on retries, avoiding a write on every successful API request.
+  await extendLeaseBeforeRetry(env, leaseId, Number(timeoutMs || DEFAULT_TIMEOUT_MS) + delayMs + 30_000);
+  await sleep(delayMs);
+}
+
 export async function mightPulseFetch(env, path, {
   method = "GET",
   query = {},
@@ -111,7 +139,8 @@ export async function mightPulseFetch(env, path, {
         return {
           data: body,
           status: response.status,
-          headers: response.headers
+          headers: response.headers,
+          attempts
         };
       }
       const retryable = response.status === 429 || response.status >= 500;
@@ -124,15 +153,17 @@ export async function mightPulseFetch(env, path, {
       });
 
       if (!retryable || attempt >= maxRetries) {
+        lastError.attempts = attempts;
         throw lastError;
       }
 
-      await sleep(retryDelay(attempt, response.headers.get("Retry-After")));
+      await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt, response.headers.get("Retry-After"));
       continue;
     } catch (error) {
       if (error instanceof MightPulseError) {
         lastError = error;
         if (!error.retryable || attempt >= maxRetries) {
+          error.attempts = attempts;
           await recordSystemEvent(env.DB, {
             traceId: systemTrace,
             parentTraceId,
@@ -153,7 +184,7 @@ export async function mightPulseFetch(env, path, {
           });
           throw error;
         }
-        await sleep(retryDelay(attempt));
+        await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt);
         continue;
       }
 
@@ -172,6 +203,7 @@ export async function mightPulseFetch(env, path, {
           }
         }
       );
+      lastError.attempts = attempts;
 
       if (attempt >= maxRetries) {
         await recordSystemEvent(env.DB, {
@@ -192,7 +224,7 @@ export async function mightPulseFetch(env, path, {
         });
         throw lastError;
       }
-      await sleep(retryDelay(attempt));
+      await waitBeforeRetry(env, metadata?.leaseId, timeoutMs, attempt);
     } finally {
       clearTimeout(timer);
     }
@@ -204,7 +236,10 @@ export async function mightPulseFetch(env, path, {
 export async function getMightPulsePlayer(env, governorId, {
   idType,
   include = "base",
-  apiKey = null
+  wait = null,
+  maxAge = null,
+  apiKey = null,
+  metadata = null
 } = {}) {
   const id = String(governorId || "").trim();
   if (!id) {
@@ -216,14 +251,17 @@ export async function getMightPulsePlayer(env, governorId, {
 
   const params = { include };
   if (idType) params.id_type = idType;
+  if (wait !== null && wait !== undefined && wait !== "") params.wait = wait;
+  if (maxAge !== null && maxAge !== undefined && maxAge !== "") params.max_age = maxAge;
 
   return mightPulseFetch(env, `/players/${encodeURIComponent(id)}`, {
     query: params,
-    apiKey
+    apiKey,
+    metadata
   });
 }
 
-export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null } = {}) {
+export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null, metadata = null } = {}) {
   const id = String(governorId || "").trim();
   if (!id) {
     throw new MightPulseError("Governor ID is required.", {
@@ -234,7 +272,8 @@ export async function getMightPulsePlayerRanks(env, governorId, { apiKey = null 
 
   return getMightPulsePlayer(env, id, {
     include: "ranks",
-    apiKey
+    apiKey,
+    metadata
   });
 }
 
@@ -243,7 +282,8 @@ export async function getMightPulseKingdomRanks(env, kid, {
   limit = 100,
   apiKey = null,
   traceId = null,
-  parentTraceId = null
+  parentTraceId = null,
+  metadata = null
 } = {}) {
   const kingdomId = String(kid || "").trim();
   if (!kingdomId) {
@@ -271,7 +311,8 @@ export async function getMightPulseKingdomRanks(env, kid, {
     parentTraceId,
     operation: "GET_KINGDOM_RANKING",
     targetType: "KINGDOM",
-    targetId: kingdomId
+    targetId: kingdomId,
+    metadata
   });
 }
 
@@ -452,9 +493,17 @@ function mightPulseStatusCode(status) {
 }
 
 function retryDelay(attempt, retryAfter) {
-  const retryAfterMs = Number.parseFloat(retryAfter);
-  if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
-    return Math.min(retryAfterMs * 1000, 30_000);
+  if (retryAfter !== null && retryAfter !== undefined && retryAfter !== "") {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, 30_000);
+    }
+
+    // Retry-After also permits an HTTP-date, not only a delta in seconds.
+    const retryAt = Date.parse(String(retryAfter));
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(0, retryAt - Date.now()), 30_000);
+    }
   }
   return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
 }

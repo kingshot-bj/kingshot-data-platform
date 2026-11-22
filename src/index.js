@@ -1,4 +1,18 @@
+import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
+import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
+import { recordFunnel, recordSignupSource, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
+import { googleConfigured, googleLoginOpen, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
+import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
+import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
+import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, loadCloudflareTopTraffic, renderOwnerTrafficPage, loadPublicDataProgress } from "./traffic-stats.js";
+import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
+import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
+import { renderHeroCatalogPage } from "./hero-catalog-page.js";
+import { renderPrivacyPolicyPage, renderTermsPage, renderAboutPage } from "./legal-pages.js";
+import { archiveStaleKingdomRankings, restoreArchivedKingdomRankingsIfMissing, withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
+import { queueHeroIconCandidates, runHeroIconAssetWorker, getSavedHeroIconMap, serveHeroIconAsset } from "./hero-icon-store.js";
+import { PLAYER_COMPARE_ENHANCEMENTS } from "./player-compare-enhancements.js";
 const DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize";
 const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -18,14 +32,15 @@ function esc(value) {
 }
 
 import { mightPulseFetch, getMightPulsePlayer, getMightPulsePlayerRanks, getMightPulseKingdomRanks, getMightPulseKingdomAllRankings } from "./mightpulse.js";
+import { validateManualProbeCommand, redactProbeSecrets, archiveMightPulseProbeRecord, MIGHTPULSE_PROBE_COMMANDS, buildCatalogProbeCommand, buildProbeFieldDictionary, extractProbeReferences } from "./mightpulse-probe.js";
 import { MIGHTPULSE_RESEARCH_CANDIDATES, runMightPulseResearch } from "./mightpulse-research.js";
 import { savePlayerRankSnapshot, buildPlayerRankSnapshotStatement, saveKingdomRankingBoard, getLatestKingdomRankings, getRankingHistory, getPlayerRankHistory, getKingdomRankingChanges, normalizeGovernorId } from "./ranking-store.js";
 import { observationEnvelope } from "./mightpulse-normalizer.js";
 import { saveApiObservation } from "./api-observations.js";
-import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory } from "./player-store.js";
+import { getLatestPlayerObservation, materializePlayer, getPlayer, getPlayerHistory, getPlayerNameHistory, stripStaleActivityFields } from "./player-store.js";
 import { configureApiPoolEncryption, addApiPoolKey, listApiPoolKeys, getApiPoolKeysWithContributors, leaseApiKey, leaseApiKeyForHealthCheck, releaseApiLease, setApiPoolMightyMetadata, recordApiPoolSuccess, recordApiPoolFailure, getPoolStats, getApiPoolAvailability, getApiPoolBudgetSnapshot, releaseExpiredLeases } from "./api-pool.js";
-import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup } from "./retention.js";
-import { exportToGoogleSheet } from "./google-sheets.js";
+import { getRetentionSettings, updateRetentionSettings, runRetentionCleanup, createDriveSession } from "./retention.js";
+import { exportToGoogleSheet, googleSheetsTransport } from "./google-sheets.js";
 import { ensureDiagnosticSchema, diagnosticTraceId, recordDiagnostic, getSystemDiagnostics, DIAGNOSTIC_SERVICES } from "./diagnostics.js";
 import { getCloudflareD1Usage, cloudflareUsageLabel } from "./cloudflare-analytics.js";
 import { handleGatewayApi } from "./gateway-api.js";
@@ -38,40 +53,100 @@ import { runKingdomCatalogDailyRefresh } from "./kingdom-catalog-scheduler.js";
 import { runKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill.js";
 import { renderKingdomCatalogR2BackfillPage } from "./kingdom-catalog-r2-backfill-page.js";
 import { verifyKingdomCatalogR2Backfill } from "./kingdom-catalog-r2-backfill-verify.js";
-import { runKingdomSeeder } from "./kingdom-seeder.js";
-import { runKingdomRankingRoller } from "./kingdom-ranking-roller.js";
-import { runAllianceRoller } from "./alliance-catalog.js";
-import { runPlayerRoller } from "./player-roller.js";
+import { LOGIN_RETURN_COOKIE, LOGIN_RETURN_MAX_AGE, sanitizeLoginReturnPath, loginUrlFor } from "./login-return.js";
+import { renderKvkPage, runKvkCollection } from "./kvk.js";
+import { findCoveringWatchlist } from "./watchlist-coverage.js";
+import { buildHomeSummary, claimMeAutoRefresh } from "./home-summary.js";
+import { loadMilestones, recordMilestone, renderMilestonesPage, milestonesAvailableFor, MILESTONES_PUBLIC } from "./milestones.js";
+import { REF_COOKIE, REF_COOKIE_MAX_AGE, isReferralCode, attributeReferral, loadMyReferrals, renderInvitePage, getWatchBonus, inviterNameForCode, INVITE_BONUS, INVITE_BONUS_CAP, OWNER_INVITE_BONUS, getUserRewards, getOrCreateSpecialInviteCode } from "./referrals.js";
+import { renderHeroShardPage } from "./hero-shards.js";
+import { renderGoldCalculatorPage } from "./gold-calculator.js";
+import { renderGoldTechPage } from "./gold-tech.js";
+import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
+import { runKvkMysticCollection, ensureKingdomMysticCurrent, fetchAndStoreKingdomMystic } from "./kvk-mystic.js";
+import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
+import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
+import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
+import { pageHasShareButton, shareFabScript } from "./share-fab.js";
+import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
+import { withSecurityHeaders } from "./security-headers.js";
+import { renderGuidesIndex, renderGuide } from "./guides.js";
+import { splitLang, canSeeEnglish } from "./i18n.js";
+import { renderPrivacyPolicyPageEn, renderTermsPageEn, renderAboutPageEn, renderGuidePageEn } from "./legal-pages-en.js";
+import { renderReportsIndexEn, renderReportEn } from "./reports-en.js";
+import { englishSummaryTitles } from "./home-en.js";
+import { translateHtmlToEnglish, enHref } from "./i18n-en.js";
+import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
+import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
+import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
+import { runWeeklyReport, isWeeklyReportOn, setWeeklyReportOn } from "./weekly-report.js";
+import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
+import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
+import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
+import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
+import { configureAdsense, injectAdsense } from "./adsense.js";
+import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
+import { renderReportsIndex, renderReport } from "./reports.js";
+import { loadAllKingdomStats } from "./kingdom-insights.js";
+import { enhanceSeo, websiteJsonLd } from "./seo.js";
+import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
+import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
+import { loadPlayerBuildHistory, renderPlayerBuildHistorySection, PLAYER_BUILD_HISTORY_CSS } from "./player-build-history.js";
+import { renderThemePickerPage, eagleEyeThemesCss, EAGLEEYE_SKIN_BOOT_SCRIPT, EAGLEEYE_THEMES } from "./themes.js";
+import { runKvkDiscordSync, listKvkUsersNotInServer, onKvkUserSignedIn } from "./kvk-discord.js";
+import { isSessionRevoked, revokeSessions } from "./session-revocation.js";
 import { recordKingdomCollectionSuccess } from "./kingdom-collection-stats.js";
 import { drainHistoryEmergencyBuffer } from "./history-emergency-buffer.js";
 import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
-import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken } from "./google-drive.js";
-import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
-import { registerUserMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
-import { handleSupportApi, handleSupportContextApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
+import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken, restoreR2ObjectFromGoogleDrive, restoreMissingR2ObjectsFromGoogleDrive, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
+import { countStaleActivity, readStaleBackupManifest, runStaleActivityBackup, runStaleActivityPurge, stalePurgeBlocker } from "./stale-activity-cleanup.js";
+import { maxAccountsForRole, getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
+import { registerUserMightPulseApiKey, normalizeMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
+import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
+import { handleGuestSupportApi, renderGuestSupportPage, handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
+import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
+import { loadMatchupHistory, ensureSwordlandEventsFetched, allianceHasOfficerUser } from "./swordland.js";
+import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
+import { allianceShareEmbed } from "./alliance-compare-share.js";
+import { renderGuidePage } from "./guide-page.js";
+import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
+import { loadAllianceForCompare, ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS } from "./kingdom-portal.js";
+import { allianceLabel, loadAllianceRosterIds, loadMemberVips } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } from "./system-log-export.js";
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
+import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
+import { socialRunStatus, triggerSocialRun } from "./social-run.js";
+import { playerShareEmbed } from "./player-share.js";
+import { readonlyTokenOk, jarvisTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe, loadSnapshotD1, loadSnapshotAnalyticsEngine } from "./owner-snapshot.js";
+import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
+import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
+import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
+import { handlePageViewBeacon, pageViewBeaconScript, isLikelyBot, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
-import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation, EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS, EAGLEEYE_THEME_BASE_CSS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
+import { EAGLEEYE_NAV_CSS, EAGLEEYE_DRAWER_INIT, renderEagleEyeOtherMenu, renderEagleEyeNavigation, EAGLEEYE_BJNYAN, EAGLEEYE_UI_TOKENS, EAGLEEYE_THEME_BASE_CSS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole, normalizeLegacyPalette, EAGLEEYE_LIGHT_TOKENS_CSS } from "./eagleeye-ui.js";
 
 async function runDiagnosticHealthChecks(env) {
   if (!env?.DB) return;
   const now = Math.floor(Date.now() / 1000);
   try {
-    const recent = await env.DB.prepare(
-      "SELECT service, MAX(created_at) AS created_at FROM diagnostic_events GROUP BY service"
-    ).all();
-    const lastByService = new Map((recent.results || []).map(row => [String(row.service), Number(row.created_at || 0)]));
+    // One indexed lookup per service (idx_diagnostic_events_service) instead of a GROUP BY over the whole table.
+    const lastByService = new Map();
+    for (const service of ["d1", "api_pool", "mightpulse", "discord", "discord_support", "google_sheets", "notifications", "retention", "history_storage"]) {
+      const row = await env.DB.prepare("SELECT MAX(created_at) AS created_at FROM diagnostic_events WHERE service = ?").bind(service).first();
+      if (row?.created_at) lastByService.set(service, Number(row.created_at));
+    }
     const due = service => !lastByService.has(service) || now - lastByService.get(service) >= 3600;
     const write = input => recordDiagnostic(env.DB, { ...input, feature: input.feature || "diagnostic_probe", operation: input.operation || "HEALTH_CHECK" });
 
@@ -94,8 +169,8 @@ async function runDiagnosticHealthChecks(env) {
 
       if (!key) {
         const message = "診断用に利用できるMightPulse APIキーがありません。";
-        if (due("api_pool")) await write({ service:"api_pool", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
-        if (due("mightpulse")) await write({ service:"mightpulse", status:"WARNING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+        if (due("api_pool")) await write({ service:"api_pool", status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
+        if (due("mightpulse")) await write({ service:"mightpulse", status:"WAITING", errorCode:"NO_API_POOL_KEY_AVAILABLE", message });
       } else {
         let lease = null;
         try {
@@ -107,7 +182,8 @@ async function runDiagnosticHealthChecks(env) {
           });
           const result = await getMightPulsePlayer(env, String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"), {
             include: "base",
-            apiKey: lease.api_key
+            apiKey: lease.api_key,
+            metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
           });
           await recordApiPoolSuccess(env.DB, {
             keyId: lease.key_id,
@@ -118,8 +194,9 @@ async function runDiagnosticHealthChecks(env) {
             targetId: String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
             purpose: "DIAGNOSTIC_HEALTH_CHECK",
             httpStatus: result.status,
-            remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-            remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+            remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+            remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
           });
           const elapsed = Date.now() - started;
           if (due("api_pool")) await write({ service:"api_pool", status:"SUCCESS", message:"API Pool診断プローブ成功", provider:"MIGHTPULSE", targetType:"API_KEY", targetId:lease.key_id, elapsedMs:elapsed, metadata:{ poolType:lease.pool_type } });
@@ -134,13 +211,16 @@ async function runDiagnosticHealthChecks(env) {
               keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
               endpoint:"/players/:governor_id", targetType:"API_KEY", targetId:String(env.MIGHTPULSE_HEALTHCHECK_GOVERNOR_ID || "225623582"),
               purpose:"DIAGNOSTIC_HEALTH_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
-              errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable
+              errorMessage:error?.message || null, cooldownSeconds:cooldown, disable, keepAvailable,
+              requestCount: Math.max(1, Number(error?.attempts) || 1)
             });
           }
           const message = error?.message || "MightPulse診断プローブに失敗しました。";
-          const code = error?.code || "MIGHTPULSE_HEALTH_CHECK_FAILED";
-          if (due("api_pool")) await write({ service:"api_pool", status:"FAILED", errorCode:code, message:"API Pool診断中のMightPulse接続に失敗: " + message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
-          if (due("mightpulse")) await write({ service:"mightpulse", status:"FAILED", errorCode:code, message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+          const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+          const code = capacityWaitCode || error?.code || "MIGHTPULSE_HEALTH_CHECK_FAILED";
+          const status = capacityWaitCode ? "WAITING" : "FAILED";
+          if (due("api_pool")) await write({ service:"api_pool", status, errorCode:code, message:capacityWaitCode ? "診断用APIキーの確保待ちです。" : "API Pool診断中のMightPulse接続に失敗: " + message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
+          if (due("mightpulse")) await write({ service:"mightpulse", status, errorCode:code, message, provider:"MIGHTPULSE", elapsedMs:Date.now()-started });
         }
       }
     }
@@ -172,6 +252,17 @@ async function runDiagnosticHealthChecks(env) {
       });
     }
 
+    if (due("notifications")) {
+      // KvK notifications go to per-kingdom Discord threads through the bot.
+      const configured = Boolean(env.DISCORD_BOT_TOKEN && env.DISCORD_SUPPORT_GUILD_ID && env.DISCORD_CLIENT_ID);
+      await write({
+        service:"notifications",
+        status:configured ? "SUCCESS" : "WARNING",
+        errorCode:configured ? null : "DISCORD_NOTIFICATION_NOT_CONFIGURED",
+        message:configured ? "通知システム（Discord Bot・KvKスレッド）の設定確認成功" : "Discord通知に必要な設定が未構成です。"
+      });
+    }
+
     if (due("retention")) {
       await write({
         service:"retention",
@@ -193,11 +284,8 @@ async function runDiagnosticHealthChecks(env) {
     }
 
     if (due("google_sheets")) {
-      const spreadsheetConfigured = Boolean(env.GOOGLE_SHEETS_SPREADSHEET_ID);
-      const serviceAccountConfigured = Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
-      const appsScriptConfigured = Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET);
-      const configured = spreadsheetConfigured && (serviceAccountConfigured || appsScriptConfigured);
-      const transport = appsScriptConfigured ? "Apps Script Web App" : serviceAccountConfigured ? "Google Sheets API" : null;
+      const transport = googleSheetsTransport(env);
+      const configured = Boolean(transport);
       await write({
         service:"google_sheets",
         status:configured ? "SUCCESS" : "WARNING",
@@ -209,86 +297,132 @@ async function runDiagnosticHealthChecks(env) {
       });
     }
 
-    if (due("notifications")) {
-      await write({
-        service:"notifications",
-        status:"WARNING",
-        errorCode:"NOTIFICATION_PROBE_NOT_CONFIGURED",
-        message:"通知送信経路の自動診断プローブは未構成です。"
-      });
-    }
   } catch (error) {
     console.error("diagnostic_health_check_failed", error?.message || error);
   }
 }
 
-async function runDataRetentionJob(env) {
-  if (!env.DB) return;
-  await ensureDiagnosticSchema(env.DB);
+// Runs on every 5-minute Cron tick with a small, bounded amount of work.
+// Rows are deleted from D1 only after the R2 copy and the Google Drive copy
+// are both verified (see retention.js archiveBatchThenDelete).
+async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } = {}) {
+  if (!env?.DB) return;
+  // Diagnostics for "nothing could be deleted" states are written at most once
+  // per hour to avoid adding D1 writes on every tick.
+  const firstTickOfHour = Math.floor(now / 3600) !== Math.floor((now - 300) / 3600);
+  const drive = createDriveSession(env);
 
   try {
     const result = await runRetentionCleanup(env.DB, {
-      batchSize: 1000,
-      archiveBucket: env.ARCHIVE
+      batchSize: 500,
+      maxBatches: 2,
+      // api_observations は「対象ごとの最新」を残すため、期限切れでも消せない行が多く、
+      // 毎回約2.5万行を読んで何も消さずに終わっていた（5分ごと→1日約720万行）。1時間に1回にする。
+      skipTables: firstTickOfHour ? [] : ["api_observations"],
+      archiveBucket: env.ARCHIVE,
+      googleDriveEnv: env,
+      drive
     });
-    await recordDiagnostic(env.DB, {
-      service: "retention",
-      feature: "data_retention",
-      operation: "CLEANUP",
-      status: "SUCCESS",
-      message: "データ保持期間クリーンアップ成功",
-      metadata: {
-        deleted: result.deleted,
-        archived: result.archived
-      }
-    });
-    console.log("data_retention_cleanup_ok", result.deleted);
+    const batches = result.batches || [];
+    const failed = batches.filter(b => b.status === "FAILED");
+    const skipped = batches.filter(b => b.status === "SKIPPED");
+    const archivedBatches = batches.filter(b => b.status === "ARCHIVED");
+    if (failed.length || archivedBatches.length || (skipped.length && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "retention",
+        feature: "data_retention",
+        operation: "CLEANUP",
+        status: failed.length ? "FAILED" : skipped.length ? "WARNING" : "SUCCESS",
+        errorCode: failed[0]?.reason || skipped[0]?.reason || null,
+        message: failed.length
+          ? "保持期間を過ぎたデータの退避に失敗したため、D1からは削除していません。"
+          : skipped.length
+            ? "Google DriveまたはR2の準備ができていないため、D1からは削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、保持期間を過ぎたデータを削除しました。",
+        metadata: { deleted: result.deleted, archived: result.archived, batches }
+      });
+    }
   } catch (error) {
     await recordDiagnostic(env.DB, {
       service: "retention",
       feature: "data_retention",
       operation: "CLEANUP",
       status: "FAILED",
-      errorCode: String(error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
+      errorCode: String(error?.code || error?.message || "RETENTION_CLEANUP_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("data_retention_cleanup_failed", error?.message || error);
   }
 
-  // System Log retention is intentionally independent from the configurable
-  // data-retention tables. A failure in another retention target must not
-  // prevent the 24h System Log archive from running.
+  // System Log retention is independent from the configurable tables so a
+  // failure there never blocks the 24h System Log archive (and vice versa).
   try {
-    const systemLogArchive = await archiveSystemEventLog(
-      env.DB,
-      env.ARCHIVE,
-      { batchSize: 1000, googleDriveEnv: env }
-    );
-    await recordDiagnostic(env.DB, {
-      service: "system_log",
-      feature: "system_log_archive",
-      operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
-      status: systemLogArchive?.skipped || (systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded)
-        ? "WARNING"
-        : "SUCCESS",
-      message: systemLogArchive?.skipped
-        ? "System Log R2アーカイブを実行できませんでした。D1のイベントは削除していません。"
-        : systemLogArchive?.googleDrive && !systemLogArchive.googleDrive.uploaded
-          ? "System LogのR2アーカイブは成功しましたが、Google Driveミラーは未完了です。"
-          : "System Logの24時間Retention処理成功",
-      metadata: systemLogArchive
+    const systemLogArchive = await archiveSystemEventLog(env.DB, env.ARCHIVE, {
+      batchSize: 1000,
+      maxBatches: 3,
+      googleDriveEnv: env,
+      drive
     });
-    console.log("system_log_archive_ok", systemLogArchive);
+    const failed = (systemLogArchive?.batches || []).some(b => b.status === "FAILED");
+    const worked = Number(systemLogArchive?.deleted || 0) > 0;
+    if (failed || worked || (systemLogArchive?.skipped && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "system_log",
+        feature: "system_log_archive",
+        operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
+        status: failed ? "FAILED" : systemLogArchive?.skipped ? "WARNING" : "SUCCESS",
+        errorCode: systemLogArchive?.reason || null,
+        message: failed
+          ? "System Logの退避に失敗したため、D1からは削除していません。"
+          : systemLogArchive?.skipped
+            ? "Google DriveまたはR2の準備ができていないため、System LogをD1から削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、24時間を過ぎたSystem Logを削除しました。",
+        metadata: systemLogArchive
+      });
+    }
   } catch (error) {
     await recordDiagnostic(env.DB, {
       service: "system_log",
       feature: "system_log_archive",
       operation: "ARCHIVE_EXPIRED_SYSTEM_EVENTS",
       status: "FAILED",
-      errorCode: String(error?.message || "SYSTEM_LOG_ARCHIVE_FAILED").split(":")[0],
+      errorCode: String(error?.code || error?.message || "SYSTEM_LOG_ARCHIVE_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000)
     });
     console.error("system_log_archive_failed", error?.message || error);
+  }
+
+  // Stale, unfollowed kingdom rankings: same verified R2 + Drive backup
+  // before D1 delete; pages read the R2 copy afterwards.
+  try {
+    // 毎時の最初の回だけ（14日以上前のものを探すので5分ごとは要らない。2026-11-17 D1 の読み取りを減らす）。
+    const kingdomArchive = firstTickOfHour ? await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now }) : { checked: 0, archivedKingdoms: 0, deletedRows: 0, batches: [], notThisTick: true };
+    const failed = (kingdomArchive.batches || []).some(b => b.status === "FAILED");
+    if (failed || kingdomArchive.archivedKingdoms > 0 || (kingdomArchive.skipped && firstTickOfHour)) {
+      await recordDiagnostic(env.DB, {
+        service: "retention",
+        feature: "kingdom_ranking_archive",
+        operation: "ARCHIVE_STALE_KINGDOM_RANKINGS",
+        status: failed ? "FAILED" : kingdomArchive.skipped ? "WARNING" : "SUCCESS",
+        errorCode: kingdomArchive.reason || null,
+        message: failed
+          ? "王国ランキングの退避に失敗したため、D1からは削除していません。"
+          : kingdomArchive.skipped
+            ? "Google DriveまたはR2の準備ができていないため、王国ランキングをD1から削除していません。"
+            : "R2とGoogle Driveへの保存を確認してから、更新の止まった王国ランキングをD1から削除しました。",
+        metadata: kingdomArchive
+      });
+    }
+  } catch (error) {
+    await recordDiagnostic(env.DB, {
+      service: "retention",
+      feature: "kingdom_ranking_archive",
+      operation: "ARCHIVE_STALE_KINGDOM_RANKINGS",
+      status: "FAILED",
+      errorCode: String(error?.code || error?.message || "KINGDOM_RANKING_ARCHIVE_FAILED").split(":")[0],
+      message: String(error?.message || error).slice(0, 2000)
+    });
+    console.error("kingdom_ranking_archive_failed", error?.message || error);
   }
 }
 
@@ -376,7 +510,7 @@ const PLAYER_VISIBILITY_ITEMS = [
   { key: "base_vip", category: "基本情報", label: "VIP", description: "VIPレベル" },
   { key: "base_coordinates", category: "基本情報", label: "座標", description: "X/Y座標" },
   { key: "base_kills", category: "基本情報", label: "撃破数", description: "撃破数" },
-  { key: "base_activity", category: "基本情報", label: "オンライン・最終活動", description: "オンライン状態・最終活動・最終ログイン" },
+  { key: "base_activity", category: "基本情報", label: "オンライン・最終活動", description: "MightPulse側で更新が停止したため、現在はどのロールにも表示しません" },
   { key: "base_profile", category: "基本情報", label: "プロフィール補助情報", description: "アバター・言語・シールド・炎上状態・役職" },
   { key: "alliance_identity", category: "同盟", label: "同盟基本情報", description: "同盟ID・略称・同盟名" },
   { key: "alliance_rank", category: "同盟", label: "同盟順位情報", description: "同盟内順位・順位ラベル" },
@@ -486,7 +620,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
   if (visibilityEnabled(settings, "base_vip", role) && player.vip !== undefined) visible.vip = player.vip;
   if (visibilityEnabled(settings, "base_coordinates", role)) for (const key of ["x","y"]) if (player[key] !== undefined) visible[key] = player[key];
   if (visibilityEnabled(settings, "base_kills", role) && player.kills !== undefined) visible.kills = player.kills;
-  if (visibilityEnabled(settings, "base_activity", role) && player.online !== undefined) visible.online = player.online;
+  // online / last_active_at / last_login are stale per MightPulse (the game no longer sends activity); never expose them.
   if (visibilityEnabled(settings, "base_profile", role)) for (const key of ["avatar_url","language","shield_endtime","burn_endtime","office"]) if (player[key] !== undefined) visible[key] = player[key];
 
   const alliance = player.alliance;
@@ -498,7 +632,7 @@ function filterPlayerProfileForRole(payload, role, settings) {
     if (Object.keys(a).length) visible.alliance = a;
   }
 
-  const heroes = Array.isArray(source.heroes) ? source.heroes : [];
+  const heroes = Array.isArray(source.heroes) ? source.heroes : Array.isArray(player.heroes) ? player.heroes : [];
   if (heroes.length && (visibilityEnabled(settings, "heroes_list", role) || visibilityEnabled(settings, "heroes_skills", role) || visibilityEnabled(settings, "heroes_exclusive_gear", role) || visibilityEnabled(settings, "heroes_gear", role))) {
     visible.heroes = heroes.map(hero => {
       const h = {};
@@ -513,16 +647,18 @@ function filterPlayerProfileForRole(payload, role, settings) {
     });
   }
 
-  if (source.ranks && typeof source.ranks === "object") {
+  const rankSource = source.ranks && typeof source.ranks === "object" ? source.ranks : player.ranks && typeof player.ranks === "object" ? player.ranks : null;
+  if (rankSource) {
     const ranks = {};
-    if (visibilityEnabled(settings, "ranks_core", role)) for (const key of ["power","power_rank","kills","kills_rank","town_center_level","town_center_rank","migrant_score","migrant_rank","mystic_trial","mystic_rank"]) if (source.ranks[key] !== undefined) ranks[key] = source.ranks[key];
-    if (visibilityEnabled(settings, "ranks_leaderboards", role) && source.ranks.leaderboards !== undefined) ranks.leaderboards = source.ranks.leaderboards;
+    if (visibilityEnabled(settings, "ranks_core", role)) for (const key of ["power","power_rank","kills","kills_rank","town_center_level","town_center_rank","migrant_score","migrant_rank","mystic_trial","mystic_rank"]) if (rankSource[key] !== undefined) ranks[key] = rankSource[key];
+    if (visibilityEnabled(settings, "ranks_leaderboards", role) && rankSource.leaderboards !== undefined) ranks.leaderboards = rankSource.leaderboards;
     if (Object.keys(ranks).length) visible.ranks = ranks;
   }
 
-  if (source.gov_gear && typeof source.gov_gear === "object") {
+  const gearSource = source.gov_gear && typeof source.gov_gear === "object" ? source.gov_gear : player.gov_gear && typeof player.gov_gear === "object" ? player.gov_gear : null;
+  if (gearSource) {
     const gear = {};
-    if (visibilityEnabled(settings, "gov_gear_list", role)) for (const key of ["hidden","message","items"]) if (source.gov_gear[key] !== undefined) gear[key] = source.gov_gear[key];
+    if (visibilityEnabled(settings, "gov_gear_list", role)) for (const key of ["hidden","message","items"]) if (gearSource[key] !== undefined) gear[key] = gearSource[key];
     if (visibilityEnabled(settings, "gov_gear_gems", role) && Array.isArray(gear.items)) gear.items = gear.items.map(item => ({ ...item, gems: item.gems || [] }));
     if (Object.keys(gear).length) visible.gov_gear = gear;
   }
@@ -531,7 +667,6 @@ function filterPlayerProfileForRole(payload, role, settings) {
 }
 
 const WATCHLIST_RANKING_LIMIT = 100;
-const WATCHLIST_PLAYER_BATCH = 8;
 
 function normalizeMightPulseTimestamp(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -540,7 +675,7 @@ function normalizeMightPulseTimestamp(value) {
   }
   const text = String(value).trim();
   if (!text) return null;
-  if (/^\\d+(?:\\.\\d+)?$/.test(text)) {
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
     const n = Number(text);
     return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
   }
@@ -548,8 +683,20 @@ function normalizeMightPulseTimestamp(value) {
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
 }
 
+// MightPulse reports when it observed the data in different places depending on
+// the endpoint: cached_at (players), board.captured_at / boards[].captured_at (ranks).
 function getMightPulseSourceTimestamp(data) {
-  return normalizeMightPulseTimestamp(data?.cached_at);
+  if (!data || typeof data !== "object") return null;
+  const candidates = [
+    data.cached_at, data.captured_at, data.board?.captured_at,
+    ...(Array.isArray(data.boards) ? data.boards.map(board => board?.captured_at) : []),
+    data.data?.cached_at, data.data?.captured_at, data.data?.board?.captured_at
+  ];
+  for (const value of candidates) {
+    const ts = normalizeMightPulseTimestamp(value);
+    if (ts) return ts;
+  }
+  return null;
 }
 
 async function ensureKingdomWatchlistFreshnessSchema(db) {
@@ -563,8 +710,16 @@ const KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH = 100;
 
 async function runKingdomWatchlistJobs(env) {
   if (!env.DB) return;
+  const schedulerStartedAtMs = Date.now();
+  const schedulerTraceId = systemTraceId("watchlist-cron");
+  let jobsAttempted = 0;
+  let jobsCompleted = 0;
+  let locksContended = 0;
+  let watchlistsCovered = 0;
+  let capacityWaits = 0;
+  let jobFailures = 0;
   await ensureKingdomWatchlistFreshnessSchema(env.DB);
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(schedulerStartedAtMs / 1000);
 
   // Job rows are runtime state, not durable ranking history. Keep completed,
   // failed, and user-cancelled rows only long enough for troubleshooting/UI
@@ -580,104 +735,84 @@ async function runKingdomWatchlistJobs(env) {
     ).bind(cleanupBefore, KINGDOM_WATCHLIST_JOB_CLEANUP_BATCH).run();
   }
   const rows = await env.DB.prepare(
-    "SELECT watchlist_id, kid, top_n, interval_hours, last_run_at FROM kingdom_watchlists WHERE enabled = 1 ORDER BY created_at ASC"
+    "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.last_run_at, w.last_success_at, w.created_at, " +
+    "(SELECT MIN(j.updated_at) FROM kingdom_watchlist_jobs j WHERE j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS')) AS active_job_updated_at " +
+    "FROM kingdom_watchlists w WHERE w.enabled = 1 " +
+    "ORDER BY CASE WHEN active_job_updated_at IS NULL THEN 1 ELSE 0 END, active_job_updated_at ASC, w.created_at ASC"
   ).all();
 
   // Read all active jobs once. This replaces one D1 SELECT per not-due watchlist.
   const activeJobRows = await env.DB.prepare(
-    "SELECT watchlist_id FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS')"
+    "SELECT watchlist_id, status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%')"
   ).all();
-  const activeWatchlistIds = new Set((activeJobRows.results || []).map(item => String(item.watchlist_id)));
+  const activeWatchlistIds = new Set((activeJobRows.results || []).filter(item => {
+    if (item.status !== "FAILED") return true;
+    const retry = String(item.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+    if (!retry) return false;
+    const retryCount = Number(retry[2]) || 1;
+    const delaySeconds = Math.min(3600, 300 * Math.pow(2, Math.max(0, retryCount - 1)));
+    return retryCount <= 5 && now - Number(item.updated_at || 0) >= delaySeconds;
+  }).map(item => String(item.watchlist_id)));
 
-  // Safety is evaluated once per cron invocation, not once per watchlist.
-  // This keeps the background control path from multiplying D1/API monitoring
-  // reads when many kingdoms are registered.
-  let watchlistSafety = null;
-  try {
-    const poolBudget = await getApiPoolBudgetSnapshot(env.DB, {
-      provider: "MIGHTPULSE",
-      poolTypes: ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"]
-    });
-    const availablePoolKeys = Number(poolBudget?.availableKeys || 0);
-    let cloudflare = null;
-    try {
-      cloudflare = await getCloudflareD1Usage(env, { includeQueryInsights: false });
-    } catch {
-      cloudflare = null;
-    }
-    watchlistSafety = evaluateSafetyGate({
-      operation: "KINGDOM_WATCHLIST",
-      priority: SAFETY_PRIORITIES.WATCHLIST,
-      plannedRequests: 26 + 10,
-      availablePoolKeys,
-      reservedKeys: 0,
-      cloudflare,
-      apiRemainingMinute: poolBudget?.remainingMinute,
-      apiRemainingDay: poolBudget?.remainingDay,
-      apiMinRemainingMinute: poolBudget?.minRemainingMinute,
-      apiMinRemainingDay: poolBudget?.minRemainingDay,
-      apiReserveMinute: poolBudget?.measuredReserveMinute,
-      apiReserveDay: poolBudget?.measuredReserveDay,
-      force: false
-    });
-    if (!watchlistSafety.allowed) {
-      await recordSystemEvent(env.DB, {
-        traceId: systemTraceId("watchlist-safety"),
-        eventType: "BLOCKED",
-        service: "watchlist",
-        feature: "kingdom_watchlist",
-        operation: "SAFETY_GATE",
-        status: "PAUSED",
-        errorCode: watchlistSafety.blockedBy || "SAFETY_GATE_BLOCKED",
-        message: "王国ウォッチリストの新規実行をSafety Gateが停止しました。",
-        metadata: {
-          state: watchlistSafety.state,
-          reasons: watchlistSafety.reasons,
-          resumeCondition: watchlistSafety.resumeCondition,
-          availablePoolKeys: watchlistSafety.availablePoolKeys
-        }
-      }).catch(() => {});
-    }
-  } catch (error) {
-    watchlistSafety = {
-      allowed: false,
-      state: "CAUTION",
-      blockedBy: "SAFETY_GATE_EVALUATION_FAILED",
-      reasons: ["SAFETY_GATE_EVALUATION_FAILED"],
-      resumeCondition: "安全状態の再評価後に再開"
-    };
-    await recordSystemEvent(env.DB, {
-      traceId: systemTraceId("watchlist-safety"),
-      eventType: "ERROR",
-      service: "watchlist",
-      feature: "kingdom_watchlist",
-      operation: "SAFETY_GATE",
-      status: "WARNING",
-      errorCode: "SAFETY_GATE_EVALUATION_FAILED",
-      message: String(error?.message || error).slice(0, 1000)
-    }).catch(() => {});
-  }
+  // New background watchlist jobs are admitted by the real API Pool lease/request
+  // path below. Do not pre-block them using a guessed fixed request count: the
+  // ranking set, available keys, and actual provider quota can vary. Existing
+  // per-request lease/cooldown handling remains the source of truth.
 
   for (const row of rows.results || []) {
     const due = !row.last_run_at || now - Number(row.last_run_at) >= Number(row.interval_hours) * 3600;
     // Do not write a lock for an idle watchlist that is not due.
     if (!due && !activeWatchlistIds.has(String(row.watchlist_id))) continue;
-    // Active jobs are allowed to continue; Safety Gate only blocks creation
-    // of new background work. This avoids abandoning a resumable job halfway.
-    if (!activeWatchlistIds.has(String(row.watchlist_id)) && watchlistSafety && !watchlistSafety.allowed) {
-      continue;
+    // Another watchlist for the same kingdom that fetches at least as many
+    // players at least as often already refreshed the shared kingdom data:
+    // reuse its success instead of spending API Pool quota twice.
+    if (due && !activeWatchlistIds.has(String(row.watchlist_id))) {
+      const cover = findCoveringWatchlist(row, rows.results || [], now);
+      if (cover) {
+        await env.DB.prepare(
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ? AND enabled = 1"
+        ).bind(now, Number(cover.last_success_at), now, row.watchlist_id).run();
+        watchlistsCovered++;
+        continue;
+      }
     }
+    // Let the API Pool lease/request path decide whether work can proceed.
+    // Jobs are resumable, so capacity/quota failures are handled at the request
+    // boundary instead of rejecting the whole job from an estimated budget.
     const lockToken = await acquireKingdomWatchlistLock(env, row.watchlist_id);
-    if (!lockToken) continue;
+    if (!lockToken) { locksContended++; continue; }
 
     try {
-      const active = await env.DB.prepare(
-        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND status IN ('RANKINGS','PLAYERS') ORDER BY created_at DESC LIMIT 1"
-      ).bind(row.watchlist_id).first();
+      let active = await env.DB.prepare(
+        "SELECT * FROM kingdom_watchlist_jobs WHERE watchlist_id = ? AND (status IN ('RANKINGS','PLAYERS') OR (status = 'FAILED' AND last_error LIKE 'RETRYABLE:%' AND updated_at <= ?)) ORDER BY created_at DESC LIMIT 1"
+      ).bind(row.watchlist_id, now - 300).first();
+      if (active?.status === "FAILED") {
+        const retry = String(active.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        if (!retry) active = null;
+        else {
+          const retryPhase = retry[1];
+          const retryCount = Number(retry[2]) || 1;
+          const delaySeconds = Math.min(3600, 300 * Math.pow(2, Math.max(0, retryCount - 1)));
+          if (now - Number(active.updated_at || 0) < delaySeconds || retryCount > 5) active = null;
+          else {
+            await env.DB.prepare(
+              "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
+            ).bind(retryPhase, now, active.job_id).run();
+            active = { ...active, status: retryPhase, updated_at: now };
+          }
+        }
+      }
       if (!active && !due) continue;
 
       let job = active;
       if (!job) {
+        // A kingdom whose rankings were archived gets its last snapshot back
+        // before the first fetch, so changes are detected against real ranks.
+        try {
+          await restoreArchivedKingdomRankingsIfMissing(env, row.kid);
+        } catch (error) {
+          console.error("kingdom_ranking_archive_restore_failed", row.kid, error?.message || error);
+        }
         const jobId = crypto.randomUUID();
         await env.DB.prepare(
           "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'OPERATOR', ?, ?)"
@@ -704,8 +839,10 @@ async function runKingdomWatchlistJobs(env) {
 
       try {
         await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"START", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"STARTED", targetType:"KINGDOM", targetId:String(row.kid), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, status:job.status } });
+        jobsAttempted++;
         const result = await processKingdomWatchlistJob(env, job);
         if (result.completed) {
+          jobsCompleted++;
           await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"COMPLETE", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"SUCCESS", targetType:"KINGDOM", targetId:String(row.kid), message:"王国ウォッチリスト更新完了", metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id, rankingRows:Number(result.rankingRows||0), playerRows:Number(result.playerRows||0) } });
           await recordDiagnostic(env.DB, {
             service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
@@ -720,36 +857,83 @@ async function runKingdomWatchlistJobs(env) {
         }
         console.log("kingdom_watchlist_job_progress", row.watchlist_id, result);
       } catch (error) {
+        const rawError = String(error?.message || error).slice(0, 850);
+        const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        jobFailures++;
+        if (capacityWaitCode) capacityWaits++;
+        const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
+        const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
+        const retryable = Boolean(capacityWaitCode) || (retryCount <= 5 &&
+          !rawError.startsWith("USER_CANCELLED:"));
+        const storedError = retryable
+          ? "RETRYABLE:" + retryPhase + ":" + (capacityWaitCode ? 1 : retryCount) + ":" + rawError
+          : rawError;
+        const failedAt = Math.floor(Date.now() / 1000);
         await env.DB.prepare(
-          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-        ).bind(String(error?.message || error).slice(0, 1000), now, job.job_id).run();
-        // Record the failed attempt time as well. Otherwise a failed watchlist
-        // keeps its old last_run_at and is retried on every 5-minute Cron tick,
-        // bypassing the user's configured interval and consuming API/D1 resources.
+          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
+        ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
+        // Preserve the committed cursor and start the retry delay at failure time.
         await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(now, String(error?.message || error).slice(0, 1000), now, row.watchlist_id).run();
-        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:"ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:"FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
+          "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = ? AND status = 'FAILED' AND last_error = ?)"
+        ).bind(failedAt, capacityWaitCode ? null : rawError, failedAt, row.watchlist_id, job.job_id, storedError.slice(0, 1000)).run();
+        await recordSystemEvent(env.DB, { traceId: job.job_id, eventType:capacityWaitCode ? "WAITING" : "ERROR", service:"watchlist", feature:"kingdom_watchlist", operation:"WATCHLIST_JOB", status:capacityWaitCode ? "WAITING" : "FAILED", targetType:"KINGDOM", targetId:String(row.kid), errorCode:capacityWaitCode || String(error?.message||"WATCHLIST_JOB_FAILED").split(":")[0], message:String(error?.message||error).slice(0,2000), metadata:{ watchlistId:row.watchlist_id, jobId:job.job_id } });
         await recordDiagnostic(env.DB, {
           service: "watchlist", feature: "kingdom_watchlist", operation: "RUN",
-          status: "FAILED", errorCode: String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
+          status: capacityWaitCode ? "WAITING" : "FAILED", errorCode: capacityWaitCode || String(error?.message || "WATCHLIST_JOB_FAILED").split(":")[0],
           message: String(error?.message || error).slice(0, 2000),
           targetType: "KINGDOM", targetId: row.kid,
           metadata: { watchlistId: row.watchlist_id, jobId: job.job_id }
         });
         console.error("kingdom_watchlist_job_failed", row.watchlist_id, error?.message || error);
       }
-      break;
+      // One batch per scheduled invocation; the next invocation prioritizes the least recently advanced active job.
     } finally {
       await releaseKingdomWatchlistLock(env, row.watchlist_id, lockToken);
     }
   }
+  console.info("kingdom_watchlist_scheduler_run_completed", {
+    traceId: schedulerTraceId,
+    startedAt: new Date(schedulerStartedAtMs).toISOString(),
+    durationMs: Date.now() - schedulerStartedAtMs,
+    watchlistsConsidered: (rows.results || []).length,
+    activeJobsSeen: (activeJobRows.results || []).length,
+    jobsAttempted,
+    jobsCompleted,
+    locksContended,
+    watchlistsCovered,
+    capacityWaits,
+    jobFailures
+  });
+  await recordSystemEvent(env.DB, {
+    traceId: schedulerTraceId,
+    eventType: "SCHEDULER_RUN",
+    service: "watchlist",
+    feature: "kingdom_watchlist",
+    operation: "WATCHLIST_CRON",
+    status: jobFailures > 0 ? "WARNING" : "SUCCESS",
+    message: "王国ウォッチリストCron実行集計",
+    startedAt: Math.floor(schedulerStartedAtMs / 1000),
+    completedAt: Math.floor(Date.now() / 1000),
+    elapsedMs: Date.now() - schedulerStartedAtMs,
+    metadata: {
+      watchlistsConsidered: (rows.results || []).length,
+      activeJobsSeen: (activeJobRows.results || []).length,
+      jobsAttempted,
+      jobsCompleted,
+      locksContended,
+      watchlistsCovered,
+      capacityWaits,
+      jobFailures
+    }
+  });
 }
 
 async function processKingdomWatchlistJob(env, job, options = {}) {
   const now = Math.floor(Date.now() / 1000);
-  const reserveApiKeys = Math.max(0, Number(options?.reserveApiKeys) || 0);
   const apiLimiter = options?.apiLimiter || null;
+  // 通常の王国ウォッチは、ユーザー操作のために BACKGROUND_KEY_RESERVE 本を空けておく（負荷テストは指定どおり）。
+  const reserveApiKeys = apiLimiter ? Math.max(0, Number(options?.reserveApiKeys) || 0) : Math.max(BACKGROUND_KEY_RESERVE, Number(options?.reserveApiKeys) || 0);
   const loadTestContext = options?.loadTestContext || null;
   const loadTestRunId = loadTestContext?.runId ? String(loadTestContext.runId) : null;
   const loadTestJobId = loadTestContext?.jobId ? String(loadTestContext.jobId) : String(job?.job_id || "");
@@ -766,12 +950,18 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
 
   if (job.status === "RANKINGS") {
     const startIndex = Number(job.board_index || 0);
+    // Keep board_index as the committed/resume cursor. player_cursor is reused
+    // only during RANKINGS to expose in-flight fetch progress without skipping
+    // boards if a Worker invocation ends before the batch is persisted.
+    await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = 0, updated_at = ? WHERE job_id = ?").bind(Math.floor(Date.now() / 1000), job.job_id).run();
     const concurrency = apiLimiter
-      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), KINGDOM_RANKING_BOARDS.length - startIndex))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), KINGDOM_RANKING_BOARDS.length - startIndex, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
-      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
-      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      if (!apiLimiter) await recordPoolPressure(env.DB, "background_yielded");
+      const code = apiLimiter ? "API_POOL_LOAD_TEST_CAPACITY_WAIT" : "NO_API_POOL_KEY_AVAILABLE";
+      const error = new Error(code);
+      error.code = code;
       throw error;
     }
     const endIndex = Math.min(startIndex + concurrency, KINGDOM_RANKING_BOARDS.length);
@@ -785,6 +975,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       const traceId = diagnosticTraceId("ranking");
       const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : traceId;
       const startedAtMs = Date.now();
+      console.log("kingdom_watchlist_ranking_fetch_started", { jobId: job.job_id, kid: job.kid, board, traceId: requestTraceId, startedAt: Math.floor(startedAtMs / 1000) });
       try {
         const requestLimiter = apiLimiter;
         if (apiLimiter) apiLimiter.globalLimiter = globalCollectionLimiter || null;
@@ -792,18 +983,75 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
           env, job.kid, board, WATCHLIST_RANKING_LIMIT, "KINGDOM_WATCHLIST_RANKING",
           { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys }
         ));
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET player_cursor = player_cursor + 1, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'").bind(Math.floor(Date.now() / 1000), job.job_id).run();
         return { board, traceId: requestTraceId, startedAtMs, fetched };
       } catch (error) {
-        error.rankingBoard = board;
-        error.rankingTraceId = traceId;
-        error.rankingStartedAtMs = startedAtMs;
-        throw error;
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        if (capacityWaitCode) {
+          return { board, traceId, startedAtMs, error, capacityWaitCode };
+        }
+        const message = "RANKING_FETCH_FAILED:" + board + ":" + String(error?.message || error).slice(0, 500);
+        const failure = new Error(message);
+        failure.cause = error;
+        failure.rankingBoard = board;
+        failure.rankingTraceId = traceId;
+        failure.rankingStartedAtMs = startedAtMs;
+        // Do not set job.last_error until the whole parallel batch settles:
+        // the status API treats last_error as a terminal/stale signal.
+        await recordDiagnostic(env.DB, {
+          traceId, service: "ranking", feature: "kingdom_watchlist",
+          operation: "FETCH", status: "FAILED", errorCode: "RANKING_FETCH_FAILED",
+          message, provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
+          startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
+          elapsedMs: Date.now() - startedAtMs, metadata: { board, jobId: job.job_id, phase: "FETCH" }
+        }).catch(() => {});
+        return { board, traceId, startedAtMs, error: failure };
       }
     });
 
-    // Persist each completed board in deterministic board order so ranking
-    // snapshots/change events remain consistent while API requests run in parallel.
-    for (const item of fetchedBoards) {
+    // Cancellation is durable in D1. Let in-flight API requests settle, then
+    // stop before persisting this batch if the user cancelled while it was running.
+    const liveJob = await env.DB.prepare(
+      "SELECT status, last_error FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1"
+    ).bind(job.job_id).first();
+    if (liveJob?.status !== "RANKINGS") {
+      if (liveJob?.status === "FAILED" && String(liveJob.last_error || "").startsWith("USER_CANCELLED:")) {
+        return { completed: false, cancelled: true, phase: "CANCELLED", rankingRows: Number(job.ranking_rows || 0) };
+      }
+      throw new Error("WATCHLIST_JOB_STATE_CHANGED:" + String(liveJob?.status || "MISSING"));
+    }
+
+    // board_index advances as each parallel fetch succeeds, so the UI can show
+    // live progress before the slowest request finishes. Persistence below
+    // updates ranking_rows independently; failed jobs are never resumed in-place.
+    for (let itemIndex = 0; itemIndex < fetchedBoards.length; itemIndex++) {
+      const item = fetchedBoards[itemIndex];
+      if (item.error) {
+        // Earlier boards in this ordered batch have already been persisted.
+        // Commit the cursor at the first failed board so a retry does not
+        // repeat successful boards or skip the failed one.
+        await env.DB.prepare("UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'")
+          .bind(startIndex + itemIndex, rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
+        if (item.capacityWaitCode) {
+          await recordDiagnostic(env.DB, {
+            traceId: item.traceId,
+            service: "ranking",
+            feature: "kingdom_watchlist",
+            operation: "FETCH",
+            status: "WAITING",
+            errorCode: item.capacityWaitCode,
+            message: "API Poolの空き待ちです。未処理ランキングから自動再試行します。",
+            provider: "MIGHTPULSE",
+            targetType: "KINGDOM",
+            targetId: job.kid,
+            metadata: { board: item.board, jobId: job.job_id, phase: "FETCH" }
+          });
+          const error = new Error(item.capacityWaitCode);
+          error.code = item.capacityWaitCode;
+          throw error;
+        }
+        throw item.error;
+      }
       const { board, traceId, startedAtMs, fetched } = item;
       const payload = fetched.result?.data;
       const sourceObservedAt = getMightPulseSourceTimestamp(payload);
@@ -872,14 +1120,15 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       rankingRows += saved;
       await recordDiagnostic(env.DB, {
         traceId, service: "ranking", feature: "kingdom_watchlist",
-        operation: "FETCH_COMPARE_SAVE", status: sourceObservedAt ? "SUCCESS" : "WARNING",
-        errorCode: sourceObservedAt ? null : "SOURCE_TIME_UNAVAILABLE",
+        // Saving succeeded either way; a missing MightPulse source time is noted, not a warning.
+        operation: "FETCH_COMPARE_SAVE", status: "SUCCESS",
+        errorCode: null,
         message: sourceObservedAt ? "ランキング取得・比較・保存成功" : "ランキング取得・比較・保存は成功しましたがMightPulse基準時刻を取得できませんでした。",
         provider: "MIGHTPULSE", targetType: "KINGDOM", targetId: job.kid,
         startedAt: Math.floor(startedAtMs / 1000), completedAt: Math.floor(Date.now() / 1000),
         elapsedMs: Date.now() - startedAtMs, sourceObservedAt,
         rowsReceived: entries.length, rowsSaved: saved,
-        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type, changedRows: rankingComparison.changedEntries.length }
+        metadata: { board, payloadKeys, rankingPayloadShape, poolType: fetched.pool_type, changedRows: rankingComparison.changedEntries.length, sourceTimeMissing: !sourceObservedAt }
       });
 
       const rankingChanges = rankingComparison.rankingChanges;
@@ -897,7 +1146,6 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         }
       }
 
-      // Progress is persisted once after the whole concurrent batch, not once per board.
     }
 
     const batchSourceTimes = fetchedBoards
@@ -907,7 +1155,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const batchSourceFirstAt = batchSourceTimes.length ? Math.min(...batchSourceTimes) : null;
     const batchSourceLastAt = batchSourceTimes.length ? Math.max(...batchSourceTimes) : null;
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET board_index = ?, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET board_index = ?, player_cursor = 0, ranking_rows = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'"
     ).bind(
       endIndex,
       rankingRows,
@@ -929,7 +1177,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     const playerIds = (playerRows.results || []).map(row => String(row.governor_id));
 
     await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ?"
+      "UPDATE kingdom_watchlist_jobs SET status = 'PLAYERS', board_index = ?, player_cursor = 0, player_ids_json = ?, ranking_rows = ?, updated_at = ? WHERE job_id = ? AND status = 'RANKINGS'"
     ).bind(KINGDOM_RANKING_BOARDS.length, JSON.stringify(playerIds), rankingRows, Math.floor(Date.now() / 1000), job.job_id).run();
 
     return { completed: false, phase: "PLAYERS", playerCount: playerIds.length, rankingRows, concurrency };
@@ -941,48 +1189,59 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
     if (!Array.isArray(ids)) ids = [];
 
     const cursor = Number(job.player_cursor || 0);
-    const batchIds = ids.slice(cursor, cursor + WATCHLIST_PLAYER_BATCH);
 
-    if (!batchIds.length) {
-      // Count a kingdom only after the complete ranking + player workflow
-      // reaches its terminal state. Partial or failed jobs are not collection.
+    if (cursor >= ids.length) {
+      // Cancellation may arrive while a batch is in flight. Never overwrite it
+      // with COMPLETED, and only count collection after the terminal transition succeeds.
+      const terminal = await env.DB.prepare(
+        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', last_error = NULL, completed_at = ?, updated_at = ? WHERE job_id = ? AND status = 'PLAYERS'"
+      ).bind(now, now, job.job_id).run();
+      if (Number(terminal?.meta?.changes || 0) !== 1) {
+        return { completed: false, cancelled: true, phase: "CANCELLED", playerRows: Number(job.player_rows || 0) };
+      }
       await recordKingdomCollectionSuccess(env.DB, {
         kid: job.kid,
         source: String(job.collection_source || "OPERATOR").toUpperCase(),
         collectedAt: now
       });
-      await env.DB.prepare(
-        "UPDATE kingdom_watchlist_jobs SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE job_id = ?"
-      ).bind(now, now, job.job_id).run();
       return { completed: true, phase: "COMPLETED", playerRows: Number(job.player_rows || 0) };
     }
 
+    const remaining = ids.length - cursor;
     const concurrency = apiLimiter
-      ? Math.max(1, Math.min(Number(apiLimiter.capacity || 1), batchIds.length))
+      ? Math.max(0, Math.min(Number(apiLimiter.capacity ?? 1), remaining, WATCHLIST_MAX_API_CONCURRENCY))
       : await getWatchlistApiConcurrency(env, { reserveApiKeys });
     if (concurrency < 1) {
-      const error = new Error("API_POOL_LOAD_TEST_CAPACITY_WAIT");
-      error.code = "API_POOL_LOAD_TEST_CAPACITY_WAIT";
+      if (!apiLimiter) await recordPoolPressure(env.DB, "background_yielded");
+      const error = new Error("NO_API_POOL_KEY_AVAILABLE");
+      error.code = "NO_API_POOL_KEY_AVAILABLE";
       throw error;
     }
+    // The work size follows current pool capacity; no fixed player batch.
+    const batchIds = ids.slice(cursor, cursor + concurrency);
     const fetchedPlayers = await fetchWithConcurrency(batchIds, concurrency, async governorId => {
       try {
         const requestTraceId = loadTestJobTraceId ? systemTraceId("load-req") : null;
         return { governorId, fetched: await fetchWithLoadTestApiLimiter(apiLimiter, () => fetchPlayerDetailThroughApiPool(env, governorId, "KINGDOM_WATCHLIST_PLAYER", { useGlobalSemaphore: !apiLimiter, globalLimiter: globalCollectionLimiter, traceId: requestTraceId, parentTraceId: loadTestJobTraceId, jobId: loadTestJobId, runId: loadTestRunId, reserveApiKeys })) };
       } catch (error) {
-        await recordDiagnostic(env.DB, {
-          service: "watchlist",
-          feature: "kingdom_watchlist",
-          operation: "PLAYER_FETCH",
-          status: "FAILED",
-          errorCode: String(error?.code || error?.message || "WATCHLIST_PLAYER_FETCH_FAILED").split(":")[0],
-          message: String(error?.message || error).slice(0, 2000),
-          provider: "MIGHTPULSE",
-          targetType: "PLAYER",
-          targetId: governorId
-        });
-        console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
-        return { governorId, error };
+        const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+        // Capacity waits are recorded once at the job level below. Writing one
+        // warning row per player would add avoidable D1 writes during pool exhaustion.
+        if (!capacityWaitCode) {
+          await recordDiagnostic(env.DB, {
+            service: "watchlist",
+            feature: "kingdom_watchlist",
+            operation: "PLAYER_FETCH",
+            status: "FAILED",
+            errorCode: String(error?.code || error?.message || "WATCHLIST_PLAYER_FETCH_FAILED").split(":")[0],
+            message: String(error?.message || error).slice(0, 2000),
+            provider: "MIGHTPULSE",
+            targetType: "PLAYER",
+            targetId: governorId
+          });
+          console.error("kingdom_watchlist_player_failed", governorId, error?.message || error);
+        }
+        return { governorId, error, capacityWaitCode };
       }
     });
 
@@ -1008,7 +1267,7 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
         "INSERT INTO api_observations (observation_id, provider, endpoint, target_type, target_id, observed_at, source_observed_at, http_status, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         observationId, "MIGHTPULSE", "/players/" + governorId + "?include=base,heroes,ranks,gov_gear",
-        "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(raw), job.observed_at
+        "PLAYER", governorId, job.observed_at, sourceObservedAt, result?.status ?? 200, JSON.stringify(stripStaleActivityFields(raw)), job.observed_at
       ).run();
 
       const observation = {
@@ -1047,11 +1306,22 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       playerRows++;
     }
 
-    const nextCursor = cursor + batchIds.length;
-    const completed = nextCursor >= ids.length;
-    await env.DB.prepare(
-      "UPDATE kingdom_watchlist_jobs SET player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ?"
+    const deferredPlayerIds = fetchedPlayers.filter(item => item.capacityWaitCode).map(item => item.governorId);
+    const deferredSet = new Set(deferredPlayerIds.map(String));
+    const consumedBatchIds = batchIds.filter(id => !deferredSet.has(String(id)));
+    // Keep completed targets before the cursor, then retry deferred targets,
+    // then retain the untouched queue. Successful players are not fetched again.
+    const nextIds = ids.slice(0, cursor).concat(
+      consumedBatchIds,
+      deferredPlayerIds,
+      ids.slice(cursor + batchIds.length)
+    );
+    const nextCursor = cursor + consumedBatchIds.length;
+    const completed = deferredPlayerIds.length === 0 && nextCursor >= nextIds.length;
+    const playerUpdate = await env.DB.prepare(
+      "UPDATE kingdom_watchlist_jobs SET player_ids_json = ?, player_cursor = ?, player_rows = ?, status = ?, completed_at = ?, source_first_at = CASE WHEN ? IS NULL THEN source_first_at WHEN source_first_at IS NULL OR ? < source_first_at THEN ? ELSE source_first_at END, source_last_at = CASE WHEN ? IS NULL THEN source_last_at WHEN source_last_at IS NULL OR ? > source_last_at THEN ? ELSE source_last_at END, updated_at = ? WHERE job_id = ? AND status = 'PLAYERS'"
     ).bind(
+      JSON.stringify(nextIds),
       nextCursor,
       playerRows,
       completed ? "COMPLETED" : "PLAYERS",
@@ -1061,14 +1331,31 @@ async function processKingdomWatchlistJob(env, job, options = {}) {
       now,
       job.job_id
     ).run();
+    if (Number(playerUpdate?.meta?.changes || 0) !== 1) {
+      return { completed: false, cancelled: true, phase: "CANCELLED", playerRows };
+    }
 
-    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: ids.length, playerRows, concurrency };
+    if (deferredPlayerIds.length) {
+      const capacityWaitCode = fetchedPlayers.find(item => item.capacityWaitCode)?.capacityWaitCode || "NO_API_POOL_KEY_AVAILABLE";
+      const error = new Error(capacityWaitCode);
+      error.code = capacityWaitCode;
+      throw error;
+    }
+
+    return { completed, phase: completed ? "COMPLETED" : "PLAYERS", playerCursor: nextCursor, playerCount: nextIds.length, playerRows, concurrency };
   }
 
   return { completed: true, phase: job.status };
 }
 
 const WATCHLIST_MAX_API_CONCURRENCY = 26;
+
+function getApiPoolCapacityWaitCode(error) {
+  const code = String(error?.code || error?.message || "").split(":")[0].trim();
+  return ["NO_API_POOL_KEY_AVAILABLE", "GLOBAL_COLLECTION_SEMAPHORE_FULL", "API_POOL_LOAD_TEST_CAPACITY_WAIT"].includes(code)
+    ? code
+    : null;
+}
 
 async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
   const availability = await getApiPoolAvailability(env.DB, {
@@ -1079,14 +1366,9 @@ async function getWatchlistApiConcurrency(env, { reserveApiKeys = 0 } = {}) {
   const reserve = Math.max(0, Number(reserveApiKeys) || 0);
   const usable = Math.max(0, available - reserve);
 
-  // Normal Watchlist processing keeps the historical minimum of one.
-  // Load Test processing can explicitly reserve one key for normal users and
-  // therefore returns zero when there is no safe capacity instead of violating
-  // the reservation.
-  if (reserve > 0) {
-    return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable);
-  }
-  return Math.max(1, Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable));
+  // A snapshot is only a planning signal. If no capacity is available, wait
+  // for the next scheduled run instead of forcing a request with zero keys.
+  return Math.min(WATCHLIST_MAX_API_CONCURRENCY, usable);
 }
 
 async function fetchWithConcurrency(items, concurrency, worker) {
@@ -1245,382 +1527,14 @@ function extractKingdomRankingEntries(payload) {
 async function renderKingdomWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><p>ログインが必要です。</p><a href="/api/auth/discord">Discordでログイン</a>`;
+    return renderLoginRequiredPage(request, "王国ウォッチリスト", "王国ウォッチリストを使うにはログインしてください。");
   }
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>王国ウォッチリスト｜EagleEye</title>
-<style>
-:root{
-  color-scheme:dark;
-  --bg:#0b1220;--bg-soft:#111a2c;--card:#162238;--card-strong:#1b2a43;
-  --text:#f8fafc;--text-soft:#cbd5e1;--muted:#94a3b8;--border:#334155;
-  --border-strong:#475569;--input:#0b1220;--accent:#f59e0b;--accent-strong:#fbbf24;
-  --accent-text:#111827;--ok:#86efac;--ok-bg:#0f2a1c;--danger:#7f1d1d;--shadow:0 12px 30px rgba(0,0,0,.22);
-}
-:root[data-eagle-theme="light"]{
-  color-scheme:light;
-  --bg:#f3f6fb;--bg-soft:#eaf0f8;--card:#ffffff;--card-strong:#f8fafc;
-  --text:#172033;--text-soft:#334155;--muted:#64748b;--border:#d6deea;
-  --border-strong:#b8c5d6;--input:#f8fafc;--accent:#f59e0b;--accent-strong:#d97706;
-  --accent-text:#172033;--ok:#15803d;--ok-bg:#ecfdf3;--danger:#b91c1c;--shadow:0 10px 24px rgba(15,23,42,.08);
-}
-*{box-sizing:border-box}
-html{background:var(--bg)}
-body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:1000px;margin:auto;padding:18px 14px 48px;background:var(--bg);color:var(--text);min-height:100vh;transition:background .2s,color .2s}
-button,input,select{font:inherit}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
-.back{color:var(--muted);text-decoration:none;font-weight:700}
-.back:hover{color:var(--text)}
-.topbar h1{font-size:clamp(25px,6vw,34px);margin:8px 0 0;letter-spacing:-.02em}
-.theme-toggle{width:46px;height:42px;padding:0;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);display:inline-flex;align-items:center;justify-content:center;font-size:20px;box-shadow:var(--shadow)}
-.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;margin:14px 0;box-shadow:var(--shadow)}
-.add-card{background:linear-gradient(135deg,var(--card),var(--card-strong))}
-.card h2{margin:0 0 14px;font-size:20px}
-.card p{margin:7px 0}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
-.form-field{display:grid;gap:7px;font-weight:800;font-size:13px;flex:1 1 150px}
-input,select{width:100%;padding:12px 13px;border:1px solid var(--border-strong);border-radius:12px;background:var(--input);color:var(--text);outline:none}
-input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,158,11,.16)}
-button{padding:12px 14px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-text);font-weight:900;cursor:pointer;transition:transform .12s,filter .12s,opacity .12s}
-button:hover{filter:brightness(1.04);transform:translateY(-1px)}
-button:disabled{opacity:.58;cursor:not-allowed;transform:none}
-.primary-action{min-width:145px}
-.danger{background:var(--danger);color:#fff}
-.muted{color:var(--muted)}
-.error{color:#ef4444}
-.ok{color:var(--ok)}
-.status-line{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:8px 2px}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 15%,transparent)}
-.progress{margin:14px 0;padding:15px;border:1px solid var(--border-strong);border-radius:14px;background:var(--bg-soft);display:grid;gap:5px}
-.progress b{font-size:14px}.progress span{font-size:23px;font-weight:950;color:var(--accent)}.progress small{color:var(--muted)}
-.progress-track{height:7px;border-radius:999px;background:var(--border);overflow:hidden;margin-top:4px}
-.progress-fill{height:100%;border-radius:999px;background:var(--accent);transition:width .2s}
-.rank-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.rank{padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card-strong);min-width:0}
-.rank-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.rank-title b{font-size:15px}
-.rank-key{font-size:10px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.rank-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent);font-size:13px}
-.rank-row:first-of-type{border-top:0}
-.rank-no{width:24px;height:24px;border-radius:8px;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:var(--muted)}
-.rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rank-score{font-weight:900;text-align:right;white-space:nowrap;color:var(--accent-strong)}
-.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 2px 10px}
-.section-title h2{margin:0;font-size:19px}
-.section-title span{font-size:11px;color:var(--muted)}
-.player-card{padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card-strong)}
-.player-card b{font-size:14px}.player-meta{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.6}
-@media(max-width:700px){.rank-grid{grid-template-columns:1fr}}
-@media(max-width:520px){
-  body{padding:14px 10px 36px}.card{padding:15px;border-radius:16px}
-  .topbar h1{font-size:25px}.row>*{width:100%}.form-field{flex-basis:100%}
-  .primary-action{width:100%}.rank-row{grid-template-columns:28px minmax(0,1fr) auto;}.rank-score{grid-column:2;text-align:left;margin-top:-4px}
+  return renderKingdomWatchlistPageReplacement();
 }
 
-/* Kingdom Watchlist dark-mode alignment with the canonical EagleEye palette. */
-:root:not([data-eagle-theme="light"]){--accent:var(--ee-cyan,#22d3ee);--accent-strong:var(--ee-cyan-strong,#20d7f2);--accent-text:#062033}
-:root:not([data-eagle-theme="light"]) input:focus,:root:not([data-eagle-theme="light"]) select:focus{border-color:var(--ee-cyan,#22d3ee);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
-:root:not([data-eagle-theme="light"]) .card,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;box-shadow:none}
-:root:not([data-eagle-theme="light"]) .add-card{background:var(--ee-panel,#0f2035)!important}
-:root:not([data-eagle-theme="light"]) button:not(.theme-toggle){border:1px solid var(--ee-border,#2a4664);border-radius:var(--ee-radius-sm,9px);background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff)}
-:root:not([data-eagle-theme="light"]) button.primary-action{background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
-:root:not([data-eagle-theme="light"]) .progress,:root:not([data-eagle-theme="light"]) .rank,:root:not([data-eagle-theme="light"]) .player-card{border-color:var(--ee-border-soft,#1d344d)}
-:root:not([data-eagle-theme="light"]) .progress span,:root:not([data-eagle-theme="light"]) .rank-score,:root:not([data-eagle-theme="light"]) .back:hover{color:var(--ee-cyan,#22d3ee)}
-:root:not([data-eagle-theme="light"]) .topbar p a{color:var(--ee-cyan,#22d3ee)!important}
-</style></head><body>
-<div class="topbar">
-  <div><a class="back" href="/">← EagleEye</a><h1>王国ウォッチリスト</h1><p><a href="/kingdom-watchlist/analytics" style="color:#f59e0b;text-decoration:none">Analytics →</a></p></div>
-  <button id="themeToggle" class="theme-toggle" type="button" aria-label="テーマ切り替え" title="テーマ切り替え">🌙</button>
-</div>
-<div id="msg" class="status-line"><span class="status-dot"></span><span>読み込み中…</span></div>
-<section class="card add-card"><h2>王国を監視対象に追加</h2><div class="row">
-<label class="form-field">王国番号<input id="kid" type="number" min="1" placeholder="例: 1524"></label>
-<label class="form-field">ランキング上位<select id="top"><option value="5">TOP 5</option><option value="10">TOP 10</option></select></label>
-<label class="form-field">更新間隔<select id="interval"><option value="1">1時間</option><option value="3">3時間</option><option value="6">6時間</option><option value="12">12時間</option></select></label>
-<button id="create" class="primary-action">監視を登録</button></div></section>
-<div id="list"></div><div id="detail"></div>
-<script>
-(function(){
-  function el(id){return document.getElementById(id);}
-  function esc(v){return String(v == null ? "" : v).replace(/[&<>"]/g,function(m){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m];});}
-  var RANKING_BOARD_LABELS = {
-    alliance_power:"同盟総力", alliance_kills:"同盟撃破", personal_power:"個人総力", kills:"個人撃破",
-    town_center:"役場Lv.", rebel_conquest:"反乱軍討伐ステージ", single_hero:"英雄総力", hero_total:"英雄全体総力",
-    troop_power:"部隊総力", building_power:"建物総力", research_power:"研究総力", hero_no_equip:"英雄総力（装備除外）",
-    hero_equip:"英雄総力（装備込み）", gov_gear:"領主装備", gov_charm:"領主宝石", pet_power:"ペット総合実力",
-    island_prosperity:"島の繁栄度", migrant_score:"移民スコア", mystic_trial:"秘境の試練", coliseum:"闘技場",
-    forest_of_life:"生命の森", crystal_cave:"水晶鉱山", knowledge_nexus:"知識の枢軸", molten_fort:"溶岩要塞",
-    radiant_spire:"輝光の塔", master_power:"マスター全体総力"
-  };
-  function formatCompactNumber(value){
-    if(value===null||value===undefined||value==="")return "-";
-    var n=Number(value);
-    if(!Number.isFinite(n))return String(value);
-    var abs=Math.abs(n);
-    if(abs>=1e9)return formatCompactUnit(n,1e9,"B");
-    if(abs>=1e6)return formatCompactUnit(n,1e6,"M");
-    if(abs>=1e3)return formatCompactUnit(n,1e3,"K");
-    return n.toLocaleString("ja-JP");
-  }
-  function formatCompactUnit(value,divisor,suffix){
-    var scaled=value/divisor;
-    var decimals=Math.abs(scaled)>=100?0:Math.abs(scaled)>=10?1:2;
-    return scaled.toFixed(decimals).replace(/\\.?0+$|\\.$/,"")+suffix;
-  }
-  function api(url,options){return fetch(url,options).then(function(r){return r.text().then(function(t){var d;try{d=JSON.parse(t);}catch(e){throw new Error("API応答エラー（HTTP "+r.status+"）");}if(!r.ok||d.ok===false)throw new Error(d.message||d.error||("HTTP "+r.status));return d;});});}
-  var running={};
-  function isActiveJob(w){
-    return w.job && (w.job.status==="RANKINGS" || w.job.status==="PLAYERS");
-  }
-  var watchlistIdForProgress="";
-  function jobProgressHtml(w){
-    watchlistIdForProgress=w.watchlist_id;
-    var j=w.job;
-    if(!j)return "";
-    if(j.status==="COMPLETED"){
-      var sourceText="";
-      if(j.source_first_at&&j.source_last_at){
-        var first=new Date(j.source_first_at*1000).toLocaleString("ja-JP");
-        var last=new Date(j.source_last_at*1000).toLocaleString("ja-JP");
-        sourceText=first===last?first:(first+" ～ "+last);
-      }
-      var elapsedText="";
-      var elapsedKey="eagleeye_watchlist_elapsed_ms_"+String(watchlistIdForProgress||"");
-      try{
-        var savedElapsed=sessionStorage.getItem(elapsedKey);
-        if(savedElapsed&&Number.isFinite(Number(savedElapsed))) elapsedText="<small>今回の更新: "+(Number(savedElapsed)/1000).toFixed(1)+"秒</small>";
-      }catch(e){}
-      return "<div class='progress ok'><b>✓ 更新完了</b><span>"+(j.completed_at?new Date(j.completed_at*1000).toLocaleString("ja-JP"):"")+"</span>"+(sourceText?"<small>MightPulseデータ基準時刻: "+esc(sourceText)+"</small>":"<small>MightPulseデータ基準時刻: 未取得</small>")+elapsedText+"</div>";
-    }
-    if(j.status==="RANKINGS"){
-      var pct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress'><b>更新中：ランキング</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+pct+"%'></div></div><small>ランキング取得 "+esc(j.ranking_rows)+"件</small></div>";
-    }
-    if(j.status==="PLAYERS"){
-      var count=j.player_count==null?"?":j.player_count;
-      var playerPct=count && count!=="?" ? Math.min(100,Math.round((Number(j.player_cursor)||0)/Number(count)*100)) : 0;
-      return "<div class='progress'><b>更新中：プレイヤー</b><span>"+esc(j.player_cursor)+" / "+esc(count)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+playerPct+"%'></div></div><small>プレイヤーデータ取得 "+esc(j.player_rows)+"件</small></div>";
-    }
-    if(j.status==="FAILED"){
-      var failedPhase=(Number(j.board_index||0)<Number(j.total_boards||0))?"ランキング":"プレイヤー";
-      var failedPct=j.total_boards ? Math.min(100,Math.round((Number(j.board_index)||0)/Number(j.total_boards)*100)) : 0;
-      return "<div class='progress'><b>更新停止："+failedPhase+"</b><span>"+esc(j.board_index)+" / "+esc(j.total_boards)+"</span><div class='progress-track'><div class='progress-fill' style='width:"+failedPct+"%'></div></div><small>取得済みランキング "+esc(j.ranking_rows)+"件 / ジョブ停止</small></div>";
-    }
-    return "";
-  }
-  function load(){
-    return api("/api/kingdom-watchlist").then(function(d){
-      el("list").innerHTML="";
-      var ws=d.watchlists||[];
-      ws.forEach(function(w){
-        var active=isActiveJob(w);
-        if(!active){
-          sessionStorage.removeItem("eagleeye_watchlist_running_"+w.watchlist_id);
-          running[w.watchlist_id]=false;
-        }
-        var card=document.createElement("div"); card.className="card"; card.dataset.watchlistId=w.watchlist_id;
-        var errorHtml=(!active&&w.last_error)?"<p class='error'>エラー: "+esc(w.last_error)+"</p>":"";
-        var lastSuccessText=w.last_success_at?new Date(w.last_success_at*1000).toLocaleString("ja-JP"):"未実行";
-        var completionText=active?(w.last_success_at?lastSuccessText+"（現在更新中）":"更新中…"):lastSuccessText;
-        card.innerHTML="<h2>王国 "+esc(w.kid)+"</h2><p>上位"+esc(w.top_n)+"人 <span class='muted'>/</span> "+esc(w.interval_hours)+"時間ごと <span class='muted'>/</span> "+(w.enabled?"<span class='ok'>稼働中</span>":"停止中")+"</p><p class='muted'>🕐 最終チェック: "+esc(completionText)+"</p><p class='ok'>✓ 最新チェック済み</p>"+jobProgressHtml(w)+errorHtml;
-        var row=document.createElement("div"); row.className="row";
-        var refresh=document.createElement("button"); refresh.textContent=active?"更新を中断":"今すぐ更新"; refresh.disabled=false; refresh.onclick=function(){active?cancelWatch(w.watchlist_id):refreshWatch(w.watchlist_id);}; if(active)refresh.className="danger";
-        var view=document.createElement("button"); view.textContent="ランキングを見る"; view.disabled=active; view.onclick=function(){showData(w.watchlist_id);};
-        var toggle=document.createElement("button"); toggle.textContent=w.enabled?"停止":"再開"; toggle.disabled=active; toggle.onclick=function(){toggleWatch(w.watchlist_id,!w.enabled);};
-        var del=document.createElement("button"); del.textContent="削除"; del.className="danger"; del.disabled=active; del.onclick=function(){deleteWatch(w.watchlist_id);};
-        row.appendChild(refresh);row.appendChild(view);row.appendChild(toggle);row.appendChild(del);card.appendChild(row);el("list").appendChild(card);
-
-        if(active && sessionStorage.getItem("eagleeye_watchlist_running_"+w.watchlist_id)==="1" && !running[w.watchlist_id]){
-          continueWatch(w.watchlist_id);
-        }
-      });
-      el("msg").innerHTML="<span class='ok'>監視対象 "+ws.length+"件</span>";
-    }).catch(function(e){el("msg").innerHTML="<span class='error'>読み込み失敗: "+esc(e.message)+"</span>";});
-  }
-  function continueWatch(id){
-    if(running[id])return;
-    running[id]=true;
-    function step(){
-      var finished=false;
-      var pollTimer=null;
-      function poll(){
-        return load().then(function(){
-          if(!finished) pollTimer=setTimeout(poll,4000);
-        }).catch(function(){
-          if(!finished) pollTimer=setTimeout(poll,2000);
-        });
-      }
-      poll();
-      return api("/api/kingdom-watchlist?action=refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
-        .then(function(d){
-          finished=true;
-          if(pollTimer)clearTimeout(pollTimer);
-          if(d.result && d.result.completed){
-            var elapsedMs=null;
-            try{
-              var startedAt=Number(sessionStorage.getItem("eagleeye_watchlist_started_at_"+id));
-              if(Number.isFinite(startedAt)&&startedAt>0){
-                elapsedMs=Math.max(0,Date.now()-startedAt);
-                sessionStorage.setItem("eagleeye_watchlist_elapsed_ms_"+id,String(elapsedMs));
-                sessionStorage.removeItem("eagleeye_watchlist_started_at_"+id);
-              }
-            }catch(e){}
-            sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
-            el("msg").innerHTML="<span class='ok'>更新が完了しました。"+(elapsedMs!==null?" 所要時間: "+(elapsedMs/1000).toFixed(1)+"秒":"")+"</span>";
-            return load();
-          }
-          return load().then(function(){ return new Promise(function(resolve){setTimeout(resolve,500);}); }).then(step);
-        })
-        .catch(function(e){
-          finished=true;
-          if(pollTimer)clearTimeout(pollTimer);
-          running[id]=false;
-          setWatchCardBusy(id,false);
-          if(e.message==="WATCHLIST_REFRESH_IN_PROGRESS" || e.message.indexOf("現在更新中です")>=0){
-            return load();
-          }
-          sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
-          el("msg").innerHTML="<span class='error'>更新失敗: "+esc(e.message)+"</span>";
-          return load();
-        });
-    }
-    return step().finally(function(){if(!sessionStorage.getItem("eagleeye_watchlist_running_"+id))running[id]=false;});
-  }
-  function setWatchCardBusy(id,busy){
-    var card=document.querySelector("[data-watchlist-id='"+CSS.escape(String(id))+"']");
-    if(!card)return;
-    Array.prototype.forEach.call(card.querySelectorAll("button"),function(btn){btn.disabled=busy;});
-    var refresh=card.querySelector("button");
-    if(refresh)refresh.textContent=busy?"更新中…":"今すぐ更新";
-  }
-  function refreshWatch(id){
-    if(running[id])return;
-    try{
-      sessionStorage.setItem("eagleeye_watchlist_started_at_"+id,String(Date.now()));
-      sessionStorage.removeItem("eagleeye_watchlist_elapsed_ms_"+id);
-    }catch(e){}
-    sessionStorage.setItem("eagleeye_watchlist_running_"+id,"1");
-    setWatchCardBusy(id,true);
-    el("msg").innerHTML="<span class='ok'>更新を開始しました。</span>";
-    return continueWatch(id);
-  }
-  function cancelWatch(id){
-    if(!confirm("現在実行中の更新を中断しますか？"))return;
-    return api("/api/kingdom-watchlist?action=cancel",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id})})
-      .then(function(d){
-        try{
-          sessionStorage.removeItem("eagleeye_watchlist_running_"+id);
-          sessionStorage.removeItem("eagleeye_watchlist_started_at_"+id);
-        }catch(e){}
-        running[id]=false;
-        el("msg").innerHTML="<span class='ok'>更新を中断しました。現在処理中の1回分が完了後、次の更新には進みません。</span>";
-        return load();
-      })
-      .catch(function(e){
-        el("msg").innerHTML="<span class='error'>更新の中断に失敗: "+esc(e.message)+"</span>";
-        return load();
-      });
-  }
-  function toggleWatch(id,enabled){
-    return api("/api/kingdom-watchlist?action=toggle",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({watchlist_id:id,enabled:enabled})}).then(load).catch(function(e){alert(e.message);});
-  }
-  function deleteWatch(id){
-    if(!confirm("この監視対象を削除しますか？"))return;
-    return api("/api/kingdom-watchlist?watchlist_id="+encodeURIComponent(id),{method:"DELETE"}).then(function(){el("detail").innerHTML="";return load();}).catch(function(e){alert(e.message);});
-  }
-  function togglePlayerWatch(button){
-    var governorId=button.getAttribute('data-governor-id');
-    var watched=button.getAttribute('data-watched')==='1';
-    if(!governorId)return;
-    button.disabled=true;
-    var request=watched
-      ? api("/api/player-watchlist?governor_id="+encodeURIComponent(governorId),{method:"DELETE"})
-      : api("/api/player-watchlist",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({governor_id:governorId})});
-    request.then(function(){
-      var next=!watched;
-      button.setAttribute('data-watched',next?'1':'0');
-      button.textContent=next?'★':'☆';
-      button.title=next?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録';
-      button.setAttribute('aria-label',button.title);
-    }).catch(function(e){alert(e.message||'ウォッチリスト更新に失敗しました。');})
-      .finally(function(){button.disabled=false;});
-  }
-  window.togglePlayerWatch = togglePlayerWatch;
-  if(!document.getElementById("eagleeye-watchlist-player-link-style")){var st=document.createElement("style");st.id="eagleeye-watchlist-player-link-style";st.textContent=".rank-player-link{color:inherit;text-decoration:none;cursor:pointer}.rank-player-link:hover,.rank-player-link:active{text-decoration:underline}.rank-watch-star{margin-left:6px;padding:0 3px;border:0;background:transparent;color:#fbbf24;font-size:16px;line-height:1;cursor:pointer}.rank-watch-star:disabled{opacity:.5}";document.head.appendChild(st);}
-  function showData(id){
-    el("detail").innerHTML='<div class="card">ランキングデータを読み込み中…</div>';
-    api("/api/kingdom-watchlist/data?watchlist_id="+encodeURIComponent(id)).then(function(d){
-      var boards={}; (d.rankings||[]).forEach(function(r){if(!boards[r.board])boards[r.board]=[];boards[r.board].push(r);});
-      var playerAllianceById={}; (d.players||[]).forEach(function(p){if(p.governor_id)playerAllianceById[String(p.governor_id)]=p.alliance_abbr||null;if(p.uid)playerAllianceById[String(p.uid)]=p.alliance_abbr||null;});
-      var h='<div class="card"><div class="section-title"><h2>王国 '+esc(d.watchlist.kid)+' ランキング</h2><span>TOP '+esc(d.watchlist.top_n)+'</span></div><div class="rank-grid">';
-      Object.keys(boards).forEach(function(b){
-        var label=RANKING_BOARD_LABELS[b]||b;
-        h+='<div class="rank"><div class="rank-title"><b>'+esc(label)+'</b><span class="rank-key">'+esc(b)+'</span></div>';
-        boards[b].slice(0,d.watchlist.top_n).forEach(function(r){
-          var allianceAbbr=(r.abbr||playerAllianceById[String(r.governor_id)]||playerAllianceById[String(r.uid)]||playerAllianceById[String(r.target_id)]||"");
-          var displayName=(b==="alliance_power"||b==="alliance_kills")?(allianceAbbr?(("【"+allianceAbbr+"】")+(r.name||"")):(r.name||r.nick_name||r.governor_id||"-")):(allianceAbbr?("【"+allianceAbbr+"】"):"")+(r.nick_name||r.governor_id||r.name||"-");
-          var playerLink=(r.target_type==="PLAYER"&&r.governor_id)?('/player?governor_id='+encodeURIComponent(String(r.governor_id))):null;
-          var nameHtml=playerLink?'<a class="rank-name rank-player-link" href="'+playerLink+'">'+esc(displayName)+'</a>':'<span class="rank-name">'+esc(displayName)+'</span>';
-          var starHtml=(r.target_type==="PLAYER"&&r.governor_id)?'<button type="button" class="rank-watch-star" data-governor-id="'+esc(String(r.governor_id))+'" data-watched="'+(r.watched?'1':'0')+'" title="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" aria-label="'+(r.watched?'プレイヤーウォッチリスト登録済み':'プレイヤーウォッチリストに登録')+'" onclick="togglePlayerWatch(this)">'+(r.watched?'★':'☆')+'</button>':'';
-          h+='<div class="rank-row"><span class="rank-no">'+esc(r.rank)+'</span>'+nameHtml+starHtml+'<span class="rank-score">'+esc(formatCompactNumber(r.score))+'</span></div>';
-        });
-        h+='</div>';
-      });
-      h+='</div><div class="section-title"><h2>観測プレイヤー</h2><span>'+(d.players||[]).length+'人</span></div><div class="rank-grid">';
-      (d.players||[]).forEach(function(p){h+='<div class="player-card"><b>'+esc(p.nick_name||p.governor_id)+'</b><div class="player-meta">戦力 '+esc(formatCompactNumber(p.power))+' / 役場 '+esc(p.town_center_level)+'<br>'+esc(p.alliance_abbr||p.alliance_name||"-")+'</div></div>';});
-      h+='</div></div>';el("detail").innerHTML=h;
-    }).catch(function(e){el("detail").innerHTML='<div class="card error">読み込み失敗: '+esc(e.message)+'</div>';});
-  }
-  var creatingWatchlist=false;
-  el("create").addEventListener("click",function(){
-    if(creatingWatchlist)return;
-    var kidValue=String(el("kid").value||"").trim();
-    var topValue=String(el("top").value||"").trim();
-    var intervalValue=String(el("interval").value||"").trim();
-    if(!kidValue){
-      el("msg").innerHTML="<span class='error'>登録失敗: 王国番号を入力してください。</span>";
-      el("kid").focus();
-      return;
-    }
-    creatingWatchlist=true;
-    el("create").disabled=true;
-    var originalCreateText=el("create").textContent;
-    el("create").textContent="登録中…";
-    el("msg").innerHTML="<span class='muted'>監視対象を登録しています…</span>";
-    var payload={kid:Number(kidValue),top_n:Number(topValue),interval_hours:Number(intervalValue)};
-    api("/api/kingdom-watchlist?action=create",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)})
-    .then(function(d){
-      el("kid").value="";
-      if(d.initial_refresh_status==="FAILED"){
-        el("msg").innerHTML="<span class='error'>監視対象を登録しましたが、初回取得に失敗しました。</span>";
-        return load();
-      }
-      if(d.watchlist_id && d.initial_refresh_status && d.initial_refresh_status!=="COMPLETED"){
-        try{
-          sessionStorage.setItem("eagleeye_watchlist_running_"+d.watchlist_id,"1");
-          sessionStorage.setItem("eagleeye_watchlist_started_at_"+d.watchlist_id,String(Date.now()));
-        }catch(e){}
-        el("msg").innerHTML="<span class='ok'>監視を登録しました。初回データを取得中です。</span>";
-        return load().then(function(){return continueWatch(d.watchlist_id);});
-      }
-      el("msg").innerHTML="<span class='ok'>監視を登録しました。初回データの取得が完了しました。</span>";
-      return load();
-    })
-    .catch(function(e){
-      el("msg").innerHTML="<span class='error'>登録失敗: "+esc(e.message)+"</span>";
-    })
-    .finally(function(){
-      creatingWatchlist=false;
-      el("create").disabled=false;
-      el("create").textContent=originalCreateText;
-    });
-  });
-  load();
-}());
-</script></body></html>`;
-}
 async function handleKingdomRankingHistoryApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const board = url.searchParams.get("board");
@@ -1638,7 +1552,7 @@ async function handleKingdomRankingHistoryApi(request, env) {
 
 async function handleKingdomWatchlistDataApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const watchlistId = url.searchParams.get("watchlist_id");
   if (!watchlistId) return json({ ok: false, error: "WATCHLIST_ID_REQUIRED" }, 400);
@@ -1649,8 +1563,8 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (!watch) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
   const freshnessJob = await env.DB.prepare(
-    "SELECT status, source_first_at, source_last_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
-  ).bind(watchlistId).first();
+    "SELECT status, source_first_at, source_last_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? OR (kid = ? AND top_n >= ? AND status = 'COMPLETED') ORDER BY created_at DESC LIMIT 1"
+  ).bind(watchlistId, Number(watch.kid), Number(watch.top_n)).first();
 
   const board = url.searchParams.get("board");
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || watch.top_n), 1), 100);
@@ -1715,9 +1629,12 @@ async function handleKingdomWatchlistDataApi(request, env) {
   const topPlayerRows = await env.DB.prepare(
     "SELECT governor_id FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND governor_id IS NOT NULL AND rank <= ? ORDER BY rank ASC, governor_id ASC"
   ).bind(watch.kid, watch.top_n).all();
-  const topGovernorIds = [...new Set((topPlayerRows.results || [])
-    .map(row => String(row.governor_id || "").trim())
-    .filter(Boolean))];
+  const topGovernorIds = [...new Set([
+    ...(topPlayerRows.results || []).map(row => String(row.governor_id || "").trim()),
+    ...(rankings.results || []).filter(row => row.target_type === "PLAYER").flatMap(row =>
+      [row.governor_id, row.target_id, row.uid].map(value => String(value || "").trim())
+    )
+  ].filter(Boolean))];
   const playerGovernorCandidates = [...new Set(
     topGovernorIds.flatMap(id => /^\d+$/.test(id) ? [id, id + ".0"] : [id])
   )];
@@ -1726,7 +1643,7 @@ async function handleKingdomWatchlistDataApi(request, env) {
   if (playerGovernorCandidates.length) {
     const placeholders = playerGovernorCandidates.map(() => "?").join(",");
     players = await env.DB.prepare(
-      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, online, last_active_at, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
+      "SELECT governor_id, uid, nick_name, kid, power, town_center_level, vip, kills, x, y, alliance_abbr, alliance_name, avatar_url, observed_at FROM players WHERE governor_id IN (" + placeholders + ") ORDER BY power DESC, governor_id ASC"
     ).bind(...playerGovernorCandidates).all();
   }
 
@@ -1837,12 +1754,14 @@ async function handleMyAdvancedApi(request, env) {
   try {
     if (request.method === "GET") {
       const eligibility = await getAdvancedEligibility(env.DB, auth.user_id);
+      // プレビューの疑似ログインで「表示する権限」を選んだときは、その権限で返す（メニューの「オーナー管理」なども消える）。
+      if (isPreviewEnv(env) && eligibility && auth.role) eligibility.role = auth.role;
       return json({ ok: true, ...eligibility });
     }
 
     if (request.method === "POST") {
       const body = await request.json().catch(() => null);
-      const apiKey = String(body?.api_key || "").trim();
+      const apiKey = normalizeMightPulseApiKey(body?.api_key);
       if (!apiKey) return json({ ok: false, error: "MIGHTPULSE_API_KEY_REQUIRED", message: "MightPulse APIキーを入力してください。" }, 400);
 
       await registerUserMightPulseApiKey(env.DB, {
@@ -1896,8 +1815,12 @@ async function handleMyAdvancedApi(request, env) {
       "MIGHTPULSE_PLAYER_MISMATCH",
       "PLAYER_LINK_REQUIRED_FOR_KEY_VALIDATION",
       "MIGHTPULSE_API_KEY_ALREADY_REGISTERED",
-      "MIGHTPULSE_API_KEY_LIMIT_REACHED"
-    ].includes(code) ? 400 : 500;
+      "MIGHTPULSE_API_KEY_LIMIT_REACHED",
+      "MIGHTPULSE_API_KEY_VALIDATION_FAILED"
+    ].includes(code) ? 400
+      : code === "MIGHTPULSE_API_KEY_RATE_LIMITED" ? 429
+      : code === "MIGHTPULSE_API_TEMPORARY_ERROR" ? 503
+      : 500;
     return json({ ok: false, error: code, message: userMessage }, status);
   }
 }
@@ -1921,10 +1844,11 @@ async function handleMyMightyCheckApi(request, env) {
       let lease = null;
       try {
         lease = await leaseApiKeyForHealthCheck(env.DB, { keyId: row.key_id, purpose:"USER_MIGHTY_CHECK", targetType:"USER", targetId:auth.user_id });
-        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1 });
+        const result = await mightPulseFetch(env, "/kvk/matchups", { apiKey: lease.api_key, timeoutMs:15000, maxRetries:1, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
         checked++;
         confirmed++;
-        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status, remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-day-remaining") });
+        await recordApiPoolSuccess(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1), remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"), remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day") });
         await setApiPoolMightyMetadata(env.DB, { keyId:row.key_id, mightyCapable:true, status:"CONFIRMED", errorCode:null });
         // Do not stop after the first confirmed key. Every user-contributed
         // key must be checked so the API pool can rotate across all confirmed
@@ -1939,7 +1863,7 @@ async function handleMyMightyCheckApi(request, env) {
             await releaseApiLease(env.DB, lease.lease_id);
           } else {
             transient = true;
-            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401 });
+            await recordApiPoolFailure(env.DB, { keyId:lease.key_id, leaseId:lease.lease_id, poolType:lease.pool_type, endpoint:"/kvk/matchups", targetType:"USER", targetId:auth.user_id, purpose:"USER_MIGHTY_CHECK", httpStatus:status, errorCode:error?.code || "MIGHTY_CHECK_FAILED", errorMessage:error?.message || null, cooldownSeconds:status===429?60:(status>=500 || error?.retryable ? 15 : 0), disable:status===401, requestCount: Math.max(1, Number(error?.attempts) || 1) });
           }
         }
         if (status === 403) continue;
@@ -2037,11 +1961,15 @@ async function handleMyPlayerApi(request, env) {
         const key = String(row.kingdom_id);
         byKingdom[key] = (byKingdom[key] || 0) + 1;
       }
+      const maxAccounts = maxAccountsForRole(auth.role);
       return json({
         ok: true,
         links,
         link: links.find(row => row.account_type === "MAIN" && row.status === "ACTIVE") || active[0] || null,
+        // 今使っている領主（切り替え・active-governor.js）
+        active_governor_id: active.length ? await getActiveGovernorId(env.DB, auth.user_id).catch(() => null) : null,
         limits: {
+          maxAccounts,
           freeKingdoms: 2,
           freeAccountsPerKingdom: 2,
           freeSubAccountsPerKingdom: 1,
@@ -2076,7 +2004,8 @@ async function handleMyPlayerApi(request, env) {
         }
 
         link = await saveUserPlayerLink(env.DB, auth.user_id, governorId, accountType, {
-          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true"
+          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true",
+          maxAccounts: maxAccountsForRole(auth.role)
         });
       } catch (error) {
         if (error?.code === "GOVERNOR_ID_ALREADY_LINKED") {
@@ -2157,249 +2086,30 @@ async function handleMyPlayerApi(request, env) {
   }
 }
 
+// One login screen for every page that needs a signed-in user. It keeps the
+// shared look, a phone viewport and returns to the same page after login.
+function renderLoginRequiredPage(request, title, message) {
+  let returnTo = "/";
+  try { const u = new URL(request.url); returnTo = u.pathname + u.search; } catch {}
+  const loginHref = loginUrlFor(returnTo);
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="ee-page" content="login-required"><title>${escapeHtml(title)} | EagleEye</title><style>
+body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.ee-login-wall{max-width:520px;margin:0 auto;padding:48px 20px calc(48px + env(safe-area-inset-bottom));text-align:center}
+.ee-login-wall .eyebrow{color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}
+.ee-login-wall h1{margin:8px 0 10px;font-size:24px}
+.ee-login-wall p{color:var(--ee-subtext,#91a7bf);font-size:14px;line-height:1.7;margin:0 0 22px}
+.ee-login-wall .login{display:inline-block;padding:13px 22px;border-radius:var(--ee-radius-md,13px);background:#5865f2;color:#fff;font-weight:800;text-decoration:none}
+.ee-login-wall .home{display:block;margin-top:18px;color:var(--ee-subtext,#91a7bf);font-size:13px;text-decoration:none}
+</style></head><body><main class="ee-login-wall"><div class="eyebrow">EAGLEEYE</div><h1>ログインが必要です</h1><p>${escapeHtml(message)}<br>ログイン後、このページに戻ります。</p><a class="login" href="${escapeHtml(loginHref)}">Discordでログイン</a><a class="home" href="/">← ホーム</a></main></body></html>`;
+}
+
 async function renderMyPlayerPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title></head><body style="background:#0f172a;color:#f8fafc;font-family:system-ui;padding:28px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`;
+    return renderLoginRequiredPage(request, "マイKingShot", "マイKingShotを使うにはログインしてください。");
   }
 
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
-:root{color-scheme:dark;--ee-bg:#050b14;--ee-panel:#0a1728;--ee-panel2:#0d2035;--ee-line:#23415f;--ee-text:#eff8ff;--ee-sub:#8098b0;--ee-cyan:#20d7f2;--ee-blue:#4ea9ff;--ee-gold:#f6c84b;--ee-green:#49e69a}
-*{box-sizing:border-box}
-html{min-height:100%;background:var(--ee-bg)}
-body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,rgba(32,215,242,.11),transparent 65%),linear-gradient(180deg,#071321 0%,var(--ee-bg) 420px);color:var(--ee-text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{width:min(100%,760px);margin:0 auto;padding:18px 16px calc(44px + env(safe-area-inset-bottom))}
-.back{display:inline-flex;align-items:center;gap:7px;color:#8fa9c1;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.04em;padding:8px 0}
-.back:hover{color:var(--ee-cyan)}
-.eyebrow{margin-top:23px;color:var(--ee-cyan);font-size:10px;font-weight:950;letter-spacing:.22em}
-.title{font-size:clamp(28px,6vw,36px);line-height:1.12;letter-spacing:-.04em;margin:7px 0 10px;font-weight:900}
-.sub{color:#9cb1c7;line-height:1.75;font-size:13px;margin:0;max-width:620px}
-#app{margin-top:22px}
-.card{margin-top:15px;padding:18px;border:1px solid rgba(54,91,123,.7);border-radius:19px;background:linear-gradient(145deg,rgba(13,32,53,.98),rgba(7,19,33,.98));box-shadow:0 12px 30px rgba(0,0,0,.16);overflow:hidden}
-.card h2{font-size:17px;line-height:1.35;font-weight:900;letter-spacing:-.02em;color:#f0f8ff}
-.label{display:block;margin:16px 0 8px;color:#c6d8e8;font-size:12px;font-weight:850}
-.input,.select{width:100%;min-height:48px;padding:13px 14px;border-radius:12px;border:1px solid #2d4a66;background:#06111e;color:#f3f9ff;font-size:16px;box-sizing:border-box;outline:none}
-.input:focus,.select:focus{border-color:var(--ee-cyan);box-shadow:0 0 0 3px rgba(32,215,242,.12)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;width:100%;min-height:47px;padding:12px 14px;border:1px solid rgba(32,215,242,.4);border-radius:12px;background:linear-gradient(135deg,#16b9d4,#168dbd);color:#03121c;font-weight:900;font-size:14px;cursor:pointer;transition:filter .15s,transform .15s}
-.btn:hover{filter:brightness(1.08)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.55;cursor:wait}
-.btn.danger,.danger{background:#351b28;border:1px solid #71364b;color:#ffd8e2}
-.muted{color:#8fa8bf;font-size:12px;line-height:1.75}
-.ok{color:#6ff0ad}.warn{color:var(--ee-gold)}.error{margin-top:12px;color:#ff9cae;line-height:1.6}
-.row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:11px 0;border-bottom:1px solid rgba(54,82,109,.5);font-size:13px;color:#a9bfd3}
-.row:last-child{border-bottom:0}.value{font-weight:850;text-align:right;overflow-wrap:anywhere;color:#eaf5ff}
-.account{margin-top:13px;padding:14px;border:1px solid #24425e;border-radius:15px;background:rgba(4,15,27,.72)}
-.account-head{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#eff8ff}
-.badge{padding:5px 9px;border-radius:999px;background:#1b344b;color:#c5d9e9;font-size:10px;font-weight:900;white-space:nowrap}
-.badge.main{background:rgba(246,200,75,.15);color:#f9d66d;border:1px solid rgba(246,200,75,.3)}
-.badge.sub{background:rgba(78,169,255,.14);color:#8cc7ff;border:1px solid rgba(78,169,255,.28)}
-.check{display:flex;align-items:center;gap:10px;margin:11px 0;color:#d7e7f5;font-size:13px}
-.check-icon{flex:0 0 23px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#1a3045;color:#7893aa;font-size:12px;font-weight:900;border:1px solid #2d4b65}
-.check-icon.ok{background:rgba(73,230,154,.13);border-color:rgba(73,230,154,.35);color:var(--ee-green)}
-.vip-card{border-color:rgba(246,200,75,.35);background:linear-gradient(145deg,rgba(37,34,27,.65),rgba(9,20,32,.98))}
-.vip-card h2{color:var(--ee-gold)!important}
-#msg,#key-msg,#mighty-msg{font-size:12px;line-height:1.7}
-button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px}
-/* Compact mobile-first sizing aligned with the home dashboard */
-.wrap{width:min(100%,720px);padding:14px 12px calc(34px + env(safe-area-inset-bottom))}
-.back{font-size:11px;padding:5px 0}
-.eyebrow{margin-top:18px;font-size:9px;letter-spacing:.18em}
-.title{font-size:clamp(24px,7vw,30px);margin:5px 0 7px}
-.sub{font-size:12px;line-height:1.65}
-#app{margin-top:16px}
-.card{margin-top:12px;padding:14px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.13)}
-.card h2{font-size:15px}
-.account{margin-top:10px;padding:11px;border-radius:13px}
-.account-head{font-size:13px}
-.row{gap:10px;padding:9px 0;font-size:12px}
-.value{max-width:65%;font-size:12px}
-.input,.select{min-height:44px;padding:11px 12px;font-size:15px}
-.btn{min-height:43px;padding:10px 12px;font-size:13px}
-.muted{font-size:11px;line-height:1.65}
-.check{font-size:12px;margin:9px 0}
-@media(min-width:600px){.wrap{padding:22px 18px 44px}.card{padding:18px}.account{padding:14px}.title{font-size:32px}.sub{font-size:13px}.row{font-size:13px}.value{font-size:13px}}
-
-/* Compact expandable API key list */
-.key-list-details{margin-top:10px;border:1px solid rgba(43,77,107,.55);border-radius:12px;background:rgba(4,15,27,.42);overflow:hidden}.key-list-details summary{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;list-style:none;color:#d6e7f5;font-size:11px;font-weight:850}.key-list-details summary::-webkit-details-marker{display:none}.key-list-details summary .muted{font-size:10px}.key-list-rows{padding:0 12px 4px}.key-list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(54,82,109,.35);font-size:11px;color:#a9bfd3}.key-list-row small{display:block;margin-top:3px;color:#728da5;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}.key-list-row strong{font-size:11px;white-space:nowrap}
-/* My Kingshot information hierarchy */
-.section-block{margin-top:22px}
-.section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}
-.section-heading h2{margin:3px 0 0;font-size:17px;font-weight:900;letter-spacing:-.025em}
-.section-kicker{display:block;color:var(--ee-cyan);font-size:8px;font-weight:950;letter-spacing:.17em}
-.section-count,.role-pill{flex:0 0 auto;padding:5px 9px;border:1px solid rgba(32,215,242,.24);border-radius:999px;background:rgba(32,215,242,.07);color:#8ceaf6;font-size:10px;font-weight:900}
-.role-pill{border-color:rgba(143,168,191,.22);background:rgba(143,168,191,.07);color:#a9bfd3}
-.role-pill.role-active{border-color:rgba(73,230,154,.25);background:rgba(73,230,154,.08);color:#6ff0ad}
-.section-note{margin:0 2px 10px}
-.account-list{margin-top:0;padding:10px 12px}
-.account{margin-top:8px;padding:12px}
-.account .btn{margin-top:10px}
-.usage-line{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding:10px 2px 0;border-top:1px solid rgba(54,82,109,.45);color:#829bb2;font-size:10px}
-.usage-line strong{color:#c9dbea;font-size:10px;text-align:right}
-.usage-line i{font-style:normal;color:#57718a}
-.action-details{margin-top:10px;border:1px solid rgba(43,77,107,.7);border-radius:15px;background:rgba(8,22,37,.7);overflow:hidden}
-.action-details summary{display:flex;align-items:center;gap:11px;list-style:none;cursor:pointer;padding:12px}
-.action-details summary::-webkit-details-marker{display:none}
-.summary-icon{display:grid;place-items:center;flex:0 0 31px;width:31px;height:31px;border:1px solid rgba(32,215,242,.3);border-radius:10px;background:rgba(32,215,242,.08);color:var(--ee-cyan);font-size:20px}
-.action-details summary strong,.action-details summary small{display:block}
-.action-details summary strong{font-size:12px;color:#eaf5ff}
-.action-details summary small{margin-top:3px;color:#819ab1;font-size:10px}
-.summary-chevron{margin-left:auto;color:#7f9bb3;font-size:17px;transition:transform .15s}
-.action-details[open] .summary-chevron{transform:rotate(180deg)}
-.action-card{margin:0;border:0;border-top:1px solid rgba(43,77,107,.5);border-radius:0;box-shadow:none;background:rgba(4,15,27,.48)}
-.action-card .label:first-child{margin-top:2px}
-.form-help{margin-top:10px}
-.subsection-title{margin:0 0 5px;font-size:14px;font-weight:900}
-.section-block>.card{margin-top:0}
-.section-block .vip-card{margin-top:0}
-
-
-/* Collapsed account cards: keep the important identity visible, move details/actions behind a tap. */
-.account-details{padding:0;overflow:hidden}
-.account-summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px}
-.account-summary::-webkit-details-marker{display:none}
-.account-summary-main{min-width:0;flex:1}
-.account-summary-main strong,.account-summary-main small{display:block;overflow-wrap:anywhere}
-.account-summary-main strong{font-size:12px;color:#eff8ff}
-.account-summary-main small{margin-top:4px;color:#91a9bf;font-size:10px;line-height:1.5}
-.account-summary .badge{font-size:9px}
-.account-summary .summary-chevron{flex:0 0 auto;margin-left:0}
-.account-details[open] .account-summary{border-bottom:1px solid rgba(54,82,109,.5)}
-.account-detail-body{padding:2px 12px 12px}
-.account-detail-body .row:first-child{margin-top:2px}
-.account-link{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;max-width:70%;color:#8ceaf6;text-decoration:none;font-weight:850;text-align:right;overflow-wrap:anywhere}
-.account-link:hover{color:#d5fbff;text-decoration:underline;text-underline-offset:3px}
-.account-link:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px;border-radius:4px}
-.account-link-icon{display:inline-grid;place-items:center;flex:0 0 19px;width:19px;height:19px;border:1px solid rgba(32,215,242,.25);border-radius:6px;background:rgba(32,215,242,.08);font-size:11px;line-height:1}
-.account-summary-main .account-summary-player{display:inline;color:#8ceaf6;text-decoration:none}
-.account-summary-main .account-summary-player:hover{text-decoration:underline;text-underline-offset:3px}
-.key-register-details{margin-top:14px;border:1px solid rgba(43,77,107,.6);border-radius:13px;background:rgba(4,15,27,.45);overflow:hidden}
-.key-register-details>summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px;color:#d8edf8;font-size:12px;font-weight:850}
-.key-register-details>summary::-webkit-details-marker{display:none}
-.key-register-details>summary:after{content:"＋";margin-left:auto;color:var(--ee-cyan);font-size:17px}
-.key-register-details[open]>summary:after{content:"−"}
-.key-register-body{padding:0 12px 12px;border-top:1px solid rgba(43,77,107,.45)}
-.key-register-body .label:first-child{margin-top:12px}
-
-@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
-</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><div class="eyebrow">PLAYER & ACCOUNT</div><h1 class="title">マイKingshot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
-(function(){
-  const app=document.getElementById("app");
-  function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-  async function getData(){
-    const [playerRes, advancedRes, vipRes]=await Promise.all([
-      fetch("/api/me/player",{credentials:"same-origin",cache:"no-store"}),
-      fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"}),
-      fetch("/api/me/vip",{credentials:"same-origin",cache:"no-store"})
-    ]);
-    const player=await playerRes.json().catch(()=>({})); const advanced=await advancedRes.json().catch(()=>({})); const vip=await vipRes.json().catch(()=>({}));
-    if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
-    if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
-    if(!vipRes.ok||!vip.ok) throw new Error(vip.message||vip.error||("HTTP "+vipRes.status));
-    return {player,advanced,vip};
-  }
-  async function load(){render(await getData());}
-  function render(d){
-    const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
-    const limits=d.player.limits||{};
-    let html='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">PLAYER ACCOUNTS</span><h2>登録済みの領主</h2></div><span class="section-count">'+esc(rows.length)+'件</span></div><p class="muted section-note">無料枠：最大2王国・各王国メイン1＋サブ1</p><div class="card account-list">';
-    if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
-    for(const l of rows){
-      const p=l.player||{};
-      const playerName=String(p.nick_name||"プレイヤー名未取得");
-      const allianceName=String(p.alliance_name||p.alliance_abbr||"");
-      const allianceLabel=String(p.alliance_abbr||p.alliance_name||"同盟未取得");
-      const playerUrl="/player?governor_id="+encodeURIComponent(l.governor_id);
-      const allianceUrl="/alliance?kid="+encodeURIComponent(p.kid??l.kingdom_id??"")+"&tag="+encodeURIComponent(p.alliance_abbr||p.alliance_name||"");
-      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small><a class="account-summary-player" href="'+playerUrl+'">♙ '+esc(playerName)+'</a>　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+(allianceName?'<a class="account-summary-player" href="'+allianceUrl+'">⚑ '+esc(allianceLabel)+'</a>':'⚑ '+esc(allianceLabel))+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
-        '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
-        '<div class="row"><span>プレイヤー名</span><a class="account-link" href="'+playerUrl+'"><span class="account-link-icon" aria-hidden="true">♙</span>'+esc(playerName)+'</a></div>'+
-        '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
-        '<div class="row"><span>同盟名</span>'+(allianceName?'<a class="account-link" href="'+allianceUrl+'"><span class="account-link-icon" aria-hidden="true">⚑</span>'+esc(allianceLabel)+'</a>':'<span class="value">未取得</span>')+'</div>'+
-        '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
-        '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div></details>';
-    }
-    html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
-    html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
-    const a=d.advanced||{}; const role=String(a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
-    const keyCount=Number(a.mightPulseKeyCount||0);
-    const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
-    const vipKeyCount=Number(d.vip?.keyCount||keyCount);
-    const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
-    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
-    if(keyRows.length) keyHtml+='<details class="key-list-details"><summary><span>登録済みキーの内訳</span><span class="muted">'+esc(keyRows.length)+'本を表示　⌄</span></summary><div class="key-list-rows">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="key-list-row"><span>キー '+(i+1)+(prefix?'<small>'+esc(prefix)+'</small>':'')+'</span><strong class="'+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty':'✓ 提供済み')+'</strong></div>';}).join('')+'</div></details>';
-    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">ACCESS LEVEL</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+
-      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
-      '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
-      '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      '<details class="key-register-details"><summary>＋ MightPulse APIキーをPoolへ提供</summary><div class="key-register-body"><label class="label" for="mpkey">MightPulse APIキー</label><input id="mpkey" class="input" type="password" autocomplete="off" placeholder="MightPulse APIキーを入力"><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div><div id="key-msg"></div></div></details></div></section>';
-    const v=d.vip||{};
-    const mightyConnected=Boolean(v.hasMightyKey);
-    const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
-    const isElevatedMightyRole=["ADMIN","OWNER"].includes(String(v.role||role).toUpperCase());
-    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">MIGHTY ACCESS</span><h2>VIP・Mighty機能</h2></div><span class="role-pill '+(mightyConnected?'role-active':'')+'">'+(mightyConnected?'確認済み':'未確認')+'</span></div><div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ '+(isElevatedMightyRole?"Mighty機能の利用確認":"VIPロールへの昇格")+'</h2><p class="muted" style="margin:0 0 12px">'+(isElevatedMightyRole?"Mighty対応を確認すると、VIP向けMighty機能を利用できます。現在の管理者ロールは変更されません。":"Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。")+'</p>'+
-      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
-      '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
-      '<div id="mighty-check-area" style="margin-top:12px"><button class="btn" id="mighty-check">⚡ '+(mightyStatus==="CONFIRMED"?(isElevatedMightyRole?"Mighty機能を再確認":"VIPロールを再確認"):(isElevatedMightyRole?"Mighty機能の利用を確認":"VIPロールへの昇格を確認"))+'</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
-      (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ Mighty対応確認済み。'+(isElevatedMightyRole?"Mighty機能を利用できます。":"VIPロール判定済みです。")+'</div>':"")+
-      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいて判定を行います。</div></div></section>';
-    app.innerHTML=html;
-    document.getElementById("save").onclick=save;
-    document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor));
-    if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
-    const mightyButton=document.getElementById("mighty-check");
-    if(mightyButton) mightyButton.onclick=checkMighty;
-  }
-  async function save(){
-    const input=document.getElementById("gid"), type=document.getElementById("atype"), msg=document.getElementById("msg"), button=document.getElementById("save");
-    button.disabled=true; msg.textContent="";
-    try{
-      const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim(),account_type:type.value})});
-      const d=await r.json().catch(()=>({}));
-      if(r.status===409 && d.error==="GOVERNOR_ID_ALREADY_LINKED"){
-        app.innerHTML='<div class="card"><h2 style="margin-top:0">この領主IDは既に登録されています</h2><p class="muted">'+esc(d.message)+'</p><p class="muted">正当な所有者である場合は、KingShotゲーム内で本人しか表示できない情報が分かるスクリーンショットを用意してEagleEye専用サポートへ問い合わせてください。</p>'+('<a class="btn" href="/support?category=ACCOUNT&subcategory=GOVERNOR_ID&governor_id='+encodeURIComponent(input.value.trim())+'">この件について問い合わせる</a>')+'<div class="muted" style="margin-top:12px">問い合わせ番号: '+esc(d.support_request_id)+'</div><button class="btn danger" id="back">戻る</button></div>';
-        document.getElementById("back").onclick=load; return;
-      }
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      await load();
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
-    finally{button.disabled=false;}
-  }
-  async function remove(governorId){
-    if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
-    const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){alert(d.message||d.error||"解除に失敗しました");return;}
-    await load();
-  }
-  async function checkMighty(){
-    const button=document.getElementById("mighty-check"), msg=document.getElementById("mighty-msg");
-    button.disabled=true; button.textContent="確認中…"; msg.className="muted"; msg.textContent="登録済みのAPIキーを確認しています。";
-    try{
-      const r=await fetch("/api/me/vip/mighty-check",{method:"POST",credentials:"same-origin",cache:"no-store"});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      if(d.status==="CONFIRMED"){msg.className="ok";msg.textContent="⚡ Mighty対応を確認しました。"+(["ADMIN","OWNER"].includes(String(d.role||"").toUpperCase())?"管理者ロールは維持したまま、Mighty機能を利用できます。":"VIP権限を更新しました。");button.textContent=(["ADMIN","OWNER"].includes(String(d.role||"").toUpperCase())?"⚡ Mighty機能を再確認":"⚡ VIPロールを再確認");setTimeout(load,500);}
-      else if(d.status==="NOT_MIGHTY"){msg.className="warn";msg.textContent="登録済みのAPIキーではMighty対応を確認できませんでした。";setTimeout(load,500);}
-      else {msg.className="warn";msg.textContent=d.message||"一時的に判定できませんでした。時間を置いて再確認してください。";button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
-  }
-  async function registerKey(){
-    const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
-    const key=String(input?.value||"").trim();
-    if(!key){msg.className="error";msg.textContent="MightPulse APIキーを入力してください。";return;}
-    if(!confirm("このAPIキーをEagleEyeのMightPulse API Poolへ提供しますか？")) return;
-    button.disabled=true; msg.className="muted"; msg.textContent="登録しています…";
-    try{
-      const r=await fetch("/api/me/mightpulse-key",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({api_key:key})});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      msg.className="ok"; msg.textContent=d.promoted?"APIキーを登録しました。Advancedへ昇格しました。":"APIキーを登録しました。領主ID登録後にAdvanced昇格条件を満たします。";
-      input.value=""; setTimeout(load,500);
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
-    finally{button.disabled=false;}
-  }
-  load().catch(e=>{app.innerHTML='<div class="card error">'+esc(e.message||String(e))+'</div>';});
-}());
-</script></body></html>`;
+  return MY_PLAYER_PAGE_HTML;;
 }
 
 async function handlePlayerWatchlistApi(request, env) {
@@ -2409,6 +2119,12 @@ async function handlePlayerWatchlistApi(request, env) {
 
   await ensurePlayerWatchlistSchema(env.DB);
   const url = new URL(request.url);
+
+  if (request.method === "GET" && url.searchParams.get("view") === "ids") {
+    // ホームの人数表示・プレイヤー画面のウォッチ状態用。ランキング・変化は付けない軽い版（索引1回）。
+    const ids = await env.DB.prepare("SELECT governor_id, enabled FROM player_watchlists WHERE discord_id = ?").bind(auth.discord_id).all();
+    return json({ ok: true, watchlist: (ids.results || []).map(r => ({ governor_id: String(r.governor_id), enabled: Number(r.enabled) === 1 })) });
+  }
 
   if (request.method === "GET") {
     const rows = await env.DB.prepare(`
@@ -2468,55 +2184,32 @@ async function handlePlayerWatchlistApi(request, env) {
       `
     ).bind(auth.discord_id).all();
 
-    const playerChangeResult = await env.DB.prepare(`
-      WITH ranked AS (
-        SELECT ce.target_id AS governor_id,
-               ce.change_type,
-               ce.field_name,
-               ce.old_value_json,
-               ce.new_value_json,
-               ce.detected_at,
-               ce.created_at,
-               ROW_NUMBER() OVER (
-                 PARTITION BY ce.target_id, ce.change_type
-                 ORDER BY ce.detected_at DESC, ce.created_at DESC
-               ) AS rn
-        FROM change_events ce
-        INNER JOIN player_watchlists w
-          ON w.governor_id = ce.target_id
-         AND w.discord_id = ?
-        WHERE w.enabled = 1
-          AND ce.target_type = 'PLAYER'
-          AND ce.change_type IN ('TOWN_CENTER_CHANGED','ALLIANCE_CHANGED')
-      )
-      SELECT governor_id, change_type, field_name, old_value_json, new_value_json, detected_at
-      FROM ranked
-      WHERE rn = 1
-    `).bind(auth.discord_id).all();
-
-    const powerChangeResult = await env.DB.prepare(`
-      WITH ranked AS (
-        SELECT ce.target_id AS governor_id,
-               ce.old_value_json,
-               ce.new_value_json,
-               ce.detected_at,
-               ce.created_at,
-               ROW_NUMBER() OVER (
-                 PARTITION BY ce.target_id
-                 ORDER BY ce.detected_at DESC, ce.created_at DESC
-               ) AS rn
-        FROM change_events ce
-        INNER JOIN player_watchlists w
-          ON w.governor_id = ce.target_id
-         AND w.discord_id = ?
-        WHERE w.enabled = 1
-          AND ce.target_type = 'PLAYER'
-          AND ce.field_name = 'power'
-      )
-      SELECT governor_id, old_value_json, new_value_json, detected_at
-      FROM ranked
-      WHERE rn = 1
-    `).bind(auth.discord_id).all();
+    // 各ウォッチ対象の「最新の変化」（戦力・役場・同盟）を1本で取る。
+    // 以前は change_events を player_watchlists と JOIN + ROW_NUMBER で引いており、
+    // 索引が効かず1回で約85万行×2本（ウォッチリスト・ホームを開くたび）読んでいた。
+    // target_id IN (…) と相関サブクエリの MAX(detected_at) で idx_change_events_player_type_time を使う
+    // （本番で同結果・3,838行）。
+    const latestChangeResult = await env.DB.prepare(
+      "SELECT c.target_id AS governor_id, c.change_type, c.field_name, c.old_value_json, c.new_value_json, c.detected_at, c.created_at " +
+      "FROM change_events c WHERE c.target_type = 'PLAYER' AND c.change_type IN ('POWER_CHANGED','TOWN_CENTER_CHANGED','ALLIANCE_CHANGED') " +
+      "AND c.target_id IN (SELECT governor_id FROM player_watchlists WHERE discord_id = ? AND enabled = 1) " +
+      "AND c.detected_at = (SELECT MAX(c2.detected_at) FROM change_events c2 WHERE c2.target_type = 'PLAYER' AND c2.target_id = c.target_id AND c2.change_type = c.change_type) " +
+      "ORDER BY c.created_at DESC"
+    ).bind(auth.discord_id).all();
+    const latestRows = latestChangeResult.results || [];
+    // 同時刻の同盟変化は aid と名前の2行になるので、名前を優先して1件にする。
+    const pickLatest = (rows) => {
+      const out = new Map();
+      for (const row of rows) {
+        const key = String(row.governor_id) + "|" + row.change_type;
+        const prev = out.get(key);
+        if (!prev || (row.change_type === "ALLIANCE_CHANGED" && row.field_name === "alliance_name" && prev.field_name !== "alliance_name")) out.set(key, row);
+      }
+      return [...out.values()];
+    };
+    const latest = pickLatest(latestRows);
+    const playerChangeResult = { results: latest.filter(r => r.change_type === "TOWN_CENTER_CHANGED" || r.change_type === "ALLIANCE_CHANGED") };
+    const powerChangeResult = { results: latest.filter(r => r.change_type === "POWER_CHANGED") };
 
     const playerChangeByGovernor = new Map();
     for (const row of playerChangeResult.results || []) {
@@ -2600,7 +2293,9 @@ async function handlePlayerWatchlistApi(request, env) {
 
     const limits = await getWatchlistLimits(env.DB);
     const role = String(auth.role || "BASIC").toUpperCase();
-    const playerLimit = getRoleWatchlistLimit(limits, role, "player");
+    const roleLimit = getRoleWatchlistLimit(limits, role, "player");
+    // 0 は無制限。招待の特典（ウォッチ枠の上乗せ）は上限があるロールにだけ足す。
+    const playerLimit = roleLimit > 0 ? roleLimit + await getWatchBonus(env.DB, auth.user_id) : roleLimit;
     const existing = await env.DB.prepare(
       "SELECT enabled FROM player_watchlists WHERE discord_id = ? AND governor_id = ? LIMIT 1"
     ).bind(auth.discord_id, governorId).first();
@@ -2649,7 +2344,8 @@ async function handlePlayerWatchlistApi(request, env) {
     if (enabled) {
         const limits = await getWatchlistLimits(env.DB);
       const role = String(auth.role || "BASIC").toUpperCase();
-      const limit = getRoleWatchlistLimit(limits, role, "player");
+      const roleLimit = getRoleWatchlistLimit(limits, role, "player");
+      const limit = roleLimit > 0 ? roleLimit + await getWatchBonus(env.DB, auth.user_id) : roleLimit;
       const usage = await env.DB.prepare(
         "SELECT COUNT(*) AS count FROM player_watchlists WHERE discord_id = ? AND enabled = 1 AND governor_id <> ?"
       ).bind(auth.discord_id, governorId).first();
@@ -2692,9 +2388,9 @@ async function handlePlayerWatchlistApi(request, env) {
 async function renderWatchlistHubPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ウォッチリスト｜EagleEye</title></head><body><main style="max-width:720px;margin:40px auto;padding:20px"><h1>ログインが必要です</h1><p>ウォッチリストを利用するにはログインしてください。</p><a href="/api/auth/discord">Discordでログイン</a></main></body></html>`);
+    return renderLoginRequiredPage(request, "ウォッチリスト", "ウォッチリストを利用するにはログインしてください。");
   }
-  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ウォッチリスト｜EagleEye</title>
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ウォッチリスト | EagleEye</title>
 <style>
 html,body{width:100%;height:100%;min-height:0;overflow:hidden;overscroll-behavior:none;background:#050b14}body{box-sizing:border-box;margin:0;padding:18px 14px calc(88px + env(safe-area-inset-bottom));font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:linear-gradient(180deg,#071321 0%,#050b14 320px)}
 .watch-hub{max-width:760px;margin:0 auto}.watch-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}.watch-back{color:#20d7f2;text-decoration:none;font-weight:800}.watch-head h1{margin:8px 0 0;font-size:25px}.watch-intro{color:#8da2b8;margin:0 0 18px;font-size:13px}
@@ -2713,14 +2409,14 @@ html,body{width:100%;height:100%;min-height:0;overflow:hidden;overscroll-behavio
 async function renderPlayerWatchlistPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player Watchlist</title></head><body><main class="wrap"><h1>ログインが必要です</h1><a href="/api/auth/discord">Discordでログイン</a></main></body></html>`);
+    return renderLoginRequiredPage(request, "プレイヤーウォッチリスト", "プレイヤーウォッチリストを利用するにはログインしてください。");
   }
 
-  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤーウォッチリスト｜EagleEye</title>
+  return applyEagleEyeTheme(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤーウォッチリスト | EagleEye</title>
 <style>
 body{max-width:900px;margin:auto;padding:20px 14px 48px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.back{color:#94a3b8;text-decoration:none}.title{margin:8px 0 0;font-size:28px}.sub{color:#94a3b8;font-size:12px}
-.list{display:grid;gap:12px}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
+.list{display:grid;gap:12px}.kingdom-group{display:grid;gap:10px;margin-bottom:8px}.kingdom-list{display:grid;gap:12px}.kingdom-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:6px 2px 0;font-size:16px}.kingdom-head span{font-size:11px;font-weight:600;color:var(--ee-subtext,#94a3b8)}.item{padding:15px;border:1px solid #334155;border-radius:16px;background:#162238}.top{display:flex;align-items:center;gap:12px}.avatar{width:44px;height:44px;border-radius:11px;object-fit:cover;background:#0b1220;border:1px solid #475569}.main{min-width:0;flex:1}.name{font-weight:900;overflow-wrap:anywhere}.id{font-size:11px;color:#94a3b8;margin-top:2px}.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.pill{padding:4px 8px;border-radius:999px;background:#0f172a;color:#cbd5e1;font-size:10px}.state{padding:4px 8px;border-radius:999px;background:#182f25;color:#bbf7d0;font-size:10px;font-weight:800}.state.off{background:#2a1115;color:#fecaca}
 .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:10px;border-radius:11px;background:#0f172a;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:14px;overflow-wrap:anywhere}
 .change-box{margin-top:10px;padding:11px 12px;border-radius:12px;background:#111c31;border:1px solid #334155}.change-title{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.5px}.change-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;font-size:12px}.change-row .label{color:#cbd5e1}.change-row .value{font-weight:900;text-align:right}.ranking-changes{display:grid;gap:6px;margin-top:8px}.ranking-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;border-radius:9px;background:#0f172a;border:1px solid #273449;font-size:11px}.ranking-row .label{color:#cbd5e1;min-width:0;overflow-wrap:anywhere}.ranking-row .value{font-weight:900;text-align:right;white-space:nowrap}.up{color:#86efac}.down{color:#fca5a5}.flat{color:#94a3b8}.muted{color:#64748b}
 .compare-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:12px 14px;border:1px solid #334155;border-radius:14px;background:#111c31}.compare-toolbar span{display:block;margin-top:3px;color:#94a3b8;font-size:11px}.compare-check{display:inline-flex;align-items:center;gap:6px;color:#cbd5e1;font-size:12px;font-weight:800}.compare-check input{accent-color:var(--ee-cyan,#22d3ee)}.actions{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}.action{display:inline-flex;align-items:center;justify-content:center;padding:9px 11px;border:1px solid #334155;border-radius:9px;background:#0f1220;color:#e2e8f0;text-decoration:none;font-size:12px;font-weight:800;cursor:pointer}.action.primary{background:var(--ee-cyan,#22d3ee);color:#062033;border-color:var(--ee-cyan,#22d3ee)}.danger{color:#fecaca;border-color:#7f1d1d}.empty,.error{padding:18px;border:1px dashed #475569;border-radius:14px;color:#94a3b8;text-align:center}.error{color:#fecaca;border-style:solid;border-color:#7f1d1d}.loading{color:#94a3b8;padding:18px;text-align:center}
@@ -2859,8 +2555,8 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
  .power-block strong{font-size:15px}
 }
 </style></head><body><main>
-<div class="head"><div><a class="back" href="/">← EagleEye</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
-<div class="compare-toolbar"><div><strong>プレイヤー比較</strong><span id="compare-count">0 / 4人選択</span></div><button id="compare-open" class="action primary" type="button" disabled>選択したプレイヤーを比較</button></div>
+<div class="head"><div><a class="back" href="/">← ホーム</a><h1 class="title">プレイヤーウォッチリスト</h1><div class="sub">登録したプレイヤーの現在値と変化を確認できます</div></div><a class="action" href="/players">プレイヤー検索</a></div>
+<div class="compare-toolbar"><div><strong>プレイヤー比較</strong><span id="compare-count">0 / 6人選択</span></div><button id="compare-open" class="action primary" type="button" disabled>選択したプレイヤーを比較</button></div>
 <div id="watchlist" class="list"><div class="loading">読み込み中…</div></div>
 </main>
 <script>
@@ -2918,7 +2614,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
       window.__eagleEyePlayerWatchlistCount=(d.watchlist||[]).filter(function(item){return item.enabled!==false;}).length;
       if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(window.__eagleEyePlayerWatchlistCount);
       if(!(d.watchlist||[]).length){root.innerHTML='<div class="empty">ウォッチリストは空です。プレイヤー画面から追加できます。</div>';return;}
-      root.innerHTML=d.watchlist.map(x=>{
+      const card=x=>{
         const s=x.summary||{};
         const powerChange=powerChangeText(s);
         const rankingChanges=Array.isArray(s.ranking_changes)?s.ranking_changes:[];
@@ -2948,14 +2644,21 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
             '</div>'+
             '<div class="actions"><a class="action primary" href="/player?governor_id='+encodeURIComponent(x.governor_id)+'">プレイヤー詳細</a><a class="action" href="/player/changes?governor_id='+encodeURIComponent(x.governor_id)+'">変更履歴</a><button class="action danger" data-g="'+esc(x.governor_id)+'">削除</button></div>'+
           '</details></article>';
-      }).join("");
+      };
+      // 王国ごとに分け、王国内は「秘境の試練」の王国内順位が高い順（順位が無い人は後ろで戦力順）。
+      const mysticRank=x=>{const r=((x.summary||{}).ranking_changes||[]).find(v=>v.board==="mystic_trial");return r&&r.current!=null?Number(r.current):null;};
+      const groups=new Map();
+      d.watchlist.forEach(x=>{const k=x.kid==null?"?":String(x.kid);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
+      const byStrength=(a,b)=>{const ra=mysticRank(a),rb=mysticRank(b);if(ra!=null&&rb!=null&&ra!==rb)return ra-rb;if(ra!=null&&rb==null)return -1;if(ra==null&&rb!=null)return 1;return (Number(b.power)||0)-(Number(a.power)||0);};
+      const kingdomOrder=[...groups.keys()].sort((a,b)=>(groups.get(b).length-groups.get(a).length)||(a==="?"?1:b==="?"?-1:Number(a)-Number(b)));
+      root.innerHTML=kingdomOrder.map(k=>{const list=groups.get(k).slice().sort(byStrength);return '<section class="kingdom-group"><h2 class="kingdom-head">'+(k==="?"?"王国不明":"王国 "+esc(k))+'<span>'+list.length+'人・秘境の試練の王国内順位順</span></h2><div class="kingdom-list">'+list.map(card).join("")+'</div></section>';}).join("");
       const compareChecks=[...root.querySelectorAll(".compare-player")];
       const compareCount=document.getElementById("compare-count");
       const compareOpen=document.getElementById("compare-open");
       const selected=new Set();
       const preselect=new URLSearchParams(location.search).get("compare");
       function syncCompare(){
-        compareCount.textContent=selected.size+" / 4人選択";
+        compareCount.textContent=selected.size+" / 6人選択";
         compareOpen.disabled=selected.size<2;
         compareChecks.forEach(function(input){const isSelected=selected.has(String(input.dataset.governorId));input.checked=isSelected;input.closest(".item")?.classList.toggle("is-selected",isSelected);input.disabled=!isSelected&&selected.size>=4;const label=input.closest(".compare-toggle");if(label){label.classList.toggle("is-checked",isSelected);label.classList.toggle("is-disabled",input.disabled);label.querySelector(".compare-mark").textContent=isSelected?"✓":"＋";}});
       }
@@ -2963,7 +2666,7 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
         input.addEventListener("change",function(){
           const id=String(input.dataset.governorId||"");
           if(input.checked){
-            if(selected.size>=4){input.checked=false;alert("比較できるのは最大4人です。");return;}
+            if(selected.size>=6){input.checked=false;alert("比較できるのは最大6人です。");return;}
             selected.add(id);
           }else selected.delete(id);
           syncCompare();
@@ -2998,38 +2701,79 @@ button.action:disabled{opacity:.45;cursor:not-allowed}
 })();
 </script></body></html>`);
 }
-async function handleKingdomWatchlistApi(request, env) {
+async function handleKingdomWatchlistApi(request, env, requestTraceId = null) {
+  const operationTraceId = String(requestTraceId || request.headers.get("x-eagle-eye-trace-id") || systemTraceId("watchlist-http"));
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   const url = new URL(request.url);
   const action = url.searchParams.get("action") || "list";
 
   if (request.method === "GET" && action === "list") {
+    // Return all watchlists and each watchlist's latest job in one D1 query.
+    // The browser polls this endpoint during long-running jobs; an N+1 query
+    // here multiplied reads by watchlist count on every 4-second poll.
     const rows = await env.DB.prepare(
-      "SELECT watchlist_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at FROM kingdom_watchlists WHERE discord_id = ? ORDER BY created_at DESC"
+      "SELECT w.watchlist_id, w.kid, w.top_n, w.interval_hours, w.enabled, w.last_run_at, w.last_success_at, w.last_error, w.created_at, w.updated_at, " +
+      "j.job_id, j.status AS job_status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.last_error AS job_last_error, j.created_at AS job_created_at, j.updated_at AS job_updated_at, j.completed_at " +
+      "FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.job_id = (" +
+      "SELECT j2.job_id FROM kingdom_watchlist_jobs j2 WHERE j2.watchlist_id = w.watchlist_id ORDER BY j2.created_at DESC LIMIT 1) " +
+      "WHERE w.discord_id = ? ORDER BY w.created_at DESC"
     ).bind(auth.discord_id).all();
 
     const watchlists = [];
-    for (const watch of rows.results || []) {
-      let job = await env.DB.prepare(
-        "SELECT job_id, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, last_error, created_at, updated_at, completed_at FROM kingdom_watchlist_jobs WHERE watchlist_id = ? ORDER BY created_at DESC LIMIT 1"
-      ).bind(watch.watchlist_id).first();
+    for (const row of rows.results || []) {
+      const watch = {
+        watchlist_id: row.watchlist_id,
+        kid: row.kid,
+        top_n: row.top_n,
+        interval_hours: row.interval_hours,
+        enabled: row.enabled,
+        last_run_at: row.last_run_at,
+        last_success_at: row.last_success_at,
+        last_error: row.last_error,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      };
+      let job = row.job_id ? {
+        job_id: row.job_id,
+        status: row.job_status,
+        board_index: row.board_index,
+        player_cursor: row.player_cursor,
+        player_ids_json: row.player_ids_json,
+        observed_at: row.observed_at,
+        source_first_at: row.source_first_at,
+        source_last_at: row.source_last_at,
+        ranking_rows: row.ranking_rows,
+        player_rows: row.player_rows,
+        last_error: row.job_last_error,
+        created_at: row.job_created_at,
+        updated_at: row.job_updated_at,
+        completed_at: row.completed_at
+      } : null;
 
-      // Recover jobs that are visibly stuck in an active state.
-      // A failed ranking request used to leave the job as RANKINGS/PLAYERS,
-      // which made the UI show "更新中" forever even after the error.
+      // Recover genuinely stale jobs, but only reflect the transition in this
+      // response if this request won the conditional D1 state transition. This
+      // prevents a concurrent cancel from being shown as retryable in the UI.
       if (job && (job.status === "RANKINGS" || job.status === "PLAYERS")) {
-        const staleByError = Boolean(job.last_error);
+        const staleByError = Boolean(job.last_error) && !String(job.last_error).startsWith("RETRYABLE:");
         const staleByAge = Number(job.updated_at || job.created_at || 0) > 0 &&
           (Math.floor(Date.now() / 1000) - Number(job.updated_at || job.created_at)) > 15 * 60;
         if (staleByError || staleByAge) {
-          const recoveryMessage = job.last_error
-            ? String(job.last_error).slice(0, 1000)
-            : "ウォッチリスト更新ジョブが15分以上進行していないため停止しました。";
-          await env.DB.prepare(
+          const recoveryDetail = job.last_error
+            ? String(job.last_error).replace(/^RETRYABLE:(?:RANKINGS|PLAYERS):\d+:/, "").slice(0, 800)
+            : "ウォッチリスト更新ジョブが15分以上進行していないため再開待ちです。";
+          const recoveryMessage = "RETRYABLE:" + job.status + ":1:" + recoveryDetail;
+          const recovered = await env.DB.prepare(
             "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
           ).bind(recoveryMessage, Math.floor(Date.now() / 1000), job.job_id).run();
-          job = { ...job, status: "FAILED", last_error: recoveryMessage };
+          if (Number(recovered?.meta?.changes || 0) === 1) {
+            job = { ...job, status: "FAILED", last_error: recoveryMessage };
+          } else {
+            const latest = await env.DB.prepare(
+              "SELECT status, last_error, updated_at FROM kingdom_watchlist_jobs WHERE job_id = ? LIMIT 1"
+            ).bind(job.job_id).first();
+            if (latest) job = { ...job, status: latest.status, last_error: latest.last_error, updated_at: latest.updated_at };
+          }
         }
       }
 
@@ -3048,11 +2792,17 @@ async function handleKingdomWatchlistApi(request, env) {
           status: job.status,
           board_index: Number(job.board_index || 0),
           total_boards: KINGDOM_RANKING_BOARDS.length,
+          ranking_fetch_progress: Math.min(KINGDOM_RANKING_BOARDS.length, Number(job.board_index || 0) + ((job.status === "RANKINGS" || job.status === "FAILED") && Number(job.board_index || 0) < KINGDOM_RANKING_BOARDS.length ? Number(job.player_cursor || 0) : 0)),
           player_cursor: Number(job.player_cursor || 0),
           player_count: playerCount,
           ranking_rows: Number(job.ranking_rows || 0),
           player_rows: Number(job.player_rows || 0),
-          last_error: job.last_error || null,
+          last_error: job.last_error && !String(job.last_error).startsWith("RETRYABLE:") ? job.last_error : null,
+          retryable: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:"),
+          retry_attempt: Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 0),
+          retry_after_at: job.status === "FAILED" && String(job.last_error || "").startsWith("RETRYABLE:")
+            ? Number(job.updated_at || 0) + Math.min(3600, 300 * Math.pow(2, Math.max(0, Number((String(job.last_error || "").match(/^RETRYABLE:(?:RANKINGS|PLAYERS):(\d+):/) || [])[1] || 1) - 1)))
+            : null,
           observed_at: Number(job.observed_at || 0),
           source_first_at: job.source_first_at ? Number(job.source_first_at) : null,
           source_last_at: job.source_last_at ? Number(job.source_last_at) : null,
@@ -3106,19 +2856,18 @@ async function handleKingdomWatchlistApi(request, env) {
       return json({ ok: false, error: "KINGDOM_WATCHLIST_LIMIT_REACHED", message: "王国ウォッチリストの登録上限に達しています。", limit: kingdomLimit, used }, 409);
     }
 
-    // Start the first watchlist fetch immediately after registration.
-    // Reuse the same job/processing path as "今すぐ更新" instead of waiting
-    // for the next Cron tick. The job remains resumable if one invocation
-    // does not finish all ranking/player phases.
+    // Create a resumable job immediately. The browser starts collection
+    // through the existing action=refresh continuation loop after this
+    // registration response has returned.
     await ensureKingdomWatchlistFreshnessSchema(env.DB);
     const now = Math.floor(Date.now() / 1000);
     const id = crypto.randomUUID();
     const inserted = await env.DB.prepare(
       "INSERT INTO kingdom_watchlists (watchlist_id, discord_id, kid, top_n, interval_hours, enabled, last_run_at, last_success_at, last_error, created_at, updated_at) " +
-      "SELECT ?, ?, ?, ?, ?, 1, NULL, NULL, NULL, ?, ? " +
+      "SELECT ?, ?, ?, ?, ?, 1, ?, NULL, NULL, ?, ? " +
       "WHERE NOT EXISTS (SELECT 1 FROM kingdom_watchlists WHERE discord_id = ? AND kid = ? AND enabled = 1) " +
       "RETURNING watchlist_id"
-    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now, auth.discord_id, kid).first();
+    ).bind(id, auth.discord_id, kid, topN, intervalHours, now, now, now, auth.discord_id, kid).first();
 
     if (!inserted?.watchlist_id) {
       const existing = await env.DB.prepare(
@@ -3132,97 +2881,44 @@ async function handleKingdomWatchlistApi(request, env) {
       }, 409);
     }
 
-    const lockToken = await acquireKingdomWatchlistLock(env, id);
-    if (!lockToken) {
-      return json({
-        ok: true,
-        watchlist_id: id,
-        initial_refresh_started: false,
-        initial_refresh_status: "LOCKED"
-      });
-    }
+    // Persist the watchlist and its resumable job, then return immediately.
+    // Initial data collection is driven by the existing client continuation
+    // loop via action=refresh. Keeping network collection out of this request
+    // prevents the create request from timing out before the UI learns that
+    // registration succeeded.
+    const jobId = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'USER', ?, ?)"
+    ).bind(jobId, id, kid, topN, now, now, now).run();
 
-    try {
-      const jobId = crypto.randomUUID();
-      await env.DB.prepare(
-        "INSERT INTO kingdom_watchlist_jobs (job_id, watchlist_id, kid, top_n, status, board_index, player_cursor, player_ids_json, observed_at, source_first_at, source_last_at, ranking_rows, player_rows, collection_source, created_at, updated_at) VALUES (?, ?, ?, ?, 'RANKINGS', 0, 0, '[]', ?, NULL, NULL, 0, 0, 'USER', ?, ?)"
-      ).bind(jobId, id, kid, topN, now, now, now).run();
+    await recordSystemEvent(env.DB, {
+      traceId: jobId,
+      parentTraceId: operationTraceId,
+      eventType: "REGISTERED",
+      service: "watchlist",
+      feature: "kingdom_watchlist",
+      operation: "REGISTER",
+      status: "QUEUED",
+      targetType: "KINGDOM",
+      targetId: String(kid),
+      message: "王国ウォッチリスト登録・初期ジョブ作成",
+      metadata: { watchlistId: id, jobId, kid, topN, intervalHours, source: "USER" }
+    }).catch(error => console.error("kingdom_watchlist_registration_event_failed", error?.message || error));
 
-      const job = {
-        job_id: jobId,
-        watchlist_id: id,
-        kid,
-        top_n: topN,
-        status: "RANKINGS",
-        board_index: 0,
-        player_cursor: 0,
-        player_ids_json: "[]",
-        observed_at: now,
-        source_first_at: null,
-        source_last_at: null,
-        ranking_rows: 0,
-        player_rows: 0,
-        collection_source: "USER",
-        created_at: now,
-        updated_at: now
-      };
+    await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_ADD", {
+      targetType: "KINGDOM",
+      targetId: kid,
+      metadata: { top_n: topN, interval_hours: intervalHours, enabled: true }
+    });
 
-      try {
-        const result = await processKingdomWatchlistJob(env, job);
-        if (result.completed) {
-          await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_run_at = ?, last_success_at = ?, last_error = NULL, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(now, now, now, id).run();
-        }
-        await trackServiceUsage(env, auth, "KINGDOM_WATCHLIST_ADD", {
-          targetType: "KINGDOM",
-          targetId: kid,
-          metadata: {
-            top_n: topN,
-            interval_hours: intervalHours,
-            enabled: true
-          }
-        });
-        return json({
-          ok: true,
-          watchlist_id: id,
-          job_id: jobId,
-          initial_refresh_started: true,
-          initial_refresh_status: result.phase,
-          result
-        });
-      } catch (error) {
-        const message = String(error?.userMessage || error?.message || error).slice(0, 1000);
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-        ).bind(message, now, jobId).run();
-        await env.DB.prepare(
-          "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-        ).bind(message, now, id).run();
-        await recordDiagnostic(env.DB, {
-          service: "watchlist",
-          feature: "kingdom_watchlist",
-          operation: "INITIAL_REFRESH",
-          status: "FAILED",
-          errorCode: String(error?.code || message || "WATCHLIST_INITIAL_REFRESH_FAILED").split(":")[0],
-          message,
-          targetType: "WATCHLIST",
-          targetId: id,
-          metadata: { jobId, kid, poolAvailability: error?.poolAvailability || null }
-        });
-        console.error("kingdom_watchlist_initial_refresh_failed", id, message);
-        return json({
-          ok: true,
-          watchlist_id: id,
-          job_id: jobId,
-          initial_refresh_started: true,
-          initial_refresh_status: "FAILED",
-          initial_refresh_error: message
-        });
-      }
-    } finally {
-      await releaseKingdomWatchlistLock(env, id, lockToken);
-    }
+    return json({
+      ok: true,
+      watchlist_id: id,
+      job_id: jobId,
+      initial_refresh_started: true,
+      initial_refresh_status: "RANKINGS",
+      result: { completed: false, phase: "RANKINGS" }
+    });
   }
 
   if (request.method === "POST" && action === "refresh") {
@@ -3239,7 +2935,7 @@ async function handleKingdomWatchlistApi(request, env) {
       // job in one indexed lookup. The initial request may still need the watchlist
       // row when no active job exists.
       let active = await env.DB.prepare(
-        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND j.status IN ('RANKINGS','PLAYERS') WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
+        "SELECT w.watchlist_id, w.kid, w.top_n, j.job_id, j.status, j.last_error, j.board_index, j.player_cursor, j.player_ids_json, j.observed_at, j.source_first_at, j.source_last_at, j.ranking_rows, j.player_rows, j.collection_source, j.created_at, j.updated_at FROM kingdom_watchlists w LEFT JOIN kingdom_watchlist_jobs j ON j.watchlist_id = w.watchlist_id AND (j.status IN ('RANKINGS','PLAYERS') OR (j.status = 'FAILED' AND j.last_error LIKE 'RETRYABLE:%')) WHERE w.watchlist_id = ? AND w.discord_id = ? ORDER BY j.created_at DESC LIMIT 1"
       ).bind(watchlistId, auth.discord_id).first();
       if (!active) {
         const latestJob = await env.DB.prepare(
@@ -3255,6 +2951,10 @@ async function handleKingdomWatchlistApi(request, env) {
         }
         return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
       }
+      if (active.status === "FAILED" && String(active.last_error || "").startsWith("RETRYABLE:")) {
+        const retry = String(active.last_error).match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+        if (retry) active.status = retry[1];
+      }
       const watch = { watchlist_id: active.watchlist_id, kid: active.kid, top_n: active.top_n };
 
       const lockToken = await acquireKingdomWatchlistLock(env, watchlistId);
@@ -3267,12 +2967,18 @@ async function handleKingdomWatchlistApi(request, env) {
       }
 
       try {
+        if (active.job_id && active.last_error && String(active.last_error).startsWith("RETRYABLE:") && active.status !== "FAILED") {
+          await env.DB.prepare(
+            "UPDATE kingdom_watchlist_jobs SET status = ?, updated_at = ? WHERE job_id = ? AND status = 'FAILED'"
+          ).bind(active.status, now, active.job_id).run();
+        }
         let job = active.job_id ? {
           job_id: active.job_id,
           watchlist_id: active.watchlist_id,
           kid: Number(active.kid),
           top_n: Number(active.top_n),
           status: active.status,
+          last_error: active.last_error || null,
           board_index: Number(active.board_index || 0),
           player_cursor: Number(active.player_cursor || 0),
           player_ids_json: active.player_ids_json || "[]",
@@ -3331,29 +3037,47 @@ async function handleKingdomWatchlistApi(request, env) {
           });
           return json({ ok: true, watchlist_id: watchlistId, job_id: job.job_id, status: result.phase, result });
         } catch (error) {
-          const message = String(error?.userMessage || error?.message || error).slice(0, 1000);
+          const message = String(error?.userMessage || error?.message || error).slice(0, 850);
+          const capacityWaitCode = getApiPoolCapacityWaitCode(error);
+          const previousRetry = String(job.last_error || "").match(/^RETRYABLE:(RANKINGS|PLAYERS):(\d+):/);
+          const retryCount = Math.min(99, (Number(previousRetry?.[2]) || 0) + 1);
+          const retryPhase = job.status === "PLAYERS" ? "PLAYERS" : "RANKINGS";
+          const retryable = Boolean(capacityWaitCode) || (retryCount <= 5 &&
+            !message.startsWith("USER_CANCELLED:"));
+          const storedError = retryable
+            ? "RETRYABLE:" + retryPhase + ":" + (capacityWaitCode ? 1 : retryCount) + ":" + message
+            : message;
+          const failedAt = Math.floor(Date.now() / 1000);
           await env.DB.prepare(
-            "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ?"
-          ).bind(message, now, job.job_id).run();
+            "UPDATE kingdom_watchlist_jobs SET status = 'FAILED', last_error = ?, updated_at = ? WHERE job_id = ? AND status IN ('RANKINGS','PLAYERS')"
+          ).bind(storedError.slice(0, 1000), failedAt, job.job_id).run();
           await env.DB.prepare(
-            "UPDATE kingdom_watchlists SET last_error = ?, updated_at = ? WHERE watchlist_id = ?"
-          ).bind(message, now, watchlistId).run();
+            "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND EXISTS (SELECT 1 FROM kingdom_watchlist_jobs WHERE job_id = ? AND status = 'FAILED' AND last_error = ?)"
+          ).bind(failedAt, capacityWaitCode ? null : message, failedAt, watchlistId, job.job_id, storedError.slice(0, 1000)).run();
           await recordDiagnostic(env.DB, {
             service: "watchlist",
             feature: "kingdom_watchlist",
             operation: "MANUAL_REFRESH",
-            status: "FAILED",
-            errorCode: String(error?.code || message || "WATCHLIST_REFRESH_FAILED").split(":")[0],
+            status: capacityWaitCode ? "WAITING" : "FAILED",
+            errorCode: capacityWaitCode || String(error?.code || message || "WATCHLIST_REFRESH_FAILED").split(":")[0],
             message,
             targetType: "WATCHLIST",
             targetId: watchlistId,
             metadata: { jobId: job.job_id, source: "MANUAL", poolAvailability: error?.poolAvailability || null }
           });
+          if (capacityWaitCode) {
+            return json({
+              ok: true,
+              watchlist_id: watchlistId,
+              job_id: job.job_id,
+              status: "WAITING",
+              retryable: true,
+              retry_after_at: failedAt + 300,
+              message: "API Poolの空き待ちです。空きができ次第、自動再試行します。"
+            }, 202);
+          }
           console.error("kingdom_watchlist_manual_refresh_failed", watchlistId, message);
-          const responseError = error?.code === "NO_API_POOL_KEY_AVAILABLE"
-            ? "NO_API_POOL_KEY_AVAILABLE"
-            : "WATCHLIST_REFRESH_FAILED";
-          return json({ ok: false, error: responseError, message, pool_availability: error?.poolAvailability || null }, responseError === "NO_API_POOL_KEY_AVAILABLE" ? 503 : 500);
+          return json({ ok: false, error: "WATCHLIST_REFRESH_FAILED", message, pool_availability: error?.poolAvailability || null }, 500);
         }
       } finally {
         await releaseKingdomWatchlistLock(env, watchlistId, lockToken);
@@ -3373,7 +3097,7 @@ async function handleKingdomWatchlistApi(request, env) {
     const now = Math.floor(Date.now() / 1000);
     const cancelMessage = "USER_CANCELLED: ユーザーが更新を中断しました。";
     const target = await env.DB.prepare(
-      "SELECT watchlist_id, kid FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
+      "SELECT watchlist_id, kid, (SELECT job_id FROM kingdom_watchlist_jobs WHERE watchlist_id = kingdom_watchlists.watchlist_id ORDER BY created_at DESC LIMIT 1) AS job_id FROM kingdom_watchlists WHERE watchlist_id = ? AND discord_id = ? LIMIT 1"
     ).bind(watchlistId, auth.discord_id).first();
     if (!target) return json({ ok: false, error: "WATCHLIST_NOT_FOUND" }, 404);
 
@@ -3385,6 +3109,19 @@ async function handleKingdomWatchlistApi(request, env) {
         "UPDATE kingdom_watchlists SET last_run_at = ?, last_error = ?, updated_at = ? WHERE watchlist_id = ? AND discord_id = ?"
       ).bind(now, cancelMessage, now, watchlistId, auth.discord_id)
     ]);
+    await recordSystemEvent(env.DB, {
+      traceId: target.job_id || operationTraceId,
+      parentTraceId: operationTraceId,
+      eventType: "CANCEL_REQUESTED",
+      service: "watchlist",
+      feature: "kingdom_watchlist",
+      operation: "CANCEL",
+      status: "CANCELLED",
+      targetType: "KINGDOM",
+      targetId: String(target.kid),
+      message: "王国ウォッチリストの中断要求を受け付けました。",
+      metadata: { watchlistId, jobId: target.job_id || null, source: "USER" }
+    }).catch(error => console.error("kingdom_watchlist_cancel_event_failed", error?.message || error));
 
     return json({
       ok: true,
@@ -3526,19 +3263,21 @@ async function renderAdminDiagnosticsPage(request, env) {
   } catch (error) {
     const message = String(error?.message || error);
     console.error("diagnostics_page_failed", message);
-    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>System Status | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif}.wrap{max-width:760px;margin:auto;padding:48px 20px}.panel{background:#fff;border:1px solid #d2d2d7;border-radius:28px;padding:28px;box-shadow:0 4px 18px rgba(0,0,0,.05)}.icon{width:52px;height:52px;border-radius:50%;background:#ff3b30;color:#fff;display:grid;place-items:center;font-size:25px;font-weight:800}.eyebrow{margin-top:22px;color:#86868b;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.title{margin:7px 0;font-size:30px;letter-spacing:-.03em}.message{color:#6e6e73;line-height:1.6}.error{margin-top:20px;padding:14px 16px;background:#f5f5f7;border-radius:14px;color:#6e6e73;font-size:12px;word-break:break-word}.back{display:inline-block;margin-top:22px;color:#0071e3;text-decoration:none;font-weight:600}</style></head><body><main class="wrap"><section class="panel"><div class="icon">!</div><div class="eyebrow">EagleEye System Status</div><h1 class="title">システム状況を取得できません</h1><p class="message">診断データの読み込みに失敗しました。現在の状態を確認できるまで、エラー内容を保持しています。</p><div class="error">${escapeHtml(message)}</div><a class="back" href="/admin">管理画面へ戻る →</a></section></main></body></html>`);
+    return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>システム状況 | EagleEye</title><style>
+*{box-sizing:border-box}body{margin:0;background:var(--ee-bg);color:var(--ee-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif}.wrap{max-width:760px;margin:auto;padding:48px 20px}.panel{background:var(--ee-panel);border:1px solid var(--ee-border-soft);border-radius:28px;padding:28px;box-shadow:0 4px 18px rgba(0,0,0,.05)}.icon{width:52px;height:52px;border-radius:50%;background:var(--ee-danger,#f87171);color:#fff;display:grid;place-items:center;font-size:25px;font-weight:800}.eyebrow{margin-top:22px;color:var(--ee-subtext);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.title{margin:7px 0;font-size:30px;letter-spacing:-.03em}.message{color:var(--ee-subtext);line-height:1.6}.error{margin-top:20px;padding:14px 16px;background:var(--ee-bg);border-radius:14px;color:var(--ee-subtext);font-size:12px;word-break:break-word}.back{display:inline-block;margin-top:22px;color:var(--ee-cyan);text-decoration:none;font-weight:600}</style></head><body><main class="wrap"><section class="panel"><div class="icon">!</div><div class="eyebrow">システム状況</div><h1 class="title">システム状況を取得できません</h1><p class="message">診断データの読み込みに失敗しました。現在の状態を確認できるまで、エラー内容を保持しています。</p><div class="error">${escapeHtml(message)}</div><a class="back" href="/admin">管理画面へ戻る →</a></section></main></body></html>`);
   }
 
   const overall = data.overall;
   const state = overall === "SUCCESS" ? { label:"すべて正常", tone:"good", icon:"✓", note:"すべての監視対象サービスが正常に動作しています。" }
     : overall === "CRITICAL" ? { label:"主要サービスに障害", tone:"bad", icon:"!", note:"主要サービスの一部で障害が発生しています。詳細を確認してください。" }
+    : overall === "WAITING" ? { label:"一時待機中", tone:"neutral", icon:"…", note:"API Poolの空き待ちです。実障害とは区別して表示しています。" }
     : { label:"一部注意", tone:"warn", icon:"i", note:"一部のサービスで注意または未診断の状態があります。" };
 
   const serviceState = (status) => status === "SUCCESS"
     ? {label:"正常",tone:"good",icon:"✓"}
     : status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"}
     : status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"}
+    : status === "WAITING" ? {label:"待機中",tone:"neutral",icon:"…"}
     : {label:"未診断",tone:"neutral",icon:"—"};
 
   const services = data.services.map(s => {
@@ -3567,26 +3306,10 @@ async function renderAdminDiagnosticsPage(request, env) {
       state: operational?.kingdomCatalog?.state || "UNKNOWN",
       detail: operational?.kingdomCatalog ? "Page " + operational.kingdomCatalog.nextPage + " / 発見 " + operational.kingdomCatalog.kingdomsSeen + " / Catalog " + operational.kingdomCatalog.catalogTotal : "状態取得不可"
     },
-    {
-      label: "Kingdom Seeder",
-      state: operational?.kingdomSeeder?.state || "UNKNOWN",
-      detail: operational?.kingdomSeeder ? "Cursor " + operational.kingdomSeeder.catalogCursor + " / 成功 " + operational.kingdomSeeder.successCount + " / 失敗 " + operational.kingdomSeeder.failedCount : "状態取得不可"
-    },
-    {
-      label: "Alliance Roller",
-      state: operational?.allianceRoller?.state || "UNKNOWN",
-      detail: operational?.allianceRoller ? "Cursor " + operational.allianceRoller.catalogCursor + " / 成功 " + operational.allianceRoller.successCount + " / 失敗 " + operational.allianceRoller.failedCount : "状態取得不可"
-    },
-    {
-      label: "Player Roller",
-      state: operational?.playerRoller?.state || "UNKNOWN",
-      detail: operational?.playerRoller ? "KID " + (operational.playerRoller.lastKid ?? "—") + " / Player " + (operational.playerRoller.lastGovernorId ?? "—") + " / 成功 " + operational.playerRoller.successCount + " / 失敗 " + operational.playerRoller.failedCount : "状態取得不可"
-    },
-    {
-      label: "Ranking Roller",
-      state: operational?.kingdomRankingRoller?.state || "UNKNOWN",
-      detail: operational?.kingdomRankingRoller ? "KID " + (operational.kingdomRankingRoller.lastKid ?? "—") + " / Board " + (operational.kingdomRankingRoller.lastBoard ?? "—") + " / 成功 " + operational.kingdomRankingRoller.successCount + " / 失敗 " + operational.kingdomRankingRoller.failedCount : "状態取得不可"
-    },
+    { label: "Kingdom Seeder", state: "RETIRED", detail: "廃止：王国情報は Kingdom Discovery（一覧API）で毎日更新" },
+    { label: "Alliance Roller", state: "RETIRED", detail: "廃止：同盟は同盟ページを開いたときに取得" },
+    { label: "Player Roller", state: "RETIRED", detail: "廃止：プレイヤーはウォッチリスト・プレイヤーページで取得" },
+    { label: "Ranking Roller", state: "RETIRED", detail: "廃止：ランキングは王国ウォッチリストで取得" },
     {
       label: "Kingdom Portal",
       state: operational?.kingdomPortal?.state || "UNKNOWN",
@@ -3614,7 +3337,9 @@ async function renderAdminDiagnosticsPage(request, env) {
         ? { tone:"warn", label:"注意" }
         : item.state === "UNKNOWN"
           ? { tone:"neutral", label:"未確認" }
-          : { tone:"bad", label:"停止/障害" };
+          : item.state === "RETIRED"
+            ? { tone:"neutral", label:"廃止" }
+            : { tone:"bad", label:"停止/障害" };
     return "<div class='collector-row'><div><b>"+esc(item.label)+"</b><small>"+esc(item.detail)+"</small></div><span class='"+st.tone+"'>"+st.label+"</span></div>";
   }).join("");
 
@@ -3629,14 +3354,14 @@ async function renderAdminDiagnosticsPage(request, env) {
   }).join("") || "<div class='empty'>診断イベントはありません。</div>";
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}html{background:#f5f5f7}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:860px;margin:auto;padding:20px 16px 50px}.nav{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 22px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.live{display:flex;align-items:center;gap:7px;color:#86868b;font-size:12px}.live-dot{width:7px;height:7px;border-radius:50%;background:#34c759}.hero{background:#fff;border-radius:28px;padding:30px 26px;border:1px solid #d2d2d7;box-shadow:0 6px 24px rgba(0,0,0,.05)}.hero-line{display:flex;align-items:center;gap:16px}.hero-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-size:25px;font-weight:800}.hero-icon.good{background:#e8f8ed;color:#1b8a3e}.hero-icon.warn{background:#fff4d6;color:#b77900}.hero-icon.bad{background:#ffe9e7;color:#d70015}.hero-icon.neutral{background:#f2f2f7;color:#6e6e73}.eyebrow{color:#86868b;font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}.hero h1{margin:3px 0 0;font-size:30px;letter-spacing:-.035em}.note{margin:20px 0 0;color:#6e6e73;line-height:1.55}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:24px;border-top:1px solid #e5e5ea;padding-top:20px}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border-right:0}.stat b{display:block;font-size:22px;letter-spacing:-.03em}.stat span{display:block;margin-top:4px;color:#86868b;font-size:11px}.section{margin-top:28px}.section-head{display:flex;align-items:end;justify-content:space-between;padding:0 5px 10px}.section-head h2{margin:0;font-size:20px;letter-spacing:-.02em}.section-head span{color:#86868b;font-size:11px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:22px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.035)}.collector-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;border-bottom:1px solid #e5e5ea}.collector-row:last-child{border-bottom:0}.collector-row b{display:block;font-size:14px}.collector-row small{display:block;margin-top:4px;color:#86868b;font-size:11px}.collector-row>span{font-size:12px;font-weight:700;white-space:nowrap}.service{display:flex;align-items:center;gap:13px;padding:16px 18px;border-bottom:1px solid #e5e5ea}.service:last-child{border-bottom:0}.service-icon,.mini-icon{flex:0 0 auto;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800}.service-main{flex:1;min-width:0}.service-name{font-size:15px;font-weight:650}.service-time{margin-top:3px;color:#86868b;font-size:11px}.service-state{font-size:12px;font-weight:700}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.event{border-bottom:1px solid #e5e5ea}.event:last-child{border-bottom:0}.event summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:10px}.event summary::-webkit-details-marker{display:none}.event-title{font-size:14px;font-weight:650}.event-op{color:#86868b;font-size:11px}.event-time{margin-left:auto;color:#86868b;font-size:11px;text-align:right}.event-body{padding:0 18px 18px}.event-status{font-size:12px;font-weight:700}.event-body p{margin:9px 0 14px;color:#6e6e73;font-size:13px;line-height:1.6;word-break:break-word}.facts{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 14px}.facts span{padding:6px 9px;background:#f5f5f7;border-radius:9px;color:#6e6e73;font-size:11px}.details-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.details-grid div{background:#f5f5f7;border-radius:11px;padding:9px}.discord-config-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid #e5e5ea}.discord-config-row:last-child{border-bottom:0}.discord-config-row b{display:block;font-size:12px}.discord-config-row small{display:block;margin-top:3px;color:#86868b;font-size:9px}.discord-config-value{text-align:right;font-size:11px;font-weight:800}.discord-config-value span{display:block;margin-top:3px;color:#6e6e73;font-size:9px;font-weight:500;word-break:break-all;max-width:260px}.details-grid small{display:block;color:#86868b;font-size:10px}.details-grid b{display:block;margin-top:3px;font-size:11px;word-break:break-all}.event details{margin-top:10px;border-top:1px solid #e5e5ea}.event details summary{padding:11px 0;font-size:11px;color:#0071e3}.json{margin:0;padding:12px;background:#1d1d1f;color:#f5f5f7;border-radius:12px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:10px;line-height:1.5}.empty{padding:28px;text-align:center;color:#86868b;font-size:13px}.footer{display:flex;justify-content:space-between;gap:12px;margin:18px 4px;color:#86868b;font-size:11px}.footer a{color:#0071e3;text-decoration:none}@media(max-width:600px){.wrap{padding:12px 10px 40px}.hero{padding:23px 18px;border-radius:22px}.hero h1{font-size:25px}.stats{grid-template-columns:repeat(2,1fr);gap:14px}.stat{border-right:0}.stat:nth-child(-n+2){padding-bottom:3px;border-bottom:1px solid #e5e5ea}.service{padding:14px}.service-time{font-size:10px}.event summary{padding:14px}.event-op{display:none}.event-time{font-size:10px}.details-grid{grid-template-columns:1fr}.footer{flex-direction:column}}
-</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/admin">‹ 管理画面</a><div class="live"><span class="live-dot"></span>30秒ごとに自動更新</div></nav><section class="hero"><div class="hero-line"><div class="hero-icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1>${state.label}</h1></div></div><p class="note">${state.note}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未診断</span></div></div></section><section class="section"><div class="section-head"><h2>サービス</h2><span>${data.services.length}項目</span></div><div class="card">${services}</div></section><section class="section"><div class="section-head"><h2>データ収集基盤</h2><span>Catalog / Seeder / Alliance / Player / Ranking / Semaphore</span></div><div class="card">${collectorItems}</div></section><section class="section"><div class="section-head"><h2>Discord Support 設定</h2><span>秘密情報は非表示</span></div><div class="card"><div class="discord-config-row"><div><b>Interactions Endpoint</b><small>Discord Developer Portal に設定するURL</small></div><div class="discord-config-value good"><span>${esc(discordConfig.endpoint)}</span></div></div>${discordRows}</div></section><section class="section"><div class="section-head"><h2>最近の診断</h2><span>最新40件</span></div><div class="card">${events}</div></section><footer class="footer"><span>EagleEye Diagnostics</span><a href="/admin">管理画面へ戻る</a></footer></main></body></html>`);
+*{box-sizing:border-box}html{background:var(--ee-bg)}body{margin:0;background:var(--ee-bg);color:var(--ee-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:860px;margin:auto;padding:20px 16px 50px}.nav{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 22px}.back{color:var(--ee-cyan);text-decoration:none;font-size:14px;font-weight:600}.live{display:flex;align-items:center;gap:7px;color:var(--ee-subtext);font-size:12px}.live-dot{width:7px;height:7px;border-radius:50%;background:var(--ee-success,#22c55e)}.hero{background:var(--ee-panel);border-radius:28px;padding:30px 26px;border:1px solid var(--ee-border-soft);box-shadow:0 6px 24px rgba(0,0,0,.05)}.hero-line{display:flex;align-items:center;gap:16px}.hero-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-size:25px;font-weight:800}.hero-icon.good{background:color-mix(in srgb,var(--ee-success,#22c55e) 16%,transparent);color:var(--ee-success,#22c55e)}.hero-icon.warn{background:color-mix(in srgb,var(--ee-warning,#f59e0b) 16%,transparent);color:var(--ee-warning,#f59e0b)}.hero-icon.bad{background:color-mix(in srgb,var(--ee-danger,#f87171) 16%,transparent);color:var(--ee-danger,#f87171)}.hero-icon.neutral{background:var(--ee-panel-raised);color:var(--ee-subtext)}.eyebrow{color:var(--ee-subtext);font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}.hero h1{margin:3px 0 0;font-size:30px;letter-spacing:-.035em}.note{margin:20px 0 0;color:var(--ee-subtext);line-height:1.55}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:24px;border-top:1px solid var(--ee-border-soft);padding-top:20px}.stat{text-align:center;border-right:1px solid var(--ee-border-soft)}.stat:last-child{border-right:0}.stat b{display:block;font-size:22px;letter-spacing:-.03em}.stat span{display:block;margin-top:4px;color:var(--ee-subtext);font-size:11px}.section{margin-top:28px}.section-head{display:flex;align-items:end;justify-content:space-between;padding:0 5px 10px}.section-head h2{margin:0;font-size:20px;letter-spacing:-.02em}.section-head span{color:var(--ee-subtext);font-size:11px}.card{background:var(--ee-panel);border:1px solid var(--ee-border-soft);border-radius:22px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.035)}.collector-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;border-bottom:1px solid var(--ee-border-soft)}.collector-row:last-child{border-bottom:0}.collector-row b{display:block;font-size:14px}.collector-row small{display:block;margin-top:4px;color:var(--ee-subtext);font-size:11px}.collector-row>span{font-size:12px;font-weight:700;white-space:nowrap}.service{display:flex;align-items:center;gap:13px;padding:16px 18px;border-bottom:1px solid var(--ee-border-soft)}.service:last-child{border-bottom:0}.service-icon,.mini-icon{flex:0 0 auto;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800}.service-main{flex:1;min-width:0}.service-name{font-size:15px;font-weight:650}.service-time{margin-top:3px;color:var(--ee-subtext);font-size:11px}.service-state{font-size:12px;font-weight:700}.good{color:var(--ee-success,#22c55e)}.warn{color:var(--ee-warning,#f59e0b)}.bad{color:var(--ee-danger,#f87171)}.neutral{color:var(--ee-subtext)}.event{border-bottom:1px solid var(--ee-border-soft)}.event:last-child{border-bottom:0}.event summary{list-style:none;cursor:pointer;padding:16px 18px;display:flex;align-items:center;gap:10px}.event summary::-webkit-details-marker{display:none}.event-title{font-size:14px;font-weight:650}.event-op{color:var(--ee-subtext);font-size:11px}.event-time{margin-left:auto;color:var(--ee-subtext);font-size:11px;text-align:right}.event-body{padding:0 18px 18px}.event-status{font-size:12px;font-weight:700}.event-body p{margin:9px 0 14px;color:var(--ee-subtext);font-size:13px;line-height:1.6;word-break:break-word}.facts{display:flex;gap:7px;flex-wrap:wrap;margin:8px 0 14px}.facts span{padding:6px 9px;background:var(--ee-bg);border-radius:9px;color:var(--ee-subtext);font-size:11px}.details-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.details-grid div{background:var(--ee-bg);border-radius:11px;padding:9px}.discord-config-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--ee-border-soft)}.discord-config-row:last-child{border-bottom:0}.discord-config-row b{display:block;font-size:12px}.discord-config-row small{display:block;margin-top:3px;color:var(--ee-subtext);font-size:9px}.discord-config-value{text-align:right;font-size:11px;font-weight:800}.discord-config-value span{display:block;margin-top:3px;color:var(--ee-subtext);font-size:9px;font-weight:500;word-break:break-all;max-width:260px}.details-grid small{display:block;color:var(--ee-subtext);font-size:10px}.details-grid b{display:block;margin-top:3px;font-size:11px;word-break:break-all}.event details{margin-top:10px;border-top:1px solid var(--ee-border-soft)}.event details summary{padding:11px 0;font-size:11px;color:var(--ee-cyan)}.json{margin:0;padding:12px;background:var(--ee-text);color:var(--ee-bg);border-radius:12px;max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:10px;line-height:1.5}.empty{padding:28px;text-align:center;color:var(--ee-subtext);font-size:13px}.footer{display:flex;justify-content:space-between;gap:12px;margin:18px 4px;color:var(--ee-subtext);font-size:11px}.footer a{color:var(--ee-cyan);text-decoration:none}@media(max-width:600px){.wrap{padding:12px 10px 40px}.hero{padding:23px 18px;border-radius:22px}.hero h1{font-size:25px}.stats{grid-template-columns:repeat(2,1fr);gap:14px}.stat{border-right:0}.stat:nth-child(-n+2){padding-bottom:3px;border-bottom:1px solid var(--ee-border-soft)}.service{padding:14px}.service-time{font-size:10px}.event summary{padding:14px}.event-op{display:none}.event-time{font-size:10px}.details-grid{grid-template-columns:1fr}.footer{flex-direction:column}}
+</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/admin">← 管理画面</a><div class="live"><span class="live-dot"></span>30秒ごとに自動更新</div></nav><section class="hero"><div class="hero-line"><div class="hero-icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">システム状況</div><h1>${state.label}</h1></div></div><p class="note">${state.note}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未診断</span></div></div></section><section class="section"><div class="section-head"><h2>サービス</h2><span>${data.services.length}項目</span></div><div class="card">${services}</div></section><section class="section"><div class="section-head"><h2>データ収集基盤</h2><span>Catalog / Watchlist / Semaphore</span></div><div class="card">${collectorItems}</div></section><section class="section"><div class="section-head"><h2>Discord Support 設定</h2><span>秘密情報は非表示</span></div><div class="card"><div class="discord-config-row"><div><b>Interactions Endpoint</b><small>Discord Developer Portal に設定するURL</small></div><div class="discord-config-value good"><span>${esc(discordConfig.endpoint)}</span></div></div>${discordRows}</div></section><section class="section"><div class="section-head"><h2>最近の診断</h2><span>最新40件</span></div><div class="card">${events}</div></section><footer class="footer"><span>EagleEye Diagnostics</span><a href="/admin">管理画面へ戻る</a></footer></main></body></html>`);
 }
 
 async function renderMightPulseResearchPage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>管理者権限が必要です</h1></body></html>";
-  return `<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MightPulse Research Lab | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:26px 14px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0}.sub{color:#94a3b8;line-height:1.7;font-size:13px}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button,.candidate-grid button{border:1px solid #475569;border-radius:10px;background:#0f172a;color:#e2e8f0;padding:10px 12px;font-weight:800;cursor:pointer}.actions .primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.candidate-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}.result{margin-top:14px}.row{padding:12px;border-top:1px solid #334155}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;word-break:break-word}.pill{display:inline-block;padding:4px 7px;border-radius:999px;background:#0f2a1c;color:#86efac;margin:2px;font-size:10px}.note{padding:12px;border-radius:10px;background:#111c30;color:#cbd5e1;font-size:12px;line-height:1.6}@media(max-width:600px){.candidate-grid{grid-template-columns:1fr 1fr}.title{font-size:26px}}</style></head><body><main class='wrap'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='eyebrow'>MIGHTPULSE RESEARCH LAB</div><h1 class='title'>未公開データ候補の構造調査</h1><p class='sub'>公開API仕様に掲載されていない可能性があるinclude候補を、既存の認証済みPlayer APIに対して検証します。APIキー本体・生レスポンスは表示・保存しません。</p><div class='card'><div class='field'><label>Governor ID</label><input id='governorId' inputmode='numeric' placeholder='例: 225623582'></div><div class='actions'><button class='primary' id='all'>全候補を調査</button></div><div class='candidate-grid'><button type='button' data-candidate='pet'>pet</button><button type='button' data-candidate='pets'>pets</button><button type='button' data-candidate='mail'>mail</button><button type='button' data-candidate='messages'>messages</button><button type='button' data-candidate='inbox'>inbox</button><button type='button' data-candidate='record'>record</button><button type='button' data-candidate='records'>records</button><button type='button' data-candidate='battle'>battle</button><button type='button' data-candidate='battles'>battles</button><button type='button' data-candidate='battle_report'>battle_report</button><button type='button' data-candidate='battle_reports'>battle_reports</button><button type='button' data-candidate='combat'>combat</button><button type='button' data-candidate='combat_report'>combat_report</button><button type='button' data-candidate='combat_reports'>combat_reports</button><button type='button' data-candidate='report'>report</button><button type='button' data-candidate='reports'>reports</button><button type='button' data-candidate='event'>event</button><button type='button' data-candidate='events'>events</button><button type='button' data-candidate='history'>history</button><button type='button' data-candidate='activity'>activity</button></div></div><div class='card result'><div id='status' class='muted'>調査対象を選択してください。</div><div id='results'></div></div><div class='card'><div class='note'>これは認証済みPlayer APIで受け付けられる追加includeの有無とレスポンス構造を観測する研究機能です。未公開Endpointへの認証回避やアクセス制御突破は行いません。</div></div></main><script>(function(){function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}function draw(r){var el=document.getElementById('results');var rows=Array.isArray(r)?r:[r];el.innerHTML=rows.map(function(x){if(!x.ok){return '<div class="row bad"><b>'+esc(x.candidate)+'</b> · '+esc(x.error||'ERROR')+' · HTTP '+esc(x.status||0)+'<div>'+esc(x.message||'')+'</div></div>';}return '<div class="row"><b class="ok">'+esc(x.candidate)+'</b> · HTTP '+esc(x.http_status)+' · '+esc(x.elapsed_ms)+'ms<br><span class="mono">include='+esc(x.requested_include)+'</span><div style="margin-top:7px">'+(x.sections||[]).map(function(v){return '<span class="pill">'+esc(v)+'</span>'}).join('')+'</div><div class="muted" style="margin-top:6px">top-level: '+esc((x.payload_keys||[]).join(', ')||'-')+' / player: '+esc((x.player_keys||[]).join(', ')||'-')+'</div></div>';}).join('');}async function run(candidate,all){var id=document.getElementById('governorId').value.trim();if(!id){document.getElementById('status').innerHTML='<span class="bad">Governor IDを入力してください。</span>';return;}document.getElementById('status').textContent=all?'全候補を調査中…':'調査中: '+candidate;try{var q=new URLSearchParams({governor_id:id});if(all)q.set('all','1');else q.set('candidate',candidate);var r=await fetch('/api/admin/mightpulse-research?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));draw(all?d.results:d.result);document.getElementById('status').innerHTML='<span class="ok">調査完了。結果はこのブラウザには保存していません。</span>';}catch(e){document.getElementById('status').innerHTML='<span class="bad">調査失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('[data-candidate]').forEach(function(b){b.onclick=function(){run(b.getAttribute('data-candidate'),false)}});document.getElementById('all').onclick=function(){if(confirm('20候補を順番に調査します。MightPulse APIリクエストを最大20回使用します。実行しますか？'))run('',true)};})();</script></body></html>`;
+  return `<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>MightPulse Research Lab | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:26px 14px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:30px;margin:5px 0}.sub{color:#94a3b8;line-height:1.7;font-size:13px}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button,.candidate-grid button{border:1px solid #475569;border-radius:10px;background:#0f172a;color:#e2e8f0;padding:10px 12px;font-weight:800;cursor:pointer}.actions .primary{background:#f59e0b;color:#111827;border-color:#f59e0b}.candidate-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}.result{margin-top:14px}.row{padding:12px;border-top:1px solid #334155}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;word-break:break-word}.pill{display:inline-block;padding:4px 7px;border-radius:999px;background:#0f2a1c;color:#86efac;margin:2px;font-size:10px}.note{padding:12px;border-radius:10px;background:#111c30;color:#cbd5e1;font-size:12px;line-height:1.6}@media(max-width:600px){.candidate-grid{grid-template-columns:1fr 1fr}.title{font-size:26px}}</style></head><body><main class='wrap'><a class='back' href='/admin'>← 管理画面</a><div class='eyebrow'>MightPulse調査</div><h1 class='title'>未公開データ候補の構造調査</h1><p class='sub'>公開API仕様に掲載されていない可能性があるinclude候補を、既存の認証済みPlayer APIに対して検証します。APIキー本体・生レスポンスは表示・保存しません。</p><div class='card'><div class='field'><label>Governor ID</label><input id='governorId' inputmode='numeric' placeholder='例: 225623582'></div><div class='actions'><button class='primary' id='all'>全候補を調査</button></div><div class='candidate-grid'><button type='button' data-candidate='pet'>pet</button><button type='button' data-candidate='pets'>pets</button><button type='button' data-candidate='mail'>mail</button><button type='button' data-candidate='messages'>messages</button><button type='button' data-candidate='inbox'>inbox</button><button type='button' data-candidate='record'>record</button><button type='button' data-candidate='records'>records</button><button type='button' data-candidate='battle'>battle</button><button type='button' data-candidate='battles'>battles</button><button type='button' data-candidate='battle_report'>battle_report</button><button type='button' data-candidate='battle_reports'>battle_reports</button><button type='button' data-candidate='combat'>combat</button><button type='button' data-candidate='combat_report'>combat_report</button><button type='button' data-candidate='combat_reports'>combat_reports</button><button type='button' data-candidate='report'>report</button><button type='button' data-candidate='reports'>reports</button><button type='button' data-candidate='event'>event</button><button type='button' data-candidate='events'>events</button><button type='button' data-candidate='history'>history</button><button type='button' data-candidate='activity'>activity</button></div></div><div class='card result'><div id='status' class='muted'>調査対象を選択してください。</div><div id='results'></div></div><div class='card'><div class='note'>これは認証済みPlayer APIで受け付けられる追加includeの有無とレスポンス構造を観測する研究機能です。未公開Endpointへの認証回避やアクセス制御突破は行いません。</div></div></main><script>(function(){function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}function draw(r){var el=document.getElementById('results');var rows=Array.isArray(r)?r:[r];el.innerHTML=rows.map(function(x){if(!x.ok){return '<div class="row bad"><b>'+esc(x.candidate)+'</b> · '+esc(x.error||'ERROR')+' · HTTP '+esc(x.status||0)+'<div>'+esc(x.message||'')+'</div></div>';}return '<div class="row"><b class="ok">'+esc(x.candidate)+'</b> · HTTP '+esc(x.http_status)+' · '+esc(x.elapsed_ms)+'ms<br><span class="mono">include='+esc(x.requested_include)+'</span><div style="margin-top:7px">'+(x.sections||[]).map(function(v){return '<span class="pill">'+esc(v)+'</span>'}).join('')+'</div><div class="muted" style="margin-top:6px">top-level: '+esc((x.payload_keys||[]).join(', ')||'-')+' / player: '+esc((x.player_keys||[]).join(', ')||'-')+'</div></div>';}).join('');}async function run(candidate,all){var id=document.getElementById('governorId').value.trim();if(!id){document.getElementById('status').innerHTML='<span class="bad">Governor IDを入力してください。</span>';return;}document.getElementById('status').textContent=all?'全候補を調査中…':'調査中: '+candidate;try{var q=new URLSearchParams({governor_id:id});if(all)q.set('all','1');else q.set('candidate',candidate);var r=await fetch('/api/admin/mightpulse-research?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));draw(all?d.results:d.result);document.getElementById('status').innerHTML='<span class="ok">調査完了。結果はこのブラウザには保存していません。</span>';}catch(e){document.getElementById('status').innerHTML='<span class="bad">調査失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('[data-candidate]').forEach(function(b){b.onclick=function(){run(b.getAttribute('data-candidate'),false)}});document.getElementById('all').onclick=function(){if(confirm('20候補を順番に調査します。MightPulse APIリクエストを最大20回使用します。実行しますか？'))run('',true)};})();</script></body></html>`;
 }
 function stableJsonForProbe(value) {
   if (value === null || value === undefined) return value;
@@ -3706,7 +3431,9 @@ function mightPulseProbeHeaders(headers) {
   const names = [
     "date", "age", "etag", "last-modified", "cache-control", "expires",
     "cf-cache-status", "cf-ray", "x-cache", "via",
-    "x-ratelimit-remaining", "x-ratelimit-day-remaining", "content-age", "vary"
+    "x-ratelimit-limit-minute", "x-ratelimit-remaining-minute", "x-ratelimit-reset-minute",
+    "x-ratelimit-limit-day", "x-ratelimit-remaining-day", "x-ratelimit-reset-day",
+    "content-age", "vary"
   ];
   const result = {};
   for (const name of names) {
@@ -3773,23 +3500,22 @@ function mightPulseProbeRequestSpec(type, { governorId, kid, board, include }) {
   };
 }
 
-async function fetchMightPulseProbeThroughPool(env, spec) {
+async function fetchMightPulseProbeThroughPool(env, spec, actor = null) {
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
   let lease = null;
   let poolType = null;
+  let probeStartedAt = Date.now();
 
   try {
-    const automaticPoolTypes = ["SYSTEM_WATCHLIST", "SYSTEM_GENERAL", "USER_CONTRIBUTED"];
-    lease = await leaseApiKey(env.DB, {
-      poolTypes: automaticPoolTypes,
-      purpose: "MIGHTPULSE_PROBE",
-      targetType: spec.targetType,
-      targetId: spec.targetId
+    lease = await leaseProbeApiKey(env, {
+      mightyRequired:false, purpose:"MIGHTPULSE_PROBE",
+      targetType:spec.targetType, targetId:spec.targetId
     });
     poolType = lease.pool_type;
 
-    const requestStartedAt = Date.now();
-    const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key });
+    probeStartedAt = Date.now();
+    const requestStartedAt = probeStartedAt;
+    const result = await mightPulseFetch(env, spec.path, { query: spec.query, apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
     const responseReceivedAt = Date.now();
     const payload = result?.data ?? null;
 
@@ -3806,23 +3532,52 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
     const playerActivity = getMightPulseProbePlayerActivity(payload);
     const headers = mightPulseProbeHeaders(result.headers);
 
-    await recordApiPoolSuccess(env.DB, {
-      keyId: lease.key_id,
-      leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-      endpoint: spec.endpoint,
-      targetType: spec.targetType,
-      targetId: spec.targetId,
-      purpose: "MIGHTPULSE_PROBE",
-      httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+    // Comparison investigation mode: expose game-profile fields needed to validate
+    // the MightPulse schema. Never include request headers, API keys, or tokens.
+    const diagnosticPayload = (() => {
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+      const allowed = ["player", "heroes", "gov_gear", "ranks", "base", "data"];
+      const out = {};
+      for (const key of allowed) {
+        if (payload[key] !== undefined) out[key] = payload[key];
+      }
+      const player = out.player && typeof out.player === "object" ? out.player : null;
+      if (player) {
+        for (const key of ["heroes", "gov_gear", "ranks", "base"]) {
+          if (player[key] !== undefined && out[key] === undefined) out[key] = player[key];
+        }
+      }
+      return out;
+    })();
+
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
+      purpose:"MIGHTPULSE_PROBE", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
     });
+
+    const safePayload = redactProbeSecrets(payload);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:spec.path,query:spec.query||{},payload:safePayload,httpStatus:result.status,actorRole:actor?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
+    const archiveRecord = {
+      request_id: crypto.randomUUID(), user_id: actor?.user_id || null, actor_discord_id: actor?.discord_id || null, actor_label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), actor_role: actor?.role || null, command_type: spec.targetType, endpoint: spec.endpoint,
+      query: spec.query, status: "SUCCESS", http_status: result.status,
+      elapsed_ms: responseReceivedAt - requestStartedAt,
+      started_at: new Date(requestStartedAt).toISOString(), completed_at: new Date(responseReceivedAt).toISOString(),
+      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave,
+      save_destination:productionSave.saved?"R2+PRODUCTION":"R2", key_source:lease?.pool_type || lease?.source_type || null, key_id:lease?.key_id || null, key_owner_user_id:lease?.key_owner_user_id || lease?.contributed_by_user_id || null
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, archiveRecord); }
+    catch (archiveError) { archive = { request_id: archiveRecord.request_id, r2_saved:false, metadata_saved:false, archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,300) }; }
 
     return {
       ok: true,
       probe: {
-        request_id: crypto.randomUUID(),
+        request_id: archiveRecord.request_id,
+        actor: { user_id: actor?.user_id || null, discord_id: actor?.discord_id || null, label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), role: actor?.role || null },
         type: spec.label,
         target_type: spec.targetType,
         target_id: spec.targetId,
@@ -3843,33 +3598,47 @@ async function fetchMightPulseProbeThroughPool(env, spec) {
         player_activity: playerActivity,
         headers,
         payload_keys: payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload) : [],
+        diagnostic_payload: redactProbeSecrets(diagnosticPayload),
+        raw_payload: safePayload,
+        field_dictionary: buildProbeFieldDictionary(safePayload),
+        production_save: productionSave,
+        archive,
         timestamp_like_fields: timestampFields,
         response_sha256: responseHash,
         section_sha256: sectionHashes
       }
     };
   } catch (error) {
+    const status = Number(error?.status || 0);
     if (lease) {
-      const status = Number(error?.status || 0);
       const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
-      const disable = status === 401 || status === 403;
-      const keepAvailable = !disable && cooldown === 0 && (status === 400 || status === 404);
-      await recordApiPoolFailure(env.DB, {
-        keyId: lease.key_id,
-        leaseId: lease.lease_id,
-      poolType: lease.pool_type,
-        endpoint: spec.endpoint,
-        targetType: spec.targetType,
-        targetId: spec.targetId,
-        purpose: "MIGHTPULSE_PROBE",
-        httpStatus: status,
-        errorCode: error?.code || "MIGHTPULSE_REQUEST_FAILED",
-        errorMessage: error?.message || null,
-        cooldownSeconds: cooldown,
-        disable,
-        keepAvailable
-      });
+      const keepAvailable = cooldown === 0 && (status === 400 || status === 403 || status === 404);
+      try {
+        await releaseProbeApiKey(env, lease, {
+          endpoint:spec.endpoint, targetType:spec.targetType, targetId:spec.targetId,
+          purpose:"MIGHTPULSE_PROBE", httpStatus:status,
+          errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null, cooldownSeconds:cooldown, keepAvailable
+        });
+      } catch {}
     }
+    const failedAt = Date.now();
+    try {
+      await archiveMightPulseProbeRecord(env, {
+        request_id: crypto.randomUUID(), user_id: actor?.user_id || null, actor_discord_id: actor?.discord_id || null, actor_label: actor?.global_name || actor?.username || (actor?.discord_id ? "Discord " + actor.discord_id : "Admin"), actor_role: actor?.role || null, command_type: spec.targetType,
+        endpoint: spec.endpoint, query: spec.query, status: "FAILED", http_status: status || null,
+        elapsed_ms: failedAt - probeStartedAt, retry_count:Math.max(0,Number(error?.attempts||1)-1), started_at: new Date(probeStartedAt).toISOString(),
+        completed_at: new Date(failedAt).toISOString(), trigger_reason: "MANUAL",
+        key_source:lease?.pool_type||lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
+        error_code: error?.code || "MIGHTPULSE_REQUEST_FAILED",
+        error_message: safeProbeErrorMessage(error,lease?.api_key),
+        diagnostic: safeProbeDiagnostic(error?.details || null,lease?.api_key)
+      });
+    } catch {}
+    try {
+      error.message = safeProbeErrorMessage(error, lease?.api_key);
+      if (error?.details != null) error.details = safeProbeDiagnostic(error.details, lease?.api_key);
+    } catch {}
     throw error;
   }
 }
@@ -3955,34 +3724,585 @@ async function handleMightPulseResearchApi(request, env) {
   }
 }
 
+function safeProbeErrorMessage(error, apiKey = null) {
+  let message = String(error?.message || error || "MIGHTPULSE_REQUEST_FAILED");
+  const secret = String(apiKey || "");
+  if (secret) message = message.split(secret).join("[REDACTED]");
+  message = message
+    .replace(/(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+/ig, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password|credential)\s*[:=]\s*)[^\s,;]+/ig, "$1[REDACTED]");
+  return message.slice(0, 1000);
+}
+
+function safeProbeDiagnostic(value, apiKey = null) {
+  const walk = input => {
+    if (typeof input === "string") return safeProbeErrorMessage(input, apiKey);
+    if (Array.isArray(input)) return input.map(walk);
+    if (!input || typeof input !== "object") return input;
+    const out = {};
+    for (const [key, child] of Object.entries(input)) {
+      out[key] = SECRET_PROBE_DIAGNOSTIC_FIELD.test(key) ? "[REDACTED]" : walk(child);
+    }
+    return out;
+  };
+  return walk(redactProbeSecrets(value));
+}
+const SECRET_PROBE_DIAGNOSTIC_FIELD = /(?:^key$|api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|secret|password|credential)/i;
+
+
+async function leaseProbeApiKey(env, { mightyRequired = false, purpose = "MIGHTPULSE_PROBE", targetType = null, targetId = null } = {}) {
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  // Probe shares every existing API Pool class. Keep at least one otherwise-eligible
+  // key unleased for normal EagleEye users/jobs; the atomic claim query enforces this
+  // reserve even when several Probe commands start concurrently.
+  const borrowed = await leaseApiKey(env.DB, {
+    poolTypes: ["SYSTEM_GENERAL", "SYSTEM_WATCHLIST", "USER_CONTRIBUTED"],
+    mightyOnly: mightyRequired,
+    reserveAvailableKeys: 1,
+    // Ordinary commands prefer non-Mighty keys and leave one confirmed Mighty key
+    // available when such a key exists; Mighty-required commands reserve one eligible Mighty key.
+    reserveMightyKeys: mightyRequired ? 0 : 1,
+    preferNonMighty: !mightyRequired,
+    purpose,
+    targetType,
+    targetId
+  });
+  return {
+    ...borrowed,
+    source_type: "API_POOL",
+    key_owner_user_id: borrowed.contributed_by_user_id || null
+  };
+}
+
+function isQuotaFreeMightPulsePath(path) {
+  const pathOnly = String(path || "").split("?")[0].replace(/\/+$/, "");
+  return pathOnly === "/usage" || pathOnly === "/v1/usage";
+}
+
+async function releaseProbeApiKey(env, lease, options = {}) {
+  if (!lease) return;
+  if (options.success) {
+    await recordApiPoolSuccess(env.DB, {
+      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+      endpoint: options.endpoint || null, targetType: options.targetType || null,
+      targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
+      httpStatus: options.httpStatus || 200,
+      remainingMinute: options.remainingMinute ?? null, remainingDay: options.remainingDay ?? null,
+      // GET /v1/usage "does not count against either limit" (MightPulse API docs).
+      countsAgainstQuota: !isQuotaFreeMightPulsePath(options.endpoint)
+    });
+  } else if (options.errorCode || options.cooldownSeconds) {
+    await recordApiPoolFailure(env.DB, {
+      keyId: lease.key_id, leaseId: lease.lease_id, poolType: lease.pool_type,
+      endpoint: options.endpoint || null, targetType: options.targetType || null,
+      targetId: options.targetId || null, purpose: options.purpose || "MIGHTPULSE_PROBE",
+      httpStatus: options.httpStatus || 0, errorCode: options.errorCode || "MIGHTPULSE_REQUEST_FAILED",
+      errorMessage: options.errorMessage || null, cooldownSeconds: options.cooldownSeconds || 0,
+      disable: false, keepAvailable: options.keepAvailable === true,
+      requestCount: Math.max(1, Number(options.requestCount) || 1)
+    });
+  } else {
+    await releaseApiLease(env.DB, lease.lease_id);
+  }
+}
+
+async function executeManualMightPulseProbe(request, env, guard, body) {
+  const command = validateManualProbeCommand(body || {});
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:MANUAL:" + (await sha256HexForProbe({path:command.path,query:command.query})).slice(0,32);
+  const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
+  if (!apiLockToken) return json({ ok:false, error:"API_REQUEST_IN_PROGRESS", message:"同じコマンドが実行中です。" }, 409);
+  configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
+  let lease = null;
+  let leaseReleased = false;
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  try {
+    lease = await leaseProbeApiKey(env, {
+      // Arbitrary manual probes default to ordinary API access; callers may explicitly require Mighty.
+      mightyRequired: body?.mighty_required === true,
+      purpose: "MIGHTPULSE_PROBE_MANUAL",
+      targetType: "MANUAL_COMMAND",
+      targetId: command.path
+    });
+    const result = await mightPulseFetch(env, command.path, {
+      method: "GET",
+      query: command.query,
+      apiKey: lease.api_key,
+      maxRetries: 0,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type, probeRequestId: requestId }
+    });
+    const completedAt = Date.now();
+    const safePayload = redactProbeSecrets(result.data);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload:safePayload,httpStatus:result.status,actorRole:guard?.auth?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
+      purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
+    });
+    leaseReleased = true;
+    const record = {
+      request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id: guard?.auth?.discord_id || null,
+      actor_label: guard?.auth?.global_name || guard?.auth?.username || (guard?.auth?.discord_id ? "Discord " + guard.auth.discord_id : "Admin"),
+      actor_role: guard?.auth?.role || null,
+      command_type: "MANUAL", endpoint: command.path, query: command.query,
+      status: "SUCCESS", http_status: result.status, elapsed_ms: completedAt-startedAt,
+      started_at: new Date(startedAt).toISOString(), completed_at: new Date(completedAt).toISOString(),
+      trigger_reason: "MANUAL", raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload),
+      production_save:productionSave, save_destination:productionSave.saved?"R2+PRODUCTION":"R2",
+      key_source:lease?.pool_type||lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, record); }
+    catch (archiveError) { archive = { request_id: requestId, r2_saved:false, metadata_saved:false, archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,300) }; }
+    return json({ ok:true, probe:{
+      request_id: requestId, actor:{user_id:guard?.auth?.user_id||null,discord_id:guard?.auth?.discord_id||null,label:guard?.auth?.global_name||guard?.auth?.username||(guard?.auth?.discord_id?"Discord "+guard.auth.discord_id:"Admin"),role:guard?.auth?.role||null}, type:"MANUAL " + command.path, target_type:"MANUAL_COMMAND",
+      target_id: command.path, endpoint: command.path, request_path: command.path,
+      query: command.query, pool_type: lease.pool_type, http_status: result.status,
+      request_started_at_iso: record.started_at, response_received_at_iso: record.completed_at,
+      elapsed_ms: record.elapsed_ms, payload_keys: safePayload && typeof safePayload === "object" && !Array.isArray(safePayload) ? Object.keys(safePayload) : [],
+      raw_payload: safePayload, field_dictionary:buildProbeFieldDictionary(safePayload), production_save:productionSave, response_sha256: await sha256HexForProbe(safePayload), archive
+    }});
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    if (lease) {
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      const keepAvailable = status === 400 || status === 403 || status === 404;
+      try {
+        await releaseProbeApiKey(env, lease, {
+          endpoint:command.path, targetType:"MANUAL_COMMAND", targetId:command.path,
+          purpose:"MIGHTPULSE_PROBE_MANUAL", httpStatus:status,
+          errorCode:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null, cooldownSeconds:cooldown, keepAvailable
+        });
+        leaseReleased = true;
+      } catch {}
+    }
+    const completedAt = Date.now();
+    const record = {
+      request_id: requestId, user_id: guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id: guard?.auth?.discord_id || null,
+      actor_label: guard?.auth?.global_name || guard?.auth?.username || (guard?.auth?.discord_id ? "Discord " + guard.auth.discord_id : "Admin"),
+      actor_role: guard?.auth?.role || null,
+      command_type:"MANUAL", endpoint:command.path, query:command.query,
+      status:"FAILED", http_status:status || null, elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:"MANUAL", key_source:lease?.pool_type||lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
+      error_code:error?.code || "MIGHTPULSE_REQUEST_FAILED",
+      error_message:safeProbeErrorMessage(error,lease?.api_key),
+      diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key)
+    };
+    try { await archiveMightPulseProbeRecord(env, record); } catch {}
+    return json({ ok:false, request_id:requestId, error:error?.code || "MIGHTPULSE_PROBE_FAILED",
+      status, message:safeProbeErrorMessage(error,lease?.api_key) || null, diagnostic:safeProbeDiagnostic(error?.details || null,lease?.api_key) },
+      status >= 400 && status < 600 ? status : 502);
+  } finally {
+    if (lease && !leaseReleased) { try { await releaseProbeApiKey(env, lease); } catch {} }
+    await releaseApiRequestLock(env, apiLockKey, apiLockToken);
+  }
+}
+
+function identifyKnownProbeCommand(path, query = {}) {
+  const normalizedPath = String(path || "");
+  const include = String(query?.include || "base");
+  const player = normalizedPath.match(/^\/players\/([^/]+)$/);
+  if (player) {
+    const idType = String(query?.id_type || "");
+    if (idType === "uid") return null;
+    if (include === "base,heroes,ranks,gov_gear") return { id:"player_full", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (include === "ranks" || include === "base,ranks") return { id:"player_ranks", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+    if (include === "base") return { id:"player_base", params:{governor_id:decodeURIComponent(player[1])}, kind:"PLAYER" };
+  }
+  const ranking = normalizedPath.match(/^\/kingdoms\/(\d+)\/ranks$/);
+  if (ranking && query?.board && KINGDOM_RANKING_BOARDS.includes(String(query.board))) {
+    return { id:"kingdom_rank_board", params:{kid:ranking[1],board:String(query.board),limit:Math.min(100,Math.max(1,Number(query.limit)||100))}, kind:"KINGDOM_RANKING" };
+  }
+  return null;
+}
+
+async function persistKnownProbeResponse(env, { path, query = {}, payload, httpStatus = 200, commandId = null, actorRole = null } = {}) {
+  if (!env?.DB || Number(httpStatus) < 200 || Number(httpStatus) >= 300 || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { saved:false, destination:"R2", reason:"NOT_A_VALID_SUCCESS_RESPONSE" };
+  }
+  const playerCommandIds = new Set(["player_base","player_full","player_ranks","eagleeye_player_refresh","eagleeye_player_rank_refresh"]);
+  const rankingCommandIds = new Set(["kingdom_rank_board","eagleeye_kingdom_rank_refresh"]);
+  const identified = commandId ? { id:commandId, kind:playerCommandIds.has(commandId) ? "PLAYER" : rankingCommandIds.has(commandId) ? "KINGDOM_RANKING" : "OTHER", params:{} } : identifyKnownProbeCommand(path,query);
+  if (!identified) return { saved:false, destination:"R2", reason:"NO_CONFIRMED_PRODUCTION_MAPPING" };
+  const safePayload = redactProbeSecrets(payload);
+  const sourceObservedAt = getMightPulseSourceTimestamp(safePayload);
+  const now = Math.floor(Date.now()/1000);
+
+  if (identified.kind === "PLAYER") {
+    // materializePlayer requires the documented observation envelope to contain a player object.
+    // Reject unknown response shapes before writing even an API observation to production D1.
+    if (!safePayload.player || typeof safePayload.player !== "object" || Array.isArray(safePayload.player)) {
+      return { saved:false, destination:"R2", reason:"PLAYER_PAYLOAD_SHAPE_UNCONFIRMED" };
+    }
+    const playerPayload = safePayload.player;
+    // Never infer the returned player's identity from the request path alone.
+    // Use only explicit governor_id values and validate the response against the requested target.
+    const governorId = normalizeGovernorId(playerPayload.governor_id ?? safePayload.governor_id);
+    if (!governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISSING" };
+    const pathMatch=String(path||"").match(/^\/players\/([^/]+)$/);
+    const requestedId=identified.params?.governor_id || (pathMatch&&String(query?.id_type||"")!=="uid"?decodeURIComponent(pathMatch[1]):null);
+    if (requestedId && identified.id !== "player_uid" && normalizeGovernorId(requestedId) !== governorId) return { saved:false, destination:"R2", reason:"PLAYER_ID_MISMATCH" };
+    const observationData = observationEnvelope({ endpoint:"/players/:governor_id", httpStatus:Number(httpStatus)||200, raw:safePayload, sourceObservedAt });
+    const savedObservation = await saveApiObservation(env.DB,observationData);
+    const observation = { ...observationData, observation_id:savedObservation.observation_id, payload:safePayload };
+    const existing = await getPlayer(env.DB,governorId);
+    await materializePlayer(env.DB,observation,existing,env.ARCHIVE,env.HISTORY_STORAGE_MODE);
+    const heroPayload = Array.isArray(safePayload.heroes) ? safePayload.heroes : Array.isArray(playerPayload.heroes) ? playerPayload.heroes : [];
+    if (heroPayload.length) { try { await queueHeroIconCandidates(env.DB,heroPayload,value=>localizeHeroName(value)); } catch (error) { console.error("probe_hero_icon_queue_failed",error?.message||error); } }
+    const ranks = playerPayload.ranks || safePayload.ranks;
+    let rankSnapshotSaved=false;
+    if (ranks && typeof ranks==="object" && !Array.isArray(ranks) && Object.keys(ranks).length) {
+      const visibilitySettings=await getPlayerVisibilitySettings(env.DB);
+      const role=String(actorRole||"ADMIN").toUpperCase();
+      const ranksVisible=visibilityEnabled(visibilitySettings,"ranks_core",role)||visibilityEnabled(visibilitySettings,"ranks_leaderboards",role);
+      if (ranksVisible) {
+        await savePlayerRankSnapshot(env.DB,{governorId,uid:playerPayload.uid??safePayload.uid??null,kid:playerPayload.kid??safePayload.kid??null,ranks,observedAt:observation.observed_at,sourceObservedAt:observation.source_observed_at??null,sourceObservationId:observation.observation_id,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE});
+        rankSnapshotSaved=true;
+      }
+    }
+    return { saved:true,destination:rankSnapshotSaved?"API_OBSERVATIONS+PLAYER_CURRENT+PLAYER_RANK_SNAPSHOTS":"API_OBSERVATIONS+PLAYER_CURRENT",observation_id:observation.observation_id,governor_id:governorId,rank_snapshot_saved:rankSnapshotSaved };
+  }
+  if (identified.kind === "KINGDOM_RANKING") {
+    const pathMatch=String(path||"").match(/^\/kingdoms\/(\d+)\/ranks$/);
+    const kid=Number(identified.params?.kid ?? pathMatch?.[1]);
+    const board=String(identified.params?.board||query?.board||"");
+    if (!Number.isInteger(kid)||kid<0||!KINGDOM_RANKING_BOARDS.includes(board)) return {saved:false,destination:"R2",reason:"RANKING_TARGET_INVALID"};
+    await ensureKingdomWatchlistFreshnessSchema(env.DB);
+    const entries=extractKingdomRankingEntries(safePayload).slice(0,100);
+    if (!entries.length) return {saved:false,destination:"R2",reason:"RANKING_ENTRIES_EMPTY"};
+    const comparison=await getKingdomRankingChanges(env.DB,{kid,board,entries,observedAt:now});
+    const savedRows=await saveKingdomRankingBoard(env.DB,{kid,board,entries:comparison.changedEntries,removedTargets:comparison.removedTargets,entriesAlreadyFiltered:true,observedAt:now,sourceObservedAt,checkedAt:now,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE});
+    return {saved:true,destination:"KINGDOM_RANKING_CURRENT+HISTORY",kid,board,rows_saved:savedRows};
+  }
+  return {saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+}
+
+function probeResponseCount(payload) {
+  if (Array.isArray(payload)) return payload.length;
+  if (!payload || typeof payload !== "object") return 0;
+  for (const value of Object.values(payload)) if (Array.isArray(value)) return value.length;
+  return 1;
+}
+
+function probeBatchItemKey(item) {
+  try {
+    const command=buildCatalogProbeCommand(item.command_id,item.params||{});
+    return command.path+":"+JSON.stringify(command.query||{});
+  } catch {
+    const entry=MIGHTPULSE_PROBE_COMMANDS.find(command=>command.id===item.command_id);
+    return (entry?.endpoint||String(item.command_id||""))+":"+JSON.stringify(entry?.query||{})+":"+JSON.stringify(item.params||{});
+  }
+}
+
+async function executeCatalogProbeItem(env, guard, batchId, item) {
+  const entry = MIGHTPULSE_PROBE_COMMANDS.find(command => command.id === item.command_id);
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  let command = null;
+  let lease = null;
+  try {
+    command = buildCatalogProbeCommand(item.command_id, item.params || {});
+  } catch (error) {
+    const record = {
+      request_id:requestId, user_id:guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id:guard?.auth?.discord_id || null, actor_label:guard?.auth?.global_name || guard?.auth?.username || null, actor_role:guard?.auth?.role || null,
+      command_type:item.command_id || "UNKNOWN", endpoint:entry?.endpoint || "",
+      status:"SKIPPED", http_status:null, elapsed_ms:0, trigger_reason:item.trigger_reason || "MANUAL",
+      batch_id:batchId, sequence_no:item.sequence_no, discovered_from:item.discovered_from || null,
+      response_count:0, retry_count:0, save_destination:"R2",
+      error_code:String(error?.message || "PROBE_COMMAND_SKIPPED").slice(0,100)
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env, record); } catch {}
+    return { ok:false, status:"SKIPPED", command_id:item.command_id, sequence_no:item.sequence_no, endpoint:entry?.endpoint || "", error:record.error_code, archive };
+  }
+
+  try {
+    lease = await leaseProbeApiKey(env, {
+      mightyRequired:command.requiresMighty,
+      purpose:"MIGHTPULSE_PROBE_BATCH",
+      targetType:command.category,
+      targetId:command.path
+    });
+    const result = await mightPulseFetch(env, command.path, {
+      method:"GET", query:command.query, apiKey:lease.api_key, maxRetries:1,
+      metadata:{ leaseId:lease.lease_id, poolType:lease.pool_type, probeBatchId:batchId, probeSequence:item.sequence_no }
+    });
+    const completedAt = Date.now();
+    const payload = redactProbeSecrets(result.data);
+    let productionSave={saved:false,destination:"R2",reason:"NO_CONFIRMED_PRODUCTION_MAPPING"};
+    try { productionSave=await persistKnownProbeResponse(env,{path:command.path,query:command.query,payload,httpStatus:result.status,commandId:item.command_id,actorRole:guard?.auth?.role||null}); }
+    catch(saveError) { productionSave={saved:false,destination:"R2",reason:"PRODUCTION_SAVE_FAILED",error:safeProbeErrorMessage(saveError,lease?.api_key).slice(0,300)}; }
+    await releaseProbeApiKey(env, lease, {
+      success:true, endpoint:command.endpoint, targetType:command.category, targetId:command.path,
+      purpose:"MIGHTPULSE_PROBE_BATCH", httpStatus:result.status,
+      remainingMinute:parseHeaderNumber(result.headers,"x-ratelimit-remaining-minute"),
+      remainingDay:parseHeaderNumber(result.headers,"x-ratelimit-remaining-day")
+    });
+    const record = {
+      request_id:requestId, user_id:guard?.auth?.user_id || guard?.auth?.id || null,
+      actor_discord_id:guard?.auth?.discord_id || null, actor_label:guard?.auth?.global_name || guard?.auth?.username || null, actor_role:guard?.auth?.role || null,
+      command_type:item.command_id, endpoint:command.endpoint, query:command.query,
+      status:"SUCCESS", http_status:result.status, elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(), completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:item.trigger_reason || "MANUAL", batch_id:batchId,
+      sequence_no:item.sequence_no, discovered_from:item.discovered_from || null,
+      response_count:probeResponseCount(payload), retry_count:Math.max(0,Number(result.attempts||1)-1), save_destination:productionSave.saved?"R2+PRODUCTION":"R2",
+      raw_payload:payload, field_dictionary:buildProbeFieldDictionary(payload), production_save:productionSave,
+      key_source:lease?.pool_type||lease?.source_type||null, key_id:lease?.key_id||null, key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null
+    };
+    let archive = null;
+    try { archive = await archiveMightPulseProbeRecord(env,record); }
+    catch (archiveError) { archive={r2_saved:false,metadata_saved:false,archive_error:safeProbeErrorMessage(archiveError,lease?.api_key).slice(0,250)}; }
+    return {
+      ok:true,request_id:requestId,status:"SUCCESS",command_id:item.command_id,category:command.category,
+      sequence_no:item.sequence_no,trigger_reason:item.trigger_reason||"MANUAL",
+      discovered_from:item.discovered_from||null,endpoint:command.endpoint,path:command.path,
+      query:command.query,http_status:result.status,elapsed_ms:record.elapsed_ms,
+      response_count:record.response_count,field_count:record.field_dictionary.length,production_save:productionSave,
+      archive,discovered_references:extractProbeReferences(payload,{maxReferences:10,kingdomId:item.params?.kid})
+    };
+  } catch (error) {
+    const status = Number(error?.status || 0);
+    if (lease) {
+      const cooldown = status === 429 ? 60 : status >= 500 || error?.code === "MIGHTPULSE_TIMEOUT" || error?.code === "MIGHTPULSE_NETWORK_ERROR" ? 15 : 0;
+      try {
+        await releaseProbeApiKey(env,lease,{
+          endpoint:command.endpoint,targetType:command.category,targetId:command.path,
+          purpose:"MIGHTPULSE_PROBE_BATCH",httpStatus:status,errorCode:error?.code||"MIGHTPULSE_REQUEST_FAILED",
+          errorMessage:safeProbeErrorMessage(error,lease?.api_key) || null,cooldownSeconds:cooldown,keepAvailable:cooldown===0&&(status===400||status===403||status===404)
+        });
+      } catch {}
+    }
+    const completedAt=Date.now();
+    const record={
+      request_id:requestId,user_id:guard?.auth?.user_id||guard?.auth?.id||null,
+      actor_discord_id:guard?.auth?.discord_id||null,actor_label:guard?.auth?.global_name||guard?.auth?.username||null,actor_role:guard?.auth?.role||null,
+      command_type:item.command_id,endpoint:command?.endpoint||entry?.endpoint||"",query:command?.query||item.params||{},
+      status:"FAILED",http_status:status||null,elapsed_ms:completedAt-startedAt,
+      started_at:new Date(startedAt).toISOString(),completed_at:new Date(completedAt).toISOString(),
+      trigger_reason:item.trigger_reason||"MANUAL",batch_id:batchId,sequence_no:item.sequence_no,
+      discovered_from:item.discovered_from||null,response_count:0,retry_count:Math.max(0,Number(error?.attempts||1)-1),save_destination:"R2",key_source:lease?.pool_type||lease?.source_type||null,key_id:lease?.key_id||null,key_owner_user_id:lease?.key_owner_user_id||lease?.contributed_by_user_id||null,
+      error_code:error?.code||safeProbeErrorMessage(error,lease?.api_key).slice(0,100),
+      error_message:safeProbeErrorMessage(error,lease?.api_key),diagnostic:safeProbeDiagnostic(error?.details||null,lease?.api_key),retry_count:Math.max(0,Number(error?.attempts||1)-1)
+    };
+    let archive=null;
+    try { archive=await archiveMightPulseProbeRecord(env,record); } catch {}
+    return {ok:false,status:"FAILED",command_id:item.command_id,sequence_no:item.sequence_no,endpoint:record.endpoint,error:record.error_code,http_status:status||null,elapsed_ms:record.elapsed_ms,archive};
+  }
+}
+
+async function handleMightPulseProbeBatchApi(request, env, guard, body) {
+  if (!env.DB) return json({ok:false,error:"D1_NOT_CONFIGURED"},503);
+  const mode=String(body?.mode||"batch");
+  const userId=guard?.auth?.user_id||guard?.auth?.id||null;
+  let batchId=String(body?.batch_id||"").trim();
+  let queue=[],seen=new Set(),nextSequence=1,completed=0,totalCommands=0;
+  let concurrency=2,maxCommands=30,batchType="all",createdAt=Math.floor(Date.now()/1000);
+  const leaseToken=crypto.randomUUID();
+  let leaseAcquired=false;
+  const nowSeconds=()=>Math.floor(Date.now()/1000);
+  if (mode==="resume") {
+    if (!batchId) return json({ok:false,error:"BATCH_ID_REQUIRED"},400);
+    const row=await env.DB.prepare("SELECT * FROM mightpulse_probe_batches WHERE batch_id=? LIMIT 1").bind(batchId).first();
+    if (!row) return json({ok:false,error:"PROBE_BATCH_NOT_FOUND"},404);
+    // History is shared for visibility, but execution/resume belongs to the creator.
+    if (!userId || !row.user_id || String(row.user_id)!==String(userId)) {
+      return json({ok:false,error:"PROBE_BATCH_OWNER_MISMATCH",message:"このバッチを再開できるのは作成した管理者のみです。"},403);
+    }
+    const now=nowSeconds();
+    const claim=await env.DB.prepare(
+      "UPDATE mightpulse_probe_batches SET lease_token=?,lease_until=?,updated_at=? WHERE batch_id=? AND (lease_until IS NULL OR lease_until<=?) RETURNING batch_id"
+    ).bind(leaseToken,now+180,now,batchId,now).first();
+    if (!claim) return json({ok:false,error:"PROBE_BATCH_ALREADY_RUNNING",message:"このバッチは別の実行処理が使用中です。しばらく待ってから再開してください。"},409);
+    leaseAcquired=true;
+    queue=JSON.parse(row.pending_json||"[]");
+    seen=new Set(JSON.parse(row.seen_json||"[]"));
+    nextSequence=Math.max(1,Number(row.next_sequence)||1);
+    completed=Number(row.completed_commands||0);
+    totalCommands=Number(row.total_commands||0);
+    concurrency=Math.min(4,Math.max(1,Number(row.concurrency)||2));
+    maxCommands=Math.min(30,Math.max(1,Number(row.max_commands)||30));
+    batchType=String(row.batch_type||"resumed");
+    createdAt=Number(row.created_at)||createdAt;
+    if (!queue.length) {
+      await env.DB.prepare("UPDATE mightpulse_probe_batches SET state='COMPLETED',updated_at=?,lease_token=NULL,lease_until=NULL WHERE batch_id=? AND lease_token=?").bind(nowSeconds(),batchId,leaseToken).run();
+      return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,results:[]});
+    }
+  } else {
+    batchId=batchId||crypto.randomUUID();
+    batchType=String(body?.batch_type||"all");
+    concurrency=Math.min(4,Math.max(1,Number(body?.concurrency)||2));
+    maxCommands=Math.min(30,Math.max(1,Number(body?.max_commands)||30));
+    const params={
+      governor_id:String(body?.params?.governor_id||"").trim(),
+      uid:String(body?.params?.uid||"").trim(),
+      kid:String(body?.params?.kid||"").trim(),
+      tag:String(body?.params?.tag||"").trim(),
+      board:String(body?.params?.board||"personal_power"),
+      limit:Math.min(100,Math.max(1,Number(body?.params?.limit)||100))
+    };
+    let selected=MIGHTPULSE_PROBE_COMMANDS;
+    if (batchType==="category") {
+      const category=String(body?.category||"");
+      selected=selected.filter(command=>command.category===category);
+    } else if (batchType==="selected") {
+      const ids=Array.isArray(body?.command_ids)?body.command_ids.map(String):[];
+      selected=selected.filter(command=>ids.includes(command.id));
+    }
+    const initial=selected.slice(0,maxCommands).map(command=>({command_id:command.id,params,trigger_reason:"MANUAL",discovered_from:null,depth:0}));
+    for (const item of initial) {
+      const key=probeBatchItemKey(item);
+      if (!seen.has(key)) { seen.add(key); queue.push(item); }
+    }
+    totalCommands=seen.size;
+    const now=nowSeconds();
+    await env.DB.prepare(
+      "INSERT INTO mightpulse_probe_batches (batch_id,created_at,updated_at,user_id,state,batch_type,total_commands,completed_commands,pending_json,seen_json,next_sequence,concurrency,max_commands,last_error,lease_token,lease_until) VALUES (?,?,?,?,'RUNNING',?,?,0,?,?,?,?,?,NULL,?,?)"
+    ).bind(batchId,createdAt,createdAt,userId,batchType,totalCommands,JSON.stringify(queue),JSON.stringify([...seen]),nextSequence,concurrency,maxCommands,leaseToken,now+180).run();
+    leaseAcquired=true;
+  }
+
+  const results=[];
+  const inFlight=new Map();
+  let poolUnavailable=false;
+  let saveChain=Promise.resolve();
+  const saveProgress=async(state,lastError=null)=>{
+    const pending=[...queue,...inFlight.values()];
+    const now=nowSeconds();
+    const terminal=state==="COMPLETED"||state==="INTERRUPTED";
+    const snapshot={state,now,totalCommands,completed,pendingJson:JSON.stringify(pending),seenJson:JSON.stringify([...seen]),nextSequence,lastError,batchId,leaseToken,leaseUntil:terminal?null:now+180};
+    const operation=()=>env.DB.prepare(
+      "UPDATE mightpulse_probe_batches SET state=?,updated_at=?,total_commands=?,completed_commands=?,pending_json=?,seen_json=?,next_sequence=?,last_error=?,lease_token=?,lease_until=? WHERE batch_id=? AND lease_token=?"
+    ).bind(snapshot.state,snapshot.now,snapshot.totalCommands,snapshot.completed,snapshot.pendingJson,snapshot.seenJson,snapshot.nextSequence,snapshot.lastError,terminal?null:snapshot.leaseToken,snapshot.leaseUntil,snapshot.batchId,snapshot.leaseToken).run();
+    saveChain=saveChain.then(operation,operation);
+    const result=await saveChain;
+    if (Number(result?.meta?.changes||0)!==1) throw new Error("PROBE_BATCH_LEASE_LOST");
+  };
+  const scheduleDiscovered=(result,item)=>{
+    if (body?.automatic_discovery===false||!result?.ok||Number(item.depth||0)>=2) return;
+    const refs=Array.isArray(result.discovered_references)?result.discovered_references:[];
+    for (const ref of refs) {
+      const candidates=[];
+      if (ref.type==="PLAYER") {
+        candidates.push({command_id:"player_base",params:{...item.params,governor_id:ref.governor_id,kid:ref.kid||item.params?.kid}});
+        candidates.push({command_id:"player_full",params:{...item.params,governor_id:ref.governor_id,kid:ref.kid||item.params?.kid}});
+      } else if (ref.type==="KINGDOM") {
+        candidates.push({command_id:"kingdom_detail",params:{...item.params,kid:ref.kid}});
+        candidates.push({command_id:"kingdom_boards",params:{...item.params,kid:ref.kid}});
+        candidates.push({command_id:"kingdom_ranks",params:{...item.params,kid:ref.kid}});
+      } else if (ref.type==="ALLIANCE") {
+        candidates.push({command_id:"alliance_detail",params:{...item.params,kid:ref.kid,tag:ref.tag}});
+      }
+      for (const candidate of candidates) {
+        if (queue.length+inFlight.size+completed>=maxCommands) return;
+        const queued={...candidate,trigger_reason:"AUTO_DISCOVERED",discovered_from:item.command_id+"#"+item.sequence_no,depth:Number(item.depth||0)+1};
+        const key=probeBatchItemKey(queued);
+        if (!seen.has(key)) { seen.add(key);queue.push(queued);totalCommands++; }
+      }
+    }
+  };
+
+  try {
+    await saveProgress("RUNNING");
+    const worker=async()=>{
+      while(true) {
+        if(poolUnavailable) return;
+        const item=queue.shift();
+        if(!item) return;
+        if(!item.sequence_no) item.sequence_no=nextSequence++;
+        inFlight.set(item.sequence_no,item);
+        await saveProgress("RUNNING");
+        const result=await executeCatalogProbeItem(env,guard,batchId,item);
+        inFlight.delete(item.sequence_no);
+        if(!result?.ok && result?.error==="NO_API_POOL_KEY_AVAILABLE") {
+          // No upstream request was made. Keep the item queued so the batch can
+          // resume when the shared API Pool has capacity again.
+          queue.unshift(item);
+          poolUnavailable=true;
+          results.push({...result,status:"WAITING_FOR_API_POOL"});
+          await saveProgress("RUNNING","NO_API_POOL_KEY_AVAILABLE");
+          return;
+        }
+        results.push(result);
+        completed++;
+        scheduleDiscovered(result,item);
+        await saveProgress("RUNNING");
+      }
+    };
+    await Promise.all(Array.from({length:concurrency},()=>worker()));
+    if(poolUnavailable) {
+      await saveProgress("INTERRUPTED","NO_API_POOL_KEY_AVAILABLE");
+      leaseAcquired=false;
+      return json({
+        ok:false,batch_id:batchId,state:"INTERRUPTED",waiting_for_api_pool:true,
+        completed_commands:completed,total_commands:totalCommands,concurrency,
+        error:"NO_API_POOL_KEY_AVAILABLE",
+        message:"通常処理向けのAPIキー予備枠を維持するため、Probeバッチを一時停止しました。API Poolに空きができたら履歴から再開できます。",
+        results
+      },503);
+    }
+    await saveProgress("COMPLETED");
+    leaseAcquired=false;
+    return json({ok:true,batch_id:batchId,state:"COMPLETED",completed_commands:completed,total_commands:totalCommands,concurrency,results});
+  } catch(error) {
+    try { await saveProgress("INTERRUPTED",String(error?.message||error).slice(0,500)); leaseAcquired=false; } catch {}
+    return json({ok:false,batch_id:batchId,state:"INTERRUPTED",completed_commands:completed,total_commands:totalCommands,error:error?.message||"PROBE_BATCH_FAILED",results},500);
+  } finally {
+    if (leaseAcquired) {
+      try { await env.DB.prepare("UPDATE mightpulse_probe_batches SET lease_token=NULL,lease_until=NULL,updated_at=? WHERE batch_id=? AND lease_token=?").bind(nowSeconds(),batchId,leaseToken).run(); } catch {}
+    }
+  }
+}
+
 async function handleMightPulseProbeApi(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) return guard.error;
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => null);
+    if (!body) return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
+    if (String(body.mode||"")==="batch" || String(body.mode||"")==="resume") return await handleMightPulseProbeBatchApi(request,env,guard,body);
+    if (String(body.mode||"")!=="manual") return json({ok:false,error:"INVALID_PROBE_REQUEST"},400);
+    try { return await executeManualMightPulseProbe(request, env, guard, body); }
+    catch (error) { return json({ok:false,error:error?.message || "INVALID_PROBE_COMMAND"},400); }
+  }
+  if (request.method !== "GET") return json({ok:false,error:"METHOD_NOT_ALLOWED"},405);
   const url = new URL(request.url);
+  if (url.searchParams.get("history") === "1") {
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 50));
+    const result = await env.DB.prepare("SELECT request_id, created_at, user_id, actor_discord_id, actor_label, actor_role, command_type, endpoint, status, http_status, elapsed_ms, response_bytes, r2_object_key, error_code, trigger_reason, batch_id, sequence_no, discovered_from, response_count, retry_count, save_destination, key_source, key_id, key_owner_user_id FROM mightpulse_probe_runs ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+    return json({ ok:true, history: result.results || [] });
+  }
+  const requestId = String(url.searchParams.get("request_id") || "").trim();
+  if (requestId) {
+    const row = await env.DB.prepare("SELECT request_id, r2_object_key FROM mightpulse_probe_runs WHERE request_id=? LIMIT 1").bind(requestId).first();
+    if (!row) return json({ok:false,error:"PROBE_RUN_NOT_FOUND"},404);
+    if (!row.r2_object_key || !env.ARCHIVE?.get) return json({ok:false,error:"PROBE_RAW_RESPONSE_NOT_ARCHIVED",request_id:requestId},404);
+    const object = await env.ARCHIVE.get(row.r2_object_key);
+    if (!object) return json({ok:false,error:"PROBE_R2_OBJECT_NOT_FOUND",request_id:requestId},404);
+    return json({ok:true,request_id:requestId,record:JSON.parse(await object.text())});
+  }
   const type = String(url.searchParams.get("type") || "PLAYER").trim().toUpperCase();
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   const kid = String(url.searchParams.get("kid") || "").trim();
   const board = String(url.searchParams.get("board") || "").trim();
   const include = String(url.searchParams.get("include") || "base").trim();
-  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:"+type+":"+String(governorId||kid||"")+":"+String(board||"")+":"+include;
+  const apiLockKey = "ADMIN_MIGHTPULSE_PROBE:" + type + ":" + String(governorId || kid || "") + ":" + String(board || "") + ":" + include;
   const apiLockToken = await acquireApiRequestLock(env, apiLockKey);
-  if (!apiLockToken) return json({ ok: false, error: "API_REQUEST_IN_PROGRESS", message: "同じ対象への処理が現在実行中です。完了を待ってから再試行してください。", lock_key: apiLockKey }, 409);
-  try {
-
+  if (!apiLockToken) return json({ok:false,error:"API_REQUEST_IN_PROGRESS",message:"同じ対象への処理が現在実行中です。完了を待ってから再試行してください。",lock_key:apiLockKey},409);
   try {
     const spec = mightPulseProbeRequestSpec(type, { governorId, kid, board, include });
-    return json(await fetchMightPulseProbeThroughPool(env, spec));
+    return json(await fetchMightPulseProbeThroughPool(env, spec, guard.auth));
   } catch (error) {
     const status = Number(error?.status || 0);
-    return json({
-      ok: false,
-      error: error?.code || "MIGHTPULSE_PROBE_FAILED",
-      status,
-      message: error?.message || null,
-      diagnostic: error?.details || null
-    }, status >= 400 && status < 600 ? status : 502);
-  }
-
+    return json({ok:false,error:error?.code || "MIGHTPULSE_PROBE_FAILED",status,message:safeProbeErrorMessage(error) || null,diagnostic:safeProbeDiagnostic(error?.details || null)},status >= 400 && status < 600 ? status : 502);
   } finally {
     await releaseApiRequestLock(env, apiLockKey, apiLockToken);
   }
@@ -3991,23 +4311,28 @@ async function handleMightPulseProbeApi(request, env) {
 async function renderMightPulseProbePage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) {
-    return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:#fff;font-family:system-ui;padding:32px'><h1>ADMIN権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
+    return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:#fff;font-family:system-ui;padding:32px'><h1>ADMIN権限が必要です</h1><a href='/' style='color:var(--ee-cyan,#22d3ee)'>EagleEyeへ戻る</a></body></html>";
   }
 
   const boardOptions = KINGDOM_RANKING_BOARDS.map(board => "<option value='" + escapeHtml(board) + "'>" + escapeHtml(RANKING_BOARD_LABELS[board] || board) + "</option>").join("");
+  const probeCatalogJson = JSON.stringify(MIGHTPULSE_PROBE_COMMANDS).replace(/</g, "\\u003c");
 
   return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='color-scheme' content='dark'><title>MightPulse Probe | EagleEye</title>" +
-  "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 50px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;font-size:12px;line-height:1.65}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#fff}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}.btn.secondary{background:#334155;color:#e2e8f0}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}.kv{display:grid;grid-template-columns:180px minmax(0,1fr);gap:7px 10px}.kv b{color:#94a3b8;font-size:11px}.kv span{font-size:12px;word-break:break-word}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:8px;border-bottom:1px solid #334155;text-align:left;font-size:11px;vertical-align:top}th{color:#94a3b8}.ok{color:#86efac}.error{color:#fca5a5}.pill{display:inline-block;padding:3px 6px;border-radius:7px;background:#0b1220;margin:2px}.small{font-size:10px;color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.form{grid-template-columns:1fr}.kv{grid-template-columns:1fr;gap:2px}.kv b{margin-top:8px}table{min-width:620px}}</style></head><body><main class='wrap'>" +
-  "<div class='top'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='badge'>ADMIN / OWNER · PROBE</div></div>" +
-  "<h1>MightPulse Probe</h1><p class='hint'>MightPulseのレスポンス時刻・HTTPキャッシュヘッダー・cached_at / age_seconds / fresh・タイムスタンプ候補を比較するための診断画面です。APIキー本体や生レスポンスは表示・保存しません。</p>" +
+  "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 50px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:11px;font-weight:900}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;font-size:12px;line-height:1.65}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field input,.field select,.field textarea{width:100%;min-width:0;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#fff;font-family:inherit;font-size:16px;line-height:1.4;-webkit-appearance:none;appearance:none}.field input:focus,.field select:focus,.field textarea:focus{font-size:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{padding:12px 15px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900}.btn.secondary{background:#334155;color:#e2e8f0}.btn.is-clicked{background:#38bdf8!important;color:#082f49!important;box-shadow:0 0 0 3px #38bdf855;transform:translateY(1px)}.btn.is-running{background:#facc15!important;color:#422006!important;cursor:progress}.btn.is-success{background:#22c55e!important;color:#052e16!important}.btn.is-error{background:#ef4444!important;color:#fff!important}.btn:focus-visible{outline:3px solid #7dd3fc;outline-offset:3px}.btn:disabled{opacity:.72;cursor:not-allowed;filter:saturate(.7)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}.kv{display:grid;grid-template-columns:180px minmax(0,1fr);gap:7px 10px}.kv b{color:#94a3b8;font-size:11px}.kv span{font-size:12px;word-break:break-word}.table-wrap{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:8px;border-bottom:1px solid #334155;text-align:left;font-size:11px;vertical-align:top}th{color:#94a3b8}.field-dictionary{display:grid;gap:6px;max-width:100%}.field-entry{border:1px solid #334155;border-radius:8px;background:#0b1220;min-width:0;overflow:hidden}.field-entry summary{display:flex;align-items:center;gap:8px;padding:9px;cursor:pointer;min-width:0;list-style:none}.field-entry summary::-webkit-details-marker{display:none}.field-entry summary:before{content:'＋';color:#7dd3fc;flex:none}.field-entry[open] summary:before{content:'−'}.field-path{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;word-break:break-word;min-width:0;flex:1}.field-type{font-size:10px;color:#93c5fd;flex:none;background:#172554;padding:3px 5px;border-radius:5px}.field-sample{padding:0 10px 10px;font-size:12px;line-height:1.55;overflow-wrap:anywhere;word-break:break-word}.field-sample>div{margin-top:4px;white-space:pre-wrap}.ok{color:#86efac}.error{color:#fca5a5}.pill{display:inline-block;padding:3px 6px;border-radius:7px;background:#0b1220;margin:2px}.small{font-size:10px;color:#94a3b8}.catalog-list{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.catalog-group{border:1px solid #334155;border-radius:12px;background:#0b1220;overflow:hidden}.catalog-group>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 12px;cursor:pointer;font-size:14px;font-weight:800;min-height:52px;background:#142238}.catalog-group>summary::-webkit-details-marker{display:none}.catalog-group>summary:before{content:'＋';color:#7dd3fc;font-size:16px;width:18px;flex:none}.catalog-group[open]>summary:before{content:'−'}.catalog-group .group-count{margin-left:auto;font-size:11px;color:#94a3b8;font-weight:600;white-space:nowrap}.catalog-group .group-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px}.catalog-item{border:1px solid #26364b;border-radius:10px;padding:11px;background:#101b2d;min-width:0;display:flex;flex-direction:column;gap:6px}.catalog-item h3{font-size:13px;line-height:1.4;margin:0}.catalog-item .purpose{font-size:11px;color:#cbd5e1;line-height:1.5;margin:0}.catalog-item .actions{margin-top:auto;display:grid;grid-template-columns:1fr;gap:6px;padding-top:4px}.catalog-item .btn{width:100%;padding:9px 8px;font-size:11px;white-space:normal;min-height:42px}.catalog-item .details{border-top:1px solid #26364b;padding-top:5px}.catalog-item .details summary{cursor:pointer;color:#93c5fd;font-size:11px;font-weight:700;padding:5px 0}.catalog-item .detail-body{font-size:11px;color:#cbd5e1;line-height:1.6;overflow-wrap:anywhere}.catalog-item .detail-body b{display:block;color:#94a3b8;font-size:10px;margin-top:6px}.catalog-tag{display:inline-block;align-self:flex-start;border-radius:6px;background:#1e293b;color:#cbd5e1;padding:3px 6px;font-size:9px}.catalog-tag.mighty{background:#3b2c12;color:#fcd34d}.catalog-tag.internal{background:#172554;color:#bfdbfe}.catalog-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:10px}.catalog-toolbar label{min-width:0}.catalog-toolbar select,.catalog-toolbar input{min-width:0}.section-help{border-left:3px solid #38bdf8;padding:8px 10px;background:#0b1220;border-radius:0 8px 8px 0}@media(max-width:600px){.catalog-group .group-items{grid-template-columns:1fr;gap:7px;padding:7px}.catalog-group>summary{padding:13px 11px}.catalog-item{padding:10px}.catalog-item .actions{grid-template-columns:1fr 1fr}.catalog-item .btn{min-height:44px;padding:9px 6px}.catalog-toolbar{grid-template-columns:1fr}.wrap{padding:18px 10px 40px}.form{grid-template-columns:1fr}.kv{grid-template-columns:1fr;gap:2px}.kv b{margin-top:8px}table{min-width:620px}}</style></head><body><main class='wrap'>" +
+  "<div class='top'><a class='back' href='/admin'>← 管理画面</a><div class='badge'>ADMIN / OWNER · PROBE</div></div>" +
+  "<h1>MightPulse Probe</h1><p class='hint'>MightPulseのレスポンス時刻・HTTPキャッシュヘッダー・cached_at / age_seconds / fresh・タイムスタンプ候補を調べる画面です。APIキー本体は表示・保存せず、取得したレスポンスJSONは画面で確認しR2に保管します。</p>" +
   "<div class='card'><h2>1. 対象を指定</h2><div class='form'>" +
   "<label class='field'><span>Player 領主ID</span><input id='governorId' inputmode='numeric' placeholder='例: 223636495'></label>" +
   "<label class='field'><span>Kingdom 王国番号</span><input id='kid' inputmode='numeric' placeholder='例: 1524'></label>" +
+  "<label class='field'><span>Alliance タグ</span><input id='manualAllianceTag' placeholder='例: ABC'></label>" +
   "<label class='field'><span>Player include</span><select id='include'><option value='base'>base</option><option value='base,ranks'>base,ranks</option><option value='base,heroes,ranks,gov_gear'>base,heroes,ranks,gov_gear</option></select></label>" +
   "<label class='field'><span>Kingdom ranking</span><select id='board'>" + boardOptions + "</select></label>" +
   "</div><div class='actions'><button class='btn' data-type='PLAYER'>Playerを取得</button><button class='btn secondary' data-type='KINGDOM'>Kingdomを取得</button><button class='btn secondary' data-type='KINGDOM_RANKING'>Kingdom Rankingを取得</button><button class='btn secondary' id='clearHistory' type='button'>履歴クリア</button></div><div id='status' class='hint'></div></div>" +
-  "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。履歴はこのブラウザのlocalStorageだけに保持します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
-  `<script>(function(){var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.type)+'<br><span class=\"small\">'+esc(p.target_id)+'</span></td><td>'+esc(p.fresh==null?'-':p.fresh)+'</td><td>'+esc(p.cached_at||'-')+'</td><td>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</td><td>'+esc(p.http_status)+'</td><td>'+esc(p.elapsed_ms)+' ms</td><td class=\"mono\">'+esc(String(p.hash||'').slice(0,16))+'…</td></tr>';}).join('')||'<tr><td colspan=\"8\" class=\"small\">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
+  "<div class='card' id='catalogCard'><h2>コマンド台帳</h2><p class='hint section-help'>各カードに「何を調べるコマンドか」を表示します。「コマンドの詳細」で実際のAPIパス・クエリ・必要権限を確認できます。単体実行は選んだ1コマンドだけを実行します。</p><div class='catalog-toolbar'><label class='field'><span>カテゴリで絞り込み</span><select id='catalogCategory'><option value='ALL'>すべてのカテゴリ</option><option>Player</option><option>Kingdom</option><option>Ranking</option><option>Alliance</option><option>Mighty</option><option>EagleEye Retrieval</option></select></label><label class='field'><span>コマンド名・内容で検索</span><input id='catalogSearch' placeholder='英雄、ランキング、KvK…' autocomplete='off'></label></div><div id='catalogCommandForm' class='card' hidden style='margin-top:12px;border-color:#0891b2'><h3 id='catalogFormTitle' style='margin:0 0 8px'>コマンド実行</h3><p id='catalogFormHelp' class='hint'>このコマンドに必要な項目だけ入力してください。</p><div id='catalogFormFields' class='form'></div><div class='actions'><button class='btn' id='catalogFormRun' type='button'>この内容で実行</button><button class='btn secondary' id='catalogFormCancel' type='button'>閉じる</button></div><div id='catalogFormStatus' class='hint'></div></div><div id='catalogList' class='catalog-list'></div><div id='catalogStatus' class='hint'></div></div>" +
+  "<div class='card'><details><summary style='cursor:pointer;font-weight:800'>未知のAPIを手入力で試す（詳細）</summary><p class='hint'>相対パスとクエリJSONを指定してGETを1回実行します。外部URLは指定できません。</p><div class='form'><label class='field'><span>APIパス</span><input id='manualPath' autocomplete='off' placeholder='/players/223636495'></label><label class='field'><span>クエリJSON</span><input id='manualQuery' autocomplete='off' placeholder='{&quot;include&quot;:&quot;base,ranks&quot;}'></label></div><label class='field' style='margin-top:10px'><span>必要なAPI権限</span><select id='manualMightyRequired'><option value='false'>通常権限でも可</option><option value='true'>Mighty権限が必要</option></select></label><div class='actions'><button class='btn' id='runManual' type='button'>手入力コマンドを実行</button></div><div id='manualStatus' class='hint'></div></details></div>" +
+  "<div class='card'><h2>コマンド台帳・一括実行</h2><p class='hint'>公式APIのコマンド一覧からカテゴリ単位・全件を実行します。一括実行ではレスポンス内のプレイヤー・王国・同盟参照を検出し、重複を避けながら関連コマンドを追加調査します。単体実行ボタンは連鎖しません。</p><div class='form'><label class='field'><span>カテゴリ</span><select id='probeBatchCategory'><option>Player</option><option>Kingdom</option><option>Ranking</option><option>Alliance</option><option>Mighty</option><option>EagleEye Retrieval</option></select></label><label class='field'><span>同時実行数（1〜4）</span><select id='probeBatchConcurrency'><option value='1'>1</option><option value='2' selected>2</option><option value='3'>3</option><option value='4'>4</option></select></label></div><div class='actions'><button class='btn secondary' id='runCategoryBatch' type='button'>このカテゴリを一括実行</button><button class='btn' id='runAllBatch' type='button'>全コマンド一括実行</button><button class='btn secondary' id='resumeBatch' type='button'>中断したバッチを再開</button></div><div id='batchStatus' class='hint'></div><div id='batchResults' class='table-wrap'></div></div>" +
+  "<div id='latest'></div><div class='card'><h2>Probe履歴</h2><div class='hint'>同じ対象を時間を空けて再取得し、cached_at・age_seconds・レスポンスハッシュ・HTTPヘッダーを比較してください。概要はこのブラウザに保持し、実行記録と生レスポンスはD1の最小メタデータとR2に保存します。</div><div class='table-wrap'><table><thead><tr><th>時刻</th><th>実行者</th><th>Type</th><th>fresh</th><th>cached_at</th><th>age_seconds</th><th>HTTP</th><th>elapsed</th><th>hash</th></tr></thead><tbody id='history'></tbody></table></div></div>" +
+  `<script>(function(){var probeCatalog=${probeCatalogJson};var key='eagleeye_mightpulse_probe_history_v1';function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m]||m;});}function read(){try{return JSON.parse(localStorage.getItem(key)||'[]');}catch(e){return [];}}function write(rows){try{localStorage.setItem(key,JSON.stringify(rows.slice(0,30)));}catch(e){}}function commandPurpose(c){var d={player_base:'領主の基本プロフィールを取得します。名前・所属などの基本項目を確認する入口です。',player_ranks:'指定プレイヤーのランキング情報を取得します。順位系フィールドが返るか調べます。',player_full:'基本情報・英雄・ランキング・領主装備をまとめて取得し、返却範囲を確認します。',player_uid:'領主IDではなく内部UIDを指定してプレイヤー検索を試します。',kingdom_list:'ページ単位で王国一覧を取得します。ページング仕様の確認向けです。',kingdom_detail:'指定した王国の基本情報を取得します。',kingdom_boards:'王国が持つランキングボード一覧を取得します。',kingdom_ranks:'指定王国のランキング一覧を取得します。',kingdom_rank_board:'選択したランキング種別の順位データを取得します。',alliance_detail:'指定王国・同盟タグの同盟情報とメンバー一覧を取得します。',kingdom_events:'Mighty権限で王国イベント情報を取得します。',kingdom_kvk:'Mighty権限で王国のKvK情報を取得します。',kingdom_kvk_scores:'Mighty権限でKvKのスコア情報を取得します。',kvk_matchups:'Mighty権限でKvKのマッチアップ一覧を取得します。',eagleeye_player_refresh:'EagleEye側のプレイヤー詳細更新経路を調べます。外部API直呼びではなく内部取得フローの検証用です。',eagleeye_player_rank_refresh:'EagleEye側のプレイヤーランキング更新フローを検証します。',eagleeye_kingdom_rank_refresh:'EagleEye側で王国ランキングを保存する内部処理を検証します.'};if(d[c.id])return d[c.id];if(c.command_kind==='EAGLEEYE_INTERNAL')return 'EagleEye内部の取得・保存フローを検証するコマンドです。';return 'このAPIの返却内容・フィールド構造を確認します。';}function commandInputs(c){var refs=c.references||[];var names={governor_id:'領主ID',uid:'内部UID',kid:'王国番号',alliance_tag:'同盟タグ'};return refs.map(function(x){return names[x]||x;}).join('、')||'追加の対象入力なし';}function renderCatalog(){var cat=document.getElementById('catalogCategory').value;var term=document.getElementById('catalogSearch').value.trim().toLowerCase();var list=probeCatalog.filter(function(c){return (cat==='ALL'||c.category===cat)&&(!term||(c.label+' '+c.endpoint+' '+c.category+' '+c.id+' '+commandPurpose(c)).toLowerCase().indexOf(term)>=0);});var groups={};list.forEach(function(c){(groups[c.category]||(groups[c.category]=[])).push(c);});var order=['Usage','Player','Kingdom','Ranking','Alliance','Mighty','EagleEye Retrieval'];var labels={Usage:'API使用量',Player:'プレイヤー情報',Kingdom:'王国情報',Ranking:'ランキング',Alliance:'同盟情報',Mighty:'Mighty専用API', 'EagleEye Retrieval':'EagleEye内部処理'};document.getElementById('catalogList').innerHTML=order.filter(function(k){return groups[k]&&groups[k].length;}).map(function(k){var cards=groups[k].map(function(c){var internal=String(c.command_kind||'').indexOf('EAGLEEYE_INTERNAL')===0;var query=JSON.stringify(c.query||{},null,2);return '<article class="catalog-item"><span class="catalog-tag '+(internal?'internal':c.requiresMighty?'mighty':'')+'">'+esc(internal?'EAGLEEYE内部':c.requiresMighty?'MIGHTY権限':'通常権限')+'</span><h3>'+esc(c.label)+'</h3><p class="purpose">'+esc(commandPurpose(c))+'</p><div class="actions"><button class="btn secondary" type="button" data-config-catalog="'+esc(c.id)+'">必要項目を入力</button><button class="btn" type="button" data-run-catalog="'+esc(c.id)+'">入力して実行</button></div><details class="details"><summary>API・入力の詳細</summary><div class="detail-body"><b>コマンドID</b>'+esc(c.id)+'<b>実行先・HTTPメソッド</b>'+esc(c.method||'GET')+' '+esc(c.endpoint)+'<b>初期クエリ</b><pre style="white-space:pre-wrap;margin:3px 0">'+esc(query)+'</pre><b>必要な入力</b>'+esc(commandInputs(c))+'<b>実行方式</b>'+esc(internal?'EagleEye内部の取得・保存フロー': 'MightPulse APIを1回呼び出し')+'</div></details></article>';}).join('');return '<details class="catalog-group"'+(term?' open':'')+'><summary>'+esc(labels[k]||k)+'<span class="group-count">'+groups[k].length+' コマンド</span></summary><div class="group-items">'+cards+'</div></details>';}).join('')||'<p class="hint">該当するコマンドがありません。</p>';document.getElementById('catalogStatus').textContent=list.length+'件表示 / 登録済み'+probeCatalog.length+'件。カテゴリを開いてコマンドを選択してください。';}var activeProbeActions=new WeakSet();function setButtonState(btn,state,label){if(!btn)return;btn.classList.remove('is-clicked','is-running','is-success','is-error');if(state)btn.classList.add('is-'+state);if(label!=null){if(!btn.dataset.originalLabel)btn.dataset.originalLabel=btn.textContent;btn.textContent=label;} }async function runButtonAction(btn,fn,statusEl){if(btn&&activeProbeActions.has(btn))return;if(btn)activeProbeActions.add(btn);var originalLabel=btn?btn.textContent:'';if(btn){setButtonState(btn,'clicked');btn.disabled=true;}if(statusEl)statusEl.textContent='クリックを受け付けました。処理を開始します…';await Promise.resolve();if(btn)setButtonState(btn,'running','実行中…');try{await fn();var message=statusEl?String(statusEl.textContent||''):'';var failed=/失敗|エラー|FAILED|空き待ち|中断|入力してください|正しくありません|ありません|MISSING|HTTP [45]\\d{2}/i.test(message);var successful=/成功|完了|SUCCESS|HTTP \d{3}/i.test(message);if(btn){if(failed)setButtonState(btn,'error','失敗');else if(successful)setButtonState(btn,'success','完了');else setButtonState(btn,'success','受付完了');}}catch(error){if(statusEl)statusEl.textContent='実行失敗: '+String(error&&error.message||error);if(btn)setButtonState(btn,'error','失敗');}finally{if(btn){btn.disabled=false;activeProbeActions.delete(btn);setTimeout(function(){setButtonState(btn,'',null);btn.textContent=originalLabel;},2200);}}}function draw(){var rows=read();document.getElementById('history').innerHTML=rows.map(function(p){return '<tr><td>'+new Date(p.client_received_at||0).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||'-')+'</td><td>'+esc(p.type||'-')+'<br><span class="small">'+esc(p.target_id||'')+'</span></td><td>ブラウザ履歴</td><td>MANUAL</td><td>-</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td>'+ (p.request_id?'<button type="button" data-open-probe="'+esc(p.request_id)+'">開く</button>':'-')+'</td></tr>';}).join('')||'<tr><td colspan="9" class="small">まだProbe結果がありません。</td></tr>';}function compareProbe(p, previous){
   if(!previous) return {title:"比較対象なし",tone:"muted",items:["同じ対象・同じProbe種別の過去結果がありません。まず同条件で2回以上取得してください。"]};
   var items=[];
   var cachedSame=String(previous.cached_at||"")===String(p.cached_at||"");
@@ -4023,10 +4348,10 @@ async function renderMightPulseProbePage(request, env) {
   if(!items.length) items.push("明確な判定材料はありません。複数回の同条件Probeを継続してください。");
   return {title:"前回Probeとの比較",tone:"ok",items:items};
 }
-function renderPlayerActivity(a){if(!a)return '<span class="small">Player payloadなし</span>';function one(label,v){if(!v||!v.present)return '<div><b>'+label+'</b>: <span class="small">未提供</span></div>';return '<div><b>'+label+'</b>: '+esc(v.raw)+'<br><span class="small">'+esc(v.iso||'-')+'</span></div>';}return one('last_active_at',a.last_active_at)+one('last_login',a.last_login)+one('online',a.online);}
+function renderFieldDictionary(fields){if(!Array.isArray(fields)||!fields.length)return '<span class="small">観測できたフィールドがありません。</span>';function sampleText(samples){if(!Array.isArray(samples)||!samples.length)return 'サンプルなし';return samples.slice(0,2).map(function(v){if(v===null)return 'null';if(typeof v==='object'){try{return JSON.stringify(v);}catch(e){return '[object]';}}return String(v);}).join(' / ');}return '<div class="field-dictionary">'+fields.map(function(f){return '<details class="field-entry"><summary><span class="field-path">'+esc(f.path)+'</span><span class="field-type">'+esc(f.type)+'</span></summary><div class="field-sample"><span class="small">観測 '+esc(f.observations||1)+' 回</span><div>'+esc(sampleText(f.samples))+'</div></div></details>';}).join('')+'</div>';}function renderPlayerActivity(a){if(!a)return '<span class="small">Player payloadなし</span>';function one(label,v){if(!v||!v.present)return '<div><b>'+label+'</b>: <span class="small">未提供</span></div>';return '<div><b>'+label+'</b>: '+esc(v.raw)+'<br><span class="small">'+esc(v.iso||'-')+'</span></div>';}return one('last_active_at',a.last_active_at)+one('last_login',a.last_login)+one('online',a.online);}
 function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.section_sha256||{};
   var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id)&&String(x.hash||"")!==String(p.response_sha256||"");})||rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);});
-  var comparison=compareProbe(p,previous);var th=t.length?t.map(function(x){return '<div class=\"pill\"><b>'+esc(x.path)+'</b> = '+esc(x.raw)+'<br><span class=\"small\">'+esc(x.iso)+'</span></div>';}).join(''):'<span class=\"small\">候補なし</span>';var sh=Object.keys(s).length?Object.keys(s).map(function(k){return '<div class=\"pill\">'+esc(k)+': '+esc(String(s[k]).slice(0,20))+'…</div>';}).join(''):'<span class=\"small\">なし</span>';document.getElementById('latest').innerHTML='<div class=\"card\"><h2>最新Probe</h2><div class=\"kv\">'+
+  var comparison=compareProbe(p,previous);var th=t.length?t.map(function(x){return '<div class=\"pill\"><b>'+esc(x.path)+'</b> = '+esc(x.raw)+'<br><span class=\"small\">'+esc(x.iso)+'</span></div>';}).join(''):'<span class=\"small\">候補なし</span>';var sh=Object.keys(s).length?Object.keys(s).map(function(k){return '<div class=\"pill\">'+esc(k)+': '+esc(String(s[k]).slice(0,20))+'…</div>';}).join(''):'<span class=\"small\">なし</span>';document.getElementById('latest').innerHTML='<div class=\"card\"><div style=\"display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap\"><h2 style=\"margin:0\">最新Probe</h2><div class=\"actions\"><button type=\"button\" id=\"copyLatestProbe\" class=\"btn\">結果をコピー</button><button type=\"button\" id=\"downloadLatestProbe\" class=\"btn secondary\">JSONを書き出す</button></div></div><div class=\"kv\">'+
   '<b>Request ID</b><span class=\"mono\">'+esc(p.request_id)+'</span>'+
   '<b>対象</b><span>'+esc(p.type)+' / '+esc(p.target_type)+' / '+esc(p.target_id)+'</span>'+
   '<b>EagleEye request start</b><span>'+esc(p.request_started_at_iso)+'</span>'+
@@ -4038,13 +4363,115 @@ function showLatest(p){var h=p.headers||{},t=p.timestamp_like_fields||[],s=p.sec
   '<b>age_seconds</b><span>'+esc(p.age_seconds==null?'-':p.age_seconds)+'</span>'+
   '<b>Player activity</b><span>'+renderPlayerActivity(p.player_activity)+'</span>'+
   '<b>Payload keys</b><span class=\"mono\">'+esc((p.payload_keys||[]).join(', '))+'</span>'+
+  '<b>フィールド辞書</b><span>'+renderFieldDictionary(p.field_dictionary||[])+'</span>'+
+  '<b>検証用データ（英雄・装備・スキル）</b><span class=\"mono\" style=\"white-space:pre-wrap;display:block;max-height:420px;overflow:auto\">'+esc(JSON.stringify(p.diagnostic_payload||null,null,2))+'</span>'+
+  '<b>レスポンスJSON（全体）</b><span class=\"mono\" style=\"white-space:pre-wrap;display:block;max-height:560px;overflow:auto\">'+esc(JSON.stringify(p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,null,2))+'</span>'+
   '<b>HTTP headers</b><span class=\"mono\">'+esc(JSON.stringify(h,null,2))+'</span>'+
   '<b>Timestamp-like fields</b><span>'+th+'</span>'+
   '<b>Response SHA-256</b><span class=\"mono\">'+esc(p.response_sha256)+'</span>'+
   '<b>Section SHA-256</b><span>'+sh+'</span>'+
   '<b>比較</b><span><strong>'+esc(comparison.title)+'</strong><br>'+comparison.items.map(function(x){return '• '+esc(x);}).join('<br>')+'</span>'+
-  '</div></div>';}async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){probe(btn.getAttribute('data-type'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});draw();}());</script></body></html>`;
+  '</div></div>';var copyButton=document.getElementById('copyLatestProbe');if(copyButton){copyButton.addEventListener('click',async function(){var copyText=JSON.stringify({request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys,timestamp_like_fields:p.timestamp_like_fields,response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,field_dictionary:p.field_dictionary||[],raw_payload:p.raw_payload===undefined?p.diagnostic_payload:p.raw_payload,archive:p.archive||null},null,2);try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(copyText);}else{var area=document.createElement('textarea');area.value=copyText;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.focus();area.select();var copied=document.execCommand('copy');area.remove();if(!copied)throw new Error('COPY_FAILED');}var oldLabel=copyButton.textContent;copyButton.textContent='コピーしました';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent=oldLabel;},1800);}catch(error){copyButton.textContent='コピー失敗';setTimeout(function(){if(copyButton.isConnected)copyButton.textContent='結果をコピー';},1800);}});}var downloadButton=document.getElementById('downloadLatestProbe');if(downloadButton){downloadButton.addEventListener('click',async function(){var oldLabel=downloadButton.textContent;var objectUrl=null;downloadButton.disabled=true;downloadButton.textContent='JSONを検証中…';function finish(label){downloadButton.disabled=false;downloadButton.textContent=label;setTimeout(function(){if(downloadButton.isConnected)downloadButton.textContent=oldLabel;},3500);}try{if(p.raw_payload===undefined||p.raw_payload===null){throw new Error('取得レスポンス本文がありません。Probeを再実行してから書き出してください。');}var exportPayload={format:'MightPulse Probe JSON',format_version:1,request_id:p.request_id,type:p.type,target_type:p.target_type,target_id:p.target_id,endpoint:p.endpoint,query:p.query,request_started_at_iso:p.request_started_at_iso,response_received_at_iso:p.response_received_at_iso,elapsed_ms:p.elapsed_ms,http_status:p.http_status,fresh:p.fresh,cached_at:p.cached_at,cached_at_iso:p.cached_at_iso,age_seconds:p.age_seconds,player_activity:p.player_activity,payload_keys:p.payload_keys||[],timestamp_like_fields:p.timestamp_like_fields||[],response_sha256:p.response_sha256,section_sha256:p.section_sha256,diagnostic_payload:p.diagnostic_payload||null,field_dictionary:p.field_dictionary||[],raw_payload:p.raw_payload,archive:p.archive||null};var data=JSON.stringify(exportPayload,null,2);var verified=JSON.parse(data);if(!verified||verified.format!=='MightPulse Probe JSON'||verified.raw_payload===undefined||verified.raw_payload===null){throw new Error('JSON検証に失敗しました。データは書き出していません。');}if(data.length<100){throw new Error('JSONの内容が不自然に短いため、書き出しを中止しました。');}var blob=new Blob([data],{type:'application/json;charset=utf-8'});var fileName='mightpulse-probe-'+String(p.request_id||Date.now())+'.json';var isAppleMobile=/iPad|iPhone|iPod/.test(navigator.userAgent)||((navigator.platform==='MacIntel')&&navigator.maxTouchPoints>1);var file=new File([blob],fileName,{type:'application/json'});if(isAppleMobile&&typeof navigator.share==='function'&&typeof navigator.canShare==='function'&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:fileName});finish('JSONファイルを共有しました');return;}catch(shareError){if(shareError&&shareError.name==='AbortError'){finish('共有をキャンセルしました');return;}throw new Error('JSONファイルの共有に失敗しました: '+String(shareError&&shareError.message||shareError));}}objectUrl=URL.createObjectURL(blob);var link=document.createElement('a');link.href=objectUrl;link.download=fileName;link.style.display='none';document.body.appendChild(link);link.click();link.remove();setTimeout(function(){if(objectUrl)URL.revokeObjectURL(objectUrl);},10000);finish('JSONを書き出しました');}catch(error){if(objectUrl)setTimeout(function(){URL.revokeObjectURL(objectUrl);},60000);downloadButton.disabled=false;downloadButton.textContent='書き出し失敗: '+String(error&&error.message||error).slice(0,45);setTimeout(function(){if(downloadButton.isConnected)downloadButton.textContent=oldLabel;},6000);}});}}async function manualProbe(){var path=document.getElementById('manualPath').value.trim();var queryText=document.getElementById('manualQuery').value.trim();var query={};if(queryText){try{query=JSON.parse(queryText);}catch(e){document.getElementById('manualStatus').textContent='クエリJSONの形式が正しくありません。';return;}}document.getElementById('manualStatus').textContent='手入力コマンド実行中…';try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'manual',path:path,query:query,mighty_required:document.getElementById('manualMightyRequired').value!=='false'})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();rows.unshift({client_received_at:p.client_received_at,request_id:p.request_id,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p);document.getElementById('manualStatus').textContent='取得成功。R2保存: '+(p.archive&&p.archive.r2_saved?'成功':'未確認')+' / メタデータ: '+(p.archive&&p.archive.metadata_saved?'保存':'未保存');}catch(e){document.getElementById('manualStatus').textContent='実行失敗: '+esc(e.message||e);}}document.getElementById('runManual').addEventListener('click',function(ev){runButtonAction(ev.currentTarget,manualProbe,document.getElementById('manualStatus'));});document.getElementById('catalogCategory').addEventListener('change',renderCatalog);document.getElementById('catalogSearch').addEventListener('input',renderCatalog);async function runCatalogCommand(cmd){
+if(!activeCatalogCommand||activeCatalogCommand.id!==cmd.id){configureCatalogCommand(cmd);return;}
+var readInput=function(key,fallback){var el=document.getElementById('catalogInput_'+key);return el?el.value.trim():fallback;};
+var governor=readInput('governor_id',readInput('uid',document.getElementById('governorId').value.trim()));
+var kid=readInput('kid',document.getElementById('kid').value.trim());
+var tag=readInput('tag',document.getElementById('manualAllianceTag').value.trim());
+var path=cmd.endpoint.replace(/\\{governor_id\\}/g,governor||'{governor_id}').replace(/\\{uid\\}/g,governor||'{uid}').replace(/\\{kid\\}/g,kid||'{kid}').replace(/\\{tag\\}/g,tag||'{tag}');
+var missing=[];
+if(path.indexOf('{governor_id}')>=0||path.indexOf('{uid}')>=0)missing.push(['Player 領主ID','governorId']);
+if(path.indexOf('{kid}')>=0)missing.push(['王国番号','kid']);
+if(path.indexOf('{tag}')>=0)missing.push(['Alliance タグ','manualAllianceTag']);
+if(missing.length){document.getElementById('catalogFormStatus').textContent='入力してください：'+missing.map(function(x){return x[0];}).join('、');var key=missing[0][0]==='王国番号'?'kid':missing[0][0]==='Alliance タグ'?'tag':'governor_id';var el=document.getElementById('catalogInput_'+key);if(el)el.focus();return;}
+document.getElementById('catalogFormStatus').textContent='「'+cmd.label+'」を実行中…';
+try{
+var params={governor_id:governor,uid:readInput('uid',governor),kid:kid,tag:tag,board:readInput('board',document.getElementById('board').value),limit:Number(readInput('size','100'))||100,page:Number(readInput('page','1'))||1,size:Math.min(24,Number(readInput('size','24'))||24)};
+var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:'batch',batch_type:'selected',command_ids:[cmd.id],params:params,concurrency:1,max_commands:1,automatic_discovery:false})});
+var d=await r.json();
+if(!r.ok||(!d.ok&&!d.batch_id))throw new Error(d.message||d.error||('HTTP '+r.status));
+if(d.batch_id){try{localStorage.setItem('eagleeye_mightpulse_probe_last_batch_v1',d.batch_id);}catch(e){}}
+var item=(d.results||[])[0];
+renderBatchResults(d.results||[]);
+if(!d.ok&&d.batch_id){document.getElementById('catalogFormStatus').textContent='API Poolの空き待ちで一時停止しました。Batch IDを保存しました。「中断したバッチを再開」から再試行できます。';return;}
+if(!item)throw new Error('PROBE_RESULT_MISSING');
+if(item.request_id){
+var hr=await fetch('/api/admin/mightpulse-probe?request_id='+encodeURIComponent(item.request_id),{credentials:'same-origin',cache:'no-store'});
+var hd=await hr.json();
+if(hr.ok&&hd.ok&&hd.record){var rec=hd.record;showLatest({request_id:rec.request_id,type:rec.command_type||cmd.id,target_type:cmd.category,target_id:rec.endpoint||item.path||'',endpoint:rec.endpoint||item.path||'',query:rec.query||cmd.query||{},http_status:rec.http_status,elapsed_ms:rec.elapsed_ms,raw_payload:rec.raw_payload||null,diagnostic_payload:rec.diagnostic||null,field_dictionary:rec.field_dictionary||[],archive:rec.archive||item.archive||null});}
 }
+document.getElementById('catalogFormStatus').textContent='「'+cmd.label+'」: '+(item.status||'完了')+' / HTTP '+(item.http_status||'-')+' / '+(item.elapsed_ms==null?'-':item.elapsed_ms+' ms');
+}catch(e){document.getElementById('catalogFormStatus').textContent='実行失敗: '+esc(e.message||e);}
+}
+var activeCatalogCommand=null;function configureCatalogCommand(cmd){activeCatalogCommand=cmd;var fields=[];var endpoint=cmd.endpoint||'';if(endpoint.indexOf('{governor_id}')>=0)fields.push({key:'governor_id',label:'領主ID',placeholder:'例: 223636495',inputmode:'numeric'});if(endpoint.indexOf('{uid}')>=0)fields.push({key:'uid',label:'領主UID',placeholder:'UIDを入力',inputmode:'numeric'});if(endpoint.indexOf('{kid}')>=0)fields.push({key:'kid',label:'王国番号',placeholder:'例: 1524',inputmode:'numeric'});if(endpoint.indexOf('{tag}')>=0)fields.push({key:'tag',label:'同盟タグ',placeholder:'例: ABC'});if(cmd.id==='kingdom_rank_board')fields.push({key:'board',label:'ランキング種別',select:true});if(cmd.id==='kingdom_list'){fields.push({key:'page',label:'ページ番号',placeholder:'1',inputmode:'numeric'});fields.push({key:'size',label:'取得件数（最大24）',placeholder:'24',inputmode:'numeric'});}document.getElementById('catalogFormTitle').textContent=cmd.label;document.getElementById('catalogFormHelp').textContent=commandPurpose(cmd)+' 必要な項目だけ入力すれば実行できます。APIパスやクエリJSONの編集は不要です。';document.getElementById('catalogFormFields').innerHTML=fields.map(function(f){if(f.select)return '<label class="field"><span>'+esc(f.label)+'</span><select id="catalogInput_'+f.key+'">'+document.getElementById('board').innerHTML+'</select></label>';var prior=f.key==='governor_id'||f.key==='uid'?document.getElementById('governorId').value:f.key==='kid'?document.getElementById('kid').value:f.key==='tag'?document.getElementById('manualAllianceTag').value:'';return '<label class="field"><span>'+esc(f.label)+'</span><input id="catalogInput_'+f.key+'" '+(f.inputmode?'inputmode="'+f.inputmode+'" ':'')+'autocomplete="off" placeholder="'+esc(f.placeholder||'')+'" value="'+esc(prior)+'"></label>';}).join('')||'<p class="hint">追加の入力は不要です。</p>';document.getElementById('catalogFormStatus').textContent='必要項目: '+(fields.map(function(f){return f.label;}).join('・')||'なし')+(cmd.requiresMighty?' / Mighty権限が必要':'');document.getElementById('catalogCommandForm').hidden=false;document.getElementById('catalogCommandForm').scrollIntoView({behavior:'smooth',block:'start'});var first=document.querySelector('#catalogFormFields input, #catalogFormFields select');if(first)first.focus({preventScroll:true});}document.getElementById('catalogFormRun').addEventListener('click',function(ev){if(activeCatalogCommand)runButtonAction(ev.currentTarget,function(){return runCatalogCommand(activeCatalogCommand);},document.getElementById('catalogFormStatus'));});document.getElementById('catalogFormCancel').addEventListener('click',function(){document.getElementById('catalogCommandForm').hidden=true;activeCatalogCommand=null;});document.getElementById('catalogList').addEventListener('click',function(ev){var config=ev.target.closest('[data-config-catalog]');if(config){var selected=probeCatalog.find(function(c){return c.id===config.getAttribute('data-config-catalog');});if(selected){setButtonState(config,'clicked');configureCatalogCommand(selected);document.getElementById('catalogFormStatus').textContent='設定フォームを開きました。入力後に「この内容で実行」を押してください。';setTimeout(function(){setButtonState(config,'',null);},900);}return;}var btn=ev.target.closest('[data-run-catalog]');if(!btn)return;var cmd=probeCatalog.find(function(c){return c.id===btn.getAttribute('data-run-catalog');});if(!cmd)return;var needsInput=/\{(governor_id|uid|kid|tag)\}/.test(cmd.endpoint||'')||cmd.id==='kingdom_list'||cmd.id==='kingdom_rank_board';if(needsInput){setButtonState(btn,'clicked');configureCatalogCommand(cmd);document.getElementById('catalogFormStatus').textContent='入力フォームを開きました。必要項目を確認して「この内容で実行」を押してください。';setTimeout(function(){setButtonState(btn,'',null);},900);return;}activeCatalogCommand=cmd;runButtonAction(btn,function(){return runCatalogCommand(cmd);},document.getElementById('catalogFormStatus'));});renderCatalog();async function probe(type){var q=new URLSearchParams({type:type});if(type==='PLAYER'){q.set('governor_id',document.getElementById('governorId').value.trim());q.set('include',document.getElementById('include').value);}else{q.set('kid',document.getElementById('kid').value.trim());if(type==='KINGDOM_RANKING')q.set('board',document.getElementById('board').value);}document.getElementById('status').textContent='取得中…';try{var r=await fetch('/api/admin/mightpulse-probe?'+q.toString(),{cache:'no-store',credentials:'same-origin'});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||d.error||('HTTP '+r.status));var p=d.probe;p.client_received_at=Date.now();var rows=read();var previous=rows.find(function(x){return x.type===p.type&&String(x.target_id)===String(p.target_id);})||null;rows.unshift({client_received_at:p.client_received_at,type:p.type,target_id:p.target_id,actor:p.actor||null,actor_label:p.actor&&p.actor.label||"-",actor_role:p.actor&&p.actor.role||"",fresh:p.fresh,cached_at:p.cached_at,age_seconds:p.age_seconds,http_status:p.http_status,elapsed_ms:p.elapsed_ms,hash:p.response_sha256});write(rows);draw();showLatest(p,previous);document.getElementById('status').innerHTML='<span class=\"ok\">取得成功。履歴に追加しました。</span>';}catch(e){document.getElementById('status').innerHTML='<span class=\"error\">Probe失敗: '+esc(e.message||e)+'</span>';}}document.querySelectorAll('button[data-type]').forEach(function(btn){btn.addEventListener('click',function(){var type=btn.getAttribute('data-type');runButtonAction(btn,function(){return probe(type);},document.getElementById('status'));});});document.getElementById('clearHistory').addEventListener('click',function(){localStorage.removeItem(key);draw();document.getElementById('latest').innerHTML='';});var lastBatchKey='eagleeye_mightpulse_probe_last_batch_v1';function renderBatchResults(results){document.getElementById('batchResults').innerHTML='<table><thead><tr><th>#</th><th>コマンド</th><th>起動理由</th><th>HTTP</th><th>結果</th><th>保存先</th></tr></thead><tbody>'+(results||[]).map(function(x){return '<tr><td>'+esc(x.sequence_no||'-')+'</td><td>'+esc(x.command_id||x.type||'-')+'<br><span class="small">'+esc(x.endpoint||x.path||'')+'</span></td><td>'+esc(x.trigger_reason||'MANUAL')+'</td><td>'+esc(x.http_status||'-')+'</td><td>'+esc(x.status|| (x.ok?'SUCCESS':'FAILED'))+' '+esc(x.error||'')+'</td><td>'+esc(x.archive&&x.archive.r2_saved?'R2':'未保存')+'</td></tr>';}).join('')+'</tbody></table>'; }async function runBatch(mode,batchType,category){var id=mode==='resume'?localStorage.getItem(lastBatchKey):null;if(mode==='resume'&&!id){document.getElementById('batchStatus').textContent='再開できるバッチIDがありません。';return;}if(mode!=='resume'){id=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+'-'+Math.random());localStorage.setItem(lastBatchKey,id);}document.getElementById('batchStatus').textContent=mode==='resume'?'バッチ再開中…':'一括実行中…';var params={governor_id:document.getElementById('governorId').value.trim(),kid:document.getElementById('kid').value.trim(),tag:document.getElementById('manualAllianceTag')?document.getElementById('manualAllianceTag').value.trim():'',board:document.getElementById('board').value};try{var r=await fetch('/api/admin/mightpulse-probe',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({mode:mode==='resume'?'resume':'batch',batch_id:id,batch_type:batchType,category:category,params:params,concurrency:Number(document.getElementById('probeBatchConcurrency').value)||2,max_commands:60,automatic_discovery:true})});var d=await r.json();if(d.batch_id)localStorage.setItem(lastBatchKey,d.batch_id);renderBatchResults(d.results||[]);document.getElementById('batchStatus').textContent='状態: '+(d.state||'FAILED')+' / 完了 '+(d.completed_commands||0)+' / 対象 '+(d.total_commands||0)+' / Batch ID '+(d.batch_id||id)+(d.error?' / '+d.error:'');}catch(e){document.getElementById('batchStatus').textContent='一括実行が中断された可能性があります。Batch IDを保持しています。再開を押してください。';}}document.getElementById('runCategoryBatch').addEventListener('click',function(ev){runButtonAction(ev.currentTarget,function(){return runBatch('batch','category',document.getElementById('probeBatchCategory').value);},document.getElementById('batchStatus'));});document.getElementById('runAllBatch').addEventListener('click',function(ev){if(confirm('最大60コマンドを実行し、ランキングや関連データを追加調査します。APIリクエスト数が増える可能性があります。続けますか？'))runButtonAction(ev.currentTarget,function(){return runBatch('batch','all','');},document.getElementById('batchStatus'));});document.getElementById('resumeBatch').addEventListener('click',function(ev){runButtonAction(ev.currentTarget,function(){return runBatch('resume','resume','');},document.getElementById('batchStatus'));});draw();fetch('/api/admin/mightpulse-probe?history=1&limit=50',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json();}).then(function(d){if(!d||!d.ok||!Array.isArray(d.history))return;document.getElementById('history').innerHTML=d.history.map(function(p){return '<tr><td>'+new Date(Number(p.created_at||0)*1000).toLocaleString('ja-JP')+'</td><td>'+esc(p.actor_label||p.actor_discord_id||'-')+'<br><span class="small">'+esc(p.actor_role||'')+'</span></td><td>'+esc(p.command_type||'')+'<br><span class="small">'+esc(p.endpoint||'')+'</span></td><td>'+esc(p.status||'-')+'</td><td>'+esc(p.trigger_reason||'MANUAL')+(p.discovered_from?' · '+esc(p.discovered_from):'')+(p.key_source?' · '+esc(p.key_source):'')+(p.key_owner_user_id?' · lender '+esc(p.key_owner_user_id):'')+'</td><td>'+esc(p.response_count==null?'-':p.response_count)+' / retry '+esc(p.retry_count==null?0:p.retry_count)+'</td><td>'+esc(p.http_status||'-')+'</td><td>'+esc(p.elapsed_ms==null?'-':p.elapsed_ms)+' ms</td><td><button type="button" data-open-probe="'+esc(p.request_id)+'">開く</button></td></tr>';}).join('')||'<tr><td colspan=\\\"9\\\" class=\\\"small\\\">履歴なし</td></tr>';}).catch(function(){});document.getElementById('history').addEventListener('click',function(event){var button=event.target.closest('[data-open-probe]');if(!button)return;var id=button.getAttribute('data-open-probe');button.textContent='読込中…';fetch('/api/admin/mightpulse-probe?request_id='+encodeURIComponent(id),{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json().then(function(d){if(!r.ok||!d.ok)throw new Error(d.error||'HISTORY_LOAD_FAILED');return d;});}).then(function(d){var rec=d.record||{};showLatest({request_id:rec.request_id||id,type:rec.command_type||'Probe履歴',target_type:rec.target_type||'',target_id:rec.endpoint||'',endpoint:rec.endpoint||'',query:rec.query||{},http_status:rec.http_status,elapsed_ms:rec.elapsed_ms,raw_payload:rec.raw_payload||null,diagnostic_payload:rec.diagnostic||null,field_dictionary:rec.field_dictionary||[],archive:{r2_saved:true,metadata_saved:true}});}).catch(function(e){document.getElementById('status').textContent='履歴読込失敗: '+esc(e.message||e);}).finally(function(){button.textContent='開く';});});}());</script></body></html>`;}
+// OWNER only: sign out users that KvK threads could not add because they are not
+// in the Support server, so their next sign-in re-runs the server auto-join.
+async function handleKvkReloginMissingApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  const ids = await listKvkUsersNotInServer(env.DB);
+  if (request.method === "GET") return json({ ok: true, count: ids.length });
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const revoked = await revokeSessions(env.DB, ids, { reason: "KVK_SUPPORT_SERVER_MISSING" });
+  await writeOwnerAuditLog(env, guard.auth, "KVK_RELOGIN_MISSING", null, null, { count: revoked }).catch(() => {});
+  return json({ ok: true, revoked });
+}
+
+// OWNER only: back up the stale activity fields to Google Drive, then (as a
+// separate, explicitly confirmed step) remove them from D1.
+async function handleStaleActivityApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (!env.ARCHIVE) return json({ ok: false, error: "R2_ARCHIVE_NOT_CONFIGURED" }, 503);
+  try {
+    if (request.method === "GET") {
+      const counts = await countStaleActivity(env.DB);
+      const manifest = await readStaleBackupManifest(env.ARCHIVE);
+      return json({ ok: true, counts, manifest, purge_blocker: stalePurgeBlocker(manifest, counts) });
+    }
+    if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+    const body = await request.json().catch(() => ({}));
+    if (body?.action === "backup") {
+      const manifest = await runStaleActivityBackup({
+        db: env.DB, bucket: env.ARCHIVE,
+        upload: (key, fileName) => uploadR2ObjectToGoogleDrive(env, { archiveBucket: env.ARCHIVE, key, fileName, mimeType: "application/gzip" })
+      });
+      await writeOwnerAuditLog(env, guard.auth, "STALE_ACTIVITY_BACKUP", null, null, { file: manifest.file_name, counts: manifest.counts }).catch(() => {});
+      return json({ ok: true, manifest });
+    }
+    if (body?.action === "purge") {
+      const result = await runStaleActivityPurge({ db: env.DB, bucket: env.ARCHIVE, confirm: body.confirm });
+      if (result.changed) await writeOwnerAuditLog(env, guard.auth, "STALE_ACTIVITY_PURGE", null, null, { file: result.manifest?.file_name, changed: result.changed, after: result.after }).catch(() => {});
+      return json({ ok: result.ok, error: result.error, before: result.before, after: result.after || null, changed: result.changed || null }, result.ok ? 200 : 409);
+    }
+    return json({ ok: false, error: "UNKNOWN_ACTION" }, 400);
+  } catch (error) {
+    console.error("stale_activity_api_failed", error?.code || error?.message || error);
+    return json({ ok: false, error: error?.code || "STALE_ACTIVITY_FAILED", step: error?.driveStep || null }, 500);
+  }
+}
+
+// OWNER only: copy archive objects missing from R2 back from Google Drive.
+// Never overwrites an existing R2 object; R2 verifies bytes against Drive's MD5.
+async function handleGoogleDriveRestoreApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!env.ARCHIVE) return json({ ok: false, error: "R2_ARCHIVE_NOT_CONFIGURED" }, 503);
+  const body = await request.json().catch(() => ({}));
+  try {
+    if (body?.key) {
+      const result = await restoreR2ObjectFromGoogleDrive(env, { archiveBucket: env.ARCHIVE, key: String(body.key).trim() });
+      return json({ ok: true, mode: "single", result });
+    }
+    const summary = await restoreMissingR2ObjectsFromGoogleDrive(env, { archiveBucket: env.ARCHIVE, pageToken: body?.pageToken ? String(body.pageToken) : null, maxRestores: 10 });
+    return json({ ok: true, mode: "scan", ...summary });
+  } catch (error) {
+    return json({ ok: false, error: String(error?.code || error?.message || "GOOGLE_DRIVE_RESTORE_FAILED").split(":")[0], httpStatus: Number(error?.status || 0) || null }, 502);
+  }
+}
+
 async function handleGoogleDriveVerifyApi(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return guard.error;
@@ -4098,10 +4525,27 @@ async function renderGoogleDriveSetupPage(request, env, message = null, error = 
   const authorizeReady = Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI);
   const esc = escapeHtml;
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google Drive設定 | EagleEye</title><style>
-body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0 10px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:16px;padding:17px;border:1px solid #334155;border-radius:16px;background:#162238}.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #334155}.row:last-child{border:0}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:12px 15px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}.note{margin-top:14px;color:#94a3b8;font-size:12px;line-height:1.7}.message{margin-top:16px;padding:13px;border-radius:10px;background:#0f2a1c;color:#86efac}.error{margin-top:16px;padding:13px;border-radius:10px;background:#3a1418;color:#fca5a5}</style></head><body><main class="wrap"><a class="back" href="${isOwner ? "/owner" : "/admin"}">← ${isOwner ? "OWNER CONTROL" : "ADMIN CONTROL"}</a><div class="eyebrow">GOOGLE DRIVE</div><h1 class="title">Google Drive連携</h1><p class="sub">EagleEye専用の個人GoogleアカウントをOAuthで接続します。WorkspaceやService Accountは使用しません。</p>
+body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0 10px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:16px;padding:17px;border:1px solid #334155;border-radius:16px;background:#162238}.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #334155}.row:last-child{border:0}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:12px 15px;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#111827;text-decoration:none;font-weight:900}.note{margin-top:14px;color:#94a3b8;font-size:12px;line-height:1.7}.message{margin-top:16px;padding:13px;border-radius:10px;background:#0f2a1c;color:#86efac}.error{margin-top:16px;padding:13px;border-radius:10px;background:#3a1418;color:#fca5a5}</style></head><body><main class="wrap"><a class="back" href="${isOwner ? "/owner" : "/admin"}">← ${isOwner ? "OWNER CONTROL" : "ADMIN CONTROL"}</a><div class="eyebrow">Google Drive</div><h1 class="title">Google Drive連携</h1><p class="sub">EagleEye専用の個人GoogleアカウントをOAuthで接続します。WorkspaceやService Accountは使用しません。</p>
 ${message ? '<div class="message">'+esc(message)+'</div>' : ''}${error ? '<div class="error">'+esc(error)+'</div>' : ''}
 <div class="card"><div class="row"><span>OAuth設定</span><strong class="${authorizeReady ? "ok" : "bad"}">${authorizeReady ? "設定済み" : "未設定"}</strong></div><div class="row"><span>Refresh Token</span><strong class="${status.refreshConfigured ? "ok" : "bad"}">${status.refreshConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>DriveフォルダID</span><strong class="${status.folderConfigured ? "ok" : "bad"}">${status.folderConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>接続設定</span><strong class="${status.ready ? "ok" : "muted"}">${status.ready ? "設定済み" : "未設定"}</strong></div></div>
-${isOwner ? `<div class="card"><b>Google Drive接続検証</b><div class="note">Cloudflare SecretのRefresh TokenをGoogleへ交換し、Drive APIへ接続できるか確認します。Token自体は表示しません。</div><button id="verify-drive" class="btn" type="button" onclick="verifyDrive()">接続を検証</button><div id="verify-result" class="note"></div></div>
+${isOwner ? `<div class="card"><b>DriveからR2へ復元</b><div class="note">R2のアーカイブが消えたときの復旧用です。Driveの退避ファイルとR2を照合し、R2に無いものだけを戻します（既存のR2ファイルは上書きしません。中身はMD5で照合します）。</div><button id="restore-scan" type="button" onclick="restoreScan()">照合して足りないものを復元</button><div style="margin-top:10px"><input id="restore-key" placeholder="R2キーを指定して1件だけ復元（archive/...）" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#f8fafc"><button type="button" onclick="restoreOne()" style="margin-top:8px">このキーを復元</button></div><div id="restore-result" class="note"></div></div>
+<script>
+async function restoreCall(payload){const r=await fetch("/api/owner/google-drive/restore",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});return r.json().catch(()=>({ok:false,error:"INVALID_RESPONSE"}))}
+async function restoreScan(){const btn=document.getElementById("restore-scan"),out=document.getElementById("restore-result");btn.disabled=true;let token=null,total={checked:0,present:0,restored:0,skipped:0,failed:0},pages=0;try{while(pages<200){const d=await restoreCall({pageToken:token});if(!d.ok){out.textContent="✕ "+(d.error||"復元に失敗しました");return}for(const k of Object.keys(total))total[k]+=Number(d[k]||0);pages++;out.textContent="照合中… 確認"+total.checked+"件 / R2にあり"+total.present+"件 / 復元"+total.restored+"件 / 失敗"+total.failed+"件";if(d.repeatPage)continue;if(!d.nextPageToken)break;token=d.nextPageToken}out.textContent="✓ 完了：確認"+total.checked+"件 / R2にあり"+total.present+"件 / 復元"+total.restored+"件 / 対象外"+total.skipped+"件 / 失敗"+total.failed+"件"}catch(e){out.textContent="✕ 通信に失敗しました"}finally{btn.disabled=false}}
+async function restoreOne(){const key=document.getElementById("restore-key").value.trim(),out=document.getElementById("restore-result");if(!key)return;out.textContent="復元中…";const d=await restoreCall({key});const labels={RESTORED:"復元しました",ALREADY_IN_R2:"R2に既にあります（変更なし）",NOT_FOUND_ON_DRIVE:"Driveに見つかりません",SKIPPED:"対象外のキーです"};out.textContent=d.ok?(labels[d.result.status]||d.result.status)+(d.result.reason?"（"+d.result.reason+"）":""):"✕ "+(d.error||"復元に失敗しました")}
+</script>
+${isOwner ? `<div class="card"><b>使用禁止データの退避と削除</b><div class="note">MightPulseが「古い値」としている online・最終アクティブ時刻・最終ログインが、過去のデータに残っています。① まずDriveへ退避（CSV、MD5照合）→ ② 中身を確認 → ③ 削除、の順に進みます。退避しても何も消えません。</div><div id="stale-status" class="note" style="white-space:pre-line">件数を確認中…</div><button id="stale-backup" type="button" onclick="staleBackup()">① Driveへ退避</button> <button id="stale-purge" type="button" onclick="stalePurge()" disabled>③ 削除する</button><div id="stale-result" class="note"></div></div>
+<script>
+async function staleCall(method,payload){const r=await fetch("/api/owner/stale-activity",{method,credentials:"same-origin",headers:{"content-type":"application/json"},body:payload?JSON.stringify(payload):undefined});return r.json().catch(()=>({ok:false,error:"INVALID_RESPONSE"}))}
+const STALE_LABEL={players:"プレイヤー",api_observations:"API生データ",player_snapshots:"プレイヤー履歴(D1)",history_emergency_buffer:"緊急バッファ"};
+function staleCounts(c){return Object.keys(STALE_LABEL).map(k=>STALE_LABEL[k]+" "+Number(c&&c[k]||0).toLocaleString("ja-JP")+"件").join(" / ")}
+let staleManifest=null;
+async function staleLoad(){const d=await staleCall("GET");const el=document.getElementById("stale-status");if(!d.ok){el.textContent="✕ "+(d.error||"取得失敗");return}staleManifest=d.manifest;let t="残っている件数："+staleCounts(d.counts);if(d.manifest)t+="\\n最新の退避："+new Date(d.manifest.created_at*1000).toLocaleString("ja-JP")+"「"+d.manifest.file_name+"」"+(d.manifest.drive_link?" ":"");el.textContent=t;if(d.manifest&&d.manifest.drive_link){const a=document.createElement("a");a.href=d.manifest.drive_link;a.target="_blank";a.rel="noopener";a.textContent="Driveで開く";el.appendChild(document.createElement("br"));el.appendChild(a)}document.getElementById("stale-purge").disabled=Boolean(d.purge_blocker)||!d.counts.total;const why={BACKUP_REQUIRED:"削除の前に①の退避が必要です。",BACKUP_TOO_OLD:"退避から7日以上たっています。もう一度①を実行してください。",DATA_CHANGED_SINCE_BACKUP:"退避後にデータが増えています。もう一度①を実行してください。"};if(d.purge_blocker&&d.counts.total)document.getElementById("stale-result").textContent=why[d.purge_blocker]||""}
+async function staleBackup(){const b=document.getElementById("stale-backup"),out=document.getElementById("stale-result");if(!confirm("使用禁止データをCSVにしてGoogle Driveへ退避します（削除はしません）。"))return;b.disabled=true;out.textContent="退避中…（数十秒かかることがあります）";try{const d=await staleCall("POST",{action:"backup"});out.textContent=d.ok?"✓ 退避しました："+d.manifest.file_name+"（"+Number(d.manifest.counts.total).toLocaleString("ja-JP")+"行、MD5照合済み）。Driveで中身を確認してから③へ進んでください。":"✕ 退避に失敗しました："+(d.error||"")+(d.step?"（"+d.step+"）":"")}finally{b.disabled=false;staleLoad()}}
+async function stalePurge(){const out=document.getElementById("stale-result");if(!staleManifest)return;const typed=prompt("削除します。元に戻すにはDriveのCSVが必要です。\\n確認のため退避ファイル名を入力してください：\\n"+staleManifest.file_name);if(typed===null)return;const b=document.getElementById("stale-purge");b.disabled=true;out.textContent="削除中…";try{const d=await staleCall("POST",{action:"purge",confirm:typed.trim()});const msg={CONFIRMATION_MISMATCH:"ファイル名が一致しません。",BACKUP_REQUIRED:"退避が必要です。",BACKUP_TOO_OLD:"退避が古すぎます。",DATA_CHANGED_SINCE_BACKUP:"退避後にデータが増えています。",PURGE_INCOMPLETE:"一部が残りました。もう一度実行してください。"};out.textContent=d.ok?"✓ 削除しました。残り0件。":"✕ "+(msg[d.error]||d.error||"失敗")}finally{staleLoad()}}
+staleLoad();
+</script>` : ''}
+<div class="card"><b>Google Drive接続検証</b><div class="note">Cloudflare SecretのRefresh TokenをGoogleへ交換し、Drive APIへ接続できるか確認します。Token自体は表示しません。</div><button id="verify-drive" class="btn" type="button" onclick="verifyDrive()">接続を検証</button><div id="verify-result" class="note"></div></div>
 <script>
 async function verifyDrive(){
   const button=document.getElementById("verify-drive");
@@ -4201,7 +4645,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
       });
       const result = await getMightPulsePlayer(env, probeGovernorId, {
         include: "base",
-        apiKey: lease.api_key
+        apiKey: lease.api_key,
+        metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
       });
       await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
@@ -4212,8 +4657,9 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
         targetId: probeGovernorId,
         purpose: "API_POOL_AUTO_RECOVERY",
         httpStatus: result.status,
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
       recovered++;
     } catch (error) {
@@ -4237,7 +4683,8 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
           errorMessage: error?.message || null,
           cooldownSeconds: disable ? 0 : cooldown,
           disable,
-          keepAvailable: false
+          keepAvailable: false,
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
         if (disable) disabled++;
       }
@@ -4247,23 +4694,180 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
   return { checked, recovered, disabled, failed };
 }
 
-export default {
+const worker = {
   async fetch(request, env, executionContext) {
+    // プレビューは本番の D1・R2 を読むだけ（書き込み・Queue・外部 fetch を止める）。preview-readonly.js
+    if (isPreviewEnv(env)) { env = previewReadOnlyEnv(env); installPreviewFetchGuard(); }
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
+    configureAdsense(env);
+    // Custom domain move: page views on the legacy host go to PUBLIC_ORIGIN (off until LEGACY_REDIRECT is set).
+    { const moved = legacyHostRedirect(request, env); if (moved) return moved; }
+    // 招待リンク（/?ref=コード）：コードを30日だけCookieに覚えて、きれいなURLへ。DBは読まない。
+    { const ref = url.searchParams.get("ref"); if (request.method === "GET" && isReferralCode(ref) && !url.pathname.startsWith("/api/")) { const clean = new URL(url); clean.searchParams.delete("ref"); const h = new Headers({ Location: clean.pathname + clean.search, "Cache-Control": "no-store" }); h.append("Set-Cookie", serializeCookie(REF_COOKIE, ref, { maxAge: REF_COOKIE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" })); return new Response(null, { status: 302, headers: h }); } }
     try {
+      if (isPreviewEnv(env)) { const gated = await previewGate(request, env, url); if (gated) return gated; }
+      if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
+      if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
+      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, [...await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => [])]), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 21600);
+      if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
+      if (url.pathname === "/kvk/matchups") { const season = await currentKvkSeason(env.DB); return Response.redirect(new URL(season ? "/kvk/s" + season : "/kvk", url).toString(), 302); }
+      { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }, PUBLIC_CACHE_TTL.data); } }
+      if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      // データレポート（読み物・静的）。2026-11-16。
+      // 英語版（i18n.js・2026-11-19）。公開前（EN_PUBLIC=false）はオーナー・アドミンだけ。ほかの人は日本語版へ。
+      // 英語版は共有キャッシュに入れない（見られる人が限られるため）。英語版がまだないページの /en/... も日本語版へ。
+      // 英語で書いた読み物ページの中身（englishProxy から呼ぶ内部用・英語版を見られる人だけ）。
+      if (url.pathname.startsWith("/__en-prose/")) {
+        const proseAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(proseAuth?.status === "ACTIVE" ? proseAuth.role : null)) return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+        const origin = publicOrigin(request, env);
+        const p = url.pathname.slice("/__en-prose".length).replace(/\/$/, "") || "/";
+        const prose = { "/privacy": renderPrivacyPolicyPageEn, "/terms": renderTermsPageEn, "/about": renderAboutPageEn, "/guide": renderGuidePageEn }[p];
+        if (prose) return eagleEyeHtmlResponse(prose(origin));
+        if (p === "/reports") return eagleEyeHtmlResponse(renderReportsIndexEn({ origin }));
+        if (p === "/guides") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
+        const gm = p.match(/^\/guides\/([a-z0-9-]{1,80})$/);
+        if (gm) { const g = renderGuide(gm[1], { origin, lang: "en" }); return g ? eagleEyeHtmlResponse(g) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
+        const rm = p.match(/^\/reports\/([a-z0-9-]{1,80})$/);
+        const html = rm ? renderReportEn(rm[1], { origin }) : null;
+        return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+      }
+      if (url.pathname === "/en" || url.pathname.startsWith("/en/")) {
+        const { path } = splitLang(url.pathname);
+        const toJa = () => Response.redirect(new URL(path + url.search, url).toString(), 302);
+        const enAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(enAuth?.status === "ACTIVE" ? enAuth.role : null)) return toJa();
+        const origin = publicOrigin(request, env);
+        if (path === "/" && enAuth?.status !== "ACTIVE") {
+          const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
+          return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
+        }
+        // 読み物（利用規約・プライバシー・運営者情報・使い方・データレポート）は英語で書いたページ（legal-pages-en.js・reports-en.js）。
+        // ログイン中の案内やメニューも英語にするため、内部の /__en-prose/... で作ってから、ほかの英語ページと同じ englishProxy を通す。
+        if (/^\/(?:privacy|terms|about|guides?|reports)(?:\/[a-z0-9-]{0,80})?\/?$/.test(path)) return await englishProxy(request, env, executionContext, "/__en-prose" + path);
+        // そのほかのページ：日本語のページを作ってから英語に置き換える（i18n-en.js）。英語版を作らないページ（管理画面など）は日本語版へ。
+        if (enHref(path) === path) return toJa();
+        return await englishProxy(request, env, executionContext, path + url.search);
+      }
+      // 読み物：イベントの基本（guides.js・2026-11-19）
+      if (url.pathname === "/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderGuide(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
+      if (url.pathname === "/reports") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderReportsIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/reports\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderReport(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
+      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => { const [kids, stats] = await Promise.all([loadPublicKingdomIds(env.DB), loadAllKingdomStats(env.DB).catch(() => null)]); return renderPublicKingdomsIndex(kids, { origin: publicOrigin(request, env), stats }); }, PUBLIC_CACHE_TTL.data);
+      { const m = url.pathname.match(/^\/heroes\/([a-z-]{2,40})\/?$/); if (m) { const heroName = heroNameBySlug(m[1]); if (heroName) return await servePublicPage(request, env, executionContext, async signedIn => { let iconByName = {}; try { iconByName = await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_page_icons_failed", error?.message || error); } return renderHeroPage(heroName, { origin: publicOrigin(request, env), iconByName, signedIn, loginHref: loginUrlFor(url.pathname) }); }, PUBLIC_CACHE_TTL.static); return eagleEyeHtmlResponse(renderHeroNotFoundPage(), 404); } }
+      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => { const data = await loadPublicAlliance(env.DB, kid, m[2], { archive: env.ARCHIVE }).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell }); }, PUBLIC_CACHE_TTL.data); } }
+      // SNS投稿セット：実データから作るネタと、画像の元になるカード（検索には載せない。GitHub Actions が撮影する）。
+      if (url.pathname === "/social/pack.json" || url.pathname === "/social/cover" || url.pathname.startsWith("/social/card/")) return await serveSocialRoute(request, env, executionContext, url);
+      if (url.pathname === "/owner/social") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [pack, manifest] = await Promise.all([loadSocialPack(env, { origin: publicOrigin(request, env) }), loadSocialManifest(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialOwnerPage(pack, manifest)); }
+      // 「今すぐ作る」：GET は作成中かどうか、POST で GitHub Actions を動かす（投稿はしない）。D1 は使わない。
+      if (url.pathname === "/owner/social/run") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; if (request.method === "GET") return json(await socialRunStatus(env)); if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); const r = await triggerSocialRun(env); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : 502); }
+      // 動画（CM）を作る：台本の編集・保存（R2）と、GitHub Actions での作成。D1 は使わない。social-video.js
+      if (url.pathname === "/owner/social/video" || url.pathname.startsWith("/owner/social/video/")) {
+        const guard = await requireOwner(request, env);
+        if (url.pathname === "/owner/social/video") { if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [saved, videos] = await Promise.all([loadSavedVideoSets(env.ARCHIVE), loadVideos(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialVideoPage({ saved, videos })); }
+        if (guard.error) return guard.error;
+        if (url.pathname === "/owner/social/video/run" && request.method === "GET") return json(await videoRunStatus(env));
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        if (url.pathname === "/owner/social/video/scenes") { const r = await saveVideoSet(env.ARCHIVE, body?.set); return json(r.ok ? r : { ok: false, error: "INVALID_SCENES", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/scenes/delete") { const r = await deleteVideoSet(env.ARCHIVE, String(body?.name || "")); return json(r.ok ? r : { ok: false, error: "INVALID", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/run") { const r = await triggerVideoRun(env, body?.set, { bgm: body?.bgm !== false }); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : r.error === "INVALID_SCENES" ? 400 : 502); }
+        return json({ ok: false, error: "NOT_FOUND" }, 404);
+      }
+      if (url.pathname.startsWith("/owner/social/media/")) { const guard = await requireOwner(request, env); if (guard.error) return guard.error; const key = "social/" + url.pathname.slice("/owner/social/media/".length).split("/").map(decodeURIComponent).join("/"); if (!isSocialMediaKey(key) || !env.ARCHIVE) return json({ ok: false, error: "NOT_FOUND" }, 404); const range = parseByteRange(request.headers.get("range")); const obj = await env.ARCHIVE.get(key, range ? { range } : undefined); if (!obj) return json({ ok: false, error: "NOT_FOUND" }, 404); const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".png") ? "image/png" : key.endsWith(".txt") ? "text/plain; charset=utf-8" : "application/json"; const h = { "content-type": type, "cache-control": "private, max-age=300", "accept-ranges": "bytes", "content-disposition": "inline; filename=\"" + key.split("/").pop() + "\"" }; if (range && obj.range) { const sfx = obj.range.suffix != null ? Math.min(obj.size, obj.range.suffix) : null; const start = sfx != null ? obj.size - sfx : (obj.range.offset ?? 0); const len = sfx != null ? sfx : Math.min(obj.range.length ?? (obj.size - start), obj.size - start); h["content-range"] = `bytes ${start}-${start + len - 1}/${obj.size}`; h["content-length"] = String(len); return new Response(obj.body, { status: 206, headers: h }); } h["content-length"] = String(obj.size); return new Response(obj.body, { headers: h }); }
+      if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => (await publicKingdomExists(env.DB, kid)) ? renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn }) : eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404), PUBLIC_CACHE_TTL.data); } }
+      if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
+      if (url.pathname === "/about") return eagleEyeHtmlResponse(renderAboutPage(publicOrigin(request, env)));
+      if (url.pathname === "/guide") return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidePage(publicOrigin(request, env))), PUBLIC_CACHE_TTL.static);
+      if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
+      if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
+      // 通知の設定（聖剣の登録のお知らせを止める・受け取る）。ログインが必要。
+      if (url.pathname === "/settings/notifications") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "通知の設定", "通知の設定を変えるにはログインしてください。"));
+        if (request.method === "POST") {
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const form = await request.formData().catch(() => null);
+          let message = "";
+          if (form?.has("weekly")) {
+            const on = String(form.get("weekly")) === "on";
+            await setWeeklyReportOn(env.DB, auth.user_id, on);
+            message = on ? "週1回の領主の変化を受け取るようにしました。" : "週1回の領主の変化を止めました。";
+          } else {
+            const off = String(form?.get("swordland") || "") === "off";
+            await setSwordlandNotifyOff(env.DB, auth.user_id, off);
+            message = off ? "聖剣の登録のお知らせを止めました。" : "聖剣の登録のお知らせを受け取るようにしました。";
+          }
+          const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+          return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn, message }));
+        }
+        const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+        return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn }));
+      }
+      if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
+      if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
+      if (url.pathname === "/api/funnel-event") {
+        // 昇格案内の表示・押した回数だけ（日ごとの回数。個人は記録しない）。同じサイトからのPOSTだけ。
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => null);
+        if (!CLIENT_FUNNEL_STEPS.includes(body?.step)) return json({ ok: false, error: "INVALID_STEP" }, 400);
+        await recordFunnel(env.DB, body.step);
+        return json({ ok: true });
+      }
+      if (url.pathname === "/api/pv") return await handlePageViewBeacon(request, env, { isSameOrigin: isSameOriginRequest, onView: path => recordMissionFromView(request, env, path) });
       if (url.pathname.startsWith("/api/gateway/v1/")) return await handleGatewayApi(request, env);
       if (url.pathname === "/api/kingdom-rankings/preferences") return await handleKingdomRankingPreferencesApi(request, env);
       if (url.pathname === "/api/kingdom-portal/ranking") return await handleKingdomPortalApi(request, env);
       if (url.pathname === "/api/kingdom-portal/status") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return await handleKingdomPortalApi(request, env, guard.auth); }
+      if (url.pathname === "/api/home/summary") return await handleHomeSummary(request, env, executionContext);
+      if (url.pathname === "/milestones") return eagleEyeHtmlResponse(renderMilestonesPage());
+      if (url.pathname === "/api/milestones" || url.pathname === "/api/milestones/share") return await handleMilestonesApi(request, env, url);
+      if (url.pathname === "/invite") return eagleEyeHtmlResponse(renderInvitePage());
+      if (url.pathname === "/api/invite") return await handleInviteApi(request, env);
+      if (url.pathname === "/api/rewards") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE") return json({ ok: true, rewards: [] });
+        const own = await getUserRewards(env.DB, auth.user_id);
+        // オーナーは限定の着せ替えもすべて使える。
+        const all = String(auth.role || "").toUpperCase() === "OWNER" ? EAGLEEYE_THEMES.map(t => t.reward).filter(Boolean) : [];
+        return json({ ok: true, rewards: [...new Set([...own, ...all])] });
+      }
+      if (url.pathname === "/api/avatar") return await handleAvatarProxy(request);
+      if (url.pathname === "/api/badges") return await handleBadgesApi(request, env);
+      if (url.pathname === "/api/admin/announcements" || url.pathname === "/api/owner/announcements") return await handleAnnouncementsApi(request, env);
       if (url.pathname === "/api/player-watchlist") return await handlePlayerWatchlistApi(request, env);
+      if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
+      if (url.pathname === "/news") {
+        // ログインなしでも読める公開ページ（2026-11-17）。ログイン中は既読の印など今まで通り。公開版は5分キャッシュ。
+        const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+        const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+        if (auth?.status === "ACTIVE") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+        return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderNewsPage(env.DB ? await listAnnouncements(env.DB, 50).catch(() => []) : [], { publicView: true, origin: publicOrigin(request, env) })), 300);
+      }
+      // お知らせの画像・動画（news-media.js）。表示はだれでも、アップロードは ADMIN・OWNER。
+      if (url.pathname.startsWith("/news/media/")) return await serveNewsMedia(request, env.ARCHIVE, url.pathname.slice("/news/media/".length));
+      if (url.pathname === "/api/admin/announcements/media") {
+        const guard = await requireAdmin(request, env);
+        if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const r = await handleNewsMediaUpload(request, env.ARCHIVE);
+        if (r.body.ok) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_MEDIA_UPLOAD", null, null, { file: r.body.file }).catch(() => {});
+        return json(r.body, r.status);
+      }
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
-      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env);
+      if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, requestTraceId);
       if (url.pathname === "/kingdom-watchlist") return eagleEyeHtmlResponse(await renderKingdomWatchlistPage(request, env));
       if (url.pathname === "/api/auth/ui-state") {
         const auth = await getAuthenticatedUser(request, env);
@@ -4271,16 +4875,35 @@ export default {
         return json({ authenticated: active, role: active ? auth.role : null });
       }
       if (url.pathname === "/api/auth/discord") return await startDiscordLogin(request, env);
+      if (url.pathname === "/login") {
+        const next = sanitizeLoginReturnPath(url.searchParams.get("next"));
+        // Googleが未設定なら、今までどおりDiscordへ直行。
+        if (!googleConfigured(env)) return Response.redirect(new URL("/api/auth/discord?direct=1" + (next ? "&next=" + encodeURIComponent(next) : ""), url).toString(), 302);
+        return eagleEyeHtmlResponse(renderLoginChooserPage({ next: next || "", googleOpen: googleLoginOpen(env) }));
+      }
+      if (url.pathname === "/api/auth/google") return await startGoogleLogin(request, env);
+      if (url.pathname === GOOGLE_CALLBACK_PATH) return await handleGoogleCallback(request, env);
       if (url.pathname === CALLBACK_PATH) return await handleDiscordCallback(request, env);
       if (url.pathname === "/api/auth/logout") return logout(request);
       if (url.pathname === "/api/admin/google-drive/authorize") return await handleGoogleDriveAuthorizeApi(request, env);
       if (url.pathname === "/api/admin/google-drive/verify") return await handleGoogleDriveVerifyApi(request, env);
+      if (url.pathname === "/api/owner/google-drive/restore") return await handleGoogleDriveRestoreApi(request, env);
+      if (url.pathname === "/api/owner/stale-activity") return await handleStaleActivityApi(request, env);
+      if (url.pathname === "/api/owner/kvk/relogin-missing") return await handleKvkReloginMissingApi(request, env);
       if (url.pathname === "/api/admin/google-drive/callback") return await handleGoogleDriveOAuthCallback(request, env);
       if (url.pathname === "/api/debug/player-gear") return await handleDebugPlayerGear(request, env);
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
       if (url.pathname === "/api/discord/interactions") return await handleSupportInteraction(request, env);
       if (url.pathname === "/api/admin/discord-support/register-command") return await handleDiscordSupportCommandRegistrationApi(request, env);
-      if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); } if (url.pathname === "/api/support/context") { const auth = await getAuthenticatedUser(request, env); return await handleSupportContextApi(request, env, auth); }
+      if (url.pathname === "/api/support/guest") {
+        // ログインしていない人の問い合わせ。同じサイトからだけ。IP はハッシュにして回数の制限だけに使う（保存しない）。
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const ip = request.headers.get("cf-connecting-ip") || "-";
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(env.EAGLEEYE_SESSION_SECRET || "") + ":" + ip));
+        const ipHash = [...new Uint8Array(digest)].slice(0, 12).map(b => b.toString(16).padStart(2, "0")).join("");
+        return await handleGuestSupportApi(request, env, { ipHash });
+      }
+      if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); } if (url.pathname === "/api/support/context") { const auth = await getAuthenticatedUser(request, env); return await handleSupportContextApi(request, env, auth); } if (url.pathname === "/api/support/membership") { const auth = await getAuthenticatedUser(request, env); return await handleSupportMembershipApi(request, env, auth); }
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
       if (url.pathname === "/api/admin/mightpulse-probe") return await handleMightPulseProbeApi(request, env);
@@ -4317,13 +4940,43 @@ export default {
       if (url.pathname === "/api/load-test/notice-status") return await handleLoadTestNoticeStatusApi(request, env);
       if (url.pathname === "/api/owner/kingdom-load-test/cancel") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestCancelApi(request, env, guard.auth); }
       if (url.pathname === "/api/owner/kingdom-load-test") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; return await handleOwnerKingdomLoadTestApi(request, env, guard.auth, requestTraceId, processKingdomWatchlistJob, executionContext); }
+      if (url.pathname === "/api/owner/discord-diagnostics") return await handleOwnerDiscordDiagnosticsApi(request, env);
+      if (url.pathname === "/api/owner/snapshot") return await handleOwnerSnapshotApi(request, env);
       if (url.pathname === "/api/owner/users") return await handleOwnerUsersApi(request, env);
       if (url.pathname === "/api/owner/users/watchlists") return await handleOwnerUserWatchlistsApi(request, env);
       if (url.pathname === "/api/owner/users/role") return await handleOwnerUserRoleApi(request, env);
       if (url.pathname === "/api/owner/users/status") return await handleOwnerUserStatusApi(request, env);
       if (url.pathname === "/api/owner/users/login-history") return await handleOwnerLoginHistoryApi(request, env);
       if (url.pathname === "/api/owner/audit-log") return await handleOwnerAuditLogApi(request, env);
+      if (url.pathname === "/owner/discord-diagnostics") return eagleEyeHtmlResponse(await renderOwnerDiscordDiagnosticsPage(request, env));
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
+      if (url.pathname === "/owner/users") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env, { view: "users" }));
+      // その日に使ったログインユーザー（owner-active-users.js）。オーナーだけ。
+      if (url.pathname === "/owner/users/active") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const day = normalizeActiveDay(url.searchParams.get("day")); const [data, usage] = await Promise.all([loadActiveUsers(env.DB, day), env.ARCHIVE ? loadDayUsage(env.ARCHIVE, day, rollupJstDay()).catch(() => ({})) : {}]); return eagleEyeHtmlResponse(renderActiveUsersPage({ ...data, usage })); }
+      // 利用の推移（月ごと・年間）。R2 の集計（usage-rollup.js）を読む。POST /owner/usage/run で集計を今すぐ（まだの日を最大30日）。
+      if (url.pathname === "/owner/usage" || url.pathname === "/owner/usage/run") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return url.pathname === "/owner/usage" ? eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)) : guard.error;
+        if (url.pathname === "/owner/usage/run") { if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); return json({ ok: true, ...(await runUsageRollup(env, { force: true, perRun: 30 })) }); }
+        const thisYear = Number(rollupJstDay().slice(0, 4));
+        const year = Math.min(thisYear, Math.max(2025, Number(url.searchParams.get("year")) || thisYear));
+        const [months, names] = await Promise.all([loadYear(env.ARCHIVE, year), env.DB.prepare("SELECT user_id, COALESCE(NULLIF(global_name, ''), username) AS name FROM users").all().then(r => Object.fromEntries((r?.results || []).map(x => [x.user_id, x.name]))).catch(() => ({}))]);
+        return eagleEyeHtmlResponse(renderUsageYearPage({ year, months, names, thisYear }));
+      }
+      if (url.pathname === "/owner/traffic") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
+        const [active, cf, d1, apiPool, funnel, top, sweep] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null), loadCloudflareTopTraffic(env).catch(() => null), getAllianceSweepState(env.DB).catch(() => null)]);
+        const publicData = await loadPublicDataProgress(env.DB).catch(() => null);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top, sweep, publicData }));
+      }
+      if (url.pathname === "/owner/growth") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
+        const [growth, missions] = await Promise.all([loadGrowth(env.DB), loadMissionStats(env.DB).catch(() => [])]);
+        return eagleEyeHtmlResponse(renderGrowthPage({ ...growth, missions }));
+      }
+      if (url.pathname === "/api/owner/growth/baseline" || url.pathname === "/api/owner/growth/revenue") return await handleOwnerGrowthApi(request, env, url.pathname.endsWith("/baseline") ? "baseline" : "revenue");
       if (url.pathname === "/owner/player-link-support") return eagleEyeHtmlResponse(await renderOwnerPlayerLinkSupportPage(request, env));
       if (url.pathname === "/admin") return eagleEyeHtmlResponse(await renderAdminControlPage(request, env));
       if (url.pathname === "/admin/google-drive") return await renderGoogleDriveSetupPage(request, env);
@@ -4335,15 +4988,121 @@ export default {
       if (url.pathname === "/admin/diagnostics") return await renderAdminDiagnosticsPage(request, env);
       if (url.pathname === "/admin/system-log") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderAdminSystemLogPage()); }
       if (url.pathname === "/admin/data-coverage") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(await renderAdminDataCoveragePage(env, guard.auth)); }
-      if (url.pathname === "/kingdom-catalog") { return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
-      if (url.pathname === "/kingdom") return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env));
-      if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth)); }
-      if (url.pathname === "/kingdom/alliances") return eagleEyeHtmlResponse(await renderAllianceListPage(request, env));
-      if (url.pathname === "/alliance") return eagleEyeHtmlResponse(await renderAlliancePage(request, env));
+      if (url.pathname === "/api/admin/data-coverage/users") {
+        const guard = await requireAdmin(request, env);
+        if (guard.error) return guard.error;
+        if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        const params = url.searchParams;
+        const role = String(params.get("role") || "").toUpperCase();
+        if (!["OWNER", "ADMIN", "VIP", "ADVANCED", "BASIC"].includes(role)) return json({ ok: false, error: "INVALID_ROLE" }, 400);
+        const q = String(params.get("q") || "").trim().slice(0, 100);
+        const like = "%" + q + "%";
+        const limit = Math.min(Math.max(Number(params.get("limit") || 100), 1), 100);
+        const offset = Math.max(0, Math.min(Number(params.get("offset") || 0), 10000));
+        const filter = "role = ? AND (COALESCE(global_name, '') LIKE ? OR COALESCE(username, '') LIKE ? OR discord_id LIKE ?)";
+        const [count, result] = await Promise.all([
+          env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE " + filter).bind(role, like, like, like).first(),
+          env.DB.prepare("SELECT user_id, discord_id, username, global_name, role, status, created_at, last_login_at FROM users WHERE " + filter + " ORDER BY COALESCE(global_name, username, discord_id), created_at LIMIT ? OFFSET ?").bind(role, like, like, like, limit, offset).all()
+        ]);
+        return json({ ok: true, role, total: Number(count?.count || 0), users: result.results || [], limit, offset });
+      }
+      if (url.pathname === "/kingdom-catalog") { if (url.searchParams.get("suggest") === "1") return await renderKingdomCatalogPage(request, env); return eagleEyeHtmlResponse(await renderKingdomCatalogPage(request, env)); }
+      if (url.pathname.startsWith("/hero-icons/assets/")) return await serveHeroIconAsset(request, env, url.pathname);
+      // 誰が見ても同じページなのでキャッシュする（キャッシュがある時は D1 のアイコン一覧も読まない）。
+      if (url.pathname === "/hero-catalog") return await servePublicCached(request, executionContext, async () => {
+        let iconByName = {};
+        try {
+          iconByName = await getSavedHeroIconMap(env.DB);
+        } catch (error) {
+          console.error("hero_icon_catalog_lookup_failed", error?.message || error);
+        }
+        // Shared theme, colour themes and bottom navigation like every other page.
+        return eagleEyeHtmlResponse(await renderHeroCatalogPage(iconByName, { origin: publicOrigin(request, env) }).text());
+      }, PUBLIC_CACHE_TTL.static);
+      if (url.pathname === "/kingdom") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomDetailPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      if (url.pathname === "/kingdom/rankings") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomRankingsPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      if (url.pathname === "/kingdom/alliances") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderAllianceListPage(request, env, auth, { onDemand: (kid, board) => refreshKingdomRankingOnDemand(env, kid, board), waitUntil: p => executionContext?.waitUntil?.(p) })); }
+      // 聖剣争奪：対戦相手の登録（ADVANCED以上・同盟のR4/R5）と表示。
+      if (url.pathname === "/api/swordland/home") return await handleSwordlandHomeApi(request, env);
+      if (url.pathname === "/swordland") return await handleSwordlandPage(request, env);
+      if (url.pathname === "/swordland/refresh-events") {
+        // オーナーだけ：イベント日程を今すぐ取り直す（同じサイトからのPOSTのみ）。
+        if (request.method !== "POST") return Response.redirect(new URL("/swordland", url).toString(), 303);
+        const guard = await requireOwner(request, env); if (guard.error) return guard.error;
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const r = await runSwordlandEventsRefresh(env, { force: true }).catch(error => ({ error: String(error?.message || error).slice(0, 80) }));
+        await writeOwnerAuditLog(env, guard.auth, "SWORDLAND_EVENTS_REFRESH", null, null, r).catch(() => {});
+        const msg = r.error ? "取得に失敗しました：" + r.error : "日程を取り直しました（" + (r.kingdoms || 0) + "王国・聖剣の日程 " + (r.saved || 0) + "件" + ((r.errors || []).length ? "・失敗 " + r.errors.map(e => "王国" + e.kid + " " + e.status).join("、") : "") + "）。";
+        const state = await loadSwordlandState(env, guard.auth);
+        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true, ownerMatchups: await loadAllMatchupsForOwner(env.DB).catch(() => []) }));
+      }
+      // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
+      if (url.pathname === "/alliance/compare") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "同盟比較", "同盟比較を使うにはログインしてください。"));
+        // 「最新を取得」（POST）：メンバー表は10分、秘境の試練は1時間より古いものだけ取り直して、同じページに戻る。
+        if (request.method === "POST") {
+          if (!canUseAllianceCompare(auth.role)) return json({ ok: false, error: "ADVANCED_REQUIRED" }, 403);
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
+          const back = new URL(url); back.searchParams.delete("refreshed");
+          if (targets.length >= 2 && !isQuietAgentRequest(request, auth)) {
+            // オーナーは下限なし（毎回取り直す）。ほかの人はメンバー表10分・秘境の試練1時間。
+            const isOwner = String(auth.role || "").toUpperCase() === "OWNER";
+            const got = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true, maxAgeSeconds: isOwner ? 0 : ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS, force: isOwner }).catch(() => null)));
+            const kids = got.filter(a => a && !a.error).map(a => a.kid);
+            await scheduleKingdomRankingFetch(env, executionContext, kids, MYSTIC_COMPARE_BOARDS.map(b => b[0]), { staleSeconds: isOwner ? 0 : ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS, ignoreRecentAttempt: isOwner }).catch(() => []);
+            await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_REFRESH", { metadata: { count: targets.length, fetched: got.filter(a => a?.fetched).length } });
+            back.searchParams.set("refreshed", "1");
+          }
+          return new Response(null, { status: 303, headers: { Location: back.pathname + back.search, "Cache-Control": "no-store" } });
+        }
+        if (!canUseAllianceCompare(auth.role)) return eagleEyeHtmlResponse(renderAllianceComparePage({ message: "同盟比較はADVANCED以上の機能です。マイKingShotで領主を登録し、MightPulseのAPIキーを登録するとADVANCEDになります（/my-player）。" }));
+        const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
+        const topParam = Number(url.searchParams.get("top"));
+        const top = ALLIANCE_COMPARE_TOP_OPTIONS.includes(topParam) && url.searchParams.has("top") ? topParam : ALLIANCE_COMPARE_DEFAULT_TOP;
+        const quiet = isQuietAgentRequest(request, auth);
+        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: !quiet }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
+        // 秘境の試練（ステージごとの上位3人）：プレイヤー比較と同じ表示の権限。王国ランキングが古い・無いときは裏で取りに行く。
+        const found = alliances.filter(a => a && !a.error);
+        if (found.length >= 2 && visibilityEnabled(await getPlayerVisibilitySettings(env.DB), "ranks_leaderboards", auth.role)) {
+          // 見ている本人がどれかの同盟にいれば、その人も並べる（ユーザー自身の位置が分かるように）。
+          const me = await myAlliance(env.DB, auth.user_id);
+          const meId = me?.governor_id ? String(me.governor_id) : "";
+          for (const a of found) if (meId && Number(a.kid) === Number(me.kid) && (a.members || []).some(m => String(m.id) === meId)) a.me = meId;
+          // 本人がいるときは「自分の同盟の中で何位か・相手の同盟なら何位相当か」を出すため、比べている同盟のメンバー全員ぶんを読む
+          // （王国ランキングに入っている人の行だけが見つかる。本人がいないときは今までどおり上位3人ぶんだけ）。
+          const full = found.some(a => a.me);
+          await Promise.all(found.map(async a => {
+            a.mystic = await loadAllianceMystic(env.DB, a, full ? (a.members || []).map(m => m.id) : a.me ? [a.me] : []).catch(() => null);
+            if (a.mystic && full) a.mystic.full = true;
+          }));
+          if (!quiet) await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
+        }
+        if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
+        // 画像で共有（スマホの中で作る。サーバー・D1の負担は増えない）
+        const shareFound = alliances.filter(a => a && !a.error);
+        const newestRoster = Math.max(0, ...shareFound.map(a => Number(a.observedAt) || 0));
+        const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1", ownerRefresh: String(auth.role || "").toUpperCase() === "OWNER" }));
+      }
+      // 同盟メンバー全員の VIP を MightPulse から取り直す（ADMIN・OWNER・2026-11-19）。メンバーは保存済みのメンバー表から（画面からは受け取らない）。
+      if (url.pathname === "/api/alliance/member-vips") {
+        const guard = await requireAdmin(request, env); if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        const r = await refreshAllianceMemberVips(env, Number(body?.kid), String(body?.tag || "").trim());
+        if (r.error) return json({ ok: false, error: r.error, message: r.message }, r.status || 400);
+        await writeOwnerAuditLog(env, guard.auth, "ALLIANCE_MEMBER_VIPS_REFRESH", null, null, { kid: Number(body?.kid), tag: String(body?.tag || ""), fetched: r.fetched, failed: r.failed }).catch(() => {});
+        return json({ ok: true, ...r });
+      }
+      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const vipSettings = auth ? await getPlayerVisibilitySettings(env.DB).catch(() => null) : null; const showVip = Boolean(auth && vipSettings && visibilityEnabled(vipSettings, "base_vip", auth.role)); const out = await renderAlliancePage(request, env, auth, { showVip, canFetchVip: showVip && ["ADMIN", "OWNER"].includes(String(auth?.role || "").toUpperCase()) }); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
+      if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
       if (url.pathname === "/kingdom/changes") return eagleEyeHtmlResponse(await renderKingdomChangesPage(request, env));
-      if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
+      if (url.pathname === "/kingdom-watchlist/analytics") { const auth = await getAuthenticatedUser(request, env); if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "王国ウォッチの状況", "王国ウォッチの状況を見るにはログインしてください。")); return eagleEyeHtmlResponse(await renderKingdomWatchlistAnalyticsPage(request, env, auth)); }
       if (url.pathname === "/admin/mightpulse-probe") return eagleEyeHtmlResponse(await renderMightPulseProbePage(request, env));
       if (url.pathname === "/admin/api-raw-data") { const guard = await requireAdmin(request, env); if (guard.error) return guard.error; return eagleEyeHtmlResponse(renderApiRawDataPage(guard.auth)); }
       if (url.pathname === "/admin/mightpulse-research") return eagleEyeHtmlResponse(await renderMightPulseResearchPage(request, env));
@@ -4358,13 +5117,17 @@ export default {
             try {
               const runAll = String(form?.get("action") || "") === "run_all";
               const requestedBatchSize = runAll ? 100 : Math.min(100, Math.max(1, Number(form?.get("batch_size") || 10)));
+              const submittedTotalTargetCount = Number(form?.get("totalTargetCount"));
+              const totalTargetCount = Number.isFinite(submittedTotalTargetCount) && submittedTotalTargetCount >= 0
+                ? submittedTotalTargetCount
+                : null;
               const result = await runKingdomCatalogR2Backfill(env, { batchSize: requestedBatchSize });
               const verification = result.archived > 0 ? await verifyKingdomCatalogR2Backfill(env, { batchSize: result.archived }) : { checked: 0, r2: 0, pointer: 0, rawNull: 0, boardsNull: 0, failed: 0, rows: [] };
               if (verification.failed > 0) {
                 await env.DB.prepare("UPDATE kingdom_catalog_r2_migration SET state = 'FAILED', last_error = ?, updated_at = ? WHERE migration_key = 'KINGDOM_CATALOG_R2_BACKFILL'")
                   .bind("VERIFICATION_FAILED:" + verification.failed, Math.floor(Date.now() / 1000)).run();
               }
-              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, autoContinue: runAll && !result.complete && Number(verification.failed || 0) === 0 }));
+              return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ...result, verification, totalTargetCount, autoContinue: runAll && !result.complete && Number(verification.failed || 0) === 0 }));
             } catch (error) {
               return eagleEyeHtmlResponse(await renderKingdomCatalogR2BackfillPage(env, { ok:false, error:error?.message || String(error) }));
             }
@@ -4374,6 +5137,21 @@ export default {
       }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
+      // 使う領主の切り替え（active-governor.js）。自分が登録している領主だけ選べる。
+      if (url.pathname === "/api/me/active-governor") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: false, error: "LOGIN_REQUIRED" }, 401);
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => null);
+        try {
+          const governorId = await setActiveGovernor(env.DB, auth.user_id, body?.governor_id);
+          return json({ ok: true, active_governor_id: governorId });
+        } catch (error) {
+          if (error?.code === "GOVERNOR_NOT_LINKED") return json({ ok: false, error: error.code, message: error.message }, 400);
+          throw error;
+        }
+      }
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
       if (url.pathname === "/api/me/vip/mighty-check") return await handleMyMightyCheckApi(request, env);
       if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
@@ -4384,20 +5162,33 @@ export default {
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
-      if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
+      if (url.pathname === "/my-player") {
+        // ログイン直後の案内（?welcome=1・login-onboarding.js）。next は自サイトのパスだけ。
+        const page = await renderMyPlayerPage(request, env);
+        const welcome = url.searchParams.get("welcome") === "1" && page.includes('<h1 class="title">マイKingShot</h1>') ? welcomeBannerHtml(sanitizeLoginReturnPath(url.searchParams.get("next"))) : "";
+        return eagleEyeHtmlResponse(welcome ? page.replace(/(<h1 class="title">マイKingShot<\/h1><p class="sub">[^<]*<\/p>)/, m => m + welcome) : page);
+      }
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
-      if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env);
+      if (url.pathname === "/api/player-compare/refresh-capacity") return await handlePlayerCompareRefreshCapacityApi(request, env);
+      if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env, executionContext);
+      // 領主IDなしで開かれたプレイヤー系の画面は、行き止まりにせずプレイヤー検索へ。
+      if (["/player", "/player/history", "/player/changes"].includes(url.pathname) && !String(url.searchParams.get("governor_id") || "").trim()) return Response.redirect(new URL("/players", url).toString(), 302);
       if (url.pathname === "/player/history") return eagleEyeHtmlResponse(await renderPlayerHistoryPage(request, env));
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
-      if (url.pathname === "/player/compare") return eagleEyeHtmlResponse(await renderPlayerComparePage(request, env));
-      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env));
-      return eagleEyeHtmlResponse(await renderHome(request, env));
+      if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
+      if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env, executionContext));
+      // トップページは "/" だけ。ほかの知らない URL は 404（ソフト404をやめる）。
+      // /account はメニューにあるがページが無く、今までトップページを出していたので、同じくトップへ送る。
+      if (url.pathname === "/") return eagleEyeHtmlResponse(await renderHome(request, env));
+      if (url.pathname === "/index.html" || url.pathname === "/account") return Response.redirect(new URL("/", url).toString(), 302);
+      return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
     }
   },
   async scheduled(event, env, executionContext) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     try {
       await runApiPoolAutoRecovery(env, { limit: 4 });
     } catch (error) {
@@ -4409,12 +5200,115 @@ export default {
       console.error("kingdom_catalog_daily_refresh_failed", error?.message || error);
     }
     try {
+      await runHeroIconAssetWorker(env, { limit: 5 });
+    } catch (error) {
+      console.error("hero_icon_asset_worker_failed", error?.message || error);
+    }
+    try {
+      await runKingdomWatchlistJobs(env);
+    } catch (error) {
+      console.error("kingdom_watchlist_scheduler_failed", error?.message || error);
+    }
+    try {
+      await runSwordlandEventsRefresh(env);
+    } catch (error) {
+      console.error("swordland_events_refresh_failed", error?.message || error);
+    }
+    // 利用の集計：毎晩（日本時間0時台）前日の分を R2 に（usage-rollup.js。D1 には書かない）
+    try {
+      await runUsageRollup(env);
+    } catch (error) {
+      console.error("usage_rollup_failed", error?.message || error);
+    }
+    // 聖剣：同盟の R4・R5 に「対戦相手を登録して」と個チャ（毎時・昼間だけ・1回の回につき1人1回）。swordland-notify.js
+    try {
+      await runSwordlandOfficerNotify(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("swordland_officer_notify_failed", error?.message || error);
+    }
+    // 週1回：希望した人に自分の領主の先週の変化を個チャ（月曜の日本時間11時台だけ）。weekly-report.js
+    try {
+      await runWeeklyReport(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("weekly_report_failed", error?.message || error);
+    }
+    try {
+      await runUserKingdomRankingRefresh(env);
+    } catch (error) {
+      console.error("user_kingdom_ranking_refresh_failed", error?.message || error);
+    }
+    try {
+      await runPublicKingdomMonthlyRanking(env);
+    } catch (error) {
+      console.error("public_kingdom_monthly_ranking_failed", error?.message || error);
+    }
+    try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
     } catch (error) {
       console.error("kingdom_discord_notifications_failed", error?.message || error);
     }
+    try {
+      await runDataRetentionJob(env);
+    } catch (error) {
+      console.error("data_retention_job_failed", error?.message || error);
+    }
+    try {
+      // Hourly-per-service health probes (D1, Discord, Sheets, ...) so the status page is not "未確認".
+      const nowSec = Math.floor(Date.now() / 1000);
+      const claim = await env.DB.prepare(
+        "INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at) VALUES ('DIAG_HEALTH_CHECK', ?, ?, ?) ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at WHERE api_request_locks.lock_until <= ?"
+      ).bind(crypto.randomUUID(), nowSec + 600, nowSec, nowSec).run();
+      if (Number(claim?.meta?.changes || 0) === 1) await runDiagnosticHealthChecks(env);
+    } catch (error) {
+      console.error("diagnostic_health_checks_failed", error?.message || error);
+    }
+    try {
+      const kvk = await runKvkCollection(env);
+      if (kvk?.matchups?.status === "FAILED" || (kvk?.scores || []).some(item => item.status === "FAILED")) console.error("kvk_collection_partial_failure", JSON.stringify(kvk).slice(0, 500));
+    } catch (error) {
+      console.error("kvk_collection_failed", error?.message || error);
+    }
+    try {
+      const mystic = await runKvkMysticCollection(env);
+      if (mystic?.failed || mystic?.reason === "BREAKER_OPEN") console.error("kvk_mystic_collection", JSON.stringify(mystic));
+    } catch (error) {
+      console.error("kvk_mystic_collection_failed", error?.message || error);
+    }
+    try {
+      // D1読み取り量の見張り（1時間に1回、目安超えでオーナーへDM。DMは下のアナウンス同期で送られる）。
+      await runD1UsageAlert(env);
+    } catch (error) {
+      console.error("d1_usage_alert_failed", error?.message || error);
+    }
+    try {
+      // APIキー使用率の見張り（1時間に1回、直近24時間が1日の上限の50%超でオーナーへDM）。
+      await runApiPoolUsageAlert(env);
+    } catch (error) {
+      console.error("api_pool_usage_alert_failed", error?.message || error);
+    }
+    try {
+      const announce = await runAnnouncementDiscordSync(env);
+      if (announce?.errors?.length) console.error("announcement_discord_errors", JSON.stringify(announce.errors).slice(0, 500));
+    } catch (error) {
+      console.error("announcement_discord_failed", error?.message || error);
+    }
+    try {
+      // 全王国の同盟一覧：今月のD1とAPIキーに余裕がある時間だけ、少しずつ集める（公開の同盟ページ用）。
+      const [d1, api] = await Promise.all([getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null)]);
+      const sweep = await runAllianceSweep(env, { collect: collectMightPulseThroughGuards, extractEntries: extractKingdomRankingEntries, d1, api, quota: d1MonthlyQuota(env) });
+      if (sweep?.failed) console.error("alliance_sweep_partial", JSON.stringify(sweep));
+    } catch (error) {
+      console.error("alliance_sweep_failed", error?.message || error);
+    }
+    try {
+      const discord = await runKvkDiscordSync(env);
+      if (discord?.errors?.length) console.error("kvk_discord_sync_errors", JSON.stringify(discord.errors).slice(0, 500));
+    } catch (error) {
+      console.error("kvk_discord_sync_failed", error?.message || error);
+    }
   },
   async queue(batch, env) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const messages = batch?.messages || [];
     const systemEventMessages = messages.filter(message => message?.body?.type === "SYSTEM_EVENT");
@@ -4448,68 +5342,47 @@ const EAGLEEYE_THEME_CSS = `
 <style id="eagleeye-theme">
 :root{color-scheme:dark}
 ${EAGLEEYE_THEME_BASE_CSS}
+${EAGLEEYE_LIGHT_TOKENS_CSS}
+${eagleEyeThemesCss()}
 
-/* Canonical dark-theme controls and navigation surfaces. Keep page layouts local. */
-html:not([data-eagle-theme="light"]) .ee-global-nav{background:rgba(10,20,36,.97)!important;border-color:var(--ee-border-soft,#1d344d)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-drawer{background:rgba(3,12,23,.66)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel{background:linear-gradient(180deg,#10243a,#0a1728)!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
-html:not([data-eagle-theme="light"]) .ee-global-nav-panel-head{background:linear-gradient(180deg,#10243a,#10243a)!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
-html:not([data-eagle-theme="light"]) :where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+/* Canonical controls and navigation surfaces (token based: dark and light). Keep page layouts local. */
+.ee-global-nav{background:var(--ee-bg,#0a1424)!important;border-color:var(--ee-border-soft,#1d344d)!important}
+.ee-global-nav-drawer{background:color-mix(in srgb,var(--ee-bg) 55%,rgba(0,0,0,.45))!important}
+.ee-global-nav-panel{background:linear-gradient(180deg,var(--ee-panel-raised,#10243a),var(--ee-bg,#0a1728))!important;border-color:var(--ee-border,#2a4664)!important;color:var(--ee-text,#e8f3ff)!important}
+.ee-global-nav-panel-head{background:var(--ee-panel-raised,#10243a)!important}
+:where(.ee-button-primary,.action.primary,.btn-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:var(--ee-on-accent,#062033)!important}
+:where(.ee-button-danger,.action.danger,.btn-danger,button.danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}
+:where(.ee-button,.action,.btn,.pager-btn){border-radius:var(--ee-radius-sm,9px);font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 
 /* Shared component surfaces win over legacy page-local color declarations. */
-html:not([data-eagle-theme="light"]) :where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.search-panel,.player-result,.player-lookup,.search-intro,.search-state,.account,.account-summary,.action-card,.vip-card,.watch-option,.watch-hub,.hero,.notice,.detail-row,.favorite-ranking-card,.ranking-setting-option,.name-history-row,.user-card,.user-stats,.audit,.service,.event,.details-grid,.link,.links a,.choice,.result,.discord-config-row,.collector-row,.facts,.user-list){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
-html:not([data-eagle-theme="light"]) :where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
-html:not([data-eagle-theme="light"]) :where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
-html:not([data-eagle-theme="light"]) :where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
-html:not([data-eagle-theme="light"]) :where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}
+:where(.ee-card,.card,.item,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.search-panel,.player-result,.player-lookup,.search-intro,.search-state,.account,.account-summary,.action-card,.vip-card,.watch-option,.watch-hub,.hero,.notice,.detail-row,.favorite-ranking-card,.ranking-setting-option,.name-history-row,.user-card,.user-stats,.audit,.service,.event,.details-grid,.link,.links a,.choice,.result,.discord-config-row,.collector-row,.facts,.user-list){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}
+:where(.ee-muted,.muted,.sub,.hint,.label,.meta-label,.id,.meta){color:var(--ee-subtext,#91a7bf)}
+:where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}
+:where(.action,.btn,.pager-btn,.ee-button){background-color:var(--ee-panel-raised,#172a40);border-color:var(--ee-border,#2a4664);color:var(--ee-text,#e8f3ff)}
+:where(.action.primary,.btn-primary,.ee-button-primary,button.primary,input[type="submit"]){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:var(--ee-on-accent,#062033)!important}
 html[data-eagle-theme="light"]{color-scheme:light}
-html[data-eagle-theme="light"] body{background:#f3f6fb !important;color:#172033 !important}
-html[data-eagle-theme="light"] a{color:#475569}
-html[data-eagle-theme="light"] input,html[data-eagle-theme="light"] select,html[data-eagle-theme="light"] textarea{background:#fff !important;color:#172033 !important;border-color:#cbd5e1 !important}
-html[data-eagle-theme="light"] button{color:#172033}
-html[data-eagle-theme="light"] .card,
-html[data-eagle-theme="light"] .profile-section,
-html[data-eagle-theme="light"] .hero,
-html[data-eagle-theme="light"] .message,
-html[data-eagle-theme="light"] .meta,
-html[data-eagle-theme="light"] .mini-card,
-html[data-eagle-theme="light"] .hero-card,
-html[data-eagle-theme="light"] .gear-card,
-html[data-eagle-theme="light"] .detail-row,
-html[data-eagle-theme="light"] .notice,
-html[data-eagle-theme="light"] .account,
-html[data-eagle-theme="light"] .pool-error{background:#fff !important;color:#172033 !important;border-color:#d6deea !important;box-shadow:0 8px 22px rgba(15,23,42,.06)}
-html[data-eagle-theme="light"] .meta,
-html[data-eagle-theme="light"] .gear-stat,
-html[data-eagle-theme="light"] .gear-gems{background:#f8fafc !important}
-html[data-eagle-theme="light"] .label,
-html[data-eagle-theme="light"] .sub,
-html[data-eagle-theme="light"] .hero-meta,
-html[data-eagle-theme="light"] .detail-row span,
-html[data-eagle-theme="light"] .muted,
-html[data-eagle-theme="light"] .hint,
-html[data-eagle-theme="light"] .gear-name,
-html[data-eagle-theme="light"] .gear-stat,
-html[data-eagle-theme="light"] .gear-gems{color:#64748b !important}
-html[data-eagle-theme="light"] .value,
-html[data-eagle-theme="light"] .mini-card b,
-html[data-eagle-theme="light"] .hero-title strong,
-html[data-eagle-theme="light"] .gear-card strong,
-html[data-eagle-theme="light"] .detail-row b{color:#172033 !important}
-html[data-eagle-theme="light"] .action{background:#fff !important;color:#334155 !important;border-color:#cbd5e1 !important}
-html[data-eagle-theme="light"] .action.primary,
-html[data-eagle-theme="light"] button{background:#22d3ee !important;border-color:#22d3ee !important;color:#062033 !important}
-html[data-eagle-theme="light"] .search input{background:#fff !important;color:#172033 !important}
-html[data-eagle-theme="light"] .table-wrap{border-color:#d6deea !important}
-html[data-eagle-theme="light"] th,html[data-eagle-theme="light"] td{border-color:#e2e8f0 !important;color:#172033 !important}
-html[data-eagle-theme="light"] th{color:#64748b !important}
-html[data-eagle-theme="light"] .field label{color:#334155 !important}
-html[data-eagle-theme="light"] .status{background:#ecfdf3 !important;color:#15803d !important}
-html[data-eagle-theme="light"] .error{background:#fef2f2 !important;color:#b91c1c !important}
-html[data-eagle-theme="light"] .btn.secondary{background:#e2e8f0 !important;color:#172033 !important}
-html[data-eagle-theme="light"] .badge{background:#fff7ed !important;color:#b45309 !important}
+/* Light mode: surfaces come from the light token values; only parts that are
+   not token based are adjusted here (shadows instead of dark borders, the
+   bottom navigation, chips). */
+html[data-eagle-theme="light"] :where(.ee-card,.card,.item,.panel,.profile-section,.hero-card,.mini-card,.stat,.ee-tile,.ee-stat,.ee-me-card,.ee-change,.ee-milestone-card,.collector-row,.service){box-shadow:0 1px 2px rgba(15,23,42,.05),0 6px 18px rgba(15,23,42,.05)}
+html[data-eagle-theme="light"] .ee-global-nav,html[data-eagle-theme="light"] .ee-nav{background:color-mix(in srgb,var(--ee-panel) 94%,transparent)!important;border-color:var(--ee-border-soft)!important;box-shadow:0 -4px 18px rgba(15,23,42,.06)}
+html[data-eagle-theme="light"] .ee-global-nav a,html[data-eagle-theme="light"] .ee-global-nav button,html[data-eagle-theme="light"] .ee-nav a,html[data-eagle-theme="light"] .ee-nav button{color:var(--ee-subtext)!important;background:transparent!important}
+html[data-eagle-theme="light"] .ee-global-nav a.active,html[data-eagle-theme="light"] .ee-nav a.active{color:var(--ee-cyan)!important;background:color-mix(in srgb,var(--ee-cyan) 10%,transparent)!important}
+html[data-eagle-theme="light"] .ee-global-nav-panel,html[data-eagle-theme="light"] .ee-drawer-panel{box-shadow:0 -12px 40px rgba(15,23,42,.18)}
+html[data-eagle-theme="light"] .ee-top{background:color-mix(in srgb,var(--ee-panel) 92%,transparent)!important;border-color:var(--ee-border-soft)!important}
+html[data-eagle-theme="light"] .ee-welcome{background:linear-gradient(135deg,color-mix(in srgb,var(--ee-cyan) 14%,var(--ee-panel)),var(--ee-panel))!important}
+html[data-eagle-theme="light"] .ee-kvk-card{background:linear-gradient(110deg,#fff1f2,var(--ee-panel))!important}
+html[data-eagle-theme="light"] .ee-kvk-card strong{color:var(--ee-text)!important}
+html[data-eagle-theme="light"] .ee-milestone-card:not(.ee-kvk-card){background:linear-gradient(110deg,#fffbeb,var(--ee-panel))!important;color:var(--ee-text)!important}
+html[data-eagle-theme="light"] .ee-milestone-status{color:#b45309!important}
+html[data-eagle-theme="light"] .ee-kvk-card .ee-milestone-status{color:#be123c!important}
+html[data-eagle-theme="light"] .ee-milestone-copy small{color:var(--ee-subtext)!important}
+html[data-eagle-theme="light"] .eagle-preview-banner{background:#fffbeb;color:#92400e}
+html[data-eagle-theme="light"] :where(.ee-global-nav-links a,.ee-global-nav-links button,.ee-drawer-grid a,.ee-drawer-grid button){background:var(--ee-panel)!important;border-color:var(--ee-border-soft)!important;color:var(--ee-text)!important;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+html[data-eagle-theme="light"] :where(.ee-global-nav-links small,.ee-drawer-grid small){color:var(--ee-subtext)!important}
+html[data-eagle-theme="light"] :where(.ee-global-nav-panel-head button,.ee-drawer-head button,[data-close]){background:var(--ee-panel-raised)!important;color:var(--ee-text)!important;border-color:var(--ee-border-soft)!important}
+html[data-eagle-theme="light"] .ee-welcome-state{color:#15803d!important;background:#ecfdf3!important;border-color:#bbf7d0!important}
+html[data-eagle-theme="light"] .ee-welcome-copy:before{color:var(--ee-cyan)!important}
 
 .eagle-preview-banner{display:none;position:fixed;left:12px;top:42px;z-index:10000;padding:8px 12px;border:1px solid #f59e0b;border-radius:999px;background:rgba(68,39,0,.96);color:#fde68a;font-size:11px;font-weight:900;letter-spacing:.04em;box-shadow:0 8px 22px rgba(0,0,0,.25);backdrop-filter:blur(8px)}html[data-eagle-preview="1"] .eagle-preview-banner{display:block}.eagle-theme-toggle{position:fixed;right:14px;top:42px;z-index:9999;width:42px;height:42px;border:1px solid #475569;border-radius:12px;background:rgba(15,23,42,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
 html[data-eagle-theme="light"] .eagle-theme-toggle{background:#fff;color:#172033;border-color:#cbd5e1}
@@ -4538,18 +5411,24 @@ const EAGLEEYE_THEME_SCRIPT = `
 (function(){
   function applySavedTheme(){
     try {
-      var saved="";
-      try { saved=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) {}
-      var preferred=(window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark";
-      var theme=(saved==="light"||saved==="dark")?saved:preferred;
-      document.documentElement.setAttribute("data-eagle-theme",theme);
+      // 表示モード: "light" / "dark" are explicit choices (着せ替え page);
+      // anything else follows the device setting and tracks its changes.
+      var mode="";
+      try { mode=window.localStorage.getItem("eagleeye-theme")||""; } catch(e) {}
+      var mq=window.matchMedia?window.matchMedia("(prefers-color-scheme: light)"):null;
+      var apply=function(){var m=(mode==="light"||mode==="dark")?mode:(mq&&mq.matches?"light":"dark");document.documentElement.setAttribute("data-eagle-theme",m);};
+      apply();
+      if(mq&&mode!=="light"&&mode!=="dark"){try{mq.addEventListener("change",apply);}catch(e){try{mq.addListener(apply);}catch(_){}}}
     } catch(e) {}
   }
 
   function markEnvironment(){
     try {
+      // Preview deployments live on other *.workers.dev hosts; the production
+      // workers.dev host and any custom domain are production.
       var productionHost="kingshot-data-platform.black-jack-kingshot.workers.dev";
-      var isPreviewHost=window.location.hostname!==productionHost;
+      var host=window.location.hostname;
+      var isPreviewHost=host!==productionHost&&(host.slice(-12)===".workers.dev"||host==="localhost"||host==="127.0.0.1");
       document.documentElement.setAttribute("data-eagleeye-env",isPreviewHost?"preview":"production");
       if(isPreviewHost){
         document.documentElement.setAttribute("data-eagle-preview","1");
@@ -4558,7 +5437,7 @@ const EAGLEEYE_THEME_SCRIPT = `
             if(document.body&&!document.querySelector(".eagle-preview-banner")){
               var banner=document.createElement("div");
               banner.className="eagle-preview-banner";
-              banner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
+              banner.innerHTML="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
               document.body.appendChild(banner);
             }
           } catch(e) {}
@@ -4638,24 +5517,14 @@ const EAGLEEYE_THEME_SCRIPT = `
         return false;
       }
 
+      // Do not intercept clicks globally. Capture-phase locking can suppress
+      // page-specific handlers (including delegated handlers and mobile Safari
+      // interactions). Duplicate mutating requests are guarded in fetch instead.
       document.addEventListener("click",function(event){
         try {
           var button=event.target&&event.target.closest?event.target.closest("button"):null;
-          if(!button) return;
-          if(button.classList.contains("eagle-theme-toggle") || button.id==="themeToggle") return;
-          if(button.dataset.eagleBusy==="1"){
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return;
-          }
-          if(lock(button)) return;
+          if(!button || button.classList.contains("eagle-theme-toggle") || button.id==="themeToggle") return;
           window.__eagleEyeCurrentActionButton=button;
-          setTimeout(function(){
-            if(window.__eagleEyeCurrentActionButton===button) window.__eagleEyeCurrentActionButton=null;
-          },0);
-          setTimeout(function(){
-            if(button.dataset.eagleBusy==="1" && !button.dataset.eagleFetchBound) release(button);
-          },1500);
         } catch(e) {}
       },true);
 
@@ -4670,103 +5539,21 @@ const EAGLEEYE_THEME_SCRIPT = `
           }
           form.dataset.eagleSubmitting="1";
           var submitter=event.submitter || form.querySelector("button[type='submit'],input[type='submit']");
-          if(submitter){
-            if(submitter.dataset.eagleBusy==="1"){
-              event.preventDefault();
-              event.stopImmediatePropagation();
-              return;
-            }
-            lock(submitter);
-          }
-          form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(function(b){
-            b.disabled=true;
-            b.dataset.eagleFormDisabled="1";
-          });
+          // Let the form's own submit listeners run before changing controls.
+          // The prior capture-phase disable could block the page's submission logic.
+          setTimeout(function(){
+            try {
+              form.querySelectorAll("button[type='submit'],input[type='submit']").forEach(function(b){
+                if(b.dataset.eagleBusy==="1") return;
+                b.disabled=true;
+                b.dataset.eagleFormDisabled="1";
+              });
+            } catch(e) {}
+          },0);
         } catch(e) {}
       },true);
 
       window.__eagleEyeReleaseActionButton=release;
-    } catch(e) {}
-  }
-
-  function installRoleBar(){
-    try {
-      if(!document.body) return null;
-      var roleBar=document.querySelector(".eagle-role-bar");
-      if(!roleBar){
-        roleBar=document.createElement("div");
-        roleBar.className="eagle-role-bar";
-        roleBar.setAttribute("aria-label","EagleEye ロール");
-        roleBar.innerHTML="<span class=\"eagle-role-bar-label\">ROLE</span><span class=\"eagle-role-item\" data-role=\"BASIC\">BASIC</span><span class=\"eagle-role-item\" data-role=\"ADVANCED\">ADVANCED</span><span class=\"eagle-role-item vip\" data-role=\"VIP\">⚡ VIP</span><span class=\"eagle-role-item admin\" data-role=\"ADMIN\">ADMIN</span><span class=\"eagle-role-item owner\" data-role=\"OWNER\">OWNER</span>";
-        document.body.insertBefore(roleBar,document.body.firstChild);
-      }
-      if(!document.querySelector(".eagle-role-bar-spacer")){
-        var spacer=document.createElement("div");
-        spacer.className="eagle-role-bar-spacer";
-        document.body.insertBefore(spacer,document.body.children[1]||null);
-      }
-      return roleBar;
-    } catch(e) {
-      return null;
-    }
-  }
-
-  function paintRole(role){
-    try {
-      var roleBar=document.querySelector(".eagle-role-bar");
-      if(!roleBar) return;
-      role=String(role||"").toUpperCase();
-      roleBar.querySelectorAll("[data-role]").forEach(function(item){
-        item.classList.toggle("current",item.getAttribute("data-role")===role);
-      });
-    } catch(e) {}
-  }
-
-  function loadRole(){
-    try {
-      // Share the request started by the generic drawer, when present, so the
-      // shell does not issue duplicate role/eligibility API reads on page load.
-      var roleStatePromise=window.__eagleEyeRoleStatePromise;
-      if(!roleStatePromise){
-        roleStatePromise=fetch("/api/me/advanced",{credentials:"same-origin",cache:"no-store"})
-          .then(function(r){return r.ok?r.json():null;})
-          .catch(function(){return null;});
-        window.__eagleEyeRoleStatePromise=roleStatePromise;
-      }
-      roleStatePromise.then(function(d){if(d&&d.ok)paintRole(d.role);});
-    } catch(e) {}
-  }
-
-  function installThemeToggle(){
-    try {
-      if(!document.body) return;
-      var existing=document.querySelector(".theme-toggle");
-      var btn=document.querySelector(".eagle-theme-toggle");
-      if(!btn){
-        btn=document.createElement("button");
-        btn.className="eagle-theme-toggle";
-        btn.type="button";
-        btn.setAttribute("aria-label","テーマ切替");
-        btn.setAttribute("title","ライト / ダーク切替");
-        document.body.appendChild(btn);
-      }
-      function paint(){
-        try {
-          var isLight=document.documentElement.getAttribute("data-eagle-theme")==="light";
-          btn.textContent=isLight?"☀️":"🌙";
-          btn.setAttribute("aria-label",isLight?"ダークモードに切替":"ライトモードに切替");
-          if(existing) existing.style.display="none";
-        } catch(e) {}
-      }
-      btn.onclick=function(){
-        try {
-          var next=document.documentElement.getAttribute("data-eagle-theme")==="light"?"dark":"light";
-          document.documentElement.setAttribute("data-eagle-theme",next);
-          try { window.localStorage.setItem("eagleeye-theme",next); } catch(e) {}
-          paint();
-        } catch(e) {}
-      };
-      paint();
     } catch(e) {}
   }
 
@@ -4777,9 +5564,8 @@ const EAGLEEYE_THEME_SCRIPT = `
     markEnvironment();
     installMutatingRequestGuard();
     installGlobalActionGuard();
-    installRoleBar();
-    installThemeToggle();
-    loadRole();
+    // The ROLE bar and a floating light/dark toggle are not shown: the role is
+    // on the profile chip and the display mode is chosen on the 着せ替え page.
   }
 
   try {
@@ -4791,8 +5577,28 @@ const EAGLEEYE_THEME_SCRIPT = `
 })();
 </script>`;
 
+const EAGLEEYE_SITE_FOOTER = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="サイト情報"><a href="/guides">イベントの基本</a><a href="/reports">データレポート</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a><a href="/about">運営者情報</a><a href="/support">お問い合わせ</a></nav><p>EagleEye（KingShot非公式ファンサービス）</p></footer>'
+  + '<style id="ee-site-footer-css">.ee-site-footer{margin:28px auto 0;padding:14px 16px 8px;max-width:820px;text-align:center;font-size:12px;color:var(--ee-subtext,#94a3b8);border-top:1px solid var(--ee-border-soft,#1d344d)}.ee-site-footer nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}.ee-site-footer a{color:var(--ee-subtext,#94a3b8);text-decoration:underline;text-underline-offset:2px}.ee-site-footer p{margin:6px 0 0;font-size:11px}</style>';
+
+// 英語版のページ（<html lang="en">）のフッター。下のメニュー（日本語）は出さない（英語版は各ページに自分の見出しがある）。2026-11-19
+const EAGLEEYE_SITE_FOOTER_EN = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="Site"><a href="/en/guides">Event basics</a><a href="/terms">Terms (Japanese)</a><a href="/privacy">Privacy (Japanese)</a><a href="/about">About (Japanese)</a><a href="/support">Contact</a></nav><p>EagleEye — an unofficial Kingshot fan service</p></footer>';
+// 言語の切り替え：hreflang があるページだけ、フッターにもう一方の言語へのリンクを足す。
+export function footerWithLanguageSwitch(html, footer) {
+  const isEn = /<html lang="en"/.test(html);
+  const m = html.match(new RegExp('<link rel="alternate" hreflang="' + (isEn ? "ja" : "en") + '" href="([^"]+)"')) || (isEn ? html.match(/<meta name="ee-alt-ja" content="([^"]+)"/) : null);
+  if (!m) return footer;
+  let path = m[1];
+  try { const u = new URL(m[1]); path = u.pathname + u.search; } catch {}
+  const link = isEn ? '<a href="' + path + '" lang="ja" hreflang="ja">日本語</a>' : '<a href="' + path + '" lang="en" hreflang="en">English</a>';
+  return footer.replace(/(<nav aria-label="[^"]+">)/, "$1" + link);
+}
+
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
+  // One palette for every page: legacy navy/grey colours become shared theme tokens.
+  html = normalizeLegacyPalette(html);
+  // Apply the saved colour theme ("着せ替え") before the first paint.
+  if (!html.includes('id="eagleeye-skin-boot"')) html = html.includes("<head>") ? html.replace("<head>", "<head>" + EAGLEEYE_SKIN_BOOT_SCRIPT) : html.replace("</head>", EAGLEEYE_SKIN_BOOT_SCRIPT + "</head>");
   if (!html.includes('id="eagleeye-theme"')) html=html.replace("</head>",EAGLEEYE_THEME_CSS+"</head>");
   // Apply the shared navigation size contract after page-specific styles so
   // responsive page CSS cannot unexpectedly shrink navigation labels/icons.
@@ -4804,8 +5610,16 @@ function applyEagleEyeTheme(html) {
   // The home page already owns its richer navigation; leave it untouched.
   // Protected/login-required pages must not show the global navigation.
   // Keep the explicit login prompt as a clean standalone screen.
-  const isLoginRequiredPage = html.includes("ログインが必要です") || html.includes("Discordでログイン");
-  if (!isLoginRequiredPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
+  // Only the dedicated login screen hides the navigation; pages that merely offer a login link keep it.
+  const isLoginRequiredPage = html.includes('<meta name="ee-page" content="login-required">');
+  // Site footer: policy / operator / contact links on every page (visible without opening a menu).
+  const isEnglishPage = /<html lang="en"/.test(html);
+  if (!html.includes('id="ee-site-footer"')) {
+    const footer = footerWithLanguageSwitch(html, isEnglishPage ? EAGLEEYE_SITE_FOOTER_EN + EAGLEEYE_SITE_FOOTER.slice(EAGLEEYE_SITE_FOOTER.indexOf("<style")) : EAGLEEYE_SITE_FOOTER);
+    const lastMain = html.lastIndexOf("</main>");
+    html = lastMain >= 0 ? html.slice(0, lastMain) + footer + html.slice(lastMain) : html.replace("</body>", footer + "</body>");
+  }
+  if (!isLoginRequiredPage && !isEnglishPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
     const sharedNav = `
 ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 <div class="ee-global-nav-drawer" aria-hidden="true">
@@ -4821,11 +5635,186 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
   }
   if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
+  // Global request progress UI: shared by every HTML page without changing API payloads.
+  if (!isEnglishPage && !html.includes('id="eagleeye-global-progress-css"')) html=html.replace("</head>", '<style id="eagleeye-global-progress-css">#ee-global-progress{position:fixed;z-index:2147483000;top:calc(env(safe-area-inset-top,0px) + 7px);left:50%;transform:translate(-50%,-150%);width:min(92vw,520px);box-sizing:border-box;padding:10px 13px 9px;border:1px solid var(--ee-border,#2a4664);border-radius:13px;background:rgba(15,32,53,.97);color:var(--ee-text,#e8f3ff);box-shadow:0 8px 28px #0006;backdrop-filter:blur(12px);font:600 12px/1.4 system-ui,-apple-system,sans-serif;opacity:0;transition:transform .2s ease,opacity .2s ease;pointer-events:none}#ee-global-progress.visible{transform:translate(-50%,0);opacity:1}#ee-global-progress .ee-gp-row{display:flex;align-items:center;gap:9px}#ee-global-progress .ee-gp-spinner{width:14px;height:14px;flex:0 0 14px;border:2px solid #35516d;border-top-color:var(--ee-cyan,#22d3ee);border-radius:50%;animation:ee-gp-spin .8s linear infinite}#ee-global-progress .ee-gp-copy{min-width:0;flex:1}#ee-global-progress .ee-gp-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#ee-global-progress .ee-gp-time{font-variant-numeric:tabular-nums;color:var(--ee-subtext,#91a7bf);font-weight:500}#ee-global-progress .ee-gp-track{height:3px;margin-top:8px;overflow:hidden;border-radius:99px;background:#263b52}#ee-global-progress .ee-gp-bar{height:100%;width:35%;border-radius:99px;background:var(--ee-cyan,#22d3ee);animation:ee-gp-move 1.15s ease-in-out infinite alternate}@keyframes ee-gp-spin{to{transform:rotate(360deg)}}@keyframes ee-gp-move{from{transform:translateX(-15%)}to{transform:translateX(205%)}}@media(prefers-reduced-motion:reduce){#ee-global-progress *,#ee-global-progress:before{animation:none!important;transition:none!important}}</style></head>');
+  if (!isEnglishPage && !html.includes('id="eagleeye-global-progress-init"')) html=html.replace("</body>", '<div id="ee-global-progress" role="status" aria-live="polite" aria-atomic="true"><div class="ee-gp-row"><span class="ee-gp-spinner" aria-hidden="true"></span><span class="ee-gp-copy"><span class="ee-gp-label">通信中…</span></span><span class="ee-gp-time">0秒</span></div><div class="ee-gp-track" aria-hidden="true"><div class="ee-gp-bar"></div></div></div><script id="eagleeye-global-progress-init">(function(){if(window.__eeGlobalProgressInstalled)return;window.__eeGlobalProgressInstalled=true;var el=document.getElementById("ee-global-progress");if(!el)return;var label=el.querySelector(".ee-gp-label"),time=el.querySelector(".ee-gp-time"),active=new Map(),seq=0,shownAt=0,showTimer=0,tickTimer=0,tickerStartedAt=0;function describe(input,init){try{var method=String(init&&init.method||input&&input.method||"GET").toUpperCase(),u=new URL(typeof input==="string"?input:input&&input.url||String(input),location.href),p=u.pathname;if(p==="/api/player"&&u.searchParams.get("rich")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player"&&u.searchParams.get("refresh")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player/refresh")return "プレイヤーの詳細情報を取得中…";if(p==="/api/me/vip/mighty-check")return "Mighty対応を確認中…";if(p==="/api/me/vip")return "VIP情報を取得中…";if(p==="/api/me/player"&&method==="POST")return "KingShot IDを登録中…";if(p==="/api/me/player"&&method==="DELETE")return "KingShot IDの登録を解除中…";if(p==="/api/me/player")return "マイKingShotのプレイヤー情報を取得中…";if(p==="/api/me/mightpulse-key"&&method==="POST")return "MightPulse APIキーを登録中…";if(p==="/api/me/advanced"||p==="/api/me/mightpulse-key")return "権限・APIキー情報を取得中…";if(p==="/api/owner/kingdom-load-test"&&method==="POST")return "王国負荷テストを実行中…";if(p==="/api/owner/kingdom-load-test/cancel")return "王国負荷テストを停止中…";if(p==="/api/owner/kingdom-load-test/status")return "王国負荷テストの進捗を確認中…";if(p==="/api/owner/kingdom-load-test/history")return "負荷テスト履歴を取得中…";if(p==="/api/owner/kingdom-load-test/system-json")return "負荷テストのシステムログを取得中…";if(p==="/api/owner/kingdom-load-test/export")return "負荷テスト結果をエクスポート中…";if(p==="/api/admin/kingdom-catalog-r2-backfill")return "王国カタログのR2移行を実行中…";if(p==="/api/admin/mightpulse-research")return "MightPulse API調査を実行中…";if(p==="/api/admin/mightpulse-probe")return "MightPulse接続を確認中…";if(p==="/api/admin/api-pool/health-check")return "API Poolの接続確認中…";if(p==="/api/admin/api-pool/mighty-check")return "API PoolのMighty判定中…";if(p==="/api/admin/api-pool/test-player")return "API Poolでプレイヤー取得をテスト中…";if(p==="/api/admin/api-pool/test-ranking")return "API Poolでランキング取得をテスト中…";if(p==="/api/admin/data-retention")return "データ保持処理を実行中…";if(p==="/api/admin/kingdom-ranking-export")return "王国ランキングをエクスポート中…";if(p==="/api/admin/player-export")return "プレイヤーデータをエクスポート中…";if(p==="/api/admin/system-log/export")return "System Logをエクスポート中…";if(p==="/api/kingdom-watchlist/data")return "王国ウォッチリストのデータを取得中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="refresh")return "王国ウォッチリストを更新中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="create")return "王国ウォッチリストを登録中…";if(p==="/api/kingdom-watchlist"&&method==="DELETE")return "王国ウォッチリストを削除中…";if(p==="/api/kingdom-watchlist"&&method==="POST")return "王国ウォッチリストを保存中…";if(p==="/api/player-watchlist"&&method==="DELETE")return "プレイヤーウォッチリストを削除中…";if(p==="/api/player-watchlist"&&method==="POST")return "プレイヤーウォッチリストを保存中…";if(p==="/api/player/history")return "プレイヤー履歴を取得中…";if(p==="/api/player/rank-history")return "ランキング履歴を取得中…";if(p==="/api/player/changes")return "プレイヤーの変更履歴を取得中…";if(p==="/api/player-compare")return "プレイヤー比較データを取得中…";if(p==="/api/kingdom-portal/ranking")return "王国ランキングを取得中…";if(p==="/api/kingdom-portal/status")return "王国状況を取得中…";if(p==="/api/kingdom-rankings/preferences"&&method!=="GET")return "ランキング表示設定を保存中…";if(p==="/api/admin/diagnostics")return "システム診断を取得中…";if(p==="/api/admin/system-log")return "System Logを取得中…";if(p==="/api/admin/api-raw-data")return "API生データを取得中…";if(p==="/api/admin/api-raw-history")return "API生データ履歴を取得中…";if(p==="/api/admin/r2-archive-objects")return "R2アーカイブ一覧を取得中…";if(p==="/api/admin/google-drive/verify")return "Google Drive接続を確認中…";if(p==="/api/admin/api-pool/add"&&method==="POST")return "API Poolへキーを登録中…";if(p==="/api/admin/api-pool/delete")return "API Poolのキーを削除中…";if(p==="/api/admin/api-pool/revoke")return "API Poolのキーを無効化中…";if(p==="/api/admin/api-pool/move")return "API Poolキーを移動中…";if(p==="/api/owner/users/role")return "ユーザー権限を更新中…";if(p==="/api/owner/users/status")return "ユーザー状態を更新中…";if(p==="/api/owner/api-pool/reassign")return "API Poolキーの担当を変更中…";if(p.indexOf("/api/")===0){var n=p.split("/").filter(Boolean).pop()||"データ";var names={"player-compare":"比較データ","player-watchlist":"プレイヤーウォッチリスト","kingdom-watchlist":"王国ウォッチリスト","player-search":"プレイヤー検索","player":"プレイヤーデータ","players":"プレイヤーデータ","kingdom":"王国データ","rankings":"ランキング","me":"ユーザー情報","advanced":"権限情報","status":"システム状況"};return (names[n]||"データ")+"を取得中…"}return "ページのデータを取得中…"}catch(e){return "データを取得中…"}}function paint(){var count=active.size;label.textContent=count>1?(active.values().next().value.label+" ("+count+"件)"):(active.size?active.values().next().value.label:"通信中…");var elapsedBase=tickerStartedAt||shownAt;time.textContent=Math.max(0,Math.floor((Date.now()-elapsedBase)/1000))+"秒";}function startTicker(){clearInterval(tickTimer);tickerStartedAt=Date.now();paint();tickTimer=setInterval(function(){if(!active.size){clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;return}paint()},250);}function begin(id,info){active.set(id,info);if(active.size===1){shownAt=Date.now();clearTimeout(showTimer);showTimer=setTimeout(function(){if(active.size){el.classList.add("visible");startTicker()}},350)}else if(el.classList.contains("visible"))paint()}function finish(id){active.delete(id);if(!active.size){clearTimeout(showTimer);clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;el.classList.remove("visible")}else paint()}var navId=0,navWatchdog=0;function showNavigation(text){if(navId)finish(navId);if(navWatchdog)clearTimeout(navWatchdog);navId=++seq;shownAt=Date.now();active.set(navId,{label:text});clearTimeout(showTimer);el.classList.add("visible");startTicker();navWatchdog=setTimeout(function(){clearNavigation();var notice=document.getElementById("ee-progress-timeout");if(!notice){notice=document.createElement("div");notice.id="ee-progress-timeout";notice.setAttribute("role","status");notice.style.cssText="position:fixed;z-index:10001;left:12px;right:12px;bottom:calc(86px + env(safe-area-inset-bottom));padding:12px 14px;border:1px solid #b45309;border-radius:12px;background:#1f2937;color:#fef3c7;font:600 13px/1.5 system-ui;box-shadow:0 8px 28px #0008";document.body.appendChild(notice)}notice.textContent="ページの読み込みに時間がかかっています。通信またはサーバー応答を確認してください。";notice.style.display="block";setTimeout(function(){if(notice&&notice.parentNode)notice.parentNode.removeChild(notice)},10000)},20000)}function clearNavigation(){if(navWatchdog){clearTimeout(navWatchdog);navWatchdog=0}if(navId){var id=navId;navId=0;finish(id)}}document.addEventListener("click",function(event){if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;var link=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!link||link.hasAttribute("download")||link.target&&link.target!=="_self")return;var href=link.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^javascript:/i.test(href)||/^mailto:/i.test(href)||/^tel:/i.test(href))return;try{var target=new URL(href,location.href);if(target.origin!==location.origin)return;if(target.href===location.href)return;var progressLabel="ページを読み込んでいます…";if(target.pathname==="/player/compare")progressLabel="プレイヤー比較データを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.get("refresh")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/player"&&target.searchParams.get("rich")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/players"&&target.searchParams.has("q"))progressLabel="プレイヤーを検索しています…";else if(target.pathname==="/players")progressLabel="プレイヤー検索を開いています…";else if(target.pathname==="/my-player")progressLabel="マイKingShotを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.has("governor_id"))progressLabel="プレイヤー詳細を読み込んでいます…";else if(target.pathname==="/status")progressLabel="システム状況を確認しています…";else if(target.pathname==="/admin/diagnostics")progressLabel="システム診断を読み込んでいます…";else if(target.pathname==="/admin/mightpulse-probe")progressLabel="MightPulse Probeを開いています…";else if(target.pathname==="/owner/kingdom-catalog-r2-backfill")progressLabel="王国カタログR2移行の状況を読み込んでいます…";else if(target.pathname==="/kingdom-catalog")progressLabel="王国カタログを読み込んでいます…";else if(target.pathname==="/kingdom/rankings")progressLabel="王国ランキングを読み込んでいます…";else if(target.pathname==="/kingdom/alliances")progressLabel="王国の同盟一覧を読み込んでいます…";else if(target.pathname==="/alliance")progressLabel="同盟情報を読み込んでいます…";else if(target.pathname==="/player/history")progressLabel="プレイヤー履歴を読み込んでいます…";else if(target.pathname==="/player/changes")progressLabel="プレイヤーの変更履歴を読み込んでいます…";showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)}catch(e){}},false);document.addEventListener("submit",function(event){var form=event.target;if(!form||form.tagName!=="FORM"||form.target&&form.target!=="_self")return;var method=String(form.method||"get").toUpperCase();var progressLabel=method==="GET"?"ページを更新しています…":"処理を送信しています…";try{var actionUrl=new URL(form.action||form.getAttribute("action")||location.href,location.href);if(actionUrl.pathname==="/owner/kingdom-catalog-r2-backfill"&&method!=="GET")progressLabel="王国カタログのR2移行を実行中…";else if(actionUrl.pathname==="/players"&&method==="GET")progressLabel="プレイヤー検索を実行中…";else if(actionUrl.pathname==="/player"&&actionUrl.searchParams.has("governor_id"))progressLabel="プレイヤー情報を取得しています…";else if(actionUrl.pathname.indexOf("/api/")===0)progressLabel=describe(actionUrl,{method:method});}catch(e){}showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)},false);window.addEventListener("pageshow",clearNavigation);if(typeof window.fetch==="function"){var original=window.fetch.bind(window);window.fetch=function(input,init){var id=++seq,info={label:describe(input,init)};begin(id,info);var result;try{result=original(input,init)}catch(e){finish(id);throw e}return Promise.resolve(result).then(function(response){setTimeout(function(){finish(id)},0);trackResponseBody(response,info.label);return response},function(error){finish(id);throw error})};function trackResponseBody(response,parentLabel){if(!response||response.__eeProgressBodyTracking)return response;try{response.__eeProgressBodyTracking=true;["arrayBuffer","blob","formData","json","text"].forEach(function(method){var originalMethod=response[method];if(typeof originalMethod!=="function")return;try{response[method]=function(){var bodyId=++seq;begin(bodyId,{label:parentLabel?parentLabel.replace(/…$/,"")+"（応答処理中）":"応答データを処理中…"});var bodyResult;try{bodyResult=originalMethod.apply(this,arguments)}catch(error){finish(bodyId);throw error}return Promise.resolve(bodyResult).then(function(value){finish(bodyId);return value},function(error){finish(bodyId);throw error})}}catch(e){}});var body=response.body;if(body&&typeof body.getReader==="function"&&!body.__eeProgressStreamTracking){var originalGetReader=body.getReader;try{body.getReader=function(){var reader=originalGetReader.apply(this,arguments);if(!reader||reader.__eeProgressReaderTracking)return reader;try{reader.__eeProgressReaderTracking=true;var originalRead=reader.read,originalCancel=reader.cancel,originalReleaseLock=reader.releaseLock,streamId=0;reader.read=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalRead.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};reader.cancel=function(){var result;try{result=originalCancel.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReleaseLock==="function")reader.releaseLock=function(){var result=originalReleaseLock.apply(this,arguments);if(streamId){finish(streamId);streamId=0}return result}}catch(e){}return reader};body.__eeProgressStreamTracking=true}catch(e){}}if(body&&typeof Symbol!=="undefined"&&Symbol.asyncIterator&&typeof body[Symbol.asyncIterator]==="function"&&!body.__eeProgressAsyncIteratorTracking){try{var originalAsyncIterator=body[Symbol.asyncIterator];body[Symbol.asyncIterator]=function(){var iterator=originalAsyncIterator.apply(this,arguments);if(!iterator||iterator.__eeProgressIteratorTracking)return iterator;try{iterator.__eeProgressIteratorTracking=true;var streamId=0,originalNext=iterator.next,originalReturn=iterator.return;iterator.next=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalNext.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReturn==="function")iterator.return=function(){var result;try{result=originalReturn.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})}}catch(e){}return iterator};body.__eeProgressAsyncIteratorTracking=true}catch(e){}}var originalClone=response.clone;if(typeof originalClone==="function"){response.clone=function(){var cloned=originalClone.apply(this,arguments);trackResponseBody(cloned,parentLabel);return cloned}}}catch(e){}return response}}if(typeof XMLHttpRequest!=="undefined"){var open=XMLHttpRequest.prototype.open,send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__eeProgressUrl=url;this.__eeProgressMethod=method;return open.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){var xhr=this,id=++seq;begin(id,{label:describe(xhr.__eeProgressUrl,{method:xhr.__eeProgressMethod})});var done=false;function finishOnce(){if(done)return;done=true;finish(id)}xhr.addEventListener("loadend",finishOnce,{once:true});try{return send.apply(this,arguments)}catch(e){finishOnce();throw e}}}})();</script></body>');
   return html;
 }
 
-function eagleEyeHtmlResponse(html) {
-  return new Response(applyEagleEyeTheme(html), { headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
+// Public pages: signed-out visitors get a shared cached copy (search engines,
+// new visitors); signed-in users get a fresh page with their own call to action.
+// /social/pack.json・/social/card/{id}/{story|square}・/social/cover。中身は公開ページと同じデータ。1時間キャッシュ・noindex。
+async function serveSocialRoute(request, env, executionContext, url) {
+  const noindex = res => { const r = new Response(res.body, res); r.headers.set("x-robots-tag", "noindex, nofollow"); return r; };
+  const origin = publicOrigin(request, env);
+  if (url.pathname === "/social/pack.json") return noindex(await servePublicCached(request, executionContext, async () => json({ ok: true, ...(await loadSocialPack(env, { origin })) }), PUBLIC_CACHE_TTL.data));
+  if (url.pathname === "/social/cover") return noindex(await servePublicCached(request, executionContext, async () => new Response(renderSocialCover(await loadSocialPack(env, { origin })), { headers: { "content-type": "text/html; charset=UTF-8" } }), PUBLIC_CACHE_TTL.data));
+  const m = url.pathname.match(/^\/social\/card\/([a-z]{1,20})\/(story|square)$/);
+  if (!m) return json({ ok: false, error: "NOT_FOUND" }, 404);
+  return noindex(await servePublicCached(request, executionContext, async () => {
+    const pack = await loadSocialPack(env, { origin });
+    const item = pack.items.find(it => it.id === m[1]);
+    if (!item) return json({ ok: false, error: "NOT_FOUND" }, 404);
+    return new Response(renderSocialCard(item, { format: m[2], week: pack.week }), { headers: { "content-type": "text/html; charset=UTF-8" } });
+  }, PUBLIC_CACHE_TTL.data));
+}
+
+// ---- 聖剣争奪 ----
+// ホームの入口用（軽い：メンバー表は読まない）。開催中でなければ active:false。
+async function handleSwordlandHomeApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: true, active: false });
+  await ensureSwordlandSchema(env.DB).catch(() => {});
+  const mine = await myAlliance(env.DB, auth.user_id);
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
+  const [active, duel] = mine?.kid ? await Promise.all([activeSwordlandEvents(env.DB, Number(mine.kid)), activeGovernorDuel(env.DB, Number(mine.kid)).catch(() => null)]) : [[], null];
+  const duelInfo = duel ? { endTs: duel.end_ts } : null;
+  if (!active.length) return json({ ok: true, active: false, duel: duelInfo, events: [] });
+  // 聖剣争奪と頂上リーグが同時のときは両方のカードを出す（events）。下の active/label/matchup は1つ目（互換）。
+  const canCmp = canUseAllianceCompare(auth.role) && Boolean(mine.alliance_abbr);
+  const events = await Promise.all(active.map(async ev => {
+    const m = mine.alliance_aid ? await currentMatchup(env.DB, ev.season, Number(mine.kid), mine.alliance_aid) : null;
+    return { kind: ev.kind, label: ev.label, name: ev.name || null, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, memberReported: Boolean(m.memberReported), compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
+  }));
+  const showdown = active[0];
+  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.season, Number(mine.kid), mine.alliance_aid) : null;
+  const canCompare = canUseAllianceCompare(auth.role);
+  return json({ ok: true, active: true, events, label: showdown.label || "聖剣争奪", league: Boolean(showdown.league), duel: duelInfo, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
+    matchup: matchup ? { kid: matchup.opp_kid, tag: matchup.opp_tag, count: matchup.count, disputed: matchup.disputed, compareUrl: canCompare && mine.alliance_abbr ? compareUrl(mine.kid, mine.alliance_abbr, matchup.opp_kid, matchup.opp_tag) : null } : null,
+    canRegister: canRegisterRole(auth.role) && Boolean(mine.alliance_abbr) });
+}
+
+// 役職の確かめ方（2026-11-17・速さのため）：
+// ・ふだん開くとき：保存済みの役職（players.alliance_rank）が R4・R5 なら登録欄を出す（メンバー表は読まない）。
+// ・登録するとき（POST）と「最新の役職で確かめる」（?recheck=1）：メンバー表で確かめる（従来どおり）。
+async function loadSwordlandState(env, auth, { checkOfficer = true, verifyOfficer = true } = {}) {
+  await ensureSwordlandSchema(env.DB);
+  const mine = await myAlliance(env.DB, auth.user_id);
+  // まだ一度も日程を取っていない王国なら、ここで1回だけ取る（新しく登録した人・2026-11-19）
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
+  const active = mine?.kid ? await activeSwordlandEvents(env.DB, Number(mine.kid)) : [];
+  // 聖剣争奪と頂上リーグが同時のときは両方（それぞれ相手を登録する）。
+  const state = { mine, events: active.map(event => ({ event, matchup: null })), canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
+  if (!active.length || !mine?.alliance_aid) return state;
+  for (const e of state.events) e.matchup = await currentMatchup(env.DB, e.event.season, Number(mine.kid), mine.alliance_aid);
+  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr && !verifyOfficer) {
+    state.canRegister = Number(mine.alliance_rank) >= 4;
+    state.canRecheck = !state.canRegister;
+  } else if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
+    // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
+    const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
+    state.canRegister = Boolean(a && !a.error && isOfficer(a.members, mine.governor_id));
+  }
+  // 同盟に EagleEye を使っている R4・R5 がいなければ、ADVANCED 以上のメンバーも登録できる（「メンバーの報告」・2026-11-19）
+  if (checkOfficer && !state.canRegister && canRegisterRole(auth.role) && mine.alliance_abbr && !(await allianceHasOfficerUser(env.DB, Number(mine.kid), mine.alliance_aid))) {
+    state.canRegister = true;
+    state.memberMode = true;
+    state.canRecheck = false;
+  }
+  return state;
+}
+
+async function handleSwordlandPage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪・聖剣頂上リーグ", "聖剣争奪・聖剣頂上リーグの対戦相手を見るにはログインしてください。"));
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (request.method === "POST") {
+    if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+    const state = await loadSwordlandState(env, auth);
+    if (!state.canRegister) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "対戦相手を登録できるのは、同盟のR4・R5でADVANCED以上の人です。" }), 403);
+    const form = await request.formData().catch(() => null);
+    const oppKid = Number(String(form?.get("opp_kid") || "").trim());
+    const oppTag = String(form?.get("opp_tag") || "").trim().slice(0, 24);
+    if (!Number.isInteger(oppKid) || oppKid < 1 || oppKid > 999999 || !/^[^\s:：,<>"']{1,24}$/.test(oppTag)) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "相手の王国番号と同盟タグを正しく入れてください。" }), 400);
+    const opp = await loadAllianceForCompare(env, oppKid, oppTag, { canFetch: true }).catch(() => ({ error: "FAILED" }));
+    if (opp?.error) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "王国" + oppKid + "の「" + oppTag + "」が見つかりませんでした。王国番号と同盟タグを確かめてください。" }), 404);
+    const target = state.events.find(e => e.event.kind === String(form?.get("event") || "")) || state.events[0];
+    if (!target) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "今は開催期間ではありません。" }), 400);
+    await saveMatchup(env.DB, { season: target.event.season, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
+    await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
+    return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
+  }
+  const isOwner = auth.role === "OWNER";
+  // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。過去の対戦相手は自分の同盟の分（だれでも）。
+  const recheck = new URL(request.url).searchParams.get("recheck") === "1";
+  const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth, { verifyOfficer: recheck }), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
+  if (state.mine?.alliance_aid) state.history = await loadMatchupHistory(env.DB, Number(state.mine.kid), state.mine.alliance_aid, { exclude: state.events.map(e => e.event.season) }).catch(() => []);
+  return eagleEyeHtmlResponse(renderSwordlandPage({ state, isOwner, ownerMatchups }));
+}
+
+async function servePublicCached(request, executionContext, build, maxAge = PUBLIC_CACHE_SECONDS) {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const key = new Request(new URL(request.url).toString(), { method: "GET" });
+  if (cache) {
+    const hit = await cache.match(key).catch(() => null);
+    if (hit) return hit;
+  }
+  const built = await build();
+  const response = new Response(built.body, built);
+  if (response.ok) response.headers.set("cache-control", "public, max-age=" + maxAge);
+  if (cache && response.ok) {
+    const put = cache.put(key, response.clone()).catch(() => {});
+    if (executionContext?.waitUntil) executionContext.waitUntil(put); else await put;
+  }
+  return response;
+}
+
+// 英雄の欠片 計算: public calculator; signed-in users also get their own heroes.
+async function renderHeroShardRoute(request, env, executionContext) {
+  const origin = publicOrigin(request, env);
+  const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+  const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+  // Saved hero icons are the same for every viewer, so the public page stays cacheable.
+  const loadIcons = async () => { try { return await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_shard_icons_failed", error?.message || error); return {}; } };
+  if (auth?.status !== "ACTIVE") {
+    return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderHeroShardPage({ origin, loginHref: loginUrlFor("/tools/hero-shards"), iconByName: await loadIcons() })), PUBLIC_CACHE_TTL.static);
+  }
+  let heroes = null, heroesNote = "";
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    if (!visibilityEnabled(settings, "heroes_list", auth.role)) {
+      heroesNote = "現在の権限では英雄の一覧は表示されません。";
+    } else {
+      const link = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(auth.user_id).first();
+      if (!link) heroesNote = "マイKingShotで領主IDを登録すると、あなたの英雄が表示されます。";
+      else {
+        const observation = await getLatestPlayerObservation(env.DB, link.governor_id);
+        const payload = observation?.payload || {};
+        const list = Array.isArray(payload.heroes) ? payload.heroes : Array.isArray(payload.player?.heroes) ? payload.player.heroes : null;
+        if (!list) heroesNote = "英雄データがまだありません。プレイヤー詳細で「詳細情報を取得」すると表示されます。";
+        else {
+          heroes = list.filter(h => h && h.name != null).map(h => ({ name: String(h.name), displayName: localizeHeroName(h.name), steps: Number(h.star) || 0 }));
+          heroesNote = observation?.observed_at ? new Date(observation.observed_at * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) + " 時点のデータです。" : "";
+        }
+      }
+    }
+  } catch (error) {
+    console.error("hero_shard_heroes_failed", error?.message || error);
+    heroesNote = "英雄データを読み込めませんでした。";
+  }
+  return eagleEyeHtmlResponse(renderHeroShardPage({ origin, signedIn: true, heroes, heroesNote, iconByName: await loadIcons() }));
+}
+
+// render は HTML か Response（「見つかりません」など）を返す。Response はキャッシュしない（ok のときだけ置く）。
+// 存在確認などの D1 読み取りは render の中で行うと、キャッシュがある時は D1 を読まずに返せる。
+async function servePublicPage(request, env, executionContext, render, maxAge = PUBLIC_CACHE_SECONDS) {
+  const toResponse = out => out instanceof Response ? out : eagleEyeHtmlResponse(out);
+  const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+  if (hasSession) {
+    const auth = await getAuthenticatedUser(request, env).catch(() => null);
+    if (auth?.status === "ACTIVE") return toResponse(await render(true));
+  }
+  return servePublicCached(request, executionContext, async () => toResponse(await render(false)), maxAge);
+}
+
+function eagleEyeHtmlResponse(html, status = 200) {
+  const themed = injectAdsense(enhanceSeo(applyEagleEyeTheme(html)));
+  // 共有ボタンがあるページだけ、右下に浮かぶ「画像で共有」と1回だけの案内（share-fab.js）。
+  const telemetry = clientTelemetryScript() + pageViewBeaconScript() + (pageHasShareButton(themed) ? shareFabScript() : "");
+  const instrumented = themed.includes("</body>")
+    ? themed.replace("</body>", telemetry + "</body>")
+    : themed + telemetry;
+  return new Response(instrumented, { status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } });
 }
 
 function getConfig(env) {
@@ -4842,6 +5831,8 @@ async function startDiscordLogin(request, env) {
   if (!config.clientId || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
+  // Googleログインが使えるときは、まずログイン方法を選ぶ画面へ（選んだ後は direct=1 で来る）。
+  { const u = new URL(request.url); if (googleConfigured(env) && !u.searchParams.get("direct")) { const next = sanitizeLoginReturnPath(u.searchParams.get("next")); return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), u).toString(), 302); } }
 
   const redirectUri = config.redirectUri;
   const state = await createStateToken(config.sessionSecret);
@@ -4852,49 +5843,14 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      "Location": authorize.toString(),
-      "Cache-Control": "no-store"
-    }
-  });
-}
-
-async function joinDiscordSupportGuild(env, discordUserId, userAccessToken) {
-  const guildId = String(env.DISCORD_SUPPORT_GUILD_ID || "").trim();
-  const botToken = String(env.DISCORD_BOT_TOKEN || "").trim();
-  if (!guildId) throw new Error("DISCORD_SUPPORT_GUILD_ID_NOT_CONFIGURED");
-  if (!botToken) throw new Error("DISCORD_BOT_TOKEN_NOT_CONFIGURED");
-  if (!discordUserId) throw new Error("DISCORD_USER_ID_REQUIRED");
-  if (!userAccessToken) throw new Error("DISCORD_USER_ACCESS_TOKEN_REQUIRED");
-
-  const response = await fetch(
-    `https://discord.com/api/v10/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordUserId)}`,
-    {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bot ${botToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": "EagleEye/1.0 (support)"
-      },
-      body: JSON.stringify({
-        access_token: userAccessToken
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    let data = null;
-    try { data = body ? JSON.parse(body) : null; } catch {}
-    const error = new Error(data?.message || `Discord guild join failed (HTTP ${response.status})`);
-    error.status = response.status;
-    error.discord = data;
-    throw error;
-  }
-
-  return response.status === 201 ? "ADDED" : "ALREADY_MEMBER";
+  // クローラーがログインのリンクをたどった分は数えない（2026-11-17：AdSense のクローラーで「Googleへ進んだ」が膨らんでいた）。
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "login_start");
+  const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
+  const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
+  headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
+    maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
+  }));
+  return new Response(null, { status: 302, headers });
 }
 
 async function handleDiscordCallback(request, env) {
@@ -4905,10 +5861,23 @@ async function handleDiscordCallback(request, env) {
   if (!config.clientId || !config.clientSecret || !config.sessionSecret) {
     return json({ ok: false, error: "DISCORD_AUTH_NOT_CONFIGURED" }, 503);
   }
+  // どこで離れたかを数える：Discordの画面から戻ってきた（キャンセルも含む）。
+  if (env.DB) await recordFunnel(env.DB, "discord_return");
+  // Discordの画面で「キャンセル」した人は、エラー画面ではなく元のページへ戻す（ログインはしない）。
+  if (url.searchParams.get("error") && !code) {
+    if (env.DB) await recordFunnel(env.DB, "login_cancelled");
+    let back = null;
+    try { back = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
+    const h = new Headers({ Location: new URL(back || "/", request.url).toString(), "Cache-Control": "no-store" });
+    h.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+    return new Response(null, { status: 302, headers: h });
+  }
   if (!code || !state) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "missing_callback_state" }, 400);
   }
   if (!(await verifyStateToken(state, config.sessionSecret))) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "INVALID_OAUTH_STATE", reason: "invalid_state_signature" }, 400);
   }
 
@@ -4932,6 +5901,7 @@ async function handleDiscordCallback(request, env) {
       metadata: { httpStatus: tokenResponse.status }
     });
     console.error("Discord token exchange failed:", tokenResponse.status);
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "DISCORD_TOKEN_EXCHANGE_FAILED" }, 502);
   }
 
@@ -4947,6 +5917,7 @@ async function handleDiscordCallback(request, env) {
       metadata: { httpStatus: userResponse.status }
     });
     console.error("Discord user lookup failed:", userResponse.status);
+    if (env.DB) await recordFunnel(env.DB, "login_error");
     return json({ ok: false, error: "DISCORD_USER_LOOKUP_FAILED" }, 502);
   }
 
@@ -4959,17 +5930,18 @@ async function handleDiscordCallback(request, env) {
     const joinResult = await joinDiscordSupportGuild(env, String(discordUser.id), token.access_token);
     if (env.DB) await recordDiagnostic(env.DB, {
       service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "SUCCESS",
-      message: joinResult === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
-      metadata: { result: joinResult }
+      message: joinResult.result === "ADDED" ? "Discord Support Guildへの自動参加成功" : "Discord Support Guildへの参加状態を確認しました。",
+      metadata: { result: joinResult.result, ...joinResult.oauthDiagnostics }
     });
+    if (env.DB) await onKvkUserSignedIn(env.DB, String(discordUser.id));
   } catch (error) {
     // Support guild auto-join is an auxiliary feature and must never block
     // the primary Discord login/session issuance.
     if (env.DB) await recordDiagnostic(env.DB, {
       service: "discord", feature: "support_guild_membership", operation: "GUILD_JOIN", status: "FAILED",
-      errorCode: String(error?.message || "DISCORD_SUPPORT_GUILD_JOIN_FAILED").split(":")[0],
+      errorCode: String(error?.code || error?.message || "DISCORD_SUPPORT_GUILD_JOIN_FAILED").split(":")[0],
       message: String(error?.message || error).slice(0, 2000),
-      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null }
+      metadata: { httpStatus: Number(error?.status || 0) || null, discordCode: error?.discord?.code || null, ...(error?.oauthDiagnostics || {}) }
     });
     console.error("discord_support_guild_join_failed", {
       discord_id: String(discordUser.id),
@@ -4988,12 +5960,20 @@ async function handleDiscordCallback(request, env) {
     iat: now,
     exp: now + SESSION_MAX_AGE
   };
+  let loginUser = null;
   if (env.DB) {
     try {
       const userResult = await upsertUser(env.DB, discordUser, now);
+      loginUser = userResult;
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
+      await recordFunnel(env.DB, userResult?.isNew ? "login_new" : "login_returning");
+      // SNSから来た人の新規登録を、SNSごとに数える（Cookie はこの後のレスポンスで消す）。
+      if (userResult?.isNew) await recordSignupSource(env.DB, parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
+      // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
+      const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
+      if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
     } catch (error) {
       // Keep Discord authentication usable during a temporary D1 outage.
       // The signed session is safe to issue, while DB-backed roles remain unavailable.
@@ -5008,10 +5988,17 @@ async function handleDiscordCallback(request, env) {
 
   const session = await signPayload(sessionPayload, config.sessionSecret);
 
+  let returnPath = null;
+  try { returnPath = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
+  // 領主をまだ登録していない人は、マイKingShotの登録欄へ（login-onboarding.js）。
+  if (loginUser?.user_id) returnPath = await postLoginPath(env.DB, { userId: loginUser.user_id, isNew: Boolean(loginUser.isNew), returnPath }).catch(() => returnPath);
   const responseHeaders = new Headers({
-    Location: new URL("/", request.url).toString(),
+    Location: new URL(returnPath || "/", request.url).toString(),
     "Cache-Control": "no-store"
   });
+  responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
@@ -5020,6 +6007,72 @@ async function handleDiscordCallback(request, env) {
     headers: responseHeaders
   });
 }
+// Googleログイン（A案：Googleの人は users.discord_id に仮のID「google:…」を持つ。Discord専用の処理は isDiscordUserId で除外）。
+async function startGoogleLogin(request, env) {
+  if (!googleConfigured(env)) return json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" }, 503);
+  const url = new URL(request.url);
+  // 公開前は選択画面へ戻す（オーナーの動作確認だけ ?test=1 で通す）。
+  if (!googleLoginOpen(env) && url.searchParams.get("test") !== "1") {
+    const next = sanitizeLoginReturnPath(url.searchParams.get("next"));
+    return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), url).toString(), 302);
+  }
+  const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "google_start");
+  const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
+  const returnPath = sanitizeLoginReturnPath(url.searchParams.get("next"));
+  headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", { maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleGoogleCallback(request, env) {
+  if (!googleConfigured(env)) return json({ ok: false, error: "GOOGLE_AUTH_NOT_CONFIGURED" }, 503);
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  let returnPath = null;
+  try { returnPath = sanitizeLoginReturnPath(cookies[LOGIN_RETURN_COOKIE]); } catch {}
+  const clearReturn = h => h.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  // どこで離れたかを数える：Googleの画面から戻ってきた（キャンセルも含む）。
+  if (env.DB) await recordFunnel(env.DB, "google_return");
+  if (url.searchParams.get("error") && !code) {
+    if (env.DB) await recordFunnel(env.DB, "login_cancelled");
+    const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
+    clearReturn(h);
+    return new Response(null, { status: 302, headers: h });
+  }
+  if (!code || !state || !(await verifyStateToken(state, env.EAGLEEYE_SESSION_SECRET))) {
+    if (env.DB) await recordFunnel(env.DB, "login_error");
+    return json({ ok: false, error: "INVALID_OAUTH_STATE" }, 400);
+  }
+  let googleUser;
+  try {
+    googleUser = await fetchGoogleUser(env, { code, redirectUri: googleRedirectUri(env, request.url) });
+  } catch (error) {
+    if (env.DB) await recordDiagnostic(env.DB, { service: "google", feature: "oauth", operation: "LOGIN", status: "FAILED", errorCode: String(error?.code || "GOOGLE_LOGIN_FAILED"), message: "Google login failed", metadata: { httpStatus: Number(error?.httpStatus || 0) || null } });
+    console.error("google_login_failed", error?.code || "GOOGLE_LOGIN_FAILED");
+    if (env.DB) await recordFunnel(env.DB, "login_error");
+    return json({ ok: false, error: String(error?.code || "GOOGLE_LOGIN_FAILED") }, 502);
+  }
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  const now = Math.floor(Date.now() / 1000);
+  const result = await upsertGoogleUser(env.DB, googleUser, now);
+  if (result?.status === "DISABLED") return json({ ok: false, error: "USER_DISABLED" }, 403);
+  await recordFunnel(env.DB, result.isNew ? "login_new" : "login_returning");
+  await recordFunnel(env.DB, "google_done");
+  if (result.isNew) await recordSignupSource(env.DB, cookies[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
+  const refCode = cookies[REF_COOKIE];
+  if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
+  const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
+  returnPath = await postLoginPath(env.DB, { userId: result.user_id, isNew: Boolean(result.isNew), returnPath }).catch(() => returnPath);
+  const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
+  clearReturn(h);
+  if (refCode) h.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (cookies[SIGNUP_SOURCE_COOKIE]) h.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
+  h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, { maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  return new Response(null, { status: 302, headers: h });
+}
+
 async function upsertUser(db, discordUser, now) {
   const discordId = String(discordUser.id);
   const existing = await db.prepare(
@@ -5058,7 +6111,7 @@ async function upsertUser(db, discordUser, now) {
      VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(crypto.randomUUID(), userId, discordId, discordUser.username || null, discordUser.global_name || null, now).run();
 
-  return { status: "ACTIVE", user_id: userId };
+  return { status: "ACTIVE", user_id: userId, isNew: !existing };
 }
 
 function logout(request) {
@@ -5232,6 +6285,14 @@ async function handleMightPulsePlayerTest(request, env) {
 }
 
 
+async function requireVipOrAbove(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
+  if (!["VIP", "ADMIN", "OWNER"].includes(String(auth.role || "").toUpperCase())) return { error: json({ ok: false, error: "VIP_REQUIRED", message: "CSV出力はVIP以上で利用できます。" }, 403) };
+  if (!env.DB) return { error: json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503) };
+  return { auth };
+}
+
 async function requireAdmin(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return { error: json({ ok: false, error: "UNAUTHORIZED" }, 401) };
@@ -5257,18 +6318,16 @@ async function handleDataRetentionApi(request, env) {
     if (contentType.includes("application/json")) {
       return json({ ok: true, settings });
     }
-    return new Response(`<!DOCTYPE html>
+    return eagleEyeHtmlResponse(`<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>保存しました - EagleEye</title>
+<title>保存しました | EagleEye</title>
 <style>
 :root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .card{text-align:center;padding:32px 28px;border:1px solid #334155;border-radius:16px;background:#162238;box-shadow:0 12px 40px rgba(0,0,0,.25)}
 .ok{font-size:42px;margin-bottom:8px}.title{font-size:24px;font-weight:900}.sub{margin-top:8px;color:#94a3b8}
 </style>
 <meta http-equiv="refresh" content="1;url=/admin/data-retention">
-</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`, {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+</head><body><div class="card"><div class="ok">✓</div><div class="title">保存しました</div><div class="sub">データ保存期間の設定を更新しました。</div></div></body></html>`);
   } catch (error) {
     console.error("Data retention settings error:", error);
     return json({ ok: false, error: error?.message || "RETENTION_UPDATE_FAILED" }, 400);
@@ -5492,7 +6551,8 @@ async function handleApiPoolMightyCheck(request, env) {
         apiKey: lease.api_key,
         operation: "API_POOL_MIGHTY_CHECK",
         targetType: "API_KEY",
-        targetId: keyId
+        targetId: keyId,
+        metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
       });
       mightyCapable = Number(result.status) >= 200 && Number(result.status) < 300;
       checkStatus = mightyCapable ? "CONFIRMED" : "UNKNOWN";
@@ -5505,8 +6565,9 @@ async function handleApiPoolMightyCheck(request, env) {
         targetId: keyId,
         purpose: "API_POOL_MIGHTY_CHECK",
         httpStatus: result.status,
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
     } catch (error) {
       const status = Number(error?.status || 0);
@@ -5536,7 +6597,8 @@ async function handleApiPoolMightyCheck(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
       if (status !== 403) {
         await env.DB.prepare(
@@ -5600,7 +6662,7 @@ async function handleApiPoolHealthCheck(request, env) {
     let lease = null;
     try {
       lease = await leaseApiKeyForHealthCheck(env.DB, { keyId, purpose: "API_POOL_HEALTH_CHECK", targetType: "API_KEY", targetId: probeGovernorId });
-      const result = await getMightPulsePlayer(env, probeGovernorId, { include: "base", apiKey: lease.api_key });
+      const result = await getMightPulsePlayer(env, probeGovernorId, { include: "base", apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
       await recordApiPoolSuccess(env.DB, {
         keyId: lease.key_id,
         leaseId: lease.lease_id,
@@ -5610,8 +6672,9 @@ async function handleApiPoolHealthCheck(request, env) {
         targetId: probeGovernorId,
         purpose: "API_POOL_HEALTH_CHECK",
         httpStatus: result.status,
-        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+        remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+        remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
       });
       if (contentType.includes("application/json")) {
         return json({ ok: true, key_id: keyId, status: "AVAILABLE", upstream_status: result.status, message: "接続確認成功。APIキーをAVAILABLEにしました。" });
@@ -5639,7 +6702,8 @@ async function handleApiPoolHealthCheck(request, env) {
           errorMessage: error?.message || null,
           cooldownSeconds: cooldown,
           disable,
-          keepAvailable
+          keepAvailable,
+          requestCount: Math.max(1, Number(error?.attempts) || 1)
         });
       }
       const status = Number(error?.status || 0);
@@ -5757,7 +6821,7 @@ async function handleApiPoolTestPlayer(request, env) {
       targetId: governorId
     });
     const upstreamStartedAt = Date.now();
-    const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key });
+    const result = await getMightPulsePlayer(env, governorId, { include: "base", apiKey: lease.api_key, metadata: { leaseId: lease.lease_id, poolType: lease.pool_type } });
     const upstreamElapsedMs = Date.now() - upstreamStartedAt;
     await recordApiPoolSuccess(env.DB, {
       keyId: lease.key_id,
@@ -5768,7 +6832,8 @@ async function handleApiPoolTestPlayer(request, env) {
       targetId: governorId,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
     const sourcePlayer = result?.data?.player || {};
     const sourceTownCenterLevel = sourcePlayer.town_center_level ?? null;
@@ -5790,9 +6855,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5812,7 +6875,8 @@ async function handleApiPoolTestPlayer(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -5826,9 +6890,7 @@ async function handleApiPoolTestPlayer(request, env) {
     if (new URL(request.url).searchParams.get("format") === "json") {
       return json(payload, responseStatus);
     }
-    return new Response(renderApiPoolTestResult(governorId, payload), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolTestResult(governorId, payload));
   }
 }
 
@@ -5866,7 +6928,8 @@ async function handleApiPoolTestRanking(request, env) {
     const result = await getMightPulseKingdomRanks(env, kid, {
       board,
       limit: 100,
-      apiKey: lease.api_key
+      apiKey: lease.api_key,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
     });
     const elapsedMs = Date.now() - startedAt;
     const payload = result?.data || {};
@@ -5880,7 +6943,8 @@ async function handleApiPoolTestRanking(request, env) {
       targetId: kid,
       purpose: "ADMIN_TEST",
       httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
     const response = {
       ok: true,
@@ -5896,9 +6960,7 @@ async function handleApiPoolTestRanking(request, env) {
       upstream_elapsed_ms: elapsedMs
     };
     if (url.searchParams.get("format") === "json") return json(response);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role));
   } catch (error) {
     if (lease) {
       const status = Number(error?.status || 0);
@@ -5918,7 +6980,8 @@ async function handleApiPoolTestRanking(request, env) {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     const status = Number(error?.status || 0);
@@ -5932,10 +6995,7 @@ async function handleApiPoolTestRanking(request, env) {
       message: error?.message || null
     };
     if (url.searchParams.get("format") === "json") return json(response, responseStatus);
-    return new Response(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), {
-      headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" },
-      status: responseStatus
-    });
+    return eagleEyeHtmlResponse(renderApiPoolRankingTestResult(kid, board, response, guard.auth.role), responseStatus);
   }
 }
 
@@ -6093,10 +7153,10 @@ async function renderPlayerVisibilityPage(request, env) {
   }).join("");
 
   return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>" +
-    "<title>EagleEye データ公開設定</title><style>" +
+    "<title>データ公開設定 | EagleEye</title><style>" +
     ":root{color-scheme:dark}*{box-sizing:border-box}" +
     "body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
-    ".badge{display:inline-block;margin:8px 0 0;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".badge{display:inline-block;margin:8px 0 0;padding:7px 10px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;background:var(--ee-panel-raised,#172a40);color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     ".wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}" +
     ".hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}" +
     ".card h2{margin:0 0 8px;font-size:19px}.scroll{width:100%;overflow:visible}@media(max-width:720px){table,thead,tbody,tr,th,td{display:block;width:100%}thead{display:none}tbody{display:grid;gap:10px}tr{border:1px solid #334155;border-radius:12px;background:#0b1220;padding:10px}td{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:7px 4px;border-bottom:1px solid #1e293b;white-space:normal;overflow-wrap:anywhere}td:last-child{border-bottom:0}.pool-actions{min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}.pool-actions:before{width:100%;flex:0 0 100%}.pool-actions form{margin:0}.pool-actions select{width:auto;margin:0}.pool-actions button{margin:0}.pool-error{max-width:none}.scroll{overflow:visible}}table{width:100%;border-collapse:collapse;min-width:0}" +
@@ -6107,7 +7167,7 @@ async function renderPlayerVisibilityPage(request, env) {
     "@media(max-width:720px){.wrap{padding:58px 10px 24px}.card{padding:12px}.scroll{overflow:visible}table{width:100%}th,td{padding:10px 6px}" +
     "th:last-child,td:last-child{width:120px}.role-select{width:112px;padding:8px;font-size:12px}.limit-input{min-width:70px;padding:8px 7px;font-size:13px}.title{font-size:24px}.badge{font-size:10px}}" +
     "</style></head><body><div class='badge'>🔐 " + adminRole + " · DATA VISIBILITY</div><main class='wrap'>" +
-    "<a class='back' href='/'>← EagleEye</a><h1 class='title'>プレイヤーデータ公開設定</h1>" +
+    "<a class='back' href='/'>← ホーム</a><h1 class='title'>プレイヤーデータ公開設定</h1>" +
     "<div class='hint'>MightPulseから取得・保存するデータと、各ロールに表示するデータを分離しています。ここでは表示権限とウォッチリスト登録上限を変更できます。変更は即時反映されます。ADMINは「OWNERのみ」を設定できません。</div>" +
     "<div id='status' class='status'></div>" +
     "<section class='card'><div class='scroll'><table><thead><tr><th>項目</th><th>閲覧可能ロール</th></tr></thead><tbody>" + rows + "</tbody></table></div></section>" +
@@ -6155,7 +7215,7 @@ async function renderDataRetentionPage(request, env) {
   const field = (name,label,hint) => "<label><span>" + esc(label) + "</span><select name='" + name + "'>" + options(s[name]) + "</select><small>" + esc(hint) + "</small></label>";
   const updated = s.updated_at ? formatUnix(s.updated_at) : "-";
   const adminRole = guard.auth.role === "OWNER" ? "OWNER" : "ADMIN";
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye データ保存期間</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{display:inline-block;margin-top:8px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:760px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px}.card{padding:18px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}label{display:block;margin-top:14px}label span{display:block;font-weight:800;font-size:14px}select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}small{display:block;margin-top:5px;color:#94a3b8;line-height:1.5}button{margin-top:18px;padding:13px 17px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;width:100%}.danger{border-color:#7f1d1d}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><h1 class='title'>データ保存期間</h1><div class='card'><b>自動クリーンアップ</b><div class='hint'>毎時の定期処理で古い履歴を少しずつ削除します。現在値・最新状態は維持します。「永久保存」を選ぶと、そのデータ種別は自動削除しません。</div><div class='mono' style='margin-top:10px'>最終設定更新: " + esc(updated) + "</div></div><form method='post' action='/api/admin/data-retention'><div class='card'>" +
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>データ保存期間 | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.admin-badge{display:inline-block;margin-top:8px;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;letter-spacing:.6px;box-shadow:0 6px 20px rgba(0,0,0,.25)}.wrap{max-width:760px;margin:auto;padding:56px 16px 24px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px}.card{padding:18px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.hint{color:#94a3b8;font-size:13px;line-height:1.7}label{display:block;margin-top:14px}label span{display:block;font-weight:800;font-size:14px}select{width:100%;padding:12px;margin-top:7px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}small{display:block;margin-top:5px;color:#94a3b8;line-height:1.5}button{margin-top:18px;padding:13px 17px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;width:100%}.danger{border-color:#7f1d1d}.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}</style></head><body><div class='admin-badge'>🔐 ADMIN MODE · " + adminRole + "</div><main class='wrap'><a class='back' href='/admin/api-pool'>← API Pool管理へ戻る</a><h1 class='title'>データ保存期間</h1><div class='card'><b>自動クリーンアップ</b><div class='hint'>5分ごとの定期処理で、保持期間を過ぎた履歴をR2とGoogle Driveに保存し、両方への保存を確認できたものだけをD1から削除します（Google Driveが未接続の間は削除しません）。現在値・最新状態は維持します。「永久保存」を選ぶと、そのデータ種別は自動削除しません。</div><div class='mono' style='margin-top:10px'>最終設定更新: " + esc(updated) + "</div></div><form method='post' action='/api/admin/data-retention'><div class='card'>" +
     field("api_observations_days","API観測データ","MightPulseの生レスポンス。容量が最も増えやすいデータです。最新の対象データは保持します。") +
     field("player_snapshots_days","プレイヤースナップショット","プレイヤー状態の時系列履歴。") +
     field("ranking_snapshots_days","ランキングスナップショット","王国ランキングの順位・スコア履歴。") +
@@ -6216,8 +7276,8 @@ async function renderApiPoolAdminPage(request, env) {
         "<div class='detail-item'><small>Discord ID</small><b>" + escapeHtml(c.discord_id || "未登録") + "</b></div>" +
         "<div class='detail-item'><small>Mighty</small><b>" + escapeHtml(detailMighty) + "</b></div>" +
         "<div class='detail-item'><small>判定日時</small><b>" + escapeHtml(k.mighty_checked_at ? new Date(Number(k.mighty_checked_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / min</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
-        "<div class='detail-item'><small>Remaining / day</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 分</small><b>" + escapeHtml(k.remaining_minute ?? "-") + "</b></div>" +
+        "<div class='detail-item'><small>推定残量 / 日</small><b>" + escapeHtml(k.remaining_day ?? "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease用途</small><b>" + escapeHtml(k.lease_purpose || "-") + "</b></div>" +
         "<div class='detail-item'><small>Lease対象</small><b>" + escapeHtml(k.lease_target_type && k.lease_target_id ? k.lease_target_type + " / " + k.lease_target_id : "-") + "</b></div>" +
         "<div class='detail-item'><small>最終使用</small><b>" + escapeHtml(k.last_used_at ? new Date(Number(k.last_used_at) * 1000).toLocaleString("ja-JP") : "-") + "</b></div>" +
@@ -6229,9 +7289,9 @@ async function renderApiPoolAdminPage(request, env) {
     "</details>";
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
-  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye API Pool</title><style>" +
-    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 50px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:14px 0 4px}.hint{color:#94a3b8;font-size:13px;line-height:1.65}.card{padding:15px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.stats{font-size:12px;color:#cbd5e1;line-height:1.7}.key-list{display:grid;gap:8px;margin-top:12px}.key-row{width:100%;display:block;padding:0;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#f8fafc;overflow:hidden}.key-row:hover{border-color:#64748b}.actions button[data-busy='1']{opacity:.6;cursor:wait}.key-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;list-style:none}.key-summary::-webkit-details-marker{display:none}.key-summary::after{content:'›';font-size:22px;color:#64748b;transition:transform .15s ease}.key-row[open] .key-summary::after{transform:rotate(90deg)}.key-detail-panel{padding:0 13px 13px;border-top:1px solid #26364d}.key-detail-panel .detail-grid{margin-top:12px}.key-row.available{border-left:4px solid #22c55e}.key-row.leased{border-left:4px solid #3b82f6;background:#101f3b}.key-row.cooldown{border-left:4px solid #eab308}.key-row.error{border-left:4px solid #ef4444;background:#241419}.key-row.revoked{opacity:.55}.key-row.mighty-confirmed{border-left:4px solid #f59e0b;background:linear-gradient(90deg,#2a210d 0%,#101827 62%);box-shadow:inset 0 0 0 1px rgba(245,158,11,.18)}.key-row.mighty-confirmed .mighty-pill{color:#fbbf24;border-color:#a16207;background:rgba(245,158,11,.10);font-weight:900}.key-row.mighty-in-use{border-left-color:#facc15;background:linear-gradient(90deg,#46320a 0%,#171b24 68%);box-shadow:inset 0 0 0 1px rgba(250,204,21,.38),0 0 14px rgba(245,158,11,.12)}.key-row.mighty-in-use .mighty-pill{color:#fde68a;border-color:#d97706;background:rgba(245,158,11,.22);font-weight:1000;animation:mightyPulse 1.6s ease-in-out infinite}@keyframes mightyPulse{0%,100%{box-shadow:0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 10px rgba(245,158,11,.28)}}.key-main{min-width:0;display:flex;flex-direction:column;gap:3px}.key-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.key-main small{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.api-key-prefix{display:inline-block;margin-left:7px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}.key-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:10px;color:#cbd5e1}.key-meta span{padding:4px 6px;border:1px solid #334155;border-radius:999px}.detail{display:none}.detail.show{display:block}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.detail-item{padding:9px;border-radius:9px;background:#0b1220;border:1px solid #26364d}.detail-item small{display:block;color:#64748b;font-size:10px}.detail-item b{display:block;margin-top:3px;overflow-wrap:anywhere}.danger{background:#7f1d1d!important;color:#fff!important}.ok{background:#166534!important;color:#fff!important}select,input{width:100%;padding:10px;margin-top:6px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button.action{padding:9px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;cursor:pointer}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.scroll{overflow:auto}@media(max-width:600px){.detail-grid{grid-template-columns:1fr}.key-summary{align-items:flex-start;flex-direction:column}.key-meta{justify-content:flex-start}.key-summary::after{position:absolute;right:28px;margin-top:0}.key-row{position:relative}}" +
-    "</style></head><body><main class='wrap'><a class='back' href='/'>← EagleEye</a><h1 class='title'>API Pool 管理</h1><div class='hint'>一覧はスマホでも横スクロール不要。キーをタップすると詳細を表示します。MightPulseキーは照合用の先頭部分のみ表示します。</div>" +
+  return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>API Pool管理 | EagleEye</title><style>" +
+    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 50px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:14px 0 4px}.hint{color:#94a3b8;font-size:13px;line-height:1.65}.card{padding:15px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.stats{font-size:12px;color:#cbd5e1;line-height:1.7}.key-list{display:grid;gap:8px;margin-top:12px}.key-row{width:100%;display:block;padding:0;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#f8fafc;overflow:hidden}.key-row:hover{border-color:#64748b}.actions button[data-busy='1']{opacity:.6;cursor:wait}.key-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;list-style:none}.key-summary::-webkit-details-marker{display:none}.key-summary::after{content:'›';font-size:22px;color:#64748b;transition:transform .15s ease}.key-row[open] .key-summary::after{transform:rotate(90deg)}.key-detail-panel{padding:0 13px 13px;border-top:1px solid #26364d}.key-detail-panel .detail-grid{margin-top:12px}.key-row.available{border-left:4px solid #22c55e}.key-row.leased{border-left:4px solid #3b82f6;background:#101f3b}.key-row.cooldown{border-left:4px solid #eab308}.key-row.error{border-left:4px solid #ef4444;background:#241419}.key-row.revoked{opacity:.55}.key-row.mighty-confirmed{border-left:4px solid var(--ee-cyan,#22d3ee);background:linear-gradient(90deg,#2a210d 0%,#101827 62%);box-shadow:inset 0 0 0 1px rgba(245,158,11,.18)}.key-row.mighty-confirmed .mighty-pill{color:var(--ee-cyan,#22d3ee);border-color:var(--ee-border-soft,#223b57);background:rgba(245,158,11,.10);font-weight:900}.key-row.mighty-in-use{border-left-color:#facc15;background:linear-gradient(90deg,#46320a 0%,#171b24 68%);box-shadow:inset 0 0 0 1px rgba(250,204,21,.38),0 0 14px rgba(245,158,11,.12)}.key-row.mighty-in-use .mighty-pill{color:#fde68a;border-color:#d97706;background:rgba(245,158,11,.22);font-weight:1000;animation:mightyPulse 1.6s ease-in-out infinite}@keyframes mightyPulse{0%,100%{box-shadow:0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 10px rgba(245,158,11,.28)}}.key-main{min-width:0;display:flex;flex-direction:column;gap:3px}.key-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.key-main small{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.api-key-prefix{display:inline-block;margin-left:7px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}.key-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:10px;color:#cbd5e1}.key-meta span{padding:4px 6px;border:1px solid #334155;border-radius:999px}.detail{display:none}.detail.show{display:block}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.detail-item{padding:9px;border-radius:9px;background:#0b1220;border:1px solid #26364d}.detail-item small{display:block;color:#64748b;font-size:10px}.detail-item b{display:block;margin-top:3px;overflow-wrap:anywhere}.danger{background:#7f1d1d!important;color:#fff!important}.ok{background:#166534!important;color:#fff!important}select,input{width:100%;padding:10px;margin-top:6px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button.action{padding:9px 12px;border:0;border-radius:9px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900;cursor:pointer}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.scroll{overflow:auto}@media(max-width:600px){.detail-grid{grid-template-columns:1fr}.key-summary{align-items:flex-start;flex-direction:column}.key-meta{justify-content:flex-start}.key-summary::after{position:absolute;right:28px;margin-top:0}.key-row{position:relative}}" +
+    "</style></head><body><main class='wrap'><a class='back' href='/'>← ホーム</a><h1 class='title'>API Pool 管理</h1><div class='hint'>一覧はスマホでも横スクロール不要。キーをタップすると詳細を表示します。MightPulseキーは照合用の先頭部分のみ表示します。 残量は公開仕様に残量ヘッダーの記載がないため、EagleEyeが記録した直近60秒・24時間のリクエスト数から算出する推定値です。</div>" +
     "<div class='card'><b>Pool Status</b><div class='stats'>" + escapeHtml(statText || "登録キーなし") + "</div></div>" +
     "<div class='card'><b>登録済みキー</b><div class='key-list'>" + (rows || "<div class='hint'>登録キーなし</div>") + "</div></div>" +
     "" +
@@ -6302,7 +7362,10 @@ async function fetchThroughWatchlistApiPool(env, {
           targetType,
           targetId,
           jobId,
-          reserveAvailableKeys: reserve
+          reserveAvailableKeys: reserve,
+          // Ordinary endpoints: use confirmed Mighty keys only after normal keys,
+          // so Mighty quota stays available for Mighty-only features.
+          preferNonMighty: true
         });
         poolType = candidatePoolType;
         break;
@@ -6312,17 +7375,13 @@ async function fetchThroughWatchlistApiPool(env, {
       }
     }
     if (!lease) {
-      const availability = await getApiPoolAvailability(env.DB, {
-        provider: "MIGHTPULSE",
-        poolTypes: automaticPoolTypes
-      });
-      const exhaustedByLease = Boolean(availability?.exhausted_by_lease);
+      // The batch planner already checked pool availability. Avoid issuing a
+      // second availability query for every failed concurrent request when
+      // another feature claims the remaining keys between planning and leasing.
       const error = lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
       error.code = "NO_API_POOL_KEY_AVAILABLE";
-      error.poolAvailability = availability;
-      error.userMessage = exhaustedByLease
-        ? "現在、利用可能なAPIキーがすべて処理中（リース中）のため更新できません。キー自体の無効化とは限りません。しばらく待ってから再試行してください。"
-        : "現在、利用可能なMightPulse APIキーを確保できません。キーの無効化・クールダウン等の状態を確認してください。";
+      error.poolAvailability = null;
+      error.userMessage = "現在、利用可能なMightPulse APIキーを確保できません。空きが回復するまで待機し、自動再試行します。";
       throw error;
     }
 
@@ -6347,13 +7406,14 @@ async function fetchThroughWatchlistApiPool(env, {
       purpose,
       jobId,
       httpStatus: result.status,
+      requestCount: Math.max(1, Number(result.attempts) || 1),
       traceId,
       parentTraceId,
       runId,
       startedAt: requestStartedAt,
       completedAt: Math.floor(Date.now() / 1000),
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining"),
-      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-day-remaining")
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute"),
+      remainingDay: parseHeaderNumber(result.headers, "x-ratelimit-remaining-day")
     });
 
     return { result, pool_type: poolType, key_id: lease.key_id };
@@ -6382,11 +7442,38 @@ async function fetchThroughWatchlistApiPool(env, {
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
   }
+}
+
+// 王国ウォッチに入っていない王国のランキングを、開かれたときに1ボードだけ取る（APIキー1回）。
+// 同じ王国・ボードは6時間に1回まで（D1の最終確認時刻）＋同じisolate内で10分に1回まで（失敗の連打防止）。
+const RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS = 6 * 3600;
+const rankingOnDemandAttempts = new Map();
+// minIntervalSeconds：これより新しければ取らない（ふだん6時間）。ignoreRecentAttempt：同じ isolate で10分以内に試していても取る（オーナーの「最新を取得」だけ）。
+async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0, minIntervalSeconds = RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS, ignoreRecentAttempt = false } = {}) {
+  if (!env?.DB || !Number.isInteger(kid) || kid < 1 || !KINGDOM_RANKING_BOARDS.includes(board)) return { skipped: true, reason: "INVALID" };
+  const key = kid + ":" + board;
+  const last = rankingOnDemandAttempts.get(key) || 0;
+  if (!ignoreRecentAttempt && nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
+  rankingOnDemandAttempts.set(key, nowMs);
+  if (rankingOnDemandAttempts.size > 2000) rankingOnDemandAttempts.clear();
+  const now = Math.floor(nowMs / 1000);
+  const state = await env.DB.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
+  if (state?.last_checked_at && now - Number(state.last_checked_at) < minIntervalSeconds) return { skipped: true, reason: "FRESH" };
+  const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, purpose, reserveApiKeys ? { reserveApiKeys } : {});
+  const payload = fetched.result?.data;
+  const entries = extractKingdomRankingEntries(payload).slice(0, WATCHLIST_RANKING_LIMIT);
+  if (!entries.length) return { saved: false, reason: "RANKING_ENTRIES_EMPTY" };
+  await ensureKingdomWatchlistFreshnessSchema(env.DB);
+  const sourceObservedAt = getMightPulseSourceTimestamp(payload);
+  const comparison = await getKingdomRankingChanges(env.DB, { kid, board, entries, observedAt: now });
+  const rows = await saveKingdomRankingBoard(env.DB, { kid, board, entries: comparison.changedEntries, removedTargets: comparison.removedTargets, entriesAlreadyFiltered: true, observedAt: now, sourceObservedAt, checkedAt: now, archiveBucket: env.ARCHIVE, historyMode: env.HISTORY_STORAGE_MODE });
+  return { saved: true, rows };
 }
 
 async function fetchKingdomRankingThroughApiPool(env, kid, board, limit, purpose = "KINGDOM_WATCHLIST_RANKING", correlation = {}) {
@@ -6413,6 +7500,37 @@ async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGD
   });
 }
 
+// 同盟メンバー全員の VIP を取り直す（1人につき MightPulse 1回）。同じ同盟は30分に1回まで。直近6時間以内に取った人は取らない。
+const ALLIANCE_VIP_REFRESH_GAP_SECONDS = 30 * 60;
+const allianceVipRefreshAt = new Map();
+async function refreshAllianceMemberVips(env, kid, tag, { concurrency = 4, freshSeconds = 6 * 3600 } = {}) {
+  if (!Number.isInteger(kid) || kid < 1 || !tag) return { error: "BAD_REQUEST", message: "王国と同盟を指定してください。" };
+  const { row, ids } = await loadAllianceRosterIds(env, kid, tag);
+  if (!ids.length) return { error: "NO_ROSTER", message: "メンバー表がまだ保存されていません。先に同盟のページで「最新にする」を押してください。", status: 404 };
+  const key = kid + ":" + String(row?.aid || tag);
+  const now = Math.floor(Date.now() / 1000);
+  if (now - (allianceVipRefreshAt.get(key) || 0) < ALLIANCE_VIP_REFRESH_GAP_SECONDS) return { error: "TOO_SOON", message: "この同盟は30分以内に取り直したばかりです。少し待ってからもう一度押してください。", status: 429 };
+  allianceVipRefreshAt.set(key, now);
+  const vips = await loadMemberVips(env.DB, ids);
+  const targets = ids.slice(0, 100).filter(id => !(vips.get(id)?.at > now - freshSeconds));
+  let fetched = 0, failed = 0, i = 0;
+  const worker = async () => {
+    while (i < targets.length) {
+      const id = targets[i++];
+      try {
+        const got = await fetchPlayerThroughApiPool(env, id, "ALLIANCE_MEMBER_VIP");
+        await materializePlayer(env.DB, got.observation, null, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+        fetched++;
+      } catch (error) {
+        failed++;
+        if (/NO_API_POOL_KEY|RATE_LIMIT|429/i.test(String(error?.code || error?.message || ""))) { i = targets.length; }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  return { members: ids.length, skippedFresh: Math.min(ids.length, 100) - targets.length, fetched, failed };
+}
+
 async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP", include = "base") {
   if (!env.DB) throw new Error("DB_NOT_CONFIGURED");
   configureApiPoolEncryption(env.EAGLEEYE_SESSION_SECRET);
@@ -6436,7 +7554,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
           poolType: candidatePoolType,
           purpose,
           targetType: "PLAYER",
-          targetId: id
+          targetId: id,
+          preferNonMighty: true
         });
         poolType = candidatePoolType;
         break;
@@ -6445,11 +7564,16 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
         lastNoKeyError = error;
       }
     }
-    if (!lease) throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    if (!lease) {
+      // ユーザー操作（プレイヤーの取得・ホームの自動更新）でキーが取れなかった回数。増えてきたら裏の収集の枠を見直す。
+      await recordPoolPressure(env.DB, "interactive_no_key");
+      throw lastNoKeyError || new Error("NO_API_POOL_KEY_AVAILABLE");
+    }
 
     const result = await getMightPulsePlayer(env, id, {
-      include: ["base","base,heroes,ranks,gov_gear"].includes(String(include)) ? String(include) : "base",
-      apiKey: lease.api_key
+      include: ["base","base,ranks","base,heroes,ranks,gov_gear"].includes(String(include)) ? String(include) : "base",
+      apiKey: lease.api_key,
+      metadata: { leaseId: lease.lease_id, poolType: lease.pool_type }
     });
 
     const observationEnvelopeData = observationEnvelope({
@@ -6459,6 +7583,16 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       sourceObservedAt: getMightPulseSourceTimestamp(result.data)
     });
     const savedObservation = await saveApiObservation(env.DB, observationEnvelopeData);
+    const heroPayload = Array.isArray(result?.data?.heroes)
+      ? result.data.heroes
+      : Array.isArray(result?.data?.player?.heroes) ? result.data.player.heroes : [];
+    if (heroPayload.length) {
+      try {
+        await queueHeroIconCandidates(env.DB, heroPayload, value => localizeHeroName(value));
+      } catch (error) {
+        console.error("hero_icon_queue_failed", error?.message || error);
+      }
+    }
     const observation = {
       ...observationEnvelopeData,
       observation_id: savedObservation.observation_id,
@@ -6474,7 +7608,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
       targetId: id,
       purpose,
       httpStatus: result.status,
-      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining")
+      requestCount: Math.max(1, Number(result.attempts) || 1),
+      remainingMinute: parseHeaderNumber(result.headers, "x-ratelimit-remaining-minute")
     });
 
     return { result, observation, key_id: lease.key_id };
@@ -6497,7 +7632,8 @@ async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOK
         errorMessage: error?.message || null,
         cooldownSeconds: cooldown,
         disable,
-        keepAvailable
+        keepAvailable,
+        requestCount: Math.max(1, Number(error?.attempts) || 1)
       });
     }
     throw error;
@@ -6520,11 +7656,17 @@ async function handlePlayerApi(request, env) {
     let player = await getPlayer(env.DB, governorId);
     let observation = await getLatestPlayerObservation(env.DB, governorId);
     let source = "D1";
-    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
-    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
-    const fetchRich = rich || (refresh && hasRichProfile);
+    const richPayload = observation?.payload || {};
+    const richPlayer = richPayload.player && typeof richPayload.player === "object" ? richPayload.player : richPayload;
+    const hasHeroesPayload = Array.isArray(richPayload.heroes) || Array.isArray(richPlayer.heroes);
+    const hasRanksPayload = Boolean((richPayload.ranks && typeof richPayload.ranks === "object") || (richPlayer.ranks && typeof richPlayer.ranks === "object"));
+    const hasGovGearPayload = Boolean((richPayload.gov_gear && typeof richPayload.gov_gear === "object") || (richPlayer.gov_gear && typeof richPlayer.gov_gear === "object"));
+    const needsRichProfile = !hasHeroesPayload || !hasRanksPayload || !hasGovGearPayload;
+    const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
+    const fetchRich = rich || refresh;
 
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
@@ -6556,7 +7698,6 @@ async function handlePlayerApi(request, env) {
         kills: player?.kills,
         x: player?.x,
         y: player?.y,
-        online: player?.online,
         observed_at: observation.observed_at,
         cached_at: observation.payload?.cached_at ?? null,
         age_seconds: observation.payload?.age_seconds ?? null
@@ -6599,9 +7740,36 @@ async function handlePlayerRefresh(request, env) {
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
 
   try {
-    const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH");
-    const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
+    const requestedInclude = String(url.searchParams.get("include") || "base");
+    const requestedRich = requestedInclude === "base,heroes,ranks,gov_gear";
+    const requestedRanks = requestedInclude === "base,ranks" || requestedRich;
+    const ranksVisible = visibilityEnabled(visibilitySettings, "ranks_core", auth.role) || visibilityEnabled(visibilitySettings, "ranks_leaderboards", auth.role);
+    const heroesVisible = ["heroes_list","heroes_skills","heroes_exclusive_gear","heroes_gear"].some(key => visibilityEnabled(visibilitySettings, key, auth.role));
+    const gearVisible = visibilityEnabled(visibilitySettings, "gov_gear_list", auth.role) || visibilityEnabled(visibilitySettings, "gov_gear_gems", auth.role);
+    const richVisible = heroesVisible || gearVisible;
+    const include = requestedRich && richVisible ? "base,heroes,ranks,gov_gear" : requestedRanks && ranksVisible ? "base,ranks" : "base";
+    const fetched = await fetchPlayerThroughApiPool(env, governorId, "PLAYER_REFRESH", include);
+    const player = await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+    const payload = fetched.observation.payload || {};
+    const rankPlayer = payload.player && typeof payload.player === "object" ? payload.player : payload;
+    const ranks = rankPlayer.ranks || payload.ranks;
+    let rankSnapshotSaved = false;
+    const rankRefreshExpected = include.includes("ranks") && ranksVisible;
+    if (rankRefreshExpected && ranks && typeof ranks === "object" && !Array.isArray(ranks) && Object.keys(ranks).length > 0) {
+      await savePlayerRankSnapshot(env.DB, {
+        governorId,
+        uid: rankPlayer.uid ?? payload.uid ?? null,
+        kid: rankPlayer.kid ?? payload.kid ?? player?.kid ?? null,
+        ranks,
+        observedAt: fetched.observation.observed_at,
+        sourceObservedAt: fetched.observation.source_observed_at ?? null,
+        sourceObservationId: fetched.observation.observation_id,
+        archiveBucket: env.ARCHIVE,
+        historyMode: env.HISTORY_STORAGE_MODE
+      });
+      rankSnapshotSaved = true;
+    }
     await trackServiceUsage(env, auth, "PLAYER_REFRESH", {
       targetType: "PLAYER",
       targetId: governorId,
@@ -6623,7 +7791,6 @@ async function handlePlayerRefresh(request, env) {
         kills: player?.kills,
         x: player?.x,
         y: player?.y,
-        online: player?.online,
         observed_at: fetched.observation.observed_at,
         source_observed_at: fetched.observation.source_observed_at ?? null
       }
@@ -6633,6 +7800,9 @@ async function handlePlayerRefresh(request, env) {
       player: filterPlayerForRole(player, auth.role, fetched.observation.payload, visibilitySettings),
       profile: filterPlayerProfileForRole(fetched.observation.payload, auth.role, visibilitySettings),
       refreshed: true,
+      requested_include: include,
+      rank_snapshot_saved: rankSnapshotSaved,
+      rank_refresh_expected: rankRefreshExpected,
       freshness: {
         provider: "MIGHTPULSE",
         fresh: fetched.observation.payload?.fresh ?? null,
@@ -6653,25 +7823,51 @@ async function handlePlayerRefresh(request, env) {
 async function renderPlayerSearchPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#050b14;color:#f1f8ff;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#20c8e8">Discordでログイン</a></body></html>`;
+    return renderLoginRequiredPage(request, "プレイヤー検索", "プレイヤー検索を利用するにはログインしてください。");
   }
 
   const url = new URL(request.url);
   const q = String(url.searchParams.get("q") || "").trim();
+  const requestedMode = String(url.searchParams.get("mode") || "all").toLowerCase();
+  const allowedModes = new Set(["all", "kingdom", "governor", "name", "alliance"]);
+  const mode = allowedModes.has(requestedMode) ? requestedMode : "all";
+  const numericGovernorId = /^[0-9]{7,12}$/.test(q);
   let rows = [];
 
   if (q && env.DB) {
+    const columns = "governor_id, nick_name, kid, power, town_center_level, alliance_name, alliance_abbr, avatar_url, alliance_rank, alliance_rank_label, observed_at";
     const like = `%${q}%`;
-    const searchResult = await env.DB.prepare(
-      `SELECT governor_id, nick_name, kid, power, town_center_level, alliance_name, avatar_url, alliance_rank, alliance_rank_label, observed_at
-       FROM players
-       WHERE governor_id LIKE ?
-          OR nick_name LIKE ?
-          OR CAST(kid AS TEXT) LIKE ?
-          OR alliance_name LIKE ?
-       ORDER BY power DESC
-       LIMIT 30`
-    ).bind(like, like, like, like).all();
+    let searchResult;
+    if (mode === "governor") {
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players WHERE governor_id = ? ORDER BY power DESC LIMIT 30`
+      ).bind(q).all();
+    } else if (mode === "kingdom") {
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players WHERE CAST(kid AS TEXT) LIKE ? ORDER BY power DESC LIMIT 30`
+      ).bind(like).all();
+    } else if (mode === "name") {
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players WHERE nick_name LIKE ? ORDER BY power DESC LIMIT 30`
+      ).bind(like).all();
+    } else if (mode === "alliance") {
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players WHERE alliance_name LIKE ? OR alliance_abbr LIKE ? ORDER BY power DESC LIMIT 30`
+      ).bind(like, like).all();
+    } else if (numericGovernorId) {
+      // In all-search mode, numeric input may be either an exact governor ID or a kingdom number.
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players
+         WHERE governor_id = ? OR CAST(kid AS TEXT) LIKE ? OR nick_name LIKE ? OR alliance_name LIKE ? OR alliance_abbr LIKE ?
+         ORDER BY power DESC LIMIT 30`
+      ).bind(q, like, like, like, like).all();
+    } else {
+      searchResult = await env.DB.prepare(
+        `SELECT ${columns} FROM players
+         WHERE governor_id LIKE ? OR nick_name LIKE ? OR CAST(kid AS TEXT) LIKE ? OR alliance_name LIKE ? OR alliance_abbr LIKE ?
+         ORDER BY power DESC LIMIT 30`
+      ).bind(like, like, like, like, like).all();
+    }
     rows = searchResult.results || [];
   }
 
@@ -6691,25 +7887,24 @@ async function renderPlayerSearchPage(request, env) {
   if (q) {
     await trackServiceUsage(env, auth, "PLAYER_SEARCH", {
       metadata: {
-        search_type: /^[0-9]{7,12}$/.test(q) ? "GOVERNOR_ID" : "TEXT",
+        search_type: mode.toUpperCase(),
         result_count: rows.length,
         result_has_match: rows.length > 0,
         selected_result: rows.length === 1 ? rows[0]?.governor_id ?? null : null,
-        direct_lookup: /^[0-9]{7,12}$/.test(q)
+        direct_lookup: mode === "governor" && numericGovernorId
       }
     });
   }
 
-  const numericGovernorId = /^[0-9]{7,12}$/.test(q);
   const body = q
     ? (rows.length > 0
       ? `<div class="results-heading"><span>検索結果</span><strong>${rows.length}${rows.length === 30 ? "+" : ""} 件</strong></div>${results}`
-      : (numericGovernorId
+      : (mode === "governor" && numericGovernorId
         ? `<a class="player-lookup" href="/player?governor_id=${encodeURIComponent(q)}"><span class="lookup-icon">↗</span><span><strong>領主ID ${escapeHtml(q)} を開く</strong><small>未登録の場合はAPIから自動取得して詳細を表示します</small></span><span class="lookup-arrow">→</span></a>`
-        : `<div class="search-state"><span class="state-icon">⌕</span><strong>該当するプレイヤーが見つかりません</strong><p>領主名・領主ID・王国・同盟名で、保存済みデータを検索します。</p></div>`))
+        : `<div class="search-state"><span class="state-icon">⌕</span><strong>該当するプレイヤーが見つかりません</strong><p>${mode === "kingdom" ? "王国番号" : mode === "governor" ? "領主ID" : mode === "name" ? "領主名" : mode === "alliance" ? "同盟名・同盟タグ" : "領主ID・領主名・王国番号・同盟名・同盟タグ"}で、保存済みデータを検索します。</p></div>`))
     : `<section class="search-intro"><div class="search-intro-art"><img src="/assets/eagleeye/bjnyan/bjnyan-player-search.png" alt="プレイヤー情報を検索するBJにゃん" loading="eager"></div><div><strong>プレイヤーを探す</strong><p>領主名・領主ID・王国・同盟名から検索。</p><p class="search-intro-note">未登録の領主IDも自動取得。</p></div></section>`;
 
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050b14"><title>EagleEye / Search</title><style>
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#050b14"><title>プレイヤー検索 | EagleEye</title><style>
   :root{color-scheme:dark;--bg:#050b14;--panel:#091827;--panel2:#0c2032;--line:#203b53;--cyan:#20c8e8;--muted:#8ba1b8;--text:#eff8ff}
   *{box-sizing:border-box}html{min-height:100%;background:var(--bg)}body{margin:0;min-height:100vh;background:linear-gradient(180deg,#071321 0%,var(--bg) 320px);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
   .search-wrap{width:min(100%,860px);margin:0 auto;padding:22px 20px calc(108px + env(safe-area-inset-bottom))}
@@ -6719,8 +7914,8 @@ async function renderPlayerSearchPage(request, env) {
   .search-back:active{color:var(--cyan)}
   .search-heading{padding:24px 0 20px}.eyebrow{color:#6edff3;font-size:10px;font-weight:900;letter-spacing:2.2px}.title{margin:7px 0 7px;font-size:clamp(27px,6vw,34px);line-height:1.2;letter-spacing:.01em}.desc{margin:0;color:var(--muted);font-size:14px;line-height:1.6}
   .search-panel{padding:12px;border:1px solid var(--line);border-radius:19px;background:linear-gradient(145deg,rgba(12,32,50,.98),rgba(6,17,29,.98));box-shadow:0 12px 32px rgba(0,0,0,.12)}
-  .search-form{display:flex;gap:9px}.search-form input{display:block;width:100%;min-width:0;height:52px;padding:0 14px;border-radius:12px;border:1px solid #2b4963;outline:none;background:#050e19;color:var(--text);font:600 16px/1.2 system-ui,-apple-system,sans-serif}.search-form input::placeholder{color:#6e849b;font-weight:450}.search-form input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(32,200,232,.12)}
-  .search-form button{flex:0 0 84px;border:1px solid #20c8e8;border-radius:12px;background:linear-gradient(180deg,#28d4ed,#12b6d7);color:#04121c;font-size:14px;font-weight:950;cursor:pointer}.search-form button:active{transform:scale(.98)}
+  .search-form{display:flex;flex-direction:column;gap:10px}.search-modes{display:flex;flex-wrap:wrap;gap:7px}.search-mode{position:relative;cursor:pointer}.search-mode input{position:absolute;opacity:0;width:1px;height:1px}.search-mode span{display:block;padding:9px 11px;border:1px solid #29465f;border-radius:999px;background:#071321;color:#91a8bd;font-size:12px;font-weight:750;white-space:nowrap}.search-mode input:checked+span{border-color:var(--cyan);background:rgba(32,200,232,.13);color:#8deeff;box-shadow:inset 0 0 0 1px rgba(32,200,232,.12)}.search-mode input:focus-visible+span{outline:2px solid var(--cyan);outline-offset:2px}.search-input-row{display:flex;gap:9px}.search-input-row input{display:block;width:100%;min-width:0;height:52px;padding:0 14px;border-radius:12px;border:1px solid #2b4963;outline:none;background:#050e19;color:var(--text);font:600 16px/1.2 system-ui,-apple-system,sans-serif}.search-input-row input::placeholder{color:#6e849b;font-weight:450}.search-input-row input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(32,200,232,.12)}
+  .search-input-row button{flex:0 0 84px;border:1px solid #20c8e8;border-radius:12px;background:linear-gradient(180deg,#28d4ed,#12b6d7);color:#04121c;font-size:14px;font-weight:950;cursor:pointer}.search-input-row button:active{transform:scale(.98)}
   .search-tip{display:flex;gap:7px;align-items:flex-start;margin:10px 3px 0;color:#7f95ac;font-size:11px;line-height:1.5}.search-tip span{color:var(--cyan);font-weight:900}
   .results{margin-top:17px}.results-heading{display:flex;justify-content:space-between;align-items:center;margin:0 2px 10px;color:#9bb0c4;font-size:12px;font-weight:750}.results-heading strong{color:var(--cyan);font-variant-numeric:tabular-nums}
   .player-result{display:flex;align-items:center;gap:12px;margin-top:9px;padding:14px;border:1px solid var(--line);border-radius:15px;background:linear-gradient(135deg,#0b1d2e,#071321);color:var(--text);text-decoration:none;min-width:0}.player-result:active{border-color:var(--cyan);background:#0c2638}
@@ -6729,8 +7924,14 @@ async function renderPlayerSearchPage(request, env) {
   .player-result-power{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap}.player-result-power span{font-size:8px;letter-spacing:1.3px;color:#6f879e;font-weight:900}.player-result-power strong{font-size:13px;color:var(--cyan);font-variant-numeric:tabular-nums}.player-result-arrow{font-size:24px;line-height:1;color:#6b849c}
   .player-lookup{display:flex;align-items:center;gap:12px;margin-top:16px;padding:17px;border:1px solid rgba(32,200,232,.48);border-radius:15px;background:linear-gradient(135deg,rgba(11,39,57,.98),rgba(6,20,33,.98));color:var(--text);text-decoration:none}.lookup-icon{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border:1px solid rgba(32,200,232,.35);border-radius:12px;color:var(--cyan);font-size:21px}.player-lookup>span:nth-child(2){flex:1;min-width:0}.player-lookup strong{display:block;font-size:14px}.player-lookup small{display:block;margin-top:5px;color:var(--muted);font-size:11px;line-height:1.5}.lookup-arrow{color:var(--cyan);font-size:21px;font-weight:900}
   .search-intro,.search-state{display:flex;align-items:center;gap:13px;margin-top:16px;padding:17px;border:1px solid var(--line);border-radius:16px;background:rgba(8,24,39,.78)}.search-intro-art{display:flex;align-items:center;justify-content:center;flex:0 0 112px;width:112px;min-width:0}.search-intro-art img{display:block;width:100%;height:auto;max-height:132px;object-fit:contain}.state-icon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:12px;background:rgba(32,200,232,.1);color:var(--cyan);font-size:24px}.search-intro strong,.search-state strong{font-size:14px}.search-intro p,.search-state p{margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.6}.search-intro-note{color:#6edff3!important}
-  @media(max-width:520px){.search-wrap{padding:17px 18px calc(100px + env(safe-area-inset-bottom))}.search-topline{padding-bottom:14px}.brand{font-size:15px;letter-spacing:2.5px}.brand span{font-size:10px;margin-left:5px}.search-heading{padding:20px 0 16px}.title{font-size:28px}.desc{font-size:13px}.search-panel{padding:10px;border-radius:16px}.search-form{gap:8px}.search-form input{height:50px;padding:0 12px;font-size:16px}.search-form button{flex-basis:76px}.player-result{padding:12px;gap:9px}.player-result-name{font-size:14px}.player-result-power strong{font-size:12px}.search-intro,.search-state{padding:14px;gap:10px}.search-intro-art{flex-basis:88px;width:88px}.search-intro-art img{max-height:104px}.search-intro p{font-size:11px}}
-  </style></head><body><main class="search-wrap"><header class="search-topline"><div class="brand">EAGLEEYE<span>/ SEARCH</span></div><a class="search-back" href="/">← HOME</a></header><section class="search-heading"><div class="eyebrow">PLAYER DATABASE</div><h1 class="title">プレイヤー検索</h1><p class="desc">領主名・領主ID・王国・同盟名から検索</p></section><section class="search-panel"><form class="search-form" method="get" action="/players" onsubmit="const v=this.q.value.trim();if(/^[0-9]{7,12}$/.test(v)){this.action='/player';this.q.name='governor_id';}return true;"><input name="q" value="${escapeHtml(q)}" placeholder="領主名 / 領主ID / 王国 / 同盟名" aria-label="プレイヤー検索" autocomplete="off"><button type="submit">検索</button></form><div class="search-tip"><span>i</span><div>領主IDが未登録でも、確認画面を挟まず自動でデータ取得します。</div></div></section><section class="results" aria-live="polite">${body}</section></main></body></html>`;
+  @media(max-width:520px){.search-wrap{padding:17px 18px calc(100px + env(safe-area-inset-bottom))}.search-topline{padding-bottom:14px}.brand{font-size:15px;letter-spacing:2.5px}.brand span{font-size:10px;margin-left:5px}.search-heading{padding:20px 0 16px}.title{font-size:28px}.desc{font-size:13px}.search-panel{padding:10px;border-radius:16px}.search-input-row{gap:8px}.search-input-row input{height:50px;padding:0 12px;font-size:16px}.search-input-row button{flex-basis:76px}.search-mode span{padding:8px 10px;font-size:11px}.player-result{padding:12px;gap:9px}.player-result-name{font-size:14px}.player-result-power strong{font-size:12px}.search-intro,.search-state{padding:14px;gap:10px}.search-intro-art{flex-basis:88px;width:88px}.search-intro-art img{max-height:104px}.search-intro p{font-size:11px}}
+  </style></head><body><main class="search-wrap"><header class="search-topline"><div class="brand">EAGLEEYE<span>/ SEARCH</span></div><a class="search-back" href="/">← HOME</a></header><section class="search-heading"><div class="eyebrow">プレイヤー検索</div><h1 class="title">プレイヤー検索</h1><p class="desc">検索対象を選んで、領主・王国・同盟を探します。</p></section><section class="search-panel"><form class="search-form" method="get" action="/players"><div class="search-modes" role="radiogroup" aria-label="検索対象">
+    <label class="search-mode"><input type="radio" name="mode" value="all" ${mode === "all" ? "checked" : ""}><span>全体検索</span></label>
+    <label class="search-mode"><input type="radio" name="mode" value="kingdom" ${mode === "kingdom" ? "checked" : ""}><span>王国番号</span></label>
+    <label class="search-mode"><input type="radio" name="mode" value="governor" ${mode === "governor" ? "checked" : ""}><span>領主ID</span></label>
+    <label class="search-mode"><input type="radio" name="mode" value="name" ${mode === "name" ? "checked" : ""}><span>領主名</span></label>
+    <label class="search-mode"><input type="radio" name="mode" value="alliance" ${mode === "alliance" ? "checked" : ""}><span>同盟名・タグ</span></label>
+  </div><div class="search-input-row"><input name="q" value="${escapeHtml(q)}" placeholder="${mode === "all" ? "領主名 / 領主ID / 王国 / 同盟名・タグ" : mode === "kingdom" ? "王国番号を入力" : mode === "governor" ? "領主IDを入力" : mode === "name" ? "領主名を入力" : "同盟名またはタグを入力"}" aria-label="プレイヤー検索" autocomplete="off"><button type="submit">検索</button></div></form><div class="search-tip"><span>i</span><div>${mode === "governor" ? "領主IDは完全一致で検索します。未登録のIDは直接取得できます。" : mode === "kingdom" ? "王国番号だけを検索します。" : mode === "name" ? "領主名だけを検索します。" : mode === "alliance" ? "同盟名と同盟タグを検索します。" : "領主ID・領主名・王国番号・同盟名・同盟タグをまとめて検索します。"}</div></div></section><section class="results" aria-live="polite">${body}</section></main></body></html>`;
 }
 
 async function handlePlayerHistoryApi(request, env) {
@@ -6764,6 +7965,319 @@ async function handlePlayerHistoryApi(request, env) {
   }
 }
 
+
+
+async function handlePlayerCompareRefreshCapacityApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
+  if (!env.DB) return json({ok:false,error:"DB_NOT_CONFIGURED"},503);
+  try {
+    const availability = await getApiPoolAvailability(env.DB, {provider:"MIGHTPULSE",poolTypes:["SYSTEM_GENERAL","USER_CONTRIBUTED"]});
+    const available = Math.max(0, Number(availability?.totals?.available || 0));
+    return json({ok:true,available,reserved:1,usable:Math.max(0,available-1)});
+  } catch (error) {
+    console.error("player_compare_refresh_capacity_failed", error?.message || error);
+    return json({ok:false,error:"API_POOL_CAPACITY_READ_FAILED"},503);
+  }
+}
+
+// プレイヤー単体のデータには入っておらず、王国ランキング（各上位100人）からしか取れない項目。
+const COMPARE_KINGDOM_ONLY_BOARDS = Object.freeze(["rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power", "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm", "pet_power", "island_prosperity", "master_power"]);
+const COMPARE_RANKING_STALE_SECONDS = 24 * 3600;
+// 同盟比較の「最新を取得」：秘境の試練（王国ランキング）はこれより古ければ取り直す（API Pool を使いすぎない下限）。
+const ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS = 3600;
+const COMPARE_RANKING_MAX_BOARDS = 26;
+// 画面を開いたときに、足りない／古い（24時間より前）王国ランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
+// 実際の取得は refreshKingdomRankingOnDemand（6時間以内に取ったものは取り直さない・10分以内の再試行もしない）。
+// 戻り値は「取りに行った王国と種類の数」（画面で「取得中」を出す）。
+async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS, staleSeconds = COMPARE_RANKING_STALE_SECONDS, ignoreRecentAttempt = false } = {}) {
+  const kids = [...new Set((kidList || []).map(Number).filter(k => Number.isInteger(k) && k > 0))].slice(0, 6); // プレイヤー比較は最大6人＝最大6王国
+  if (!kids.length || !boards?.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
+  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs, staleSeconds);
+  const jobs = todo.slice(0, maxBoards);
+  if (!jobs.length) return [];
+  // staleSeconds が6時間より短いとき（同盟比較の「最新を取得」）は、取りに行く側の「6時間以内なら取らない」もそれに合わせる。
+  const minIntervalSeconds = Math.min(staleSeconds, RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS);
+  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs, minIntervalSeconds, ignoreRecentAttempt }));
+  const byKid = new Map();
+  for (const [kid] of jobs) byKid.set(kid, (byKid.get(kid) || 0) + 1);
+  return [...byKid].map(([kid, n]) => ({ kid, boards: n }));
+}
+async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now(), staleSeconds = COMPARE_RANKING_STALE_SECONDS) {
+  const now = Math.floor(nowMs / 1000);
+  const state = await db.prepare("SELECT kid, board, last_checked_at FROM kingdom_ranking_board_state WHERE kid IN (" + kids.map(() => "?").join(",") + ") AND board IN (" + boards.map(() => "?").join(",") + ")")
+    .bind(...kids, ...boards).all().catch(() => ({ results: [] }));
+  const checked = new Map((state.results || []).map(r => [r.kid + ":" + r.board, Number(r.last_checked_at) || 0]));
+  const todo = [];
+  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > staleSeconds) todo.push([kid, board]);
+  return todo;
+}
+async function runKingdomRankingJobs(env, jobs, options = {}) {
+  let done = 0;
+  for (const [kid, board] of jobs) {
+    try { await refreshKingdomRankingOnDemand(env, kid, board, options); done++; }
+    catch (error) {
+      console.warn("kingdom_ranking_fetch_failed", kid, board, error?.code || error?.message || error);
+      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) { if (options.report) options.report.noKey = true; break; } // キーが空いていなければやめる
+    }
+  }
+  return done;
+}
+async function scheduleCompareRankingFetch(env, executionContext, kidList, options = {}) {
+  return scheduleKingdomRankingFetch(env, executionContext, kidList, COMPARE_KINGDOM_ONLY_BOARDS, options);
+}
+
+// プレイヤー詳細で王国ランキングから出す項目（英雄ランキング4種類・秘境のステージ6種類）。
+const PLAYER_PAGE_RANKING_BOARDS = Object.freeze(["single_hero", "hero_total", "hero_no_equip", "hero_equip", "coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
+
+// 登録ユーザーの王国（王国ウォッチ外）は、王国ランキングにしかない項目を1日1回自動で更新する。
+// 1時間に1回だけ動き、1回に最大6種類。ユーザー操作のために BACKGROUND_KEY_RESERVE 本のキーを空けておく。
+const USER_KINGDOM_RANKING_BOARDS = Object.freeze([...COMPARE_KINGDOM_ONLY_BOARDS, "coliseum", "forest_of_life", "crystal_cave", "knowledge_nexus", "molten_fort", "radiant_spire"]);
+const USER_KINGDOM_RANKING_PER_RUN = 6;
+async function runUserKingdomRankingRefresh(env, { nowMs = Date.now() } = {}) {
+  if (!env?.DB) return { skipped: "NO_DB" };
+  const now = Math.floor(nowMs / 1000);
+  if (Math.floor(now / 3600) === Math.floor((now - 300) / 3600) && now % 3600 >= 300) return { skipped: "NOT_THIS_TICK" }; // 1時間に1回（毎時の最初の5分の実行だけ）
+  const rows = await env.DB.prepare(
+    "SELECT DISTINCT p.kid AS kid FROM user_player_links l JOIN players p ON p.governor_id = l.governor_id WHERE l.status = 'ACTIVE' AND p.kid IS NOT NULL " +
+    "AND p.kid NOT IN (SELECT kid FROM kingdom_watchlists WHERE enabled = 1) LIMIT 50"
+  ).all().catch(() => ({ results: [] }));
+  const kids = (rows.results || []).map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
+  if (!kids.length) return { kingdoms: 0, fetched: 0 };
+  const todo = [];
+  for (let i = 0; i < kids.length; i += 10) todo.push(...await staleKingdomRankingBoards(env.DB, kids.slice(i, i + 10), USER_KINGDOM_RANKING_BOARDS, nowMs));
+  const fetched = await runKingdomRankingJobs(env, todo.slice(0, USER_KINGDOM_RANKING_PER_RUN), { nowMs, purpose: "KINGDOM_RANKING_USER_KINGDOM", reserveApiKeys: BACKGROUND_KEY_RESERVE });
+  return { kingdoms: kids.length, pending: todo.length, fetched };
+}
+
+// 公開の王国ページ用：全王国の「個人の総力」「同盟の総力」のランキングと「秘境の試練」を月1回取り直す（2026-11-15）。
+// ・5分ごとに、王国番号の順に30王国ずつ見て（位置は public_ranking_refresh_state に覚える）、30日より古いものだけ取る。
+//   1周（約2,600王国）は約7時間で回り、実際に取るのは各王国30日に1回だけ（AdSense の審査前に一気にそろえるため・オーナー了承）。
+// ・ランキングは2種類（個人の総力・同盟の総力）を王国ごとに1回ずつ、秘境の試練は1回の呼び出しで6種類の上位10人。5件ずつ並べて取る。
+// ・取ったランキングも14日で R2 に移る（kingdom-ranking-archive.js）。公開ページは R2 の写しも読む。
+// ・API Pool はユーザー用に BACKGROUND_KEY_RESERVE 本を残す。キーが空いていなければその回はやめ、同じ位置からやり直す。
+const PUBLIC_MONTHLY_RANKING_BOARDS = Object.freeze(["personal_power", "alliance_power"]);
+const PUBLIC_MONTHLY_RANKING_SECONDS = 30 * 86400;
+const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 30;
+const PUBLIC_MONTHLY_PARALLEL = 5;
+async function runPublicKingdomMonthlyRanking(env, { nowMs = Date.now() } = {}) {
+  if (!env?.DB) return { skipped: "NO_DB" };
+  const db = env.DB, now = Math.floor(nowMs / 1000);
+  await db.prepare("CREATE TABLE IF NOT EXISTS public_ranking_refresh_state (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)").run();
+  await ensureKingdomMysticCurrent(db);
+  const cursorRow = await db.prepare("SELECT value FROM public_ranking_refresh_state WHERE key = 'cursor'").first().catch(() => null);
+  const cursor = Number(cursorRow?.value) || 0;
+  let rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > ? ORDER BY kid LIMIT ?").bind(cursor, PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  if (!rows.length && cursor > 0) rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > 0 ORDER BY kid LIMIT ?").bind(PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  const kids = rows.map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
+  if (!kids.length) return { kingdoms: 0, fetched: 0 };
+  const report = {};
+  // ランキング（2種類）
+  const todo = await staleKingdomRankingBoards(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS);
+  let fetched = 0;
+  for (let i = 0; i < todo.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+    const done = await Promise.all(todo.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(job => runKingdomRankingJobs(env, [job], { nowMs, purpose: "KINGDOM_RANKING_PUBLIC_MONTHLY", reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report })));
+    fetched += done.reduce((a, b) => a + b, 0);
+  }
+  // 秘境の試練：KvK 用（シーズンごと）か月1回の取り直しのどちらかが30日以内なら取らない。
+  let mystic = 0;
+  if (!report.noKey) {
+    const ph = kids.map(() => "?").join(",");
+    const fresh = new Set(((await db.prepare(`SELECT kid FROM kingdom_mystic_current WHERE kid IN (${ph}) AND fetched_at > ? UNION SELECT kid FROM kvk_mystic_summary WHERE kid IN (${ph}) AND status = 'OK' AND fetched_at > ?`).bind(...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS, ...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)));
+    const need = kids.filter(k => !fresh.has(k));
+    for (let i = 0; i < need.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+      const res = await Promise.all(need.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(kid => fetchAndStoreKingdomMystic(env, kid, { now }).then(() => 1).catch(error => {
+        if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) report.noKey = true;
+        else console.warn("public_kingdom_mystic_failed", kid, error?.code || error?.message || error);
+        return 0;
+      })));
+      mystic += res.reduce((a, b) => a + b, 0);
+    }
+  }
+  // キーが空いていなくて止まったときだけ、同じ王国から次の回にやり直す（ほかの失敗では先へ進む＝1つの王国で止まり続けない）。
+  if (!report.noKey) await db.prepare("INSERT INTO public_ranking_refresh_state (key, value, updated_at) VALUES ('cursor', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").bind(String(kids[kids.length - 1]), now).run();
+  return { kingdoms: kids.length, pending: todo.length, fetched, mystic, noKey: Boolean(report.noKey) };
+}
+
+async function handlePlayerCompareApi(request, env, executionContext = null) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ok:false,error:"UNAUTHORIZED"},401);
+  if (!env.DB) return json({ok:false,error:"DB_NOT_CONFIGURED"},503);
+  const url = new URL(request.url);
+  const ids = normalizeCompareGovernorIds(url.searchParams.getAll("governor_id"));
+  if (ids.length < 2) return json({ok:false,error:"COMPARE_REQUIRES_TWO_PLAYERS",message:"比較するプレイヤーを2人以上選択してください。"},400);
+  try {
+    const visibility = await getPlayerVisibilitySettings(env.DB);
+    const canReadCoreRanks = visibilityEnabled(visibility,"ranks_core",auth.role);
+    const canReadLeaderboardRanks = visibilityEnabled(visibility,"ranks_leaderboards",auth.role);
+    const from = Math.floor(Date.now()/1000)-30*86400;
+    const compareKids = []; // 表示の権限に関係なく、裏の取得に使う王国番号
+    const compareKidById = new Map();
+    const players = await Promise.all(ids.map(async id => {
+      const [raw, storedHistory, rankRows] = await Promise.all([
+        env.DB.prepare("SELECT p.*, o.payload_json AS current_observation_payload_json FROM players p LEFT JOIN api_observations o ON o.observation_id = p.source_observation_id WHERE p.governor_id = ? LIMIT 1").bind(id).first(),
+        getPlayerHistory(env.DB,id,30,env.ARCHIVE,env.HISTORY_STORAGE_MODE),
+        (canReadCoreRanks || canReadLeaderboardRanks)
+          ? getPlayerRankHistory(env.DB,{governorId:id,limit:1,archiveBucket:env.ARCHIVE,historyMode:env.HISTORY_STORAGE_MODE})
+          : Promise.resolve([])
+      ]);
+      if (!raw) return {governor_id:id,missing:true};
+      compareKids.push(raw.kid);
+      compareKidById.set(id, Number(raw.kid));
+      let observationPayload = {};
+      try { observationPayload = JSON.parse(raw.current_observation_payload_json || "{}"); } catch {}
+      const playerRow = { ...raw };
+      delete playerRow.current_observation_payload_json;
+      const player = filterPlayerForRole(playerRow,auth.role,{},visibility);
+      const profile = filterPlayerProfileForRole(observationPayload,auth.role,visibility);
+      const heroesVisible = ["heroes_list","heroes_skills","heroes_exclusive_gear","heroes_gear"].some(key => visibilityEnabled(visibility,key,auth.role));
+      const gearVisible = visibilityEnabled(visibility,"gov_gear_list",auth.role) || visibilityEnabled(visibility,"gov_gear_gems",auth.role);
+      const observationPlayer = observationPayload.player && typeof observationPayload.player === "object" ? observationPayload.player : observationPayload;
+      const observedHeroes = Array.isArray(observationPayload.heroes) ? observationPayload.heroes : observationPlayer.heroes;
+      const observedGovGear = observationPayload.gov_gear && typeof observationPayload.gov_gear === "object" ? observationPayload.gov_gear : observationPlayer.gov_gear;
+      const profileNeedsRich = (heroesVisible && !Array.isArray(observedHeroes)) || (gearVisible && !(observedGovGear && Array.isArray(observedGovGear.items)));
+      const snapshots = (storedHistory||[]).map(row=>({observed_at:row.observed_at,player:filterPlayerForRole(row.player||{},auth.role,row.profile||{},visibility)}));
+      const latestRankRow = Array.isArray(rankRows) ? rankRows[0] : null;
+      let leaderboardData = [];
+      if (latestRankRow && canReadLeaderboardRanks) {
+        if (Array.isArray(latestRankRow.leaderboards)) {
+          leaderboardData = latestRankRow.leaderboards;
+        } else {
+          try {
+            const parsed = JSON.parse(latestRankRow.leaderboards_json || "[]");
+            if (Array.isArray(parsed)) leaderboardData = parsed;
+          } catch {}
+        }
+      }
+      const rankTypeBoardKeys = {3:"personal_power",4:"kills",5:"town_center",19:"migrant_score",20:"mystic_trial",21:"coliseum",22:"forest_of_life",23:"crystal_cave",24:"knowledge_nexus",25:"molten_fort",26:"radiant_spire"};
+      const normalizeBoardKey = entry => {
+        const rankType = Number(entry?.rank_type);
+        if (rankTypeBoardKeys[rankType]) return rankTypeBoardKeys[rankType];
+        const rawKey = String(entry?.key ?? entry?.board ?? entry?.id ?? entry?.name ?? entry?.label ?? "").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const aliases = {personalpower:"personal_power",killcount:"kills",towncenterlevel:"town_center",migrantscore:"migrant_score",mystictrial:"mystic_trial"};
+        return aliases[rawKey] || rawKey;
+      };
+      if (canReadLeaderboardRanks && raw.kid != null && Number.isFinite(Number(raw.kid))) {
+        const playerTargetIds = [...new Set([id, raw.uid, raw.fid].map(value => String(value ?? "").trim()).filter(Boolean))];
+        const allianceTargetIds = raw.alliance_aid == null ? [] : [String(raw.alliance_aid).trim()].filter(Boolean);
+        const queryBoards = allianceTargetIds.length
+          ? KINGDOM_RANKING_BOARDS
+          : KINGDOM_RANKING_BOARDS.filter(board => board !== "alliance_power" && board !== "alliance_kills");
+        if (playerTargetIds.length) {
+          const boardPlaceholders = queryBoards.map(() => "?").join(",");
+          const playerPlaceholders = playerTargetIds.map(() => "?").join(",");
+          const allianceClause = allianceTargetIds.length
+            ? " OR (target_type = 'ALLIANCE' AND target_id IN (" + allianceTargetIds.map(() => "?").join(",") + "))"
+            : "";
+          const stored = await withArchivedRankings(env, raw.kid, await env.DB.prepare(
+            "SELECT board, target_type, target_id, rank, score, observed_at, source_observed_at " +
+            "FROM kingdom_ranking_current WHERE kid = ? AND board IN (" + boardPlaceholders + ") AND " +
+            "((target_type = 'PLAYER' AND target_id IN (" + playerPlaceholders + "))" + allianceClause + ")"
+          ).bind(Number(raw.kid), ...queryBoards, ...playerTargetIds, ...allianceTargetIds).all(), {
+            filter: row => queryBoards.includes(row.board) && (
+              (row.target_type === "PLAYER" && playerTargetIds.map(String).includes(String(row.target_id))) ||
+              (row.target_type === "ALLIANCE" && allianceTargetIds.map(String).includes(String(row.target_id))))
+          });
+          const knownBoards = new Set(leaderboardData.map(normalizeBoardKey));
+          for (const row of stored.results || []) {
+            if (row.score == null || row.score === "") continue;
+            const numericScore = Number(row.score);
+            const scoreValue = Number.isFinite(numericScore) ? numericScore : String(row.score);
+            const boardKey = String(row.board || "");
+            if (row.target_type === "PLAYER") {
+              if (knownBoards.has(boardKey)) {
+                const existingIndex = leaderboardData.findIndex(entry => normalizeBoardKey(entry) === boardKey);
+                if (existingIndex >= 0) {
+                  const existing = leaderboardData[existingIndex];
+                  if (existing.kingdom_rank == null && !existing.kingdom_rank_label && row.rank != null) {
+                    leaderboardData[existingIndex] = {...existing, kingdom_rank:row.rank, kingdom_rank_label:"#"+row.rank, observed_at:existing.observed_at ?? row.observed_at, source_observed_at:existing.source_observed_at ?? row.source_observed_at};
+                  }
+                }
+                continue;
+              }
+              leaderboardData.push({key:boardKey,board:boardKey,name:RANKING_BOARD_LABELS[boardKey] || boardKey,label:RANKING_BOARD_LABELS[boardKey] || boardKey,value:scoreValue,kingdom_rank:row.rank,kingdom_rank_label:row.rank == null ? null : "#"+row.rank,observed_at:row.observed_at ?? null,source_observed_at:row.source_observed_at ?? null,data_source:"KINGDOM_RANKING_CURRENT"});
+              knownBoards.add(boardKey);
+            } else if (row.target_type === "ALLIANCE") {
+              const allianceKey = boardKey + "_alliance";
+              if (leaderboardData.some(entry => String(entry.key || "") === allianceKey)) continue;
+              const label = (RANKING_BOARD_LABELS[boardKey] || boardKey) + "（所属同盟）";
+              leaderboardData.push({key:allianceKey,board:boardKey,name:label,label,value:scoreValue,kingdom_rank:row.rank,kingdom_rank_label:row.rank == null ? null : "#"+row.rank,observed_at:row.observed_at ?? null,source_observed_at:row.source_observed_at ?? null,data_source:"KINGDOM_RANKING_CURRENT",target_type:"ALLIANCE"});
+            }
+          }
+        }
+      }
+      leaderboardData = leaderboardData.map(entry => {
+        const boardKey = normalizeBoardKey(entry);
+        const label = RANKING_BOARD_LABELS[boardKey];
+        return label && !String(entry.key || "").endsWith("_alliance")
+          ? {...entry,key:boardKey,name:label,label}
+          : entry;
+      });
+      const rankings = latestRankRow || leaderboardData.length ? {
+        observed_at: latestRankRow?.observed_at ?? null,
+        source_observed_at: latestRankRow?.source_observed_at ?? null,
+        ...(canReadCoreRanks && latestRankRow ? {
+          power: latestRankRow.power ?? null, power_rank: latestRankRow.power_rank ?? null,
+          kills: latestRankRow.kills ?? null, kills_rank: latestRankRow.kills_rank ?? null,
+          town_center_level: latestRankRow.town_center_level ?? null, town_center_rank: latestRankRow.town_center_rank ?? null,
+          migrant_score: latestRankRow.migrant_score ?? null, migrant_rank: latestRankRow.migrant_rank ?? null,
+          mystic_trial: latestRankRow.mystic_trial ?? null, mystic_rank: latestRankRow.mystic_rank ?? null
+        } : {}),
+        leaderboards: leaderboardData
+      } : null;
+      const series = buildPlayerCompareSeries({playerHistory:snapshots,rankHistory:[],fromUnix:from});
+      const history = series.power;
+      const first = history[0], last = history[history.length-1];
+      await trackServiceUsage(env,auth,"PLAYER_COMPARE_VIEW",{targetType:"PLAYER",targetId:id,metadata:{comparison_count:ids.length,history_days:30,rank_snapshot_available:!!latestRankRow}});
+      return {governor_id:id,player,profile,profileNeedsRich,rankings,rankingsExpected:canReadCoreRanks||canReadLeaderboardRanks,history,rankHistory:[],period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
+    }));
+    // 比較に出す項目のうち、王国ランキングからしか取れないもの（領主宝石・英雄総力など）が無い／古い王国は、裏で取りに行く。
+    const rankingPending = isQuietAgentRequest(request, auth) ? [] : await scheduleCompareRankingFetch(env, executionContext, compareKids);
+    // その王国で取得済み（7日以内）のランキングの種類。表に値が無いとき「100位圏外」か「取得中」かを分ける。
+    const checkedKids = [...new Set([...compareKidById.values()].filter(k => Number.isInteger(k) && k > 0))];
+    const checkedByKid = new Map();
+    if (checkedKids.length) {
+      const st = await env.DB.prepare("SELECT kid, board FROM kingdom_ranking_board_state WHERE kid IN (" + checkedKids.map(() => "?").join(",") + ") AND last_checked_at > ?")
+        .bind(...checkedKids, Math.floor(Date.now() / 1000) - 7 * 86400).all().catch(() => ({ results: [] }));
+      for (const r of st.results || []) { const k = Number(r.kid); if (!checkedByKid.has(k)) checkedByKid.set(k, []); checkedByKid.get(k).push(String(r.board)); }
+    }
+    const pendingKids = new Set(rankingPending.map(x => Number(x.kid)));
+    for (const p of players) if (!p.missing) { const k = compareKidById.get(p.governor_id); p.rankingChecked = checkedByKid.get(k) || []; p.rankingPending = pendingKids.has(k); }
+    return json({ok:true,players,period_days:30,rankingPending});
+  } catch (error) {
+    console.error("Player compare API error:",error);
+    return json({ok:false,error:"PLAYER_COMPARE_READ_FAILED",message:"比較データを読み込めませんでした。時間をおいて再試行してください。"},500);
+  }
+}
+
+async function renderPlayerComparePage(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "プレイヤー比較", "プレイヤー比較を使うにはログインしてください。"));
+  const pageUrl = new URL(request.url);
+  let ids = normalizeCompareGovernorIds(pageUrl.searchParams.getAll("governor_id"));
+  // 自分の領主（マイKingShot のメイン）を最初に入れる（ウォッチリストに入れなくても自分と比べられる・2026-11-16）。me=0 で外す。
+  let meNote = "";
+  if (pageUrl.searchParams.get("me") !== "0" && env.DB && auth.user_id) {
+    const mine = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    const own = normalizeCompareGovernorIds([String(mine?.governor_id || "")])[0];
+    if (own) {
+      const others = ids.filter(id => id !== own);
+      ids = normalizeCompareGovernorIds([own, ...others]);
+      const off = new URL(pageUrl); off.searchParams.set("me", "0"); off.searchParams.delete("governor_id"); others.forEach(id => off.searchParams.append("governor_id", id));
+      // アドレスは「入っている全員＋me=0」に書き換える（共有したリンクを開いた人の領主が勝手に入らないように）。
+      const fixed = new URL(pageUrl); fixed.searchParams.delete("governor_id"); ids.forEach(id => fixed.searchParams.append("governor_id", id)); fixed.searchParams.set("me", "0");
+      meNote = '<p class="sub" id="meNote">あなたの領主（ID ' + own + '）を自動で入れています。' + (others.length ? '<a href="' + escapeHtml(off.pathname + off.search) + '">外す</a>' : '') + '</p><script>try{history.replaceState(null,"",' + JSON.stringify(fixed.pathname + fixed.search).replace(/</g, "\\u003c") + ')}catch(e){}</script>';
+    }
+  }
+  const initial = JSON.stringify(ids);
+  const escSkill = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const html = '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>プレイヤー比較 | EagleEye</title><style>'+
+  ':root{color-scheme:dark;--bg:var(--ee-bg,#0a1424);--panel:var(--ee-panel,#0f2035);--raised:var(--ee-panel-raised,#172a40);--border:var(--ee-border-soft,#1d344d);--text:var(--ee-text,#e8f3ff);--sub:var(--ee-subtext,#91a7bf);--cyan:var(--ee-cyan,#22d3ee);--ring-1:var(--ee-cyan,#22d3ee);--ring-2:var(--ee-blue,#60a5fa);--ring-3:var(--ee-gold,#f0c75e);--ring-4:var(--ee-success,#22c55e)}:root[data-eagle-theme="light"]{--ring-1:var(--accent,var(--ee-cyan,#22d3ee));--ring-2:var(--accent-strong,var(--ee-blue,#60a5fa));--ring-3:var(--warning,var(--ee-gold,#f0c75e));--ring-4:var(--ok,var(--ee-success,#22c55e))}*{box-sizing:border-box}body{margin:0;padding:16px 12px 40px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:1100px;margin:auto}.back{display:inline-block;color:var(--cyan);text-decoration:none;font-weight:800;margin-bottom:14px}.head h1{font-size:24px;margin:0 0 6px}.sub,.count,.metric,.footnote{font-size:12px;color:var(--sub);line-height:1.6}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:18px 0}button{border:1px solid var(--border);border-radius:10px;background:var(--raised);color:var(--text);padding:11px 14px;font:inherit;font-size:13px;font-weight:800}.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:14px;margin:12px 0}.status{padding:22px;text-align:center;color:var(--sub)}.error{color:#ff8d96}.power-showcase{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;margin:12px 0 18px}.power-card{display:flex;align-items:center;gap:14px;min-width:0;padding:14px;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,var(--panel),var(--raised));overflow:hidden}.power-ring{width:112px;height:112px;flex:0 0 112px;position:relative}.power-ring svg{display:block;width:100%;height:100%;overflow:visible}.ring-base,.ring-value{fill:none;stroke-width:8}.ring-base{stroke:var(--border)}.ring-value{stroke:var(--ring-color,var(--cyan));stroke-linecap:round;stroke-dasharray:263.9;stroke-dashoffset:263.9;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset 950ms cubic-bezier(.2,.7,.2,1),stroke .25s ease;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--ring-color,var(--cyan)) 45%,transparent))}.power-ring.ready .ring-value{stroke-dashoffset:var(--ring-offset,0)}.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center}.ring-number{font-size:17px;font-weight:900;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.ring-caption{font-size:9px;color:var(--sub)}.power-info{min-width:0;flex:1}.power-info .pname{font-size:14px;overflow-wrap:anywhere}.power-info .pid{font-size:11px;overflow-wrap:anywhere}.power-label{font-size:10px;color:var(--sub);margin-top:7px}.power-value{font-size:18px;font-weight:900;overflow-wrap:anywhere}.power-ratio{font-size:11px;color:var(--sub);margin-top:3px}.table-wrap{overflow:visible;border:0;border-radius:14px}.compare-table{width:100%;min-width:0;border-collapse:collapse;font-size:13px;table-layout:fixed}.compare-table th,.compare-table td{overflow-wrap:anywhere}.compare-table th:first-child{width:118px}.compare-controls{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 12px}.compare-controls label{display:flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--raised);font-size:12px}.compare-controls input{accent-color:var(--cyan)}.compare-table th,.compare-table td{padding:12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}.compare-table th{background:var(--raised);min-width:0}.player-head{display:flex;align-items:center;gap:8px}.avatar{width:38px;height:38px;border-radius:9px;object-fit:cover;background:var(--raised)}.pname{font-weight:900}.pid{font-size:10px;color:var(--sub);margin-top:3px}.value{font-size:14px;font-weight:850;overflow-wrap:anywhere}.section-title{font-size:15px}.chart{display:flex;align-items:end;gap:4px;height:115px;padding:10px 2px 20px;border-bottom:1px solid var(--border)}.bar-group{flex:1;min-width:5px;height:100%;display:flex;align-items:end;position:relative}.bar{width:100%;min-height:2px;border-radius:3px 3px 0 0;background:var(--cyan)}.bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--sub);white-space:nowrap}.compare-item-selector{margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}.compare-item-selector summary{cursor:pointer;font-weight:800}.compare-item-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.compare-item-actions button{padding:6px 9px;font-size:11px}.compare-item-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:6px;max-height:260px;overflow:auto}.compare-item-list label{display:flex;align-items:flex-start;gap:6px;font-size:11px;color:var(--sub);padding:5px;border:1px solid var(--border);border-radius:8px;overflow-wrap:anywhere}.compare-player-cards{display:none}.compare-player-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:12px;min-width:0}.compare-player-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.compare-player-card-head img{width:34px;height:34px;border-radius:8px;object-fit:cover}.compare-player-metrics{display:grid;gap:0}.compare-metric{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}.compare-metric span{color:var(--sub);overflow-wrap:anywhere}.compare-metric strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.compare-metric small{grid-column:1/-1;color:var(--sub);font-size:10px}@media(max-width:480px){.power-card{padding:11px;gap:10px}.power-ring{width:94px;height:94px;flex-basis:94px}.ring-number{font-size:15px}.power-value{font-size:16px}.table-wrap{display:none}#hero-skill-catalog .table-wrap{display:block;overflow-x:auto}#hero-skill-catalog .compare-table{min-width:600px}.compare-player-cards{display:grid;grid-template-columns:1fr;gap:10px}.compare-player-card{padding:10px}.compare-metric{font-size:11px;gap:6px}.compare-metric strong{font-size:11px}}.mystic-section{isolation:isolate;position:relative;overflow:hidden;margin:14px 0 18px;padding:16px;border:1px solid #22d3ee55;border-radius:20px;background:radial-gradient(520px 200px at 50% 0%,#22d3ee1c,transparent 70%),linear-gradient(150deg,var(--panel),var(--raised));box-shadow:0 0 28px #22d3ee17}.mystic-title{text-align:center;font-size:15px;letter-spacing:.08em;font-weight:900;margin:0 0 12px}.mystic-card{--a:var(--ring-1);--b:var(--ring-2);position:relative;min-width:0;border:1px solid #22d3ee44;border-radius:16px;background:var(--panel);padding:12px 8px;text-align:center;overflow:hidden}.mystic-card.is-main{width:100%;max-width:460px;padding:16px 12px 14px;--a:#ffd166;--b:#ff5b35;border-color:#ff9a4277;box-shadow:0 0 30px #ff8a2422,inset 0 0 28px #ff8a2410}.mystic-card.is-sub{--a:#42d9ff;--b:#a18aff;padding:10px 6px}.mystic-name{font-size:13px;font-weight:900;line-height:1.3}.mystic-card.is-main .mystic-name{font-size:18px}.mystic-ring{position:relative;width:clamp(142px,45vw,190px);aspect-ratio:1;margin:6px auto 2px}.mystic-card.is-main .mystic-ring{width:clamp(205px,64vw,280px);margin:8px auto 4px}.mystic-ring svg{width:100%;height:100%;display:block;overflow:visible}.mystic-track,.mystic-arc{fill:none;stroke-width:7}.mystic-track{stroke:var(--border);opacity:.85}.mystic-arc{stroke-linecap:round;stroke-dasharray:565.49;stroke-dashoffset:565.49;transform:rotate(-90deg);transform-origin:50% 50%;filter:drop-shadow(0 0 5px currentColor);transition:stroke-dashoffset 1300ms cubic-bezier(.14,.8,.2,1)}.mystic-arc.a{stroke:var(--a);color:var(--a)}.mystic-arc.b{stroke:var(--b);color:var(--b);stroke-width:5}.mystic-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;pointer-events:none}.mystic-delta{font-size:clamp(20px,6vw,29px);font-weight:950;letter-spacing:-.05em;font-variant-numeric:tabular-nums}.mystic-card.is-main .mystic-delta{font-size:clamp(27px,8vw,38px)}.mystic-delta-label{font-size:10px;color:var(--sub)}.mystic-values{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:5px}.mystic-value{font-size:clamp(13px,3.7vw,17px);font-weight:900;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.mystic-value small{display:block;font-size:10px;font-weight:800;color:var(--sub);margin-bottom:2px}.mystic-value.a small{color:var(--a)}.mystic-value.b small{color:var(--b)}.mystic-ranks{font-size:10px;color:var(--sub);margin-top:3px}.mystic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}.mystic-card.is-sub .mystic-ring{width:clamp(104px,30vw,142px);margin:4px auto 0}.mystic-card.is-sub .mystic-track,.mystic-card.is-sub .mystic-arc{stroke-width:6}.mystic-card.is-sub .mystic-arc.b{stroke-width:4}.mystic-card.is-sub .mystic-delta{font-size:clamp(14px,4vw,20px)}.mystic-card.is-sub .mystic-delta-label,.mystic-card.is-sub .mystic-value small,.mystic-card.is-sub .mystic-ranks{font-size:9px}.mystic-card.is-sub .mystic-value{font-size:12px}.mystic-sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}.mystic-spark{position:absolute;left:50%;top:50%;width:3px;height:3px;border-radius:50%;background:var(--spark,#ffe29a);box-shadow:0 0 8px 2px var(--spark,#ffe29a);opacity:0;animation:mystic-spark-burst 850ms ease-out both;animation-delay:var(--delay,0ms)}.mystic-card.is-main .mystic-spark{width:4px;height:4px}.mystic-card.ignite.is-main{animation:mystic-impact 700ms cubic-bezier(.2,.8,.2,1) both}.mystic-card.ignite.is-main:after{content:\"\";position:absolute;inset:8%;border:1px solid #ffbd5a88;border-radius:50%;pointer-events:none;animation:mystic-shockwave 850ms ease-out both}.mystic-card.is-sub.ignite{animation:mystic-sub-impact 500ms ease-out both}@keyframes mystic-spark-burst{0%{transform:translate(-50%,-50%) rotate(var(--angle)) translateY(0) scale(1);opacity:0}12%{opacity:1}100%{transform:translate(-50%,-50%) rotate(var(--angle)) translateY(calc(-1 * var(--distance))) scale(.1);opacity:0}}@keyframes mystic-impact{0%{filter:brightness(1);transform:scale(.985)}24%{filter:brightness(1.65);transform:scale(1.012)}52%{filter:brightness(1.1);transform:scale(.998)}100%{filter:brightness(1);transform:scale(1)}}@keyframes mystic-sub-impact{0%{filter:brightness(1)}35%{filter:brightness(1.5)}100%{filter:brightness(1)}}@keyframes mystic-shockwave{0%{transform:scale(.72);opacity:.9}100%{transform:scale(1.18);opacity:0}}@media(min-width:620px){.mystic-section{padding:20px}.mystic-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.mystic-card.is-sub .mystic-ring{width:clamp(110px,15vw,145px)}}@media(prefers-reduced-motion:reduce){.mystic-spark,.mystic-card,.mystic-card:after{animation:none!important}.mystic-arc{transition:none}}@media(prefers-reduced-motion:reduce){.ring-value{transition:none}}@media(min-width:760px){body{padding:26px}.panel{padding:20px}}'+
+  '</style></head><body><main class="wrap"><a class="back" href="/watchlist">← プレイヤーウォッチリストへ戻る</a><header class="head"><h1>プレイヤー比較</h1>'+meNote+'<div class="sub">2〜6人を横並びで比較します。推移は保存済みの過去30日データのみを使用します。</div></header><div class="toolbar"><span class="count" id="count"></span><button id="retry">再読み込み</button><button id="refresh">最新データで比較</button></div><div id="content" class="panel"><div class="status">比較データを読み込み中…</div></div></main><script>(function(){var startedAt=Date.now();var timer=setInterval(function(){var box=document.getElementById("content");if(!box){clearInterval(timer);return}var status=box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){if(Date.now()-startedAt>=5000){status.className="status error";status.textContent="比較画面の初期化が完了しませんでした。JavaScriptエラーまたは古い画面データの可能性があります。再読み込みしてください。";clearInterval(timer)}}else{clearInterval(timer)}},1000);window.addEventListener("error",function(){var box=document.getElementById("content");var status=box&&box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){status.className="status error";status.textContent="比較画面のJavaScript初期化エラーを検出しました。再読み込みしてください。";clearInterval(timer)}})})();</script><script>(function(){const ids='+initial+';const box=document.getElementById("content"),count=document.getElementById("count"),retry=document.getElementById("retry");'+
+  'const esc=v=>String(v==null?"—":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(new RegExp(String.fromCharCode(34),"g"),"&quot;").split(String.fromCharCode(39)).join("&#39;");const num=v=>v==null||v===""||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("ja-JP");const compact=v=>{if(v==null||!Number.isFinite(Number(v)))return "—";const n=Number(v),a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(1)+"B":a>=1e6?(n/1e6).toFixed(1)+"M":a>=1e3?(n/1e3).toFixed(1)+"K":num(n)};const date=v=>v?new Date(Number(v)*1000).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"";'+
+  "function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());const ps=d.players||[];const observed=ps.filter(p=>!p.missing&&Number(p.player&&p.player.observed_at)>0).map(p=>Number(p.player.observed_at));const oldest=observed.length?Math.min.apply(null,observed):0;count.textContent=ps.length+\"人を比較中 · 過去30日 · 最終取得 \"+(oldest?new Date(oldest*1000).toLocaleString(\"ja-JP\"):\"日時不明\");const fields=[[\"戦力\",\"power\",compact],[\"役場レベル\",\"town_center_level\",num],[\"VIP\",\"vip\",num],[\"撃破数\",\"kills\",compact],[\"王国\",\"kid\",num],[\"同盟略称\",\"alliance_abbr\",v=>v||\"—\"],[\"同盟名\",\"alliance_name\",v=>v||\"—\"],[\"同盟役職\",\"alliance_rank_label\",v=>v||\"—\"],[\"座標 X\",\"x\",num],[\"座標 Y\",\"y\",num]];let h=\"<div class=\\\"table-wrap\\\"><table class=\\\"compare-table\\\"><thead><tr><th>比較項目</th>\"+ps.map(p=>\"<th><div class=\\\"player-head\\\">\"+(p.player&&p.player.avatar_url?\"<img class=\\\"avatar\\\" src=\\\"\"+esc(p.player.avatar_url)+\"\\\" alt=\\\"\\\" loading=\\\"lazy\\\">\":\"<div class=\\\"avatar\\\"></div>\")+\"<div><div class=\\\"pname\\\">\"+esc(p.player&&p.player.nick_name||\"データなし\")+\"</div><div class=\\\"pid\\\">ID \"+esc(p.governor_id)+\"</div></div></div></th>\").join(\"\")+\"</tr></thead><tbody>\";fields.forEach(f=>{h+=\"<tr><th>\"+f[0]+\"</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+esc(p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]))+\"</span></td>\").join(\"\")+\"</tr>\"});const coreRankRows=[];const coreRankScoreRows=[];const rankTypeBoardKeys={3:\"personal_power\",4:\"kills\",5:\"town_center\",19:\"migrant_score\",20:\"mystic_trial\",21:\"coliseum\",22:\"forest_of_life\",23:\"crystal_cave\",24:\"knowledge_nexus\",25:\"molten_fort\",26:\"radiant_spire\"};const boardNameAliases={personalpower:\"personal_power\",killcount:\"kills\",towncenterlevel:\"town_center\",migrantscore:\"migrant_score\",mystictrial:\"mystic_trial\"};const leaderboardRows=new Map();ps.forEach(p=>{const lists=[p.rankings&&p.rankings.leaderboards,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];lists.forEach(list=>{if(!Array.isArray(list))return;list.forEach(board=>{if(!board||typeof board!==\"object\")return;const label=String(board.label??board.name??board.board_name??board.key??board.board??board.id??\"\").trim();if(!label)return;const rawScore=board.value??board.score??board.rank_value??board.points;if(rawScore==null||rawScore===\"\")return;const numericScore=Number(rawScore);const displayScore=Number.isFinite(numericScore)?numericScore:String(rawScore);const rawBoardKey=String(board.key??board.board??board.id??board.name??label).toLowerCase().replace(/[^a-z0-9]/g,\"\");const key=rankTypeBoardKeys[Number(board.rank_type)]||boardNameAliases[rawBoardKey]||rawBoardKey||label;if(!leaderboardRows.has(key))leaderboardRows.set(key,{key,label,byId:{}});leaderboardRows.get(key).byId[p.governor_id]={...board,value:displayScore};})})});leaderboardRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"ランキング：\"+row.label)+\"</th>\"+ps.map(p=>{const board=row.byId[p.governor_id];if(!board){const rk=String(row.key||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");const checked=Array.isArray(p.rankingChecked)&&rk!==\"\"&&p.rankingChecked.some(function(b){return String(b).toLowerCase().replace(/[^a-z0-9]/g,\"\")===rk});return checked?\"<td class=\\\"rank-out\\\">100位圏外</td>\":p.rankingPending?\"<td>取得中</td>\":\"<td>—</td>\"};const score=board.value??board.score??board.rank_value;const rank=board.kingdom_rank??board.rank??board.ranking;const rankLabel=rank!=null?num(rank):(board.kingdom_rank_label||\"\");const meta=[];if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board.value_label||formattedScore;const apiNote=board.value_label&&score!=null?\"<div class=\\\"metric\\\">API値 \"+esc(formattedScore)+\"</div>\":\"\";return \"<td><span class=\\\"value\\\">\"+esc(display)+\"</span>\"+apiNote+(meta.length?\"<div class=\\\"metric\\\">\"+esc(meta.join(\" · \"))+\"</div>\":\"\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;if(!heroRows.has(key))heroRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroRows.get(key).byId[p.governor_id]=hero})});heroRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"闘技場防衛編成：\"+row.label)+\"</th>\"+ps.map(p=>{const hero=row.byId[p.governor_id];if(!hero)return \"<td>—</td>\";const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroGearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&& (hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.gear)?hero.gear:[]).forEach(item=>{const slot=String(item&&(item.slot??item.sid??item.name)||\"\").trim();if(!slot)return;const key=heroKey+\"::\"+slot;if(!heroGearRows.has(key))heroGearRows.set(key,{label:heroLabel+\" / \"+slot,byId:{}});heroGearRows.get(key).byId[p.governor_id]=item;});});});heroGearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"防衛編成装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>装備情報なし</td>\";const parts=[];if(item.name)parts.push(String(item.name));if(item.quality_label||item.quality)parts.push(String(item.quality_label||item.quality));if(item.enhancement_level!=null)parts.push(\"強化 +\"+item.enhancement_level);if(item.refine_level!=null)parts.push(\"精錬 \"+item.refine_level);if(item.gear_level!=null)parts.push(\"装備Lv. \"+item.gear_level);if(item.red===true)parts.push(\"赤装備\");if(item.troop_label||item.troop)parts.push(String(item.troop_label||item.troop));return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\";}).join(\"\")+\"</tr>\"});const heroSkillRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&&(hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.skill_levels)?hero.skill_levels:[]).forEach(skill=>{const skillKey=String(skill&&(skill.id??skill.name)||\"\").trim();if(!skillKey)return;const key=heroKey+\"::\"+skillKey;if(!heroSkillRows.has(key))heroSkillRows.set(key,{label:heroLabel+\" / \"+skillKey,byId:{}});heroSkillRows.get(key).byId[p.governor_id]=skill;});});});heroSkillRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"英雄スキル：\"+row.label)+\"</th>\"+ps.map(p=>{const skill=row.byId[p.governor_id];if(!skill)return \"<td>スキル情報なし</td>\";return \"<td>\"+esc(skill.level==null?\"データなし\":\"Lv. \"+skill.level)+\"</td>\"}).join(\"\")+\"</tr>\"});const heroExclusiveRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;const gear=hero.exclusive_gear;const level=hero.exclusive_gear_level;if((gear==null)&&(level==null))return;if(!heroExclusiveRows.has(key))heroExclusiveRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroExclusiveRows.get(key).byId[p.governor_id]={gear,level};});});heroExclusiveRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"専用装備：\"+row.label)+\"</th>\"+ps.map(p=>{const entry=row.byId[p.governor_id];if(!entry)return \"<td>専用装備情報なし</td>\";const gear=entry.gear;const parts=[];if(gear&&gear.name)parts.push(String(gear.name));const level=gear&&gear.level!=null?gear.level:entry.level;if(level!=null)parts.push(\"Lv. \"+level);if(gear&&gear.slot!=null)parts.push(\"スロット \"+gear.slot);if(gear&&gear.atk_ratio!=null)parts.push(\"攻撃補正 \"+gear.atk_ratio);if(gear&&gear.hp_ratio!=null)parts.push(\"HP補正 \"+gear.hp_ratio);if(gear&&gear.def_ratio!=null)parts.push(\"防御補正 \"+gear.def_ratio);if(gear&&gear.power_ratio!=null)parts.push(\"戦力補正 \"+gear.power_ratio);if(gear&&Array.isArray(gear.slg_attr)&&gear.slg_attr.length)parts.push(\"SLG属性 \"+gear.slg_attr.length+\"件\");if(gear==null&&level!=null)parts.push(\"詳細未提供\");return \"<td>\"+esc(parts.join(\" · \")||\"未取得\")+\"</td>\";}).join(\"\")+\"</tr>\"});const gearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const key=String(item&&(item.slot??item.id??item.name)||\"\").trim();if(!key)return;if(!gearRows.has(key))gearRows.set(key,{label:key,byId:{}});gearRows.get(key).byId[p.governor_id]=item})});gearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"領主装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>—</td>\";const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});h+=\"<tr><th>30日間の戦力変化</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+(p.period&&p.period.powerDelta!=null?((p.period.powerDelta>0?\"+\":\"\")+esc(compact(p.period.powerDelta))):\"—\")+\"</span><div class=\\\"metric\\\">\"+esc(p.period&&p.period.observations||0)+\"件の履歴</div></td>\").join(\"\")+\"</tr></tbody></table></div><section class=\\\"panel\\\"><h2 class=\\\"section-title\\\">戦力推移（30日）</h2>\";const active=ps.filter(p=>!p.missing&&(p.history||[]).length>1);if(!active.length)h+=\"<div class=\\\"status\\\">比較できる履歴がまだありません。履歴が蓄積するとここに推移を表示します。</div>\";else{const vals=active.flatMap(p=>p.history.map(x=>Number(x.power))).filter(Number.isFinite),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),range=hi-lo||1;active.forEach(p=>{h+=\"<div class=\\\"metric\\\">\"+esc(p.player.nick_name||p.governor_id)+\" · \"+p.history.length+\"件</div><div class=\\\"chart\\\">\"+p.history.slice(-30).map((x,i,a)=>\"<div class=\\\"bar-group\\\"><div class=\\\"bar\\\" title=\\\"\"+esc(date(x.observed_at)+\" · \"+compact(x.power))+\"\\\" style=\\\"height:\"+Math.max(3,(Number(x.power)-lo)/range*100)+\"%\\\"></div>\"+(i===0||i===a.length-1?\"<span class=\\\"bar-label\\\">\"+esc(date(x.observed_at))+\"</span>\":\"\")+\"</div>\").join(\"\")+\"</div>\"})}h+=\"<div class=\\\"footnote\\\">保存済みデータを使用し、比較のための外部API追加取得は行いません。未取得の項目は「—」で表示します。</div></section>\";function addMysticTrialComparison(players){const boards=[[\"mystic_trial\",\"秘境の試練\"],[\"coliseum\",\"闘技場\"],[\"forest_of_life\",\"生命の森\"],[\"crystal_cave\",\"水晶鉱山\"],[\"knowledge_nexus\",\"知識の枢軸\"],[\"molten_fort\",\"溶岩要塞\"],[\"radiant_spire\",\"輝光の塔\"]];const entry=(p,k)=>{const srcs=[p.rankings,p.profile&&p.profile.ranks,p.player&&p.player.ranks,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];for(const s of srcs){if(!s)continue;if(s[k]!=null)return k===\"mystic_trial\"&&s.mystic_rank!=null?{score:s[k],kingdom_rank:s.mystic_rank}:s[k];const arr=Array.isArray(s)?s:Array.isArray(s.leaderboards)?s.leaderboards:[];const x=arr.find(x=>{const id=String(x&&(x.board??x.key??x.id??x.type??x.name??x.slug)||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");return id===k.replace(/_/g,\"\")||String(x&&x.label||\"\").includes(boards.find(b=>b[0]===k)[1])});if(x)return x}return null};const unpack=e=>{if(e==null)return{score:null,rank:null,label:null,rankType:null};if(typeof e===\"number\"||(typeof e===\"string\"&&e.trim()!==\"\"&&Number.isFinite(Number(e))))return{score:Number(e),rank:null,label:null,rankType:null};if(typeof e!==\"object\")return{score:null,rank:null,label:null,rankType:null};const pick=ks=>{for(const k of ks)if(e[k]!=null&&e[k]!==\"\"&&Number.isFinite(Number(e[k])))return Number(e[k]);return null};return{score:pick([\"value\",\"score\",\"rank_value\",\"points\",\"power\",\"current_value\",\"total\"]),rank:pick([\"kingdom_rank\",\"rank\",\"position\",\"ranking\",\"leaderboard_rank\",\"rank_no\"]),rankLabel:e.kingdom_rank_label==null?null:String(e.kingdom_rank_label),label:e.value_label==null?null:String(e.value_label),rankType:e.rank_type==null?null:String(e.rank_type)}};const vals=players.map(p=>({id:String(p.governor_id),name:String(p.player&&p.player.nick_name||p.governor_id),data:Object.fromEntries(boards.map(([k])=>[k,unpack(entry(p,k))]))}));const sec=document.createElement(\"section\");sec.className=\"mystic-section\";const title=document.createElement(\"h2\");title.className=\"mystic-title\";title.textContent=\"秘境の試練\";sec.appendChild(title);const colors=[\"#ffd166\",\"#42d9ff\",\"#a18aff\",\"#5ee6a8\",\"#fb923c\",\"#f472b6\"];const card=(key,label,main)=>{const c=document.createElement(\"article\");c.className=\"mystic-card \"+(main?\"is-main\":\"is-sub\");const n=document.createElement(\"div\");n.className=\"mystic-name\";n.textContent=label;c.appendChild(n);const values=document.createElement(\"div\");values.className=\"mystic-values\";const entries=vals.map(p=>({player:p,value:p.data[key]}));entries.forEach((entry,i)=>{const cell=document.createElement(\"div\");cell.className=\"mystic-value\";cell.style.color=colors[i%colors.length];const name=document.createElement(\"small\");name.textContent=entry.player.name;name.style.color=colors[i%colors.length];cell.appendChild(name);const score=document.createElement(\"span\");score.className=\"counter\";score.dataset.target=(entry.value.label||entry.value.score==null)?\"\":String(entry.value.score);score.dataset.stageValue=entry.value.label?\"1\":\"\";score.dataset.api=entry.value.score==null?\"\":String(entry.value.score);score.textContent=entry.value.label||(entry.value.score==null?\"未取得\":num(entry.value.score));cell.appendChild(score);if(entry.value.label){const stage=document.createElement(\"small\");stage.textContent=\"ゲーム表示値\";stage.style.display=\"block\";stage.style.marginTop=\"2px\";stage.style.color=\"var(--text,#e8f3ff)\";cell.appendChild(stage)}const rank=document.createElement(\"small\");rank.textContent=\"王国内順位: \"+(entry.value.rank!=null?num(entry.value.rank):entry.value.rankLabel||\"未取得\");rank.style.display=\"block\";rank.style.marginTop=\"3px\";cell.appendChild(rank);values.appendChild(cell)});c.appendChild(values);return c};const big=card(\"mystic_trial\",\"秘境の試練\",true);sec.appendChild(big);const grid=document.createElement(\"div\");grid.className=\"mystic-grid\";boards.slice(1).forEach(([k,l])=>grid.appendChild(card(k,l,false)));sec.appendChild(grid);const old=box.querySelector(\".mystic-section\");if(old)old.remove();const table=box.querySelector(\".table-wrap\");if(table)table.before(sec);else box.insertBefore(sec,box.firstChild);}addMysticTrialComparison(ps);const controls=document.createElement(\"div\");controls.className=\"compare-controls\";controls.innerHTML=\"<label><input type=checkbox data-compare-group=basic checked>基本</label><label><input type=checkbox data-compare-group=combat checked>戦闘</label><label><input type=checkbox data-compare-group=affiliation checked>所属・位置</label>\";box.insertBefore(controls,box.firstChild);const tableData=document.createElement(\"template\");tableData.id=\"eeCompareTableData\";tableData.innerHTML=h;box.appendChild(tableData);const itemLabels=[...new Set([...fields.map(f=>f[0]),...coreRankRows.map(f=>f[0]),...coreRankScoreRows.map(f=>f[0]),...[...leaderboardRows.values()].map(row=>\"ランキング：\"+row.label),...[...heroRows.values()].map(row=>\"闘技場防衛編成：\"+row.label),...[...heroGearRows.values()].map(row=>\"防衛編成装備：\"+row.label),...[...heroSkillRows.values()].map(row=>\"英雄スキル：\"+row.label),...[...heroExclusiveRows.values()].map(row=>\"専用装備：\"+row.label),...[...gearRows.values()].map(row=>\"領主装備：\"+row.label),\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"])];const recommendedItems=new Set([\"戦力\",\"役場レベル\",\"VIP\",\"撃破数\",\"王国\",\"同盟略称\",\"ランキングスコア：秘境の試練\",\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"]);const isHeroItem=label=>label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\");const selectedCompareItems=new Set(itemLabels.filter(label=>recommendedItems.has(label)));try{let saved=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v2\")||\"null\");if(!Array.isArray(saved)){const old=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v1\")||\"null\");if(Array.isArray(old))saved=old.filter(label=>!isHeroItem(label))}if(Array.isArray(saved)){selectedCompareItems.clear();saved.filter(label=>itemLabels.includes(label)).forEach(label=>selectedCompareItems.add(label));if(!selectedCompareItems.size){recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});}}}catch{}const itemSelector=document.createElement(\"details\");itemSelector.className=\"compare-item-selector\";const itemSummary=document.createElement(\"summary\");itemSummary.textContent=\"比較項目を選択（おすすめ項目を初期表示）\";itemSelector.appendChild(itemSummary);const itemActions=document.createElement(\"div\");itemActions.className=\"compare-item-actions\";const resetItems=document.createElement(\"button\");resetItems.type=\"button\";resetItems.textContent=\"おすすめに戻す\";const showAllItems=document.createElement(\"button\");showAllItems.type=\"button\";showAllItems.textContent=\"すべて表示\";itemActions.appendChild(resetItems);itemActions.appendChild(showAllItems);itemSelector.appendChild(itemActions);const itemList=document.createElement(\"div\");itemList.className=\"compare-item-list\";const itemCheckboxes=[];itemLabels.forEach(label=>{const wrapper=document.createElement(\"label\");const input=document.createElement(\"input\");input.type=\"checkbox\";input.checked=selectedCompareItems.has(label);const textNode=document.createElement(\"span\");textNode.textContent=label;wrapper.appendChild(input);wrapper.appendChild(textNode);itemList.appendChild(wrapper);itemCheckboxes.push({label,input})});itemSelector.appendChild(itemList);box.insertBefore(itemSelector,controls.nextSibling);resetItems.addEventListener(\"click\",()=>{selectedCompareItems.clear();recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});itemCheckboxes.forEach(x=>x.input.checked=selectedCompareItems.has(x.label));try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});showAllItems.addEventListener(\"click\",()=>{itemLabels.forEach(label=>selectedCompareItems.add(label));itemCheckboxes.forEach(x=>x.input.checked=true);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});itemCheckboxes.forEach(x=>x.input.addEventListener(\"change\",()=>{if(x.input.checked)selectedCompareItems.add(x.label);else selectedCompareItems.delete(x.label);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()}));const compareGroupForLabel=label=>[\"戦力\",\"役場レベル\",\"VIP\",\"王国\"].includes(label)?\"basic\":label===\"撃破数\"||label===\"30日間の戦力変化\"||label.startsWith(\"王国内順位：\")||label.startsWith(\"ランキング：\")||label.startsWith(\"ランキングスコア：\")||label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\")||label.startsWith(\"領主装備：\")?\"combat\":\"affiliation\";function applyCompareGroups(){const enabled={basic:controls.querySelector(\"[data-compare-group=basic]\").checked,combat:controls.querySelector(\"[data-compare-group=combat]\").checked,affiliation:controls.querySelector(\"[data-compare-group=affiliation]\").checked};box.querySelectorAll(\".compare-table tbody tr\").forEach(function(row){const th=row.querySelector(\"th\");const label=th?th.textContent.trim():\"\";const group=compareGroupForLabel(label);row.hidden=!enabled[group]||!selectedCompareItems.has(label)});box.querySelectorAll(\".compare-metric\").forEach(function(row){const label=row.getAttribute(\"data-compare-label\");row.hidden=!enabled[row.getAttribute(\"data-compare-group\")]||(label&&!selectedCompareItems.has(label))})}controls.querySelectorAll(\"input\").forEach(function(input){input.addEventListener(\"change\",applyCompareGroups)});window.__eeCompareShown=function(label){const g=compareGroupForLabel(label);const c=controls.querySelector(\"[data-compare-group=\"+g+\"]\");return Boolean(c&&c.checked)&&selectedCompareItems.has(label)};applyCompareGroups();\n\nbox.querySelectorAll(\".compare-player-cards\").forEach(el=>el.remove());const mobileCards=document.createElement(\"div\");mobileCards.className=\"compare-player-cards\";\nps.forEach(p=>{const card=document.createElement(\"article\");card.className=\"compare-player-card\";card.dataset.governorId=String(p.governor_id||\"\");const head=document.createElement(\"div\");head.className=\"compare-player-card-head\";if(p.player&&p.player.avatar_url){const img=document.createElement(\"img\");img.src=String(p.player.avatar_url);img.alt=\"\";img.loading=\"lazy\";head.appendChild(img)}const heading=document.createElement(\"div\");const playerName=document.createElement(\"div\");playerName.className=\"pname\";playerName.textContent=String(p.player&&p.player.nick_name||\"データなし\");const playerMeta=document.createElement(\"div\");playerMeta.className=\"pid\";playerMeta.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");heading.appendChild(playerName);heading.appendChild(playerMeta);head.appendChild(heading);card.appendChild(head);const metrics=document.createElement(\"div\");metrics.className=\"compare-player-metrics\";const addMetric=(label,value,group,detail)=>{const row=document.createElement(\"div\");row.className=\"compare-metric\";row.setAttribute(\"data-compare-group\",group);row.setAttribute(\"data-compare-label\",label);const labelNode=document.createElement(\"span\");labelNode.textContent=label;const valueNode=document.createElement(\"strong\");valueNode.textContent=String(value==null?\"—\":value);row.appendChild(labelNode);row.appendChild(valueNode);if(detail){const detailNode=document.createElement(\"small\");detailNode.textContent=detail;row.appendChild(detailNode)}metrics.appendChild(row)};fields.forEach(f=>addMetric(f[0],p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]),compareGroupForLabel(f[0])));coreRankRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":\"#\"+num(v),\"combat\")});coreRankScoreRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":compact(v),\"combat\")});leaderboardRows.forEach(row=>{const board=row.byId[p.governor_id];const score=board&&(board.value??board.score??board.rank_value);const rank=board&&(board.kingdom_rank??board.rank??board.ranking);const rankLabel=rank!=null?num(rank):(board&&board.kingdom_rank_label||\"\");const meta=[];if(board&&board.value_label&&score!=null)meta.push(\"API値 \"+compact(score));if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board&&board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board&&board.value_label?board.value_label:formattedScore;addMetric(\"ランキング：\"+row.label,display,\"combat\",meta.join(\" · \"));const metric=metrics.lastElementChild;if(metric&&score!=null&&Number.isFinite(Number(score))&&!(board&&board.value_label))metric.dataset.rankScore=String(score)});(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);addMetric(\"英雄：\"+String(hero.name||hero.id||\"英雄\"),parts.join(\" · \")||\"データなし\",\"combat\")});(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);addMetric(\"領主装備：\"+String(item.slot||item.id||item.name||\"装備\"),parts.join(\" · \")||\"データなし\",\"combat\")});const delta=p.period&&p.period.powerDelta;addMetric(\"30日間の戦力変化\",delta==null?\"—\":(delta>0?\"+\":\"\")+compact(delta),\"combat\",String(p.period&&p.period.observations||0)+\"件の履歴\");const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);addMetric(\"EagleEye取得\",eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\"):\"不明\",\"affiliation\");addMetric(\"元データ時刻\",sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\")+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\",\"affiliation\");card.appendChild(metrics);mobileCards.appendChild(card)});box.insertBefore(mobileCards,itemSelector.nextSibling);applyCompareGroups();\nconst validPowers=ps.map(p=>({p,value:Number(p.player&&p.player.power)})).filter(x=>!x.p.missing&&Number.isFinite(x.value)&&x.value>=0);const maxPower=validPowers.length?Math.max.apply(null,validPowers.map(x=>x.value)):0;const ns=\"http://www.w3.org/2000/svg\";const showcase=document.createElement(\"section\");showcase.className=\"power-showcase-wrap\";const title=document.createElement(\"h2\");title.className=\"section-title\";title.textContent=\"戦力バランス\";showcase.appendChild(title);const note=document.createElement(\"div\");note.className=\"sub\";note.textContent=\"円の長さは比較対象内の最大戦力を100%とした目安です。中央の数値は実際の戦力です。\";showcase.appendChild(note);const grid=document.createElement(\"div\");grid.className=\"power-showcase\";showcase.appendChild(grid);const ringColors=[\"var(--ring-1)\",\"var(--ring-2)\",\"var(--ring-3)\",\"var(--ring-4)\"];const ringNodes=[];const counterNodes=[];\nps.forEach((p,i)=>{const power=Number(p.player&&p.player.power);const valid=!p.missing&&Number.isFinite(power)&&power>=0;const ratio=valid&&maxPower>0?Math.min(1,power/maxPower):0;const card=document.createElement(\"article\");card.className=\"power-card\";const ring=document.createElement(\"div\");ring.className=\"power-ring\";const svg=document.createElementNS(ns,\"svg\");svg.setAttribute(\"viewBox\",\"0 0 100 100\");svg.setAttribute(\"role\",\"img\");svg.setAttribute(\"aria-label\",String(p.player&&p.player.nick_name||\"プレイヤー\")+\"の戦力比較ゲージ\");const base=document.createElementNS(ns,\"circle\");base.setAttribute(\"class\",\"ring-base\");base.setAttribute(\"cx\",\"50\");base.setAttribute(\"cy\",\"50\");base.setAttribute(\"r\",\"42\");const valueCircle=document.createElementNS(ns,\"circle\");valueCircle.setAttribute(\"class\",\"ring-value\");valueCircle.setAttribute(\"cx\",\"50\");valueCircle.setAttribute(\"cy\",\"50\");valueCircle.setAttribute(\"r\",\"42\");valueCircle.style.setProperty(\"--ring-color\",ringColors[i%ringColors.length]);valueCircle.style.strokeDashoffset=\"263.9\";svg.appendChild(base);svg.appendChild(valueCircle);ring.appendChild(svg);const center=document.createElement(\"div\");center.className=\"ring-center\";const number=document.createElement(\"span\");number.className=\"ring-number\";number.textContent=valid?\"0\":\"—\";const caption=document.createElement(\"span\");caption.className=\"ring-caption\";caption.textContent=\"戦力\";center.appendChild(number);center.appendChild(caption);ring.appendChild(center);card.appendChild(ring);const info=document.createElement(\"div\");info.className=\"power-info\";const name=document.createElement(\"div\");name.className=\"pname\";name.textContent=String(p.player&&p.player.nick_name||\"データなし\");const id=document.createElement(\"div\");id.className=\"pid\";id.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");const label=document.createElement(\"div\");label.className=\"power-label\";label.textContent=\"取得した元の数値\";const raw=document.createElement(\"div\");raw.className=\"power-value\";raw.textContent=valid?compact(power):\"データなし\";const relative=document.createElement(\"div\");relative.className=\"power-ratio\";relative.textContent=valid&&maxPower>0?Math.round(ratio*100)+\"%（比較対象内）\":\"比較不可\";info.appendChild(name);info.appendChild(id);const freshness=document.createElement(\"div\");freshness.className=\"pid\";const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);freshness.textContent=\"EagleEye: \"+(eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"不明\")+\" · 元データ: \"+(sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(freshness);const rankFreshness=document.createElement(\"div\");rankFreshness.className=\"pid\";const rankAt=Number(p.rankings&&p.rankings.observed_at);const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at);rankFreshness.textContent=\"ランキング EE: \"+(rankAt?new Date(rankAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"未取得\")+\" · 元データ: \"+(rankSourceAt?new Date(rankSourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-rankSourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(rankFreshness);info.appendChild(label);info.appendChild(raw);info.appendChild(relative);card.appendChild(info);grid.appendChild(card);if(valid){ringNodes.push({ring,valueCircle,offset:263.9*(1-ratio)});counterNodes.push({node:number,target:power})}});\nbox.insertBefore(showcase,box.firstChild);requestAnimationFrame(()=>{ringNodes.forEach(x=>{x.valueCircle.style.strokeDashoffset=String(x.offset);x.ring.classList.add(\"ready\")});const duration=900;const started=performance.now();function tick(now){const progress=Math.min(1,(now-started)/duration);const eased=1-Math.pow(1-progress,3);counterNodes.forEach(x=>{x.node.textContent=compact(x.target*eased)});if(progress<1)requestAnimationFrame(tick);else counterNodes.forEach(x=>{x.node.textContent=compact(x.target)})}if(counterNodes.length)requestAnimationFrame(tick)})}" + "async function fetchJsonWithTimeout(url,options,timeoutMs){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs||15000);try{const response=await fetch(url,{...(options||{}),signal:controller.signal,cache:\"no-store\"});const data=await response.json();return {response,data}}finally{clearTimeout(timer)}}async function runCompareRefreshBatch(items,concurrency,worker,onProgress){let cursor=0,completed=0;const results=new Array(items.length);async function run(){while(true){const index=cursor++;if(index>=items.length)return;try{results[index]=await worker(items[index],index)}catch(error){results[index]={error}}completed++;if(onProgress)onProgress(completed,items.length)}}await Promise.all(Array.from({length:Math.min(concurrency,items.length)},()=>run()));return results}let staleRefreshAttempted=false;async function load(){if(ids.length<2){count.textContent=\"2〜6人必要です\";box.innerHTML=\"<div class=\\\"status error\\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>\";return}retry.disabled=true;box.innerHTML=\"<div class=status id=compareLoadStatus>比較データを読み込み中…（0秒）</div>\";let loadPhase=\"比較データを読み込み中\";const loadStartedAt=Date.now();const loadTimer=setInterval(function(){const status=document.getElementById(\"compareLoadStatus\");if(status)status.textContent=loadPhase+\"…（経過 \"+Math.floor((Date.now()-loadStartedAt)/1000)+\"秒）\";},1000);try{const q=new URLSearchParams();ids.forEach(id=>q.append(\"governor_id\",id));const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);let r,d;try{r=await fetch(\"/api/player-compare?\"+q.toString(),{cache:\"no-store\",signal:controller.signal});d=await r.json()}finally{clearTimeout(timeout)}if(!r.ok||!d.ok)throw new Error(d.message||\"比較データの取得に失敗しました。\");let autoRefreshFailures=[];if(!staleRefreshAttempted){const now=Math.floor(Date.now()/1000);const stale=(d.players||[]).filter(p=>{const eeAt=Number(p.player&&p.player.observed_at)||0;const sourceAt=Number(p.player&&p.player.source_observed_at)||0;const rankAt=Number(p.rankings&&p.rankings.observed_at)||0;const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at)||0;return !p.missing&&(!eeAt||now-eeAt>900||(sourceAt>0&&now-sourceAt>900)||(p.rankingsExpected&&(!rankAt||now-rankAt>900||(rankSourceAt>0&&now-rankSourceAt>900)))||p.profileNeedsRich);});if(stale.length){staleRefreshAttempted=true;loadPhase=\"古いデータを自動更新中\";count.textContent=\"古いデータを自動更新中… \"+stale.length+\"人\";const capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);const capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");const refreshConcurrency=Math.min(stale.length,Math.max(0,Number(capacityData.usable)||0));const refreshResults=refreshConcurrency>0?await runCompareRefreshBatch(stale,refreshConcurrency,async p=>{for(let attempt=0;attempt<3;attempt++){try{const refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(p.governor_id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);const rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}if(!rr.ok||!rd.ok||(rd.rank_refresh_expected&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},(completed,total)=>{count.textContent=\"古いデータを自動更新中… \"+completed+\"/\"+total+\"人\"}):[];refreshResults.forEach((result,index)=>{if(!result||!result.ok){autoRefreshFailures.push(stale[index].governor_id);console.warn(\"compare_auto_refresh_failed\",stale[index].governor_id,result&&result.error&&result.error.message||\"refresh_failed\")}});loadPhase=\"比較データを再取得中\";const refreshedResult=await fetchJsonWithTimeout(\"/api/player-compare?\"+q.toString(),null,12000);const refreshed=refreshedResult.response,refreshedData=refreshedResult.data;if(refreshed.ok&&refreshedData.ok)d=refreshedData;}}render(d);if(autoRefreshFailures.length)count.textContent+=\" · 自動更新失敗 \"+autoRefreshFailures.length+\"人\";if(d.rankingPending&&d.rankingPending.length&&!window.__eeRankRetry){window.__eeRankRetry=1;var rp=document.createElement('div');rp.className='status';rp.id='compareRankingPending';rp.textContent='⏳ 王国'+d.rankingPending.map(function(x){return x.kid}).join('・')+'のランキング（領主宝石・英雄総力など）を取得しています。10秒ほどで自動で更新します。';box.insertBefore(rp,box.firstChild);setTimeout(async function(){try{var again=await fetchJsonWithTimeout('/api/player-compare?'+q.toString(),null,12000);if(again.response.ok&&again.data.ok)render(again.data)}catch(e){}var el=document.getElementById('compareRankingPending');if(el)el.remove()},10000)}}catch(e){const message=e&&e.name===\"AbortError\"?\"取得が12秒以内に完了しませんでした。サーバー側の処理が遅延しています。再読み込みするか、時間をおいて再試行してください。\":(e.message||\"比較データの取得に失敗しました。\");box.innerHTML=\"<div class=\\\"status error\\\">\"+esc(message)+\"</div>\"}finally{clearInterval(loadTimer);retry.disabled=false}}retry.addEventListener(\"click\",load);document.getElementById(\"refresh\").addEventListener(\"click\",async function(){if(!confirm(\"比較対象のプレイヤーを順番に最新データへ更新します。API Poolを使用します。続けますか？\"))return;var btn=this;btn.disabled=true;retry.disabled=true;var status=document.getElementById(\"count\");try{var failures=[];var refreshStartedAt=Date.now();var refreshIndex=0;var refreshTimer=setInterval(function(){status.textContent=\"最新データを取得中… \"+refreshIndex+\"/\"+ids.length+\"人 · 残り \"+(ids.length-refreshIndex)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"},1000);var capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);var capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");var refreshConcurrency=Math.min(ids.length,Math.max(0,Number(capacityData.usable)||0));if(refreshConcurrency<1)throw new Error(\"通常利用向けAPIキーを確保するため、最新データを取得できません。少し待ってから再試行してください。\");var refreshResults=await runCompareRefreshBatch(ids,refreshConcurrency,async function(id){for(var attempt=0;attempt<3;attempt++){try{var refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);var rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}if(!rr.ok||!rd.ok||(String(rd.requested_include||\"\").includes(\"ranks\")&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},function(completed,total){refreshIndex=completed;status.textContent=\"最新データを取得中… \"+completed+\"/\"+total+\"人 · 残り \"+(total-completed)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"});refreshResults.forEach(function(result,index){if(!result||!result.ok)failures.push(ids[index])});await load();if(failures.length)count.textContent+=\" · 更新失敗 \"+failures.length+\"人\"}catch(e){alert(e.message||\"最新データを取得できませんでした\")}finally{clearInterval(refreshTimer);btn.disabled=false;retry.disabled=false}});load()})();</script></body></html>";
+  return eagleEyeHtmlResponse(html.replace("</body>", PLAYER_COMPARE_ENHANCEMENTS + compareShareScript() + "</body>"));
+}
 
 async function handlePlayerChangesApi(request, env) {
   const auth = await getAuthenticatedUser(request, env);
@@ -6816,7 +8330,7 @@ async function handlePlayerChangesApi(request, env) {
 async function renderPlayerChangesPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+    return renderLoginRequiredPage(request, "変更履歴", "変更履歴を見るにはログインしてください。");
   }
   const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
@@ -6861,7 +8375,7 @@ async function renderPlayerChangesPage(request, env) {
 
 function renderChangesShell(message, governorId, cards = "") {
   const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
-  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Change History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.change{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.headline strong{font-size:17px}.headline span{font-size:11px;color:#94a3b8;padding:4px 7px;border-radius:7px;background:#0b1220}.transition{display:flex;align-items:center;gap:10px;margin-top:12px;min-width:0}.old,.new{padding:9px 10px;border-radius:9px;overflow-wrap:anywhere;word-break:break-word}.old{background:#0b1220;color:#94a3b8}.new{background:#182f25;color:#bbf7d0;font-weight:800}.arrow{color:#f59e0b;font-weight:900}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}@media(max-width:520px){.transition{align-items:stretch}.old,.new{flex:1}.arrow{align-self:center}}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">CHANGE EVENTS</div><h1 class="title">変更履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>変更履歴 | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.change{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}.headline strong{font-size:17px}.headline span{font-size:11px;color:#94a3b8;padding:4px 7px;border-radius:7px;background:#0b1220}.transition{display:flex;align-items:center;gap:10px;margin-top:12px;min-width:0}.old,.new{padding:9px 10px;border-radius:9px;overflow-wrap:anywhere;word-break:break-word}.old{background:#0b1220;color:#94a3b8}.new{background:#182f25;color:#bbf7d0;font-weight:800}.arrow{color:#f59e0b;font-weight:900}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}@media(max-width:520px){.transition{align-items:stretch}.old,.new{flex:1}.arrow{align-self:center}}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">変化履歴</div><h1 class="title">変更履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
 }
 
 function isChangeVisibleForRole(change, role, settings = null) {
@@ -6870,6 +8384,8 @@ function isChangeVisibleForRole(change, role, settings = null) {
     return false;
   }
   const field = String(change.field_name || "");
+  // Activity fields are stale upstream; hide previously recorded activity changes.
+  if (field === "online" || field === "last_active_at" || field === "last_login") return false;
   const key = field === "vip" ? "base_vip"
     : field === "x" || field === "y" ? "base_coordinates"
     : field === "power" || field === "town_center_level" ? "base_power"
@@ -6901,19 +8417,18 @@ function formatChangeValue(field, value) {
 
 async function renderPlayerHistoryPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>';
+  if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "プレイヤー履歴", "プレイヤー履歴を見るにはログインしてください。");
   const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   if (!governorId) return renderHistoryShell("領主IDを指定してください。", "");
   if (!env.DB) return renderHistoryShell("データベースが設定されていません。", governorId);
   try {
-    const result = await env.DB.prepare(
-      'SELECT snapshot_id, governor_id, observation_id, observed_at, payload_json FROM player_snapshots WHERE governor_id = ? ORDER BY observed_at DESC LIMIT 100'
-    ).bind(governorId).all();
+    // 履歴は R2（HISTORY_STORAGE_MODE=R2_ONLY）に保存されているので、D1だけでなく R2 も読む共通の関数を使う。
+    const history = await getPlayerHistory(env.DB, governorId, 50, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
-    const rows = (result.results || []).map(row => {
+    const rows = (history || []).map(row => {
       let p = {};
-      try { p = filterPlayerForRole(JSON.parse(row.payload_json), auth.role, JSON.parse(row.payload_json), visibilitySettings); } catch {}
+      try { p = filterPlayerForRole(row.player || {}, auth.role, row.profile || row.player || {}, visibilitySettings); } catch {}
       return { ...row, player: p };
     });
     if (!rows.length) return renderHistoryShell("このプレイヤーの履歴はまだありません。", governorId);
@@ -6932,11 +8447,13 @@ async function renderPlayerHistoryPage(request, env) {
 
 function renderHistoryShell(message, governorId, cards = "") {
   const content = cards ? '<div class="timeline">' + cards + '</div>' : '<div class="message">' + escapeHtml(message) + '</div>';
-  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player History</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.snapshot{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:baseline;gap:10px;margin-top:8px}.headline span{color:#94a3b8;font-size:13px}.headline strong{font-size:21px}.headline em{font-style:normal;font-size:13px}.up{color:#86efac}.down{color:#fca5a5}.details{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#cbd5e1;font-size:12px}.details span{padding:5px 8px;border-radius:8px;background:#0b1220}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">PLAYER HISTORY</div><h1 class="title">プレイヤー履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
+  return '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー履歴 | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.title{margin:5px 0 8px;font-size:27px}.sub{color:#94a3b8}.timeline{margin-top:20px;display:grid;gap:10px}.snapshot{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.time{color:#94a3b8;font-size:12px}.headline{display:flex;align-items:baseline;gap:10px;margin-top:8px}.headline span{color:#94a3b8;font-size:13px}.headline strong{font-size:21px}.headline em{font-style:normal;font-size:13px}.up{color:#86efac}.down{color:#fca5a5}.details{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px;color:#cbd5e1;font-size:12px}.details span{padding:5px 8px;border-radius:8px;background:#0b1220}.message{margin-top:22px;padding:20px;border:1px solid #334155;border-radius:14px;background:#111c31;color:#94a3b8}</style></head><body><main class="wrap"><a class="back" href="/player?governor_id=' + encodeURIComponent(governorId) + '">← プレイヤー詳細</a><div class="eyebrow">プレイヤー履歴</div><h1 class="title">プレイヤー履歴</h1><div class="sub">領主ID ' + escapeHtml(governorId) + '</div>' + content + '</main></body></html>';
 }
 
 function csvEscape(value) {
-  const raw = value === null || value === undefined ? "" : String(value);
+  let raw = value === null || value === undefined ? "" : String(value);
+  // Spreadsheet apps run cells starting with = + - @ as formulas; neutralise text (not plain numbers).
+  if (/^[=+\-@\t\r]/.test(raw) && !/^-?\d+(\.\d+)?$/.test(raw)) raw = "'" + raw;
   return '"' + raw.replace(/"/g, '""') + '"';
 }
 
@@ -6965,10 +8482,12 @@ function flattenCsvValue(value) {
 
 
 async function handlePlayerSectionExport(request, env) {
-  const guard = await requireAdmin(request, env);
+  const url = new URL(request.url);
+  // CSV download: VIP and above. Shared Google Sheet: ADMIN / OWNER only.
+  const wantsCsv = url.searchParams.get("format") === "csv";
+  const guard = wantsCsv ? await requireVipOrAbove(request, env) : await requireAdmin(request, env);
   if (guard.error) return guard.error;
 
-  const url = new URL(request.url);
   const governorId = String(url.searchParams.get("governor_id") || "").trim();
   const section = String(url.searchParams.get("section") || "").trim().toLowerCase();
   if (!governorId) return json({ ok: false, error: "GOVERNOR_ID_REQUIRED" }, 400);
@@ -6987,7 +8506,7 @@ async function handlePlayerSectionExport(request, env) {
 
     if (visibilityEnabled(visibilitySettings, "hero_rankings", guard.auth.role)) {
       const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
+      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env, kid, governorId);
     }
 
     const exportedAt = new Date().toISOString();
@@ -6997,12 +8516,12 @@ async function handlePlayerSectionExport(request, env) {
 
     if (section === "profile") {
       sheetTitle = "プロフィール";
-      headers = ["出力日時","領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","オンライン","最終活動","最終ログイン","言語","役職","シールド終了","炎上終了"];
+      headers = ["出力日時","領主ID","UID","FID","プレイヤー名","王国","戦力","役場","VIP","撃破数","座標X","座標Y","言語","役職","シールド終了","炎上終了"];
       const p = visiblePlayer || {};
       rows = [{
         "出力日時": exportedAt, "領主ID": p.governor_id, "UID": p.uid, "FID": p.fid, "プレイヤー名": p.nick_name, "王国": p.kid,
         "戦力": p.power, "役場": p.town_center_level, "VIP": p.vip, "撃破数": p.kills,
-        "座標X": p.x, "座標Y": p.y, "オンライン": p.online ? "オンライン" : "オフライン",
+        "座標X": p.x, "座標Y": p.y,
         "言語": p.language, "役職": p.office,
         "シールド終了": p.shield_endtime, "炎上終了": p.burn_endtime
       }];
@@ -7060,6 +8579,13 @@ async function handlePlayerSectionExport(request, env) {
       }));
     }
 
+    if (wantsCsv) {
+      await trackServiceUsage(env, guard.auth, "PLAYER_EXPORT", {
+        targetType: "PLAYER", targetId: governorId,
+        metadata: { format: "csv", section, row_count: rows.length, column_count: headers.length, target_player_count: 1, success: true }
+      });
+      return csvResponse("eagleeye-" + governorId + "-" + section + ".csv", headers, rows);
+    }
     const result = await exportToGoogleSheet(env, { sheetTitle, headers, rows });
     await recordDiagnostic(env.DB, {
       service: "google_sheets", feature: "player_export", operation: "EXPORT", status: "SUCCESS",
@@ -7089,15 +8615,15 @@ async function handlePlayerSectionExport(request, env) {
     console.error("Player section Google Sheets export error:", error);
     if (error?.code === "GOOGLE_SHEETS_NOT_CONFIGURED") return json({
       ok: false, error: "GOOGLE_SHEETS_NOT_CONFIGURED",
-      message: "Google Sheets連携が未設定です。GOOGLE_SHEETS_SPREADSHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY を設定してください。"
+      message: "Google Sheets連携が未設定です。管理画面の「Google Drive設定」でGoogleアカウントを接続すると、EagleEye Exportスプレッドシートへ出力できます。"
     }, 503);
     return json({ ok: false, error: error?.code || "PLAYER_EXPORT_FAILED", message: error?.message || "Google Sheetsへの出力に失敗しました。", status: error?.status || 0 }, 502);
   }
 }
-async function renderPlayerPage(request, env) {
+async function renderPlayerPage(request, env, executionContext = null) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") {
-    return applyEagleEyeTheme(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye</title></head><body style="background:#0f172a;color:white;font-family:system-ui;padding:32px"><h1>ログインが必要です</h1><a href="/api/auth/discord" style="color:#f59e0b">Discordでログイン</a></body></html>`);
+    return renderLoginRequiredPage(request, "プレイヤー詳細", "プレイヤー詳細を見るにはログインしてください。");
   }
 
   const url = new URL(request.url);
@@ -7110,21 +8636,32 @@ async function renderPlayerPage(request, env) {
     const refresh = url.searchParams.get("refresh") === "1";
     const rich = url.searchParams.get("rich") === "1";
     let observation = await getLatestPlayerObservation(env.DB, governorId);
-    const needsRichProfile = !observation?.payload?.heroes || !observation?.payload?.ranks || !observation?.payload?.gov_gear;
-    const hasRichProfile = Boolean(observation?.payload?.heroes && observation?.payload?.ranks && observation?.payload?.gov_gear);
-    const fetchRich = rich || (refresh && hasRichProfile);
+    const richPayload = observation?.payload || {};
+    const richPlayer = richPayload.player && typeof richPayload.player === "object" ? richPayload.player : richPayload;
+    const hasHeroesPayload = Array.isArray(richPayload.heroes) || Array.isArray(richPlayer.heroes);
+    const hasRanksPayload = Boolean((richPayload.ranks && typeof richPayload.ranks === "object") || (richPlayer.ranks && typeof richPlayer.ranks === "object"));
+    const hasGovGearPayload = Boolean((richPayload.gov_gear && typeof richPayload.gov_gear === "object") || (richPlayer.gov_gear && typeof richPlayer.gov_gear === "object"));
+    const needsRichProfile = !hasHeroesPayload || !hasRanksPayload || !hasGovGearPayload;
+    const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
+    const fetchRich = rich || refresh;
 
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    // First visit of a player EagleEye has never stored: answer at once with a
+    // page that fetches in the background (MightPulse can wait up to 90 s for
+    // an upstream update), instead of holding the whole page load open.
+    if (!observation && !refresh && !rich) {
+      return renderPlayerFetchingPage(governorId);
+    }
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
 
-    let player = await getPlayer(env.DB, governorId);
+    let [player, visibilitySettings] = await Promise.all([getPlayer(env.DB, governorId), getPlayerVisibilitySettings(env.DB)]);
     if (!player || String(player.source_observation_id) !== String(observation.observation_id)) {
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
     }
 
-    const visibilitySettings = await getPlayerVisibilitySettings(env.DB);
     const visiblePlayer = filterPlayerForRole(player, auth.role, observation.payload, visibilitySettings);
     const visibleProfile = filterPlayerProfileForRole(observation.payload, auth.role, visibilitySettings);
     // Supplement missing leaderboard ranks from the already-collected kingdom current table.
@@ -7135,11 +8672,13 @@ async function renderPlayerPage(request, env) {
       const normalizedGovernorId = normalizeGovernorId(governorId);
       if (kid !== undefined && kid !== null && normalizedGovernorId) {
         const placeholders = rankBoards.map(() => "?").join(",");
-        const storedRanks = await env.DB.prepare(
+        const storedRanks = await withArchivedRankings(env, kid, await env.DB.prepare(
           "SELECT board, rank FROM kingdom_ranking_current " +
           "WHERE kid = ? AND target_type = 'PLAYER' AND (governor_id = ? OR target_id = ?) " +
           "AND board IN (" + placeholders + ")"
-        ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all();
+        ).bind(Number(kid), normalizedGovernorId, normalizedGovernorId, ...rankBoards).all(), {
+          filter: row => row.target_type === "PLAYER" && (String(row.governor_id) === String(normalizedGovernorId) || String(row.target_id) === String(normalizedGovernorId)) && rankBoards.includes(row.board)
+        });
         const rankByBoard = new Map((storedRanks.results || []).map(row => [String(row.board), row.rank]));
         const boardAliases = {
           "Coliseum": "coliseum",
@@ -7167,14 +8706,34 @@ async function renderPlayerPage(request, env) {
       }
     }
     visibleProfile.optional_assets = extractOptionalPlayerAssets(observation.payload);
-    if (visibilityEnabled(visibilitySettings, "base_identity", auth.role)) {
-      visibleProfile.name_history = await getPlayerNameHistory(env.DB, governorId);
+    visibleProfile.locked_advanced = lockedAdvancedItems(visibilitySettings, auth.role, visibilityEnabled);
+    // Independent reads run in parallel (name history, hero rankings, build history).
+    const heroKid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
+    const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
+    const heroRankingsPromise = visibilityEnabled(visibilitySettings, "hero_rankings", auth.role) ? getLatestPlayerHeroRankings(env, heroKid, governorId) : null;
+    // 王国ランキングから出す項目（英雄ランキング・秘境のステージ順位）が無い／古い王国は、裏で取りに行く（画面は1回だけ読み直す）。
+    visibleProfile.ranking_pending = isQuietAgentRequest(request, auth) ? [] : await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
+    let buildHistoryHtml = "";
+    const buildVisible = {
+      heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
+      heroSkills: visibilityEnabled(visibilitySettings, "heroes_skills", auth.role),
+      heroExclusive: visibilityEnabled(visibilitySettings, "heroes_exclusive_gear", auth.role),
+      heroGear: visibilityEnabled(visibilitySettings, "heroes_gear", auth.role),
+      govGear: visibilityEnabled(visibilitySettings, "gov_gear_list", auth.role)
+    };
+    buildVisible.heroes = buildVisible.heroList || buildVisible.heroSkills || buildVisible.heroExclusive || buildVisible.heroGear;
+    const buildHistoryPromise = env.ARCHIVE && (buildVisible.heroes || buildVisible.govGear)
+      ? loadPlayerBuildHistory(env.ARCHIVE, governorId).catch(error => { console.error("player_build_history_load_failed", governorId, error?.message || error); return null; })
+      : null;
+    const [nameHistory, heroRankings, buildHistory] = await Promise.all([nameHistoryPromise, heroRankingsPromise, buildHistoryPromise]);
+    if (nameHistoryPromise) visibleProfile.name_history = nameHistory;
+    if (heroRankingsPromise) visibleProfile.hero_rankings = heroRankings;
+    if (buildHistory) {
+      buildHistoryHtml = renderPlayerBuildHistorySection(buildHistory, buildVisible, {
+        heroName: localizeHeroName, heroSlot: localizeHeroGearSlot, govSlot: localizeGovernorGearSlot
+      });
     }
-    if (visibilityEnabled(visibilitySettings, "hero_rankings", auth.role)) {
-      const kid = observation.payload?.player?.kid ?? observation.payload?.kid ?? player?.kid;
-      visibleProfile.hero_rankings = await getLatestPlayerHeroRankings(env.DB, kid, governorId);
-    }
-    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER");
+    return renderPlayerShell("", governorId, visiblePlayer, observation.payload, null, visibleProfile, auth.role === "ADMIN" || auth.role === "OWNER" ? "ADMIN" : auth.role === "VIP" ? "VIP" : false, buildHistoryHtml);
   } catch (error) {
     console.error("Player page error:", error);
     const code = String(error?.code || error?.message || "PLAYER_READ_FAILED");
@@ -7234,7 +8793,7 @@ function filterPlayerForRole(player, role, payload = null, settings = null) {
   if (!visibilityEnabled(settings, "base_identity", role)) { delete visible.uid; delete visible.governor_id; delete visible.fid; delete visible.nick_name; delete visible.kid; }
   if (!visibilityEnabled(settings, "base_power", role)) { delete visible.power; delete visible.town_center_level; }
   if (!visibilityEnabled(settings, "base_kills", role)) delete visible.kills;
-  if (!visibilityEnabled(settings, "base_activity", role)) { delete visible.online; }
+  delete visible.online;
   delete visible.last_active_at;
   delete visible.last_login;
   if (!visibilityEnabled(settings, "base_profile", role)) { delete visible.avatar_url; delete visible.language; delete visible.shield_endtime; delete visible.burn_endtime; delete visible.office; }
@@ -7248,7 +8807,31 @@ function filterPlayerForRole(player, role, payload = null, settings = null) {
   return visible;
 }
 
-function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false) {
+// canExport: "ADMIN" (CSV + shared Google Sheet), "VIP" (CSV only) or false.
+function playerExportLinks(governorId, section, canExport, extraClass = "") {
+  if (!canExport || !governorId) return "";
+  const base = "/api/admin/player-export?governor_id=" + encodeURIComponent(governorId) + "&section=" + encodeURIComponent(section);
+  const cls = "section-export" + (extraClass ? " " + extraClass : "");
+  let html = '<a class="' + cls + '" href="' + base + '&format=csv" download>CSV出力</a>';
+  if (canExport === "ADMIN") html += '<a class="' + cls + '" href="' + base + '">スプレッドシート出力</a>';
+  return html;
+}
+
+function renderPlayerFetchingPage(governorId) {
+  const gid = JSON.stringify(String(governorId)).replace(/</g, "\\u003c");
+  const html = renderPlayerShell("プレイヤー情報をMightPulseから取得しています…", governorId);
+  const script = '<script>(function(){var gid=' + gid + ',t0=Date.now();' +
+    'var p=document.createElement("p");p.id="player-fetch-wait";p.className="notice";p.setAttribute("role","status");(document.querySelector("main")||document.body).appendChild(p);' +
+    'var paint=function(){p.textContent="取得中… "+Math.floor((Date.now()-t0)/1000)+"秒（初めて見るプレイヤーは、MightPulse側の更新待ちで最大90秒ほどかかります）"};paint();var timer=setInterval(paint,1000);' +
+    'fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base%2Cheroes%2Cranks%2Cgov_gear",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json().then(function(d){return {r:r,d:d}},function(){return {r:r,d:{}}})}).then(function(x){clearInterval(timer);' +
+    'if(x.r.status===401){location.href="/api/auth/discord";return}if(x.r.ok&&x.d.ok){location.replace("/player?governor_id="+encodeURIComponent(gid));return}' +
+    'p.textContent=x.d.error==="PLAYER_NOT_FOUND"?"該当するプレイヤーが見つかりませんでした。":x.d.error==="NO_API_POOL_KEY_AVAILABLE"?"APIキーが混み合っています。少し待ってから再読み込みしてください。":"取得に失敗しました（"+(x.d.error||x.r.status)+"）。再読み込みしてください。"})' +
+    '.catch(function(){clearInterval(timer);p.textContent="通信に失敗しました。再読み込みしてください。"})})();</script>';
+  if (html instanceof Response) return html;
+  return String(html).replace("</body>", script + "</body>");
+}
+
+function renderPlayerShell(message, governorId, player = null, payload = null, notice = null, profile = null, canExport = false, buildHistoryHtml = "") {
   const p = player || {};
   const freshness = payload || {};
   const esc = escapeHtml;
@@ -7256,27 +8839,30 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   const avatarRoleAttr = avatarRole ? ` data-role="${avatarRole}"` : "";
   const noticeHtml = notice ? '<div class="notice">' + esc(notice) + '</div>' : "";
   const content = player ? `
-    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">PLAYER PROFILE</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${canExport ? '<a class="section-export hero-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=profile">スプレッドシート出力</a>' : ""}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
+    <div class="hero"><div class="player-identity-main">${p.avatar_url ? '<img class="player-avatar-main ee-role-avatar"' + avatarRoleAttr + ' src="' + esc(normalizeProfileAssetUrl(p.avatar_url)) + '" alt="" loading="lazy">': '<span class="player-avatar-main player-avatar-empty ee-role-avatar"' + avatarRoleAttr + '>?</span>'}<div><div class="eyebrow">プレイヤー</div><h1>${esc(p.nick_name || "Unknown Player")}</h1><div class="sub">領主ID ${esc(p.governor_id)}</div><div class="profile-meta"><span>王国：${p.kid != null ? '<a href="/kingdom?kid=' + encodeURIComponent(p.kid) + '" style="color:#f59e0b;text-decoration:none">王国 ' + esc(p.kid) + '</a>' : '—'}</span>${p.alliance_name ? '<span>同盟：<a href="/alliance?kid=' + encodeURIComponent(p.kid || '') + '&tag=' + encodeURIComponent(p.alliance_abbr || p.alliance_name) + '" style="color:#f59e0b;text-decoration:none">' + esc(p.alliance_name) + '</a></span>' : ''}${profile?.language ? '<span>言語：' + esc(formatProfileValue(profile.language)) + '</span>' : ""}${profile?.office ? '<span>役職：' + esc(formatProfileValue(profile.office)) + '</span>' : ""}${profile?.shield_endtime ? '<span>シールド終了：' + esc(formatUnix(profile.shield_endtime)) + '</span>' : ""}${profile?.burn_endtime ? '<span>炎上終了：' + esc(formatUnix(profile.burn_endtime)) + '</span>' : ""}</div>${playerExportLinks(governorId, "profile", canExport, "hero-export")}</div></div><div class="kid">王国 ${esc(p.kid ?? "-")}</div></div>
     <div class="grid">
       ${card("戦力", formatNumber(p.power))}
-      ${card("役場", formatTownCenterLevel(p.town_center_level))}
+      <div class="card"><div class="label">役場</div><div class="value">${townCenterBadgeHtml(p.town_center_level)}</div></div>
       ${card("VIP", p.vip ?? "-")}
       ${card("撃破数", formatNumber(p.kills))}
-      ${card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
-      ${card("オンライン", p.online ? "オンライン" : "オフライン")}
+      ${(profile?.locked_advanced || []).some(i => i.key === "base_coordinates") ? '<div class="card"><div class="label">座標</div><div class="value">' + lockedInlineValue() + '</div></div>' : card("座標", p.x != null && p.y != null ? `${p.x}, ${p.y}` : "-")}
       ${card("同盟", p.alliance_name || "-")}
     </div>
+    ${playerShareEmbed(p, profile, { heroName: localizeHeroName })}
     ${noticeHtml}
     ${profile?.name_history?.length > 1 ? '<section class="profile-section name-history-section"><div class="section-heading"><h2>過去の名前</h2><span class="label">同一領主IDの名称履歴</span></div><div class="name-history-list">' + profile.name_history.map((item, index) => '<div class="name-history-row"><div><strong>' + esc(item.name) + '</strong><span>' + esc(index === 0 ? '現在' : '過去') + '</span></div><small>' + esc(index === 0 ? '現在の名前' : formatUnix(item.first_seen_at) + ' ～ ' + formatUnix(item.last_seen_at)) + '</small></div>').join('') + '</div></section>' : ''}
+    ${(profile?.locked_advanced || []).length ? "<style>" + LOCKED_CSS + "</style>" : ""}
     ${renderPlayerAdvancedSections(profile, governorId, canExport)}
-    <div class="actions"><a class="action primary" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">基本情報を更新</a><a class="action" href="/player?governor_id=${encodeURIComponent(governorId)}&rich=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
+    ${renderLockedSection(profile?.locked_advanced || [])}
+    ${buildHistoryHtml}
+    <div class="actions"><a class="action primary" id="player-refresh" data-governor-id="${esc(governorId)}" href="/player?governor_id=${encodeURIComponent(governorId)}&refresh=1">詳細情報を取得</a><button type="button" class="action" id="player-watchlist-toggle" data-governor-id="${esc(governorId)}">☆ ウォッチリスト</button><a class="action" href="/player/history?governor_id=${encodeURIComponent(governorId)}">スナップショット履歴</a><a class="action" href="/player/changes?governor_id=${encodeURIComponent(governorId)}">変更履歴</a></div>
     <div class="meta">
       <div><b>データ鮮度</b> ${freshness.age_seconds != null ? Math.round(freshness.age_seconds / 3600) + "時間前" : "不明"}</div>
       <div><b>データ状態</b> ${freshness.fresh === true ? "最新" : "キャッシュ"}</div>
       <div><b>観測時刻</b> ${formatUnix(p.observed_at)}</div>
     </div>` : `${noticeHtml}<div class="message">${esc(message)}</div>`;
 
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye Player</title><style>
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>プレイヤー詳細 | EagleEye</title><style>
   :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.hero{margin-top:22px;padding:22px;border:1px solid #334155;border-radius:18px;background:#111c31;display:flex;justify-content:space-between;gap:16px}.eyebrow{color:#f59e0b;font-size:11px;font-weight:800;letter-spacing:2px}.hero h1{margin:5px 0;font-size:26px;overflow-wrap:anywhere}.sub{color:#94a3b8}.profile-language{margin-top:3px;color:#cbd5e1;font-size:11px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px}.section-heading h2{margin:0}.section-export{display:inline-flex;align-items:center;justify-content:center;padding:6px 9px;border:1px solid #475569;border-radius:8px;background:#162238;color:#f59e0b;text-decoration:none;font-size:10px;font-weight:800;white-space:nowrap}.hero-export{margin-top:7px}.kid{font-size:22px;font-weight:900;color:#f59e0b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.card{padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.label{font-size:12px;color:#94a3b8}.value{font-size:19px;font-weight:800;margin-top:5px;overflow-wrap:anywhere}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.action{display:inline-flex;align-items:center;justify-content:center;padding:11px 13px;border:1px solid #334155;border-radius:10px;background:#162238;color:#e2e8f0;text-decoration:none;font-size:13px;font-weight:800}.action.primary{background:var(--ee-cyan,#22d3ee);color:#062033;border-color:var(--ee-cyan,#22d3ee)}.meta{margin-top:14px;padding:15px;border-radius:14px;background:#0b1220;color:#94a3b8;font-size:13px;line-height:1.9}.meta b{color:#e2e8f0}.profile-section{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#111c31}
 .alliance-profile-details{display:flex;flex-wrap:wrap;gap:4px 8px;margin:3px 0 0;color:#94a3b8;font-size:9px;line-height:1.35}.alliance-profile-details span{overflow-wrap:anywhere}.profile-alliance-export{margin-top:4px}.gov-gear-private{display:flex;align-items:center;gap:7px;margin-top:8px;padding:6px 9px;border:1px solid #334155;border-radius:8px;background:#111c31;color:#94a3b8;font-size:10px}.gov-gear-private b{color:#e2e8f0}.gov-gear-private .section-export{margin-left:auto;padding:3px 5px;font-size:9px}
 /* Compact player stats grid: keep all seven fields, reduce vertical scrolling. */
@@ -7295,12 +8881,12 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
 /* Dense profile facts: preserve every field, reduce card height on mobile. */
 .mini-grid{gap:5px}.mini-card{padding:7px 8px;border-radius:8px;min-width:0}.mini-card span{font-size:10px;line-height:1.2}.mini-card b{margin-top:2px;font-size:12px;line-height:1.25;overflow-wrap:anywhere}.profile-section{margin-top:8px;padding:10px;border-radius:11px}.profile-section h2{margin-bottom:7px;font-size:15px}.section-heading{gap:6px}.section-heading h2{font-size:15px}.profile-identity{gap:7px}.profile-identity .mini-grid{gap:5px}@media(max-width:520px){.profile-section{margin-top:6px;padding:8px}.profile-section h2{margin-bottom:6px}.mini-grid{gap:4px}.mini-card{padding:6px}.mini-card span{font-size:9px}.mini-card b{font-size:11px}}.profile-section h2{margin:0 0 12px;font-size:18px}.alliance-collapsible{padding:0;overflow:hidden}.alliance-collapsible details{width:100%}.alliance-collapsible summary{list-style:none;cursor:pointer;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}.alliance-collapsible summary::-webkit-details-marker{display:none}.alliance-collapsible summary>span:first-child{min-width:0}.alliance-collapsible summary b{display:block;font-size:16px}.alliance-collapsible summary small{display:block;margin-top:3px;color:#94a3b8;font-size:10px}.collapse-mark{width:28px;height:28px;border-radius:9px;background:#162238;color:#f59e0b;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;flex:0 0 28px}.alliance-collapsible details[open] .collapse-mark{transform:rotate(45deg)}.collapse-body{padding:0 16px 16px}.mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-card{padding:12px;border-radius:10px;background:#162238;border:1px solid #334155}.mini-card span{display:block;color:#94a3b8;font-size:11px}.mini-card b{display:block;margin-top:4px}.hero-stars-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;padding:7px 10px;border:1px solid #334155;border-radius:9px;background:#0f172a}.hero-stars{display:flex;align-items:center;gap:2px;min-width:0}.hero-star{width:24px;height:24px;display:block;flex:0 0 24px;overflow:visible}.hero-star-petal{stroke:#9b7a28;stroke-width:1.05;stroke-linejoin:round}.hero-star-petal.is-filled{fill:#ffe98a}.hero-star-petal.is-empty{fill:#334155;opacity:.78}.hero-star-center{fill:#fff2ad;stroke:#9b7a28;stroke-width:1.05}.hero-star-divider{fill:none;stroke:#9b7a28;stroke-width:1.05;stroke-linecap:round}.hero-stars-label{font-size:12px;font-weight:800;color:#e2e8f0;white-space:nowrap}.hero-gear-section{margin-top:10px}.hero-gear-title{font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:7px}.hero-gear-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.hero-gear-item{min-width:0;text-align:center;padding:6px 4px;border:1px solid #334155;border-radius:9px;background:#0f172a}.hero-gear-image{width:48px;height:48px;display:block;margin:0 auto 4px;object-fit:contain;border-radius:8px;background:#111827;border:1px solid #475569}.hero-gear-image-empty{display:grid;place-items:center;color:#64748b;font-size:10px}.hero-gear-slot{display:block;font-size:9px;color:#cbd5e1;overflow-wrap:anywhere}.hero-gear-level{display:block;margin-top:2px;font-size:10px;font-weight:700;color:#fbbf24}.hero-gear-name{display:block;margin-top:2px;font-size:8px;color:#94a3b8;overflow-wrap:anywhere}.hero-list,.gear-list{display:grid;gap:10px;margin-top:12px}.hero-card,.gear-card{padding:13px;border:1px solid #334155;border-radius:11px;background:#162238}
 /* Readability pass: restore text size and save height through layout, not tiny type. */
-@media(max-width:520px){.profile-section:has(> .section-heading > h2) .mini-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card{padding:6px 5px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card span{font-size:9px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card b{font-size:11px}.hero .sub{font-size:11px;line-height:1.25}.hero .profile-meta{font-size:10px;line-height:1.25}.hero .kid{font-size:16px}.hero-title-text strong{font-size:14px}.hero-level{font-size:11px}.hero-inline-stars .hero-star{width:11px;height:11px;flex-basis:11px}.hero-inline-stars span{font-size:8px}.hero-meta{font-size:10px;line-height:1.3}.hero-gear-slot{font-size:9px}.hero-gear-level{font-size:9px}.hero-gear-name{font-size:8px}}
+@media(max-width:520px){.profile-section:has(> .section-heading > h2) .mini-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card{padding:6px 5px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card span{font-size:9px}.profile-section:has(> .section-heading > h2) .mini-grid .mini-card b{font-size:11px}.hero .sub{font-size:11px;line-height:1.25}.hero .profile-meta{font-size:10px;line-height:1.25}.hero .kid{font-size:16px}.hero-title-text strong{font-size:14px}.hero-name-line{display:flex;align-items:center;flex-wrap:wrap;gap:5px;min-width:0}.hero-troop-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;line-height:1.2;font-weight:700;white-space:nowrap;padding:2px 5px;border:1px solid var(--ee-border,#2a4664);border-radius:999px;color:var(--ee-text,#e8f3ff);background:var(--ee-panel-raised,#172a40)}.hero-troop-badge img{display:block;width:32px;height:32px;object-fit:contain;flex:0 0 32px}.hero-level{font-size:11px}.hero-inline-stars .hero-star{width:11px;height:11px;flex-basis:11px}.hero-inline-stars span{font-size:8px}.hero-meta{font-size:10px;line-height:1.3}.hero-gear-slot{font-size:9px}.hero-gear-level{font-size:9px}.hero-gear-name{font-size:8px}}
 /* Compact layout pass: reduce repeated vertical spacing without hiding data. */
 .wrap{padding-top:10px;padding-bottom:10px}.profile-section{margin-top:5px;padding:7px}.section-heading{margin-bottom:5px}.mini-grid{gap:3px}.mini-card{padding:5px}.hero{margin-top:5px;padding:7px;gap:5px}.player-avatar-main{width:34px;height:34px;flex-basis:34px}.hero h1{margin:1px 0;font-size:17px}.sub{font-size:10px;line-height:1.2}.profile-meta{gap:2px;font-size:9px;line-height:1.2}.hero .kid{font-size:15px;margin-top:2px}.hero-list{gap:4px;margin-top:5px}.hero-card{padding:5px}.hero-meta{margin-top:1px;font-size:9px;line-height:1.2}.hero-gear-section{margin-top:3px}.hero-gear-image{width:26px;height:26px;margin-bottom:1px}.hero-inline-stars{margin-top:1px}.hero-inline-stars .hero-star{width:10px;height:10px;flex-basis:10px}@media(max-width:520px){.wrap{padding:8px 7px}.profile-section{margin-top:4px;padding:6px}.hero{margin-top:4px;padding:6px}.player-avatar-main{width:32px;height:32px;flex-basis:32px}.hero h1{font-size:16px}.hero .kid{font-size:14px}.hero-card{padding:4px}.hero-gear-image{width:24px;height:24px}}
 /* Compact player hero cards: preserve all stats and segmented stars while reducing vertical space. */
 .hero-list{gap:5px;margin-top:7px}.hero-card{padding:7px 8px;border-radius:9px}.hero-head{gap:5px}.hero-title{gap:6px}.hero-icon{width:42px;height:42px;flex:0 0 42px}.hero-stars-row{margin-top:3px;padding:2px 5px;gap:5px}.hero-star{width:16px;height:16px;flex:0 0 16px}.hero-stars{gap:0}.hero-stars-label{font-size:9px}
-.hero-inline-stars{display:flex;align-items:center;gap:2px;margin-top:2px;min-width:0}.hero-inline-stars .hero-star{width:11px;height:11px;flex:0 0 11px}.hero-inline-stars span{font-size:7px;color:#cbd5e1;white-space:nowrap}.hero-title-text{min-width:0}.hero-title-text strong{font-size:13px}.hero-level{font-size:10px;color:#94a3b8}.hero-meta{margin-top:2px;font-size:10px;line-height:1.25}.hero-gear-section{margin-top:4px}.hero-gear-title{margin-bottom:3px;font-size:9px}.hero-gear-list{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.hero-gear-item{padding:3px 2px;border-radius:6px}.hero-gear-image{width:30px;height:30px;margin-bottom:2px;border-radius:5px}.hero-gear-slot{font-size:8px;line-height:1.1}.hero-gear-level{margin-top:1px;font-size:8px}.hero-gear-name{font-size:7px;line-height:1.1}.hero-gear-slot{font-size:9px}.hero-gear-name{overflow-wrap:anywhere}@media(max-width:520px){.hero-card{padding:6px}.hero-icon{width:38px;height:38px;flex-basis:38px}.hero-gear-list{gap:3px}.hero-gear-image{width:28px;height:28px}.hero-star{width:15px;height:15px;flex-basis:15px}.hero-stars-label{font-size:8px}}.optional-assets-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.optional-asset-card{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #334155;border-radius:11px;background:#162238;min-width:0}.optional-asset-image{width:56px;height:56px;flex:0 0 56px;object-fit:contain;border-radius:10px;background:#0f172a;border:1px solid #475569}.optional-asset-info{min-width:0}.optional-asset-info b{display:block;font-size:12px;overflow-wrap:anywhere}.optional-asset-info span{display:block;margin-top:3px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.profile-identity{display:flex;align-items:center;gap:10px}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-identity-main{display:flex;align-items:center;gap:11px;min-width:0}
+.hero-inline-stars{display:flex;align-items:center;gap:2px;margin-top:2px;min-width:0}.hero-inline-stars .hero-star{width:11px;height:11px;flex:0 0 11px}.hero-inline-stars span{font-size:7px;color:#cbd5e1;white-space:nowrap}.hero-troop-badge{display:inline-flex;align-items:center;gap:4px;margin:4px 0 2px;padding:2px 7px;border:1px solid var(--ee-border);border-radius:6px;background:rgba(32,201,232,.10);color:var(--ee-text);font-size:11px;font-weight:800;line-height:1.5}.hero-inline-stars{align-items:center;flex-wrap:wrap;row-gap:3px}.hero-inline-stars .hero-troop-badge{align-self:center;margin:0 0 0 6px;padding:0 5px;gap:3px;font-size:10px;line-height:1;white-space:nowrap;flex:0 0 auto;min-height:28px;box-sizing:border-box}.hero-inline-stars .hero-troop-badge img{width:26px;height:26px;flex:0 0 26px}.hero-title-text{min-width:0}.hero-title-text strong{font-size:13px}.hero-level{font-size:10px;color:#94a3b8}.hero-meta{margin-top:2px;font-size:10px;line-height:1.25}.hero-gear-section{margin-top:4px}.hero-gear-title{margin-bottom:3px;font-size:9px}.hero-gear-list{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.hero-gear-item{padding:3px 2px;border-radius:6px}.hero-gear-image{width:30px;height:30px;margin-bottom:2px;border-radius:5px}.hero-gear-slot{font-size:8px;line-height:1.1}.hero-gear-level{margin-top:1px;font-size:8px}.hero-gear-name{font-size:7px;line-height:1.1}.hero-gear-slot{font-size:9px}.hero-gear-name{overflow-wrap:anywhere}@media(max-width:520px){.hero-card{padding:6px}.hero-icon{width:38px;height:38px;flex-basis:38px}.hero-gear-list{gap:3px}.hero-gear-image{width:28px;height:28px}.hero-star{width:15px;height:15px;flex-basis:15px}.hero-stars-label{font-size:8px}}.optional-assets-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.optional-asset-card{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #334155;border-radius:11px;background:#162238;min-width:0}.optional-asset-image{width:56px;height:56px;flex:0 0 56px;object-fit:contain;border-radius:10px;background:#0f172a;border:1px solid #475569}.optional-asset-info{min-width:0}.optional-asset-info b{display:block;font-size:12px;overflow-wrap:anywhere}.optional-asset-info span{display:block;margin-top:3px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.profile-identity{display:flex;align-items:center;gap:10px}.profile-identity>div{min-width:0}.profile-identity span{display:block;color:#94a3b8;font-size:10px}.profile-identity b{display:block;margin-top:2px;font-size:12px}.profile-avatar{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-identity-main{display:flex;align-items:center;gap:11px;min-width:0}
 /* Tighten player profile header without removing identity metadata. */
 .hero{margin-top:10px;padding:12px;gap:8px;border-radius:12px}.player-identity-main{gap:7px}.player-avatar-main{width:40px;height:40px;flex-basis:40px;border-radius:9px}.eyebrow{font-size:9px;letter-spacing:1.5px}.hero h1{margin:2px 0;font-size:20px}.sub{font-size:11px;line-height:1.3}.profile-meta{gap:3px;font-size:10px;line-height:1.3}.hero .kid{font-size:18px;margin-top:4px}.hero .section-export{padding:4px 6px;font-size:9px}@media(max-width:520px){.hero{margin-top:8px;padding:10px}.player-avatar-main{width:36px;height:36px;flex-basis:36px}.hero h1{font-size:18px}.hero .kid{font-size:16px}}.player-avatar-main{width:48px;height:48px;flex:0 0 48px;border-radius:12px;object-fit:cover;background:#0f172a;border:1px solid #475569}.player-avatar-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:17px}.flag-value{display:flex!important;align-items:center;gap:7px}.alliance-flag{width:24px;height:24px;border-radius:6px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.hero-title{display:flex;align-items:center;gap:10px;min-width:0}.hero-title>div{min-width:0}.hero-title strong{display:block;font-size:15px;overflow-wrap:anywhere}.hero-icon{width:42px;height:42px;flex:0 0 42px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.hero-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.hero-level{margin-top:2px;color:#94a3b8;font-size:11px;font-weight:700}.hero-head span{display:inline-flex;flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#0f172a;color:#94a3b8;font-size:10px;margin:0}.hero-meta{display:block;color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:7px;overflow-wrap:anywhere}.hero-meta:first-of-type{color:#f8fafc;font-weight:700}.detail-list{display:grid;gap:7px;margin-top:10px}.detail-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:9px;background:#162238;border:1px solid #334155}.detail-row span{color:#cbd5e1;font-size:12px;min-width:0;overflow-wrap:anywhere}.detail-row b{color:#f8fafc;font-size:12px;white-space:nowrap}.ranking-group-title{margin:14px 0 8px;font-size:13px;color:#f59e0b}.gear-card strong{display:block;font-size:14px}.gear-head{display:flex;align-items:center;gap:10px}.gear-head>div{min-width:0}.gear-icon{width:44px;height:44px;flex:0 0 44px;border-radius:9px;object-fit:cover;background:#0f172a;border:1px solid #475569}.gear-icon-empty{display:flex;align-items:center;justify-content:center;color:#64748b;font-size:16px}.gear-name{margin-top:2px;color:#94a3b8;font-size:10px;overflow-wrap:anywhere}.gear-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}.gear-stat{padding:7px 8px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.35}.gear-stat b{display:block;color:#e2e8f0;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.gear-gems{margin-top:8px;padding:8px 9px;border-radius:8px;background:#0f172a;color:#94a3b8;font-size:11px;line-height:1.5;overflow-wrap:anywhere}.gear-gems b{color:#e2e8f0}.name-history-list{display:grid;gap:8px}.name-history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:10px;background:#162238;border:1px solid #334155}.name-history-row strong{display:block;overflow-wrap:anywhere}.name-history-row span{display:inline-block;margin-left:7px;color:#f59e0b;font-size:10px}.name-history-row small{color:#94a3b8;font-size:10px;text-align:right;white-space:nowrap}.message{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c31;color:#cbd5e1}.notice{margin-top:14px;padding:12px 14px;border:1px solid #7f1d1d;border-radius:10px;background:#2a1115;color:#fecaca;font-size:12px;line-height:1.6}.search{margin-top:18px;display:flex;gap:8px}.search input{flex:1;padding:12px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:white}.search button{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}@media(max-width:520px){.hero{display:block}.kid{margin-top:12px}.grid{grid-template-columns:1fr}.mini-grid{grid-template-columns:1fr}.gear-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.detail-row{align-items:flex-start}.detail-row b{white-space:normal;text-align:right}}
   
@@ -7338,7 +8924,35 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   .ranking-settings-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
   .ranking-rest-panel .detail-row{border-left:3px solid var(--ee-cyan,#20d7f2)}
   @media(max-width:360px){.favorite-rankings-grid{gap:4px}.favorite-ranking-card{padding:7px 4px}.ranking-dashboard-actions button{font-size:11px;padding:7px 6px}}
-</style></head><body><main class="wrap"><a class="back" href="/">← EagleEye</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
+${PLAYER_BUILD_HISTORY_CSS}</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><form class="search" method="get" action="/player"><input name="governor_id" value="${esc(governorId)}" placeholder="領主ID"><button>検索</button></form>${content}</main><script>
+(function(){
+  // 詳細情報の取得はページ遷移せずバックグラウンドで行う。MightPulseは古い項目の
+  // 更新を最大90秒待つため、その間も保存済みのデータを見られるようにする。
+  const link=document.getElementById("player-refresh");
+  if(!link)return;
+  const gid=link.dataset.governorId;
+  link.addEventListener("click",async e=>{
+    e.preventDefault();
+    if(link.dataset.busy==="1")return;
+    link.dataset.busy="1";
+    let box=document.getElementById("player-refresh-status");
+    if(!box){box=document.createElement("div");box.id="player-refresh-status";box.className="notice";box.setAttribute("role","status");link.parentNode.insertAdjacentElement("afterend",box)}
+    const started=Date.now();
+    const paint=()=>{box.textContent="MightPulseから最新データを取得中… "+Math.floor((Date.now()-started)/1000)+"秒（データが古いとMightPulse側の更新待ちで最大90秒ほどかかります。このまま下の保存済みデータを見られます）"};
+    paint();const timer=setInterval(paint,1000);
+    link.textContent="取得中…";
+    try{
+      const r=await fetch("/api/player/refresh?governor_id="+encodeURIComponent(gid)+"&include=base,heroes,ranks,gov_gear",{credentials:"same-origin",cache:"no-store"});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===401){location.href="/api/auth/discord";return}
+      if(!r.ok||!d.ok)throw new Error(d.error==="NO_API_POOL_KEY_AVAILABLE"?"APIキーが混み合っています。少し待ってからもう一度お試しください。":(d.message||d.error||"取得に失敗しました"));
+      clearInterval(timer);box.textContent="取得しました。表示を更新します…";
+      location.replace("/player?governor_id="+encodeURIComponent(gid));
+    }catch(err){
+      clearInterval(timer);box.textContent="✕ "+(err.message||"取得に失敗しました");link.textContent="詳細情報を取得";link.dataset.busy="";
+    }
+  });
+})();
 (function(){
   const btn=document.getElementById("player-watchlist-toggle");
   if(!btn)return;
@@ -7346,7 +8960,7 @@ function renderPlayerShell(message, governorId, player = null, payload = null, n
   const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function sync(){
     try{
-      const r=await fetch("/api/player-watchlist",{cache:"no-store"});const d=await r.json();
+      const r=await fetch("/api/player-watchlist?view=ids",{cache:"no-store"});const d=await r.json();
       if(!r.ok||!d.ok){
         window.__eagleEyePlayerWatchlistCount=null;
         if(typeof window.__eagleEyeSetPlayerWatchlistCount==="function")window.__eagleEyeSetPlayerWatchlistCount(null);
@@ -7418,11 +9032,11 @@ const HERO_NAME_JA = {
   Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペーラ",
   Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
   Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
-  Triton: "トリトン", Sophia: "ソフィア", Ava: "エヴァ", Charles: "チャールズ",
+  Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
   "Wee & Woo": "レン&ロン", Yeonwoo: "インウー", Amane: "あまね",
   Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
   Fahd: "ファハド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
-  Edwin: "エドウィン", Seth: "セス", Diego: "ディエゴ", Liz: "リズ", Luna: "ルナ"
+  Edwin: "エドウィン", Seth: "スミス", Diego: "ディエゴ", Liz: "リズ", Luna: "ルナ"
 };
 const HERO_GEAR_SLOT_JA = {
   helmet: "兜", helm: "兜", head: "兜",
@@ -7514,7 +9128,8 @@ function localizeLeaderboardLabel(board) {
   return candidates[0] || "ランキング";
 }
 
-async function getLatestPlayerHeroRankings(db, kid, governorId) {
+async function getLatestPlayerHeroRankings(env, kid, governorId) {
+  const db = env?.DB;
   if (!db || kid === undefined || kid === null || !governorId) return [];
   const result = await db.prepare(
     `SELECT board, rank, score, observed_at
@@ -7531,7 +9146,13 @@ async function getLatestPlayerHeroRankings(db, kid, governorId) {
        ELSE 99
      END`
   ).bind(Number(kid), String(governorId)).all();
-  return result.results || [];
+  const heroBoards = ["single_hero", "hero_total", "hero_no_equip", "hero_equip"];
+  const resolved = await withArchivedRankings(env, kid, result, {
+    filter: row => row.target_type === "PLAYER" && String(row.target_id) === String(governorId) && heroBoards.includes(row.board)
+  });
+  return resolved.results
+    .map(row => ({ board: row.board, rank: row.rank, score: row.score, observed_at: row.observed_at, archived_at: resolved.archived?.archivedAt ?? null }))
+    .sort((a, b) => heroBoards.indexOf(a.board) - heroBoards.indexOf(b.board));
 }
 
 function localizeGemLevel(gem) {
@@ -7633,9 +9254,7 @@ function renderPlayerOptionalAssets(assets, canExport = false) {
 }
 
 function renderPlayerAdvancedSections(profile, governorId = "", canExport = false) {
-  const exportButton = (section) => canExport && governorId
-    ? '<a class="section-export" href="/api/admin/player-export?governor_id=' + encodeURIComponent(governorId) + '&section=' + encodeURIComponent(section) + '">スプレッドシート出力</a>'
-    : "";
+  const exportButton = (section) => playerExportLinks(governorId, section, canExport);
   const p = profile || {};
   const esc = escapeHtml;
   let html = "";
@@ -7665,7 +9284,9 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
       hero_no_equip: "英雄総力（装備除外）",
       hero_equip: "英雄総力（装備込み）"
     };
-    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + (heroRankings.length ? '<div class="mini-grid">' : "");
+    const rankingPending = Array.isArray(p.ranking_pending) ? p.ranking_pending : [];
+    const pendingNotice = rankingPending.length ? '<div class="ranking-pending" id="rankingPending" style="margin:0 0 10px;padding:10px 12px;border:1px dashed currentColor;border-radius:10px;font-size:12px;opacity:.85">⏳ 王国' + esc(rankingPending.map(x => x.kid).join('・')) + 'のランキング（英雄総力・秘境の順位など）を取得しています。数秒後に自動で更新します。</div><script>(function(){if(/[?&]rk=1(&|$)/.test(location.search))return;setTimeout(function(){var u=new URL(location.href);u.searchParams.set("rk","1");location.replace(u.pathname+u.search)},8000)})();</script>' : '';
+    html += '<section class="profile-section"><div class="section-heading"><h2>英雄</h2>' + exportButton("heroes") + '</div>' + pendingNotice + (heroRankings.length ? '<div class="mini-grid">' : "");
     for (const ranking of heroRankings) {
       html += '<div class="mini-card"><span>' + esc(heroRankingLabels[ranking.board] || ranking.board) + '</span><b>' + esc(formatCompactNumber(ranking.score)) + ' / ' + esc(ranking.rank ?? "-") + '位</b></div>';
     }
@@ -7673,7 +9294,30 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
     heroes.forEach(hero => {
       const gear = Array.isArray(hero.gear) ? hero.gear : [];
       const heroName = localizeHeroName(hero.name || hero.id);
-            const rawStarProgress = Number(hero.star);
+      const troopRaw = [hero.troop_type, hero.unit_type, hero.army_type].find(value => value != null && String(value).trim() !== "");
+      const troopText = (() => {
+        const value = String(troopRaw ?? "").trim().toLowerCase();
+        if (/infantry|步兵|歩兵/.test(value)) return "歩兵";
+        if (/cavalry|骑兵|騎兵/.test(value)) return "騎兵";
+        if (/archer|marksman|弓兵|射手/.test(value)) return "弓兵";
+        const key = String(hero.name || hero.id || "").trim().toLowerCase().replace(/[ _-]+/g, "");
+        const verifiedHeroTroops = {
+          amadeus: "歩兵", alcar: "歩兵", charles: "歩兵", chenko: "騎兵",
+          diana: "弓兵", edwin: "騎兵", eric: "歩兵", fahd: "騎兵",
+          forrest: "歩兵", gordon: "騎兵", helga: "歩兵", hilde: "騎兵",
+          howard: "歩兵", jaeger: "弓兵", jabel: "騎兵", longfei: "歩兵",
+          marlin: "弓兵", margot: "騎兵", olive: "弓兵", petra: "騎兵",
+          quinn: "弓兵", rosa: "弓兵", saul: "弓兵", seth: "歩兵",
+          sophia: "騎兵", thrud: "騎兵", triton: "歩兵", vivian: "弓兵",
+          "wee&woo": "弓兵", yang: "弓兵", yeonwoo: "弓兵", zoe: "歩兵",
+          amane: "弓兵", ava: "騎兵"
+        };
+        return verifiedHeroTroops[key] || "";
+      })();
+      const troopIconUrl = troopText === "歩兵" ? "/assets/eagleeye/hero-troop/infantry.PNG"
+        : troopText === "騎兵" ? "/assets/eagleeye/hero-troop/cavalry.PNG"
+        : troopText === "弓兵" ? "/assets/eagleeye/hero-troop/archer.PNG" : "";
+      const rawStarProgress = Number(hero.star);
       const hasStarProgress = Number.isFinite(rawStarProgress);
       const starProgress = hasStarProgress ? Math.max(0, Math.floor(rawStarProgress)) : 0;
       const labelMatch = String(hero.star_label ?? "").match(/\d+/);
@@ -7702,7 +9346,7 @@ function renderPlayerAdvancedSections(profile, governorId = "", canExport = fals
       const heroIconUrl = normalizeProfileAssetUrl(hero.icon);
       html += '<article class="hero-card"><div class="hero-head"><div class="hero-title">' +
         (heroIconUrl ? '<img class="hero-icon" src="' + esc(heroIconUrl) + '" alt="" loading="lazy">' : '<span class="hero-icon hero-icon-empty">?</span>') +
-        '<div class="hero-title-text"><strong>' + esc(heroName) + '</strong><div class="hero-level">Lv.' + esc(hero.level ?? "-") + '</div><div class="hero-inline-stars" aria-label="' + esc(starLabel) + '">' + starIcons + '<span>' + esc(starLabel) + '</span></div></div></div>' +
+        '<div class="hero-title-text"><div class="hero-name-line"><strong>' + esc(heroName) + '</strong></div><div class="hero-level">Lv.' + esc(hero.level ?? "-") + '</div><div class="hero-inline-stars" aria-label="' + esc(starLabel) + '">' + starIcons + '<span>' + esc(starLabel) + '</span>' + (troopText ? '<span class="hero-troop-badge" aria-label="兵種：' + esc(troopText) + '"><img src="' + esc(troopIconUrl) + '" alt="" loading="lazy">' + esc(troopText) + '</span>' : '') + '</div></div></div>' +
         '<span>' + esc(hero.position ? "配置 " + hero.position : "") + '</span></div>';
       html += '<div class="hero-meta">品質 ' + esc(hero.quality ?? "-") + ' / 戦力 ' + esc(formatCompactNumber(hero.power)) + '</div>';
       if (hero.skill_levels) html += '<div class="hero-meta">スキル: ' + esc(hero.skill_levels.map((s, i) => "スキル" + (i + 1) + " Lv." + (s.level ?? "-")).join(" / ")) + '</div>';
@@ -7804,17 +9448,6 @@ function card(label, value) {
   return `<div class="card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
 }
 
-function formatTownCenterLevel(value) {
-  if (value === null || value === undefined || value === "") return "-";
-  const level = Number(value);
-  if (!Number.isFinite(level)) return String(value);
-  if (level <= 30) return `Lv.${level}`;
-  // Lv.30の後は30-1〜30-4を経て黄金1に入り、以降は各黄金レベル5段階。
-  if (level <= 34) return `Lv.30-${level - 30}`;
-  const goldLevel = Math.floor((level - 35) / 5) + 1;
-  const stage = ((level - 35) % 5) + 1;
-  return `黄金${goldLevel}（${stage}/5）`;
-}
 
 function formatRelativeActivity(lastActiveAt, fallback = null) {
   if (lastActiveAt !== null && lastActiveAt !== undefined && lastActiveAt !== "") {
@@ -7840,7 +9473,7 @@ function translateLastLogin(value) {
     .replace(/^Last active (just now)$/i, "直近");
 }
 
-function formatCompactNumber(value) {
+export function formatCompactNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -7854,7 +9487,9 @@ function formatCompactNumber(value) {
 function formatCompactUnit(value, divisor, suffix) {
   const scaled = value / divisor;
   const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-  return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + suffix;
+  // 小数点の後ろの0だけ消す（「330M」の0を消して「33M」にしていた・2026-11-19）
+  const text = scaled.toFixed(decimals);
+  return (text.includes(".") ? text.replace(/\.?0+$/, "") : text) + suffix;
 }
 
 function formatNumber(value) {
@@ -7892,7 +9527,76 @@ async function handleKingdomRankingPreferencesApi(request, env) {
   return json({ ok: true, kid, boards, primary_board: primary });
 }
 
+// プレビュー専用の合言葉ゲートと疑似ログイン（preview-login.js）。本番では呼ばれない（isPreviewEnv を見ている）。
+async function previewGate(request, env, url) {
+  if (url.pathname === "/preview/login" || url.pathname === "/preview/logout") return handlePreviewLogin(request, env, url);
+  if (isPreviewGateOpenPath(url.pathname)) return null;
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const gate = parseCookie(request.headers.get("Cookie") || "")[PREVIEW_GATE_COOKIE];
+  if (gate && secret && (await verifyPayload(gate, secret))?.gate === true) return null;
+  if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "PREVIEW_LOGIN_REQUIRED" }, 401);
+  return new Response(null, { status: 302, headers: { Location: "/preview/login?next=" + encodeURIComponent(url.pathname + url.search), "Cache-Control": "no-store" } });
+}
+
+async function handlePreviewLogin(request, env, url) {
+  const html = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const clear = name => serializeCookie(name, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" });
+  if (url.pathname === "/preview/logout") {
+    const h = new Headers({ Location: "/preview/login", "Cache-Control": "no-store" });
+    h.append("Set-Cookie", clear(SESSION_COOKIE));
+    h.append("Set-Cookie", clear(PREVIEW_GATE_COOKIE));
+    return new Response(null, { status: 302, headers: h });
+  }
+  const configured = Boolean(env.PREVIEW_LOGIN_KEY && secret);
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  let current = null;
+  try {
+    const session = cookies[SESSION_COOKIE] && secret ? await verifyPayload(cookies[SESSION_COOKIE], secret) : null;
+    const gate = cookies[PREVIEW_GATE_COOKIE] && secret ? await verifyPayload(cookies[PREVIEW_GATE_COOKIE], secret) : null;
+    if (session) current = (PREVIEW_ROLES.find(([v]) => v === previewRoleOf(session)) || PREVIEW_ROLES[0])[1];
+    else if (gate?.gate === true) current = PREVIEW_ROLES.find(([v]) => v === GUEST)[1];
+  } catch {}
+  if (request.method !== "POST") return html(renderPreviewLoginPage({ configured, current, next: url.searchParams.get("next") || "/" }));
+  if (!configured) return html(renderPreviewLoginPage({ configured }), 503);
+  if (previewLoginLimited()) return html(renderPreviewLoginPage({ configured, message: "しばらく待ってからやり直してください。" }), 429);
+  const form = await request.formData().catch(() => null);
+  const next = safeNextPath(form?.get("next"));
+  if (!safeEqual(form?.get("key"), env.PREVIEW_LOGIN_KEY)) { notePreviewLoginFailure(); return html(renderPreviewLoginPage({ configured, next, message: "合言葉が違います。" }), 401); }
+  const now = Math.floor(Date.now() / 1000);
+  const cookieOpts = { maxAge: PREVIEW_GATE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" };
+  const h = new Headers({ Location: next, "Cache-Control": "no-store" });
+  h.append("Set-Cookie", serializeCookie(PREVIEW_GATE_COOKIE, await signPayload({ gate: true, iat: now, exp: now + PREVIEW_GATE_MAX_AGE }, secret), cookieOpts));
+  if (String(form.get("role") || "") === GUEST) {
+    h.append("Set-Cookie", clear(SESSION_COOKIE));
+    return new Response(null, { status: 302, headers: h });
+  }
+  const owner = env.DB ? await env.DB.prepare("SELECT discord_id, username, global_name FROM users WHERE role = 'OWNER' ORDER BY user_id LIMIT 1").first().catch(() => null) : null;
+  if (!owner?.discord_id) return html(renderPreviewLoginPage({ configured, next, message: "オーナーのアカウントが見つかりません。" }), 500);
+  const role = previewRoleOf({ preview_role: form.get("role") });
+  const session = await signPayload({ sub: String(owner.discord_id), username: owner.username || null, global_name: owner.global_name || null, avatar: null, iat: now, exp: now + PREVIEW_GATE_MAX_AGE, preview: true, ...(role ? { preview_role: role } : {}) }, secret);
+  h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, cookieOpts));
+  return new Response(null, { status: 302, headers: h });
+}
+
+// 「Range: bytes=a-b」を R2 の range に（iPhone の Safari は動画を部分ごとに読みに来る）。suffix（bytes=-N）にも対応。
+function parseByteRange(header) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || "").trim());
+  if (!m || (m[1] === "" && m[2] === "")) return null;
+  if (m[1] === "") return { suffix: Number(m[2]) };
+  const offset = Number(m[1]);
+  return m[2] === "" ? { offset } : { offset, length: Math.max(1, Number(m[2]) - offset + 1) };
+}
+
 async function getAuthenticatedUser(request, env) {
+  // 作業用の鍵（X-EagleEye-Agent-Token）：決められた操作だけオーナーとして通す。鍵が付いていればCookieは見ない。
+  const agent = agentTokenState(request, env);
+  if (agent !== undefined) {
+    if (!agent || agentRateLimited() || !env.DB) return null;
+    await auditAgentRequest(request, env, writeOwnerAuditLog, agent);
+    await ensureActiveGovernorSchema(env.DB).catch(() => {});
+    return agent;
+  }
   const secret = env.EAGLEEYE_SESSION_SECRET;
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   if (!token || !secret) return null;
@@ -7900,12 +9604,17 @@ async function getAuthenticatedUser(request, env) {
   if (!session) return null;
 
   if (!env.DB) return null;
+  if (await isSessionRevoked(env.DB, session)) return null;
 
   try {
     const user = await env.DB.prepare(
-      "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
+      "SELECT user_id, discord_id, username, global_name, role, status FROM users WHERE discord_id = ? LIMIT 1"
     ).bind(session.sub).first();
-    return user || null;
+    // ログインユーザーの1日の利用者数（1人1日1行、同じisolate内は2回目以降書かない）。
+    if (user) await recordDailyActive(env.DB, user);
+    // 使う領主の切り替え（active-governor.js）の表を、ログイン中の人の最初の1回だけ用意する（同じ isolate では2回目以降しない）。
+    if (user) await ensureActiveGovernorSchema(env.DB).catch(() => {});
+    return applyPreviewRole(user, session, isPreviewEnv(env)) || null;
   } catch (error) {
     // D1 outage must not turn the public/home page into a 500.
     // Protected routes still fail closed because they require a DB-backed user.
@@ -7916,6 +9625,7 @@ async function getAuthenticatedUser(request, env) {
 
 async function trackServiceUsage(env, auth, operation, { targetType = null, targetId = null, metadata = {} } = {}) {
   if (!auth?.user_id) return;
+  if (auth.agent) return; // Claude 用の鍵は利用者ではないので、利用の記録に数えない
   try {
     await recordServiceUsage(env, {
       operation,
@@ -7961,11 +9671,10 @@ async function handleDebugPlayerGear(request, env) {
         '</article>';
     }).join("");
 
-    return new Response(
-      '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug</title>' +
+    return eagleEyeHtmlResponse(
+      '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gear Icon Debug | EagleEye</title>' +
       '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1000px;margin:auto}.note{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 8px}.card p{font-size:13px;color:#94a3b8;word-break:break-all}.preview{min-height:190px;border:1px dashed #475569;border-radius:10px;background:#020617;display:flex;align-items:center;justify-content:center;position:relative}.preview img{max-width:180px;max-height:180px}.preview .error{display:none;color:#fca5a5;font-size:12px}.preview img:not([src=""]){}</style>' +
-      '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>',
-      { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+      '</head><body><main class="wrap"><h1>領主装備アイコン確認</h1><p class="note">領主ID: ' + escapeHtml(governorId) + '<br>APIから取得した確認済みiconパスを直接表示しています。MightPulse APIの再取得は行いません。</p><div class="grid">' + cards + '</div></main></body></html>'
     );
   }
 
@@ -8040,11 +9749,10 @@ async function handleDebugPlayerIcons(request, env) {
         '<div class="row"><span>同盟旗</span>' + image(result.alliance_flag_url, "alliance flag") + '<code>' + escapeHtml(result.alliance_flag_url || "-") + '</code></div>' +
         '</section>';
 
-      return new Response(
-        '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player Icon Debug</title>' +
+      return eagleEyeHtmlResponse(
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player Icon Debug | EagleEye</title>' +
         '<style>body{margin:0;background:#0f172a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;padding:20px}.wrap{max-width:1100px;margin:auto}.note,.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px}.card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px}.card h2{margin:0 0 12px}.hero-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:900}.hero-title img{width:64px;height:64px;object-fit:contain;border-radius:10px;background:#020617}.sub{margin-top:12px;padding-top:10px;border-top:1px solid #334155}.row{display:grid;grid-template-columns:110px 56px minmax(0,1fr);gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #334155}.row img{width:48px;height:48px;object-fit:contain;border-radius:8px;background:#020617}.row code,.sub>code{display:block;margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.row code{grid-column:2 / 4}.missing{display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:8px;background:#0b1220;color:#64748b;font-size:10px}.sub pre{white-space:pre-wrap;overflow:auto;padding:10px;border-radius:8px;background:#0b1220;color:#cbd5e1;font-size:11px}</style>' +
-        '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">Governor ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>',
-        { status: 200, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" } }
+        '</head><body><main class="wrap"><h1>プレイヤーアイコン確認</h1><p class="note">領主ID: ' + escapeHtml(governorId) + '<br>APIから実際に取得したアイコン関連データを確認します。ここでは表示確認のみで、本番UIは変更しません。</p><div class="grid">' + heroCards + '</div>' + misc + '</main></body></html>'
       );
     }
 
@@ -8081,7 +9789,7 @@ function adminKingdomRankingName(row) {
   if (row?.target_type === "ALLIANCE") {
     const abbr = String(row.abbr || "").trim();
     const name = String(row.name || "").trim();
-    return abbr && name ? "[" + abbr + "] " + name : abbr || name || row.target_id || "-";
+    return abbr && name ? "[" + abbr + "] " + name : abbr || name || (row.target_id ? allianceLabel(row) : "-");
   }
   return String(row?.nick_name || row?.governor_id || row?.uid || row?.target_id || "-");
 }
@@ -8271,9 +9979,9 @@ async function renderAdminKingdomRankingsPage(request, env) {
   const statusHtml=status.length ? "<div class='status'>"+esc(status.join(" / "))+"</div>" : "";
   const errorHtml=state.error ? "<div class='error'>"+esc(state.error)+"</div>" : "";
 
-  return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>EagleEye 王国ランキング</title><style>"+
-    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 48px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0}.sub{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.form{display:grid;grid-template-columns:1fr 1.6fr 110px auto;gap:9px;align-items:end}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:10px;border:0;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900;cursor:pointer;white-space:nowrap}.btn.secondary{background:#334155;color:#e2e8f0}.status{margin-top:12px;padding:11px;border-radius:10px;background:#0f2a1c;color:#86efac;font-size:12px;line-height:1.7}.error{margin-top:12px;padding:11px;border-radius:10px;background:#3a1418;color:#fca5a5;font-size:12px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #334155;border-radius:12px}table{width:100%;border-collapse:collapse;min-width:520px}th,td{padding:10px 9px;border-bottom:1px solid #334155;text-align:left;font-size:12px}th{color:#94a3b8;font-size:11px}td:first-child{width:58px;color:#f59e0b;font-weight:900}td:last-child{text-align:right;font-weight:900;white-space:nowrap}td small{display:block;color:#94a3b8;margin-top:3px}.empty{text-align:center!important;color:#94a3b8!important;line-height:1.7;padding:24px!important;font-weight:400!important}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .field:nth-child(2){grid-column:1 / -1}.form .btn{grid-column:1 / -1;width:100%}}@media(max-width:430px){.form{grid-template-columns:1fr}.form .field:nth-child(2){grid-column:auto}}"+
-    "</style></head><body><main class='wrap'><div class='top'><a class='back' href='/admin'>← ADMIN CONTROL</a><div class='badge'>ADMIN / OWNER</div></div><div class='eyebrow'>KINGDOM RANKINGS</div><h1 class='title'>王国ランキング</h1><p class='sub'>必要なランキングだけを選択して取得・閲覧します。ウォッチリストの全ランキング監視とは分離しています。</p>"+
+  return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>王国ランキング | EagleEye</title><style>"+
+    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 48px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:11px;font-weight:900}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0}.sub{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.form{display:grid;grid-template-columns:1fr 1.6fr 110px auto;gap:9px;align-items:end}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:10px;border:0;background:var(--ee-cyan,#22d3ee);color:#111827;text-decoration:none;font-weight:900;cursor:pointer;white-space:nowrap}.btn.secondary{background:#334155;color:#e2e8f0}.status{margin-top:12px;padding:11px;border-radius:10px;background:#0f2a1c;color:#86efac;font-size:12px;line-height:1.7}.error{margin-top:12px;padding:11px;border-radius:10px;background:#3a1418;color:#fca5a5;font-size:12px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #334155;border-radius:12px}table{width:100%;border-collapse:collapse;min-width:520px}th,td{padding:10px 9px;border-bottom:1px solid #334155;text-align:left;font-size:12px}th{color:#94a3b8;font-size:11px}td:first-child{width:58px;color:var(--ee-cyan,#22d3ee);font-weight:900}td:last-child{text-align:right;font-weight:900;white-space:nowrap}td small{display:block;color:#94a3b8;margin-top:3px}.empty{text-align:center!important;color:#94a3b8!important;line-height:1.7;padding:24px!important;font-weight:400!important}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .field:nth-child(2){grid-column:1 / -1}.form .btn{grid-column:1 / -1;width:100%}}@media(max-width:430px){.form{grid-template-columns:1fr}.form .field:nth-child(2){grid-column:auto}}"+
+    "</style></head><body><main class='wrap'><div class='top'><a class='back' href='/admin'>← 管理画面</a><div class='badge'>ADMIN / OWNER</div></div><div class='eyebrow'>王国ランキング</div><h1 class='title'>王国ランキング</h1><p class='sub'>必要なランキングだけを選択して取得・閲覧します。ウォッチリストの全ランキング監視とは分離しています。</p>"+
     "<div class='card'><form class='form' method='get' action='/admin/kingdom-rankings'><div class='field'><label>王国番号（鯖番号）</label><input name='kid' inputmode='numeric' pattern='[0-9]+' value='"+esc(kid)+"' placeholder='例: 1524' required></div><div class='field'><label>ランキング</label><select name='board'>"+options+"</select></div><div class='field'><label>表示件数</label><select name='limit'><option value='10'"+(limit===10?" selected":"")+">10位</option><option value='50'"+(limit===50?" selected":"")+">50位</option><option value='100'"+(limit===100?" selected":"")+">100位</option></select></div><button class='btn' name='refresh' value='1'>最新データを取得</button></form></div>"+
     "<div class='card'><div>"+(state.rows.length ? "<a class='btn secondary' href='"+exportLink+"'>スプレッドシートへ出力</a>" : "")+"</div>"+errorHtml+statusHtml+"<div class='table-wrap'><table><thead><tr><th>順位</th><th>プレイヤー / 同盟</th><th>スコア</th></tr></thead><tbody>"+rowsHtml+"</tbody></table></div></div></main></body></html>";
 }
@@ -8284,8 +9992,8 @@ async function renderAdminControlPage(request, env) {
   const isOwner = guard.auth.role === "OWNER";
   const ownerLink = isOwner ? "<div class=\"section\"><a class=\"card\" href=\"/owner\"><b>OWNER CONTROLへ</b><span>OWNER専用のユーザー・監査管理</span></a></div>" : "";
   const visibilityLink = isOwner ? "<a class=\"card\" href=\"/admin/player-visibility\"><b>データ公開設定</b><span>ロール別公開範囲を管理</span></a>" : "";
-  return "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>EagleEye ADMIN CONTROL</title>" +
-    "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:820px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.grid{display:grid;gap:12px;margin-top:22px}.card{display:block;padding:18px;border:1px solid #334155;border-radius:14px;background:#162238;color:#f8fafc;text-decoration:none}.card:hover{border-color:#64748b;background:#1b2a42}.card b{display:block;font-size:16px}.card span{display:block;margin-top:5px;color:#94a3b8;font-size:13px}.section{margin-top:28px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.notice{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#cbd5e1;font-size:13px;line-height:1.6}</style></head><body><main class=\"wrap\"><a class=\"back\" href=\"/\">← EagleEye</a><div class=\"eyebrow\">ADMIN CONSOLE</div><h1 class=\"title\">ADMIN CONTROL</h1><p class=\"sub\">EagleEyeの運用・データ管理をまとめて操作できます。</p><div class=\"badge\">ROLE: " + escapeHtml(guard.auth.role) + "</div>" +
+  return "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>管理画面 | EagleEye</title>" +
+    "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:820px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:12px;font-weight:900}.grid{display:grid;gap:12px;margin-top:22px}.card{display:block;padding:18px;border:1px solid #334155;border-radius:14px;background:#162238;color:#f8fafc;text-decoration:none}.card:hover{border-color:#64748b;background:#1b2a42}.card b{display:block;font-size:16px}.card span{display:block;margin-top:5px;color:#94a3b8;font-size:13px}.section{margin-top:28px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.notice{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#cbd5e1;font-size:13px;line-height:1.6}</style></head><body><main class=\"wrap\"><a class=\"back\" href=\"/\">← ホーム</a><div class=\"eyebrow\">管理コンソール</div><h1 class=\"title\">管理画面</h1><p class=\"sub\">EagleEyeの運用・データ管理をまとめて操作できます。</p><div class=\"badge\">ROLE: " + escapeHtml(guard.auth.role) + "</div>" +
     "<div class=\"grid\"><a class=\"card\" href=\"/admin/api-pool\"><b>API Pool管理</b><span>APIキー・Pool状態・利用状況・テスト</span></a><a class=\"card\" href=\"/admin/google-drive\"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定（操作はOWNERのみ）</span></a><a class=\"card\" href=\"/admin/diagnostics\"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細を確認</span></a><a class=\"card\" href=\"/admin/mightpulse-probe\"><b>MightPulse Probe</b><span>cached_at・age_seconds・HTTPヘッダー・時刻候補を比較</span></a><a class=\"card\" href=\"/admin/data-retention\"><b>データ保存期間</b><span>D1履歴の保持期間とR2アーカイブ対象を管理</span></a>" + visibilityLink + "<a class=\"card\" href=\"/players\"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更イベント・必要なデータ更新</span></a><a class=\"card\" href=\"/kingdom-watchlist\"><b>王国ウォッチリスト</b><span>監視対象・ランキング監視・進捗を確認</span></a></div>" +
     "<div class=\"section\"><h2>権限について</h2><div class=\"notice\">ADMINは運用・データ管理を担当します。ユーザーのロール変更、ユーザー停止、ログイン履歴、OWNER監査ログなどのアカウント管理はOWNER CONTROLからOWNERのみが行います。</div></div>" + ownerLink +
     "</main></body></html>";
@@ -8331,6 +10039,33 @@ async function writeOwnerAuditLog(env, actor, action, targetUserId, targetDiscor
   await env.DB.prepare(`INSERT INTO owner_audit_log (audit_id, actor_user_id, actor_discord_id, action, target_user_id, target_discord_id, details_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(crypto.randomUUID(), actor.user_id, actor.discord_id, action, targetUserId || null, targetDiscordId || null, details ? JSON.stringify(details) : null, Math.floor(Date.now() / 1000)).run();
 }
+// オーナー閲覧専用の鍵（OWNER_READONLY_TOKEN）で読むだけのスナップショット。Claudeの作業環境から使う。
+// ?sections=overview,traffic,growth,users（既定）/ all / audit,system,coverage など。
+async function handleOwnerSnapshotApi(request, env) {
+  if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  if (!readonlyTokenOk(request, env) && !jarvisTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
+  if (readonlyRateLimited()) return json({ ok: false, error: "RATE_LIMITED" }, 429);
+  const sections = parseSections(new URL(request.url).searchParams.get("sections"));
+  const want = k => sections.includes(k);
+  const settle = p => p.then(v => v, error => ({ error: String(error?.message || error).slice(0, 160) }));
+  const out = { ok: true, generatedAt: Math.floor(Date.now() / 1000), sections };
+  const jobs = [];
+  if (want("overview")) jobs.push(Promise.all([settle(getD1UsageState(env.DB)), settle(getApiPoolUsageState(env.DB)), settle(getAllianceSweepState(env.DB)), settle(loadFunnel(env.DB, { days: 14 })), settle(loadDailyActive(env.DB, { days: 14 }))]).then(([d1, apiPool, allianceSweep, funnel, dailyActive]) => { out.overview = { d1, apiPool, allianceSweep, funnel, dailyActive }; }));
+  if (want("traffic")) jobs.push(Promise.all([settle(loadCloudflareTraffic(env, { days: 14 })), settle(loadCloudflareTopTraffic(env))]).then(([cloudflare, top]) => { out.traffic = { cloudflare, top }; }));
+  if (want("growth")) jobs.push(Promise.all([settle(loadGrowth(env.DB)), settle(loadMissionStats(env.DB))]).then(([growth, missions]) => { out.growth = growth?.error ? growth : { headline: growthHeadline(growth), daily: growth.traffic?.daily?.slice(0, 14), pages: growth.traffic?.groups, sources: growth.traffic?.sources, landing: growth.traffic?.landing, active: growth.active, measuredRevenue: growth.measured, baselines: growth.baselines?.map(b => ({ label: b.label, created_at: b.created_at, summary: b.summary })), missions }; }));
+  if (want("users")) jobs.push(settle(loadSnapshotUsers(env.DB)).then(v => { out.users = v; }));
+  if (want("audit")) jobs.push(settle(loadSnapshotAudit(env.DB)).then(v => { out.audit = v; }));
+  if (want("system")) jobs.push(settle(loadSnapshotSystem(env.DB)).then(v => { out.system = v; }));
+  if (want("coverage")) jobs.push(settle(loadSnapshotCoverage(env.DB)).then(v => { out.coverage = v; }));
+  if (want("d1")) jobs.push(settle(loadSnapshotD1(env)).then(v => { out.d1 = v; }));
+  if (want("ae")) jobs.push(settle(loadSnapshotAnalyticsEngine(env)).then(v => { out.ae = v; }));
+  if (want("probe")) jobs.push(settle(loadSnapshotProbe(env.DB, env.ARCHIVE, { probeId: new URL(request.url).searchParams.get("probe_id") || "" })).then(v => { out.probe = v; }));
+  await Promise.all(jobs);
+  await writeOwnerAuditLog(env, { user_id: "readonly-token", discord_id: "readonly-token" }, "READONLY_SNAPSHOT", null, null, { sections }).catch(() => {});
+  return json(scrubSecrets(out));
+}
+
 async function handleOwnerUsersApi(request, env) {
   const guard = await requireOwner(request, env); if (guard.error) return guard.error;
   const url = new URL(request.url), q = String(url.searchParams.get("q") || "").trim(), like = "%" + q + "%";
@@ -8439,6 +10174,31 @@ async function handleOwnerUserStatusApi(request, env) {
   await writeOwnerAuditLog(env,guard.auth,"STATUS_CHANGED",target.user_id,target.discord_id,{from_status:target.status,to_status:status});
   return json({ok:true,user_id:target.user_id,status});
 }
+// 成長ダッシュボードの保存（オーナーだけ・同じサイトからのPOSTだけ）。
+async function handleOwnerGrowthApi(request, env, kind) {
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object") return json({ ok: false, error: "INVALID_JSON" }, 400);
+  try {
+    if (kind === "baseline") {
+      const saved = await saveBaseline(env.DB, body.label, await loadGrowth(env.DB));
+      await writeOwnerAuditLog(env, guard.auth, "GROWTH_BASELINE_SAVED", null, null, { label: saved.label }).catch(() => {});
+      return json({ ok: true, baseline: saved });
+    }
+    const from = String(body.from || ""), to = String(body.to || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to || (Date.parse(to) - Date.parse(from)) / 86400000 > 93) return json({ ok: false, error: "INVALID_RANGE" }, 400);
+    const adPv = await adPvBetween(env.DB, from, to);
+    const saved = await saveMeasuredRevenue(env.DB, { yen: body.yen, from, to, adPv });
+    return json({ ok: true, measured: saved });
+  } catch (error) {
+    const code = String(error?.message || "");
+    if (code.startsWith("INVALID_")) return json({ ok: false, error: code }, 400);
+    throw error;
+  }
+}
 async function handleOwnerAuditLogApi(request,env){
   const guard=await requireOwner(request,env);if(guard.error)return guard.error;
   const limit=Math.min(Math.max(Number(new URL(request.url).searchParams.get("limit")||100),1),250);
@@ -8449,7 +10209,7 @@ async function renderOwnerPlayerLinkSupportPage(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return eagleEyeHtmlResponse(guard.error);
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KingShot所有権サポート | EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.item{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30;margin-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.btn{padding:10px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}.danger{background:#7f1d1d;color:white}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}textarea{width:100%;min-height:70px;background:#0b1220;color:white;border:1px solid #334155;border-radius:9px;padding:9px}</style></head><body><main class="wrap"><a class="back" href="/owner">← OWNER CONTROL</a><h1>KingShot所有権サポート</h1><p class="muted">ゲーム内スクリーンショット等で本人確認した案件をここで処理します。移管時には旧リンクを解除し、申請者をADMIN_VERIFIEDとして公式認証します。不正利用が疑われる旧アカウントへの警告・停止判断は証拠を確認した上で別途行ってください。</p><div id="list" class="card">読み込み中…</div></main><script>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.item{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30;margin-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.btn{padding:10px 12px;border:0;border-radius:9px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900}.danger{background:#7f1d1d;color:white}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}textarea{width:100%;min-height:70px;background:#0b1220;color:white;border:1px solid #334155;border-radius:9px;padding:9px}</style></head><body><main class="wrap"><a class="back" href="/owner">← OWNER CONTROL</a><h1>KingShot所有権サポート</h1><p class="muted">ゲーム内スクリーンショット等で本人確認した案件をここで処理します。移管時には旧リンクを解除し、申請者をADMIN_VERIFIEDとして公式認証します。不正利用が疑われる旧アカウントへの警告・停止判断は証拠を確認した上で別途行ってください。</p><div id="list" class="card">読み込み中…</div></main><script>
 (async function(){
  const list=document.getElementById("list");
  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -8472,9 +10232,190 @@ async function renderOwnerPlayerLinkSupportPage(request, env) {
 </script></body></html>`);
 }
 
-async function renderOwnerAdminPage(request,env){
+async function handleOwnerDiscordDiagnosticsApi(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return guard.error;
+  try {
+    const result = await env.DB.prepare("SELECT event_id, trace_id, status, error_code, message, target_id, started_at, completed_at, elapsed_ms, metadata_json, created_at FROM diagnostic_events WHERE service = 'discord' AND feature = 'support_guild_membership' AND operation = 'GUILD_JOIN' ORDER BY created_at DESC LIMIT 30").all();
+    const events = (result.results || []).map(row => {
+      let metadata = {};
+      try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch {}
+      return { ...row, metadata };
+    });
+    // Live comparison with the Discord application (no D1 access, no secret values returned).
+    let checks = null;
+    try {
+      checks = await getDiscordConfigCheck(env, { origin: new URL(request.url).origin });
+    } catch (error) {
+      checks = { error: String(error?.code || "DISCORD_CONFIG_CHECK_FAILED") };
+    }
+    return json({ ok: true, config: {
+      clientId: String(env.DISCORD_CLIENT_ID || ""),
+      hasClientSecret: Boolean(env.DISCORD_CLIENT_SECRET),
+      hasBotToken: Boolean(env.DISCORD_BOT_TOKEN),
+      supportGuildId: String(env.DISCORD_SUPPORT_GUILD_ID || ""),
+      hasDatabase: Boolean(env.DB)
+    }, checks, events });
+  } catch (error) {
+    return json({ ok: false, error: "DIAGNOSTICS_QUERY_FAILED", message: String(error?.message || error).slice(0, 300) }, 500);
+  }
+}
+
+async function renderOwnerDiscordDiagnosticsPage(request, env) {
+  const guard = await requireOwner(request, env);
+  if (guard.error) return "<!doctype html><html lang='ja'><body>OWNER権限が必要です</body></html>";
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Discord連携調査 | EagleEye</title>
+  <style>*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 12px 48px}.card{background:#162238;border:1px solid #334155;border-radius:14px;padding:15px;margin:12px 0}.muted{color:#94a3b8;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.item{background:#0b1220;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item b{display:block;margin-top:5px}.event{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}.status{font-weight:800}.FAILED{color:#fca5a5}.SUCCESS{color:#86efac}button,a{display:inline-block;border:0;border-radius:8px;padding:10px 12px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:800;text-decoration:none;cursor:pointer;margin-right:6px}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style></head><body><main class="wrap"><a href="/owner">← Owner管理へ戻る</a><h1>Discord連携調査</h1><p class="muted">秘密情報の値は表示しません。ログインし直すと新しい自動参加診断が記録されます。</p><div class="card"><h2>設定状態</h2><div id="config" class="grid">読み込み中…</div></div><div class="card"><h2>接続チェック</h2><p class="muted">Cloudflareの設定とDiscordアプリの実際の設定を照合します。すべて「OK」なら、ログイン時の自動参加と /close・/reopen が動作する状態です。</p><div id="checks" class="grid">読み込み中…</div><div style="margin-top:12px"><button id="registerCommands">/close・/reopen コマンドを登録</button><div id="registerMsg" class="muted" style="margin-top:6px"></div></div></div><div class="card"><h2>自動参加の診断履歴</h2><button id="refresh">再読み込み</button><button id="copy">結果をコピー</button><div id="msg" class="muted"></div><div id="events"></div></div></main><script>
+let snapshot=null;const esc=s=>String(s??"-").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function load(){document.getElementById("msg").textContent="取得中…";try{const r=await fetch("/api/owner/discord-diagnostics",{credentials:"same-origin"});snapshot=await r.json();if(!r.ok||!snapshot.ok)throw Error(snapshot.message||snapshot.error||"取得失敗");const c=snapshot.config;document.getElementById("config").innerHTML=[["OAuth Client ID",c.clientId||"未設定"],["Client Secret",c.hasClientSecret?"設定済み":"未設定"],["Bot Token",c.hasBotToken?"設定済み":"未設定"],["Support Guild ID",c.supportGuildId||"未設定"],["D1 Database",c.hasDatabase?"接続設定あり":"未設定"]].map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("");renderChecks(snapshot.checks);document.getElementById("events").innerHTML=snapshot.events.length?snapshot.events.map(e=>'<div class="event"><div class="status '+esc(e.status)+'">'+esc(e.status)+' · '+esc(new Date(Number(e.created_at)*1000).toLocaleString("ja-JP"))+'</div><b>'+esc(e.error_code||"エラーコードなし")+'</b><div>'+esc(e.message||"メッセージなし")+'</div><div class="muted">HTTP: '+esc(e.metadata?.httpStatus??e.metadata?.discordHttpStatus??"-")+' / OAuth App: '+esc(e.metadata?.oauthApplicationId||"-")+' / OAuth照会HTTP: '+esc(e.metadata?.oauthInfoHttpStatus??"-")+' / Bot App ID: '+esc(e.metadata?.botApplicationId||e.metadata?.botUserId||"-")+' / 参加HTTP: '+esc(e.metadata?.joinHttpStatus??"-")+' / 参加確認HTTP: '+esc(e.metadata?.membershipVerifyHttpStatus??"-")+' / 結果: '+esc(e.metadata?.result||"-")+'</div><div class="muted">Trace: '+esc(e.trace_id||"-")+' / '+esc(e.target_id||"-")+'</div></div>').join(""):"診断履歴がありません。Discordログインをやり直してから再読み込みしてください。";document.getElementById("msg").textContent="更新済み · "+snapshot.events.length+"件";}catch(e){document.getElementById("msg").textContent="取得失敗: "+e.message}}
+function renderChecks(k){const box=document.getElementById("checks");if(!k||k.error){box.innerHTML='<div class="item">照合できませんでした: '+esc(k&&k.error||"不明")+'</div>';return}const ok=v=>v?'<span class="SUCCESS">OK</span>':'<span class="FAILED">NG</span>';const rows=[["Bot所属アプリ",(k.botApplication&&k.botApplication.id)||("取得失敗 "+((k.botApplication&&(k.botApplication.error||k.botApplication.httpStatus))||"")),null],["Client IDとBotのアプリが一致",k.clientIdMatchesBotApplication?"一致":"不一致",k.clientIdMatchesBotApplication],["DISCORD_PUBLIC_KEY",k.publicKeyConfigured?(k.publicKeyMatches?"Discordアプリと一致":"Discordアプリと不一致"):"未設定",k.publicKeyMatches],["Interactions Endpoint URL",k.interactionsEndpointUrl||"未設定",k.interactionsEndpointMatches],["期待するEndpoint URL",k.expectedInteractionsEndpointUrl||"-",null],["/close コマンド",k.commands&&k.commands.close?"登録済み":"未登録",k.commands&&k.commands.close],["/reopen コマンド",k.commands&&k.commands.reopen?"登録済み":"未登録",k.commands&&k.commands.reopen]];box.innerHTML=rows.map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+(x[2]===null?"":ok(x[2])+' ')+esc(x[1])+'</b></div>').join("")}
+document.getElementById("registerCommands").onclick=async()=>{const b=document.getElementById("registerCommands"),m=document.getElementById("registerMsg");b.disabled=true;m.textContent="登録中…";try{const r=await fetch("/api/admin/discord-support/register-command",{method:"POST",credentials:"same-origin"});const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw Error(d.error||("HTTP "+r.status));m.textContent="登録しました: "+(d.commands||[]).map(c=>"/"+c.name).join(" ");await load();}catch(e){m.textContent="登録失敗: "+e.message}finally{b.disabled=false}};
+document.getElementById("refresh").onclick=load;document.getElementById("copy").onclick=async()=>{if(!snapshot)return;await navigator.clipboard.writeText(JSON.stringify(snapshot,null,2));document.getElementById("msg").textContent="診断JSONをコピーしました";};load();
+</script>
+<div class="wrap"><div class="card"><h2>KvKスレッド：サーバー未参加の人に再ログインを依頼</h2><p style="color:#94a3b8;font-size:13px">KvK通知スレッドに追加できなかった（Supportサーバー未参加の）ユーザーだけをログアウトさせます。次にEagleEyeを開いたときにログインし直すと、Supportサーバーに自動参加し、数分以内に自分の王国のスレッドへ追加されます。参加済みのユーザーには影響しません。</p><button id="kvkRelogin" type="button">未参加の<span id="kvkReloginCount">—</span>人をログアウトさせる</button><div id="kvkReloginMsg" style="margin-top:8px;color:#94a3b8;font-size:13px"></div></div></div>
+<script>
+(async()=>{try{const r=await fetch("/api/owner/kvk/relogin-missing",{credentials:"same-origin"});const d=await r.json();document.getElementById("kvkReloginCount").textContent=d.ok?d.count:"?"}catch(e){}})();
+document.getElementById("kvkRelogin").onclick=async()=>{const b=document.getElementById("kvkRelogin"),m=document.getElementById("kvkReloginMsg");if(!confirm("Supportサーバー未参加のユーザーをログアウトさせます。よろしいですか？"))return;b.disabled=true;m.textContent="処理中…";try{const r=await fetch("/api/owner/kvk/relogin-missing",{method:"POST",credentials:"same-origin"});const d=await r.json();m.textContent=d.ok?"✓ "+d.revoked+"人をログアウトさせました。次回ログイン時にスレッドへ追加されます。":"✕ "+(d.error||"失敗しました")}catch(e){m.textContent="✕ 通信に失敗しました"}finally{b.disabled=false}};
+</script></body></html>`;
+}
+
+// オーナー管理の入口：機能をまとめて並べる（各ページの中身・URL・権限チェックは変えない）。
+// ユーザー・権限管理と監査ログは /owner/users に分けた（入口では重いユーザー一覧を読まない）。
+// オーナー画面の日時（秒）。日付だけ（登録）か、月日と時刻（最終ログイン）。日本時間。
+function ownerDate(sec, withTime) {
+  const n = Number(sec);
+  if (!n) return "-";
+  const d = new Date(n * 1000 + 9 * 3600 * 1000), p2 = v => String(v).padStart(2, "0");
+  return withTime ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}` : `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+// 2026-11-17：今のデザイン（着せ替えの色・ライトモード）にそろえる。オレンジの旧デザインをやめ、アクセントは --ee-cyan（着せ替えで変わる）。
+const OWNER_PAGE_CSS = ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Hiragino Sans\",\"Segoe UI\",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:var(--ee-subtext,#91a7bf);text-decoration:none;font-size:14px}.badge{padding:5px 11px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:800;letter-spacing:.08em}h1{font-size:24px;margin:14px 0 4px}h2{font-size:16px;margin:0 0 12px}.card{padding:16px;margin-top:14px;border:1px solid var(--ee-border-soft,#223b57);border-radius:16px;background:var(--ee-panel,#0f2035)}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff);text-decoration:none}.link b,.link span{display:block}.link b{margin-bottom:3px}.link span,.sub,.muted{color:var(--ee-subtext,#91a7bf);font-size:12px}.sub{margin:0 0 6px}.sub a{color:var(--ee-cyan,#22d3ee)}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-size:15px}.toolbar button,.actions button{padding:9px 13px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#04202a;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:var(--ee-success,#4ade80);font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel-raised,#172a40)}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:16px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:4px;color:var(--ee-muted,#7d93ab);font-size:10px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-panel,#0f2035)}.role-OWNER,.role-ADMIN{border-color:var(--ee-cyan,#22d3ee);color:var(--ee-cyan,#22d3ee)}.role-VIP{border-color:#a78bfa;color:#c4b5fd}.role-ADVANCED{border-color:#38bdf8;color:#7dd3fc}.st-ACTIVE{color:#4ade80;border-color:#16653488}.st-DISABLED{color:#fca5a5;border-color:#7f1d1d}.user-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px 10px;border-radius:10px;background:var(--ee-panel,#0f2035);border:1px solid var(--ee-border-soft,#223b57)}.stat span{display:block;color:var(--ee-subtext,#91a7bf);font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);border:1px solid var(--ee-border-soft,#223b57)}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;background:var(--ee-bg,#0a1424)}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:10px;background:var(--ee-panel,#0f2035);border:1px solid var(--ee-border-soft,#223b57)}.watchlist-meta{min-width:0;color:var(--ee-text,#e8f3ff);font-size:12px}.watchlist-meta small{display:block;color:var(--ee-subtext,#91a7bf);margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.audit-item{min-width:0;padding:10px;border-radius:10px;background:var(--ee-panel-raised,#172a40);border:1px solid var(--ee-border-soft,#223b57);overflow-wrap:anywhere;word-break:break-word;font-size:13px}.audit-item small{color:var(--ee-subtext,#91a7bf)}@media(max-width:600px){.wrap{padding:16px 12px 110px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}";
+const OWNER_MENU_GROUPS = Object.freeze([
+  {
+    "title": "成長・集客",
+    "note": "毎日見るもの",
+    "open": true,
+    "links": [
+      {
+        "href": "/owner/growth",
+        "title": "成長ダッシュボード",
+        "note": "PV・訪問者・継続率・広告収益の試算・前後比較"
+      },
+      {
+        "href": "/owner/traffic",
+        "title": "アクセス状況",
+        "note": "1日の利用者数・訪問者数"
+      },
+      {
+        "href": "/owner/social",
+        "title": "SNS投稿セット",
+        "note": "毎週の画像・ショート動画・投稿文と自動投稿の結果"
+      }
+    ]
+  },
+  {
+    "title": "データ",
+    "note": "プレイヤー・王国のデータと公開範囲",
+    "open": true,
+    "links": [
+      {
+        "href": "/players",
+        "title": "プレイヤーDB",
+        "note": "検索・詳細・履歴・変更"
+      },
+      {
+        "href": "/kingdom-watchlist",
+        "title": "王国ウォッチリスト",
+        "note": "監視対象・ランキング"
+      },
+      {
+        "href": "/admin/kingdom-rankings",
+        "title": "王国ランキング",
+        "note": "必要なランキングだけ取得・閲覧・Sheets出力"
+      },
+      {
+        "href": "/admin/data-coverage",
+        "title": "データ登録状況",
+        "note": "現在登録されているプレイヤー数・王国数を確認"
+      },
+      {
+        "href": "/admin/player-visibility",
+        "title": "データ公開設定",
+        "note": "ロール別公開範囲"
+      }
+    ]
+  },
+  {
+    "title": "運用・トラブル対応",
+    "note": "障害・キー・外部サービスの状態",
+    "open": true,
+    "links": [
+      {
+        "href": "/admin/diagnostics",
+        "title": "システムログ",
+        "note": "サービス状態・診断イベント・障害詳細"
+      },
+      {
+        "href": "/admin/api-pool",
+        "title": "API Pool管理",
+        "note": "APIキー・Pool・テスト"
+      },
+      {
+        "href": "/owner/discord-diagnostics",
+        "title": "Discord連携調査",
+        "note": "OAuth・Bot設定状態・自動参加の失敗履歴"
+      },
+      {
+        "href": "/admin/google-drive",
+        "title": "Google Drive連携",
+        "note": "接続状態・OAuth設定・Driveアーカイブ設定"
+      },
+      {
+        "href": "/admin/data-retention",
+        "title": "データ保存期間",
+        "note": "D1履歴・R2アーカイブ"
+      }
+    ]
+  },
+  {
+    "title": "開発・調査用",
+    "note": "普段は使わない検証用の画面",
+    "open": false,
+    "links": [
+      {
+        "href": "/admin/api-raw-data",
+        "title": "API Raw Inspector",
+        "note": "MightPulse保存生データと画像リソースを実画像で照合"
+      },
+      {
+        "href": "/owner/kingdom-load-test",
+        "title": "王国ウォッチリスト実処理負荷テスト",
+        "note": "本番と同じ取得・保存パイプラインを実行"
+      },
+      {
+        "href": "/owner/kingdom-catalog-r2-backfill",
+        "title": "王国Catalog R2バックフィル",
+        "note": "既存詳細JSONを最大10件ずつR2へ退避"
+      }
+    ]
+  }
+]);
+async function renderOwnerMenuPage(env){
+  const counts=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first().catch(()=>null);
+  const link=l=>'<a class="link" href="'+escapeHtml(l.href)+'"><b>'+escapeHtml(l.title)+'</b><span>'+escapeHtml(l.note)+'</span></a>';
+  const group=g=>g.open
+    ? '<div class="card"><h2>'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'</span></h2><div class="links">'+g.links.map(link).join("")+'</div></div>'
+    : '<details class="card"><summary style="cursor:pointer;font-weight:800;font-size:1.1em">'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'（'+g.links.length+'）</span></summary><div class="links" style="margin-top:12px">'+g.links.map(link).join("")+'</div></details>';
+  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a><a class="link" href="/owner/users/active"><b>使ったユーザー</b><span>今日（日ごと）EagleEye を開いた人・新規・領主・ログイン回数</span></a></div></div>';
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OWNER管理 | EagleEye</title>
+<style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
+${OWNER_MENU_GROUPS.map(group).join("")}${users}</main></body></html>`;
+}
+
+async function renderOwnerAdminPage(request,env,{ view = "menu" } = {}){
   const guard=await requireOwner(request,env);
   if(guard.error)return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:white;font-family:system-ui;padding:32px'><h1>OWNER権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
+  if(view==="menu")return renderOwnerMenuPage(env);
   const [users,logs,kingdomCounts,playerCounts]=await Promise.all([
     env.DB.prepare("SELECT u.user_id,u.discord_id,u.username,u.global_name,u.avatar,u.role,u.status,u.created_at,u.last_login_at,COUNT(l.login_id) AS login_count FROM users u LEFT JOIN login_history l ON l.user_id=u.user_id GROUP BY u.user_id ORDER BY CASE u.role WHEN 'OWNER' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'VIP' THEN 2 WHEN 'ADVANCED' THEN 3 ELSE 4 END,u.last_login_at DESC").all(),
     env.DB.prepare("SELECT audit_id,actor_discord_id,action,target_discord_id,details_json,created_at FROM owner_audit_log ORDER BY created_at DESC LIMIT 50").all(),
@@ -8497,21 +10438,20 @@ async function renderOwnerAdminPage(request,env){
       escapeHtml(user.global_name || user.username || "Discord User") +
       '</b><span class="muted">@' + escapeHtml(user.username || "") +
       '</span><div class="user-id">' + escapeHtml(user.discord_id) +
-      '</div></div><div class="badges"><span class="role">' + escapeHtml(user.role) +
-      '</span><span class="status">' + escapeHtml(user.status) +
+      '</div></div><div class="badges"><span class="role role-' + escapeHtml(user.role) + '">' + escapeHtml(user.role) +
+      '</span><span class="status st-' + escapeHtml(user.status) + '">' + escapeHtml(user.status) +
       '</span></div></div><div class="user-stats">' +
-      '<div class="stat"><span>登録</span><b>' + (user.created_at ? new Date(Number(user.created_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
-      '<div class="stat"><span>最終ログイン</span><b>' + (user.last_login_at ? new Date(Number(user.last_login_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
-      '<div class="stat"><span>ログイン回数</span><b>' + escapeHtml(user.login_count || 0) + '</b></div>' +
-      '<div class="stat"><span>王国ウォッチ</span><b>' + escapeHtml(user.kingdom_watchlist_count || 0) + '件</b></div>' +
-      '<div class="stat"><span>プレイヤーウォッチ</span><b>' + escapeHtml(user.player_watchlist_count || 0) + '件</b></div>' +
+      '<div class="stat"><span>登録</span><b>' + ownerDate(user.created_at, false) + '</b></div>' +
+      '<div class="stat"><span>最終ログイン</span><b>' + ownerDate(user.last_login_at, true) + '</b></div>' +
+      '<div class="stat"><span>ログイン回数</span><b>' + escapeHtml(user.login_count || 0) + '回</b></div>' +
+      '<div class="stat"><span>ウォッチ</span><b>王国 ' + escapeHtml(user.kingdom_watchlist_count || 0) + '・プレイヤー ' + escapeHtml(user.player_watchlist_count || 0) + '</b></div>' +
       '</div><div class="actions">' + watchAction + '</div></article>';
   }).join("") || '<div class="muted">ユーザーが登録されていません</div>';
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EagleEye OWNER CONTROL</title>
-<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← EagleEye</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
-<div class="card"><h2>管理機能</h2><div class="links"><a class="link" href="/admin/api-pool"><b>API Pool管理</b><span>APIキー・Pool・テスト</span></a><a class="link" href="/admin/google-drive"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定</span></a><a class="link" href="/admin/diagnostics"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細</span></a><a class="link" href="/admin/data-coverage"><b>データ登録状況</b><span>現在登録されているプレイヤー数・王国数を確認</span></a><a class="link" href="/admin/api-raw-data"><b>API Raw Inspector</b><span>MightPulse保存生データと画像リソースを実画像で照合</span></a><a class="link" href="/owner/kingdom-load-test"><b>王国Watchlist実処理負荷テスト</b><span>本番と同じ取得・保存パイプラインを実行</span></a><a class="link" href="/owner/kingdom-catalog-r2-backfill"><b>王国Catalog R2バックフィル</b><span>既存詳細JSONを最大10件ずつR2へ退避</span></a><a class="link" href="/admin/kingdom-rankings"><b>王国ランキング</b><span>必要なランキングだけ取得・閲覧・Sheets出力</span></a><a class="link" href="/admin/data-retention"><b>データ保存期間</b><span>D1履歴・R2アーカイブ</span></a><a class="link" href="/admin/player-visibility"><b>データ公開設定</b><span>ロール別公開範囲</span></a><a class="link" href="/players"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更</span></a><a class="link" href="/kingdom-watchlist"><b>王国ウォッチリスト</b><span>監視対象・ランキング</span></a></div></div>
-<div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ユーザー・権限管理 | EagleEye</title>
+<style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>ユーザー・権限管理</h1><p class="sub">ユーザーのロール・状態・ウォッチ件数とOWNER監査ログ</p>
+<p class="sub"><a href="/owner">← オーナー管理メニューへ</a>・<a href="/owner/users/active">今日使ったユーザー →</a>・<a href="/owner/usage">利用の推移 →</a></p>
+<div class="card"><h2>ユーザー一覧</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
 (function(){
@@ -8525,7 +10465,11 @@ function esc(s){
   });
 }
 function fmt(t){
-  return t ? new Date(Number(t)*1000).toLocaleString("ja-JP") : "-";
+  if(!t)return "-";var d=new Date(Number(t)*1000),p=function(v){return String(v).padStart(2,"0")};
+  return (d.getMonth()+1)+"/"+d.getDate()+" "+p(d.getHours())+":"+p(d.getMinutes());
+}
+function fmtDay(t){
+  if(!t)return "-";var d=new Date(Number(t)*1000);return d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();
 }
 function button(label, action, id, extra, disabled, value){
   var attr=value ? (action==="role" ? ' data-role="'+esc(value)+'"' : ' data-status="'+esc(value)+'"') : "";
@@ -8543,7 +10487,7 @@ function draw(){
     var self=u.user_id===ownerId;
     var actions=button("履歴","history",u.user_id,"secondary",false);
     ["BASIC","ADVANCED","VIP","ADMIN","OWNER"].forEach(function(role){
-      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
+      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"secondary",self&&role!=="OWNER",role); // 権限の変更はたまにしか使わないので目立たせない（2026-11-17）
     });
     if(u.status==="ACTIVE"){
       actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER","DISABLED");
@@ -8562,14 +10506,13 @@ function draw(){
       esc(u.global_name||u.username||"Discord User")+
       '</b><span class="muted">@'+esc(u.username||"")+
       '</span><div class="user-id">'+esc(u.discord_id)+
-      '</div></div><div class="badges"><span class="role">'+esc(u.role)+
-      '</span><span class="status">'+esc(u.status)+
+      '</div></div><div class="badges"><span class="role role-'+esc(u.role)+'">'+esc(u.role)+
+      '</span><span class="status st-'+esc(u.status)+'">'+esc(u.status)+
       '</span></div></div><div class="user-stats">'+
-      '<div class="stat"><span>登録</span><b>'+fmt(u.created_at)+'</b></div>'+
+      '<div class="stat"><span>登録</span><b>'+fmtDay(u.created_at)+'</b></div>'+
       '<div class="stat"><span>最終ログイン</span><b>'+fmt(u.last_login_at)+'</b></div>'+
-      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'</b></div>'+
-      '<div class="stat"><span>王国ウォッチ</span><b>'+esc(u.kingdom_watchlist_count||0)+'件</b></div>'+
-      '<div class="stat"><span>プレイヤーウォッチ</span><b>'+esc(u.player_watchlist_count||0)+'件</b></div>'+
+      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'回</b></div>'+
+      '<div class="stat"><span>ウォッチ</span><b>王国 '+esc(u.kingdom_watchlist_count||0)+'・プレイヤー '+esc(u.player_watchlist_count||0)+'</b></div>'+
       '</div><div class="actions">'+actions+'</div>'+panel+'</article>';
   }).join("") || '<div class="muted">該当ユーザーなし</div>';
 }
@@ -8737,13 +10680,13 @@ async function handleMe(request, env) {
   if (!token || !secret) return json({ ok: true, authenticated: false });
 
   const session = await verifyPayload(token, secret);
-  if (!session) return json({ ok: true, authenticated: false });
+  if (!session || await isSessionRevoked(env.DB, session)) return json({ ok: true, authenticated: false });
 
-  const dbUser = env.DB
+  const dbUser = applyPreviewRole(env.DB
     ? await env.DB.prepare(
         "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
       ).bind(session.sub).first()
-    : null;
+    : null, session, isPreviewEnv(env));
 
   return json({
     ok: true,
@@ -8939,22 +10882,37 @@ async function renderPublicStatusPage(request, env) {
     console.error("public_status_diagnostics_unavailable", diagnosticsResult.reason?.message || diagnosticsResult.reason);
   }
 
-  const apiPoolCritical = operational.apiPool.totalKeys > 0 && operational.apiPool.availableKeys === 0;
+  const poolTotals = operational.apiPool.totals || {};
+  const terminalKeyStates = Number(poolTotals.ERROR || 0) + Number(poolTotals.DISABLED || 0) + Number(poolTotals.REVOKED || 0);
+  const apiPoolCritical = operational.apiPool.totalKeys > 0 &&
+    operational.apiPool.availableKeys === 0 &&
+    Number(poolTotals.COOLDOWN || 0) === 0 &&
+    Number(operational.apiPool.activeLeases || 0) === 0 &&
+    terminalKeyStates >= Number(operational.apiPool.totalKeys || 0);
   const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
-  const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
-  const usageWarning = usage.status === "WARNING";
+  // Workers Paid（$5枠）では込み枠を超えても止まらず従量課金になるだけなので「障害」にしない（2026-11-16）。
+  // 請求サイクル（月）の合計で判定するため、すでに直った急増でもサイクル末まで残る。Free枠は上限で止まるので従来どおり障害。
+  const paidProfile = String(monitoringProfileSetting.profile || "").toUpperCase().startsWith("PAID");
+  const usageOver = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
+  const usageCritical = usageOver && !paidProfile;
+  const usageOverage = usageOver && paidProfile;
+  const usageWarning = usage.status === "WARNING" || usageOverage;
   const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
-    ? {label:"Service Disruption",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
-    : usageWarning || data.overall === "DEGRADED" || watchlistWarning
-      ? {label:"Some Services Degraded",tone:"warn",icon:"i",desc:"一部のサービス、API Pool、ウォッチリスト、またはCloudflareリソースで注意が必要です。"}
-      : {label:"System Operational",tone:"good",icon:"✓",desc:"EagleEyeの監視対象サービス、API Pool、ウォッチリスト、Cloudflareリソースは正常範囲です。"};
+    ? {label:"障害が発生しています",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
+    : data.overall === "WAITING" && !usageWarning && !watchlistWarning
+      ? {label:"空き待ち",tone:"neutral",icon:"…",desc:"API Poolの空き待ちです。収集処理は自動再試行の対象で、障害とは区別されています。"}
+      : usageOverage && data.overall !== "DEGRADED" && !watchlistWarning
+        ? {label:"正常に稼働中（込み枠を超過）",tone:"warn",icon:"i",desc:"サービスは正常に動いています。Cloudflareの今月の込み枠を超えたため、超えた分は従量課金になります（下のサーバーの状態に内訳）。"}
+      : usageWarning || data.overall === "DEGRADED" || watchlistWarning
+        ? {label:"一部注意",tone:"warn",icon:"i",desc:"一部のサービス（データ取得・ウォッチリスト・サーバー）で注意が必要です。"}
+        : {label:"正常に稼働中",tone:"good",icon:"✓",desc:"EagleEyeのサービス（データ取得・ウォッチリスト・サーバー）は正常範囲です。"};
 
   const rows = data.services.map(s => {
-    const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : {label:"未確認",tone:"neutral",icon:"—"};
+    const st = s.status === "SUCCESS" ? {label:"正常",tone:"good",icon:"✓"} : s.status === "FAILED" ? {label:"障害",tone:"bad",icon:"!"} : s.status === "WARNING" ? {label:"注意",tone:"warn",icon:"!"} : s.status === "WAITING" ? {label:"待機中",tone:"neutral",icon:"…"} : {label:"未確認",tone:"neutral",icon:"—"};
     return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
   }).join("");
 
-  const usageLabel = cloudflareUsageLabel(usage.status);
+  const usageLabel = cloudflareUsageLabel(usage.status, { paid: paidProfile });
   const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
   const formatBytes = value => {
     const bytes = Number(value || 0);
@@ -8979,6 +10937,7 @@ async function renderPublicStatusPage(request, env) {
   const monitoringEstimatedOverageUsd = usage.monitoring?.estimatedOverageUsd ?? null;
   const monitoringEstimatedCostJpy = usage.monitoring?.estimatedMonthlyCostJpy ?? null;
   const monitoringEstimatedOverageJpy = usage.monitoring?.estimatedOverageJpy ?? null;
+  const monitoringOverageBreakdown = usage.monitoring?.estimatedOverageBreakdownUsd || null;
   const monitoringUsdJpyRate = usage.monitoring?.usdJpyRate ?? null;
   const usagePeriod = usage.usagePeriod || null;
   const billingCycle = usage.monitoring?.billingCycle || usagePeriod?.billingCycle || null;
@@ -8992,7 +10951,7 @@ async function renderPublicStatusPage(request, env) {
     ? "最大使用率（CPU推定を含む）"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
-    const item = cloudflareUsageLabel(stateValue);
+    const item = cloudflareUsageLabel(stateValue, { paid: paidProfile });
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
   };
 
@@ -9048,7 +11007,7 @@ async function renderPublicStatusPage(request, env) {
     <section class="section">
       <h2>Database</h2>
       <div class="card resource-card">
-        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : "good"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
+        <div class="resource-head"><div><b>D1 Database</b><small>eagleeye-db · ${escapeHtml(data.services.find(item => item.key === "d1")?.status || "UNKNOWN")}</small></div><span class="state ${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "bad" : data.services.find(item => item.key === "d1")?.status === "SUCCESS" ? "good" : "neutral"}">${data.services.find(item => item.key === "d1")?.status === "FAILED" ? "障害" : "稼働"}</span></div>
         <div class="resource-row"><div><b>D1 Storage</b><small>Cloudflare Analytics ${usage.database?.databaseSizeBytes != null ? "取得済み" : "未確認"}</small></div><strong>${usage.database?.databaseSizeBytes != null ? formatBytes(usage.database.databaseSizeBytes) : "—"}</strong></div>
         <div class="resource-note">D1のRows Read / Rows Written / Storageの使用量はCloudflareリソース監視に表示しています。</div>
       </div>
@@ -9076,10 +11035,8 @@ async function renderPublicStatusPage(request, env) {
         <div id="r2-object-check-result" class="resource-note">未確認。ボタンを押した時だけR2 LISTを実行します（D1は使用しません）。</div>
       </div>
     </section>` : "";
-  const googleModes = [
-    env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET ? "Apps Script Web App" : null,
-    env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID ? "Service Account" : null
-  ].filter(Boolean);
+  const sheetsTransportLabels = { "apps-script-webapp": "Apps Script Web App", "service-account": "Service Account", "drive-oauth": "Google Drive連携（EagleEye Export）" };
+  const googleModes = [sheetsTransportLabels[googleSheetsTransport(env)]].filter(Boolean);
   const googleSection = `
     <section class="section">
       <h2>Google連携</h2>
@@ -9102,17 +11059,17 @@ async function renderPublicStatusPage(request, env) {
   const runtimeConfigRows = [
     ["Worker", "kingshot-data-platform", true],
     ["Worker Version ID", workerVersion?.id || "未取得", Boolean(workerVersion?.id)],
-    ["Worker Version Tag", workerVersion?.tag || "未取得", Boolean(workerVersion?.tag)],
+    ["Worker Version Tag", workerVersion?.tag || "タグなし（任意項目）", true],
     ["Worker Version Created", workerVersion?.timestamp ? new Date(workerVersion.timestamp).toLocaleString("ja-JP") : "未取得", Boolean(workerVersion?.timestamp)],
     ["Monitoring Profile", monitoringProfile + " / " + monitoringLabel, Boolean(env.CLOUDFLARE_MONITORING_PROFILE)],
     ["DB Binding", "D1", Boolean(env.DB)],
     ["ARCHIVE Binding", "R2", Boolean(env.ARCHIVE)],
     ["HISTORY_STORAGE_MODE", historyStorage.mode, Boolean(env.HISTORY_STORAGE_MODE)],
     ["Cloudflare Analytics", "Account / Token / D1 Database", Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ANALYTICS_TOKEN && env.CLOUDFLARE_D1_DATABASE_ID)],
-    ["MightPulse", "Base URL", Boolean(env.MIGHTPULSE_BASE_URL)],
+    ["Cloudflare Billing API", "Billing Read Token", Boolean(env.CLOUDFLARE_BILLING_TOKEN)],
+    ["MightPulse", env.MIGHTPULSE_API_BASE_URL ? "Base URL（カスタム）" : "Base URL（既定値 api.mightpulse.com を使用）", true],
     ["Discord", "OAuth / Session", Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET)],
-    ["Google Sheets Apps Script", "Web App", Boolean(env.GOOGLE_SHEETS_WEBAPP_URL && env.GOOGLE_SHEETS_WEBAPP_SECRET)],
-    ["Google Sheets Service Account", "Spreadsheet / Service Account", Boolean(env.GOOGLE_SERVICE_ACCOUNT_EMAIL && env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY && env.GOOGLE_SHEETS_SPREADSHEET_ID)],
+    ["Google Sheets 出力", sheetsTransportLabels[googleSheetsTransport(env)] || "Apps Script / Service Account / Google Drive連携のいずれか", Boolean(googleSheetsTransport(env))],
     ["Google Drive OAuth", "OAuth Client / Refresh Token / Folder", Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID)],
     ["Gateway", "Read-only Status API", Boolean(env.EAGLEEYE_GATEWAY_TOKEN)]
   ];
@@ -9174,7 +11131,7 @@ async function renderPublicStatusPage(request, env) {
   const usageSection = canViewDetailedUsage && usage.configured && usage.status !== "UNKNOWN" && usage.limits
     ? `
       <section class="section">
-        <h2>Cloudflare リソース監視</h2>
+        <h2>サーバーの状態</h2>
         <div class="card resource-card">
           <div class="resource-head"><div><b>${escapeHtml(monitoringLabel)}</b><small>${escapeHtml(usage.date || "—")} · Cloudflare Analytics API</small></div><span class="state ${usageLabel.tone}">${usageLabel.label}</span></div>
           ${canViewDetailedUsage ? `
@@ -9189,7 +11146,7 @@ async function renderPublicStatusPage(request, env) {
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>請求サイクル</b><small>Cloudflare Billing APIのbilling_cycle_anchor_timestamp基準</small></div><strong class="${billingCycle?.available ? "good" : "warn"}">${escapeHtml(billingPeriodLabel)}</strong></div>` : `<div class="resource-note">${escapeHtml(billingPeriodLabel)}</div>`}
           ` : ""}
           ${monitoringProfile === "PAID_5USD" ? `<div class="resource-head"><div><b>${escapeHtml(monitoringBudgetLabel)}</b><small>請求サイクル内のD1 / Workers / R2各使用率の最大値。CPUはRequests × CPU P50の推定値</small></div><strong class="${cloudflareUsageLabel(monitoringBudgetState).tone}">${formatPercent(monitoringBudgetPercent)}</strong></div><div class="resource-note">この割合は「$5を使った割合」ではありません。CPU使用率が最大値になった場合は、Workersの月間CPU安全上限に対する推定値（CPU P50基準）です。</div>` : ""}
-          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row"><div><b>推定超過</b><small>D1 / Workersの現時点請求指標から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div><div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）</div>` : ""}
+          ${monitoringProfile === "PAID_5USD" ? `<div class="resource-row billing-cost-row"><div><b>推定月額</b><small>基本料金 + 現時点の超過推計 · USD ${monitoringEstimatedCostUsd == null ? "—" : Number(monitoringEstimatedCostUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedCostJpy)}</strong></div><div class="resource-row billing-overage-row"><div><b>推定超過（実請求額ではありません）</b><small>D1 / Workersリクエストの込み枠超過分から算出 · USD ${monitoringEstimatedOverageUsd == null ? "—" : Number(monitoringEstimatedOverageUsd).toFixed(4)}</small></div><strong>${formatYen(monitoringEstimatedOverageJpy)}</strong></div>${monitoringOverageBreakdown ? `<div class="resource-note">推定内訳（USD）: D1読み取り ${Number(monitoringOverageBreakdown.d1RowsRead || 0).toFixed(4)} · D1書き込み ${Number(monitoringOverageBreakdown.d1RowsWritten || 0).toFixed(4)} · D1保存 ${Number(monitoringOverageBreakdown.d1Storage || 0).toFixed(4)} · Workersリクエスト ${Number(monitoringOverageBreakdown.workerRequests || 0).toFixed(4)}</div><div class="resource-note">CPU料金はRequests × CPU P50による推定値のため、実際の課金量として検証できるまで金額推計から除外しています（監視指標には引き続き表示）。</div>` : ""}<div class="resource-note">円換算: 1 USD = ${monitoringUsdJpyRate == null ? "—" : Number(monitoringUsdJpyRate).toFixed(2)} JPY（表示用）。Cloudflare API報告済み請求額とは別の推計です。</div>` : ""}
           ${resourceRow("Rows Read", usage.account?.rowsRead, usage.limits?.d1?.rowsRead, usage.account?.rowsReadPercent, usage.account?.rowsReadState)}
           ${resourceRow("Rows Written", usage.account?.rowsWritten, usage.limits?.d1?.rowsWritten, usage.account?.rowsWrittenPercent, usage.account?.rowsWrittenState)}
           <div class="resource-row"><div><b>D1 Storage</b><small>${formatInt(usage.database?.databaseSizeBytes)} / ${formatInt(usage.limits?.d1?.storageBytes)} bytes</small></div><strong class="${cloudflareUsageLabel(usage.database?.storageState).tone}">${formatPercent(usage.database?.storagePercent)} · ${cloudflareUsageLabel(usage.database?.storageState).label}</strong></div>
@@ -9206,9 +11163,9 @@ async function renderPublicStatusPage(request, env) {
     `
     : `
       <section class="section">
-        <h2>Cloudflare リソース監視</h2>
+        <h2>サーバーの状態</h2>
         <div class="card resource-card">
-          <div class="resource-head"><div><b>Cloudflare Usage</b><small>詳細使用量は管理者向け</small></div><span class="state neutral">制限付き表示</span></div>
+          <div class="resource-head"><div><b>サーバーの使用量</b><small>くわしい数値は運営向け</small></div><span class="state neutral">制限付き表示</span></div>
           <div class="resource-note">D1 / Workers / R2の詳細使用量とD1 Query InsightsはADMIN / OWNERのみ確認できます。</div>
         </div>
       </section>`;
@@ -9257,11 +11214,111 @@ async function renderPublicStatusPage(request, env) {
 
 
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>システム状況 | EagleEye</title><style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7;color:#1d1d1f;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:#0071e3;text-decoration:none;font-size:14px;font-weight:600}.refresh{color:#86868b;font-size:11px}.hero{background:#fff;border:1px solid #d2d2d7;border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:#1b8a3e}.warn{color:#b77900}.bad{color:#d70015}.neutral{color:#6e6e73}.icon.good{background:#e8f8ed}.icon.warn{background:#fff4d6}.icon.bad{background:#ffe9e7}.icon.neutral{background:#f2f2f7}.eyebrow{color:#86868b;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:#6e6e73;line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid #e5e5ea}.stat{text-align:center;border-right:1px solid #e5e5ea}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:#86868b;font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:#fff;border:1px solid #d2d2d7;border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#f2f2f7;font-size:12px;font-weight:800}.dot.good{background:#e8f8ed}.dot.warn{background:#fff4d6}.dot.bad{background:#ffe9e7}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid #e5e5ea}.resource-head small,.resource-row small{display:block;color:#86868b;font-size:10px;margin-top:3px}.resource-row strong{font-size:12px;text-align:right;white-space:nowrap}.resource-note{padding:12px 17px;color:#86868b;font-size:10px;line-height:1.5}.monitoring-switch{display:flex;gap:5px;padding:4px;background:#f2f2f7;border-radius:12px}.monitoring-switch-btn{border:0;border-radius:9px;padding:9px 10px;background:transparent;color:#6e6e73;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.monitoring-switch-btn.active{background:#fff;color:#1d1d1f;box-shadow:0 2px 8px rgba(0,0,0,.10)}.monitoring-switch-btn:disabled{opacity:.55;cursor:wait}.insight-list{border-top:1px solid #e5e5ea}.insight-query{padding:12px 17px;border-bottom:1px solid #e5e5ea}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:#4b5563;font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:#86868b;font-size:9px}.foot{margin:17px 4px;color:#86868b;font-size:11px;line-height:1.5}@media(max-width:600px){.hero{padding:22px 18px}.stats{grid-template-columns:repeat(2,1fr);gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid #e5e5ea}.resource-row{align-items:flex-start}}
-</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">‹ EagleEye</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">EagleEye System Status</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section" id="service-status"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
+*{box-sizing:border-box}body{margin:0;background:var(--ee-bg);color:var(--ee-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}.wrap{max-width:760px;margin:auto;padding:20px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;padding:3px 3px 20px}.back{color:var(--ee-cyan);text-decoration:none;font-size:14px;font-weight:600}.refresh{color:var(--ee-subtext);font-size:11px}.hero{background:var(--ee-panel);border:1px solid var(--ee-border-soft);border-radius:27px;padding:28px;box-shadow:0 5px 20px rgba(0,0,0,.05)}.hero-line{display:flex;gap:15px;align-items:center}.icon{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:23px;font-weight:800}.good{color:var(--ee-success,#22c55e)}.warn{color:var(--ee-warning,#f59e0b)}.bad{color:var(--ee-danger,#f87171)}.neutral{color:var(--ee-subtext)}.icon.good{background:color-mix(in srgb,var(--ee-success,#22c55e) 16%,transparent)}.icon.warn{background:color-mix(in srgb,var(--ee-warning,#f59e0b) 16%,transparent)}.icon.bad{background:color-mix(in srgb,var(--ee-danger,#f87171) 16%,transparent)}.icon.neutral{background:var(--ee-panel-raised)}.eyebrow{color:var(--ee-subtext);font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.title{margin:3px 0 0;font-size:27px;letter-spacing:-.03em}.desc{margin:19px 0 0;color:var(--ee-subtext);line-height:1.6}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;padding-top:18px;border-top:1px solid var(--ee-border-soft)}.stat{text-align:center;border-right:1px solid var(--ee-border-soft)}.stat:last-child{border:0}.stat b{display:block;font-size:21px}.stat span{color:var(--ee-subtext);font-size:10px}.section{margin-top:26px}.section h2{font-size:19px;margin:0 5px 10px}.card{background:var(--ee-panel);border:1px solid var(--ee-border-soft);border-radius:21px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.035)}.row{display:flex;align-items:center;gap:11px;padding:15px 17px;border-bottom:1px solid var(--ee-border-soft)}.row:last-child{border:0}.dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--ee-panel-raised);font-size:12px;font-weight:800}.dot.good{background:color-mix(in srgb,var(--ee-success,#22c55e) 16%,transparent)}.dot.warn{background:color-mix(in srgb,var(--ee-warning,#f59e0b) 16%,transparent)}.dot.bad{background:color-mix(in srgb,var(--ee-danger,#f87171) 16%,transparent)}.name{flex:1;font-size:14px;font-weight:650}.state{font-size:11px;font-weight:700}.resource-card{padding:0;background:var(--card,#fff)}.resource-head,.resource-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:15px 17px;border-bottom:1px solid var(--ee-border-soft)}.resource-head{background:linear-gradient(110deg,rgba(15,23,42,.035),transparent 72%)}.resource-head>div,.resource-row>div{min-width:0;flex:1}.resource-head b,.resource-row b{display:block;font-size:12px;line-height:1.4;letter-spacing:.01em}.resource-head small,.resource-row small{display:block;color:var(--ee-subtext);font-size:11px;line-height:1.45;margin-top:4px;overflow-wrap:anywhere}.resource-row strong{flex:0 1 auto;min-width:0;font-size:12px;line-height:1.45;text-align:right;white-space:normal;overflow-wrap:anywhere}.resource-note{padding:11px 17px;color:var(--ee-subtext);font-size:11px;line-height:1.6;overflow-wrap:anywhere}.billing-cost-row{background:linear-gradient(110deg,rgba(59,130,246,.055),transparent 85%)}.billing-cost-row strong{font-size:17px;color:var(--ee-cyan);font-variant-numeric:tabular-nums}.billing-overage-row{background:linear-gradient(110deg,rgba(22,163,74,.08),transparent 85%)}.billing-overage-row strong{font-size:20px;color:var(--ee-success,#22c55e);font-variant-numeric:tabular-nums}.monitoring-switch{display:flex;gap:5px;padding:4px;background:var(--ee-panel-raised);border-radius:12px}.monitoring-switch-btn{border:0;border-radius:9px;padding:9px 10px;background:transparent;color:var(--ee-subtext);font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}.monitoring-switch-btn.active{background:var(--ee-panel);color:var(--ee-text);box-shadow:0 2px 8px rgba(0,0,0,.10)}.monitoring-switch-btn:disabled{opacity:.55;cursor:wait}.insight-list{border-top:1px solid var(--ee-border-soft)}.insight-query{padding:12px 17px;border-bottom:1px solid var(--ee-border-soft)}.insight-query:last-child{border:0}.insight-query-head{display:flex;justify-content:space-between;gap:10px;font-size:11px}.insight-query-head span{font-weight:800}.insight-query code{display:block;margin-top:7px;color:var(--ee-subtext);font-size:9px;line-height:1.45;word-break:break-word;white-space:pre-wrap}.insight-query small{display:block;margin-top:5px;color:var(--ee-subtext);font-size:9px}.foot{margin:17px 4px;color:var(--ee-subtext);font-size:11px;line-height:1.5}@media(max-width:600px){.wrap{padding:20px 12px calc(92px + env(safe-area-inset-bottom))}.hero{padding:22px 16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.stat:nth-child(2){border:0}.stat:nth-child(-n+2){padding-bottom:10px;border-bottom:1px solid var(--ee-border-soft)}.section{margin-top:22px}.section h2{font-size:16px;margin:0 4px 9px}.card{border-radius:16px}.resource-head,.resource-row{align-items:flex-start;gap:10px;padding:13px 12px}.resource-head>div,.resource-row>div{min-width:0}.resource-row strong{max-width:48%;font-size:11px}.resource-head small,.resource-row small{font-size:10px}.resource-note{padding:10px 12px;font-size:10px}.billing-cost-row strong{font-size:16px}.billing-overage-row strong{font-size:19px}.monitoring-switch-row{flex-direction:column}.monitoring-switch{width:100%}.monitoring-switch-btn{flex:1;padding:10px 6px}.resource-head .state{flex-shrink:0}}
+
+/* System Status v2: operational console visual hierarchy */
+body{background:#08111f;color:#e6edf7;background-image:radial-gradient(ellipse at 50% -15%,rgba(35,99,160,.22),transparent 52%);min-height:100vh}
+.wrap{max-width:1040px;padding:24px 22px calc(48px + env(safe-area-inset-bottom))}
+.nav{padding:4px 2px 22px;border-bottom:1px solid rgba(148,163,184,.16);margin-bottom:20px}
+.back{color:#93c5fd;font-size:13px;letter-spacing:.01em}
+.refresh{color:#8ea1b9;font-size:11px;display:inline-flex;align-items:center;gap:7px}
+.refresh:before{content:"";width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.12)}
+.hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#111f33 0%,#0d1929 58%,#10243a 100%);border:1px solid #263a53;border-radius:24px;padding:28px 30px;box-shadow:0 18px 55px rgba(0,0,0,.24)}
+.hero:after{content:"";position:absolute;right:-75px;top:-125px;width:300px;height:300px;border:1px solid rgba(125,180,255,.12);border-radius:50%;box-shadow:0 0 0 28px rgba(125,180,255,.025),0 0 0 58px rgba(125,180,255,.02);pointer-events:none}
+.hero-line{position:relative;z-index:1;gap:17px}
+.icon{width:54px;height:54px;flex:0 0 54px;border-radius:16px;font-size:23px}
+.icon.good{background:rgba(52,211,153,.13);color:#6ee7b7}.icon.warn{background:rgba(251,191,36,.14);color:#fcd34d}.icon.bad{background:rgba(248,113,113,.14);color:#fca5a5}.icon.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}
+.eyebrow{color:#8ea8c7;font-size:10px;letter-spacing:2.1px}
+.title{font-size:clamp(25px,4vw,34px);color:#f8fbff;letter-spacing:-.045em;font-weight:760}
+.desc{max-width:680px;margin:16px 0 0;color:#a9bad0;font-size:13px;line-height:1.7}
+.stats{position:relative;z-index:1;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:25px;padding-top:20px;border-top:1px solid rgba(148,163,184,.17)}
+.stat{border:1px solid rgba(148,163,184,.16);border-radius:13px;background:rgba(4,13,25,.28);padding:13px 8px;text-align:left}
+.stat:last-child{border:1px solid rgba(148,163,184,.16)}
+.stat b{font-size:25px;color:#f4f8ff;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{display:block;margin-top:7px;color:#8fa4bd;font-size:10px;letter-spacing:.04em}
+.section{margin-top:30px}
+.section h2{display:flex;align-items:center;gap:10px;margin:0 3px 12px;color:#e8f1fc;font-size:16px;font-weight:750;letter-spacing:-.015em}
+.section h2:before{content:"";width:3px;height:17px;border-radius:4px;background:#60a5fa}
+.card{background:#0e1a2a;border:1px solid #25364b;border-radius:17px;box-shadow:0 12px 30px rgba(0,0,0,.14)}
+.row{padding:15px 17px;border-bottom-color:rgba(148,163,184,.12);gap:12px}
+.dot{width:30px;height:30px;flex:0 0 30px;border-radius:10px;background:#1b2a3d;color:#c4d4e8}
+.dot.good{background:rgba(52,211,153,.12);color:#6ee7b7}.dot.warn{background:rgba(251,191,36,.12);color:#fcd34d}.dot.bad{background:rgba(248,113,113,.12);color:#fca5a5}
+.name{color:#dce7f5;font-size:13px;font-weight:650}.state{font-size:11px;letter-spacing:.01em}
+.good{color:#6ee7b7}.warn{color:#fcd34d}.bad{color:#fca5a5}.neutral{color:#a8b8cb}
+.resource-card{background:#0e1a2a}
+.resource-head,.resource-row{padding:16px 18px;border-bottom-color:rgba(148,163,184,.13);gap:18px}
+.resource-head{background:linear-gradient(100deg,rgba(96,165,250,.09),rgba(96,165,250,0))}
+.resource-head b,.resource-row b{color:#dce8f7;font-size:12px;font-weight:720}
+.resource-head small,.resource-row small{color:#8499b2;font-size:10px;line-height:1.55}
+.resource-row strong{color:#dce8f7;font-size:12px;font-weight:750;font-variant-numeric:tabular-nums}
+.resource-note{color:#8196af;padding:12px 18px;font-size:10px;line-height:1.7;border-bottom:1px solid rgba(148,163,184,.08)}
+.billing-cost-row{background:linear-gradient(100deg,rgba(59,130,246,.13),rgba(59,130,246,.025))}
+.billing-cost-row strong{color:#93c5fd;font-size:21px}
+.billing-overage-row{background:linear-gradient(100deg,rgba(16,185,129,.12),rgba(16,185,129,.025))}
+.billing-overage-row strong{color:#6ee7b7;font-size:25px}
+.monitoring-switch{background:#081321;border:1px solid #2a3b51;border-radius:13px}
+.monitoring-switch-btn{color:#91a4bc;font-size:11px}
+.monitoring-switch-btn.active{background:#263a53;color:#f3f8ff;box-shadow:inset 0 0 0 1px rgba(147,197,253,.18)}
+.insight-list{border-top-color:rgba(148,163,184,.14)}
+.insight-query{border-bottom-color:rgba(148,163,184,.12)}
+.insight-query-head{color:#c7d6e8}
+.insight-query code{padding:10px 11px;border:1px solid rgba(148,163,184,.12);border-radius:9px;background:#081321;color:#a9c2df;font-size:10px}
+.insight-query small{color:#7f93ab}
+.foot{color:#71869f;font-size:10px;line-height:1.7;margin:20px 4px}
+@media(min-width:800px){.stats{gap:12px}.stat{padding:16px}.section{margin-top:32px}.resource-head,.resource-row{padding:17px 20px}}
+@media(max-width:600px){
+.wrap{padding:14px 12px calc(104px + env(safe-area-inset-bottom))}
+.nav{padding:4px 2px 16px;margin-bottom:15px}
+.hero{padding:21px 17px;border-radius:19px}
+.hero-line{gap:12px}
+.icon{width:46px;height:46px;flex-basis:46px;border-radius:13px;font-size:20px}
+.eyebrow{font-size:9px;letter-spacing:1.5px}
+.title{font-size:25px}
+.desc{font-size:12px;line-height:1.65;margin-top:14px}
+.stats{gap:8px;margin-top:20px;padding-top:16px}
+.stat{padding:12px 10px;border-radius:11px}
+.stat b{font-size:23px}
+.stat span{font-size:10px;margin-top:6px}
+.section{margin-top:23px}
+.section h2{font-size:14px;margin:0 3px 10px}
+.card{border-radius:14px}
+.row{padding:13px 12px;gap:10px}
+.name{font-size:12px}
+.state{font-size:10px}
+.resource-head,.resource-row{align-items:flex-start;gap:9px;padding:13px 12px}
+.resource-head>div,.resource-row>div{min-width:0;flex:1}
+.resource-row strong{max-width:43%;font-size:11px;line-height:1.45}
+.resource-head b,.resource-row b{font-size:11px}
+.resource-head small,.resource-row small{font-size:9px;line-height:1.5}
+.resource-note{padding:10px 12px;font-size:9px;line-height:1.65}
+.billing-cost-row strong{font-size:18px}
+.billing-overage-row strong{font-size:21px}
+.monitoring-switch-row{flex-direction:column}
+.monitoring-switch{width:100%}
+.monitoring-switch-btn{flex:1;padding:10px 5px;font-size:10px}
+.insight-query{padding:11px 12px}
+.insight-query-head{font-size:10px}
+.insight-query code{font-size:9px;overflow-wrap:anywhere}
+.foot{font-size:9px}
+}
+@media(prefers-reduced-motion:no-preference){.card,.hero{transition:border-color .18s ease,box-shadow .18s ease}.card:hover{border-color:#385271;box-shadow:0 15px 36px rgba(0,0,0,.2)}}
+</style></head><body><main class="wrap"><nav class="nav"><a class="back" href="/">← ホーム</a><span class="refresh">60秒ごとに更新</span></nav><section class="hero"><div class="hero-line"><div class="icon ${state.tone}">${state.icon}</div><div><div class="eyebrow">システム状況</div><h1 class="title">${state.label}</h1></div></div><p class="desc">${state.desc}</p><div class="stats"><div class="stat"><b>${data.counts.healthy}</b><span>正常</span></div><div class="stat"><b>${data.counts.warning}</b><span>注意</span></div><div class="stat"><b>${data.counts.failed}</b><span>障害</span></div><div class="stat"><b>${data.counts.unknown}</b><span>未確認</span></div></div></section>${usageSection}${operationalSection}<section class="section" id="service-status"><h2>サービス状況</h2><div class="card">${rows}</div></section><p class="foot">Cloudflareリソース監視はD1とは独立したGraphQL Analytics APIを使用します。Analyticsの集計には遅延が発生する場合があります。</p>
 
 ${canViewDetailedUsage ? `<script>
 (function(){
+  // This script runs in the browser; server-side helpers are not in scope here.
+  function escapeHtml(value){
+    return String(value == null ? "" : value).replace(/[&<>"']/g,function(char){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char];
+    });
+  }
+  function formatBytes(value){
+    var bytes=Number(value||0);
+    if(!Number.isFinite(bytes)||bytes<1024)return Math.round(bytes).toLocaleString("ja-JP")+" B";
+    var units=["KB","MB","GB","TB"],size=bytes,unit=-1;
+    while(size>=1024&&unit<units.length-1){size/=1024;unit++;}
+    return size.toFixed(size>=100?0:size>=10?1:2)+" "+units[unit];
+  }
   document.querySelectorAll("[data-monitoring-profile]").forEach(function(btn){
     btn.addEventListener("click", async function(){
       var profile=btn.getAttribute("data-monitoring-profile");
@@ -9322,40 +11379,229 @@ ${canViewDetailedUsage ? `<script>
 
 async function renderSupportPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return `<!doctype html><html lang="ja"><body style="margin:0;background:#0f172a;color:#fff;font-family:system-ui;padding:28px"><div style="max-width:620px;margin:auto"><h1>お問い合わせ</h1><p style="color:#94a3b8">お問い合わせにはDiscordログインが必要です。</p><a href="/api/auth/discord" style="color:#f59e0b;font-weight:800">Discordでログイン</a></div></body></html>`;
+  // ログインしていない人も送れるフォーム（届け先は同じ Discord のサポートサーバー・2026-11-15）。
+  if (!auth || auth.status !== "ACTIVE") return renderGuestSupportPage();
   const supportCatalogJson = JSON.stringify(SUPPORT_CATALOG).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
   *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.choices{display:grid;gap:9px;margin-top:10px}.choice{width:100%;padding:14px;text-align:left;border:1px solid #334155;border-radius:13px;background:#0b1424;color:#f8fafc;font:inherit;cursor:pointer}.choice:hover{border-color:#f59e0b}.back{margin-top:10px;background:transparent;color:#94a3b8;border:0;padding:8px 0;cursor:pointer}.qa{margin-top:14px;padding:14px;border:1px solid #365314;border-radius:14px;background:#14210f;color:#d9f99d}.incident{margin-top:14px;padding:14px;border:1px solid #7f1d1d;border-radius:14px;background:#2a1114;color:#fecaca}.field{margin-top:14px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:100px;resize:vertical}.submit{width:100%;margin-top:18px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}.muted{font-size:12px;color:#94a3b8}
-  </style></head><body><main class="wrap"><nav class="nav"><a href="/">‹ EagleEye</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card"><h1>お問い合わせ</h1><p>カテゴリを選択すると、既知の解決方法や現在の障害状況を確認できます。解決しない場合だけ問い合わせへ進みます。</p><div id="incident"></div><div id="wizard"></div><div id="result" class="result"></div></section></main><script>
-(function(){var catalog=${supportCatalogJson},params=new URLSearchParams(location.search),state={category:(params.get("category")||"").toUpperCase()||null,subcategory:(params.get("subcategory")||"").toUpperCase()||null,child:null,incident:null,governorId:(params.get("governor_id")||"").trim()};var wizard=document.getElementById("wizard"),incident=document.getElementById("incident"),result=document.getElementById("result");
+  </style></head><body><main class="wrap"><nav class="nav"><a href="/">← ホーム</a><span style="color:#64748b;font-size:11px">Discord Support</span></nav><section class="card"><h1>お問い合わせ</h1><p>カテゴリを選択すると、既知の解決方法や現在の障害状況を確認できます。解決しない場合だけ問い合わせへ進みます。</p><div id="incident"></div><div id="wizard"></div><div id="result" class="result"></div></section></main><script>
+(function(){var catalog=${supportCatalogJson},params=new URLSearchParams(location.search),state={category:(params.get("category")||"").toUpperCase()||null,subcategory:(params.get("subcategory")||"").toUpperCase()||null,child:null,incident:null,membership:false,governorId:(params.get("governor_id")||"").trim()};var wizard=document.getElementById("wizard"),incident=document.getElementById("incident"),result=document.getElementById("result");
 function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function render1(){wizard.innerHTML="<strong>1. 何について困っていますか？</strong><div class='choices'>"+catalog.map(function(x){return "<button class='choice' data-c='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div>";wizard.querySelectorAll("[data-c]").forEach(function(b){b.onclick=function(){state.category=b.dataset.c;render2();};});}
 function render2(){var p=catalog.find(function(x){return x.key===state.category;});wizard.innerHTML="<strong>2. 具体的には？</strong><div class='choices'>"+p.children.map(function(x){return "<button class='choice' data-s='"+esc(x.key)+"'>"+esc(x.label)+"</button>";}).join("")+"</div><button class='back' id='back1'>← カテゴリを戻す</button>";wizard.querySelectorAll("[data-s]").forEach(function(b){b.onclick=function(){state.subcategory=b.dataset.s;state.child=p.children.find(function(x){return x.key===state.subcategory;});render3();};});document.getElementById("back1").onclick=render1;}
-function render3(){var p=catalog.find(function(x){return x.key===state.category}),c=p.children.find(function(x){return x.key===state.subcategory}),html="<strong>3. 確認</strong><div class='muted' style='margin-top:7px'>"+esc(p.label)+" → "+esc(c.label)+"</div>";if(c.qa)html+="<div class='qa'><b>まずはこちらをご確認ください</b><div style='margin-top:6px'>"+esc(c.qa)+"</div><button class='choice' id='qyes' style='margin-top:10px'>解決した</button><button class='choice' id='qno' style='margin-top:8px'>解決しなかった</button></div>";html+="<div id='intake' style='"+(c.qa?"display:none":"")+"'><div class='field'><label>件名</label><input id='subject' maxlength='120' placeholder='例：データが表示されない'></div>";var labels={governor_id:"領主ID",kid:"王国番号",field:"問題の項目",displayed_value:"EagleEyeの表示値",expected_value:"正しいと思う値",target:"対象・画面",board:"ランキングボード",message:"状況の補足"};(c.fields||[]).forEach(function(f){html+="<div class='field'><label>"+labels[f]+"</label><input data-d='"+f+"' maxlength='1000' value='"+(f==="governor_id"?esc(state.governorId):"")+"'></div>";});html+="<div class='field'><label>補足（任意）</label><textarea id='message' maxlength='4000' placeholder='必要な場合だけ補足してください'></textarea></div><button id='submit' class='submit'>問い合わせを送信</button></div><button class='back' id='back2'>← 症状を戻す</button>";wizard.innerHTML=html;var y=document.getElementById("qyes"),n=document.getElementById("qno");if(y)y.onclick=function(){wizard.innerHTML="<strong>解決しました。</strong><p class='muted'>お問い合わせは不要です。</p>";};if(n)n.onclick=function(){document.getElementById("intake").style.display="block";};document.getElementById("back2").onclick=render2;document.getElementById("submit").onclick=submit;}
-async function submit(){var b=document.getElementById("submit");b.disabled=true;b.textContent="送信中…";var c=state.child,details={};(c.fields||[]).forEach(function(f){var e=document.querySelector("[data-d='"+f+"']");if(e&&e.value.trim())details[f]=e.value.trim();});var subject=(document.getElementById("subject").value.trim()||catalog.find(function(x){return x.key===state.category;}).label+" / "+c.label);var message=document.getElementById("message").value.trim();try{var r=await fetch("/api/support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({category:state.category,subcategory:state.subcategory,subject:subject,message:message,details:details,qna_id:c.qa?state.category+"_"+state.subcategory:null})});var d=await r.json().catch(function(){return {}});if(!r.ok||!d.ok)throw new Error(d.error||("HTTP "+r.status));result.className="result ok";result.innerHTML="<div class='ticket'>"+esc(d.ticketId)+"</div><div>お問い合わせを受け付けました。Discordに専用の非公開チャンネルを作成しました。</div>"+(d.channelUrl?"<div style='margin-top:8px'><a href='"+esc(d.channelUrl)+"' target='_blank' rel='noopener'>Discordの問い合わせチャンネルを開く →</a></div>":"");wizard.innerHTML="<strong>送信完了</strong><p class='muted'>必要な情報はサポート担当者に引き継がれています。</p>";}catch(e){result.className="result error";result.textContent="送信できませんでした: "+(e.message||String(e));b.disabled=false;b.textContent="問い合わせを送信";}}
-function renderInitial(){var p=catalog.find(function(x){return x.key===state.category;}),ch=p&&p.children.find(function(x){return x.key===state.subcategory;});if(p&&ch){state.child=ch;render3();}else{render1();}}async function boot(){renderInitial();try{var r=await fetch("/api/support/context",{credentials:"same-origin",cache:"no-store"});var d=await r.json();if(!r.ok||!d.ok)throw new Error("context");state.incident=d.incident;if(state.incident&&state.incident.active){var incidentService={api_pool:"API Pool",mightpulse:"MightPulse API",ranking:"ランキング取得",player:"プレイヤー取得",watchlist:"王国ウォッチリスト",d1:"D1 Database",discord:"Discord認証",discord_support:"Discord Support",google_sheets:"Google Sheets",notifications:"通知システム"}[state.incident.service]||state.incident.service;var incidentStatus=state.incident.status==="FAILED"?"障害":"注意";var incidentTitle=state.incident.status==="FAILED"?"現在、EagleEyeで障害を検知しています":"現在、EagleEyeで注意状態を検知しています";incident.innerHTML="<div class='incident'><b>⚠ "+incidentTitle+"</b><div style='margin-top:6px'>"+esc(incidentService)+" / "+incidentStatus+"</div><div style='margin-top:6px'>同じ症状に関する問い合わせは、まず障害情報をご確認ください。</div><div style='margin-top:10px'><a href='\/status#service-status' style='color:#fecaca;font-weight:900;text-decoration:underline'>障害情報を確認する →</a></div></div>";}}catch(e){}}
+function render3(){var p=catalog.find(function(x){return x.key===state.category}),c=p.children.find(function(x){return x.key===state.subcategory}),html="<strong>3. 確認</strong><div class='muted' style='margin-top:7px'>"+esc(p.label)+" → "+esc(c.label)+"</div>";if(c.qa)html+="<div class='qa'><b>まずはこちらをご確認ください</b><div style='margin-top:6px'>"+esc(c.qa)+"</div><button class='choice' id='qyes' style='margin-top:10px'>解決した</button><button class='choice' id='qno' style='margin-top:8px'>解決しなかった</button></div>";html+="<div id='intake' style='"+(c.qa?"display:none":"")+"'><div class='field'><label>件名</label><input id='subject' maxlength='120' placeholder='例：データが表示されない'></div>";var labels={governor_id:"領主ID",kid:"王国番号",field:"問題の項目",displayed_value:"EagleEyeの表示値",expected_value:"正しいと思う値",target:"対象・画面",board:"ランキングボード",message:"状況の補足"};(c.fields||[]).forEach(function(f){html+="<div class='field'><label>"+labels[f]+"</label><input data-d='"+f+"' maxlength='1000' value='"+(f==="governor_id"?esc(state.governorId):"")+"'></div>";});html+="<div class='field'><label>補足（任意）</label><textarea id='message' maxlength='4000' placeholder='必要な場合だけ補足してください'></textarea></div><button id='submit' class='submit' disabled>Discordサーバー参加後に送信できます</button></div><button class='back' id='back2'>← 症状を戻す</button>";wizard.innerHTML=html;var y=document.getElementById("qyes"),n=document.getElementById("qno");if(y)y.onclick=function(){wizard.innerHTML="<strong>解決しました。</strong><p class='muted'>お問い合わせは不要です。</p>";};if(n)n.onclick=function(){document.getElementById("intake").style.display="block";};document.getElementById("back2").onclick=render2;document.getElementById("submit").onclick=submit;var submitButton=document.getElementById("submit");submitButton.disabled=!state.membership;submitButton.textContent=state.membership?"問い合わせを送信":"Discordサーバー参加後に送信できます";}
+async function submit(){var b=document.getElementById("submit");if(!state.membership){result.className="result error";result.textContent="Discordサーバーへの参加が確認できないため送信できません。Discord連携を完了してください。";return;}b.disabled=true;b.textContent="送信中…";var c=state.child,details={};(c.fields||[]).forEach(function(f){var e=document.querySelector("[data-d='"+f+"']");if(e&&e.value.trim())details[f]=e.value.trim();});var subject=(document.getElementById("subject").value.trim()||catalog.find(function(x){return x.key===state.category;}).label+" / "+c.label);var message=document.getElementById("message").value.trim();try{var r=await fetch("/api/support",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({category:state.category,subcategory:state.subcategory,subject:subject,message:message,details:details,qna_id:c.qa?state.category+"_"+state.subcategory:null})});var d=await r.json().catch(function(){return {}});if(!r.ok||!d.ok)throw new Error(d.error||("HTTP "+r.status));result.className="result ok";result.innerHTML="<div class='ticket'>"+esc(d.ticketId)+"</div><div>お問い合わせを受け付けました。Discordに専用の非公開チャンネルを作成しました。</div>"+(d.channelUrl?"<div style='margin-top:8px'><a href='"+esc(d.channelUrl)+"' target='_blank' rel='noopener'>Discordの問い合わせチャンネルを開く →</a></div>":"");wizard.innerHTML="<strong>送信完了</strong><p class='muted'>必要な情報はサポート担当者に引き継がれています。</p>";}catch(e){result.className="result error";result.textContent="送信できませんでした: "+(e.message||String(e));b.disabled=false;b.textContent="問い合わせを送信";}}
+function renderInitial(){var p=catalog.find(function(x){return x.key===state.category;}),ch=p&&p.children.find(function(x){return x.key===state.subcategory;});if(p&&ch){state.child=ch;render3();}else{render1();}}async function boot(){renderInitial();try{var mr=await fetch("/api/support/membership",{credentials:"same-origin",cache:"no-store"});var md=await mr.json();if(mr.ok&&md.ok){if(md.member){state.membership=true;var submitButton=document.getElementById("submit");if(submitButton){submitButton.disabled=false;submitButton.textContent="問い合わせを送信";}incident.innerHTML="<div class='qa'><b>Discordサーバー参加済み</b><div style='margin-top:4px'>問い合わせ後はDiscordの専用チャンネルで返信・添付ファイルのやり取りができます。</div></div>";}else{state.membership=false;var blockedButton=document.getElementById("submit");if(blockedButton){blockedButton.disabled=true;blockedButton.textContent="Discordサーバー参加後に送信できます";}incident.innerHTML="<div class='incident'><b>Discordサーバーへの参加が確認できません</b><div style='margin-top:6px'>問い合わせを送信するには、Discord連携をやり直してサーバー参加を完了してください。</div><a href='/api/auth/discord' style='display:inline-block;margin-top:10px;color:#fecaca;font-weight:900;text-decoration:underline'>Discord連携をやり直す →</a></div>";}}else{state.membership=false;var blockedButton=document.getElementById("submit");if(blockedButton){blockedButton.disabled=true;blockedButton.textContent="参加状態を確認してから送信できます";}incident.innerHTML="<div class='incident'>Discordの参加状態を確認できません。時間をおいて再読み込みしてください。</div>";}}catch(e){state.membership=false;var blockedButton=document.getElementById("submit");if(blockedButton){blockedButton.disabled=true;blockedButton.textContent="参加状態を確認してから送信できます";}incident.innerHTML="<div class='incident'>Discordの参加状態を確認できません。時間をおいて再読み込みしてください。</div>";}try{var r=await fetch("/api/support/context",{credentials:"same-origin",cache:"no-store"});var d=await r.json();if(!r.ok||!d.ok)throw new Error("context");state.incident=d.incident;if(state.incident&&state.incident.active){var incidentService={api_pool:"API Pool",mightpulse:"MightPulse API",ranking:"ランキング取得",player:"プレイヤー取得",watchlist:"王国ウォッチリスト",d1:"D1 Database",discord:"Discord認証",discord_support:"Discord Support",google_sheets:"Google Sheets",notifications:"通知システム"}[state.incident.service]||state.incident.service;var incidentStatus=state.incident.status==="FAILED"?"障害":"注意";var incidentTitle=state.incident.status==="FAILED"?"現在、EagleEyeで障害を検知しています":"現在、EagleEyeで注意状態を検知しています";incident.innerHTML=incident.innerHTML+"<div class='incident'><b>⚠ "+incidentTitle+"</b><div style='margin-top:6px'>"+esc(incidentService)+" / "+incidentStatus+"</div><div style='margin-top:6px'>同じ症状に関する問い合わせは、まず障害情報をご確認ください。</div><div style='margin-top:10px'><a href='\/status#service-status' style='color:#fecaca;font-weight:900;text-decoration:underline'>障害情報を確認する →</a></div></div>";}}catch(e){}}
 boot();})();</script></body></html>`;
 }
 
-async function renderHome(request, env) {
+// Notification-style navigation badges (new watched-player changes, unread お知らせ).
+async function handleBadgesApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const counts = await getBadgeCounts(env.DB, auth, { changeVisible: change => isChangeVisibleForRole(change, auth.role, settings) });
+    // 全ページ上部の案内帯用（BASICのみ。領主ID登録の有無だけ確認、索引1回）。
+    let onboarding = null;
+    if (String(auth.role || "").toUpperCase() === "BASIC") {
+      const link = await env.DB.prepare("SELECT 1 AS ok FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' LIMIT 1").bind(auth.user_id).first().catch(() => null);
+      onboarding = onboardingStep({ role: auth.role, linked: Boolean(link) });
+    }
+    return json({ ok: true, ...counts, onboarding });
+  } catch (error) {
+    console.error("badges_failed", error?.message || error);
+    return json({ ok: false, error: "BADGES_FAILED" }, 500);
+  }
+}
+
+async function markWatchBadgeSeen(request, env) {
+  try {
+    const auth = await getAuthenticatedUser(request, env);
+    if (auth?.status === "ACTIVE" && auth.discord_id) await markBadgeSeen(env.DB, auth.discord_id, "watch");
+  } catch (error) {
+    console.error("watch_badge_seen_failed", error?.message || error);
+  }
+}
+
+export function newsNeedsSeenWrite(state, items) {
+  if (!state || state.news_seen_at == null) return true;
+  const newest = Math.max(0, ...(items || []).map(i => Number(i.publish_at ?? i.created_at) || 0));
+  return newest > Number(state.news_seen_at);
+}
+
+async function renderNewsRoute(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お知らせ", "お知らせを見るにはログインしてください。");
+  await ensureBadgeSchema(env.DB);
+  const canPost = auth.role === "OWNER" || auth.role === "ADMIN";
+  // まとめて読む。既読の書き込みは「前に見た後に新しいお知らせが出たとき」だけ（2026-11-17・速さと D1 の書き込みを減らす）。
+  const [state, items, queued] = await Promise.all([
+    env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null),
+    listAnnouncements(env.DB, 50),
+    canPost ? listQueuedAnnouncements(env.DB, auth) : []
+  ]);
+  if (newsNeedsSeenWrite(state, items)) await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
+  return renderNewsPage(items, { canPost, isOwner: auth.role === "OWNER", queued, viewerId: auth.discord_id, unreadSince: state?.news_seen_at ?? null });
+}
+
+async function handleAnnouncementsApi(request, env) {
+  // ADMIN and OWNER may post and delete お知らせ.
+  const guard = await requireAdmin(request, env);
+  if (guard.error) return guard.error;
+  if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+  const body = await request.json().catch(() => ({}));
+  try {
+    if (body?.action === "create") {
+      await ensureAnnouncementDiscordSchema(env.DB);
+      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null, media: body.media });
+      await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title, status: item.status, publish_at: item.publish_at }).catch(() => {});
+      // ADMIN post → DM every OWNER (sent from the cron queue).
+      if (item.status === "PENDING") await enqueueApprovalRequestDms(env, { ...item, created_by: guard.auth?.discord_id || null }).catch(error => console.error("announcement_dm_enqueue_failed", error?.message || error));
+      return json({ ok: true, item });
+    }
+    if (body?.action === "approve" || body?.action === "reject") {
+      if (guard.auth?.role !== "OWNER") return json({ ok: false, error: "OWNER_REQUIRED" }, 403);
+      const done = await reviewAnnouncement(env.DB, { id: body.id, approve: body.action === "approve", reviewer: guard.auth.discord_id || null });
+      if (done) await writeOwnerAuditLog(env, guard.auth, body.action === "approve" ? "ANNOUNCEMENT_APPROVE" : "ANNOUNCEMENT_REJECT", null, null, { id: String(body.id) }).catch(() => {});
+      if (done) await enqueueReviewResultDm(env, body.id, body.action === "approve").catch(error => console.error("announcement_review_dm_failed", error?.message || error));
+      return json({ ok: done, error: done ? null : "NOT_PENDING" }, done ? 200 : 409);
+    }
+    if (body?.action === "delete") {
+      const deleted = await deleteAnnouncement(env.DB, body.id, guard.auth);
+      if (deleted) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_DELETE", null, null, { id: String(body.id) }).catch(() => {});
+      return json({ ok: deleted, error: deleted ? null : "NOT_FOUND" }, deleted ? 200 : 404);
+    }
+    return json({ ok: false, error: "UNKNOWN_ACTION" }, 400);
+  } catch (error) {
+    return json({ ok: false, error: error?.code || "ANNOUNCEMENT_FAILED" }, ["TITLE_AND_BODY_REQUIRED", "PUBLISH_AT_INVALID", "PUBLISH_AT_TOO_FAR"].includes(error?.code) ? 400 : 500);
+  }
+}
+
+// 今日の作戦：PVのついでに、ログイン中（署名を確かめたセッション）の人の「使った機能」を記録する。
+// ユーザー表は読まない（discord_id で記録）。公開前は対象（オーナー）だけ。
+async function recordMissionFromView(request, env, path) {
+  const action = missionActionForPath(path);
+  if (!action || !env.DB || !env.EAGLEEYE_SESSION_SECRET) return;
+  const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
+  const session = token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
+  if (!session?.sub) return;
+  if (!(await isMissionUser(env.DB, session.sub, { isPublic: MILESTONES_PUBLIC }))) return;
+  await recordMissionAction(env.DB, session.sub, action);
+}
+
+// マイルストーン（表示時判定・D1にある値だけ）。share は比較画像を作れたときに画面から呼ばれる。
+async function handleMilestonesApi(request, env, url) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    if (url.pathname === "/api/milestones/share") {
+      if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+      if (milestonesAvailableFor(auth.role) && auth.discord_id) await recordMissionAction(env.DB, String(auth.discord_id), "share").catch(() => false);
+      return json({ ok: true, recorded: await recordMilestone(env.DB, auth.user_id, "herald") });
+    }
+    if (!milestonesAvailableFor(auth.role)) return json({ ok: false, error: "COMING_SOON" }, 403);
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const result = await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role), markSeen: url.searchParams.get("seen") === "1" });
+    return json({ ok: true, ...result });
+  } catch (error) {
+    console.error("milestones_failed", error?.message || error);
+    return json({ ok: false, error: "MILESTONES_FAILED" }, 500);
+  }
+}
+
+// 友だち招待（ログインした全員。マイルストーンの公開状態とは関係なし）。
+async function handleInviteApi(request, env) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const mine = await loadMyReferrals(env.DB, auth.user_id);
+    // オーナーは「個人の招待リンク」（通常）に加えて「運営の特別招待リンク」も持ち、相手によって使い分ける。
+    const isOwner = String(auth.role || "").toUpperCase() === "OWNER";
+    const specialCode = isOwner ? await getOrCreateSpecialInviteCode(env.DB, auth.user_id) : null;
+    return json({ ok: true, link: publicOrigin(request, env) + "/?ref=" + mine.code, invitees: mine.invitees, lifetime: mine.lifetime, season: mine.season, this_season: mine.thisSeason, bonus: mine.bonus, bonus_cap: INVITE_BONUS_CAP, rewards: INVITE_BONUS,
+      special_link: specialCode ? publicOrigin(request, env) + "/?ref=" + specialCode : null, special_rewards: specialCode ? OWNER_INVITE_BONUS : null });
+  } catch (error) {
+    console.error("invite_failed", error?.message || error);
+    return json({ ok: false, error: "INVITE_FAILED" }, 500);
+  }
+}
+
+async function handleHomeSummary(request, env, executionContext) {
+  const auth = await getAuthenticatedUser(request, env);
+  if (!auth || auth.status !== "ACTIVE") return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  try {
+    const settings = await getPlayerVisibilitySettings(env.DB);
+    const summary = await buildHomeSummary(env.DB, auth, {
+      visible: key => visibilityEnabled(settings, key, auth.role),
+      changeVisible: change => isChangeVisibleForRole(change, auth.role, settings)
+    });
+    const ms = !milestonesAvailableFor(auth.role) ? null : await loadMilestones(env.DB, auth, { visible: key => visibilityEnabled(settings, key, auth.role) }).catch(error => { console.warn("home_milestones_failed", error?.message || error); return null; });
+    if (ms) summary.milestones = { achieved: ms.achieved, total: ms.total, unseen: ms.unseen };
+    if (ms?.missions) summary.missions = { dailyDone: ms.missions.dailyDone, daily: ms.missions.daily, streak: ms.missions.streak, weeklyDone: ms.missions.weeklyDone };
+    // 自分の領主データが3時間より古ければ裏で取り直す。画面側は少し待って再取得する。
+    if (summary.me && executionContext?.waitUntil && claimMeAutoRefresh(summary.me)) {
+      const governorId = summary.me.governor_id;
+      summary.me.refreshing = true;
+      executionContext.waitUntil((async () => {
+        try {
+          const fetched = await fetchPlayerThroughApiPool(env, governorId, "HOME_AUTO_REFRESH", "base");
+          await materializePlayer(env.DB, fetched.observation, undefined, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+        } catch (error) {
+          console.warn("home_me_auto_refresh_failed", error?.code || error?.message || "unknown");
+        }
+      })());
+    }
+    // 英語のホーム（/en）から：ミッション・マイルストーンの名前を英語に（home-en.js）
+    if (new URL(request.url).searchParams.get("lang") === "en") englishSummaryTitles(summary);
+    return json({ ok: true, ...summary });
+  } catch (error) {
+    console.error("home_summary_failed", error?.message || error);
+    return json({ ok: false, error: "HOME_SUMMARY_FAILED" }, 500);
+  }
+}
+
+// ホームのクライアントスクリプトへ役場バッジ関数を埋め込む（バンドラの __name 対策の shim 付き）。
+const TC_BADGE_CLIENT_SOURCE = "(function(){var __name=function(f){return f};return " + townCenterBadgeHtml.toString() + "})()";
+
+const INVITE_BANNER_CSS = "<style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}.ee-invited-special{border-color:rgba(251,191,36,.9);background:linear-gradient(110deg,#5a410c,#2a1e07)!important;color:#fff8e6!important;box-shadow:0 0 22px rgba(251,191,36,.3)}.ee-invited-special b{color:#fde68a}.ee-invited-special span{color:#f3e2b3!important}.ee-invited-special em{color:#fbbf24!important}</style>";
+
+export async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
-  const session = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
-  const auth = session ? await getAuthenticatedUser(request, env) : null;
+  const verifiedSession = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
+  const cookieSession = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;
+  // 作業用の鍵（Claude・動画の撮影）が付いているときは、ログイン後のホームを見せる（2026-11-16 着せ替えの撮影用）。
+  // 鍵が無い普通の人には関係しない。ホームは共有キャッシュに載せていない。
+  const agent = !cookieSession ? agentTokenState(request, env) : undefined;
+  const session = cookieSession || (agent ? { sub: agent.discord_id, username: agent.username, global_name: agent.global_name, agent: true } : null);
+  const auth = cookieSession ? await getAuthenticatedUser(request, env) : (agent || null);
   // Only an ACTIVE database-backed user may receive role-gated drawer links.
   const menuAuth = auth?.status === "ACTIVE" ? auth : (session ? { role: "BASIC" } : null);
   const role = menuAuth?.role || "BASIC";
+  // 招待リンクから来た未ログインの人へ、招待者の名前と特典を案内（コードがあるときだけ1行読む）。
+  const refCode = !session ? parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE] : null;
+  const inviter = refCode && isReferralCode(refCode) ? await inviterNameForCode(env.DB, refCode) : null;
+  const inviteBanner = !inviter ? "" : inviter.special
+    ? '<a class="ee-invited ee-invited-special" href="/api/auth/discord"><b>👑 EagleEye運営からの特別招待</b><span>ログインするとウォッチ枠 +' + OWNER_INVITE_BONUS.invitedSignup + '・限定の着せ替え「ゴールド」・運営招待バッジ。ADVANCEDになるとさらにウォッチ枠 +' + OWNER_INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS
+    : '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS;
+  // ログインしていない人（と検索エンジン・AdSense の審査）には、何のサイトか分かるトップを見せる（2026-11-15）。
+  // 数字は王国ページの分析と同じ全王国の一覧（isolate で1時間覚える）から。MightPulse は呼ばない。
+  if (!session) {
+    const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
+    return renderVisitorHome({ origin: publicOrigin(request, env), highlights: stats ? homeHighlights(stats) : null, kvkSeason, inviteBanner });
+  }
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar
     ? `<img src="https://cdn.discordapp.com/avatars/${encodeURIComponent(session.sub)}/${encodeURIComponent(session.avatar)}.png?size=96" alt="">`
     : "<span>BJ</span>";
   const loginBlock = session
-    ? `<a class="ee-profile" href="/my-player" aria-label="マイKingshotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
+    ? `<a class="ee-profile" href="/my-player" aria-label="マイKingShotを開く"><span class="ee-avatar">${avatar}</span><span class="ee-profile-copy"><b>${userName}</b><small>${roleLabel}</small></span></a>`
     : `<a class="ee-profile ee-login-trigger" href="/api/auth/discord" aria-label="Discordでログイン"><span class="ee-avatar">BJ</span><span class="ee-profile-copy"><b class="ee-login-label">ログイン</b><small class="ee-login-state">未ログイン</small></span><span class="ee-login-spinner" aria-hidden="true"></span></a>`;
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>EagleEye</title><style>
-:root{color-scheme:dark;--bg:#050b14;--panel:#0a1728;--panel2:#0d2035;--line:#23415f;--text:#eff8ff;--sub:#8098b0;--cyan:#20d7f2;--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,#06101d,#030811 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#06101d"><title>キングショット（KingShot）分析・攻略ツール｜王国・プレイヤー観測 | EagleEye</title><meta name="description" content="キングショット（KingShot）の分析・攻略に役立つ非公式ファンサイト。王国・同盟・プレイヤーのランキング推移、KvKの戦況と秘境の試練の比較、英雄の育成情報を見やすくまとめています。欠片計算・黄金計算などの攻略ツールも無料で使えます。"><link rel="canonical" href="${publicOrigin(request, env)}/">${websiteJsonLd(publicOrigin(request, env))}<style>
+:root{color-scheme:dark;--bg:var(--ee-bg,#050b14);--panel:var(--ee-panel,#0a1728);--panel2:var(--ee-panel-raised,#0d2035);--line:var(--ee-border,#23415f);--text:var(--ee-text,#eff8ff);--sub:var(--ee-subtext,#8098b0);--cyan:var(--ee-cyan,#20d7f2);--blue:#4ea9ff;--gold:#f6c84b;--green:#49e69a}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:radial-gradient(circle at 50% 8%,rgba(34,211,238,.08),transparent 30%),linear-gradient(180deg,var(--ee-bg,#06101d),color-mix(in srgb,var(--ee-bg,#06101d) 80%,#000) 75%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a,button{touch-action:manipulation}a{color:inherit;text-decoration:none}
 .ee-app{height:100dvh;min-height:0;display:grid;grid-template-rows:60px minmax(0,1fr) 72px;overflow:hidden}.ee-top{display:flex;align-items:center;justify-content:space-between;padding:0 max(18px,calc((100vw - 1100px)/2));border-bottom:1px solid rgba(35,65,95,.7);background:rgba(4,10,18,.86);backdrop-filter:blur(18px);z-index:10}.ee-brand{font-weight:950;letter-spacing:.09em;font-size:16px}.ee-brand span{color:var(--cyan)}.ee-brand b{color:#7189a2;font-size:11px;margin-left:7px}.ee-profile{display:flex;align-items:center;gap:8px}.ee-avatar{width:35px;height:35px;border:1px solid #31516f;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#0b1c2e;color:var(--gold);font-weight:950;font-size:10px}.ee-avatar img{width:100%;height:100%;object-fit:cover}.ee-profile-copy{display:grid;line-height:1.05}.ee-profile-copy b{font-size:13px}.ee-profile-copy small{margin-top:4px;color:var(--gold);font-size:10px;font-weight:900;letter-spacing:.08em}
 .ee-main{min-height:0;overflow:hidden;overscroll-behavior:none;padding:20px 14px 10px}.ee-screen{width:min(920px,100%);margin:auto}.ee-welcome{position:relative;min-height:116px;display:flex;align-items:center;overflow:hidden;padding:15px 18px;border:1px solid rgba(44,93,137,.8);border-radius:20px;background:radial-gradient(circle at 75% 50%,rgba(34,211,238,.25),transparent 35%),linear-gradient(135deg,#0c2945,#071525 72%);box-shadow:0 14px 40px rgba(0,0,0,.24)}.ee-welcome-copy{position:relative;z-index:2;max-width:58%}.ee-kicker{font-size:10px;letter-spacing:.16em;color:var(--cyan);font-weight:950}.ee-welcome h1{margin:5px 0 2px;font-size:22px;letter-spacing:-.04em}.ee-welcome p{margin:0;color:#a1b7ca;font-size:11px;line-height:1.5}.ee-welcome-state{display:inline-flex;margin-top:8px;align-items:center;gap:5px;color:#8ff0ba;font-size:10px;font-weight:900}.ee-welcome-state i{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(73,230,154,.8)}.ee-welcome-bj{position:absolute;right:4%;bottom:-18px;width:150px;height:150px;object-fit:contain;filter:drop-shadow(0 14px 18px rgba(0,0,0,.5));animation:heroIn .85s cubic-bezier(.2,.8,.2,1) both}.ee-menu-title{display:flex;align-items:end;justify-content:space-between;margin:14px 3px 7px}.ee-menu-title b{font-size:15px;letter-spacing:.08em}.ee-menu-title span{font-size:10px;color:#6f879e}
 .ee-mainmenu{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.ee-tile{position:relative;min-height:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:1px solid rgba(39,75,108,.85);border-radius:16px;background:linear-gradient(180deg,rgba(12,34,55,.94),rgba(7,20,34,.96));box-shadow:inset 0 1px rgba(255,255,255,.03);transition:transform .16s,border-color .16s,box-shadow .16s}.ee-tile:active{transform:scale(.97)}.ee-tile.primary{border-color:rgba(34,211,238,.42)}.ee-tile img{width:48px;height:48px;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,.38))}.ee-tile strong{font-size:13px;font-weight:950}.ee-tile small{font-size:9px;color:#718aa2;font-weight:800}.ee-tile .badge{position:absolute;right:7px;top:7px;min-width:20px;height:20px;padding:0 5px;display:grid;place-items:center;border-radius:999px;background:var(--cyan);color:#04111c;font-size:10px;font-weight:950}
@@ -9371,19 +11617,20 @@ async function renderHome(request, env) {
 .ee-app{grid-template-rows:60px minmax(0,1fr) 72px}.ee-top{padding-left:max(18px,calc((100vw - 1040px)/2));padding-right:max(18px,calc((100vw - 1040px)/2));background:rgba(3,9,17,.94)}
 .ee-brand{font-size:15px;letter-spacing:.13em}.ee-brand b{font-size:9px;letter-spacing:.12em;color:#718aa2}.ee-profile{padding:5px 9px 5px 5px;border:1px solid rgba(49,81,111,.62);border-radius:999px;background:rgba(11,28,46,.72)}.ee-profile-copy b{font-size:11px}.ee-profile-copy small{font-size:8px;color:var(--cyan);letter-spacing:.04em}
 .ee-main{padding:14px 14px 22px;overscroll-behavior:contain}.ee-screen{width:min(860px,100%)}
-.ee-welcome{min-height:148px;padding:20px;border-radius:22px;border-color:rgba(32,215,242,.34);background:radial-gradient(ellipse at 85% 40%,rgba(32,215,242,.18),transparent 38%),linear-gradient(135deg,#0b2944 0%,#08192b 55%,#061321 100%);box-shadow:0 14px 36px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.04)}
-.ee-welcome-copy{max-width:66%}.ee-welcome-copy:before{content:"KINGSHOT INTELLIGENCE";display:block;margin-bottom:8px;color:#66e7f6;font-size:9px;font-weight:950;letter-spacing:.18em}.ee-welcome-copy:after{content:"王国とプレイヤーの動きを、ひと目で。";display:block;margin-top:7px;color:#9db4c8;font-size:11px;line-height:1.65}
+.ee-welcome{min-height:148px;padding:20px;border-radius:22px;border-color:rgba(32,215,242,.34);background:radial-gradient(ellipse at 85% 40%,rgba(32,215,242,.18),transparent 38%),linear-gradient(135deg,var(--ee-panel-raised,#0b2944) 0%,var(--ee-panel,#08192b) 55%,var(--ee-panel-deep,#061321) 100%);box-shadow:0 14px 36px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.04)}
+.ee-welcome-copy{max-width:66%}.ee-welcome-copy:before{content:"KingShot 観測ダッシュボード";display:block;margin-bottom:8px;color:#66e7f6;font-size:9px;font-weight:950;letter-spacing:.18em}.ee-welcome-copy:after{content:"王国とプレイヤーの動きを、ひと目で。";display:block;margin-top:7px;color:#9db4c8;font-size:11px;line-height:1.65}
 .ee-welcome-state{margin-top:0;padding:5px 8px;border:1px solid rgba(73,230,154,.22);border-radius:999px;background:rgba(73,230,154,.06);font-size:9px}.ee-welcome-bj{right:3%;bottom:-10px;width:158px;height:158px}
 .ee-menu-title{margin:20px 3px 10px;align-items:center}.ee-menu-title b{font-size:13px;letter-spacing:.04em}.ee-menu-title span{font-size:9px}.ee-mainmenu{gap:9px}
 .ee-tile{min-height:112px;padding:10px 5px;border-radius:17px;background:linear-gradient(155deg,rgba(13,34,54,.98),rgba(6,18,31,.98));border-color:rgba(43,77,107,.68);transition:transform .16s,border-color .16s,background .16s}.ee-tile.primary{border-color:rgba(32,215,242,.5);background:linear-gradient(155deg,rgba(10,45,65,.98),rgba(6,20,34,.98))}.ee-tile:active{transform:scale(.965);background:#102b43}.ee-tile img{width:48px;height:48px}.ee-tile strong{font-size:11px}.ee-tile small{font-size:8px;color:#89a1b8}.ee-tile .badge{right:8px;top:8px;min-width:18px;height:18px;box-shadow:0 0 15px rgba(32,215,242,.18)}
 .ee-summary{gap:8px;margin-top:17px}.ee-stat{padding:11px 12px;border-radius:15px;background:linear-gradient(150deg,rgba(10,25,41,.95),rgba(6,16,28,.95));border-color:rgba(35,65,95,.62)}.ee-stat-label{font-size:8px;letter-spacing:.08em}.ee-stat-value{font-size:17px}.ee-stat-sub{font-size:8px;color:#7892aa}.ee-more{display:none}
 .ee-milestone-card{width:100%;display:flex;align-items:center;gap:12px;margin-top:12px;padding:13px 15px;text-align:left;border:1px solid rgba(246,200,75,.25);border-radius:16px;background:linear-gradient(110deg,rgba(48,39,18,.52),rgba(8,22,37,.92));color:#e7edf5;opacity:.78;cursor:not-allowed}
+.ee-milestone-live{opacity:1;cursor:pointer;text-decoration:none}.ee-welcome-slim .ee-welcome{min-height:0!important;padding:12px 16px!important}.ee-welcome-slim .ee-welcome-bj{width:78px!important;height:78px!important;bottom:-6px!important}.ee-welcome-slim .ee-welcome-copy:after{display:none!important}.ee-welcome-slim .ee-welcome-copy:before{margin-bottom:4px!important}.ee-home-me+.ee-menu-title{margin-top:14px}.ee-kvk-card{opacity:1;cursor:pointer;text-decoration:none;border-color:rgba(248,113,113,.35);background:linear-gradient(110deg,rgba(64,22,28,.6),rgba(8,22,37,.92))}.ee-kvk-card .ee-milestone-icon{color:#f87171;border-color:rgba(248,113,113,.4)}.ee-kvk-card .ee-milestone-status{color:#fecaca;border-color:rgba(248,113,113,.3)}.ee-kvk-card strong{color:#f1f8ff}.ee-kvk-card small{color:#a9bed3}
 .ee-milestone-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border:1px solid rgba(246,200,75,.35);border-radius:12px;color:#f6c84b;font-size:24px}
 .ee-milestone-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.ee-milestone-copy strong{font-size:12px;font-weight:950}.ee-milestone-copy small{font-size:9px;color:#8da2b8}.ee-milestone-status{flex:0 0 auto;padding:6px 8px;border:1px solid rgba(246,200,75,.24);border-radius:999px;color:#f6d98b;font-size:9px;font-weight:900;white-space:nowrap}
 .ee-drawer-grid button.ee-drawer-milestone{min-height:82px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:7px;border:1px solid rgba(246,200,75,.22);border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.7),rgba(6,17,29,.7));color:#8da2b8;opacity:.65;cursor:not-allowed}
 .ee-drawer-milestone-icon{color:#f6c84b;font-size:23px}.ee-drawer-grid .ee-drawer-milestone span{font-size:9px;font-weight:900}.ee-drawer-grid .ee-drawer-milestone small{display:block;margin-top:3px;color:#d0b66e;font-size:8px}
 .ee-nav{padding-top:7px;gap:5px;background:rgba(3,9,17,.97);padding-bottom:max(7px,env(safe-area-inset-bottom))}.ee-nav a,.ee-nav button{min-height:49px;font-size:8px;border-radius:13px;gap:4px}.ee-nav-icon{font-size:20px}.ee-nav a.active{background:linear-gradient(180deg,rgba(32,215,242,.11),rgba(32,215,242,.025))}
-.ee-drawer{z-index:1000;align-items:flex-end;padding-top:env(safe-area-inset-top)}.ee-drawer-panel{box-sizing:border-box;position:relative;flex:0 1 auto;min-height:0;width:min(920px,100%);height:min(82vh,calc(100vh - env(safe-area-inset-top) - 12px));height:min(82dvh,calc(100dvh - env(safe-area-inset-top) - 12px));max-height:calc(100vh - env(safe-area-inset-top) - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);overflow-x:hidden;overflow-y:scroll;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:16px 16px calc(22px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:linear-gradient(180deg,#0d2339,#050e19)}.ee-drawer-head{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;margin:-16px -16px 14px;padding:16px;background:linear-gradient(180deg,#0d2339,#0d2339);border-radius:25px 25px 0 0}.ee-drawer-head b{font-size:14px;letter-spacing:.03em}.ee-close{flex-shrink:0;width:36px;height:36px;border:1px solid rgba(80,115,145,.4);border-radius:50%;background:rgba(255,255,255,.04)}.ee-drawer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ee-drawer-grid a{min-height:82px;border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.96),rgba(6,17,29,.96));border-color:rgba(43,78,110,.7)}.ee-drawer-grid img{width:37px;height:37px}.ee-drawer-grid span{font-size:9px}
+.ee-drawer{z-index:1000;align-items:flex-end;padding-top:env(safe-area-inset-top)}.ee-drawer-panel{box-sizing:border-box;position:relative;flex:0 1 auto;min-height:0;width:min(920px,100%);height:min(82vh,calc(100vh - env(safe-area-inset-top) - 12px));height:min(82dvh,calc(100dvh - env(safe-area-inset-top) - 12px));max-height:calc(100vh - env(safe-area-inset-top) - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);overflow-x:hidden;overflow-y:scroll;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:16px 16px calc(22px + env(safe-area-inset-bottom));border-radius:25px 25px 0 0;background:linear-gradient(180deg,var(--ee-panel-raised,#0d2339),var(--ee-bg,#050e19))}.ee-drawer-head{position:sticky;top:-16px;z-index:3;display:flex;align-items:center;justify-content:space-between;margin:-16px -16px 14px;padding:16px;background:var(--ee-panel-raised,#0d2339);border-radius:25px 25px 0 0}.ee-drawer-head b{font-size:14px;letter-spacing:.03em}.ee-close{flex-shrink:0;width:36px;height:36px;border:1px solid rgba(80,115,145,.4);border-radius:50%;background:rgba(255,255,255,.04)}.ee-drawer-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.ee-drawer-grid a{min-height:82px;border-radius:15px;background:linear-gradient(150deg,rgba(13,34,54,.96),rgba(6,17,29,.96));border-color:rgba(43,78,110,.7)}.ee-drawer-grid img{width:37px;height:37px}.ee-drawer-grid span{font-size:9px}
 @media(min-width:760px){.ee-welcome{min-height:172px;padding:26px}.ee-welcome-bj{width:205px;height:205px;right:7%;bottom:-24px}.ee-tile{min-height:132px}.ee-tile img{width:58px;height:58px}.ee-summary{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:520px){.ee-main{padding:12px 12px 18px}.ee-welcome{min-height:132px;padding:16px}.ee-welcome-copy{max-width:68%}.ee-welcome-copy:before{font-size:8px;letter-spacing:.13em}.ee-welcome-copy:after{font-size:10px;max-width:205px}.ee-welcome-bj{width:137px;height:137px;right:-2%;bottom:-8px}.ee-menu-title{margin-top:17px}.ee-mainmenu{gap:7px}.ee-tile{min-height:101px;padding:8px 3px}.ee-tile img{width:42px;height:42px}.ee-tile strong{font-size:10px}.ee-tile small{font-size:7px}.ee-summary{margin-top:13px}.ee-stat{padding:9px 10px}.ee-stat-value{font-size:15px}.ee-nav{padding-left:8px;padding-right:8px}.ee-nav-icon{font-size:19px}}
 @media(max-height:700px){.ee-welcome{min-height:112px}.ee-welcome-bj{width:118px;height:118px}.ee-welcome-copy:after{margin-top:4px}.ee-tile{min-height:86px}.ee-tile img{width:36px;height:36px}.ee-summary{margin-top:10px}}
@@ -9606,37 +11853,107 @@ async function renderHome(request, env) {
 .ee-tile small{font-size:7px}
 .ee-stat-label,.ee-stat-sub{font-size:8px}
 .ee-nav a,.ee-nav button{font-size:9px}
-}${EAGLEEYE_NAV_CSS}
+}
+/* Home v2: readable sizes, scrollable content, personal summary. Prefixed with
+   .ee-app so these win over the older compact media rules above. */
+.ee-app .ee-main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 24px}
+.ee-app .ee-welcome{min-height:118px;padding:16px}
+.ee-app .ee-welcome-copy:before{font-size:10px;letter-spacing:.14em;color:var(--ee-cyan)}
+.ee-app .ee-welcome-copy{max-width:72%}.ee-onboard{display:grid;gap:4px;margin:12px 0 4px;padding:14px 16px;border-radius:18px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(135deg,rgba(250,204,21,.16),rgba(34,211,238,.10));color:inherit;text-decoration:none}.ee-onboard[hidden]{display:none}.ee-onboard b{font-size:16px}.ee-onboard span{font-size:12px;opacity:.85;line-height:1.6}.ee-onboard em{font-style:normal;font-weight:900;font-size:13px;color:#b45309}.ee-h{margin:0!important;padding:0!important;font:inherit!important;line-height:inherit!important;color:inherit!important;letter-spacing:inherit!important;text-transform:none!important}.ee-welcome-copy:before{content:none!important;display:none!important}.ee-welcome .ee-welcome-h1{display:block!important;margin:0 0 8px!important;padding:0!important;color:var(--ee-cyan,#66e7f6)!important;font-size:11px!important;font-weight:950!important;letter-spacing:.14em!important;line-height:1.4!important;white-space:nowrap}@media(max-width:520px){.ee-welcome .ee-welcome-h1{margin-bottom:5px!important;font-size:10px!important;letter-spacing:.1em!important}}.ee-app .ee-welcome-copy:after{font-size:12px;line-height:1.5;color:var(--ee-subtext)}
+.ee-app .ee-welcome-state{font-size:11px;padding:4px 9px}
+.ee-app .ee-welcome-bj{width:128px;height:128px}
+.ee-app .ee-menu-title{margin:16px 3px 8px}
+.ee-app .ee-menu-title b{font-size:15px}
+.ee-app .ee-menu-title span{font-size:11px;color:var(--ee-subtext)}
+.ee-app .ee-mainmenu{gap:8px}
+.ee-app .ee-tile{min-height:92px;padding:8px 4px;border-radius:15px}
+.ee-app .ee-tile img{width:40px;height:40px}
+.ee-app .ee-tile strong{font-size:13px}
+.ee-app .ee-tile small{font-size:10px;color:var(--ee-subtext)}
+.ee-home-me{margin-top:12px;display:grid;gap:8px}
+.ee-me-card{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--ee-cyan) 35%,transparent);border-radius:16px;background:linear-gradient(135deg,var(--ee-panel-raised),var(--ee-panel));color:var(--ee-text);text-decoration:none}
+.ee-me-label{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-weight:900;letter-spacing:.06em;color:var(--ee-cyan)}
+.ee-me-label small{font-weight:600;letter-spacing:0;color:var(--ee-subtext)}
+.ee-me-name{font-size:17px;font-weight:900;line-height:1.35}
+.ee-kvk-share{display:block;margin:6px 2px 0;font-size:13px;font-weight:800;color:var(--ee-cyan);text-decoration:none}.ee-kvk-share[hidden]{display:none}
+.ee-me-cta .ee-me-name{font-size:13px;font-weight:700;color:var(--ee-subtext)}
+.ee-me-go{font-size:12px;font-weight:800;color:var(--ee-cyan)}
+.ee-me-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px}
+.ee-me-stats span{padding:7px 9px;border-radius:11px;background:var(--ee-panel-deep);border:1px solid var(--ee-border-soft)}
+.ee-me-stats i{display:block;font-style:normal;font-size:10px;color:var(--ee-subtext)}
+.ee-me-stats b{font-size:14px;white-space:nowrap}
+.ee-app .ee-summary{grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.ee-app .ee-stat{display:block;min-height:0;padding:11px 13px;color:var(--ee-text);text-decoration:none}
+.ee-app .ee-stat-label{font-size:11px;letter-spacing:0;color:var(--ee-subtext)}
+.ee-app .ee-stat-value{font-size:20px;margin-top:2px}
+.ee-app .ee-milestone-card{margin-top:10px;padding:12px 14px}
+.ee-app .ee-milestone-copy strong{font-size:14px}
+.ee-app .ee-milestone-copy small{font-size:11px;color:var(--ee-subtext)}
+.ee-app .ee-milestone-status{font-size:11px}
+.ee-changes .ee-menu-title{margin-top:18px}
+.ee-change-list{display:grid;gap:6px}
+.ee-change{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 13px;border:1px solid var(--ee-border-soft);border-radius:13px;background:var(--ee-panel);color:var(--ee-text);text-decoration:none}
+.ee-change-who{font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ee-change-at{font-size:11px;color:var(--ee-subtext);text-align:right}
+.ee-change-what{grid-column:1/-1;font-size:12px;color:var(--ee-subtext)}
+.ee-change-what b{color:var(--ee-text)}.ee-change-what b.up{color:var(--ee-success,#22c55e)}.ee-change-what b.down{color:var(--ee-danger,#f87171)}
+.ee-change-empty{padding:14px;border:1px dashed var(--ee-border-soft);border-radius:13px;font-size:12px;color:var(--ee-subtext);text-align:center}
+.ee-app .ee-tile .badge{background:#ef4444!important;color:#fff!important;border:0}
+@media(min-width:760px){.ee-app .ee-tile{min-height:120px}.ee-app .ee-tile img{width:54px;height:54px}.ee-app .ee-summary{grid-template-columns:repeat(2,1fr)}}
+${EAGLEEYE_NAV_CSS}
 </style></head><body>
 <div class="ee-app">
 <header class="ee-top"><div class="ee-brand"><span>EAGLEEYE</span><b>/ HOME</b></div>${loginBlock}</header>
 <main class="ee-main"><div class="ee-screen">
-<a class="ee-welcome-link" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
+<a class="ee-welcome-link${session ? " ee-welcome-slim" : ""}" href="/status" aria-label="システム状況を確認"><section class="ee-welcome">
   <div class="ee-welcome-copy">
+    <h1 class="ee-welcome-h1">キングショット 分析・攻略ダッシュボード</h1>
     <span class="ee-welcome-state"><i></i> システム稼働中</span>
   </div>
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
-<div class="ee-menu-title"><b>主要メニュー</b><span>必要な入口だけをここに</span></div>
+${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
+${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var base=document.getElementById('homeSword');var evs=(d.events&&d.events.length)?d.events:[{label:d.label,matchup:d.matchup}];evs.forEach(function(ev,i){var a=i?base.cloneNode(true):base;if(i){a.removeAttribute('id');base.parentNode.insertBefore(a,base.nextSibling)}var b=a.querySelector('span');a.querySelector('b').textContent='⚔️ '+(ev.label||'聖剣争奪');a.href='/swordland';if(ev.matchup){b.textContent='今回の相手：王国'+ev.matchup.kid+'の '+ev.matchup.tag+'（'+ev.matchup.count+'人が登録'+(ev.matchup.memberReported?'・メンバーの報告':'')+'）';if(ev.matchup.compareUrl)a.href=ev.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'対戦相手が登録されると、ここに表示されます（R4・R5 が使っていない同盟はメンバーも登録できます）'}a.hidden=false})}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+<div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
+<section class="ee-mainmenu" data-menu="signed-in">
+  <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>
+  <a class="ee-tile primary" href="/kvk"><img src="/assets/eagleeye/bjnyan/13_kingdom_data_review.png" alt=""><h3 class="ee-h"><strong>KvK</strong></h3><small>対戦相手・スコア</small></a>
+  <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><h3 class="ee-h"><strong>王国検索</strong></h3><small>王国を探す</small></a>
+  <a class="ee-tile" href="/watchlist"><img src="/assets/eagleeye/bjnyan/05_player_identity_check.png" alt=""><h3 class="ee-h"><strong>比較・共有</strong></h3><small>ウォッチから比較画像</small></a>
+  <a class="ee-tile" href="/settings/theme"><img src="/assets/eagleeye/bjnyan/14_search_refining.png" alt=""><h3 class="ee-h"><strong>着せ替え</strong></h3><small>色テーマを選ぶ</small></a>
+  <a class="ee-tile" href="/news"><img src="/assets/eagleeye/bjnyan/04_player_found.png" alt=""><h3 class="ee-h"><strong>お知らせ</strong></h3><small>更新情報</small><b class="badge" data-badge="news" hidden>0</b></a>
+</section>` : `<div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>必要な入口だけをここに</span></div>
 <section class="ee-mainmenu">
-  <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><strong>ランキング</strong><small>王国・順位を確認</small></a>
-  <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><strong>ウォッチリスト</strong><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge">0</b></a>
-  <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><strong>プレイヤー検索</strong><small>プレイヤーを探す</small></a>
-  <a class="ee-tile" href="/kingdom"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><strong>王国検索</strong><small>王国を探す</small></a>
-  <a class="ee-tile" href="/status"><img src="/assets/eagleeye/bjnyan/03_player_searching_data.png" alt=""><strong>システム状況</strong><small>稼働状況を確認</small></a>
-  <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><strong>マイKingshot</strong><small>自分のデータ</small></a>
+  <a class="ee-tile primary" href="/kingdom/rankings"><img src="/assets/eagleeye/bjnyan/12_kingdom_found.png" alt=""><h3 class="ee-h"><strong>ランキング</strong></h3><small>王国・順位を確認</small></a>
+  <a class="ee-tile primary" href="/watchlist"><img src="/assets/eagleeye/bjnyan/10_player_recheck.png" alt=""><h3 class="ee-h"><strong>ウォッチリスト</strong></h3><small>プレイヤー・王国を追跡</small><b class="badge" id="playerBadge" data-badge="watch" hidden>0</b></a>
+  <a class="ee-tile" href="/players"><img src="/assets/eagleeye/bjnyan/01_player_search.png" alt=""><h3 class="ee-h"><strong>プレイヤー検索</strong></h3><small>プレイヤーを探す</small></a>
+  <a class="ee-tile" href="/kingdom-catalog"><img src="/assets/eagleeye/bjnyan/11_kingdom_search.png" alt=""><h3 class="ee-h"><strong>王国検索</strong></h3><small>王国を探す</small></a>
+  <a class="ee-tile" href="/kvk/matchups"><img src="/assets/eagleeye/bjnyan/13_kingdom_data_review.png" alt=""><h3 class="ee-h"><strong>KvK組み合わせ</strong></h3><small>対戦カードを確認</small></a>
+  <a class="ee-tile" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ</small></a>
 </section>
+<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>`}<section class="ee-home-tools" id="tools" aria-label="ツール"><h2>ツール</h2><div class="ee-home-tools-grid"><a href="/tools/hero-shards"><h3 class="ee-h"><b>英雄の欠片計算</b></h3><small>★5までの必要数</small></a><a href="/tools/gold"><h3 class="ee-h"><b>黄金計算</b></h3><small>建物ごとのG1〜8</small></a><a href="/tools/gold-tech"><h3 class="ee-h"><b>黄金テクノロジー研究</b></h3><small>T11研究の必要数</small></a><a href="/hero-catalog"><h3 class="ee-h"><b>英雄カタログ</b></h3><small>全英雄のスキル</small></a><a href="/kingdoms"><h3 class="ee-h"><b>王国一覧</b></h3><small>戦力・成長・KvK</small></a><a href="/kvk/matchups"><h3 class="ee-h"><b>KvK組み合わせ</b></h3><small>秘境の試練で比較</small></a><a href="/kingdom-timeline"><h3 class="ee-h"><b>王国タイムライン</b></h3><small>英雄・黄金の解放時期</small></a></div><style>.ee-home-tools{margin:14px 0}.ee-home-tools h2{font-size:15px;margin:0 0 8px}.ee-home-tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.ee-home-tools-grid a{display:grid;gap:2px;padding:12px;border:1px solid var(--ee-border-soft,#1d344d);border-radius:var(--ee-radius-md,13px);background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-home-tools-grid b{font-size:14px}.ee-home-tools-grid small{font-size:11px;color:var(--ee-subtext,#94a3b8)}</style></section>
 <section class="ee-summary">
-  <div class="ee-stat"><div class="ee-stat-label">PLAYER WATCH</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div><div class="ee-stat-sub">監視中のプレイヤー</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">KINGDOM WATCH</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div><div class="ee-stat-sub">監視中の王国</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">MY KINGSHOT</div><div class="ee-stat-value">DATA</div><div class="ee-stat-sub">登録データへ</div></div>
-  <div class="ee-stat"><div class="ee-stat-label">EAGLEEYE</div><div class="ee-stat-value"><em>LIVE</em></div><div class="ee-stat-sub">観測システム稼働中</div></div>
+  <a class="ee-stat" href="/watchlist"><div class="ee-stat-label">ウォッチ中のプレイヤー</div><div class="ee-stat-value"><em id="playerCount">0</em> 人</div></a>
+  <a class="ee-stat" href="/kingdom-watchlist"><div class="ee-stat-label">ウォッチ中の王国</div><div class="ee-stat-value"><em id="kingdomCount">0</em> 王国</div></a>
 </section>
-<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
+<a class="ee-milestone-card ee-kvk-card" href="/kvk" id="homeKvk">
+  <span class="ee-milestone-icon" aria-hidden="true">⚔</span>
+  <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
+  <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
+</a>
+<a class="ee-kvk-share" id="homeKvkShare" href="/kvk" hidden>📤 相手王国と比べて画像で共有 →</a>
+${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
+${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
+${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live ee-mission-card" href="/milestones#missions" id="homeMissions">
+  <span class="ee-milestone-icon" aria-hidden="true">🎯</span>
+  <span class="ee-milestone-copy"><strong>今日の作戦</strong><small id="homeMissionsText">3つの作戦で、EagleEyeを毎日ちょっと便利に</small></span>
+  <span class="ee-milestone-status" id="homeMissionsStatus">0 / 3</span>
+</a>` : ''}
+${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live" href="/milestones" id="homeMilestone">
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
-  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>デイリー・累計目標と報酬</small></span>
-  <span class="ee-milestone-status">近日公開予定</span>
-</button>
+  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
+  <span class="ee-milestone-status" id="homeMilestoneStatus">NEW</span>
+</a>` : ''}
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
@@ -9671,10 +11988,8 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
   }
   async function loadCounts(){
     try{
-      var p=await fetch("/api/player-watchlist",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
+      var p=await fetch("/api/player-watchlist?view=ids",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()});
       var pc=(p.watchlist||[]).filter(function(x){return x.enabled!==false}).length;
-      if(pBadge)pBadge.textContent=pc;
-      if(nBadge)nBadge.textContent=pc;
       if(pCount)countUp(pCount,pc,700);
     }catch(e){}
     try{
@@ -9683,7 +11998,42 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
       countUp(kCount,kc,700);
     }catch(e){}
   }
-  loadCounts();
+  // ウォッチの件数はログインしている人だけ（ログインしていない人に毎回401を返していた）
+  ${session ? "loadCounts();" : ""}
+  function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function compact(v){var n=Number(v);if(!isFinite(n))return v==null?"-":String(v);var a=Math.abs(n);if(a>=1e9)return (n/1e9).toFixed(a>=1e10?1:2).replace(/[.]0+$/,"")+"B";if(a>=1e6)return (n/1e6).toFixed(1).replace(/[.]0$/,"")+"M";if(a>=1e3)return (n/1e3).toFixed(1).replace(/[.]0$/,"")+"K";return n.toLocaleString("ja-JP")}
+  function tc(v){var l=Number(v);if(!isFinite(l))return "-";if(l<=30)return "Lv."+l;if(l<35)return "Lv.30（"+(l-30)+"/5）";var g=Math.floor((l-35)/5)+1,st=(l-35)%5;return "黄金"+g+(st?"（"+st+"/5）":"")}
+  var tcBadge=${TC_BADGE_CLIENT_SOURCE};
+  function ago(t){var d=Math.max(0,Math.floor(Date.now()/1000)-Number(t||0));if(d<3600)return Math.max(1,Math.floor(d/60))+"分前";if(d<86400)return Math.floor(d/3600)+"時間前";return Math.floor(d/86400)+"日前"}
+  var FIELD={power:"戦力",town_center_level:"役場",vip:"VIP",x:"X座標",y:"Y座標",kills:"撃破数",alliance_aid:"同盟",alliance_name:"同盟",alliance_rank:"同盟ランク",alliance_power:"同盟戦力",alliance_count:"同盟人数"};
+  function val(field,v){if(v==null||v==="")return "-";if(field==="power"||field==="kills"||field==="alliance_power")return compact(v);if(field==="town_center_level")return tc(v);return String(v)}
+  var homeMeRetried=false;
+  async function loadSummary(){
+    var me=document.getElementById("homeMe"),list=document.getElementById("homeChanges");
+    if(!list)return;
+    var d;try{d=await fetch("/api/home/summary",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.json()})}catch(e){d=null}
+    if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
+    if(me){
+      if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+tcBadge(m.town_center_level)+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
+        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'+(m.link_count>1?'<a class="ee-kvk-share" href="/my-player">⇄ 使う領主を切り替える（'+esc(m.link_count)+'件登録中）</a>':'')}
+      else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
+    }
+    if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
+    var ob=document.getElementById("homeOnboard"),obCopy=${JSON.stringify({ link: onboardingCopy("link"), key: onboardingCopy("key") })}[d.onboarding||""]
+    if(ob){if(obCopy){document.getElementById("homeOnboardTitle").textContent=obCopy.title;document.getElementById("homeOnboardBody").textContent=obCopy.body;document.getElementById("homeOnboardCta").textContent=obCopy.cta+" →";ob.hidden=false}else ob.hidden=true}
+    if(d.missions){var xt=document.getElementById("homeMissionsText"),xs=document.getElementById("homeMissionsStatus"),xn=(d.missions.daily||[]).filter(function(x){return !x.done})[0];if(xs)xs.textContent=d.missions.dailyDone+" / 3"+(d.missions.streak?" 🔥"+d.missions.streak:"");if(xt)xt.textContent=xn?"次："+xn.title:"今日の作戦はすべて達成！"}
+    if(d.milestones){var mt=document.getElementById("homeMilestoneText"),ms=document.getElementById("homeMilestoneStatus"),mu=d.milestones.unseen||[];if(ms)ms.textContent=d.milestones.achieved+" / "+d.milestones.total+" 達成";if(mt&&mu.length)mt.textContent="🎉 達成："+mu.slice(0,2).map(function(u){return u.title}).join("、")+(mu.length>2?" ほか"+(mu.length-2)+"件":"")}
+    if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus"),card=document.getElementById("homeKvk");var w=Number(k.score),l=Number(k.opponent_score),has=isFinite(w)&&isFinite(l)&&(w||l);
+      // KvK終了から3日より後はカードを隠す（主要メニューの「KvK」からは見られる）。3日以内は結果だけ。
+      var ks=document.getElementById("homeKvkShare");if(ks&&k.opponent!=null&&!(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400)){ks.href="/kingdom/compare?kid="+encodeURIComponent(k.kid)+"&kid="+encodeURIComponent(k.opponent);ks.hidden=false}
+      if(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400){if(card)card.hidden=true}
+      else if(k.ended){if(t)t.textContent="シーズン"+(k.season||"")+" 終了 · 王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"勝利":w<l?"敗北":"引き分け"):"終了"}
+      else{if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
+    var ch=d.changes||[];
+    if(!ch.length){list.innerHTML='<div class="ee-change-empty">この7日間、ウォッチ中のプレイヤーに変化はありません。</div>';return}
+    list.innerHTML=ch.map(function(c){var up=Number(c.to)>Number(c.from),down=Number(c.to)<Number(c.from);return '<a class="ee-change" href="/player?governor_id='+encodeURIComponent(c.governor_id)+'"><span class="ee-change-who">'+esc(c.name||("領主ID "+c.governor_id))+'</span><span class="ee-change-at">'+esc(ago(c.at))+'</span><span class="ee-change-what">'+esc(FIELD[c.field]||c.field)+' <b class="'+(up?"up":down?"down":"")+'">'+(c.field==="town_center_level"?tcBadge(c.from)+' → '+tcBadge(c.to):esc(val(c.field,c.from))+' → '+esc(val(c.field,c.to)))+'</b></span></a>'}).join("")
+  }
+  loadSummary();
 })();
 </script></body></html>`;
 }
@@ -9798,3 +12148,22 @@ function constantTimeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
+
+// 英語版（/en/...）：日本語のページを作ってから英語に置き換える。共有キャッシュには入れない。2026-11-20
+async function englishProxy(request, env, executionContext, jaPathWithQuery) {
+  const inner = new Request(new URL(jaPathWithQuery, request.url).toString(), request);
+  const res = await worker.fetch(inner, env, executionContext);
+  const location = res.headers.get("location");
+  if (location && res.status >= 300 && res.status < 400) {
+    let to = location;
+    try { const u = new URL(location, request.url); if (u.origin === new URL(request.url).origin) to = enHref(u.pathname) + u.search; } catch {}
+    const headers = new Headers(res.headers); headers.set("location", to); headers.set("cache-control", "no-store");
+    return new Response(null, { status: res.status, headers });
+  }
+  if (!String(res.headers.get("content-type") || "").includes("text/html")) return res;
+  const headers = new Headers(res.headers); headers.set("cache-control", "no-store"); headers.delete("content-length");
+  return new Response(translateHtmlToEnglish(await res.text()), { status: res.status, headers });
+}
+
+// すべての応答に安全のための設定を付ける（security-headers.js）。
+export default { ...worker, async fetch(request, env, executionContext) { return withSecurityHeaders(await worker.fetch(request, env, executionContext)); } };

@@ -1,8 +1,16 @@
+import { allianceShareEmbed } from "./alliance-share.js";
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
+import { townCenterBadgeHtml } from "./town-center-level.js";
+import { currentKingdomAge, renderKingdomTimelineSection, KINGDOM_TIMELINE_CSS } from "./kingdom-timeline.js";
+import { loadKingdomGrowthHistory, renderKingdomGrowthSection, KINGDOM_GROWTH_CSS } from "./kingdom-growth-history.js";
 import { collectMightPulseThroughGuards, collectMightyOnly, collectUserMightyOnly, collectAllianceDetail } from "./data-collection-engine.js";
 import { archiveAllianceHistoryBatch, listAllianceHistoryFromR2 } from "./r2-archive.js";
 import { evaluateVipEligibility } from "./user-eligibility.js";
 import { recordSystemEvent, systemTraceId } from "./system-log.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
+import { withArchivedRankings, formatArchiveDate } from "./kingdom-ranking-archive.js";
+import { loginUrlFor } from "./login-return.js";
+import { kingdomShareEmbed } from "./kingdom-compare-share.js";
 import { EAGLEEYE_THEME_BASE_CSS, EAGLEEYE_ROLE_AVATAR_CSS, normalizeAllianceRole } from "./eagleeye-ui.js";
 
 const BOARD_ORDER = [
@@ -14,7 +22,21 @@ const BOARD_ORDER = [
 const BOARDS = BOARD_ORDER.map(board => [board, RANKING_BOARD_LABELS[board] || board]);
 
 function esc(v) {
-  return String(v ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+  // Attributes in this file use single quotes, so ' must be escaped too.
+  return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+// One on-demand MightPulse refresh per alliance per 10 minutes, shared by all
+// viewers and independent of whether the alliance is in alliance_catalog.
+const ALLIANCE_REFRESH_INTERVAL_SECONDS = 600;
+async function claimAllianceRefresh(db, kid, tag, now) {
+  const result = await db.prepare(
+    `INSERT INTO api_request_locks (lock_key, lock_token, lock_until, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(lock_key) DO UPDATE SET lock_token = excluded.lock_token, lock_until = excluded.lock_until, updated_at = excluded.updated_at
+     WHERE api_request_locks.lock_until <= ?`
+  ).bind("ALLIANCE_REFRESH:" + Number(kid) + ":" + String(tag).slice(0, 64), crypto.randomUUID(), now + ALLIANCE_REFRESH_INTERVAL_SECONDS, now, now).run();
+  return Number(result?.meta?.changes || 0) === 1;
 }
 function num(v) {
   const n = Number(v);
@@ -24,7 +46,7 @@ function ts(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? new Date(n * 1000).toLocaleString("ja-JP",{timeZone:"Asia/Tokyo"}) : "—";
 }
-async function readR2Json(bucket, key) {
+export async function readR2Json(bucket, key) {
   if (!bucket || !key) return null;
   const obj = await bucket.get(key);
   if (!obj?.body) return null;
@@ -43,10 +65,23 @@ async function catalogRow(db, kid) {
   ).bind(Number(kid)).first();
 }
 
-export async function renderKingdomDetailPage(request, env) {
+// Alliance ids are stored as "153300015" or "153300015.0" depending on source.
+// 王国の番号が無いときに出す入力フォーム（「〜を指定してください」の行き止まりにしない）。
+function kidFormPage(title, path, lead) {
+  return page(title, "<main class='wrap'><h1>" + esc(title) + "</h1><p class='kf-lead'>" + esc(lead) + "</p>" +
+    "<form class='kf' method='get' action='" + esc(path) + "'><input type='number' name='kid' inputmode='numeric' min='1' max='99999' placeholder='王国の番号（例：1524）' aria-label='王国の番号' required><button type='submit'>表示</button></form>" +
+    "<p class='kf-lead'>番号が分からないときは <a href='/kingdom-catalog'>王国カタログ</a> から探せます。</p>" +
+    "<style>.kf-lead{color:var(--ee-subtext);font-size:14px}.kf-lead a{color:var(--ee-cyan)}.kf{display:flex;gap:8px;margin:14px 0}.kf input{flex:1;min-width:0;padding:12px;border-radius:10px;border:1px solid var(--ee-border);background:var(--ee-panel);color:var(--ee-text,#e8f3ff);font-size:16px}.kf button{padding:12px 18px;border:0!important;border-radius:10px;background:var(--ee-cyan,#22d3ee)!important;color:#04121f!important;font-weight:900;font-size:15px}</style></main>");
+}
+
+export function normalizeAllianceId(value) {
+  return String(value ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+}
+
+export async function renderKingdomDetailPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url = new URL(request.url);
   const kidText = String(url.searchParams.get("kid") || "").trim();
-  if (!/^\d+$/.test(kidText)) return page("王国詳細", "<div class='empty'>王国IDを指定してください。</div>");
+  if (!/^\d+$/.test(kidText)) return kidFormPage("王国の詳細", "/kingdom", "見たい王国の番号を入れてください。戦力・上位プレイヤー・同盟・ランキングをまとめて見られます。");
   const kid = Number(kidText);
   const row = await catalogRow(env.DB, kid);
   if (!row) return page("王国詳細", "<div class='empty'>王国カタログに該当王国がありません。<a href='/kingdom-catalog'>王国カタログへ</a></div>");
@@ -58,52 +93,96 @@ export async function renderKingdomDetailPage(request, env) {
     try { legacy = row.raw_json ? JSON.parse(row.raw_json) : null; } catch {}
   }
   const payload = archived?.payload || legacy || {};
-  const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  const detail = { ...(payload?.data && typeof payload.data === "object" ? payload.data : payload) };
+  // カタログの保存データに無い項目は、毎日の集計（kingdom_stats_current）で補う。
+  const stat = await env.DB.prepare("SELECT power, power_gain_7d, power_rank, age_days, player_count, observed_at FROM kingdom_stats_current WHERE kid = ?").bind(kid).first().catch(() => null);
+  if (stat) {
+    for (const k of ["power", "power_gain_7d", "power_rank", "player_count"]) if (detail[k] == null && stat[k] != null) detail[k] = stat[k];
+    if (detail.avg_power == null && Number(stat.power) > 0 && Number(stat.player_count) > 0) detail.avg_power = Math.round(Number(stat.power) / Number(stat.player_count));
+    if (detail.source_observed_at == null && stat.observed_at) detail.source_observed_at = stat.observed_at;
+  }
   const boards = await env.DB.prepare(
     "SELECT board, MAX(checked_rows) AS rows, MAX(changed_rows) AS changed_rows, MAX(last_checked_at) AS last_checked_at, MAX(source_observed_at) AS source_observed_at FROM kingdom_ranking_board_state WHERE kid = ? GROUP BY board ORDER BY board"
   ).bind(kid).all();
-  const topPlayers = await env.DB.prepare(
+  const topPlayers = await withArchivedRankings(env, kid, await env.DB.prepare(
     "SELECT rank,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' ORDER BY rank ASC LIMIT 10"
-  ).bind(kid).all();
-  const topAlliances = await env.DB.prepare(
+  ).bind(kid).all(), { filter: r => r.board === "personal_power" && r.target_type === "PLAYER", limit: 10 });
+  const topAlliances = await withArchivedRankings(env, kid, await env.DB.prepare(
     "SELECT rank,target_id,aid,abbr,name,score,previous_rank FROM kingdom_ranking_current WHERE kid = ? AND board = 'alliance_power' AND target_type = 'ALLIANCE' ORDER BY rank ASC LIMIT 10"
-  ).bind(kid).all();
+  ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 10 });
 
+  // 王国ウォッチに入ったことのない王国：ログイン中に開いたら、上位プレイヤー・同盟の2ボードだけ裏で取得して再読み込み。
+  const fetchNotice = onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards: [["personal_power", topPlayers], ["alliance_power", topAlliances]], boardState: boards.results || [], what: "上位プレイヤーと同盟" });
+
+  let growthHtml = "", growthHistory = null;
+  try { growthHistory = await loadKingdomGrowthHistory(env.ARCHIVE, kid); growthHtml = renderKingdomGrowthSection(growthHistory) + "<style>" + KINGDOM_GROWTH_CSS + "</style>"; }
+  catch (error) { console.error("kingdom_growth_history_failed", kid, error?.message || error); }
+  const timelineAge = growthHistory?.latest?.age_days != null
+    ? currentKingdomAge(growthHistory.latest.age_days, growthHistory.latest.observed_at)
+    : currentKingdomAge(detail.age_days, archived?.observed_at);
+  const timelineHtml = timelineAge != null ? renderKingdomTimelineSection(timelineAge, { kid }) + "<style>" + KINGDOM_TIMELINE_CSS + "</style>" : "";
   const fields = [
-    ["Power",detail.power],["平均Power",detail.avg_power],["領主数",detail.player_count],["Active",detail.active_players],
-    ["Active 7d",detail.active_7d],["Active 30d",detail.active_30d],["同盟数",detail.alliance_count],["Health",detail.health],
-    ["Power Rank",detail.power_rank],["Activity Rank",detail.activity_rank],["Power Gain 7d",detail.power_gain_7d],
-    ["TC Pushers 7d",detail.tc_pushers_7d],["Governor Power",detail.gov_power],["Alliance Power",detail.alliance_power],
-    ["Hero Power",detail.hero_power],["Troop Power",detail.troop_power],["Building Power",detail.building_power],
-    ["Research Power",detail.research_power],["Pet Power",detail.pet_power],["Migrant Score",detail.migrant_score],
-    ["Mystic Trial",detail.mystic_trial],["Master Power",detail.master_power]
+    ["総力",detail.power],["平均戦力",detail.avg_power],["領主数",detail.player_count],["マップ上の領主",detail.active_players],
+    ["7日間の活動者",detail.active_7d],["30日間の活動者",detail.active_30d],["同盟数",detail.alliance_count],["健全度",detail.health],
+    ["戦力順位",detail.power_rank],["活動順位",detail.activity_rank],["7日間の戦力の伸び",detail.power_gain_7d],
+    ["7日間で役場を上げた人",detail.tc_pushers_7d],["領主戦力",detail.gov_power],["同盟戦力",detail.alliance_power],
+    ["英雄戦力",detail.hero_power],["兵士戦力",detail.troop_power],["建物戦力",detail.building_power],
+    ["研究戦力",detail.research_power],["ペット戦力",detail.pet_power],["移民スコア",detail.migrant_score],
+    ["秘境の試練",detail.mystic_trial],["マスター戦力",detail.master_power]
   ].filter(([,v]) => v !== undefined && v !== null);
 
   const playerRows=(topPlayers.results||[]).map(r=>"<a class='row' href='/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(r.nick_name||r.governor_id||r.target_id)+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
-  const allianceRows=(topAlliances.results||[]).map(r=>"<a class='row' href='/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(r.abbr||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(r.name||r.abbr||r.target_id)+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
+  const allianceRows=(topAlliances.results||[]).map(r=>"<a class='row' href='/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(r.abbr||r.target_id||"")+"'><b>#"+esc(r.rank)+"</b><span>"+esc(allianceLabel(r))+"</span><em>"+num(r.score)+"</em><small>"+rankDelta(r.previous_rank,r.rank)+"</small></a>").join("");
   const boardRows=(boards.results||[]).map(r=>{
     const label=BOARDS.find(x=>x[0]===r.board)?.[1]||r.board;
-    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"行 · 変更 "+num(r.changed_rows)+" · "+esc(ts(r.last_checked_at))+"</small></a>";
+    return "<a class='board' href='/kingdom/rankings?kid="+encodeURIComponent(kid)+"&board="+encodeURIComponent(r.board)+"'><span>"+esc(label)+"</span><small>"+num(r.rows)+"件 · 更新 "+esc(ts(r.last_checked_at))+"</small></a>";
   }).join("");
 
-  const html = "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><div class='hero'><div><div class='eyebrow'>KINGDOM PORTAL</div><h1>王国 "+esc(kid)+"</h1><p>"+esc(row.name||detail.name||"名称未取得")+"</p></div><button id='watch' data-kid='"+esc(kid)+"'>＋王国ウォッチリスト</button></div>"+
-    "<div class='actions'><a href='/kingdom/rankings?kid="+kid+"'>26ランキングを見る</a><a href='/kingdom/compare?kid="+kid+"'>王国比較</a><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a><a href='/kingdom/mighty?kid="+kid+"'>Mighty Events / KvK</a></div>"+
+  const html = "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><div class='hero'><div><div class='eyebrow'>王国ポータル</div><h1>王国 "+esc(kid)+"</h1><p>"+esc(row.name||detail.name||"名称未取得")+"</p></div><button id='watch' data-kid='"+esc(kid)+"'>＋王国ウォッチリスト</button></div>"+
+    "<div class='actions'><a href='/kingdom/rankings?kid="+kid+"'>ランキングを見る</a><a href='/kingdom/compare?kid="+kid+"'>王国比較</a><a href='/kingdom/alliances?kid="+kid+"'>同盟一覧</a><a href='/kingdom/mighty?kid="+kid+"'>KvK・王国イベント</a></div>"+
     "<section><h2>基本情報</h2><div class='grid'>"+fields.map(([k,v])=>"<div class='card'><small>"+esc(k)+"</small><strong>"+esc(num(v))+"</strong></div>").join("")+"</div></section>"+
-    "<section><h2>Momentum</h2><div class='momentum'><b>Power Gain 7d</b><span>"+esc(num(detail.power_gain_7d))+"</span><b>TC Pushers 7d</b><span>"+esc(num(detail.tc_pushers_7d))+"</span><b>Active 7d / 30d</b><span>"+esc(num(detail.active_7d))+" / "+esc(num(detail.active_30d))+"</span><b>Health</b><span>"+esc(num(detail.health))+"</span></div></section>"+
-    "<section><h2>Top Player</h2><div class='list'>"+(playerRows||"<div class='empty'>現在のランキングデータなし</div>")+"</div></section>"+
-    "<section><h2>Top Alliance</h2><div class='list'>"+(allianceRows||"<div class='empty'>現在の同盟ランキングデータなし</div>")+"</div></section>"+
+    "<section><h2>この7日間の勢い</h2><div class='momentum'><b>戦力の伸び</b><span>"+esc(num(detail.power_gain_7d))+"</span><b>役場を上げた人</b><span>"+esc(num(detail.tc_pushers_7d))+"</span><b>活動者（7日 / 30日）</b><span>"+esc(num(detail.active_7d))+" / "+esc(num(detail.active_30d))+"</span><b>健全度</b><span>"+esc(num(detail.health))+"</span></div></section>"+
+    growthHtml+timelineHtml+
+    fetchNotice+
+    "<section><h2>戦力上位のプレイヤー</h2><div class='list'>"+(playerRows||"<div class='empty'>まだランキングを取得していません</div>")+"</div></section>"+
+    "<section><h2>戦力上位の同盟</h2><div class='list'>"+(allianceRows||"<div class='empty'>まだ同盟ランキングを取得していません</div>")+"</div></section>"+
     "<section><h2>ランキングボード</h2><div class='boards'>"+(boardRows||"<div class='empty'>ランキング未取得</div>")+"</div></section>"+
-    "<section><h2>データ鮮度</h2><div class='fresh'>EagleEye取得："+esc(ts(row.last_seen_at))+"<br>MightPulse観測："+esc(ts(row.source_observed_at || detail.source_observed_at || detail.cached_at))+"<br>R2："+esc(row.r2_latest_key ? "最新アーカイブあり" : "未保存")+"</div></section>"+
-    "</main><script>document.getElementById('watch')?.addEventListener('click',async function(){this.disabled=true;try{const r=await fetch('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(this.dataset.kid),top_n:10,interval_hours:6})});const d=await r.json();if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'登録失敗');this.textContent='✓ ウォッチリスト登録済み';}catch(e){alert(e.message||e);this.disabled=false}});</script>";
+    "<section><h2>データの取得日時</h2><div class='fresh'>"+esc(ts(row.source_observed_at || detail.source_observed_at || detail.cached_at || row.last_seen_at))+"</div></section>"+
+    "</main><script>document.getElementById('watch')?.addEventListener('click',async function(){this.disabled=true;try{const r=await fetch('/api/kingdom-watchlist?action=create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(this.dataset.kid),top_n:10,interval_hours:6})});const d=await r.json();if(r.status===401){location.href='/login?next='+encodeURIComponent(location.pathname+location.search);return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'登録失敗');this.textContent='✓ ウォッチリスト登録済み';}catch(e){alert(e.message||e);this.disabled=false}});</script>";
   return page("王国 "+kid, html);
 }
 
-export async function renderKingdomRankingsPage(request, env, auth = null) {
+// 開いたページのランキングが無い／古いとき、ログイン中なら裏で取得して数秒後に再読み込みする案内（ランキング以外のページ用）。
+// boards: [[board, rowsResult]]、boardState: kingdom_ranking_board_state の行（board, last_checked_at）。
+function onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards, boardState, what }) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const stale = boards.filter(([board, rows]) => {
+    const checked = Number((boardState || []).find(x => x.board === board)?.last_checked_at || 0);
+    return !(rows?.results || []).length || rows?.archived || nowSec - checked > RANKING_ON_DEMAND_STALE_SECONDS;
+  }).map(([board]) => board);
+  if (!stale.length) return "";
+  const empty = boards.every(([, rows]) => !(rows?.results || []).length);
+  if (url.searchParams.get("fetched") === "1") return empty ? "<div class='empty'>今は" + esc(what) + "を取得できませんでした。時間をおいてもう一度開いてください。</div>" : "";
+  if (auth?.status === "ACTIVE" && typeof onDemand === "function") {
+    const job = Promise.all(stale.map(b => Promise.resolve().then(() => onDemand(kid, b)).catch(error => console.warn("ranking_on_demand_failed", kid, b, error?.code || error?.message || error))));
+    if (typeof waitUntil === "function") waitUntil(job);
+    const again = new URL(url); again.searchParams.set("fetched", "1");
+    return "<div class='empty'>⏳ " + esc(what) + "の最新データを取得しています。数秒後に自動で更新します。</div><script>setTimeout(function(){location.replace(" + JSON.stringify(again.pathname + again.search) + ")},6000)</script>";
+  }
+  if (!auth && empty) return "<div class='empty'>" + esc(what) + "はまだ取得されていません。 <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン</a>すると、開いたときに取得します。</div>";
+  return "";
+}
+
+// 王国ウォッチに登録されていない王国でもランキングを見られるように、開いたときに足りない／古い1ボードだけ取りに行く。
+// onDemand(kid, board) は index.js から渡される（APIキー1回）。ログインした人のときだけ動かす（ボットに全王国を取らせない）。
+export const RANKING_ON_DEMAND_STALE_SECONDS = 24 * 3600;
+export async function renderKingdomRankingsPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
   const url = new URL(request.url);
   let pref = null, linked = null;
   if (auth?.status === "ACTIVE" && env.DB) {
     pref = await env.DB.prepare("SELECT kid, boards_json, primary_board FROM user_kingdom_ranking_preferences WHERE user_id = ? LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
-    linked = await env.DB.prepare("SELECT kingdom_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    await ensureActiveGovernorSchema(env.DB).catch(() => {});
+    linked = await env.DB.prepare("SELECT kingdom_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
   }
   const requestedKid = String(url.searchParams.get("kid") || "").trim();
   const savedKid = Number(pref?.kid || linked?.kingdom_id || 0);
@@ -117,10 +196,40 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
   }
   const row = await catalogRow(env.DB,kid);
   if (!row) return page("王国ランキング","<main class='wrap'><h1>王国ランキング</h1><div class='empty'>王国が見つかりません。王国IDを確認してください。</div><a href='/kingdom-catalog'>王国カタログ</a></main>");
-  const boards = await env.DB.prepare("SELECT board FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
+  const boards = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? ORDER BY board").bind(kid).all();
   const available = (boards.results||[]).map(x=>x.board);
   const board = available.includes(selected) ? selected : (available.includes(selectedBoards[0]) ? selectedBoards[0] : (available[0]||selected));
-  const rows = await env.DB.prepare("SELECT r.rank,r.target_type,r.target_id,r.governor_id,r.nick_name,r.score,r.aid,r.abbr,r.name,r.previous_rank,p.avatar_url,p.alliance_abbr,p.alliance_rank,p.alliance_rank_label FROM kingdom_ranking_current r LEFT JOIN players p ON p.governor_id = COALESCE(NULLIF(r.governor_id,''),r.target_id) WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT 100").bind(kid,board).all();
+  const rows = await withArchivedRankings(env, kid, await env.DB.prepare("SELECT r.rank,r.target_type,r.target_id,r.governor_id,r.nick_name,r.score,r.aid,r.abbr,r.name,r.previous_rank,p.avatar_url,p.alliance_abbr,p.alliance_rank,p.alliance_rank_label FROM kingdom_ranking_current r LEFT JOIN players p ON p.governor_id = COALESCE(NULLIF(r.governor_id,''),r.target_id) WHERE r.kid = ? AND r.board = ? ORDER BY r.rank ASC LIMIT 100").bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
+  // Personal boards carry only the alliance id. Resolve its tag from this
+  // kingdom's alliance boards so players never show a bare number like
+  // [153300015.0]; when no tag is known the tag is simply not shown.
+  const abbrByAid = new Map();
+  if ((rows.results || []).some(r => !r.alliance_abbr && !r.abbr && r.aid)) {
+    try {
+      const allianceRows = await env.DB.prepare("SELECT aid, abbr FROM kingdom_ranking_current WHERE kid = ? AND target_type = 'ALLIANCE' AND abbr IS NOT NULL AND abbr <> '' AND aid IS NOT NULL").bind(kid).all();
+      for (const a of allianceRows.results || []) abbrByAid.set(normalizeAllianceId(a.aid), String(a.abbr));
+    } catch (error) { console.error("ranking_alliance_abbr_lookup_failed", kid, error?.message || error); }
+  }
+  // 足りない・古いボードは、ログインしている人が開いたときに裏で取り直す（そのあと自動で再読み込み）。
+  const validBoard = BOARDS.some(x => x[0] === board);
+  const checkedAt = Number((boards.results || []).find(x => x.board === board)?.last_checked_at || 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const needsFetch = validBoard && (!(rows.results || []).length || rows.archived || nowSec - checkedAt > RANKING_ON_DEMAND_STALE_SECONDS);
+  const alreadyTried = url.searchParams.get("fetched") === "1";
+  let fetchNotice = "";
+  if (needsFetch && !alreadyTried) {
+    if (auth?.status === "ACTIVE" && typeof onDemand === "function") {
+      const job = Promise.resolve().then(() => onDemand(kid, board)).catch(error => console.warn("ranking_on_demand_failed", kid, board, error?.code || error?.message || error));
+      if (typeof waitUntil === "function") waitUntil(job);
+      const again = new URL(url); again.searchParams.set("board", board); again.searchParams.set("fetched", "1");
+      fetchNotice = "<div class='empty fetch-notice'>⏳ このランキングの最新データを取得しています。数秒後に自動で更新します。</div><script>setTimeout(function(){location.replace(" + JSON.stringify(again.pathname + again.search) + ")},6000)</script>";
+    } else if (!auth) {
+      fetchNotice = "<div class='empty fetch-notice'>" + ((rows.results || []).length ? "表示中のランキングは古い可能性があります。" : "この王国のランキングはまだ取得されていません。") + " <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン</a>すると、開いたときに最新のランキングを取得します。</div>";
+    }
+  } else if (needsFetch && alreadyTried && !(rows.results || []).length) {
+    fetchNotice = "<div class='empty fetch-notice'>このランキングは今は取得できませんでした（ゲーム内でまだ開放されていない項目の可能性があります）。時間をおいてもう一度開いてください。</div>";
+  }
+  const archiveNotice = fetchNotice ? fetchNotice : rows.archived ? "<div class='empty'>このランキングは " + esc(formatArchiveDate(rows.archived.lastUpdatedAt)) + " 時点のデータ（アーカイブ）です。最新の順位は、王国ウォッチリストに登録すると自動で取得されます。</div>" : "";
   const label=BOARDS.find(x=>x[0]===board)?.[1]||board;
   const boardSelectOptions=BOARDS.filter(([b])=>!storedBoards.length||storedBoards.includes(b)).map(([b,l])=>({key:b,label:l}));
   const body=(rows.results||[]).map(r=>{
@@ -129,54 +238,194 @@ export async function renderKingdomRankingsPage(request, env, auth = null) {
     const rankNumber=Number(r.rank);
     const rankClass=rankNumber===1?"rank-gold":rankNumber===2?"rank-silver":rankNumber===3?"rank-bronze":"";
     const star=player?" <button class='star' type='button' aria-label='ウォッチリストに追加' aria-pressed='false' data-g='"+esc(r.governor_id||r.target_id)+"'>☆</button>":"";
-    const playerName=String(r.nick_name||r.name||r.abbr||r.target_id||"");const role=player?normalizeAllianceRole(r.alliance_rank,r.alliance_rank_label):null;const roleAttr=role? " data-role='"+role+"'":"";const avatar=r.avatar_url?"<img class='rank-avatar ee-role-avatar'"+roleAttr+" src='"+esc(r.avatar_url)+"' alt='' loading='lazy' decoding='async' referrerpolicy='no-referrer'>":"<span class='rank-avatar ee-role-avatar rank-avatar-fallback'"+roleAttr+" aria-hidden='true'>"+esc(playerName.slice(0,1)||"？")+"</span>";const allianceTag=String(r.alliance_abbr||r.abbr||r.aid||"");const allianceHref="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(allianceTag);const alliance=player&&allianceTag?"<a class='rank-alliance' href='"+allianceHref+"' aria-label='同盟 "+esc(allianceTag)+" の詳細'>["+esc(allianceTag)+"]</a>":"";return "<article class='rank-row "+rankClass+"'><div class='rank-position'><span>"+esc(r.rank)+"</span><small>位</small></div><div class='rank-player'><a class='rank-player-link' href='"+href+"'>"+avatar+"<span class='rank-player-name'>"+esc(playerName)+"</span></a>"+alliance+"</div><div class='rank-score'><small>スコア</small><strong>"+num(r.score)+"</strong></div><div class='rank-change'>"+rankDelta(r.previous_rank,r.rank)+"</div>"+star+"</article>";
+    const playerName=String(player?(r.nick_name||r.name||r.abbr||r.target_id||""):allianceLabel(r));const role=player?normalizeAllianceRole(r.alliance_rank,r.alliance_rank_label):null;const roleAttr=role? " data-role='"+role+"'":"";const avatar=r.avatar_url?"<img class='rank-avatar ee-role-avatar'"+roleAttr+" src='"+esc(r.avatar_url)+"' alt='' loading='lazy' decoding='async' referrerpolicy='no-referrer'>":"<span class='rank-avatar ee-role-avatar rank-avatar-fallback'"+roleAttr+" aria-hidden='true'>"+esc(playerName.slice(0,1)||"？")+"</span>";const allianceTag=String(r.alliance_abbr||r.abbr||(r.aid?abbrByAid.get(normalizeAllianceId(r.aid)):"")||"");const allianceHref="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(allianceTag);const alliance=player&&allianceTag?"<a class='rank-alliance' href='"+allianceHref+"' aria-label='同盟 "+esc(allianceTag)+" の詳細'>["+esc(allianceTag)+"]</a>":"";return "<article class='rank-row "+rankClass+"'><div class='rank-position'><span>"+esc(r.rank)+"</span><small>位</small></div><div class='rank-player'><a class='rank-player-link' href='"+href+"'>"+avatar+"<span class='rank-player-name'>"+esc(playerName)+"</span></a>"+alliance+"</div><div class='rank-score'><small>スコア</small><strong>"+num(r.score)+"</strong></div><div class='rank-change'>"+rankDelta(r.previous_rank,r.rank)+"</div>"+star+"</article>";
   }).join("");
   const options=BOARDS.map(([b,l])=>"<label class='board-option'><input type='checkbox' name='boards' value='"+esc(b)+"' "+(selectedBoards.includes(b)?"checked":"")+"><span>"+esc(l)+"</span></label>").join("");
   const settings="<div class='rank-settings' id='rank-settings' hidden><div class='settings-title'>表示対象ランキング</div><form id='rank-pref-form'><label>王国ID<input name='kid' type='number' min='1' value='"+kid+"' required></label><div class='board-options'>"+options+"</div><button type='submit'>設定を保存</button><span id='pref-status' role='status'></span></form></div>";
-  const html="<main class='wrap'><div class='rank-head'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><button type='button' id='open-rank-settings'>ランキング設定</button></div><h1>"+esc(label)+"</h1>"+settings+"<div class='actions'><a href='/kingdom/changes?kid="+kid+"&board="+encodeURIComponent(board)+"'>順位変化を見る →</a></div><div class='rank-switch'><span class='rank-switch-label'>ランキング切替</span><div class='rank-picker' id='rank-picker'><button type='button' class='rank-picker-trigger' id='rank-picker-trigger' aria-haspopup='listbox' aria-expanded='false'><span>"+esc(label)+"</span><span class='rank-picker-chevron'>⌄</span></button><div class='rank-picker-menu' id='rank-picker-menu' role='listbox' aria-label='ランキング切替' hidden>"+boardSelectOptions.map(o=>"<button type='button' role='option' aria-selected='"+(o.key===board?"true":"false")+"' data-board='"+esc(o.key)+"' class='rank-picker-option "+(o.key===board?"is-selected":"")+"'><span>"+esc(o.label)+"</span>"+(o.key===board?"<span class='rank-picker-check'>✓</span>":"")+"</button>").join("")+"</div></div></div><div class='list'>"+(body||"<div class='empty'>このランキングのデータはまだありません。</div>")+"</div><style>.rank-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 18px} .rank-head .back{color:#9bb0c8;text-decoration:none;font-size:13px} .rank-head button,.rank-settings button{border:1px solid #244b68;border-radius:12px;background:linear-gradient(135deg,#12334b,#0c2438);color:#e7f7ff;font-weight:800;padding:10px 14px} .wrap>h1{margin:8px 0 14px;font-size:clamp(23px,5vw,30px);line-height:1.2;letter-spacing:-.02em;color:#f0f8ff} .rank-settings{margin:14px 0;padding:14px;border:1px solid #25415f;border-radius:16px;background:linear-gradient(145deg,#0d1b2d,#091625);color:#dceaf7} .rank-settings[hidden]{display:none}.settings-title{font-size:15px;font-weight:850;color:#e7f7ff;margin-bottom:10px} .rank-settings label{display:block;margin:12px 0;color:#a9bed3;font-size:12px} .rank-settings input[type=number],.rank-settings select{box-sizing:border-box;display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #2c4d69;border-radius:10px;background:#071525;color:#edf7ff;font:inherit} .board-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0} .board-option{display:flex!important;align-items:center;gap:8px;margin:0!important;padding:10px;border:1px solid #25415f;border-radius:10px;background:#0b1b2c;font-size:12px;color:#dceaf7} .board-option input{accent-color:#22d3ee} .rank-settings form{margin-top:12px} #pref-status{display:block;color:#fbbf24;font-size:12px;margin-top:8px} .actions{display:flex;gap:8px;margin:14px 0;overflow-x:auto;padding-bottom:3px} .actions a{flex:0 0 auto;padding:10px 13px;border:1px solid #25415f;border-radius:11px;background:#0c1c2d;color:#9eeeff;text-decoration:none;font-size:12px;font-weight:750} .rank-switch{display:flex;align-items:center;gap:10px;margin:12px 0 16px;padding:10px 12px;border:1px solid #203b55;border-radius:13px;background:#0b1b2c}.rank-switch-label{flex:0 0 auto;color:#91a9c0;font-size:12px;font-weight:750}.rank-picker{position:relative;flex:1;min-width:0}.rank-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;padding:10px 12px;border:1px solid #2c4d69;border-radius:10px;background:linear-gradient(135deg,#10263b,#091827);color:#e8f7ff;font:inherit;font-size:14px;font-weight:800;text-align:left}.rank-picker-trigger span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rank-picker-chevron{color:#75e6f5;font-size:18px;line-height:1}.rank-picker-menu{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 7px);max-height:min(46vh,360px);overflow-y:auto;padding:6px;border:1px solid #2c526f;border-radius:13px;background:#091827;box-shadow:0 14px 36px rgba(0,0,0,.45)}.rank-picker-menu[hidden]{display:none}.rank-picker-option{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:11px 10px;border:0;border-bottom:1px solid rgba(44,77,105,.45);border-radius:7px;background:transparent;color:#b8cce0;font:inherit;font-size:13px;text-align:left}.rank-picker-option:last-child{border-bottom:0}.rank-picker-option.is-selected{background:#103047;color:#8feeff;font-weight:850}.rank-picker-check{color:#75e6f5;font-size:16px;font-weight:900}.list{display:grid;gap:8px;margin:4px 0 24px} .rank-row{box-sizing:border-box;display:grid;grid-template-columns:42px minmax(0,1fr) auto;grid-template-areas:\"position player star\" \"position score change\";align-items:center;column-gap:10px;row-gap:5px;min-width:0;padding:11px 10px;border:1px solid #203b55;border-radius:14px;background:linear-gradient(120deg,#0d1d2f,#091625);box-shadow:0 3px 10px rgba(0,0,0,.12)} .rank-position{grid-area:position;display:flex;flex-direction:column;align-items:center;justify-content:center;align-self:stretch;min-height:43px;border-radius:10px;background:#12283d;color:#b8d2e8} .rank-position span{font-size:18px;line-height:1.1;font-weight:900;font-variant-numeric:tabular-nums} .rank-position small{font-size:10px;font-weight:750;margin-top:2px} .rank-gold .rank-position{background:linear-gradient(145deg,#6c5421,#3b301b);color:#ffe49a} .rank-silver .rank-position{background:linear-gradient(145deg,#394b5c,#202e3d);color:#e1edf7} .rank-bronze .rank-position{background:linear-gradient(145deg,#69462e,#39281f);color:#ffd0a8} .rank-player{grid-area:player;display:flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere;color:#edf6ff;font-size:14px;font-weight:800;line-height:1.35}.rank-player-link{display:flex;align-items:center;gap:8px;min-width:0;color:#edf6ff;text-decoration:none}.rank-avatar{display:block;flex:0 0 30px;width:30px;height:30px;object-fit:cover;border-radius:9px;border:1px solid #294963;background:#10243a}.rank-avatar-fallback{display:flex;align-items:center;justify-content:center;color:#8fa9c1;font-size:13px;font-weight:850}.rank-player-name{min-width:0;overflow-wrap:anywhere}.rank-alliance{display:inline-flex;align-items:center;flex:0 0 auto;padding:2px 5px;border:1px solid #2a4d67;border-radius:5px;background:#10243a;color:#91a9c0;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap;text-decoration:none}.rank-alliance:hover,.rank-alliance:focus-visible{border-color:#75e6f5;color:#75e6f5}align-items:center;flex:0 0 auto;padding:2px 5px;border:1px solid #2a4d67;border-radius:5px;background:#10243a;color:#91a9c0;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap} .rank-score{grid-area:score;display:flex;align-items:baseline;gap:6px;min-width:0} .rank-score small{color:#7f9ab3;font-size:10px;white-space:nowrap} .rank-score strong{color:#75e6f5;font-size:14px;font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere} .rank-change{grid-area:change;justify-self:end;color:#9aafc3;font-size:11px;text-align:right;white-space:nowrap} .rank-row .star{grid-area:star;justify-self:end;align-self:center;display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:34px;height:32px;margin:0;padding:0;border:1px solid #254b67;border-radius:10px;background:#10243a;color:#7fe8f6;font-family:Arial,sans-serif;font-size:20px;line-height:1;text-align:center} .rank-row .star:disabled{opacity:.55}.rank-row .star.is-watched{background:#103047;border-color:#24708a;color:#75e6f5;box-shadow:inset 0 0 0 1px rgba(117,230,245,.12)}.rank-row .star.is-watched:focus-visible{outline:2px solid #75e6f5;outline-offset:2px} .empty{padding:20px;border:1px dashed #2a4965;border-radius:14px;background:#0b1b2c;color:#9bb0c8} @media(min-width:600px){.rank-row{grid-template-columns:48px minmax(0,1fr) auto auto;grid-template-areas:\"position player score star\" \"position change change star\";padding:13px 14px}.rank-change{justify-self:start}.rank-position span{font-size:20px}} @media(max-width:520px){.board-options{grid-template-columns:1fr}.rank-row{grid-template-columns:38px minmax(0,1fr) auto;column-gap:8px;padding:10px 8px}.rank-player{font-size:13px;gap:5px}.rank-player-link{gap:6px}.rank-avatar{flex-basis:28px;width:28px;height:28px}.rank-player-meta{gap:4px}.rank-alliance{font-size:9px;padding:2px 4px}.rank-score strong{font-size:13px}.rank-change{font-size:10px}.rank-row .star{width:30px;height:30px}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style><script>const picker=document.getElementById('rank-picker');const pickerTrigger=document.getElementById('rank-picker-trigger');const pickerMenu=document.getElementById('rank-picker-menu');pickerTrigger.onclick=()=>{const opening=pickerMenu.hidden;pickerMenu.hidden=!opening;pickerTrigger.setAttribute('aria-expanded',String(opening))};pickerMenu.querySelectorAll('[data-board]').forEach(option=>option.onclick=()=>{const nextBoard=option.dataset.board;if(nextBoard)location.href='/kingdom/rankings?kid="+kid+"&board='+encodeURIComponent(nextBoard)});document.addEventListener('click',e=>{if(!picker.contains(e.target)){pickerMenu.hidden=true;pickerTrigger.setAttribute('aria-expanded','false')}});document.addEventListener('keydown',e=>{if(e.key==='Escape'){pickerMenu.hidden=true;pickerTrigger.setAttribute('aria-expanded','false')}});const sf=document.getElementById('rank-settings');const settingsButton=document.getElementById('open-rank-settings');settingsButton.onclick=()=>{sf.hidden=!sf.hidden;settingsButton.textContent=sf.hidden?'ランキング設定':'閉じる';if(!sf.hidden)sf.scrollIntoView({behavior:'smooth',block:'start'})};document.getElementById('rank-pref-form').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;const boards=[...f.querySelectorAll('input[name=boards]:checked')].map(x=>x.value);const status=document.getElementById('pref-status');if(!boards.length){status.textContent='ランキングを1つ以上選択してください';return}const currentBoard=document.getElementById('ranking-board-select').value;const primary=boards.includes(currentBoard)?currentBoard:boards[0];try{const r=await fetch('/api/kingdom-rankings/preferences',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({kid:Number(f.elements.kid.value),boards,primary_board:primary})});const d=await r.json();if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'保存に失敗しました');location.href='/kingdom/rankings?kid='+encodeURIComponent(f.elements.kid.value)+'&board='+encodeURIComponent(primary)}catch(err){status.textContent=err.message||'保存に失敗しました'}};const starButtons=[...document.querySelectorAll('.star')];const setStarState=(b,active)=>{b.setAttribute('aria-pressed',String(active));b.classList.toggle('is-watched',active);b.textContent=active?'★':'☆';b.setAttribute('aria-label',active?'ウォッチリストから解除':'ウォッチリストに追加')};(async()=>{if(!starButtons.length)return;try{const r=await fetch('/api/player-watchlist',{credentials:'same-origin',cache:'no-store'});if(r.status===401)return;if(!r.ok)return;const d=await r.json();const watched=new Set((d.watchlist||[]).filter(x=>x.enabled===true||Number(x.enabled)===1).map(x=>String(x.governor_id)));starButtons.forEach(b=>setStarState(b,watched.has(String(b.dataset.g))))}catch{}})();starButtons.forEach(b=>b.onclick=async()=>{if(b.disabled)return;const wasActive=b.getAttribute('aria-pressed')==='true';b.disabled=true;try{const gid=encodeURIComponent(b.dataset.g);const r=wasActive?await fetch('/api/player-watchlist?governor_id='+gid,{method:'DELETE',credentials:'same-origin'}):await fetch('/api/player-watchlist',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({governor_id:b.dataset.g})});const d=await r.json().catch(()=>({}));if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||d.ok===false)throw new Error(d.message||(wasActive?'解除に失敗しました':'登録に失敗しました'));setStarState(b,!wasActive)}catch(e){alert(e.message||'ウォッチリストの更新に失敗しました')}finally{b.disabled=false}})</script></main>";
+  const html="<main class='wrap'><div class='rank-head'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><button type='button' id='open-rank-settings'>ランキング設定</button></div><h1>"+esc(label)+"</h1>"+archiveNotice+settings+"<div class='actions'><a href='/kingdom/changes?kid="+kid+"&board="+encodeURIComponent(board)+"'>順位変化を見る →</a></div><div class='rank-switch'><span class='rank-switch-label'>ランキング切替</span><div class='rank-picker' id='rank-picker'><button type='button' class='rank-picker-trigger' id='rank-picker-trigger' aria-haspopup='listbox' aria-expanded='false'><span>"+esc(label)+"</span><span class='rank-picker-chevron'>⌄</span></button><div class='rank-picker-menu' id='rank-picker-menu' role='listbox' aria-label='ランキング切替' hidden>"+boardSelectOptions.map(o=>"<button type='button' role='option' aria-selected='"+(o.key===board?"true":"false")+"' data-board='"+esc(o.key)+"' class='rank-picker-option "+(o.key===board?"is-selected":"")+"'><span>"+esc(o.label)+"</span>"+(o.key===board?"<span class='rank-picker-check'>✓</span>":"")+"</button>").join("")+"</div></div></div><div class='list'>"+(body||"<div class='empty'>このランキングのデータはまだありません。</div>")+"</div><style>.rank-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:4px 0 18px} .rank-head .back{color:#9bb0c8;text-decoration:none;font-size:13px} .rank-head button,.rank-settings button{border:1px solid #244b68;border-radius:12px;background:linear-gradient(135deg,#12334b,#0c2438);color:#e7f7ff;font-weight:800;padding:10px 14px} .wrap>h1{margin:8px 0 14px;font-size:clamp(23px,5vw,30px);line-height:1.2;letter-spacing:-.02em;color:#f0f8ff} .rank-settings{margin:14px 0;padding:14px;border:1px solid #25415f;border-radius:16px;background:linear-gradient(145deg,#0d1b2d,#091625);color:#dceaf7} .rank-settings[hidden]{display:none}.settings-title{font-size:15px;font-weight:850;color:#e7f7ff;margin-bottom:10px} .rank-settings label{display:block;margin:12px 0;color:#a9bed3;font-size:12px} .rank-settings input[type=number],.rank-settings select{box-sizing:border-box;display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #2c4d69;border-radius:10px;background:#071525;color:#edf7ff;font:inherit} .board-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0} .board-option{display:flex!important;align-items:center;gap:8px;margin:0!important;padding:10px;border:1px solid #25415f;border-radius:10px;background:#0b1b2c;font-size:12px;color:#dceaf7} .board-option input{accent-color:#22d3ee} .rank-settings form{margin-top:12px} #pref-status{display:block;color:#fbbf24;font-size:12px;margin-top:8px} .actions{display:flex;gap:8px;margin:14px 0;overflow-x:auto;padding-bottom:3px} .actions a{flex:0 0 auto;padding:10px 13px;border:1px solid #25415f;border-radius:11px;background:#0c1c2d;color:#9eeeff;text-decoration:none;font-size:12px;font-weight:750} .rank-switch{display:flex;align-items:center;gap:10px;margin:12px 0 16px;padding:10px 12px;border:1px solid #203b55;border-radius:13px;background:#0b1b2c}.rank-switch-label{flex:0 0 auto;color:#91a9c0;font-size:12px;font-weight:750}.rank-picker{position:relative;flex:1;min-width:0}.rank-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0;padding:10px 12px;border:1px solid #2c4d69;border-radius:10px;background:linear-gradient(135deg,#10263b,#091827);color:#e8f7ff;font:inherit;font-size:14px;font-weight:800;text-align:left}.rank-picker-trigger span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rank-picker-chevron{color:#75e6f5;font-size:18px;line-height:1}.rank-picker-menu{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 7px);max-height:min(46vh,360px);overflow-y:auto;padding:6px;border:1px solid #2c526f;border-radius:13px;background:#091827;box-shadow:0 14px 36px rgba(0,0,0,.45)}.rank-picker-menu[hidden]{display:none}.rank-picker-option{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:11px 10px;border:0;border-bottom:1px solid rgba(44,77,105,.45);border-radius:7px;background:transparent;color:#b8cce0;font:inherit;font-size:13px;text-align:left}.rank-picker-option:last-child{border-bottom:0}.rank-picker-option.is-selected{background:#103047;color:#8feeff;font-weight:850}.rank-picker-check{color:#75e6f5;font-size:16px;font-weight:900}.list{display:grid;gap:8px;margin:4px 0 24px} .rank-row{box-sizing:border-box;display:grid;grid-template-columns:42px minmax(0,1fr) auto;grid-template-areas:\"position player star\" \"position score change\";align-items:center;column-gap:10px;row-gap:5px;min-width:0;padding:11px 10px;border:1px solid #203b55;border-radius:14px;background:linear-gradient(120deg,#0d1d2f,#091625);box-shadow:0 3px 10px rgba(0,0,0,.12)} .rank-position{grid-area:position;display:flex;flex-direction:column;align-items:center;justify-content:center;align-self:stretch;min-height:43px;border-radius:10px;background:#12283d;color:#b8d2e8} .rank-position span{font-size:18px;line-height:1.1;font-weight:900;font-variant-numeric:tabular-nums} .rank-position small{font-size:10px;font-weight:750;margin-top:2px} .rank-gold .rank-position{background:linear-gradient(145deg,#6c5421,#3b301b);color:#ffe49a} .rank-silver .rank-position{background:linear-gradient(145deg,rgb(148,163,184),rgb(71,85,105));color:rgb(248,250,252)} .rank-bronze .rank-position{background:linear-gradient(145deg,#69462e,#39281f);color:#ffd0a8} .rank-player{grid-area:player;display:flex;align-items:center;gap:7px;min-width:0;overflow-wrap:anywhere;color:#edf6ff;font-size:14px;font-weight:800;line-height:1.35}.rank-player-link{display:flex;align-items:center;gap:8px;min-width:0;color:#edf6ff;text-decoration:none}.rank-avatar{display:block;flex:0 0 30px;width:30px;height:30px;object-fit:cover;border-radius:9px;border:1px solid #294963;background:#10243a}.rank-avatar-fallback{display:flex;align-items:center;justify-content:center;color:#8fa9c1;font-size:13px;font-weight:850}.rank-player-name{min-width:0;overflow-wrap:anywhere}.rank-alliance{display:inline-flex;align-items:center;flex:0 0 auto;padding:2px 5px;border:1px solid #2a4d67;border-radius:5px;background:#10243a;color:#91a9c0;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap;text-decoration:none}.rank-alliance:hover,.rank-alliance:focus-visible{border-color:#75e6f5;color:#75e6f5}align-items:center;flex:0 0 auto;padding:2px 5px;border:1px solid #2a4d67;border-radius:5px;background:#10243a;color:#91a9c0;font-size:10px;font-weight:800;line-height:1.2;white-space:nowrap} .rank-score{grid-area:score;display:flex;align-items:baseline;gap:6px;min-width:0} .rank-score small{color:#7f9ab3;font-size:10px;white-space:nowrap} .rank-score strong{color:#75e6f5;font-size:14px;font-weight:850;font-variant-numeric:tabular-nums;overflow-wrap:anywhere} .rank-change{grid-area:change;justify-self:end;color:#9aafc3;font-size:11px;text-align:right;white-space:nowrap} .rank-row .star{grid-area:star;justify-self:end;align-self:center;display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:34px;height:32px;margin:0;padding:0;border:1px solid #254b67;border-radius:10px;background:#10243a;color:#7fe8f6;font-family:Arial,sans-serif;font-size:20px;line-height:1;text-align:center} .rank-row .star:disabled{opacity:.55}.rank-row .star.is-watched{background:#103047;border-color:#24708a;color:#75e6f5;box-shadow:inset 0 0 0 1px rgba(117,230,245,.12)}.rank-row .star.is-watched:focus-visible{outline:2px solid #75e6f5;outline-offset:2px} .empty{padding:20px;border:1px dashed #2a4965;border-radius:14px;background:#0b1b2c;color:#9bb0c8} @media(min-width:600px){.rank-row{grid-template-columns:48px minmax(0,1fr) auto auto;grid-template-areas:\"position player score star\" \"position change change star\";padding:13px 14px}.rank-change{justify-self:start}.rank-position span{font-size:20px}} @media(max-width:520px){.board-options{grid-template-columns:1fr}.rank-row{grid-template-columns:38px minmax(0,1fr) auto;column-gap:8px;padding:10px 8px}.rank-player{font-size:13px;gap:5px}.rank-player-link{gap:6px}.rank-avatar{flex-basis:28px;width:28px;height:28px}.rank-player-meta{gap:4px}.rank-alliance{font-size:9px;padding:2px 4px}.rank-score strong{font-size:13px}.rank-change{font-size:10px}.rank-row .star{width:30px;height:30px}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style><script>const picker=document.getElementById('rank-picker');const pickerTrigger=document.getElementById('rank-picker-trigger');const pickerMenu=document.getElementById('rank-picker-menu');pickerTrigger.onclick=()=>{const opening=pickerMenu.hidden;pickerMenu.hidden=!opening;pickerTrigger.setAttribute('aria-expanded',String(opening))};pickerMenu.querySelectorAll('[data-board]').forEach(option=>option.onclick=()=>{const nextBoard=option.dataset.board;if(nextBoard)location.href='/kingdom/rankings?kid="+kid+"&board='+encodeURIComponent(nextBoard)});document.addEventListener('click',e=>{if(!picker.contains(e.target)){pickerMenu.hidden=true;pickerTrigger.setAttribute('aria-expanded','false')}});document.addEventListener('keydown',e=>{if(e.key==='Escape'){pickerMenu.hidden=true;pickerTrigger.setAttribute('aria-expanded','false')}});const sf=document.getElementById('rank-settings');const settingsButton=document.getElementById('open-rank-settings');settingsButton.onclick=()=>{sf.hidden=!sf.hidden;settingsButton.textContent=sf.hidden?'ランキング設定':'閉じる';if(!sf.hidden)sf.scrollIntoView({behavior:'smooth',block:'start'})};document.getElementById('rank-pref-form').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget;const boards=[...f.querySelectorAll('input[name=boards]:checked')].map(x=>x.value);const status=document.getElementById('pref-status');if(!boards.length){status.textContent='ランキングを1つ以上選択してください';return}const currentBoard=document.getElementById('ranking-board-select').value;const primary=boards.includes(currentBoard)?currentBoard:boards[0];try{const r=await fetch('/api/kingdom-rankings/preferences',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({kid:Number(f.elements.kid.value),boards,primary_board:primary})});const d=await r.json();if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||!d.ok)throw new Error(d.message||d.error||'保存に失敗しました');location.href='/kingdom/rankings?kid='+encodeURIComponent(f.elements.kid.value)+'&board='+encodeURIComponent(primary)}catch(err){status.textContent=err.message||'保存に失敗しました'}};const starButtons=[...document.querySelectorAll('.star')];const setStarState=(b,active)=>{b.setAttribute('aria-pressed',String(active));b.classList.toggle('is-watched',active);b.textContent=active?'★':'☆';b.setAttribute('aria-label',active?'ウォッチリストから解除':'ウォッチリストに追加')};(async()=>{if(!starButtons.length)return;try{const r=await fetch('/api/player-watchlist',{credentials:'same-origin',cache:'no-store'});if(r.status===401)return;if(!r.ok)return;const d=await r.json();const watched=new Set((d.watchlist||[]).filter(x=>x.enabled===true||Number(x.enabled)===1).map(x=>String(x.governor_id)));starButtons.forEach(b=>setStarState(b,watched.has(String(b.dataset.g))))}catch{}})();starButtons.forEach(b=>b.onclick=async()=>{if(b.disabled)return;const wasActive=b.getAttribute('aria-pressed')==='true';b.disabled=true;try{const gid=encodeURIComponent(b.dataset.g);const r=wasActive?await fetch('/api/player-watchlist?governor_id='+gid,{method:'DELETE',credentials:'same-origin'}):await fetch('/api/player-watchlist',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({governor_id:b.dataset.g})});const d=await r.json().catch(()=>({}));if(r.status===401){location.href='/api/auth/discord';return}if(!r.ok||d.ok===false)throw new Error(d.message||(wasActive?'解除に失敗しました':'登録に失敗しました'));setStarState(b,!wasActive)}catch(e){alert(e.message||'ウォッチリストの更新に失敗しました')}finally{b.disabled=false}})</script></main>";
   return page("王国ランキング", html);
 }
 
-export async function renderAllianceListPage(request, env) {
-  const url=new URL(request.url); const kid=Number(url.searchParams.get("kid"));
-  if(!Number.isInteger(kid)||kid<1) return page("同盟一覧","<div class='empty'>kidを指定してください。</div>");
-  let rows=await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all();
-  if (!(rows.results || []).length) {
-    rows = await env.DB.prepare(
-      "SELECT kid,target_id,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' ORDER BY rank ASC LIMIT 100"
-    ).bind(kid).all();
-  }
-  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(r.name||r.abbr||r.aid||r.target_id)+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"ランキングcurrent")+"</small></a>").join("");
-  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><div class='list'>"+(body||"<div class='empty'>同盟ランキングデータがありません。</div>")+"</div></main>");
+// 同盟の表示名。MightPulse に同盟名・タグが無い同盟（新しい王国に多い）は ID（「.0」なし）を添えて「名前未取得」と出す（2026-11-18）。
+export function allianceLabel(r) {
+  const label = String(r?.name || r?.abbr || "").trim();
+  if (label) return label;
+  const id = String(r?.aid ?? r?.target_id ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+  return id ? "名前未取得の同盟（ID " + id + "）" : "名前未取得の同盟";
 }
 
-export async function renderAlliancePage(request, env) {
+export async function renderAllianceListPage(request, env, auth = null, { onDemand = null, waitUntil = null } = {}) {
+  const url=new URL(request.url); const kid=Number(url.searchParams.get("kid"));
+  if(!Number.isInteger(kid)||kid<1) return kidFormPage("同盟一覧", "/kingdom/alliances", "同盟一覧を見たい王国の番号を入れてください。");
+  // 一覧は王国の同盟ランキング（全同盟がそろっている）を先に使う。alliance_catalog は同盟の詳細を開いた時に
+  // 1件ずつ入るだけなので、そこを先に見ると「開いた同盟1つだけ・順位と戦力なし」の一覧になっていた。
+  let rows = await withArchivedRankings(env, kid, await env.DB.prepare(
+    "SELECT kid,target_id,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' ORDER BY rank ASC LIMIT 100"
+  ).bind(kid).all(), { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE", limit: 100 });
+  rows.results = (rows.results || []).map(r => ({ ...r, power: r.power ?? r.score, power_rank: r.power_rank ?? r.rank }));
+  const catalog = await env.DB.prepare("SELECT kid,aid,abbr,name,power,member_count,power_rank,last_seen_at,r2_latest_key FROM alliance_catalog WHERE kid = ? ORDER BY COALESCE(power_rank,999999), name ASC LIMIT 100").bind(kid).all().catch(() => ({ results: [] }));
+  const normAid = v => String(v ?? "").trim().replace(/^(\d+)\.0+$/, "$1");
+  const known = new Set(rows.results.flatMap(r => [normAid(r.aid), normAid(r.target_id)]).filter(Boolean));
+  // ランキングに無い同盟だけ、後ろに足す（ランキングが無い王国では、これが一覧になる）。
+  // 詳細を開いたことがある同盟は、人数（alliance_catalog）もランキングの行に出す。
+  const memberByAid = new Map((catalog.results || []).filter(c => c.member_count != null).map(c => [normAid(c.aid), c.member_count]));
+  rows.results = rows.results.map(r => r.member_count != null ? r : { ...r, member_count: memberByAid.get(normAid(r.aid)) ?? memberByAid.get(normAid(r.target_id)) ?? null });
+  const extra = (catalog.results || []).filter(c => !known.has(normAid(c.aid)));
+  if (extra.length) rows.results = [...rows.results, ...extra].slice(0, 100);
+  const body=(rows.results||[]).map(r=>"<a class='row' href='/alliance?kid="+kid+"&tag="+encodeURIComponent(r.abbr||r.aid||r.target_id||"")+"'><b>#"+esc(r.power_rank??"—")+"</b><span>"+esc(allianceLabel(r))+"</span><em>"+num(r.power)+"</em><small>"+(r.member_count!=null?num(r.member_count)+"人":"")+"</small></a>").join("");
+  let fetchNotice = "";
+  if (!(rows.results || []).length || rows.archived) {
+    const st = await env.DB.prepare("SELECT board, last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = 'alliance_power'").bind(kid).all().catch(() => ({ results: [] }));
+    fetchNotice = onDemandNotice({ url, auth, onDemand, waitUntil, kid, boards: [["alliance_power", rows]], boardState: st?.results || [], what: "同盟一覧" });
+  }
+  return page("同盟一覧","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><h1>同盟一覧</h1><p style='margin:0 0 10px;font-size:13px'><a href='/alliance/compare'>⚔️ 同盟を比べる（違う王国どうしも・聖剣の下見）→</a></p>"+fetchNotice+"<div class='list'>"+(body||(fetchNotice?"":"<div class='empty'>同盟ランキングデータがありません。</div>"))+"</div></main>");
+}
+
+// 戦力の表記（数値・"1.2B" など）を数値にする。
+function parsePower(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const text = String(value).trim().replace(/,/g, "").replace(/\s+/g, "");
+  const match = text.match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
+  if (!match) {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const magnitude = match[2] ? ({K:1e3,M:1e6,B:1e9}[match[2].toUpperCase()] || 1) : 1;
+  const result = Number(match[1]) * magnitude;
+  return Number.isFinite(result) ? result : null;
+}
+
+// 同盟メンバー1人分を表示用の形にする（同盟詳細・同盟比較で共通）。
+export function normalizeAllianceMember(m, i = 0) {
+    const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
+    const id=String(m?.governor_id||m?.uid||m?.id||"");
+    const rawPower=m?.power??m?.personal_power??m?.score;
+    const power=parsePower(rawPower);
+    const tc=m?.town_center_level??m?.town_center??m?.tc_level;
+    const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
+    // MightPulse Alliance Roster fields: alliance_rank / alliance_rank_label.
+    // Prefer the documented fields; retain legacy aliases as fallbacks.
+    const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
+    const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
+    // alliance_rank may be a member's ordinal rank (e.g. 1), not the R1-R5 tier.
+    // Prefer the human-readable label when resolving the role tier.
+    const roleText=String(roleLabelRaw||"").trim();
+    const roleName=roleText.toLowerCase();
+    const labelMatch=roleText.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
+    const rawMatch=String(roleRaw).trim().match(/^R?([1-5])$/i);
+    const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
+    const role=labelMatch?Number(labelMatch[1]):roleByName??(rawMatch?Number(rawMatch[1]):null);
+    const displayRole=role!==null?"R"+role+(role===5?"（盟主）":""):roleText;
+    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
+}
+
+// 同盟のメンバー表（MightPulse の roster）を取り出す。形がいくつかあるので順に探す。
+export function extractRosterMembers(p) {
+  const a = p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
+  const candidates = [p?.roster,p?.members,p?.data?.roster,p?.data?.members,p?.data?.data?.roster,p?.data?.data?.members,a?.roster,a?.members,a?.member_list];
+  return candidates.find(Array.isArray) || [];
+}
+
+// 保存済みの最新のメンバー表から、メンバーの領主IDを取り出す（VIP の取り直し用・2026-11-19）。MightPulse は使わない。
+export async function loadAllianceRosterIds(env, kid, tag) {
+  const row = await env.DB.prepare("SELECT kid, aid, abbr, r2_latest_key FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(Number(kid), String(tag), String(tag)).first().catch(() => null);
+  if (!row?.r2_latest_key || !env.ARCHIVE) return { row, ids: [] };
+  let archived = null;
+  try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
+  const payload = archived?.payload || {};
+  const ids = [...new Set(extractRosterMembers(payload?.data && typeof payload.data === "object" ? payload.data : payload).map((m, i) => normalizeAllianceMember(m, i).id).filter(id => /^\d{5,20}$/.test(id)))];
+  return { row, ids };
+}
+
+// VIP の表示（2026-11-19）：保存済みのプレイヤーデータの VIP を、メンバーごとに出す。opts.showVip は表示してよい権限か（index.js で判定）。
+export async function loadMemberVips(db, ids) {
+  const out = new Map();
+  const list = [...new Set((ids || []).map(String).filter(Boolean))];
+  for (let i = 0; i < list.length; i += 90) {
+    const chunk = list.slice(i, i + 90);
+    const rows = (await db.prepare("SELECT governor_id, vip, observed_at FROM players WHERE governor_id IN (" + chunk.map(() => "?").join(",") + ")").bind(...chunk).all().catch(() => ({ results: [] })))?.results || [];
+    for (const r of rows) if (r.vip != null) out.set(String(r.governor_id), { vip: Number(r.vip), at: Number(r.observed_at) || 0 });
+  }
+  return out;
+}
+
+// VIP の分かる人数と、ADMIN・OWNER 向けの「全員の VIP を今取る」ボタン（2026-11-19）。
+export function vipSummaryHtml(members, vips, { canFetch = false, kid = 0, tag = "" } = {}) {
+  const total = members.length, known = members.filter(m => vips.has(String(m.id))).length;
+  const oldest = Math.min(...[...vips.values()].map(v => v.at).filter(Boolean));
+  const date = Number.isFinite(oldest) ? new Date((oldest + 9 * 3600) * 1000).toISOString().slice(5, 16).replace("-", "/").replace("T", " ") : "";
+  return "<p class='vip-note'>VIP が分かるのは " + total + "人中 " + known + "人" + (date ? "（いちばん古いもので " + esc(date) + " 時点）" : "") + "。VIP はメンバー表に入っていないので、1人ずつのプレイヤー情報から出しています。</p>" +
+    (canFetch ? "<p><button type='button' class='vip-fetch' data-kid='" + esc(kid) + "' data-tag='" + esc(tag) + "'>👑 メンバー全員の VIP を今取る（MightPulse を最大" + total + "回使います）</button> <small class='vip-msg'></small></p>" +
+      "<script>(function(){var b=document.querySelector('.vip-fetch');if(!b)return;b.onclick=function(){if(!confirm('メンバー全員のプレイヤー情報を MightPulse から取り直します。よろしいですか？'))return;b.disabled=true;var msg=document.querySelector('.vip-msg');msg.textContent='取得中…（1分ほどかかることがあります）';fetch('/api/alliance/member-vips',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({kid:Number(b.dataset.kid),tag:b.dataset.tag})}).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.message||d.error||'失敗しました');msg.textContent=d.fetched+'人分を取得しました'+(d.failed?'（'+d.failed+'人は失敗）':'')+'。再読み込みします…';setTimeout(function(){location.reload()},800)}).catch(function(e){msg.textContent=e.message;b.disabled=false})}})()</script>" : "");
+}
+
+// 総力などを短く（330M・46.6M・1.25B）。小数点の後ろの0だけ消す（「330M」の0を消して「33M」にしていた・2026-11-19）。
+export function compactPower(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const abs = Math.abs(n);
+  const unit = abs >= 1e9 ? [1e9,"B"] : abs >= 1e6 ? [1e6,"M"] : abs >= 1e3 ? [1e3,"K"] : null;
+  if (!unit) return n.toLocaleString("ja-JP");
+  const scaled = n / unit[0];
+  const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+  const text = scaled.toFixed(decimals);
+  return (text.includes(".") ? text.replace(/\.?0+$/, "") : text) + unit[1];
+}
+
+const shareDate = sec => Number(sec) > 0 ? new Date((Number(sec) + 9 * 3600) * 1000).toISOString().slice(0, 10).replace(/-/g, "/") : "";
+
+export async function renderAlliancePage(request, env, auth = null, opts = {}) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const tag = String(url.searchParams.get("tag") || "").trim();
   const requestedRefresh = url.searchParams.get("refresh") === "1";
-  if (!Number.isInteger(kid) || !tag) return page("同盟詳細", "<div class='empty'>王国と同盟タグを指定してください。</div>");
+  // 同盟が決まっていなければ、その王国の同盟一覧（王国も無ければ番号の入力）へ。
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("同盟を探す", "/kingdom/alliances", "同盟を探したい王国の番号を入れてください。王国の同盟一覧が表示されます。");
+  if (!tag) return Response.redirect(new URL("/kingdom/alliances?kid=" + kid, url).toString(), 302);
 
   let row = await env.DB.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid,tag,tag).first();
-  if (!row) row = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first();
+  const rankRow = await env.DB.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid,tag,tag,tag).first().catch(() => null);
+  // alliance_catalog には戦力・順位が入っていないことがある（詳細を開いた時の保存）→ ランキングの値で補う。
+  if (row && rankRow) row = { ...row, power: row.power ?? rankRow.power, power_rank: row.power_rank ?? rankRow.power_rank };
+  if (!row) row = rankRow;
+  if (!row) {
+    const archivedAlliance = await withArchivedRankings(env, kid, { results: [] }, { filter: r => r.board === "alliance_power" && r.target_type === "ALLIANCE" && [String(r.abbr), String(r.aid), String(r.target_id)].includes(String(tag)), limit: 1 });
+    const a = archivedAlliance.results[0];
+    if (a) row = { kid, aid: a.aid, abbr: a.abbr, name: a.name, power: a.score, power_rank: a.rank };
+  }
   if (!row) return page("同盟詳細","<main class='wrap'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a><div class='empty'>指定された同盟が見つかりません。</div></main>");
 
   let archived = null;
   try { archived = await readR2Json(env.ARCHIVE,row.r2_latest_key); } catch {}
   let payload = archived?.payload || {};
+  // No latest pointer (e.g. alliance only known from rankings): show the newest
+  // saved history snapshot instead of an empty roster. The list is reused below.
+  const normalizeAid = v => String(v ?? "").replace(/^(\d+)\.0+$/, "$1");
+  let earlyHistory = null, earlyHistoryAid = null, historyFallbackAt = null;
+  if (!Object.keys(payload).length && env.ARCHIVE) {
+    earlyHistoryAid = normalizeAid(row.aid || tag);
+    try { earlyHistory = await listAllianceHistoryFromR2(env.ARCHIVE,{kid,aid:earlyHistoryAid,limit:12}); } catch (error) { earlyHistory = null; console.error("alliance_history_read_failed",{kid,aid:earlyHistoryAid,message:error?.message||String(error)}); }
+    const newest = (earlyHistory||[]).find(h => h?.payload && typeof h.payload === "object");
+    if (newest) {
+      const p = newest.payload;
+      payload = p?.data && typeof p.data === "object" ? p.data : p;
+      historyFallbackAt = Number(newest.observed_at) || null;
+    }
+  }
   const getAlliance = p => p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
-  const getMembers = p => {
-    const a = getAlliance(p);
-    const candidates = [p?.roster,p?.members,p?.data?.roster,p?.data?.members,p?.data?.data?.roster,p?.data?.data?.members,a?.roster,a?.members,a?.member_list];
-    return candidates.find(Array.isArray) || [];
-  };
+  const getMembers = extractRosterMembers;
   let alliance = getAlliance(payload);
   let members = getMembers(payload);
   const now = Math.floor(Date.now()/1000);
-  const lastAttempt = Number(row.updated_at || row.last_seen_at || 0);
-  const canFetch = Boolean(env.ARCHIVE) && now-lastAttempt>=600;
-  const shouldFetch = canFetch && (members.length===0 || requestedRefresh);
-  let statusMessage = requestedRefresh && !canFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
+  const lastAttempt = Number(row.updated_at || row.last_seen_at || historyFallbackAt || 0);
+  // Only signed-in users can trigger an upstream fetch; anonymous visitors see stored data.
+  const signedIn = Boolean(auth && auth.status === "ACTIVE");
+  const wantsFetch = Boolean(env.ARCHIVE) && signedIn && (members.length===0 || requestedRefresh) && now-lastAttempt>=ALLIANCE_REFRESH_INTERVAL_SECONDS;
+  const shouldFetch = wantsFetch && await claimAllianceRefresh(env.DB, kid, row.aid || row.abbr || tag, now).catch(() => false);
+  let statusMessage = !signedIn ? "最新情報の取得にはログインが必要です。"
+    : requestedRefresh && !shouldFetch ? "前回の取得から10分未満のため更新を保留しました。" : "";
   if (shouldFetch) {
     try {
       const collected = await collectAllianceDetail(env,kid,row.abbr||tag,{purpose:"ALLIANCE_DETAIL_ON_DEMAND"});
@@ -185,10 +434,11 @@ export async function renderAlliancePage(request, env) {
       const fetchedMembers = getMembers(fetchedPayload);
       if (fetchedMembers.length) {
         const observedAt = Math.floor(Date.now()/1000);
-        const aid = String(fetchedPayload?.alliance?.aid ?? fetchedPayload?.data?.alliance?.aid ?? fetchedPayload?.aid ?? row.aid ?? tag);
+        const aid = normalizeAid(fetchedPayload?.alliance?.aid ?? fetchedPayload?.data?.alliance?.aid ?? fetchedPayload?.aid ?? row.aid ?? tag);
         const archive = await archiveAllianceHistoryBatch(env.ARCHIVE,{kid,aid,observedAt,sourceObservedAt:Number(fetchedPayload?.source_observed_at ?? fetchedPayload?.observed_at ?? 0)||null,payload:fetched});
         if (!archive?.key) throw new Error("ALLIANCE_R2_ARCHIVE_FAILED");
-        await env.DB.prepare("UPDATE alliance_catalog SET r2_latest_key=?,member_count=COALESCE(?,member_count),last_seen_at=?,updated_at=? WHERE kid=? AND aid=?").bind(archive.key,fetchedMembers.length,observedAt,observedAt,kid,aid).run();
+        // Upsert so alliances that were only known from rankings keep their latest pointer.
+        await env.DB.prepare("INSERT INTO alliance_catalog (kid,aid,abbr,name,member_count,r2_latest_key,first_seen_at,last_seen_at,updated_at,status) VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE') ON CONFLICT(kid,aid) DO UPDATE SET r2_latest_key=excluded.r2_latest_key,member_count=COALESCE(excluded.member_count,alliance_catalog.member_count),abbr=COALESCE(alliance_catalog.abbr,excluded.abbr),name=COALESCE(alliance_catalog.name,excluded.name),last_seen_at=excluded.last_seen_at,updated_at=excluded.updated_at").bind(kid,aid,row.abbr||tag||null,row.name||null,fetchedMembers.length,archive.key,observedAt,observedAt,observedAt).run();
         row = {...row, r2_latest_key:archive.key, member_count:fetchedMembers.length, last_seen_at:observedAt, updated_at:observedAt, aid};
         archived = {payload:fetched};
         payload = fetchedPayload;
@@ -210,49 +460,16 @@ export async function renderAlliancePage(request, env) {
 
   const allianceName = String(alliance.name || row.name || tag);
   const allianceAbbr = String(alliance.abbr || row.abbr || tag);
-  const allianceAid = String(alliance.aid || row.aid || tag);
+  const allianceAid = normalizeAid(alliance.aid || row.aid || tag);
   const alliancePower = alliance.power ?? alliance.score ?? row.power ?? row.score;
   const displayNum = value => value === null || value === undefined || value === "" ? "—" : num(value);
   const memberCount = Number(alliance.count ?? alliance.member_count ?? row.member_count ?? members.length ?? 0);
-  const rankingResult = await env.DB.prepare("SELECT board,rank,score,previous_rank FROM kingdom_ranking_current WHERE kid=? AND target_type='ALLIANCE' AND (aid=? OR abbr=? OR target_id=?) AND board IN ('alliance_power','alliance_kills') ORDER BY board LIMIT 2").bind(kid,allianceAid,allianceAbbr,allianceAid).all().catch(()=>({results:[]}));
+  const rankingResult = await withArchivedRankings(env, kid, await env.DB.prepare("SELECT board,rank,score,previous_rank FROM kingdom_ranking_current WHERE kid=? AND target_type='ALLIANCE' AND (aid=? OR abbr=? OR target_id=?) AND board IN ('alliance_power','alliance_kills') ORDER BY board LIMIT 2").bind(kid,allianceAid,allianceAbbr,allianceAid).all().catch(()=>({results:[]})), { filter: r => r.target_type === "ALLIANCE" && ["alliance_power","alliance_kills"].includes(r.board) && [allianceAid, allianceAbbr].map(String).some(v => v === String(r.aid) || v === String(r.abbr) || v === String(r.target_id)), limit: 2 });
   const ranking = new Map((rankingResult.results||[]).map(r=>[String(r.board),r]));
   const powerRank = ranking.get("alliance_power")?.rank ?? alliance.power_rank ?? row.power_rank ?? row.rank;
   const killsRank = ranking.get("alliance_kills")?.rank ?? alliance.kills_rank;
-  const parsePower = value => {
-    if (value === null || value === undefined || value === "") return null;
-    if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    const text = String(value).trim().replace(/,/g, "").replace(/\s+/g, "");
-    const match = text.match(/^(-?\d+(?:\.\d+)?)([KMB])?$/i);
-    if (!match) {
-      const parsed = Number(text);
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-    const magnitude = match[2] ? ({K:1e3,M:1e6,B:1e9}[match[2].toUpperCase()] || 1) : 1;
-    const result = Number(match[1]) * magnitude;
-    return Number.isFinite(result) ? result : null;
-  };
-  const normalized = members.map((m,i)=>{
-    const name=String(m?.nick_name||m?.name||m?.governor_id||m?.uid||m?.id||"名前未取得");
-    const id=String(m?.governor_id||m?.uid||m?.id||"");
-    const rawPower=m?.power??m?.personal_power??m?.score;
-    const power=parsePower(rawPower);
-    const tc=m?.town_center_level??m?.town_center??m?.tc_level;
-    const image=m?.avatar_url||m?.avatar||m?.icon_url||"";
-    // MightPulse Alliance Roster fields: alliance_rank / alliance_rank_label.
-    // Prefer the documented fields; retain legacy aliases as fallbacks.
-    const roleRaw=m?.alliance_rank??m?.alliance_role??m?.member_role??m?.role??m?.position??"";
-    const roleLabelRaw=m?.alliance_rank_label??m?.alliance_role_label??m?.role_label??m?.label??"";
-    // alliance_rank may be a member's ordinal rank (e.g. 1), not the R1-R5 tier.
-    // Prefer the human-readable label when resolving the role tier.
-    const roleText=String(roleLabelRaw||"").trim();
-    const roleName=roleText.toLowerCase();
-    const labelMatch=roleText.match(/(?:^|\\D)R([1-5])(?:$|\\D)/i);
-    const rawMatch=String(roleRaw).trim().match(/^R?([1-5])$/i);
-    const roleByName=/(leader|president|chief|盟主|会長)/i.test(roleName)?5:/(officer|vice|副盟主|副会長)/i.test(roleName)?4:null;
-    const role=labelMatch?Number(labelMatch[1]):roleByName??(rawMatch?Number(rawMatch[1]):null);
-    const displayRole=role!==null?"R"+role+(role===5?"（盟主）":""):roleText;
-    return {raw:m,name,id,power,tc,role,roleRaw:String(roleRaw),roleLabel:String(displayRole||""),image:/^https?:\/\//i.test(String(image))?String(image):"",rank:m?.rank??m?.power_rank??i+1};
-  });
+  const normalized = members.map(normalizeAllianceMember);
+  const vips = opts.showVip ? await loadMemberVips(env.DB, normalized.map(m => m.id)).catch(() => new Map()) : new Map();
   const powerSorted = normalized.slice().sort((a,b)=>{
     if (a.power === null && b.power === null) return a.name.localeCompare(b.name,"ja");
     if (a.power === null) return 1;
@@ -271,27 +488,9 @@ export async function renderAlliancePage(request, env) {
   const totalPower = known.reduce((n,m)=>n+m.power,0);
   const average = known.length ? Math.round(totalPower/known.length) : null;
   const topTenShare = totalPower>0 ? Math.round(powerSorted.slice(0,10).reduce((n,m)=>n+(m.power??0),0)/totalPower*100) : null;
-  const compact = value => {
-    if (value === null || value === undefined || value === "") return "—";
-    const n = Number(value);
-    if (!Number.isFinite(n)) return String(value);
-    const abs = Math.abs(n);
-    const unit = abs >= 1e9 ? [1e9,"B"] : abs >= 1e6 ? [1e6,"M"] : abs >= 1e3 ? [1e3,"K"] : null;
-    if (!unit) return n.toLocaleString("ja-JP");
-    const scaled = n / unit[0];
-    const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-    return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + unit[1];
-  };
-  const townCenterDisplay = value => {
-    if (value === null || value === undefined || value === "") return "—";
-    const level = Number(value);
-    if (!Number.isFinite(level)) return String(value);
-    if (level <= 30) return "Lv." + level;
-    if (level <= 34) return "Lv.30-" + (level - 30);
-    const goldLevel = Math.floor((level - 35) / 5) + 1;
-    const stage = ((level - 35) % 5) + 1;
-    return "<span class='tc-gold'>黄金" + goldLevel + "<small> " + stage + "/5</small></span>";
-  };
+  const compact = compactPower;
+  const townCenterDisplay = townCenterBadgeHtml;
+
   const bucketSize = 100_000_000;
   const buckets = [
     { min: 0, max: bucketSize, label: "100M未満", count: 0 },
@@ -317,9 +516,10 @@ export async function renderAlliancePage(request, env) {
   }
 
   let history = [];
-  try { history = await listAllianceHistoryFromR2(env.ARCHIVE,{kid,aid:allianceAid,limit:12}); } catch (error) { console.error("alliance_history_read_failed",{kid,aid:allianceAid,message:error?.message||String(error)}); }
+  if (earlyHistory && earlyHistoryAid === allianceAid && !shouldFetch) history = earlyHistory;
+  else try { history = await listAllianceHistoryFromR2(env.ARCHIVE,{kid,aid:allianceAid,limit:12}); } catch (error) { console.error("alliance_history_read_failed",{kid,aid:allianceAid,message:error?.message||String(error)}); }
   const snapshots = history.map(h=>({at:Number(h.observed_at||0),payload:h.payload||{}})).filter(h=>h.at>0);
-  if (payload && Object.keys(payload).length) snapshots.push({at:Number(row.last_seen_at||row.updated_at||now),payload});
+  if (payload && Object.keys(payload).length) snapshots.push({at:Number(row.last_seen_at||row.updated_at||historyFallbackAt||now),payload});
   const deduped = Array.from(new Map(snapshots.map(s=>[String(s.at),s])).values()).sort((a,b)=>a.at-b.at).slice(-12);
   const getPower = p => {const a=getAlliance(p);const v=a.power??a.score??a.alliance_power;return v===null||v===undefined||v===""||!Number.isFinite(Number(v))?null:Number(v);};
   const powerHistory = deduped.map(s=>({at:s.at,power:getPower(s.payload)})).filter(s=>s.power!==null);
@@ -344,7 +544,7 @@ export async function renderAlliancePage(request, env) {
     const href=m.id?"/player?governor_id="+encodeURIComponent(m.id):"#";
     const roleLabel=m.roleLabel|| (m.role?"R"+m.role:"役職不明");
     const roleClass=m.role===5?"role-r5":m.role===4?"role-r4":m.role===3?"role-r3":m.role===2?"role-r2":m.role===1?"role-r1":"role-unknown";
-    return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"' data-role='"+esc(m.role??0)+"' style='--name-length:"+Math.min(1,18/Math.max(1,[...m.name].length)).toFixed(3)+"'>"+avatar+"<span class='member-info'><strong>"+esc(m.name)+"</strong><small class='member-tc'>役場 "+townCenterDisplay(m.tc)+"</small><small class='member-role "+roleClass+"'>"+esc(roleLabel)+"</small></span><b class='member-power'>"+compact(m.power)+"</b></a>";
+    return "<a class='member' href='"+href+"' data-name='' data-power='"+esc(m.power??-1)+"' data-tc='"+esc(m.tc??-1)+"' data-role='"+esc(m.role??0)+"' data-vip='"+esc(vips.get(String(m.id))?.vip ?? -1)+"' style='--name-length:"+Math.min(1,18/Math.max(1,[...m.name].length)).toFixed(3)+"'>"+avatar+"<span class='member-info'><strong>"+esc(m.name)+"</strong><small class='member-tc'>役場 "+townCenterDisplay(m.tc)+(opts.showVip?"・VIP "+esc(vips.get(String(m.id))?.vip ?? "—"):"")+"</small><small class='member-role "+roleClass+"'>"+esc(roleLabel)+"</small></span><b class='member-power'>"+compact(m.power)+"</b></a>";
   };
   const rosterHtml=sorted.slice(0,100).map(memberRow).join("");
   const topMembers=powerSorted.slice(0,5).map(memberRow).join("");
@@ -355,22 +555,27 @@ export async function renderAlliancePage(request, env) {
   const mark = alliance.avatar_url||alliance.icon_url||alliance.image_url||"";
   const emblem = /^https?:\/\//i.test(String(mark)) ? "<img class='emblem' src='"+esc(mark)+"' alt='' loading='lazy' referrerpolicy='no-referrer'>" : "<span class='emblem fallback'>"+esc(allianceAbbr.slice(0,3))+"</span>";
   const refreshUrl="/alliance?kid="+encodeURIComponent(kid)+"&tag="+encodeURIComponent(tag)+"&refresh=1";
+  const loginHref=loginUrlFor(refreshUrl);
+  const refreshButton=signedIn?"<a class='refresh' href='"+esc(refreshUrl)+"'>↻ 最新情報を取得</a>":"<a class='refresh' href='"+esc(loginHref)+"'>ログインして取得</a>";
+  const loginLink=signedIn?"":" <a class='notice-login' href='"+esc(loginHref)+"'>Discordでログイン →</a>";
   const html="<main class='wrap alliance-page'><a class='back' href='/kingdom?kid="+kid+"'>← 王国 "+kid+"</a>"+
-    "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>ALLIANCE PROFILE</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div><a class='refresh' href='"+refreshUrl+"'>↻ 最新情報を取得</a></header>"+
-    (statusMessage?"<div class='notice'>"+esc(statusMessage)+"</div>":"")+
-    "<section><div class='section-title'><h2>同盟概要</h2><small>取得 "+esc(ts(row.last_seen_at||row.updated_at))+"</small></div><div class='metrics'>"+
+    "<header class='alliance-hero'>"+emblem+"<div class='alliance-heading'><div class='eyebrow'>同盟</div><h1>"+esc(allianceName)+"</h1><p>["+esc(allianceAbbr)+"] · 王国 "+kid+"</p><small>同盟ID："+esc(allianceAid)+"</small></div>"+refreshButton+"</header>"+"<p style='margin:8px 0 0;font-size:13px'><a href='/alliance/compare?a="+encodeURIComponent(kid+":"+(allianceAbbr||tag))+"'>⚔️ この同盟をほかの同盟と比べる（聖剣の下見）→</a></p>"+
+    // 同盟カード（画像で共有・alliance-share.js・2026-11-19）。VIP は見られる人のカードにだけ載せる。
+    allianceShareEmbed({ kid, tag: allianceAbbr || tag, name: allianceName, power: alliancePower, powerRank, memberCount, members: normalized, vips: opts.showVip ? vips : null, date: shareDate(row.last_seen_at || row.updated_at || historyFallbackAt) })+
+    (statusMessage?"<div class='notice'>"+esc(statusMessage)+loginLink+"</div>":"")+
+    "<section><div class='section-title'><h2>同盟概要</h2><small>取得 "+esc(ts(row.last_seen_at||row.updated_at||historyFallbackAt))+"</small></div><div class='metrics'>"+
       "<div class='metric'><small>同盟戦力</small><strong>"+compact(alliancePower)+"</strong><span>"+(powerRank==null?"順位データなし":"戦力順位 "+esc(powerRank)+"位")+"</span></div>"+
       "<div class='metric'><small>メンバー数</small><strong>"+num(memberCount||members.length)+"</strong><span>Roster取得 "+num(members.length)+"人</span></div>"+
       "<div class='metric'><small>平均メンバー戦力</small><strong>"+compact(average)+"</strong><span>戦力取得 "+num(known.length)+"人</span></div>"+
       "<div class='metric'><small>上位10人の戦力比</small><strong>"+(topTenShare===null?"—":topTenShare+"%")+"</strong><span>取得済みメンバー内</span></div>"+rankCards+"</div></section>"+
     "<section><h2>メンバー戦力分布</h2>"+distribution+"</section>"+
     "<section><div class='section-title'><h2>上位メンバー</h2><small>戦力順</small></div><div class='list'>"+(topMembers||"<div class='empty'>メンバー情報がありません。</div>")+"</div></section>"+
-    "<section><div class='section-title'><h2>メンバー一覧</h2><small>最大100人表示</small></div><div class='tools'><input id='member-search' type='search' placeholder='メンバー名で検索'><select id='member-sort'><option value='role'>役職順（R5→R1）</option><option value='power'>戦力が高い順</option><option value='power-asc'>戦力が低い順</option><option value='name'>名前順</option><option value='tc'>役場レベル順</option></select></div><div class='list member-grid' id='member-list'>"+(rosterHtml||"<div class='empty'>"+esc(statusMessage||"Roster詳細はまだありません。")+"</div>")+"</div><div class='empty' id='no-members' hidden>一致するメンバーがいません。</div></section>"+
+    "<section><div class='section-title'><h2>メンバー一覧</h2><small>最大100人表示</small></div>"+(opts.showVip?vipSummaryHtml(normalized,vips,{canFetch:opts.canFetchVip,kid,tag:row.abbr||tag}):"")+"<div class='tools'><input id='member-search' type='search' placeholder='メンバー名で検索'><select id='member-sort'><option value='role'>役職順（R5→R1）</option>"+(opts.showVip?"<option value='vip'>VIP順</option>":"")+"<option value='power'>戦力が高い順</option><option value='power-asc'>戦力が低い順</option><option value='name'>名前順</option><option value='tc'>役場レベル順</option></select></div><div class='list member-grid' id='member-list'>"+(rosterHtml||"<div class='empty'>"+esc(statusMessage||"Roster詳細はまだありません。")+"</div>")+"</div><div class='empty' id='no-members' hidden>一致するメンバーがいません。</div></section>"+
     "<section><h2>同盟戦力の推移</h2>"+historyHtml+"</section><section><h2>メンバー戦力の増減</h2>"+memberPowerChangesHtml+"</section><section><h2>メンバーの加入・脱退</h2>"+changeHtml+"</section>"+
-    "<section><h2>データ状況</h2><div class='data-status'><div><small>最終保存</small><b>"+esc(ts(row.last_seen_at||row.updated_at))+"</b></div><div><small>履歴スナップショット</small><b>"+num(history.length)+"件</b></div><div><small>R2</small><b>"+(row.r2_latest_key?"保存あり":"未保存")+"</b></div></div><p class='muted'>履歴分析は保存済みデータがある場合のみ表示します。メンバー一覧は取得済みRosterの先頭100人です。</p></section>"+
+    "<section><h2>データ状況</h2><div class='data-status'><div><small>最終保存</small><b>"+esc(ts(row.last_seen_at||row.updated_at||historyFallbackAt))+"</b></div><div><small>履歴スナップショット</small><b>"+num(history.length)+"件</b></div><div><small>R2</small><b>"+(row.r2_latest_key?"保存あり":historyFallbackAt?"履歴から表示":"未保存")+"</b></div></div><p class='muted'>履歴分析は保存済みデータがある場合のみ表示します。メンバー一覧は取得済みRosterの先頭100人です。</p></section>"+
     "<div class='actions'><a href='/kingdom/alliances?kid="+kid+"'>← 同盟一覧</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_power'>同盟戦力ランキング</a><a href='/kingdom/rankings?kid="+kid+"&board=alliance_kills'>撃破数ランキング</a></div>"+
-    " <style>"+EAGLEEYE_ROLE_AVATAR_CSS+".alliance-page{padding-bottom:60px}.alliance-hero{display:flex;align-items:center;gap:12px;margin:14px 0;padding:15px;border:1px solid #294763;border-radius:18px;background:linear-gradient(135deg,#12263b,#0b1727)}.emblem{width:58px;height:58px;flex:0 0 58px;border-radius:14px;object-fit:cover;border:1px solid #3b5c78}.emblem.fallback{display:grid;place-items:center;background:#18334c;color:#8de9ff;font-weight:950}.alliance-heading{min-width:0;flex:1}.alliance-heading .eyebrow{margin:0;font-size:10px}.alliance-heading h1{overflow-wrap:anywhere;font-size:clamp(21px,5vw,29px);margin:4px 0}.alliance-heading p{margin:0;color:#a8c4db}.alliance-heading small{display:block;color:#6f8ca5;margin-top:4px;font-size:10px}.refresh{padding:9px;border:1px solid #28627d;border-radius:10px;background:#0d2c40;color:#9deaff;text-decoration:none;font-size:11px;font-weight:850;white-space:nowrap}.notice{margin:10px 0;padding:10px;border:1px solid #36516a;border-radius:10px;background:#10263a;color:#b9d7eb;font-size:12px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.section-title small,.muted{color:#7892a9;font-size:10px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{min-width:0;padding:11px;border:1px solid #29445e;border-radius:12px;background:linear-gradient(140deg,#122238,#0b1727)}.metric small{display:block;color:#8ea8c0;font-size:10px}.metric strong{display:block;margin:5px 0 2px;font-size:clamp(17px,4vw,22px);overflow-wrap:anywhere}.metric span{display:block;color:#8be9f8;font-size:10px}.distribution{display:grid;gap:10px;padding:14px;border:1px solid #29445e;border-radius:14px;background:#0c1a2b}.dist-chart-wrap{display:grid;grid-template-columns:minmax(120px, .85fr) minmax(0,1.5fr);align-items:center;gap:18px}.dist-donut{width:min(100%,190px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;margin:auto;position:relative}.dist-donut-hole{width:61%;height:61%;border-radius:50%;background:#0c1a2b;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}.dist-donut-hole strong{font-size:25px;line-height:1.1;color:#f0f8ff}.dist-donut-hole span{font-size:9px;color:#91abc2;margin-top:4px}.dist-legend{display:grid;gap:10px;min-width:0}.dist-legend-row{display:grid;grid-template-columns:9px minmax(0,1fr) auto auto;gap:6px;align-items:center;color:#a8c4db;font-size:10px}.dist-legend-row i{width:8px;height:8px;border-radius:3px}.dist-legend-row span{overflow-wrap:anywhere}.dist-legend-row b{color:#e5f3ff;white-space:nowrap}.dist-legend-row small{color:#8be9f8;text-align:right;min-width:32px}.dist-note{margin:0;color:#7892a9;font-size:10px}.tc-gold{color:#f6c84b;font-weight:900;text-shadow:0 0 10px rgba(246,200,75,.18);white-space:nowrap}.tc-gold small{color:#d5ae42;font-size:9px}@media(max-width:380px){.dist-chart-wrap{grid-template-columns:1fr}.dist-donut{width:150px}.dist-legend{gap:8px}}.list{display:grid;gap:7px}.member-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}.member{display:grid;grid-template-columns:30px minmax(0,1fr) auto;grid-template-rows:auto;column-gap:7px;align-items:center;padding:9px;border:1px solid #213c55;border-radius:11px;background:#0d1d2f;color:#edf7ff;text-decoration:none;min-width:0;min-height:70px}.member-avatar{grid-column:1;grid-row:1;width:30px;height:30px;border-radius:8px;object-fit:cover;background:#19324a;border:2px solid rgba(196,224,247,.72);box-shadow:0 0 0 2px #071321, inset 0 1px 2px rgba(255,255,255,.24), 0 2px 5px rgba(0,0,0,.42)}.member-avatar.fallback{display:grid;place-items:center;color:#a5e9f7;font-weight:900;border-color:rgba(141,233,255,.82)}.member[data-role='5'] .member-avatar{border-color:#f0c75e;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(255,244,198,.55),0 0 9px rgba(240,199,94,.68),0 2px 5px rgba(0,0,0,.42)}.member[data-role='4'] .member-avatar{border-color:#bca0ff;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(239,226,255,.48),0 0 9px rgba(188,160,255,.58),0 2px 5px rgba(0,0,0,.42)}.member[data-role='3'] .member-avatar{border-color:#70dfff;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(220,248,255,.48),0 0 9px rgba(112,223,255,.56),0 2px 5px rgba(0,0,0,.42)}.member[data-role='2'] .member-avatar{border-color:#79e5a5;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(222,255,234,.44),0 0 9px rgba(121,229,165,.5),0 2px 5px rgba(0,0,0,.42)}.member[data-role='1'] .member-avatar{border-color:#a9bacb;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(255,255,255,.38),0 0 8px rgba(169,186,203,.38),0 2px 5px rgba(0,0,0,.42)}.member-info{grid-column:2;grid-row:1;min-width:0;align-self:center}.member strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(8px,2.8vw,11px);line-height:1.3;letter-spacing:-.02em}.member small{display:block;margin-top:3px;font-size:9px;line-height:1.25;overflow-wrap:anywhere}.member-tc{color:#829bb1}.member-role{width:fit-content;padding:2px 5px;border:1px solid transparent;border-radius:5px;font-weight:850}.role-r5{color:#ffd978;background:#3c2e12;border-color:#856626}.role-r4{color:#c9b5ff;background:#2b2147;border-color:#65509a}.role-r3{color:#82dfff;background:#103448;border-color:#286783}.role-r2{color:#91edb5;background:#123528;border-color:#28694a}.role-r1{color:#c4d1df;background:#202d3b;border-color:#41556a}.role-unknown{color:#91a9c0;background:#172638;border-color:#2a4157}.member-power{grid-column:3;grid-row:1;justify-self:end;text-align:right;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;color:#e5f4ff;padding-left:2px}.member[hidden]{display:none}@media(max-width:390px){.member-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member{min-height:70px}}.tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.tools input,.tools select{width:100%;min-width:0;padding:11px;border:1px solid #2b4b66;border-radius:10px;background:#091727;color:#eaf6ff;font:inherit;font-size:12px}.history{display:grid;grid-auto-columns:minmax(65px,1fr);grid-auto-flow:column;gap:8px;overflow-x:auto;padding:12px;border:1px solid #29445e;border-radius:12px;background:#0c1a2b}.history>div{height:130px;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}.history>div>i{align-self:center;margin-top:auto;width:22px;min-height:4px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#66e5f6,#11779a)}.history>div>b{font-size:10px;text-align:center;overflow-wrap:anywhere}.history>div>small{color:#7d96ad;font-size:9px;text-align:center}.change-counts,.change-cols{display:grid;grid-template-columns:1fr 1fr;gap:8px}.change-counts>div,.change-cols>div{padding:11px;border:1px solid #29445e;border-radius:11px;background:#0d1d2f}.change-counts b{font-size:20px;margin-left:8px}.power-changes{display:grid;gap:6px}.power-changes>div{display:flex;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid #29445e;border-radius:9px;background:#0d1d2f;font-size:11px}.power-changes span{overflow-wrap:anywhere}.power-changes b{white-space:nowrap;font-variant-numeric:tabular-nums}.power-changes .up{color:#5ee5a5}.power-changes .down{color:#f6a3a3}.change-cols h3{font-size:12px;margin:0 0 8px}.change-cols p{font-size:11px;overflow-wrap:anywhere;border-bottom:1px solid #20384e;padding-bottom:5px}.data-status{display:grid;gap:7px}.data-status>div{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid #29445e;border-radius:10px;background:#0d1d2f}.data-status small{color:#8ea8c0}.data-status b{text-align:right;font-size:11px}.actions{display:flex;flex-wrap:wrap;gap:7px}.actions a{padding:10px;border:1px solid #25415f;border-radius:11px;background:#0c1c2d;color:#9eeeff;text-decoration:none;font-size:11px;font-weight:750}@media(max-width:520px){.alliance-hero{flex-wrap:wrap;align-items:flex-start}.alliance-heading{width:calc(100% - 74px)}.refresh{margin-left:auto}.tools{grid-template-columns:1fr}.change-cols{grid-template-columns:1fr}}@media(min-width:720px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.data-status{grid-template-columns:repeat(3,minmax(0,1fr))}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style>"+
-    "<script>(function(){const list=document.getElementById('member-list'),search=document.getElementById('member-search'),sort=document.getElementById('member-sort'),empty=document.getElementById('no-members');if(!list)return;const rows=Array.from(list.querySelectorAll('.member'));function apply(){const q=(search?.value||'').trim().toLowerCase(),mode=sort?.value||'power';const visible=rows.filter(r=>(r.dataset.name||r.textContent.toLowerCase()).includes(q));visible.sort((a,b)=>mode==='name'?a.textContent.localeCompare(b.textContent,'ja'):mode==='tc'?Number(b.dataset.tc||-1)-Number(a.dataset.tc||-1):mode==='role'?Number(b.dataset.role||0)-Number(a.dataset.role||0)||Number(b.dataset.power||-1)-Number(a.dataset.power||-1):mode==='power-asc'?Number(a.dataset.power||-1)-Number(b.dataset.power||-1):Number(b.dataset.power||-1)-Number(a.dataset.power||-1));visible.forEach(r=>{r.hidden=false;list.appendChild(r)});rows.filter(r=>!visible.includes(r)).forEach(r=>r.hidden=true);if(empty)empty.hidden=visible.length>0;}rows.forEach(r=>{r.dataset.name=(r.querySelector('strong')?.textContent||'').toLowerCase();r.dataset.tc=r.dataset.tc||-1;r.dataset.power=r.dataset.power||-1;r.dataset.role=r.dataset.role||0});search?.addEventListener('input',apply);sort?.addEventListener('change',apply);apply()})();</script>"+
+    " <style>"+EAGLEEYE_ROLE_AVATAR_CSS+".notice-login{display:inline-block;margin-left:6px;color:#22d3ee;font-weight:800;text-decoration:none}.alliance-page{padding-bottom:60px}.alliance-hero{display:flex;align-items:center;gap:12px;margin:14px 0;padding:15px;border:1px solid #294763;border-radius:18px;background:linear-gradient(135deg,#12263b,#0b1727)}.emblem{width:58px;height:58px;flex:0 0 58px;border-radius:14px;object-fit:cover;border:1px solid #3b5c78}.emblem.fallback{display:grid;place-items:center;background:#18334c;color:#8de9ff;font-weight:950}.alliance-heading{min-width:0;flex:1}.alliance-heading .eyebrow{margin:0;font-size:10px}.alliance-heading h1{overflow-wrap:anywhere;font-size:clamp(21px,5vw,29px);margin:4px 0}.alliance-heading p{margin:0;color:#a8c4db}.alliance-heading small{display:block;color:#6f8ca5;margin-top:4px;font-size:10px}.refresh{padding:9px;border:1px solid #28627d;border-radius:10px;background:#0d2c40;color:#9deaff;text-decoration:none;font-size:11px;font-weight:850;white-space:nowrap}.notice{margin:10px 0;padding:10px;border:1px solid #36516a;border-radius:10px;background:#10263a;color:#b9d7eb;font-size:12px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.section-title small,.muted{color:#7892a9;font-size:10px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{min-width:0;padding:11px;border:1px solid #29445e;border-radius:12px;background:linear-gradient(140deg,#122238,#0b1727)}.metric small{display:block;color:#8ea8c0;font-size:10px}.metric strong{display:block;margin:5px 0 2px;font-size:clamp(17px,4vw,22px);overflow-wrap:anywhere}.metric span{display:block;color:#8be9f8;font-size:10px}.distribution{display:grid;gap:10px;padding:14px;border:1px solid #29445e;border-radius:14px;background:#0c1a2b}.dist-chart-wrap{display:grid;grid-template-columns:minmax(120px, .85fr) minmax(0,1.5fr);align-items:center;gap:18px}.dist-donut{width:min(100%,190px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;margin:auto;position:relative}.dist-donut-hole{width:61%;height:61%;border-radius:50%;background:#0c1a2b;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}.dist-donut-hole strong{font-size:25px;line-height:1.1;color:#f0f8ff}.dist-donut-hole span{font-size:9px;color:#91abc2;margin-top:4px}.dist-legend{display:grid;gap:10px;min-width:0}.dist-legend-row{display:grid;grid-template-columns:9px minmax(0,1fr) auto auto;gap:6px;align-items:center;color:#a8c4db;font-size:10px}.dist-legend-row i{width:8px;height:8px;border-radius:3px}.dist-legend-row span{overflow-wrap:anywhere}.dist-legend-row b{color:#e5f3ff;white-space:nowrap}.dist-legend-row small{color:#8be9f8;text-align:right;min-width:32px}.dist-note{margin:0;color:#7892a9;font-size:10px}.tc-gold{color:#f6c84b;font-weight:900;text-shadow:0 0 10px rgba(246,200,75,.18);white-space:nowrap}.tc-gold small{color:#d5ae42;font-size:9px}@media(max-width:380px){.dist-chart-wrap{grid-template-columns:1fr}.dist-donut{width:150px}.dist-legend{gap:8px}}.list{display:grid;gap:7px}.member-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}.member{display:grid;grid-template-columns:30px minmax(0,1fr) auto;grid-template-rows:auto;column-gap:7px;align-items:center;padding:9px;border:1px solid #213c55;border-radius:11px;background:#0d1d2f;color:#edf7ff;text-decoration:none;min-width:0;min-height:70px}.member-avatar{grid-column:1;grid-row:1;width:30px;height:30px;border-radius:8px;object-fit:cover;background:#19324a;border:2px solid rgba(196,224,247,.72);box-shadow:0 0 0 2px #071321, inset 0 1px 2px rgba(255,255,255,.24), 0 2px 5px rgba(0,0,0,.42)}.member-avatar.fallback{display:grid;place-items:center;color:#a5e9f7;font-weight:900;border-color:rgba(141,233,255,.82)}.member[data-role='5'] .member-avatar{border-color:#f0c75e;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(255,244,198,.55),0 0 9px rgba(240,199,94,.68),0 2px 5px rgba(0,0,0,.42)}.member[data-role='4'] .member-avatar{border-color:#bca0ff;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(239,226,255,.48),0 0 9px rgba(188,160,255,.58),0 2px 5px rgba(0,0,0,.42)}.member[data-role='3'] .member-avatar{border-color:#70dfff;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(220,248,255,.48),0 0 9px rgba(112,223,255,.56),0 2px 5px rgba(0,0,0,.42)}.member[data-role='2'] .member-avatar{border-color:#79e5a5;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(222,255,234,.44),0 0 9px rgba(121,229,165,.5),0 2px 5px rgba(0,0,0,.42)}.member[data-role='1'] .member-avatar{border-color:#a9bacb;box-shadow:0 0 0 2px #071321,inset 0 1px 2px rgba(255,255,255,.38),0 0 8px rgba(169,186,203,.38),0 2px 5px rgba(0,0,0,.42)}.member-info{grid-column:2;grid-row:1;min-width:0;align-self:center}.member strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(8px,2.8vw,11px);line-height:1.3;letter-spacing:-.02em}.member small{display:block;margin-top:3px;font-size:9px;line-height:1.25;overflow-wrap:anywhere}.member-tc{color:#829bb1}.member-role{width:fit-content;padding:2px 5px;border:1px solid transparent;border-radius:5px;font-weight:850}.role-r5{color:#ffd978;background:#3c2e12;border-color:#856626}.role-r4{color:#c9b5ff;background:#2b2147;border-color:#65509a}.role-r3{color:#82dfff;background:#103448;border-color:#286783}.role-r2{color:#91edb5;background:#123528;border-color:#28694a}.role-r1{color:#c4d1df;background:#202d3b;border-color:#41556a}.role-unknown{color:#91a9c0;background:#172638;border-color:#2a4157}.member-power{grid-column:3;grid-row:1;justify-self:end;text-align:right;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;color:#e5f4ff;padding-left:2px}.member[hidden]{display:none}@media(max-width:390px){.member-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member{min-height:70px}}.tools{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.tools input,.tools select{width:100%;min-width:0;padding:11px;border:1px solid #2b4b66;border-radius:10px;background:#091727;color:#eaf6ff;font:inherit;font-size:12px}.history{display:grid;grid-auto-columns:minmax(65px,1fr);grid-auto-flow:column;gap:8px;overflow-x:auto;padding:12px;border:1px solid #29445e;border-radius:12px;background:#0c1a2b}.history>div{height:130px;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}.history>div>i{align-self:center;margin-top:auto;width:22px;min-height:4px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#66e5f6,#11779a)}.history>div>b{font-size:10px;text-align:center;overflow-wrap:anywhere}.history>div>small{color:#7d96ad;font-size:9px;text-align:center}.change-counts,.change-cols{display:grid;grid-template-columns:1fr 1fr;gap:8px}.change-counts>div,.change-cols>div{padding:11px;border:1px solid #29445e;border-radius:11px;background:#0d1d2f}.change-counts b{font-size:20px;margin-left:8px}.power-changes{display:grid;gap:6px}.power-changes>div{display:flex;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid #29445e;border-radius:9px;background:#0d1d2f;font-size:11px}.power-changes span{overflow-wrap:anywhere}.power-changes b{white-space:nowrap;font-variant-numeric:tabular-nums}.power-changes .up{color:#5ee5a5}.power-changes .down{color:#f6a3a3}.change-cols h3{font-size:12px;margin:0 0 8px}.change-cols p{font-size:11px;overflow-wrap:anywhere;border-bottom:1px solid #20384e;padding-bottom:5px}.data-status{display:grid;gap:7px}.data-status>div{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid #29445e;border-radius:10px;background:#0d1d2f}.data-status small{color:#8ea8c0}.data-status b{text-align:right;font-size:11px}.actions{display:flex;flex-wrap:wrap;gap:7px}.actions a{padding:10px;border:1px solid #25415f;border-radius:11px;background:#0c1c2d;color:#9eeeff;text-decoration:none;font-size:11px;font-weight:750}@media(max-width:520px){.alliance-hero{flex-wrap:wrap;align-items:flex-start}.alliance-heading{width:calc(100% - 74px)}.refresh{margin-left:auto}.tools{grid-template-columns:1fr}.change-cols{grid-template-columns:1fr}}@media(min-width:720px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.data-status{grid-template-columns:repeat(3,minmax(0,1fr))}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style>"+
+    "<script>(function(){const list=document.getElementById('member-list'),search=document.getElementById('member-search'),sort=document.getElementById('member-sort'),empty=document.getElementById('no-members');if(!list)return;const rows=Array.from(list.querySelectorAll('.member'));function apply(){const q=(search?.value||'').trim().toLowerCase(),mode=sort?.value||'power';const visible=rows.filter(r=>(r.dataset.name||r.textContent.toLowerCase()).includes(q));visible.sort((a,b)=>mode==='name'?a.textContent.localeCompare(b.textContent,'ja'):mode==='tc'?Number(b.dataset.tc||-1)-Number(a.dataset.tc||-1):mode==='vip'?Number(b.dataset.vip||-1)-Number(a.dataset.vip||-1)||Number(b.dataset.power||-1)-Number(a.dataset.power||-1):mode==='role'?Number(b.dataset.role||0)-Number(a.dataset.role||0)||Number(b.dataset.power||-1)-Number(a.dataset.power||-1):mode==='power-asc'?Number(a.dataset.power||-1)-Number(b.dataset.power||-1):Number(b.dataset.power||-1)-Number(a.dataset.power||-1));visible.forEach(r=>{r.hidden=false;list.appendChild(r)});rows.filter(r=>!visible.includes(r)).forEach(r=>r.hidden=true);if(empty)empty.hidden=visible.length>0;}rows.forEach(r=>{r.dataset.name=(r.querySelector('strong')?.textContent||'').toLowerCase();r.dataset.tc=r.dataset.tc||-1;r.dataset.power=r.dataset.power||-1;r.dataset.role=r.dataset.role||0});search?.addEventListener('input',apply);sort?.addEventListener('change',apply);apply()})();</script>"+
     "</main>";
   return page("同盟 "+allianceAbbr,html);
 }
@@ -383,55 +588,118 @@ export async function renderKingdomComparePage(request, env) {
       .filter(value => Number.isInteger(value) && value > 0)
   )].slice(0, 4);
 
+  // 王国を選ぶ部分（2王国未満でも、比較結果の上でも同じものを出す）。
+  const picker = await renderComparePicker(env.DB, kids);
   if (kids.length < 2) {
-    return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p>URLに ?kid=1&kid=2 のように2王国以上を指定してください。</p></main>");
+    return page("王国比較", "<main class='wrap'><h1>王国比較</h1><p class='cmp-lead'>最大4つの王国を並べて、戦力や成長を比較できます。比べたい王国の番号を追加してください。</p>" + picker + "</main>");
   }
 
+  // 毎日の集計（kingdom_stats_current）が主。カタログの保存データに項目があれば追加で並べる。
   const placeholders = kids.map(() => "?").join(",");
-  const rows = await env.DB.prepare(
-    "SELECT kid,name,status,raw_json,source_observed_at,last_seen_at,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ") ORDER BY kid"
-  ).bind(...kids).all();
-
-  const details = await Promise.all((rows.results || []).map(async row => {
-    let archived = null;
-    try { archived = await readR2Json(env.ARCHIVE, row.r2_latest_key); } catch {}
-    let legacy = null;
-    if (!archived?.payload && row.raw_json) {
-      try { legacy = JSON.parse(row.raw_json); } catch {}
-    }
-    const payload = archived?.payload || legacy || {};
-    const detail = payload?.data && typeof payload.data === "object" ? payload.data : payload;
-    return { ...row, detail };
+  const [statRows, catRows] = await Promise.all([
+    env.DB.prepare("SELECT kid, power, power_gain_7d, power_rank, age_days, player_count, observed_at FROM kingdom_stats_current WHERE kid IN (" + placeholders + ")").bind(...kids).all().catch(() => ({ results: [] })),
+    env.DB.prepare("SELECT kid,name,raw_json,r2_latest_key FROM kingdom_catalog WHERE kid IN (" + placeholders + ")").bind(...kids).all().catch(() => ({ results: [] }))
+  ]);
+  const stats = new Map((statRows.results || []).map(r => [Number(r.kid), r]));
+  const cats = new Map((catRows.results || []).map(r => [Number(r.kid), r]));
+  const details = await Promise.all(kids.map(async kid => {
+    const row = cats.get(kid) || {};
+    let detail = {};
+    try {
+      const archived = row.r2_latest_key ? await readR2Json(env.ARCHIVE, row.r2_latest_key) : null;
+      const payload = archived?.payload || (row.raw_json ? JSON.parse(row.raw_json) : {}) || {};
+      detail = payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data) ? payload.data : payload;
+    } catch {}
+    const st = stats.get(kid) || {};
+    const pick = (a, b) => a != null && a !== "" ? a : (b != null && b !== "" ? b : null);
+    const power = Number(pick(st.power, detail.power));
+    const players = Number(pick(st.player_count, detail.player_count));
+    const gain = Number(pick(st.power_gain_7d, detail.power_gain_7d));
+    return {
+      kid, name: row.name || detail.name || null, observedAt: st.observed_at || null,
+      v: {
+        power: Number.isFinite(power) && power > 0 ? power : null,
+        power_rank: pick(st.power_rank, detail.power_rank),
+        gain: Number.isFinite(gain) ? gain : null,
+        gain_pct: Number.isFinite(gain) && power > 0 ? gain / (power - gain) * 100 : null,
+        players: Number.isFinite(players) && players > 0 ? players : null,
+        avg: power > 0 && players > 0 ? power / players : pick(detail.avg_power, null),
+        age: pick(st.age_days, detail.age_days),
+        alliances: pick(detail.alliance_count, null),
+        tc_pushers: pick(detail.tc_pushers_7d, null),
+        hero: pick(detail.hero_power, null),
+        troop: pick(detail.troop_power, null),
+        research: pick(detail.research_power, null)
+      }
+    };
   }));
-
-  const cards = details.map(row => {
-    const d = row.detail || {};
-    const metrics = [
-      ["Power", d.power],
-      ["平均Power", d.avg_power],
-      ["領主数", d.player_count],
-      ["Active 7d", d.active_7d],
-      ["Active 30d", d.active_30d],
-      ["Power Gain 7d", d.power_gain_7d],
-      ["TC Pushers 7d", d.tc_pushers_7d],
-      ["Health", d.health],
-      ["同盟数", d.alliance_count],
-      ["Hero Power", d.hero_power],
-      ["Troop Power", d.troop_power],
-      ["Research Power", d.research_power]
-    ];
-    return "<article class='compare'><h2>王国 " + esc(row.kid) + "</h2><p>" + esc(row.name || d.name || "名称未取得") + "</p>" +
-      "<div class='compare-meta'>最終取得 " + esc(ts(row.last_seen_at)) + " / Provider観測 " + esc(ts(row.source_observed_at || d.source_observed_at)) + "</div>" +
-      "<div class='compare-metrics'>" + metrics.map(([label,value]) =>
-        "<div><small>" + esc(label) + "</small><strong>" + esc(num(value)) + "</strong></div>"
-      ).join("") + "</div></article>";
+  // [キー, 表示名, 書式, 大きい方が良いか]
+  const METRICS = [
+    ["power", "総力", "big", true], ["power_rank", "戦力順位（全王国）", "rank", false], ["gain", "7日間の戦力の伸び", "big", true],
+    ["gain_pct", "7日間の伸び率", "pct", true], ["players", "領主数", "int", true], ["avg", "1人あたりの戦力", "big", true],
+    ["age", "開設からの日数", "int", null], ["alliances", "同盟数", "int", null], ["tc_pushers", "7日間で役場を上げた人", "int", true],
+    ["hero", "英雄戦力", "big", true], ["troop", "兵士戦力", "big", true], ["research", "研究戦力", "big", true]
+  ];
+  const fmt = (v, f) => {
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return "—";
+    if (f === "pct") return (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
+    if (f === "rank") return n.toLocaleString("ja-JP") + "位";
+    if (f === "big") { const a = Math.abs(n); return a >= 1e8 ? (n / 1e8).toFixed(a >= 1e10 ? 0 : 1) + "億" : a >= 1e4 ? Math.round(n / 1e4).toLocaleString("ja-JP") + "万" : n.toLocaleString("ja-JP"); }
+    return Math.round(n).toLocaleString("ja-JP");
+  };
+  const tableRows = METRICS.filter(([k]) => details.some(d => d.v[k] != null)).map(([k, label, f, higher]) => {
+    const vals = details.map(d => d.v[k] == null ? null : Number(d.v[k]));
+    const known = vals.filter(v => v != null && Number.isFinite(v));
+    const best = higher == null || known.length < 2 ? null : (higher ? Math.max(...known) : Math.min(...known));
+    return "<tr><th>" + esc(label) + "</th>" + vals.map(v => "<td" + (best != null && v === best ? " class='best'" : "") + ">" + esc(fmt(v, f)) + "</td>").join("") + "</tr>";
   }).join("");
+  const head = "<tr><th></th>" + details.map(d => "<th><a href='/kingdom?kid=" + esc(d.kid) + "'>王国 " + esc(d.kid) + "</a>" + (d.name ? "<small>" + esc(d.name) + "</small>" : "") + "</th>").join("") + "</tr>";
+  const newest = Math.max(0, ...details.map(d => Number(d.observedAt) || 0));
+  const cards = tableRows
+    ? "<div class='cmp-table-wrap'><table class='cmp-table'><thead>" + head + "</thead><tbody>" + tableRows + "</tbody></table></div>" +
+      kingdomShareEmbed(details, newest ? ts(newest) : "") +
+      "<p class='cmp-note'>色付きの数字がその項目でいちばん良い王国です。" + (newest ? "データ：" + esc(ts(newest)) + "（毎日更新）" : "") + "</p>" +
+      "<style>.cmp-table-wrap{overflow-x:auto;border:1px solid var(--ee-border);border-radius:14px;background:var(--ee-panel)}.cmp-table{width:100%;border-collapse:collapse;font-size:13px}.cmp-table th,.cmp-table td{padding:10px 8px;border-bottom:1px solid var(--ee-border-soft);text-align:right;white-space:nowrap}.cmp-table tr:last-child th,.cmp-table tr:last-child td{border-bottom:0}.cmp-table tbody th{text-align:left;color:var(--ee-subtext);font-weight:700;white-space:normal;min-width:7.5em}.cmp-table thead th{font-size:14px}.cmp-table thead a{color:var(--ee-text,#e8f3ff);text-decoration:none}.cmp-table thead small{display:block;color:var(--ee-subtext);font-weight:400}.cmp-table td.best{color:var(--ee-cyan,#22d3ee);font-weight:900}.cmp-note{color:var(--ee-subtext);font-size:12px}</style>"
+    : "";
 
   return page("王国比較",
-    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p>最大4王国。現在値と7日成長指標を比較します。詳細payloadは選択した王国だけR2から読み込みます。</p><div class='comparegrid'>" +
-    (cards || "<div class='empty'>比較対象がありません。</div>") +
+    "<main class='wrap'><a class='back' href='/kingdom-catalog'>← 王国カタログ</a><h1>王国比較</h1><p class='cmp-lead'>最大4王国。今の数値と、この7日間の伸びを並べて比較します。</p>" + picker + "<div class='cmp-result'>" +
+    (cards || "<div class='empty'>この王国の集計データはまだありません（毎日自動で取得しています）。</div>") +
     "</div></main>"
   );
+}
+
+const COMPARE_MAX = 4;
+const compareHref = list => "/kingdom/compare?" + list.map(k => "kid=" + encodeURIComponent(k)).join("&");
+const PICKER_CSS = "<style>.cmp-lead{color:var(--ee-subtext);font-size:14px}.cmp-pick{margin:14px 0 18px;padding:14px;border:1px solid var(--ee-border);border-radius:14px;background:var(--ee-panel)}.cmp-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}.cmp-chip{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;background:var(--ee-panel-raised);border:1px solid var(--ee-border);font-weight:800}.cmp-chip a{color:var(--ee-subtext);text-decoration:none;font-size:15px;line-height:1}.cmp-form{display:flex;gap:8px}.cmp-form input{flex:1;min-width:0;padding:11px;border-radius:10px;border:1px solid var(--ee-border);background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-size:16px}.cmp-pick .cmp-form button{padding:11px 16px;border:0!important;border-radius:10px;background:var(--ee-cyan,#22d3ee)!important;color:#04121f!important;font-weight:900;font-size:15px}.cmp-sug{margin-top:12px}.cmp-sug small{display:block;color:var(--ee-subtext);margin-bottom:6px}.cmp-sug a{display:inline-block;margin:0 6px 6px 0;padding:7px 11px;border-radius:999px;border:1px solid var(--ee-border);color:var(--ee-text,#e8f3ff);text-decoration:none;font-size:13px}.cmp-sug a b{color:var(--ee-cyan)}.cmp-go{display:block;margin-top:12px;padding:12px;border-radius:12px;background:#facc15;color:#1f1300;text-align:center;font-weight:900;text-decoration:none}.cmp-hint{margin-top:10px;color:var(--ee-subtext);font-size:12px}</style>";
+
+// 比較する王国の選択：選んだ王国（×で外す）、番号を追加するフォーム、おすすめ（今季のKvK相手・番号が近い王国）。
+// D1は主キーでの数行だけ（KvK相手は (season,kid) と (season,opponent) の索引）。
+async function renderComparePicker(db, kids) {
+  const chips = kids.map(k => "<span class='cmp-chip'>王国 " + esc(k) + (kids.length > 0 ? "<a href='" + esc(compareHref(kids.filter(x => x !== k))) + "' aria-label='王国" + esc(k) + "を外す'>×</a>" : "") + "</span>").join("");
+  const full = kids.length >= COMPARE_MAX;
+  const form = full ? "<p class='cmp-hint'>比較できるのは4王国までです。入れ替えるときは×で外してください。</p>" :
+    "<form class='cmp-form' method='get' action='/kingdom/compare'>" + kids.map(k => "<input type='hidden' name='kid' value='" + esc(k) + "'>").join("") +
+    "<input type='number' name='kid' inputmode='numeric' min='1' max='99999' placeholder='王国の番号（例：1524）' aria-label='追加する王国の番号' required><button type='submit'>追加</button></form>";
+  let sug = "";
+  if (!full && kids.length > 0 && db) {
+    const base = kids[0];
+    const list = [];
+    try {
+      const st = await db.prepare("SELECT value FROM kvk_state WHERE key = 'matchups'").first();
+      const season = Number(JSON.parse(st?.value || "null")?.season);
+      if (Number.isFinite(season)) {
+        const m = await db.prepare("SELECT kid, opponent FROM kvk_matchups WHERE season = ? AND (kid = ? OR opponent = ?) LIMIT 1").bind(season, base, base).first();
+        const opp = m ? (Number(m.kid) === base ? Number(m.opponent) : Number(m.kid)) : null;
+        if (opp && !kids.includes(opp)) list.push({ kid: opp, why: "今季のKvK相手" });
+      }
+    } catch {}
+    for (const k of [base - 1, base + 1, base - 2, base + 2]) if (k > 0 && !kids.includes(k) && !list.some(x => x.kid === k)) list.push({ kid: k, why: "番号が近い" });
+    sug = "<div class='cmp-sug'><small>王国 " + esc(base) + " と比べるなら</small>" + list.slice(0, 5).map(x => "<a href='" + esc(compareHref([...kids, x.kid])) + "'><b>+ 王国 " + esc(x.kid) + "</b>　" + esc(x.why) + "</a>").join("") + "</div>";
+  }
+  const go = kids.length === 1 ? "<p class='cmp-hint'>もう1つ王国を追加すると比較が表示されます。</p>" : "";
+  return PICKER_CSS + "<section class='cmp-pick' aria-label='比較する王国'>" + (chips ? "<div class='cmp-chips'>" + chips + "</div>" : "") + form + sug + go + "</section>";
 }
 
 export async function handleKingdomPortalApi(request, env) {
@@ -467,37 +735,28 @@ export async function handleKingdomPortalApi(request, env) {
     return Response.json({ ok: false, error: "INVALID_BOARD" }, { status: 400 });
   }
 
-  const rows = await env.DB.prepare(
+  const rows = await withArchivedRankings(env, kid, await env.DB.prepare(
     "SELECT rank,target_type,target_id,governor_id,nick_name,score,aid,abbr,name,previous_rank,observed_at,source_observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
-  ).bind(kid, board).all();
+  ).bind(kid, board).all(), { filter: r => r.board === board, limit: 100 });
 
-  await recordSystemEvent(env.DB, {
-    traceId: systemTraceId("kingdom-portal"),
-    eventType: "COMPLETE",
-    service: "kingdom_portal",
-    feature: "ranking_explorer",
-    operation: "READ_CURRENT_RANKING",
-    status: "SUCCESS",
-    targetType: "KINGDOM",
-    targetId: String(kid),
-    metadata: { board, rowCount: rows.results?.length || 0 }
-  }).catch(() => {});
+  // Read-only and public: do not write a system-log row per request.
 
   return Response.json({
     ok: true,
     kid,
     board,
-    rows: rows.results || []
+    rows: rows.results || [],
+    archived: rows.archived || null
   });
 }
 
 export async function renderKingdomMightyPage(request, env, auth = null) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
-  if (!Number.isInteger(kid) || kid < 1) return page("Mighty", "<main class='wrap'><div class='empty'>王国IDを指定してください。</div></main>");
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("KvK・王国イベント", "/kingdom/mighty", "見たい王国の番号を入れてください。");
 
   if (!auth || auth.status !== "ACTIVE") {
-    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>Mighty機能</h1><div class='empty'>Mighty機能を利用するにはDiscordログインが必要です。</div></main>");
+    return page("Mighty", "<main class='wrap'><a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a><h1>KvK・王国イベント</h1><div class='empty'>この機能を使うにはログインが必要です。 <a href='" + esc(loginUrlFor(url.pathname + url.search)) + "'>ログイン →</a></div></main>");
   }
 
   const eligibility = await evaluateVipEligibility(env.DB, { env, userId: auth.user_id });
@@ -690,10 +949,10 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
   const eventDate = eventData.date ? String(eventData.date) : null;
   const eventCount = Number(eventData.count || categories.reduce((n, c) => n + (Array.isArray(c?.events) ? c.events.length : 0), 0));
 
-  return page("Mighty Events / KvK", "<main class='wrap mighty-page'>" +
+  return page("KvK・王国イベント", "<main class='wrap mighty-page'>" +
     "<a class='back' href='/kingdom?kid=" + kid + "'>← 王国 " + kid + "</a>" +
     "<div class='mighty-hero'>" +
-      "<div><div class='eyebrow'>MIGHTY / KVK</div><h1>王国 " + kid + " <span>· Mighty</span></h1><p>イベント・KvK情報</p></div>" +
+      "<div><div class='eyebrow'>Mighty・KvK</div><h1>王国 " + kid + " <span>· Mighty</span></h1><p>イベント・KvK情報</p></div>" +
       "<div class='mighty-badge'>⚡ Mighty API 接続済み</div>" +
     "</div>" +
     (errors.length ? "<div class='notice warn'>⚠️ " + errors.map(esc).join("<br>") + "</div>" : "") +
@@ -703,7 +962,7 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
       "<div class='summary-card'><small>最終取得</small><strong>" + esc(new Date().toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" })) + "</strong></div>" +
     "</div>" +
     (eventRows || "<section class='mighty-section'><div class='empty'>イベントデータがありません。</div></section>") +
-    "<section class='mighty-section kvk-section'><div class='section-heading'><div><span class='section-kicker'>KVK</span><h2>KvK情報</h2></div></div>" + kvkHtml + "</section>" +
+    "<section class='mighty-section kvk-section'><div class='section-heading'><div><span class='section-kicker'>KvK</span><h2>KvK情報</h2></div></div>" + kvkHtml + "</section>" +
     "<details class='raw-details'><summary>API原文を確認</summary><div class='raw-grid'><pre>" + esc(JSON.stringify(eventPayload, null, 2)) + "</pre><pre>" + esc(JSON.stringify(kvkPayload, null, 2)) + "</pre></div></details>" +
     "<style>" +
       ".mighty-page{padding-bottom:60px}.mighty-hero{margin-top:14px;padding:20px;border:1px solid #2a4664;border-radius:18px;background:linear-gradient(135deg,#17233a,#111827);display:flex;justify-content:space-between;align-items:center;gap:14px}.mighty-hero h1{margin:4px 0;font-size:28px}.mighty-hero h1 span{color:#fbbf24;font-size:18px}.mighty-hero p{margin:6px 0 0;color:#94a3b8}.mighty-badge{padding:9px 12px;border:1px solid #b45309;border-radius:999px;background:#2a1c08;color:#fbbf24;font-weight:900;font-size:12px;white-space:nowrap}.notice.warn{margin-top:12px;padding:12px 14px;border:1px solid #92400e;border-radius:12px;background:#2a1c08;color:#fde68a}.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}.summary-card{padding:13px;border:1px solid #334155;border-radius:12px;background:#0f2035}.summary-card small{display:block;color:#94a3b8;font-size:11px}.summary-card strong{display:block;margin-top:4px;font-size:18px}.summary-card strong span{font-size:12px;color:#94a3b8;margin-left:3px}.mighty-section{margin-top:18px}.section-heading{display:flex;justify-content:space-between;align-items:end;gap:10px;margin-bottom:9px}.section-kicker{display:block;color:#f59e0b;font-size:10px;font-weight:900;letter-spacing:1.7px}.section-heading h2{margin:2px 0;font-size:21px}.count-pill{padding:5px 8px;border:1px solid #334155;border-radius:999px;color:#cbd5e1;font-size:11px}.event-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.mighty-event{padding:13px;border:1px solid #334155;border-left:3px solid #64748b;border-radius:12px;background:#111c31}.mighty-event.live{border-left-color:#22c55e}.mighty-event.upcoming{border-left-color:#f59e0b}.mighty-event.ended{border-left-color:#64748b;opacity:.72}.event-top{display:flex;gap:6px;justify-content:space-between;align-items:center}.event-status{padding:4px 7px;border-radius:999px;font-size:10px;font-weight:900;border:1px solid #334155}.event-status.live{color:#86efac;border-color:#166534;background:#052e16}.event-status.upcoming{color:#fde68a;border-color:#92400e;background:#2a1c08}.event-status.ended{color:#94a3b8}.event-category{color:#94a3b8;font-size:10px}.mighty-event h3{margin:10px 0 2px;font-size:16px}.original-name{color:#64748b}.event-period{margin-top:8px;color:#cbd5e1;font-size:12px;line-height:1.5}.kvk-section{padding-top:2px}.kvk-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kvk-field{padding:11px;border:1px solid #334155;border-radius:10px;background:#111c31}.kvk-field small{display:block;color:#64748b;font-size:10px}.kvk-field strong{display:block;margin-top:4px;overflow-wrap:anywhere}.kvk-list{display:grid;gap:7px}.kvk-list-item{padding:9px;border:1px solid #334155;border-radius:9px;background:#111c31}.muted{color:#64748b}.raw-details{margin-top:18px;border:1px solid #334155;border-radius:12px;background:#0b1220}.raw-details summary{cursor:pointer;padding:12px;color:#94a3b8;font-weight:800}.raw-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 10px 10px}.raw-grid pre{margin:0;padding:10px;overflow:auto;max-height:420px;color:#cbd5e1;font-size:10px;white-space:pre-wrap;overflow-wrap:anywhere}@media(max-width:650px){.mighty-hero{align-items:flex-start;flex-direction:column}.mighty-badge{white-space:normal}.summary-grid{grid-template-columns:1fr 1fr}.summary-card:last-child{grid-column:1/-1}.event-grid,.kvk-fields,.raw-grid{grid-template-columns:1fr}}" +
@@ -712,7 +971,7 @@ export async function renderKingdomMightyPage(request, env, auth = null) {
 }
 
 export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
-  if (!auth || auth.status !== "ACTIVE") return page("Watchlist Analytics","<main class='wrap'><div class='empty'>ログインが必要です。</div></main>");
+  if (!auth || auth.status !== "ACTIVE") return page("王国ウォッチの状況","<main class='wrap'><div class='empty'>ログインが必要です。 <a href='" + esc(loginUrlFor("/kingdom-watchlist/analytics")) + "'>ログイン →</a></div></main>");
   const watches = await env.DB.prepare(
     "SELECT w.kid,w.top_n,w.interval_hours,w.enabled,w.last_run_at,w.last_success_at,w.last_error,c.name,c.status,c.source_observed_at,c.last_seen_at FROM kingdom_watchlists w LEFT JOIN kingdom_catalog c ON c.kid=w.kid WHERE w.discord_id=? ORDER BY w.created_at DESC LIMIT 100"
   ).bind(auth.discord_id).all();
@@ -720,21 +979,41 @@ export async function renderKingdomWatchlistAnalyticsPage(request, env, auth) {
     const freshness=r.source_observed_at&&r.last_seen_at?Math.max(0,Number(r.last_seen_at)-Number(r.source_observed_at)):null;
     return "<div class='row'><b>王国 "+esc(r.kid)+"</b><span>"+esc(r.name||"名称未取得")+"</span><em>"+(Number(r.enabled)===1?"監視中":"停止")+"</em><small>最終成功 "+esc(ts(r.last_success_at))+" / 鮮度差 "+esc(freshness==null?"—":Math.round(freshness/60)+"分")+"</small></div>";
   }).join("");
-  return page("Watchlist Analytics","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国Watchlist</a><h1>Watchlist Analytics</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国Watchlistはありません。</div>")+"</div></main>");
+  return page("王国ウォッチの状況","<main class='wrap'><a class='back' href='/kingdom-watchlist'>← 王国ウォッチリスト</a><h1>王国ウォッチの状況</h1><p>登録王国ごとの取得成功・鮮度・直近状態を一覧します。</p><div class='list'>"+(rows||"<div class='empty'>王国ウォッチリストはありません。</div>")+"</div></main>");
+}
+
+// この王国・このボードに載っている対象だけの変化を、最後のチェック以降で取る。
+// 以前は target_type と時刻だけで change_events 全体を新しい順に読んでおり（全王国が対象・
+// 1回で約85万行）、D1の読み取りのほぼすべてを占めていた。target_id を絞って
+// idx_change_events_target_time を使う。D1のbind上限（100）に合わせて分割する。
+export const BOARD_CHANGE_ID_CHUNK = 90;
+export async function loadBoardChangeEvents(db, kid, board, targetType, targetIds) {
+  const ids = [...new Set((targetIds || []).filter(v => v != null && v !== "").map(String))].slice(0, 100);
+  if (!ids.length) return { results: [] };
+  const state = await db.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
+  const since = Number(state?.last_checked_at || 0);
+  const rows = [];
+  for (let i = 0; i < ids.length; i += BOARD_CHANGE_ID_CHUNK) {
+    const chunk = ids.slice(i, i + BOARD_CHANGE_ID_CHUNK);
+    const r = await db.prepare(
+      "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type = ? AND target_id IN (" + chunk.map(() => "?").join(",") + ") AND detected_at >= ? ORDER BY detected_at DESC LIMIT 100"
+    ).bind(targetType, ...chunk, since).all();
+    rows.push(...(r?.results || []));
+  }
+  rows.sort((a, b) => Number(b.detected_at) - Number(a.detected_at));
+  return { results: rows.slice(0, 100) };
 }
 
 export async function renderKingdomChangesPage(request, env) {
   const url = new URL(request.url);
   const kid = Number(url.searchParams.get("kid"));
   const board = String(url.searchParams.get("board") || "personal_power");
-  if (!Number.isInteger(kid) || kid < 1) return page("ランキング変化","<main class='wrap'><div class='empty'>kidを指定してください。</div></main>");
-  const current = await env.DB.prepare(
+  if (!Number.isInteger(kid) || kid < 1) return kidFormPage("ランキングの変化", "/kingdom/changes", "順位の変化を見たい王国の番号を入れてください。");
+  const current = await withArchivedRankings(env, kid, await env.DB.prepare(
     "SELECT rank,target_type,target_id,governor_id,nick_name,score,abbr,name,previous_rank,observed_at FROM kingdom_ranking_current WHERE kid=? AND board=? ORDER BY rank ASC LIMIT 100"
-  ).bind(kid,board).all();
+  ).bind(kid,board).all(), { filter: r => r.board === board, limit: 100 });
   const targetType = ["alliance_power","alliance_kills"].includes(board) ? "ALLIANCE" : "PLAYER";
-  const events = await env.DB.prepare(
-    "SELECT target_id,change_type,field_name,old_value_json,new_value_json,detected_at FROM change_events WHERE target_type=? AND detected_at >= (SELECT COALESCE(last_checked_at,0) FROM kingdom_ranking_board_state WHERE kid=? AND board=?) ORDER BY detected_at DESC LIMIT 100"
-  ).bind(targetType,kid,board).all();
+  const events = await loadBoardChangeEvents(env.DB, kid, board, targetType, (current.results || []).map(r => r.target_id));
   const eventMap = new Map((events.results||[]).map(r=>[String(r.target_id),r]));
   const rows=(current.results||[]).map(r=>{
     const d=Number(r.previous_rank)-Number(r.rank);
@@ -743,7 +1022,7 @@ export async function renderKingdomChangesPage(request, env) {
     return "<div class='rank'><b>#"+esc(r.rank)+"</b><a href='/player?governor_id="+encodeURIComponent(r.governor_id||r.target_id)+"'>"+esc(r.nick_name||r.governor_id||r.target_id)+"</a><span>"+(movement==="UP"?"↑"+d:movement==="DOWN"?"↓"+Math.abs(d):"→")+" / 前回 "+esc(r.previous_rank??"—")+"</span><small>"+esc(ts(r.observed_at))+"</small></div>";
   }).join("");
   const inOut=(events.results||[]).filter(r=>["RANK_IN","RANK_OUT","RANKING_IN","RANKING_OUT"].includes(String(r.change_type))).map(r=>"<div class='row'><span>"+esc(r.change_type)+"</span><span>"+esc(r.target_id)+"</span><small>"+esc(ts(r.detected_at))+"</small></div>").join("");
-  return page("ランキング変化","<main class='wrap'><a class='back' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(board)+"'>← ランキング</a><h1>ランキング変化</h1><p>前回順位 → 今回順位。現在値とChange Eventだけを使用しています。</p><section><h2>順位変動</h2><div class='list'>"+(rows||"<div class='empty'>変動データなし</div>")+"</div></section><section><h2>IN / OUT</h2><div class='list'>"+(inOut||"<div class='empty'>直近IN / OUTなし</div>")+"</div></section></main>");
+  return page("ランキング変化","<main class='wrap'><a class='back' href='/kingdom/rankings?kid="+kid+"&board="+encodeURIComponent(board)+"'>← ランキング</a><h1>ランキング変化</h1><p>前回の順位 → 今回の順位。最近の入れ替わりも表示します。</p><section><h2>順位変動</h2><div class='list'>"+(rows||"<div class='empty'>順位の変動はまだありません</div>")+"</div></section><section><h2>ランク入り・ランク外</h2><div class='list'>"+(inOut||"<div class='empty'>最近のランク入り・ランク外はありません</div>")+"</div></section></main>");
 }
 
 function rankDelta(prev,current){
@@ -753,4 +1032,57 @@ function rankDelta(prev,current){
 }
 function page(title, body){
   return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+esc(title)+" | EagleEye</title><style>:root{color-scheme:dark}*{box-sizing:border-box}"+EAGLEEYE_THEME_BASE_CSS+"body{margin:0;background:#0a1424;color:#e8f3ff;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 48px}.back{color:var(--ee-subtext);text-decoration:none}.eyebrow{margin-top:22px;color:var(--ee-cyan);font-size:11px;font-weight:900;letter-spacing:2px}.hero{margin-top:16px;padding:20px;border:1px solid var(--ee-border);border-radius:18px;background:var(--ee-panel);display:flex;justify-content:space-between;gap:12px}.hero h1,h1{margin:4px 0;font-size:28px}.hero p{color:var(--ee-subtext)}.hero button,.actions a{border:1px solid var(--ee-border);background:var(--ee-panel-raised);color:#f8fafc;padding:9px 12px;border-radius:10px;text-decoration:none;font-weight:800}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}.card,.compare,.fresh,.momentum{padding:14px;border:1px solid var(--ee-border);border-radius:12px;background:var(--ee-panel)}.card small{display:block;color:var(--ee-subtext)}.card strong{display:block;margin-top:5px;font-size:18px}.momentum{display:grid;grid-template-columns:1fr 1fr;gap:10px}.list{display:grid;gap:7px}.row{display:grid;grid-template-columns:45px 1fr auto auto;gap:8px;align-items:center;padding:11px 12px;border:1px solid var(--ee-border);border-radius:10px;background:var(--ee-panel-raised);color:#fff;text-decoration:none}.row em{font-style:normal;color:var(--ee-cyan)}.row small{color:var(--ee-subtext)}.boards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:7px}.board,.boardtabs a{display:block;padding:10px;border:1px solid var(--ee-border);border-radius:9px;background:var(--ee-panel);color:#fff;text-decoration:none}.board small{display:block;color:var(--ee-muted);margin-top:4px}.boardtabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.boardtabs a.active{border-color:var(--ee-cyan);color:var(--ee-cyan)}.rank{display:grid;grid-template-columns:45px 1fr auto 55px 35px;gap:8px;align-items:center;padding:10px;border-bottom:1px solid var(--ee-border-soft)}.rank a{color:#fff;text-decoration:none}.rank span{color:var(--ee-cyan)}.rank small{color:var(--ee-subtext)}.star{border:0;background:none;color:var(--ee-cyan);font-size:18px}.comparegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}.compare-meta{color:var(--ee-muted);font-size:11px;margin:8px 0 12px}.compare-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}.compare-metrics div{padding:9px;border:1px solid var(--ee-border);border-radius:9px;background:var(--ee-panel-deep)}.compare-metrics small{display:block;color:var(--ee-subtext)}.compare-metrics strong{display:block;margin-top:3px}.empty{padding:18px;border:1px dashed #475569;border-radius:12px;color:var(--ee-subtext)}section{margin-top:24px}section h2{font-size:18px}@media(max-width:600px){.hero{flex-direction:column}.row{grid-template-columns:35px 1fr auto}.row small{display:none}.rank{grid-template-columns:35px 1fr auto 35px 30px}}\n/* EagleEye shared-theme alignment: keep page-specific layout, normalize shared surfaces/controls. */\n:root{color-scheme:dark}\nbody{background:var(--ee-bg,#0a1424)!important;color:var(--ee-text,#e8f3ff)!important}\n:where(.card,.panel,.profile-section,.compare-toolbar,.hero-card,.mini-card,.stat,.change-box,.compare-metrics div,.alliance-hero,.mighty-hero,.hero,.kingdom-hero,.rank-panel){background:var(--ee-panel,#0f2035)!important;border-color:var(--ee-border-soft,#1d344d)!important;color:var(--ee-text,#e8f3ff)!important;box-shadow:none}\n:where(.muted,.sub,.hint,.meta-label,.label){color:var(--ee-subtext,#91a7bf)!important}\n:where(.back,.text-link){color:var(--ee-cyan,#22d3ee)!important}\n:where(button,.btn,.action,.pager-btn){border:1px solid var(--ee-border,#2a4664)!important;border-radius:var(--ee-radius-sm,9px)!important;background:var(--ee-panel-raised,#172a40)!important;color:var(--ee-text,#e8f3ff)!important;font-weight:800;-webkit-tap-highlight-color:transparent;touch-action:manipulation}\n:where(.btn-primary,.action.primary,.ee-button-primary){background:var(--ee-cyan,#22d3ee)!important;border-color:var(--ee-cyan,#22d3ee)!important;color:#062033!important}\n:where(.btn-danger,.action.danger,.ee-button-danger){background:#321b2a!important;border-color:#713944!important;color:#ffb4bc!important}\n:where(input:not([type=checkbox]):not([type=radio]),select,textarea){background-color:var(--ee-panel-deep,#0b192b);color:var(--ee-text,#e8f3ff);border-color:var(--ee-border,#2a4664)}\n:where(button,.btn,.action,.pager-btn):focus-visible,:where(input,select,textarea):focus-visible{outline:2px solid var(--ee-cyan,#22d3ee)!important;outline-offset:2px}\n</style></head><body>"+body+"</body></html>";
+}
+
+// 同盟比較用：同盟の情報とメンバー表を読む。メンバー表が無いか24時間より古く、取得してよい時（ログイン中）は
+// 同盟詳細と同じしくみで取りに行く（同じ同盟は10分に1回まで）。
+export const ALLIANCE_COMPARE_STALE_SECONDS = 24 * 3600;
+// 「最新を取得」ボタン：メンバー表がこれより古ければ取り直す（同じ同盟は10分に1回まで＝claimAllianceRefresh）。
+export const ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS = 600;
+// force：同じ同盟10分に1回のロックを使わない（オーナーの「最新を取得」だけ）。
+export async function loadAllianceForCompare(env, kid, tag, { canFetch = false, nowMs = Date.now(), maxAgeSeconds = ALLIANCE_COMPARE_STALE_SECONDS, force = false } = {}) {
+  const db = env.DB;
+  const normalizeAid = v => String(v ?? "").replace(/^(\d+)\.0+$/, "$1");
+  let row = await db.prepare("SELECT * FROM alliance_catalog WHERE kid=? AND (abbr=? OR aid=?) LIMIT 1").bind(kid, tag, tag).first().catch(() => null);
+  const rankRow = await db.prepare("SELECT kid,aid,abbr,name,score AS power,rank AS power_rank FROM kingdom_ranking_current WHERE kid=? AND board='alliance_power' AND target_type='ALLIANCE' AND (abbr=? OR aid=? OR target_id=?) LIMIT 1").bind(kid, tag, tag, tag).first().catch(() => null);
+  if (row && rankRow) row = { ...row, power: row.power ?? rankRow.power, power_rank: row.power_rank ?? rankRow.power_rank, name: row.name || rankRow.name, abbr: row.abbr || rankRow.abbr };
+  if (!row) row = rankRow;
+  // EagleEye にまだ無い同盟（違う王国など）も、取得してよい時は同盟タグで取りに行く。
+  if (!row && canFetch) row = { kid, aid: "", abbr: tag, name: "", power: null, power_rank: null, unknown: true };
+  if (!row) return { kid, tag, error: "NOT_FOUND" };
+  const getAlliance = p => p?.alliance || p?.data?.alliance || p?.data?.data?.alliance || p?.payload?.alliance || p?.payload?.data?.alliance || p || {};
+  const getMembers = p => { const a = getAlliance(p); return [p?.roster, p?.members, p?.data?.roster, p?.data?.members, p?.data?.data?.roster, p?.data?.data?.members, a?.roster, a?.members, a?.member_list].find(Array.isArray) || []; };
+  let payload = {}, observedAt = Number(row.updated_at || row.last_seen_at || 0) || null;
+  if (row.r2_latest_key) { try { payload = (await readR2Json(env.ARCHIVE, row.r2_latest_key))?.payload || {}; } catch {} }
+  if (!Object.keys(payload).length && env.ARCHIVE) {
+    try {
+      const hist = await listAllianceHistoryFromR2(env.ARCHIVE, { kid, aid: normalizeAid(row.aid || tag), limit: 3 });
+      const newest = (hist || []).find(h => h?.payload && typeof h.payload === "object");
+      if (newest) { payload = newest.payload?.data && typeof newest.payload.data === "object" ? newest.payload.data : newest.payload; observedAt = Number(newest.observed_at) || observedAt; }
+    } catch {}
+  }
+  let members = getMembers(payload), fetched = false, status = "";
+  const now = Math.floor(nowMs / 1000);
+  const stale = !members.length || !observedAt || now - observedAt > maxAgeSeconds;
+  if (canFetch && stale && env.ARCHIVE && (force || await claimAllianceRefresh(db, kid, row.aid || row.abbr || tag, now).catch(() => false))) {
+    try {
+      const collected = await collectAllianceDetail(env, kid, row.abbr || tag, { purpose: "ALLIANCE_COMPARE_ON_DEMAND" });
+      const got = collected?.result?.data ?? collected?.result ?? collected?.data ?? collected;
+      const gp = got?.data && typeof got.data === "object" ? got.data : got;
+      const gm = getMembers(gp);
+      if (gm.length) {
+        const aid = normalizeAid(gp?.alliance?.aid ?? gp?.data?.alliance?.aid ?? gp?.aid ?? row.aid ?? tag);
+        const archive = await archiveAllianceHistoryBatch(env.ARCHIVE, { kid, aid, observedAt: now, sourceObservedAt: Number(gp?.source_observed_at ?? gp?.observed_at ?? 0) || null, payload: got });
+        if (archive?.key) await db.prepare("INSERT INTO alliance_catalog (kid,aid,abbr,name,member_count,r2_latest_key,first_seen_at,last_seen_at,updated_at,status) VALUES (?,?,?,?,?,?,?,?,?,'ACTIVE') ON CONFLICT(kid,aid) DO UPDATE SET r2_latest_key=excluded.r2_latest_key,member_count=COALESCE(excluded.member_count,alliance_catalog.member_count),abbr=COALESCE(alliance_catalog.abbr,excluded.abbr),name=COALESCE(alliance_catalog.name,excluded.name),last_seen_at=excluded.last_seen_at,updated_at=excluded.updated_at").bind(kid, aid, row.abbr || tag || null, row.name || null, gm.length, archive.key, now, now, now).run().catch(() => {});
+        payload = gp; members = gm; observedAt = now; fetched = true;
+      } else status = "NO_MEMBERS";
+    } catch (error) { status = String(error?.code || error?.message || "FETCH_FAILED").slice(0, 60); }
+  }
+  const alliance = getAlliance(payload);
+  if (row.unknown && !members.length) return { kid, tag, error: "NOT_FOUND" };
+  return {
+    kid, tag, aid: normalizeAid(row.aid || alliance.aid || ""), abbr: row.abbr || alliance.abbr || alliance.tag || tag, name: row.name || alliance.name || "",
+    power: row.power ?? null, power_rank: row.power_rank ?? null, observedAt, fetched, status,
+    members: members.map(normalizeAllianceMember).map(m => ({ name: m.name, id: m.id, power: m.power, tc: m.tc ?? null, role: m.role, roleLabel: m.roleLabel, image: m.image }))
+  };
 }

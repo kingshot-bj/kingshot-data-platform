@@ -1,0 +1,96 @@
+name: MightPulse Probe checks
+
+on:
+  push:
+    branches:
+      - main
+      - feat/mightpulse-probe-expansion-2026-10-14
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  probe-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check Worker modules
+        run: |
+          node --check src/index.js
+          node --check src/client-telemetry.js
+          node --check src/diagnostics.js
+          node --check src/mightpulse.js
+          node --check src/mightpulse-probe.js
+          node --check src/api-pool.js
+          node --check src/discord-oauth.js
+          node --check src/discord-support.js
+          node --check src/user-eligibility.js
+          node --check src/player-store.js
+          node --check src/data-collection-engine.js
+          node --check src/retention.js
+          node --check src/google-drive.js
+          node --check src/r2-archive.js
+          node --check src/kingdom-ranking-archive.js
+          node --check src/kingdom-portal.js
+          bash -n scripts/check-probe-migration-history.sh
+      - name: Run diagnostic telemetry regression tests
+        run: node --test tests/diagnostic-telemetry-regression.test.mjs
+      - name: Run Probe unit tests
+        run: node --test tests/mightpulse-probe*.test.mjs
+      - name: Run API Pool quota accounting tests
+        run: node --test tests/api-pool-quota-accounting.test.mjs
+      - name: Run Kingdom Watchlist registration UX tests
+        run: node --test tests/kingdom-watchlist-registration-ux.test.mjs
+      - name: Run kingdom watchlist regression tests
+        run: node --test tests/kingdom-watchlist*.test.mjs
+      - name: Run Discord OAuth / support guild tests
+        run: node --test tests/discord-oauth.test.mjs
+      - name: Run Discord support /close and /reopen tests
+        run: node --test tests/discord-support-commands.test.mjs
+      - name: Run MightPulse key registration guide tests
+        run: node --test tests/mightpulse-key-guide.test.mjs
+      - name: Run MightPulse quota accounting and stale activity tests
+        run: node --test tests/mightpulse-quota-activity.test.mjs
+      - name: Run data retention safe-archive tests
+        run: node --test tests/retention-safe-archive.test.mjs
+      - name: Run legal page tests
+        run: node --test tests/legal-pages.test.mjs
+      - name: Run kingdom ranking archive tests
+        run: node --test tests/kingdom-ranking-archive.test.mjs
+      - name: Run public endpoint safety tests
+        run: node --test tests/public-endpoint-safety.test.mjs
+      - name: Login return path tests
+        run: node --test tests/login-return.test.mjs
+      - name: Alliance history fallback tests
+        run: node --test tests/alliance-history-fallback.test.mjs
+      - name: KvK tests
+        run: node --test tests/kvk.test.mjs
+      - name: KvK Discord tests
+        run: node --test tests/kvk-discord.test.mjs
+      - name: Google Drive restore tests
+        run: node --test tests/google-drive-restore.test.mjs
+      - name: Session revocation tests
+        run: node --test tests/session-revocation.test.mjs
+      - name: Status config rows tests
+        run: node --test tests/status-config-rows.test.mjs
+      - name: Player CSV export tests
+        run: node --test tests/player-csv-export.test.mjs
+      - name: Google Sheets Drive export tests
+        run: node --test tests/google-sheets-drive-export.test.mjs
+      - name: Diagnostic health check tests
+        run: node --test tests/diagnostic-health-checks.test.mjs
+      - name: MightPulse source time tests
+        run: node --test tests/mightpulse-source-time.test.mjs
+      - name: UI consistency tests
+        run: node --test tests/ui-consistency.test.mjs
+      - name: Theme tests
+        run: node --test tests/themes.test.mjs
+      - name: Terminology tests
+        run: node --test tests/terminology.test.mjs
+      - name: All tests (catches test files not listed above)
+        run: node --test tests/*.test.mjs
+      - name: Run player compare enhancement tests
+        run: node --test tests/player-compare-enhancements.test.mjs

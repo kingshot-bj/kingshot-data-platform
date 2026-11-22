@@ -1,0 +1,18 @@
+{
+  "name": "alliance-compare",
+  "title": "同盟比較（聖剣争奪の下見）",
+  "output": "eagleeye-alliance-compare.mp4",
+  "post": [
+    "聖剣争奪の相手、どれくらい強い？「EagleEye」の同盟比較で、上位3人の秘境の試練をステージごとに比べられます。",
+    "{host}",
+    "",
+    "#キングショット #KingShot #聖剣争奪"
+  ],
+  "scenes": [
+    { "slide": "text", "heading": "聖剣争奪の<br>相手を下見", "sub": "EagleEye の同盟比較", "seconds": 3 },
+    { "page": "/alliance/compare?a=1524:Pen&a=1537:LOL", "caption": "違う王国の同盟どうしを比べられる", "seconds": 4, "scroll": 300, "login": true },
+    { "page": "/alliance/compare?a=1524:Pen&a=1537:LOL", "caption": "上位3人の秘境の試練を<br><b>ステージごと</b>に並べて比較", "seconds": 7, "scroll": 2600, "login": true },
+    { "slide": "signup", "seconds": 5 },
+    { "slide": "outro", "seconds": 3 }
+  ]
+}

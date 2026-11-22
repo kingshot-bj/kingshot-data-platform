@@ -207,7 +207,24 @@ ADMIN / OWNER専用。
 
 # 6. 現在のResearch Candidate
 
-現在の候補:
+現在の候補は、正規のAPI Pool経由で1候補ずつ試験するためのもの。候補を追加しただけではリクエストは実行されない。結果がHTTP 200でも、新しいsectionが実際に存在し、意味が確認できるまでは採用しない。
+
+比較機能のデータ不足を調べるため、以下の未検証候補を追加した。
+
+- `buff`
+- `buffs`
+- `combat_stats`
+- `battle_stats`
+- `research`
+- `technology`
+- `tech`
+- `academy`
+- `war_academy`
+- `pet_stats`
+
+これらは **UNKNOWN（未検証）** であり、MightPulseが受け付ける、または戦闘バフ・研究・ペット詳細を返すと断定しない。
+
+既存候補:
 
 1. `pet`
 2. `pets`
@@ -229,6 +246,21 @@ ADMIN / OWNER専用。
 18. `events`
 19. `history`
 20. `activity`
+21. `avatar`
+22. `avatar_frame`
+23. `frame`
+24. `frames`
+25. `skin`
+26. `skins`
+27. `castle_skin`
+28. `city_skin`
+29. `marching_skin`
+30. `profile`
+31. `cosmetics`
+
+### 調査順
+
+まず `buff`、`combat_stats`、`research`、`pet` を各1件ずつ確認する。候補をまとめて一斉実行しない。レスポンスのsection keys、内側のkeys、値の意味、更新時刻を記録し、未文書化の値を推測で本体に取り込まない。
 
 ---
 
