@@ -236,6 +236,8 @@ export async function mightPulseFetch(env, path, {
 export async function getMightPulsePlayer(env, governorId, {
   idType,
   include = "base",
+  wait = null,
+  maxAge = null,
   apiKey = null,
   metadata = null
 } = {}) {
@@ -249,6 +251,8 @@ export async function getMightPulsePlayer(env, governorId, {
 
   const params = { include };
   if (idType) params.id_type = idType;
+  if (wait !== null && wait !== undefined && wait !== "") params.wait = wait;
+  if (maxAge !== null && maxAge !== undefined && maxAge !== "") params.max_age = maxAge;
 
   return mightPulseFetch(env, `/players/${encodeURIComponent(id)}`, {
     query: params,
@@ -489,9 +493,17 @@ function mightPulseStatusCode(status) {
 }
 
 function retryDelay(attempt, retryAfter) {
-  const retryAfterMs = Number.parseFloat(retryAfter);
-  if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
-    return Math.min(retryAfterMs * 1000, 30_000);
+  if (retryAfter !== null && retryAfter !== undefined && retryAfter !== "") {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, 30_000);
+    }
+
+    // Retry-After also permits an HTTP-date, not only a delta in seconds.
+    const retryAt = Date.parse(String(retryAfter));
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(0, retryAt - Date.now()), 30_000);
+    }
   }
   return RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)];
 }
