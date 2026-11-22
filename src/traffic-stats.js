@@ -176,6 +176,30 @@ export function renderAllianceSweepCard(st) {
   return `<div class="card"><h2>同盟一覧の収集（公開の同盟ページ用）</h2><p>${esc(SWEEP_REASON[st.lastReason] || "まだ動いていません")}</p><p class="muted">進み具合：王国${esc(st.cursor || 0)}まで／最後に集めた日時 ${esc(when(st.lastRunAt))}／最後に一巡した日時 ${esc(when(st.completedAt))}</p><p class="muted">今月のD1の読み書きが日割りの枠の8割以内、APIキーの使用が直近24時間で3割未満、前回の一巡から7日以上、のときだけ1時間に100王国ずつ集めます。</p></div>`;
 }
 
+// 公開の王国ページ用のデータ集め（月1回の取り直し）の進み具合（2026-11-15）。数字は loadPublicDataProgress（index.js）。
+export async function loadPublicDataProgress(db, nowMs = Date.now()) {
+  const since = Math.floor(nowMs / 1000) - 30 * 86400;
+  const q = (sql, ...b) => db.prepare(sql).bind(...b).first().catch(() => null);
+  const [total, personal, alliance, mystic, cursor] = await Promise.all([
+    q("SELECT COUNT(*) AS n FROM kingdom_stats_current"),
+    q("SELECT COUNT(*) AS n FROM kingdom_ranking_board_state WHERE board = 'personal_power' AND last_checked_at > ?", since),
+    q("SELECT COUNT(*) AS n FROM kingdom_ranking_board_state WHERE board = 'alliance_power' AND last_checked_at > ?", since),
+    q("SELECT COUNT(*) AS n FROM (SELECT kid FROM kingdom_mystic_current WHERE fetched_at > ? UNION SELECT kid FROM kvk_mystic_summary WHERE status = 'OK' AND fetched_at > ?)", since, since),
+    q("SELECT value, updated_at FROM public_ranking_refresh_state WHERE key = 'cursor'")
+  ]);
+  return { total: Number(total?.n) || 0, personal: Number(personal?.n) || 0, alliance: Number(alliance?.n) || 0, mystic: Number(mystic?.n) || 0, cursor: Number(cursor?.value) || 0, cursorAt: Number(cursor?.updated_at) || null };
+}
+
+export function renderPublicDataProgressCard(p) {
+  if (!p || !p.total) return "";
+  const bar = (label, n) => { const pct = Math.min(100, Math.floor(n / p.total * 1000) / 10); return `<div class="bar"><span>${esc(label)}</span><i style="width:${pct}%"></i><b>${pct}%（${num(n)} / ${num(p.total)}王国）</b></div>`; };
+  const when = p.cursorAt ? new Date(p.cursorAt * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—";
+  const lap = Math.min(100, Math.floor(p.cursor / Math.max(1, p.total) * 1000) / 10);
+  return `<div class="card"><h2>公開の王国ページのデータ集め（月1回）</h2>
+${bar("上位10人（個人の総力）", p.personal)}${bar("同盟上位（同盟の総力）", p.alliance)}${bar("秘境の試練", p.mystic)}
+<p class="muted">直近30日以内に取れている王国の割合です。5分ごとに30王国ずつ確認し、古いものだけ取り直します。今の周：王国${num(p.cursor)}まで（約${lap}%）／最後に進んだ日時：${esc(when)}</p></div>`;
+}
+
 // APIキー（MightPulse）の混み具合。1時間ごとの確認結果を表示する。
 export function renderApiPoolCard(p) {
   if (!p) return `<div class="card"><h2>APIキーの使用（直近24時間）</h2><p class="muted">まだ確認していません（1時間ごとに自動確認）。</p></div>`;
@@ -196,7 +220,7 @@ function bars(rows, key) {
   return rows.map(r => `<div class="bar"><span>${esc(String(r.day || r.date).slice(5))}</span><i style="width:${Math.round((Number(r[key]) || 0) / max * 100)}%"></i><b>${num(r[key])}</b></div>`).join("");
 }
 
-export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null, funnel = undefined, top = null, sweep = null } = {}) {
+export function renderOwnerTrafficPage({ active = [], cf = { configured: false }, d1 = null, apiPool = null, funnel = undefined, top = null, sweep = null, publicData = null } = {}) {
   const activeRows = active.map(d => ({ ...d, roleText: ROLES.filter(r => d.roles[r]).map(r => r + " " + d.roles[r]).join("・") }));
   const activeHtml = `<div class="bars">${bars(activeRows, "total")}</div><table><thead><tr><th>日付（日本時間）</th><th>人数</th><th>ロール内訳</th></tr></thead><tbody>${activeRows.map(d => `<tr><td>${esc(d.day)}</td><td>${num(d.total)}</td><td>${esc(d.roleText || "—")}</td></tr>`).join("")}</tbody></table>`;
   let cfHtml;
@@ -212,6 +236,6 @@ export function renderOwnerTrafficPage({ active = [], cf = { configured: false }
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>アクセス状況 | EagleEye</title>
 <style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px 96px}a{color:#38bdf8}.card{background:#111c33;border:1px solid #1e2b47;border-radius:16px;padding:16px;margin:14px 0}h1{font-size:22px;margin:8px 0}h2{font-size:17px;margin:0 0 10px}h3{font-size:14px;margin:16px 0 8px;color:#cbd5e1}.bars{display:grid;gap:4px;margin:6px 0 12px}.bar{display:grid;grid-template-columns:3.2em 1fr 4em;gap:8px;align-items:center;font-size:12px}.bar i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,#0ea5e9,#22d3ee);min-width:2px}.bar b{text-align:right;font-weight:700}table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:6px 4px;border-bottom:1px solid #1e2b47;text-align:left}td:nth-child(n+2),th:nth-child(n+2){text-align:right}td:last-child{text-align:right}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.err{color:#fca5a5;font-size:12px}code{background:#0b1222;padding:1px 4px;border-radius:4px}</style></head>
 <body><main class="wrap"><a href="/owner">← OWNER管理</a><h1>アクセス状況</h1>
-${funnel === undefined ? "" : renderFunnelCard(funnel)}${renderD1Card(d1)}${renderApiPoolCard(apiPool)}${renderAllianceSweepCard(sweep)}<div class="card"><h2>ログインして使った人（1日あたり）</h2>${activeHtml}<p class="muted">1人1日1回だけ数えます。記録は90日で消えます。</p></div>
+${funnel === undefined ? "" : renderFunnelCard(funnel)}${renderD1Card(d1)}${renderApiPoolCard(apiPool)}${renderPublicDataProgressCard(publicData)}${renderAllianceSweepCard(sweep)}<div class="card"><h2>ログインして使った人（1日あたり）</h2>${activeHtml}<p class="muted">1人1日1回だけ数えます。記録は90日で消えます。</p></div>
 <div class="card"><h2>訪問者（Cloudflareの集計）</h2>${cfHtml}</div>${renderTopTrafficCard(top)}</main></body></html>`;
 }

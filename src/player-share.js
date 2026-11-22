@@ -111,7 +111,10 @@ export function playerShareClient(cfg) {
   function currentPalette() { var id = document.documentElement.getAttribute("data-ee-skin") || "navy"; return PALS[id] || PALS.navy || { bg: "#0b1424", panel: "#0f1f36", raised: "#13263d", border: "#1d344d", text: "#e8f3ff", subtext: "#91a7bf", accent: "#22d3ee" }; }
   var P = currentPalette();
   function alpha(hex, a) { var n = parseInt(String(hex).slice(1), 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; }
-  host.innerHTML = '<button type="button" id="pshImg">📤 画像で共有</button><button type="button" id="pshLink">リンクをコピー</button><span id="pshMsg" aria-live="polite"></span>';
+  host.innerHTML = '<button type="button" id="pshImg">📤 画像で共有</button><button type="button" id="pshLink">リンクをコピー</button>' + (/^\d{7,12}$/.test(String(d.gid || "")) ? '<button type="button" id="pshCmp">⚔️ 自分と比べる</button>' : '') + '<span id="pshMsg" aria-live="polite"></span>';
+  // 自分と比べる：比較ページは自分の領主を自動で入れる（2026-11-16）。
+  var cmp = document.getElementById("pshCmp");
+  if (cmp) cmp.addEventListener("click", function () { location.href = "/player/compare?governor_id=" + encodeURIComponent(String(d.gid)); });
   var msg = document.getElementById("pshMsg");
   function say(t) { msg.textContent = t; if (t) setTimeout(function () { if (msg.textContent === t) msg.textContent = ""; }, 4000); }
   var refPromise = null;
@@ -222,9 +225,18 @@ export function playerShareClient(cfg) {
   function preview(blob) {
     var url = URL.createObjectURL(blob), box = document.createElement("div");
     box.id = "pshPreview";
-    box.innerHTML = '<p>画像を長押しして保存・共有できます</p><img alt="領主カードの画像"><button type="button">閉じる</button>';
+    // 共有メニューが無いとき（PC の一部のブラウザなど）の代わり。2026-11-17：PC には長押しが無いので、コピー・保存のボタンを付ける。
+    var touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    var canCopy = !!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem);
+    box.innerHTML = '<p></p><img alt="領主カードの画像"><div class="ee-pv-actions" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">' + (canCopy ? '<button type="button" data-act="copy">📋 画像をコピー</button>' : '') + '<a data-act="save" download="eagleeye-player.png" style="border-radius:10px;padding:9px 18px;font-weight:700;background:#e2e8f0;color:#0f172a;text-decoration:none">💾 保存</a><button type="button" data-act="close">閉じる</button></div>';
+    box.querySelector("p").textContent = touch ? "画像を長押しして保存・共有できます" : (canCopy ? "「画像をコピー」して、Discord や X にそのまま貼り付けられます（Ctrl+V / ⌘V）" : "「保存」して、Discord や X に添付してください");
     box.querySelector("img").src = url;
-    box.querySelector("button").onclick = function () { box.remove(); URL.revokeObjectURL(url); };
+    box.querySelector('[data-act="save"]').href = url;
+    box.querySelector('[data-act="close"]').onclick = function () { box.remove(); URL.revokeObjectURL(url); };
+    var copyBtn = box.querySelector('[data-act="copy"]');
+    if (copyBtn) copyBtn.onclick = function () {
+      navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(function () { copyBtn.textContent = "✅ コピーしました"; }, function () { copyBtn.textContent = "コピーできませんでした（保存を使ってください）"; });
+    };
     document.body.appendChild(box);
   }
   window.__pshBuild = build;

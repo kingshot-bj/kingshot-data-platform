@@ -33,14 +33,17 @@ function pageConfig(html) {
 
 test("free picker: every hero, aliases unified, icons only from saved hashes", () => {
   const icon = "a".repeat(64) + ".png";
-  const list = shardHeroList({ "マーリン": icon, "エヴァ": "../evil.png" });
+  const list = shardHeroList({ "マーリン": icon, "アイヴァ": "../evil.png" });
   const names = list.map(h => h.n);
   assert.ok(names.length >= 37);
   assert.equal(new Set(names).size, names.length, "no duplicates");
   assert.ok(names.includes("マーリン") && !names.includes("マリン"));
-  assert.ok(names.includes("エヴァ") && !names.includes("アイヴァ"));
+  assert.ok(names.includes("アイヴァ") && !names.includes("エヴァ"), "ゲーム内の表記はアイヴァ（2026-11-16）");
   assert.equal(list.find(h => h.n === "マーリン").i, icon);
-  assert.equal(list.find(h => h.n === "エヴァ").i, "", "unsafe file names are dropped");
+  assert.equal(list.find(h => h.n === "アイヴァ").i, "", "unsafe file names are dropped");
+  // 古い表記（エヴァ）で保存されたアイコンも見つかる
+  assert.equal(shardHeroList({ "エヴァ": icon }).find(h => h.n === "アイヴァ").i, icon);
+  assert.equal(canonicalHeroName("エヴァ"), "アイヴァ");
   assert.equal(canonicalHeroName("マリン"), "マーリン");
   assert.ok(isDedicatedShardHero("アマデウス") && isDedicatedShardHero("Helga") && !isDedicatedShardHero("ゾーイ"));
 });
@@ -122,4 +125,12 @@ test("Seth is shown as スミス everywhere; icons saved as セス still resolve
   const db = { prepare: () => ({ all: async () => ({ results: [{ hero_name: "セス", object_key: key }] }) }) };
   const map = await getSavedHeroIconMap(db);
   assert.ok(map["スミス"], "legacy name maps to スミス");
+});
+
+test("アイヴァ：ゲーム内の表記にそろえる（英語名 Ava・王国タイムライン・英雄カタログ）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(index, /Ava: "アイヴァ"/);
+  assert.doesNotMatch(index, /Ava: "エヴァ"/);
+  assert.doesNotMatch(readFileSync(new URL("../src/kingdom-timeline.js", import.meta.url), "utf8"), /エヴァ/);
 });

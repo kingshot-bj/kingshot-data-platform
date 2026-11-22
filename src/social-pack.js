@@ -6,6 +6,8 @@
 
 import { compactNumber } from "./public-pages.js";
 import { currentKvkSeason, loadSeasonMatchups } from "./kvk-matchups-page.js";
+import { kvkEndedAt } from "./home-summary.js";
+import { renderPlansSection } from "./social-plans.js";
 
 export const SOCIAL_FORMATS = Object.freeze({ story: { w: 1080, h: 1920, rows: 10 }, square: { w: 1080, h: 1080, rows: 5 } });
 export const SOCIAL_PLATFORMS = Object.freeze(["x", "discord", "youtube", "tiktok", "instagram"]);
@@ -37,18 +39,18 @@ async function kingdomItems(db) {
   const age = r => r.age_days != null ? `開設${r.age_days}日` : "";
   const items = [];
   if (gain.length) items.push({
-    id: "gain", title: "今週いちばん伸びた王国", subtitle: "7日間の戦力増加 TOP10", path: "/kingdoms", observedAt: at(gain),
-    rows: gain.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総戦力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
+    id: "gain", title: "今週いちばん伸びた王国", subtitle: "7日間の総力増加 TOP10", path: "/kingdoms", observedAt: at(gain),
+    rows: gain.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
     hook: `今週いちばん戦力が伸びたのは王国${gain[0].kid}（7日間で+${compactNumber(gain[0].power_gain_7d)}）`
   });
   if (power.length) items.push({
-    id: "power", title: "総戦力ランキング", subtitle: "全王国の総戦力 TOP10", path: "/kingdoms", observedAt: at(power),
+    id: "power", title: "総力ランキング", subtitle: "全王国の総力 TOP10", path: "/kingdoms", observedAt: at(power),
     rows: power.map((r, i) => kingdomRow(r, i, compactNumber(r.power), [age(r), r.power_gain_7d > 0 ? "7日間 +" + compactNumber(r.power_gain_7d) : ""].filter(Boolean).join("・"))),
-    hook: `総戦力1位は王国${power[0].kid}（${compactNumber(power[0].power)}）`
+    hook: `総力1位は王国${power[0].kid}（${compactNumber(power[0].power)}）`
   });
   if (young.length) items.push({
-    id: "young", title: "新しい王国の成長ランキング", subtitle: "開設180日以内・7日間の戦力増加 TOP10", path: "/kingdoms", observedAt: at(young),
-    rows: young.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総戦力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
+    id: "young", title: "新しい王国の成長ランキング", subtitle: "開設180日以内・7日間の総力増加 TOP10", path: "/kingdoms", observedAt: at(young),
+    rows: young.map((r, i) => kingdomRow(r, i, "+" + compactNumber(r.power_gain_7d), [age(r), "総力 " + compactNumber(r.power)].filter(Boolean).join("・"))),
     hook: `開設180日以内でいちばん伸びたのは王国${young[0].kid}（${age(young[0])}・+${compactNumber(young[0].power_gain_7d)}）`
   });
   return items;
@@ -65,9 +67,13 @@ export function closeKvkPairs(pairs, limit = 10) {
     .map(x => x.p);
 }
 
-async function kvkItem(db) {
+async function kvkItem(db, nowMs = Date.now()) {
   const season = await currentKvkSeason(db).catch(() => null);
   if (!season) return null;
+  // KvK が終わっていたら出さない（終わった組み合わせの「接戦」は意味がない）。
+  // 日程（days_json）は王国ごとに同じなので、最近取った1行だけ見る（D1 の読み取りを増やさない）。
+  const latest = await db.prepare("SELECT days_json FROM kvk_scores WHERE season = ? AND days_json IS NOT NULL ORDER BY fetched_at DESC LIMIT 1").bind(season).first().catch(() => null);
+  if (kvkEndedAt(latest?.days_json, Math.floor(nowMs / 1000)) != null) return null;
   const { pairs, observedAt } = await loadSeasonMatchups(db, season).catch(() => ({ pairs: [], observedAt: 0 }));
   const close = closeKvkPairs(pairs);
   if (!close.length) return null;
@@ -75,7 +81,7 @@ async function kvkItem(db) {
     id: "kvk", title: `KvK S${season} 接戦の組み合わせ`, subtitle: "秘境の試練の1位記録が拮抗", path: `/kvk/s${season}`, observedAt,
     rows: close.map((p, i) => {
       const m = p.mystic, n = m.wins + m.losses + m.even;
-      return { rank: i + 1, label: `王国 ${p.a.kid} vs ${p.b.kid}`, kid: p.a.kid, value: `${m.wins}-${m.losses}`, sub: `${n}ステージ中${m.even ? `・同点${m.even}` : ""}` };
+      return { rank: i + 1, label: `王国 ${p.a.kid} vs ${p.b.kid}`, kid: p.a.kid, value: `${m.wins}-${m.losses}`, sub: `秘境の試練${n}種類中${m.even ? `・同点${m.even}` : ""}` };
     }),
     hook: `KvK S${season}、秘境の試練の記録で拮抗している組み合わせ`
   };
@@ -86,9 +92,9 @@ export function socialCaptions(item, { origin = "https://eagleeye-ks.com" } = {}
   const top3 = item.rows.slice(0, 3).map(r => `${r.rank}位 ${r.label} ${r.value}`).join("\n");
   const tags = [...HASHTAGS, ...(item.id === "kvk" ? ["#KvK"] : [])].join(" ");
   return {
-    x: `${item.hook}📊\n\n${top3}\n\n全部はこちら（ログイン不要）\n${link("x")}\n${tags}`,
+    x: `${item.hook}📊\n\n${top3}\n\n全部はこちら\n${link("x")}\n${tags}`,
     discord: `**${item.title}**（${item.subtitle}）\n${top3}\n\n全部はこちら → ${link("discord")}`,
-    youtube: { title: `${item.title}｜キングショット ${item.subtitle}`.slice(0, 95), description: `${item.hook}。\n\n${item.rows.map(r => `${r.rank}位 ${r.label} ${r.value}（${r.sub}）`).join("\n")}\n\n詳しいデータ（ログイン不要）：${link("youtube")}\nデータ：EagleEye（KingShot非公式データサイト・毎日更新）\n${tags} #Shorts` },
+    youtube: { title: `${item.title}｜キングショット ${item.subtitle}`.slice(0, 95), description: `${item.hook}。\n\n${item.rows.map(r => `${r.rank}位 ${r.label} ${r.value}（${r.sub}）`).join("\n")}\n\n詳しいデータ：${link("youtube")}\nデータ：EagleEye（KingShot非公式データサイト・毎日更新）\n${tags} #Shorts` },
     tiktok: `${item.hook}📊 全部のデータはプロフィールのリンクから！ ${tags} #ゲーム`,
     instagram: `${item.hook}📊\n\n${top3}\n\n全部のデータはプロフィールのリンク（eagleeye-ks.com）から。\n${tags} #ゲーム #スマホゲーム`
   };
@@ -97,7 +103,7 @@ export function socialCaptions(item, { origin = "https://eagleeye-ks.com" } = {}
 export async function loadSocialPack(env, { nowMs = Date.now(), origin = "https://eagleeye-ks.com" } = {}) {
   const db = env.DB;
   const items = [...await kingdomItems(db)];
-  const kvk = await kvkItem(db);
+  const kvk = await kvkItem(db, nowMs);
   if (kvk) items.push(kvk);
   // 3位まで並ばないネタは出さない（データが少ない週・シーズンの切り替わり）。
   for (let i = items.length - 1; i >= 0; i--) if (items[i].rows.length < SOCIAL_MIN_ROWS) items.splice(i, 1);
@@ -144,7 +150,7 @@ li.top{background:linear-gradient(90deg,#123047,#0f2238);border-color:#22d3ee88}
 <div class="brand"><i></i>EagleEye<span>${esc(item.dataDate ? item.dataDate + " 時点" : week)}</span></div>
 <h1>${esc(item.title)}</h1><h2>${esc(item.subtitle)}</h2>
 <ol>${list}</ol>
-<div class="foot"><b>eagleeye-ks.com</b><span>キングショット非公式データサイト・ログイン不要</span></div>
+<div class="foot"><b>eagleeye-ks.com</b><span>キングショット非公式データサイト</span></div>
 </div></body></html>`;
 }
 
@@ -158,7 +164,9 @@ export function renderSocialCover(pack) {
 export const SOCIAL_R2_PREFIX = "social/";
 export const SOCIAL_MANIFEST_KEY = "social/latest.json";
 const MEDIA_KEY = /^social\/\d{4}-\d{2}-\d{2}\/[a-z0-9_-]{1,40}\.(png|mp4|json)$/;
-export function isSocialMediaKey(key) { return MEDIA_KEY.test(String(key || "")); }
+// 動画（CM）：social/videos/out/<id>/video.mp4・caption.txt（/owner/social/video で作ったもの）
+const VIDEO_MEDIA_KEY = /^social\/videos\/out\/\d{8}-\d{6}-[a-z0-9][a-z0-9-]{0,39}\/(video\.mp4|caption\.txt)$/;
+export function isSocialMediaKey(key) { const k = String(key || ""); return MEDIA_KEY.test(k) || VIDEO_MEDIA_KEY.test(k); }
 
 export async function loadSocialManifest(bucket) {
   if (!bucket) return null;
@@ -187,12 +195,27 @@ a{color:var(--ee-cyan,#22d3ee)}h1{font-size:22px;margin:10px 0 4px}.lead{color:v
 .caps{flex:1;min-width:0;display:grid;gap:8px}.cap-h{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:3px}.cap textarea{width:100%;box-sizing:border-box;font:12px/1.5 system-ui;background:var(--ee-bg,#0a1424);color:inherit;border:1px solid var(--ee-border-soft,#223b57);border-radius:8px;padding:6px;resize:vertical}
 .copy{font:700 12px system-ui;padding:4px 10px;border-radius:8px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-panel-raised,#172a40);color:inherit}
 .dl a{display:inline-block;margin-right:10px;font-weight:700}.muted{color:var(--ee-subtext,#91a7bf);font-size:12px}table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px;border-bottom:1px solid var(--ee-border-soft,#223b57)}td:nth-child(-n+2){white-space:nowrap}
+.plan{border-top:1px solid var(--ee-border-soft,#223b57);padding:10px 0}.plan summary{cursor:pointer;font-size:14px;line-height:1.6}.plan .caps{margin-top:8px}.badge{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:11px;background:rgba(250,204,21,.14);color:var(--ee-gold,#facc15)}
 @media (max-width:640px){.row{flex-direction:column}}
 </style></head><body><main class="wrap"><a href="/owner">← OWNER管理</a>・<a href="/owner/growth">成長ダッシュボード</a>
-<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">実際のデータから毎週月曜に自動で作ります。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
+<h1>SNS投稿セット（${esc(pack.week)} の週）</h1><p class="lead">🎬 <a href="/owner/social/video">動画（CM）を作る</a>：台本を書き換えて縦長の動画を作れます。</p><p class="lead">実際のデータから毎週月曜に自動で作ります。下の「今すぐ作る」でいつでも作れます（投稿はしません）。投稿文のリンクには <code>?ref=</code> が付いているので、成長ダッシュボードの「どこから来たか」で効果が分かります。</p>
+<section class="card" id="run"><h2>今すぐ作る<small>最新のデータで画像・動画・投稿文を作り直します（10分ほど）。SNSへの投稿はしません。同じ週の分は上書きされます。</small></h2><button type="button" class="copy" id="run-btn" disabled>今すぐ作る</button> <span class="muted" id="run-msg">状態を確認しています…</span></section>
 <section class="card"><h2>ショート動画（YouTube・TikTok・Instagram 用）</h2>${video ? `<video src="${video}" controls playsinline style="width:216px;border-radius:10px"></video><p class="dl"><a href="${video}" download>動画をダウンロード</a></p>` : '<p class="muted">まだ作られていません（毎週月曜に自動で作ります。GitHub の「SNS weekly pack」から手動でも動かせます）。</p>'}</section>
 <section class="card"><h2>自動投稿の結果</h2>${postRows}</section>
 ${items || '<p class="muted">今週のネタを作れるデータがありません。</p>'}
+${renderPlansSection({ origin: pack.origin })}
+<script>(()=>{const b=document.getElementById("run-btn"),m=document.getElementById("run-msg");let was=false,timer=null;
+const label={success:"成功",failure:"失敗",cancelled:"中止"};
+const show=d=>{if(!d||!d.ok){b.disabled=true;m.textContent=d&&d.error==="GITHUB_TOKEN_REJECTED"?"GitHub の鍵が使えません（SOCIAL_GITHUB_DISPATCH_TOKEN を確認）":"GitHub の状態を読めませんでした";return}
+if(!d.configured){b.disabled=true;m.textContent="未設定：Worker のシークレットに SOCIAL_GITHUB_DISPATCH_TOKEN がありません";return}
+const last=d.last?("前回 "+new Date(d.last.createdAt).toLocaleString("ja-JP")+"："+(d.running?"作成中":(label[d.last.conclusion]||d.last.conclusion||d.last.status))):"まだ実行がありません";
+b.disabled=d.running;m.innerHTML="";m.append(last);if(d.last&&d.last.url&&String(d.last.url).startsWith("https://github.com/")){const a=document.createElement("a");a.href=d.last.url;a.target="_blank";a.rel="noopener";a.textContent=" 詳細";m.append(a)}
+if(was&&!d.running&&d.last&&d.last.conclusion==="success"){m.append("（できました。再読み込みすると反映されます）")}
+was=d.running;clearTimeout(timer);if(d.running)timer=setTimeout(load,30000)};
+const load=()=>fetch("/owner/social/run",{credentials:"same-origin"}).then(r=>r.json()).then(show).catch(()=>show(null));
+b.addEventListener("click",async()=>{b.disabled=true;m.textContent="依頼しています…";try{const r=await fetch("/owner/social/run",{method:"POST",credentials:"same-origin"});const d=await r.json();
+if(d.ok){m.textContent="作成を始めました。10分ほどで終わります";was=true;timer=setTimeout(load,15000)}else if(d.error==="ALREADY_RUNNING"){m.textContent="いま作成中です";was=true;timer=setTimeout(load,30000)}else{show({ok:false,error:d.error})}}catch(e){show(null)}});
+load()})()</script>
 <script>document.querySelectorAll(".copy").forEach(b=>b.addEventListener("click",async()=>{const t=b.closest(".cap").querySelector("textarea");try{await navigator.clipboard.writeText(t.value);b.textContent="コピーしました"}catch(e){t.select();document.execCommand("copy");b.textContent="コピーしました"}setTimeout(()=>{b.textContent="コピー"},1500)}));</script>
 </main></body></html>`;
 }

@@ -36,7 +36,7 @@ test("配線：鍵が付いていればCookieは見ない。使うたびに監�
   const fn = index.slice(index.indexOf("async function getAuthenticatedUser("), index.indexOf("async function getAuthenticatedUser(") + 600);
   assert.match(fn, /const agent = agentTokenState\(request, env\);/);
   assert.match(fn, /if \(!agent \|\| agentRateLimited\(\) \|\| !env\.DB\) return null;/);
-  assert.match(fn, /await auditAgentRequest\(request, env, writeOwnerAuditLog\);/);
+  assert.match(fn, /await auditAgentRequest\(request, env, writeOwnerAuditLog, agent\);/);
   resetAgentRate();
   const worker = (await import("../src/index.js")).default;
   const audits = [];
@@ -52,4 +52,19 @@ test("配線：鍵が付いていればCookieは見ない。使うたびに監�
   const before = audits.length;
   await worker.fetch(new Request("https://eagleeye-ks.com/swordland/refresh-events", { method: "POST", headers: { authorization: "Bearer " + TOKEN, origin: "https://eagleeye-ks.com" } }), env, ctx);
   assert.ok(audits.slice(before).some(a => a.includes("AGENT_REQUEST")), "書き換えの操作は監査ログに記録");
+});
+
+test("JARVIS 専用の鍵：Claude と同じ範囲で通り、jarvis-agent として扱う。鍵が違えば通らない", async () => {
+  const { JARVIS_AGENT_USER, auditAgentRequest } = await import("../src/owner-agent.js");
+  const J = "j".repeat(40);
+  const env = { OWNER_READONLY_TOKEN: TOKEN, JARVIS_AGENT_TOKEN: J };
+  const ok = agentTokenState(req("/swordland/refresh-events", "POST", J), env);
+  assert.equal(ok.user_id, "jarvis-agent"); assert.equal(ok.role, "OWNER"); assert.equal(ok, JARVIS_AGENT_USER);
+  assert.equal(agentTokenState(req("/api/owner/users/role", "POST", J), env), null, "危ない操作は JARVIS も拒否");
+  assert.equal(agentTokenState(req("/swordland", "GET", TOKEN), env).user_id, "claude-agent", "Claude 用の鍵はそのまま");
+  assert.equal(agentTokenState(req("/swordland", "GET", J), { OWNER_READONLY_TOKEN: TOKEN }), undefined, "JARVIS の鍵が未設定なら通らない");
+  assert.equal(agentTokenState(req("/swordland", "GET", "short"), { JARVIS_AGENT_TOKEN: "short" }), undefined, "短い鍵は使えない");
+  const logged = [];
+  await auditAgentRequest(req("/api/admin/announcements", "POST", J), env, (e, user, action) => logged.push([user.user_id, action]), ok);
+  assert.deepEqual(logged, [["jarvis-agent", "AGENT_REQUEST"]], "監査ログには JARVIS として残る");
 });

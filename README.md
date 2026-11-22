@@ -144,3 +144,5 @@ AI-assisted development tools are used as implementation support. Product direct
 ---
 
 技術的な設計判断と実装上の課題は [`docs/ENGINEERING_CASE_STUDY.md`](./docs/ENGINEERING_CASE_STUDY.md) にまとめています。
+
+このプロジェクトは AI 秘書 JARVIS と連携しています

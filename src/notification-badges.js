@@ -1,3 +1,4 @@
+import { normalizeMediaList, mediaHtml, NEWS_MEDIA_LIMITS } from "./news-media.js";
 // Navigation badges that behave like notifications: they show only what is new
 // since the user last looked, and disappear once seen.
 //   watch: changes of watched players since the user last opened the watchlist
@@ -26,6 +27,8 @@ export async function ensureBadgeSchema(db) {
       if (!have.has("publish_at")) add.push("ALTER TABLE announcements ADD COLUMN publish_at INTEGER");
       if (!have.has("reviewed_by")) add.push("ALTER TABLE announcements ADD COLUMN reviewed_by TEXT");
       if (!have.has("reviewed_at")) add.push("ALTER TABLE announcements ADD COLUMN reviewed_at INTEGER");
+      // 画像・動画（R2 のファイル名の一覧・JSON）。2026-11-17
+      if (!have.has("media_json")) add.push("ALTER TABLE announcements ADD COLUMN media_json TEXT");
       for (const sql of add) await db.prepare(sql).run();
       if (add.length) await db.prepare("UPDATE announcements SET publish_at = created_at WHERE publish_at IS NULL").run();
     }).catch(error => { schemaReady = null; throw error; });
@@ -83,7 +86,8 @@ export async function markBadgeSeen(db, discordId, kind, now = Math.floor(Date.n
   return true;
 }
 
-const COLS = "id, title, body, created_at, created_by, status, COALESCE(publish_at, created_at) AS publish_at, reviewed_by, reviewed_at";
+const COLS = "id, title, body, created_at, created_by, status, COALESCE(publish_at, created_at) AS publish_at, reviewed_by, reviewed_at, media_json";
+export function parseMedia(item) { try { return normalizeMediaList(JSON.parse(item?.media_json || "[]")); } catch { return []; } }
 
 // Published and due: what every signed-in user sees.
 export async function listAnnouncements(db, limit = 30, now = Math.floor(Date.now() / 1000)) {
@@ -105,10 +109,11 @@ export async function listQueuedAnnouncements(db, auth, now = Math.floor(Date.no
   return rows?.results || [];
 }
 
-export async function createAnnouncement(db, { title, body, createdBy = null, role = "OWNER", publishAt = null, now = Math.floor(Date.now() / 1000) }) {
+export async function createAnnouncement(db, { title, body, createdBy = null, role = "OWNER", publishAt = null, media = [], now = Math.floor(Date.now() / 1000) }) {
   const t = String(title || "").trim().slice(0, 120);
   const b = String(body || "").trim().slice(0, 4000);
-  if (!t || !b) { const e = new Error("TITLE_AND_BODY_REQUIRED"); e.code = "TITLE_AND_BODY_REQUIRED"; throw e; }
+  const m = normalizeMediaList(media);
+  if (!t || (!b && !m.length)) { const e = new Error("TITLE_AND_BODY_REQUIRED"); e.code = "TITLE_AND_BODY_REQUIRED"; throw e; }
   let at = publishAt == null || publishAt === "" ? now : Math.floor(Number(publishAt));
   if (!Number.isFinite(at)) { const e = new Error("PUBLISH_AT_INVALID"); e.code = "PUBLISH_AT_INVALID"; throw e; }
   if (at < now) at = now;
@@ -117,8 +122,8 @@ export async function createAnnouncement(db, { title, body, createdBy = null, ro
   const status = String(role || "").toUpperCase() === "OWNER" ? "PUBLISHED" : "PENDING";
   await ensureBadgeSchema(db);
   const id = crypto.randomUUID();
-  await db.prepare("INSERT INTO announcements (id, title, body, created_at, created_by, status, publish_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, t, b, now, createdBy, status, at).run();
-  return { id, title: t, body: b, created_at: now, status, publish_at: at };
+  await db.prepare("INSERT INTO announcements (id, title, body, created_at, created_by, status, publish_at, media_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, t, b, now, createdBy, status, at, m.length ? JSON.stringify(m) : null).run();
+  return { id, title: t, body: b, created_at: now, status, publish_at: at, media: m };
 }
 
 // OWNER only (enforced by the caller). Approving publishes at the requested
@@ -147,33 +152,33 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-export function renderNewsPage(items, { canPost = false, isOwner = false, queued = [], viewerId = null, unreadSince = null } = {}) {
+export function renderNewsPage(items, { canPost = false, isOwner = false, queued = [], viewerId = null, unreadSince = null, publicView = false, origin = "" } = {}) {
   const fmt = at => new Date(Number(at) * 1000).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const canDelete = item => canPost && (isOwner || String(item.created_by || "") === String(viewerId || ""));
   const list = items.length ? items.map(item => {
     const at = item.publish_at ?? item.created_at;
     const isNew = unreadSince != null && Number(at) > Number(unreadSince);
-    return '<article class="news-item"><div class="news-head"><h2>' + (isNew ? '<span class="news-new">NEW</span>' : "") + escapeHtml(item.title) + '</h2><time>' + escapeHtml(fmt(at)) + '</time></div><p>' + escapeHtml(item.body).replace(/\n/g, "<br>") + '</p>' +
+    return '<article class="news-item"><div class="news-head"><h2>' + (isNew ? '<span class="news-new">NEW</span>' : "") + escapeHtml(item.title) + '</h2><time>' + escapeHtml(fmt(at)) + '</time></div><p>' + escapeHtml(item.body).replace(/\n/g, "<br>") + '</p>' + mediaHtml(parseMedia(item), escapeHtml) +
       (canDelete(item) ? '<button type="button" class="news-delete" data-id="' + escapeHtml(item.id) + '">削除</button>' : "") + '</article>';
   }).join("") : '<div class="news-empty">お知らせはまだありません。</div>';
   const statusLabel = item => item.status === "PENDING" ? '<span class="news-tag pending">承認待ち</span>' : item.status === "REJECTED" ? '<span class="news-tag rejected">却下</span>' : '<span class="news-tag scheduled">予約</span>';
   const queue = canPost && queued.length ? '<section class="news-queue"><h2>予約・承認待ち</h2>' + queued.map(item =>
-    '<article class="news-item"><div class="news-head"><h2>' + statusLabel(item) + escapeHtml(item.title) + '</h2><time>公開 ' + escapeHtml(fmt(item.publish_at)) + '</time></div><p>' + escapeHtml(item.body).replace(/\n/g, "<br>") + '</p><div class="news-actions">' +
+    '<article class="news-item"><div class="news-head"><h2>' + statusLabel(item) + escapeHtml(item.title) + '</h2><time>公開 ' + escapeHtml(fmt(item.publish_at)) + '</time></div><p>' + escapeHtml(item.body).replace(/\n/g, "<br>") + '</p>' + mediaHtml(parseMedia(item), escapeHtml) + '<div class="news-actions">' +
       (isOwner && item.status === "PENDING" ? '<button type="button" class="news-approve action primary" data-id="' + escapeHtml(item.id) + '">承認</button><button type="button" class="news-reject" data-id="' + escapeHtml(item.id) + '">却下</button>' : "") +
       (canDelete(item) ? '<button type="button" class="news-delete" data-id="' + escapeHtml(item.id) + '">削除</button>' : "") + '</div></article>').join("") + '</section>' : "";
-  const form = canPost ? '<section class="news-post"><h2>お知らせを投稿（管理者）</h2><input id="news-title" maxlength="120" placeholder="タイトル"><textarea id="news-body" rows="5" maxlength="4000" placeholder="本文"></textarea><label class="news-label">公開日時（空欄なら今すぐ）<input id="news-at" type="datetime-local"></label>' +
+  const form = canPost ? '<section class="news-post"><h2>お知らせを投稿（管理者）</h2><input id="news-title" maxlength="120" placeholder="タイトル"><textarea id="news-body" rows="5" maxlength="4000" placeholder="本文"></textarea><label class="news-label">画像・動画（画像は' + NEWS_MEDIA_LIMITS.images + '枚まで・各8MB、動画は1本・50MB まで）<input id="news-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime" multiple></label><div id="news-previews" class="news-previews"></div><label class="news-label">公開日時（空欄なら今すぐ）<input id="news-at" type="datetime-local"></label>' +
     (isOwner ? '<p class="news-note">公開されるとDiscordの #📢お知らせ にも流れます。</p>' : '<p class="news-note">ADMINの投稿はOWNERの承認後に公開されます（OWNERにDiscordで通知が届きます）。公開されるとDiscordの #📢お知らせ にも流れます。</p>') +
     '<button type="button" id="news-submit" class="action primary">' + (isOwner ? "投稿する" : "承認を依頼する") + '</button><div id="news-msg" class="news-msg"></div></section>' : "";
-  const script = canPost ? '<script>(function(){var msg=document.getElementById("news-msg");function call(p){return fetch("/api/admin/announcements",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().catch(function(){return {ok:false}})})}' +
+  const script = canPost ? '<script>(function(){var msg=document.getElementById("news-msg");var MEDIA=[],UPLOADING=0;var files=document.getElementById("news-files"),pv=document.getElementById("news-previews");function drawPv(){pv.innerHTML="";MEDIA.forEach(function(m,i){var d=document.createElement("div");d.className="news-pv";var el=document.createElement(m.kind==="video"?"video":"img");el.src="/news/media/"+m.file;if(m.kind==="video"){el.muted=true;el.playsInline=true}var x=document.createElement("button");x.type="button";x.textContent="×";x.onclick=function(){MEDIA.splice(i,1);drawPv()};d.appendChild(el);d.appendChild(x);pv.appendChild(d)})}files.onchange=function(){Array.prototype.forEach.call(files.files,function(f){UPLOADING++;msg.textContent="アップロード中…（"+f.name+"）";fetch("/api/admin/announcements/media",{method:"POST",credentials:"same-origin",headers:{"content-type":f.type||"application/octet-stream"},body:f}).then(function(r){return r.json()}).then(function(d){if(d.ok){MEDIA.push({file:d.file,kind:d.kind});drawPv();msg.textContent=""}else msg.textContent="アップロードできませんでした："+(d.message||d.error||"")}).catch(function(){msg.textContent="アップロードできませんでした"}).finally(function(){UPLOADING--})});files.value=""};function call(p){return fetch("/api/admin/announcements",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify(p)}).then(function(r){return r.json().catch(function(){return {ok:false}})})}' +
     'var ERR={PUBLISH_AT_TOO_FAR:"公開日時は1年以内にしてください。",PUBLISH_AT_INVALID:"公開日時が正しくありません。",TITLE_AND_BODY_REQUIRED:"タイトルと本文を入力してください。"};' +
-    'document.getElementById("news-submit").onclick=function(){var t=document.getElementById("news-title").value.trim(),b=document.getElementById("news-body").value.trim(),v=document.getElementById("news-at").value;if(!t||!b){msg.textContent=ERR.TITLE_AND_BODY_REQUIRED;return}var at=v?Math.floor(new Date(v).getTime()/1000):null;msg.textContent="送信中…";call({action:"create",title:t,body:b,publish_at:at}).then(function(d){if(d.ok)location.reload();else msg.textContent="失敗しました："+(ERR[d.error]||d.error||"")})};' +
+    'document.getElementById("news-submit").onclick=function(){var t=document.getElementById("news-title").value.trim(),b=document.getElementById("news-body").value.trim(),v=document.getElementById("news-at").value;if(!t||(!b&&!MEDIA.length)){msg.textContent=ERR.TITLE_AND_BODY_REQUIRED;return}if(UPLOADING){msg.textContent="画像・動画のアップロードが終わるまで待ってください。";return}var at=v?Math.floor(new Date(v).getTime()/1000):null;msg.textContent="送信中…";call({action:"create",title:t,body:b,publish_at:at,media:MEDIA}).then(function(d){if(d.ok)location.reload();else msg.textContent="失敗しました："+(ERR[d.error]||d.error||"")})};' +
     'function bind(sel,action,question){document.querySelectorAll(sel).forEach(function(b){b.onclick=function(){if(question&&!confirm(question))return;call({action:action,id:b.dataset.id}).then(function(d){if(d.ok)location.reload();else alert("失敗しました："+(d.error||""))})}})}' +
     'bind(".news-delete","delete","このお知らせを削除しますか？");bind(".news-approve","approve","承認して公開しますか？（公開日時を過ぎていればすぐ公開）");bind(".news-reject","reject","却下しますか？");})();</script>' : "";
-  return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お知らせ | EagleEye</title><meta name="description" content="EagleEye（キングショット非公式データサービス）の新機能・メンテナンス・更新情報のお知らせ。"><style>' +
+  return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お知らせ | EagleEye</title><meta name="description" content="EagleEye（キングショット非公式データサービス）の新機能・メンテナンス・更新情報のお知らせ。">' + (publicView && origin ? '<link rel="canonical" href="' + escapeHtml(origin) + '/news">' : '') + '<style>' +
     'body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:0 auto;padding:20px 16px calc(96px + env(safe-area-inset-bottom))}.back{color:var(--ee-cyan);text-decoration:none;font-size:13px}.eyebrow{margin-top:14px;color:var(--ee-cyan);font-size:11px;font-weight:900;letter-spacing:.1em}h1{margin:4px 0 14px;font-size:26px}' +
     '.news-item{margin:10px 0;padding:14px 16px;border:1px solid var(--ee-border-soft);border-radius:var(--ee-radius-lg,17px);background:var(--ee-panel)}.news-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.news-head h2{margin:0;font-size:16px}.news-head time{flex:0 0 auto;font-size:11px;color:var(--ee-subtext)}.news-item p{margin:8px 0 0;font-size:14px;line-height:1.7;color:var(--ee-text)}' +
     '.news-new{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;font-weight:900;vertical-align:2px}.news-empty{padding:20px;border:1px dashed var(--ee-border-soft);border-radius:14px;color:var(--ee-subtext);text-align:center}' +
     '.news-post,.news-queue{margin:18px 0;padding:14px;border:1px solid var(--ee-border-soft);border-radius:14px;background:var(--ee-panel)}.news-queue{background:var(--ee-panel-deep)}.news-post h2,.news-queue>h2{margin:0 0 8px;font-size:14px}.news-post input,.news-post textarea{box-sizing:border-box;width:100%;margin:4px 0 8px;padding:10px;border:1px solid var(--ee-border);border-radius:10px;font:inherit}.news-label{display:block;font-size:12px;color:var(--ee-subtext)}.news-note{font-size:12px;color:var(--ee-subtext);margin:0 0 8px}.news-msg{font-size:12px;color:var(--ee-subtext);margin-top:6px}' +
-    '.news-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.news-delete,.news-reject,.news-approve{font-size:12px;padding:6px 12px}.news-tag{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:900;vertical-align:2px}.news-tag.pending{background:#f59e0b;color:#1f1300}.news-tag.scheduled{background:var(--ee-cyan);color:var(--ee-on-accent,#062033)}.news-tag.rejected{background:#64748b;color:#fff}' +
-    '</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">お知らせ</div><h1>お知らせ</h1>' + form + queue + list + '</main>' + script + '</body></html>';
+    '.news-media{margin-top:10px;display:grid;gap:8px}.news-media video{width:100%;max-height:520px;border-radius:12px;background:#000}.news-imgs{display:grid;gap:6px;grid-template-columns:repeat(2,minmax(0,1fr))}.news-imgs.n1{grid-template-columns:1fr}.news-imgs img{width:100%;height:100%;max-height:420px;object-fit:cover;border-radius:10px;display:block}.news-imgs.n1 img{object-fit:contain;max-height:520px;background:var(--ee-panel-deep)}.news-previews{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.news-pv{position:relative;width:88px;height:88px}.news-pv img,.news-pv video{width:88px;height:88px;object-fit:cover;border-radius:8px}.news-pv button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:#0009;color:#fff;font-weight:800}.news-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.news-delete,.news-reject,.news-approve{font-size:12px;padding:6px 12px}.news-tag{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:900;vertical-align:2px}.news-tag.pending{background:#f59e0b;color:#1f1300}.news-tag.scheduled{background:var(--ee-cyan);color:var(--ee-on-accent,#062033)}.news-tag.rejected{background:#64748b;color:#fff}' +
+    '</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">お知らせ</div><h1>お知らせ</h1>' + (publicView ? '<p class="news-login">EagleEye の新機能・更新情報です。<a href="/login?next=%2Fnews">ログイン</a>すると、まだ読んでいないお知らせに印が付きます。</p>' : '') + form + queue + list + '</main>' + script + '</body></html>';
 }

@@ -102,5 +102,5 @@ test("運営者情報：運営・開発チーム（1524サーバー・司令部�
   assert.match(about, /<b>設計・主要エンジニア<\/b>：BJにゃん/);
   assert.match(about, /<b>エンジニア<\/b>：あまね/);
   assert.match(about, /<b>発足メンバー<\/b>：シバ犬・はんぺん・いちくん/);
-  assert.match(about, /最終更新日：2026年11月8日/);
+  assert.match(about, /最終更新日：2026年11月16日/);
 });

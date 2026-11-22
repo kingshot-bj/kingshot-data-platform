@@ -1,9 +1,32 @@
 name: Feature video
 
-# 機能紹介の縦長動画（字幕つき・1080×1920）を作って、Artifact に置く。手動で動かす。
-# ログインが必要な場面（プレイヤー詳細・比較・同盟比較）は、Secrets に EAGLEEYE_VIDEO_TOKEN があるときだけ撮る（無ければ飛ばす）。
+# 機能紹介の縦長動画（字幕つき・1080×1920）を作って Artifact に置く。手動で動かす（iPhone の GitHub アプリの「Run workflow」からも動かせる）。
+# 場面は scripts/social/scenes/<set>.json。ログインが必要な場面は、Secrets に EAGLEEYE_VIDEO_TOKEN があるときだけ撮る（無ければ飛ばす）。
+# 撮影中は広告・アクセス記録の通信を止め、サーバーは裏で MightPulse に取りに行かない（API Pool を使わない）。
 on:
   workflow_dispatch:
+    inputs:
+      scene_set:
+        description: "場面セット"
+        type: choice
+        options: [features, alliance-compare, governor-duel, duel-data, duel-short, duel-howto, skins, share-card]
+        default: features
+      bgm:
+        description: "BGMのファイル（リポジトリ内のパス。空ならBGMなし）"
+        type: string
+        default: "scripts/social/bgm/battle.mp3"
+      fade:
+        description: "場面の切り替えのフェード（秒）"
+        type: string
+        default: "0.4"
+      scenes_json:
+        description: "（EagleEye の画面から）台本の JSON。入っていれば scene_set の代わりに使う"
+        type: string
+        default: ""
+      video_id:
+        description: "（EagleEye の画面から）R2 に保存するときの名前。空なら R2 に保存しない"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -18,20 +41,38 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install fonts and ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk ffmpeg
-      - name: Install Playwright (Chromium)
-        run: npm install --no-save --no-package-lock playwright@1.48.2 && npx playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-media
       - name: Build the video
         env:
           EAGLEEYE_VIDEO_TOKEN: ${{ secrets.EAGLEEYE_VIDEO_TOKEN }}
-        run: node scripts/social/feature-video.mjs feature-video-out
+          SCENE_SET: ${{ inputs.scene_set }}
+          BGM: ${{ inputs.bgm }}
+          FADE: ${{ inputs.fade }}
+          SCENES_JSON: ${{ inputs.scenes_json }}
+        run: |
+          args=(feature-video-out --set "$SCENE_SET" --fade "$FADE")
+          if [ -n "$BGM" ]; then args+=(--bgm "$BGM"); fi
+          # 画面で書いた台本は環境変数からファイルに書く（シェルに展開しない）。中身はスクリプトが normalizeSceneSet で検証する。
+          if [ -n "$SCENES_JSON" ]; then printf '%s' "$SCENES_JSON" > "$RUNNER_TEMP/scenes.json"; args+=(--scenes-file "$RUNNER_TEMP/scenes.json"); fi
+          node scripts/social/feature-video.mjs "${args[@]}"
       - name: Keep the video as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: feature-video
+          name: feature-video-${{ inputs.video_id || inputs.scene_set }}
           path: feature-video-out
           retention-days: 30
+      # EagleEye の画面（/owner/social/video）から頼まれたときは R2 に保存して、画面で再生・ダウンロードできるようにする。
+      - name: Save to R2 (shown on /owner/social/video)
+        if: inputs.video_id != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VIDEO_ID: ${{ inputs.video_id }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VIDEO_ID" | grep -Eq '^[0-9]{8}-[0-9]{6}-[a-z0-9][a-z0-9-]{0,39}$'; then echo "::error::video_id が正しくありません"; exit 1; fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::warning::Secrets に CLOUDFLARE_R2_API_TOKEN がないので R2 に保存しません（Artifact には残ります）"; exit 0; fi
+          npm install --global wrangler@4 >/dev/null
+          mp4=$(ls feature-video-out/*.mp4 | head -n 1)
+          wrangler r2 object put "eagleeye-archive/social/videos/out/$VIDEO_ID/video.mp4" --file "$mp4" --content-type video/mp4 --remote
+          wrangler r2 object put "eagleeye-archive/social/videos/out/$VIDEO_ID/caption.txt" --file feature-video-out/caption.txt --content-type "text/plain; charset=utf-8" --remote

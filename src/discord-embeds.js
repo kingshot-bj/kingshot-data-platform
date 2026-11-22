@@ -49,8 +49,8 @@ export function kvkMatchupEmbed({ season, kid, opponent, opponentName, power, op
   }
   const fields = [];
   if (power != null || opponentPower != null) {
-    fields.push({ name: `王国${kid}`, value: `総戦力 ${compactScore(power)}`, inline: true });
-    fields.push({ name: `王国${opponent}${opponentName ? "（" + opponentName + "）" : ""}`, value: `総戦力 ${compactScore(opponentPower)}`, inline: true });
+    fields.push({ name: `王国${kid}`, value: `総力 ${compactScore(power)}`, inline: true });
+    fields.push({ name: `王国${opponent}${opponentName ? "（" + opponentName + "）" : ""}`, value: `総力 ${compactScore(opponentPower)}`, inline: true });
   }
   fields.push({ name: "秘境の試練の比較", value: "両国のデータがそろったら、このスレッドでお知らせします。" });
   return base("matchup", { title: `⚔️ KvK シーズン${season} 組み合わせ発表`, description: `王国${kid} の対戦相手は **王国${opponent}**${opponentName ? "（" + opponentName + "）" : ""} です。`, fields, author: `KvK通知 · 王国${kid}`, origin, url: kvkUrl(origin, kid) });

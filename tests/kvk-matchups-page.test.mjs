@@ -51,11 +51,18 @@ test("matchups: pairs once, Mystic tally decides order; no KvK scores, no total-
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/kvk\/s23">/);
   assert.ok(html.indexOf('href="/k/3"') < html.indexOf('href="/k/1"'), "6-0 before 4-1");
   assert.match(html, /<span class="w">4<\/span>-<span class="">1<\/span>/);
-  assert.match(html, /href="\/kvk\?kid=1" rel="nofollow">2位以降を見る<\/a>/, "stage detail behind login（検索エンジンは辿らない）");
+  assert.match(html, /href="\/kvk\?kid=1" rel="nofollow">スコアと詳細を見る<\/a>/, "stage detail behind login（検索エンジンは辿らない）");
+  // 2026-11-15：「6ステージ中」「2位以降を見る」が KvK の日程のことだと誤解された。秘境の試練の種類と1位どうしの比較だと書く。
+  assert.match(html, /<small>秘境の試練<br>\d種類の1位で比較<\/small>/);
+  assert.doesNotMatch(html, /ステージ中|2位以降を見る/);
+  assert.match(html, /KvKの日程とは関係ありません/);
   assert.doesNotMatch(html, /大差|やや差あり/, "no verdicts from total power");
-  assert.match(html, /総戦力 .*（参考）/);
+  assert.match(html, /総力 .*（参考）/);
   assert.match(html, /不戦/);
   assert.doesNotMatch(html, /score|スコア \d/i, "no KvK scores");
+  // 2026-11-16：相手のいない王国まで「組」に数えて 1,227組 と出ていた（実際は 1,219組）。
+  assert.match(html, /<span>組み合わせ <b>2<\/b>組<\/span><span>相手なし <b>1<\/b>王国<\/span>/);
+  assert.match(html, /全2組の組み合わせ/);
 });
 
 test("wiring: routes, sitemap, links, share card", () => {
@@ -87,7 +94,7 @@ test("軽量化：HTMLで出すのは最初の60組だけ、残りは小さな�
   assert.equal(data.length, 1227);
   assert.deepEqual(data.find(r => r[0] === 1), [1, "86.5B", 600, 2, "89.7B", 560, 0, 6, 6]);
   // 画面側で作るHTMLもサーバーと同じ形
-  assert.match(kvkPairHtml([1, "87B", 600, 2, "90B", 560, 4, 1, 6]), /<a class="sd up" href="\/k\/1"><b>王国 1<\/b><small>総戦力 87B（参考）・開設600日<\/small><\/a><div class="vs"><span>VS<\/span><b class="tally"><span class="w">4<\/span>-<span class="">1<\/span><\/b><small>6ステージ中<\/small><a class="more" href="\/kvk\?kid=1" rel="nofollow">2位以降を見る<\/a>/);
+  assert.match(kvkPairHtml([1, "87B", 600, 2, "90B", 560, 4, 1, 6]), /<a class="sd up" href="\/k\/1"><b>王国 1<\/b><small>総力 87B（参考）・開設600日<\/small><\/a><div class="vs"><span>VS<\/span><b class="tally"><span class="w">4<\/span>-<span class="">1<\/span><\/b><small>秘境の試練<br>6種類の1位で比較<\/small><a class="more" href="\/kvk\?kid=1" rel="nofollow">スコアと詳細を見る<\/a>/);
   assert.match(kvkPairHtml([5, "10B", null, null, null, null, null, null, 0]), /不戦/);
   assert.match(kvkPairHtml([1, "87B", 600, 2, "90B", 560, null, null, 0]), /集計中/);
   const script = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));

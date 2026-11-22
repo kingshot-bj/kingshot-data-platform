@@ -1087,7 +1087,9 @@ export async function getCloudflareD1Usage(env, { now = new Date(), includeQuery
   };
 }
 
-export function cloudflareUsageLabel(status) {
+// paid：Workers Paid（$5枠）。込み枠を超えても止まらず従量課金になるだけなので「上限到達」ではなく「込み枠超過」（2026-11-16）。
+export function cloudflareUsageLabel(status, { paid = false } = {}) {
+  if (paid && (status === "EXHAUSTED" || status === "CRITICAL")) return { label: status === "EXHAUSTED" ? "込み枠超過（従量課金）" : "込み枠に近い", tone: "warn", icon: "!" };
   return {
     OK: { label: "正常", tone: "good", icon: "✓" },
     WARNING: { label: "警告", tone: "warn", icon: "!" },

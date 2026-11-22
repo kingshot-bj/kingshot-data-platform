@@ -1,3 +1,4 @@
+import { loadArchivedKingdomRankings } from "./kingdom-ranking-archive.js";
 // 同盟の公開ページ（/a/{王国}/{同盟ID}）と、そのための全王国の同盟一覧の収集。
 // ・収集は「余裕がある日だけ」：今月のD1の読み書きが日割りの枠の8割以内、APIキーの使用が直近24時間で3割未満、
 //   前回の一巡から7日以上。条件を満たした時間だけ、1回100王国ずつ進める（既存の1時間ごとの処理の中で動く。新しいcronはない）。
@@ -119,7 +120,7 @@ export async function runAllianceSweep(env, { collect, extractEntries, d1, api, 
 
 // ---- 公開ページ ----
 
-export async function loadPublicAlliance(db, kid, aid) {
+export async function loadPublicAlliance(db, kid, aid, { archive = null } = {}) {
   await ensureAllianceDirectorySchema(db);
   const id = normAid(aid);
   if (!Number.isInteger(kid) || kid < 1 || !/^\d{1,20}$/.test(id)) return null;
@@ -130,9 +131,22 @@ export async function loadPublicAlliance(db, kid, aid) {
     db.prepare("SELECT rank, nick_name FROM kingdom_ranking_current WHERE kid = ? AND board = 'personal_power' AND target_type = 'PLAYER' AND (aid = ? OR aid = ?) ORDER BY rank ASC LIMIT 100").bind(kid, id, id + ".0").all().catch(() => ({ results: [] }))
   ]);
   const byBoard = Object.fromEntries((ranked?.results || []).map(r => [r.board, r]));
-  const power = byBoard.alliance_power, kills = byBoard.alliance_kills;
+  let power = byBoard.alliance_power, kills = byBoard.alliance_kills;
+  let memberRows = members?.results || [], peerRows = peers?.results || [];
+  // 王国ページは R2 に移したランキングからも同盟へリンクするので、同盟ページも R2 の写しを読む（リンク切れの404をなくす・2026-11-16）。
+  if (!dir && !power && archive) {
+    const arch = await loadArchivedKingdomRankings(archive, kid).catch(() => null);
+    const rows = arch?.rows || [];
+    const same = r => [r.target_id, r.aid].some(v => normAid(v) === id);
+    power = rows.find(r => r.board === "alliance_power" && r.target_type === "ALLIANCE" && same(r)) || null;
+    kills = rows.find(r => r.board === "alliance_kills" && r.target_type === "ALLIANCE" && same(r)) || null;
+    if (power) {
+      power = { ...power, observed_at: power.observed_at || arch.lastUpdatedAt };
+      memberRows = rows.filter(r => r.board === "personal_power" && r.target_type === "PLAYER" && normAid(r.aid) === id).sort((a, b) => Number(a.rank) - Number(b.rank));
+      peerRows = rows.filter(r => r.board === "alliance_power" && r.target_type === "ALLIANCE").sort((a, b) => Number(a.rank) - Number(b.rank)).slice(0, 20).map(r => ({ aid: r.target_id ?? r.aid, abbr: r.abbr, name: r.name, power: r.score, rank: r.rank }));
+    }
+  }
   if (!dir && !power) return null;
-  const memberRows = members?.results || [];
   return {
     kid, aid: id,
     abbr: power?.abbr || dir?.abbr || null,
@@ -146,7 +160,7 @@ export async function loadPublicAlliance(db, kid, aid) {
     // 名前を出すのは王国の上位10人に入っている人だけ
     topMembers: memberRows.filter(m => Number(m.rank) <= 10).map(m => ({ rank: Number(m.rank), name: String(m.nick_name || "") })),
     hasMemberData: memberRows.length > 0,
-    peers: (peers?.results || []).filter(p => normAid(p.aid) !== id).slice(0, 12)
+    peers: peerRows.filter(p => normAid(p.aid) !== id).slice(0, 12)
   };
 }
 
@@ -177,7 +191,8 @@ ${peers}
     { "@type": "ListItem", position: 2, name: "王国 " + a.kid, item: origin + "/k/" + a.kid },
     { "@type": "ListItem", position: 3, name: label, item: canonical }
   ] };
-  return shell({ title, description, canonical, body, jsonLd, origin });
+  // 同盟ページは中身が少ない（数字数個と上位10人の名前）ので、検索に載せない（noindex＝広告タグも入らない）。ページは今までどおり見られる（2026-11-16・AdSense の品質対応）。
+  return shell({ title, description, canonical, body, jsonLd, origin, noindex: true });
 }
 
 // サイトマップ：各王国の上位10同盟だけ（索引 rank,kid,aid だけで読む）。

@@ -108,7 +108,16 @@ export function compactPower(v) {
 const jst = sec => sec ? new Date(sec * 1000 + 9 * 3600 * 1000).toISOString().slice(5, 16).replace("T", " ") : "—";
 
 // 画面。alliances は loadAllianceForCompare の結果の配列。
-export function renderAllianceComparePage({ alliances = [], targets = [], top = ALLIANCE_COMPARE_DEFAULT_TOP, message = "", shareHtml = "" } = {}) {
+// 「最新を取得」ボタン。押すと POST（同じ URL）→ メンバー表は10分・秘境の試練は1時間より古いものだけ取り直して戻ってくる。
+function refreshBlock(targets, top, refreshed, ownerRefresh = false) {
+  const q = new URLSearchParams();
+  for (const t of targets) q.append("a", `${t.kid}:${t.tag}`);
+  if (ALLIANCE_COMPARE_TOP_OPTIONS.includes(top) && top !== ALLIANCE_COMPARE_DEFAULT_TOP) q.set("top", String(top));
+  const done = refreshed ? `<span class="note">メンバー表を取り直しました。秘境の試練は裏で取得中です。1〜2分後に再読み込みすると反映されます。</span>` : ownerRefresh ? `<span class="note">オーナーは毎回すべて取り直します（API Pool を使います）。</span>` : `<span class="note">メンバー表は10分、秘境の試練は1時間より古いものだけ取り直します。</span>`;
+  return `<form class="card ac-refresh" method="post" action="/alliance/compare?${esc(q.toString())}" onsubmit="var b=this.querySelector('button');b.disabled=true;b.textContent='取得中…'"><button type="submit">最新を取得</button>${done}</form>`;
+}
+
+export function renderAllianceComparePage({ alliances = [], targets = [], top = ALLIANCE_COMPARE_DEFAULT_TOP, message = "", shareHtml = "", refreshed = false, ownerRefresh = false } = {}) {
   const found = alliances.filter(a => !a.error);
   const inputs = Array.from({ length: ALLIANCE_COMPARE_MAX }, (_, i) => {
     const t = targets[i] || {};
@@ -130,11 +139,13 @@ h1{font-size:22px;margin:6px 0 4px}.lead{font-size:13px;color:var(--ee-subtext,#
 .tbl{width:100%;border-collapse:separate;border-spacing:4px;table-layout:fixed}.tbl th{font-size:11px;color:var(--ee-subtext,#91a7bf);text-align:left;font-weight:700;width:6.5em}.tbl td{background:var(--ee-panel-raised,#172a40);border-radius:9px;padding:8px 6px;text-align:center;font-weight:800;font-size:14px;overflow:hidden;text-overflow:ellipsis}
 .tbl td.best{outline:2px solid var(--ee-cyan,#22d3ee)}.tbl thead td{background:none;font-size:13px;line-height:1.3}.tbl thead small{display:block;font-size:10px;color:var(--ee-subtext,#91a7bf);font-weight:600}
 .mem{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mem small{display:block;font-size:11px;color:var(--ee-subtext,#91a7bf)}
+.ac-refresh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.ac-refresh button{padding:9px 14px;border-radius:10px;border:1px solid var(--ee-cyan,#22d3ee);background:transparent;color:var(--ee-cyan,#22d3ee);font:800 13px system-ui}.ac-refresh button:disabled{opacity:.6}
 .note{font-size:11px;color:var(--ee-subtext,#91a7bf);line-height:1.6}.warn{font-size:12px;padding:8px 10px;border-radius:9px;border:1px dashed currentColor;margin:8px 0}
 h2{font-size:15px;margin:4px 0 8px}.tbl.mys{margin-bottom:10px}.tbl.mys thead th{color:var(--ee-text,#e8f3ff);font-size:13px;width:auto;padding:4px 2px}.tbl.mys th{width:3em}.tbl.mys td.who{text-align:left;padding-left:10px}.tbl.mys .ord{display:inline-block;min-width:1.6em;color:var(--ee-subtext,#91a7bf);font-weight:700}.tbl.mys small.krk{display:block;font-size:10px;font-weight:600;color:var(--ee-subtext,#91a7bf)}.tbl.mys small.mepos{color:var(--ee-cyan,#22d3ee);font-weight:800}.tbl.mys td.who.me{outline:2px dashed var(--ee-cyan,#22d3ee);outline-offset:-2px}.you{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:var(--ee-cyan,#22d3ee);color:#04202a;margin-right:2px}.tbl td.dim{font-weight:600;font-size:11px;color:var(--ee-subtext,#91a7bf)}
 </style></head><body><main class="wrap"><a href="/kingdom/rankings">← ランキング</a>
 <h1>同盟比較</h1><p class="lead">違う王国の同盟どうしも比べられます（聖剣争奪の下見に）。王国番号と同盟タグを2〜4組入れてください。</p>
 <form class="card ac-form" method="get" action="/alliance/compare" id="acForm">${inputs}<button class="ac-go" type="submit">比べる</button></form>
+${found.length >= 2 ? refreshBlock(targets, top, refreshed, ownerRefresh) : ""}
 ${message ? `<div class="warn">${esc(message)}</div>` : ""}${missing ? `<div class="warn">見つからなかった同盟：${missing}（王国番号と同盟タグを確かめてください）</div>` : ""}
 ${found.length >= 2 ? `<section class="card"><div class="tops" id="acTops" role="group" aria-label="比べる人数">${ALLIANCE_COMPARE_TOP_OPTIONS.map(n => `<button type="button" data-n="${n}">${n ? "上位" + n + "人" : "全員"}</button>`).join("")}</div><div id="acBody"></div>${shareHtml}
 <p class="note">数字は各同盟のメンバー表の「戦力（総合）」です。聖剣争奪のマッチングに使われる部隊戦闘力とは違うので目安として見てください。明るい枠はその行のいちばん上です。</p></section>` : `<p class="note">2つ以上の同盟を入れると比較が表示されます。</p>`}
@@ -166,7 +177,7 @@ var K=A.map(known),T=K.map(function(k){return cur>0?k.slice(0,cur):k});
 var head="<thead><tr><th></th>"+A.map(function(a){return "<td>"+e(a.abbr||"")+"<small>王国"+e(a.kid)+(a.name?" · "+e(a.name):"")+"</small></td>"}).join("")+"</tr></thead>";
 var label=cur>0?"上位"+cur+"人":"全員";
 var h="<table class=\\"tbl\\">"+head+"<tbody>"+
-row("同盟総戦力",A.map(function(a){return a.power}),cp)+
+row("同盟総力",A.map(function(a){return a.power}),cp)+
 row("王国内順位",A.map(function(a){return a.power_rank}),function(v){return v==null?"—":e(v)+"位"},"min")+
 row("メンバー数",A.map(function(a){return (a.members||[]).length||null}),function(v){return v==null?"—":e(v)+"人"})+
 row(label+"の合計",T.map(function(t){return t.length?t.reduce(function(s,m){return s+m.power},0):null}),cp)+

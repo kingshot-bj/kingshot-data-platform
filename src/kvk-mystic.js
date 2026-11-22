@@ -160,6 +160,14 @@ export async function loadMysticSummaries(db, season, kids) {
   await ensureKvkMysticSchema(db);
   const out = new Map();
   const list = [...new Set(kids.map(Number).filter(Number.isFinite))];
+  // シーズンの全組み合わせ（約2,400王国）を90件ずつ順に読むと28回の問い合わせになり、ページの表示に10秒以上かかっていた。
+  // 多いときはシーズン全体を1回で読む（読む行数は同じ）。2026-11-16。
+  if (list.length > 300) {
+    const want = new Set(list);
+    const rows = (await db.prepare("SELECT kid, boards_json FROM kvk_mystic_summary WHERE season = ? AND status = 'OK'").bind(season).all())?.results || [];
+    for (const r of rows) { if (!want.has(Number(r.kid))) continue; try { out.set(Number(r.kid), JSON.parse(r.boards_json)); } catch {} }
+    return out;
+  }
   for (let i = 0; i < list.length; i += 90) {
     const chunk = list.slice(i, i + 90);
     const rows = (await db.prepare(`SELECT kid, boards_json FROM kvk_mystic_summary WHERE season = ? AND status = 'OK' AND kid IN (${chunk.map(() => "?").join(",")})`).bind(season, ...chunk).all())?.results || [];
@@ -204,4 +212,23 @@ async function notifyMysticPairs(env, season, fetchedKids, now) {
     }
   }
   if (items.length) await enqueueKvkNotifications(db, items, now);
+}
+
+// 公開の王国ページ用（2026-11-15）：KvK に関係なく、王国の秘境の試練の上位10人を1回の呼び出しで取って kingdom_mystic_current に入れる。
+// 月1回の取り直し（index.js runPublicKingdomMonthlyRanking）から呼ぶ。404 は NOT_FOUND として記録、ほかの失敗は投げる（次の回にやり直す）。
+export async function ensureKingdomMysticCurrent(db) {
+  await db.prepare("CREATE TABLE IF NOT EXISTS kingdom_mystic_current (kid INTEGER PRIMARY KEY, status TEXT NOT NULL, boards_json TEXT, fetched_at INTEGER NOT NULL)").run();
+}
+export async function fetchAndStoreKingdomMystic(env, kid, { now = Math.floor(Date.now() / 1000), collect = collectMightPulseThroughGuards } = {}) {
+  let status = "OK", boards = null;
+  try {
+    const collected = await collect(env, { path: `/kingdoms/${encodeURIComponent(kid)}`, endpoint: "/kingdoms/:kid?include=boards", targetType: "KINGDOM", targetId: String(kid), purpose: "PUBLIC_KINGDOM_MYSTIC", reserveKeys: BACKGROUND_KEY_RESERVE, query: { include: "boards", limit: 10 }, timeoutMs: 15000, maxRetries: 1 });
+    boards = summarizeKingdomBoards(collected?.result?.data ?? collected?.result ?? collected);
+    if (!MYSTIC_STAGE_KEYS.some(k => boards[k])) status = "EMPTY";
+  } catch (error) {
+    if (Number(error?.status) !== 404) throw error;
+    status = "NOT_FOUND";
+  }
+  await env.DB.prepare("INSERT OR REPLACE INTO kingdom_mystic_current (kid, status, boards_json, fetched_at) VALUES (?, ?, ?, ?)").bind(Number(kid), status, boards ? JSON.stringify(boards) : null, now).run();
+  return status;
 }

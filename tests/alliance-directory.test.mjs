@@ -98,7 +98,9 @@ test("同盟の公開ページ：名前を出すのは王国の上位10人だけ
   const a = { kid: 1524, aid: "153300050", abbr: "TNC", name: "にゃっぷ！", power: 1.39e10, powerRank: 1, killsRank: 3, kills: 5e8, updatedAt: 1794099356, inTop100: 30, topMembers: [{ rank: 1, name: "おーとオートAUTO！" }, { rank: 3, name: "<b>x</b>" }], hasMemberData: true, peers: [{ aid: "153300205.0", abbr: "Pen", name: "はんぺん", power: 1.18e10, rank: 2 }] };
   const html = renderPublicAlliancePage(a, { origin: "https://eagleeye-ks.com", shell });
   assert.match(html, /<title>にゃっぷ！［TNC］の戦力・ランキング（王国1524）｜キングショット \| EagleEye<\/title>/);
-  assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/a\/1524\/153300050">/);
+  // 同盟ページは中身が少ないので noindex（2026-11-16・AdSense の品質対応）。canonical を付けないので広告タグも入らない。
+  assert.match(html, /<meta name="robots" content="noindex">/);
+  assert.doesNotMatch(html, /rel="canonical"/);
   assert.match(html, /王国の戦力TOP100に入っている人<\/small><b>30人/);
   assert.match(html, /おーとオートAUTO！/);
   assert.ok(!html.includes("<b>x</b>"), "名前はエスケープ");
@@ -125,10 +127,10 @@ test("loadPublicAlliance：上位10人より下のメンバーの名前は渡さ
 test("配線：/a/ のルート（見つからなければ404・noindex）、王国ページからのリンク、サイトマップ、1時間ごとの処理、オーナー画面", async () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(index, /url\.pathname\.match\(\/\^\\\/a\\\/\(\\d\{1,6\}\)\\\/\(\\d\{1,20\}\)\\\/\?\$\/\)/);
-  assert.match(index, /async signedIn => \{ const data = await loadPublicAlliance\(env\.DB, kid, m\[2\]\)\.catch\(\(\) => null\); if \(!data\) return eagleEyeHtmlResponse\(publicShell\([\s\S]*?noindex: true \}\), 404\); return renderPublicAlliancePage/);
-  assert.match(index, /loadAllianceSitemapPaths\(env\.DB\)/);
+  assert.match(index, /async signedIn => \{ const data = await loadPublicAlliance\(env\.DB, kid, m\[2\], \{ archive: env\.ARCHIVE \}\)\.catch\(\(\) => null\); if \(!data\) return eagleEyeHtmlResponse\(publicShell\([\s\S]*?noindex: true \}\), 404\); return renderPublicAlliancePage/);
+  assert.doesNotMatch(index, /loadAllianceSitemapPaths\(env\.DB\)/, "noindex の同盟ページはサイトマップに入れない");
   assert.match(index, /runAllianceSweep\(env, \{ collect: collectMightPulseThroughGuards, extractEntries: extractKingdomRankingEntries, d1, api, quota: d1MonthlyQuota\(env\) \}\)/);
-  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);
+  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep[,} ]/);
   const kp = renderPublicKingdomPage(1524, { catalog: { kid: 1524 }, players: [], alliances: [{ rank: 1, abbr: "TNC", name: "にゃっぷ！", score: 1e10, aid: "153300050.0" }], matchup: null, score: null, growth: null }, { origin: "" });
   assert.match(kp, /href="\/a\/1524\/153300050"/);
   resetAllianceDirectorySchemaCache();
@@ -138,4 +140,25 @@ test("配線：/a/ のルート（見つからなければ404・noindex）、王
   assert.deepEqual(await loadAllianceSitemapPaths(db), ["/a/1/5"]);
   const robots = (await import("../src/public-pages.js")).renderRobotsTxt("https://x");
   assert.doesNotMatch(robots, /Disallow: \/a\b/);
+});
+
+// 2026-11-16：王国ページが R2 のランキングから同盟へリンクするので、同盟ページも R2 の写しを読む（404 のリンク切れをなくす）。
+test("同盟ページ：D1 に無ければ R2 の写しから出す", async () => {
+  const { loadPublicAlliance: load } = await import("../src/alliance-directory.js");
+  const { resetKingdomRankingArchiveCache } = await import("../src/kingdom-ranking-archive.js");
+  resetKingdomRankingArchiveCache();
+  const db = { batch: async () => [], prepare: () => { const s = { bind: () => s, first: async () => null, all: async () => ({ results: [] }), run: async () => ({}) }; return s; } };
+  const rows = [
+    { board: "alliance_power", target_type: "ALLIANCE", target_id: "79100401", aid: "79100401", abbr: "ABC", name: "Alpha", score: 3e10, rank: 2 },
+    { board: "alliance_power", target_type: "ALLIANCE", target_id: "79100402", aid: "79100402", abbr: "XYZ", name: "Zed", score: 4e10, rank: 1 },
+    { board: "personal_power", target_type: "PLAYER", target_id: "1", aid: "79100401", nick_name: "Ann", rank: 3 }
+  ];
+  const objects = new Map([["archive/v1/kingdom_ranking_current/kid/782/latest.json", JSON.stringify({ key: "x", lastUpdatedAt: 1791305313 })], ["x", rows.map(r => JSON.stringify(r)).join("\n")]]);
+  const archive = { get: async k => objects.has(k) ? { body: objects.get(k), httpMetadata: {} } : null };
+  const a = await load(db, 782, "79100401", { archive });
+  assert.equal(a.abbr, "ABC");
+  assert.equal(a.powerRank, 2);
+  assert.deepEqual(a.topMembers, [{ rank: 3, name: "Ann" }]);
+  assert.deepEqual(a.peers.map(p => p.abbr), ["XYZ"]);
+  assert.equal(await load(db, 782, "1", { archive }), null, "R2 にも無ければ今までどおり 404");
 });

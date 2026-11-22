@@ -32,7 +32,7 @@ test("ネタは実データから。戦力順位（power_rank）は使わない�
   assert.equal(gain.rows[0].label, "王国 1085");
   assert.equal(gain.rows[0].value, "+29.4B");
   assert.equal(gain.dataDate, "2026-11-08", "データの時点（日本時間）");
-  assert.equal(pack.items[1].rows[0].label, "王国 232", "総戦力は power の値で並べる");
+  assert.equal(pack.items[1].rows[0].label, "王国 232", "総力は power の値で並べる");
   assert.ok(db.sqls.every(s => !/power_rank/.test(s)), "power_rank は使わない（意味が未確認）");
   assert.ok(pack.items.every(i => i.rows.length >= SOCIAL_MIN_ROWS));
   const thin = { prepare: sql => { const s = { bind: () => s, all: async () => ({ results: /kingdom_stats_current/.test(sql) ? [{ kid: 1, power: 1e9, power_gain_7d: 1e8, age_days: 10, observed_at: 1 }] : [] }), first: async () => null }; return s; } };
@@ -120,11 +120,57 @@ test("毎週の自動実行：月曜9:13（日本時間）。投稿は定期実�
   assert.match(wf, /cron: "13 0 \* \* 1"/);
   assert.match(wf, /if: github\.event_name == 'schedule' \|\| inputs\.post/);
   assert.match(wf, /SOCIAL_DISCORD_WEBHOOK_URL: \$\{\{ secrets\.SOCIAL_DISCORD_WEBHOOK_URL \}\}/);
-  assert.match(wf, /fonts-noto-cjk ffmpeg/);
+  assert.match(wf, /uses: \.\/\.github\/actions\/setup-media/, "準備は共通部品で");
+  assert.match(readFileSync(new URL("../.github/actions/setup-media/action.yml", import.meta.url), "utf8"), /fonts-noto-cjk ffmpeg/);
   assert.match(wf, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_R2_API_TOKEN \}\}/, "R2 だけの鍵を使う（D1 用の鍵の権限を広げない）");
+  // 2026-11-14：R2 保存が 401 で失敗しても continue-on-error で緑のままになり、気づけなかった。
+  assert.ok(wf.includes("- name: Save to R2"), "R2 保存の手順がある");
+  const r2Step = wf.slice(wf.indexOf("- name: Save to R2"));
+  assert.doesNotMatch(wf, /^\s*continue-on-error:/m, "R2 保存などの失敗を隠さない（失敗したら赤にする）");
+  assert.match(r2Step, /set -euo pipefail/, "wrangler が失敗したらその場で止まる");
+  assert.ok(wf.indexOf("upload-artifact") < wf.indexOf("- name: Save to R2"), "R2 で止まっても Artifact には先に残す");
   const pub = readFileSync(new URL("../scripts/social/publish.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(pub, /console\.log\([^)]*process\.env/);
   assert.match(pub, /allowed_mentions: \{ parse: \[\] \}/, "Discord で @everyone などを鳴らさない");
   const build = readFileSync(new URL("../scripts/social/build.mjs", import.meta.url), "utf8");
   assert.match(build, /anullsrc/, "BGMなし（無音トラックだけ）");
+});
+
+// 2026-11-14：KvK が終わった後も「接戦の組み合わせ」の動画・投稿文が作られていた。
+function kvkDb({ endTs }) {
+  const sqls = [];
+  const matchup = { kid: 9, opponent: 10, p1: 1e9, p2: 1e9, o1: 1794100000, o2: 1794100000 };
+  const db = { sqls, prepare: sql => { sqls.push(sql); const s = {
+    bind: () => s, run: async () => ({}),
+    first: async () => {
+      if (/kvk_state/.test(sql)) return { value: JSON.stringify({ season: 23 }) };
+      if (/kvk_scores/.test(sql)) return endTs == null ? null : { days_json: JSON.stringify([{ day: 1, end_ts: endTs - 86400 }, { day: 6, end_ts: endTs }]) };
+      return null;
+    },
+    all: async () => ({ results: /kvk_matchups/.test(sql) ? [matchup] : [] })
+  }; return s; } };
+  return db;
+}
+
+test("KvK：全日程が終わっていたら接戦のネタを出さない。日程は1行だけ読む", async () => {
+  const nowSec = Math.floor(NOW / 1000);
+  const ended = kvkDb({ endTs: nowSec - 60 });
+  const pack = await loadSocialPack({ DB: ended }, { nowMs: NOW });
+  assert.ok(!pack.items.some(i => i.id === "kvk"), "終わった KvK は出さない");
+  assert.ok(!ended.sqls.some(s => /kvk_matchups/.test(s)), "終わっていたら組み合わせは読まない");
+  const scoreSql = ended.sqls.find(s => /kvk_scores/.test(s));
+  assert.match(scoreSql, /LIMIT 1/, "D1 の読み取りを増やさない");
+  // 開催中は今までどおり判定に進む（組み合わせを読む）。
+  const running = kvkDb({ endTs: nowSec + 3600 });
+  await loadSocialPack({ DB: running }, { nowMs: NOW });
+  assert.ok(running.sqls.some(s => /kvk_matchups/.test(s)), "開催中は組み合わせを読む");
+});
+
+test("投稿文・カード：「ログイン不要」はわざわざ書かない", async () => {
+  const pack = await loadSocialPack({ DB: fakeDb() }, { nowMs: NOW });
+  for (const item of pack.items) {
+    assert.doesNotMatch(JSON.stringify(item.captions), /ログイン不要/);
+    assert.doesNotMatch(renderSocialCard(item), /ログイン不要/);
+  }
+  assert.doesNotMatch(renderSocialCover(pack), /ログイン不要/);
 });

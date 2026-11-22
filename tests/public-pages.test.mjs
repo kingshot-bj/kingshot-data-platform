@@ -15,12 +15,13 @@ const data = {
 test("public kingdom page: SEO tags, escaped content, KvK link and a login call to action", () => {
   const html = renderPublicKingdomPage(1524, data, { origin: "https://eagleeye-ks.com" });
   assert.match(html, /<title>王国1524の戦力・ランキング・KvK情報｜キングショット \| EagleEye<\/title>/);
-  assert.match(html, /<meta name="description" content="キングショット（KingShot）王国1524の総戦力123B/);
+  assert.match(html, /<meta name="description" content="キングショット（KingShot）王国1524の総力123B/);
   assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/k\/1524">/);
   assert.match(html, /application\/ld\+json[\s\S]*BreadcrumbList/);
   assert.ok(!html.includes("<script>x</script>"), "player names are escaped");
   assert.match(html, /href="\/k\/1530">王国 1530/);
-  assert.match(html, /7日 −2位|7日 \+?−?2/);
+  // 戦力順位（power_rank）は意味が未確認なので出さない（2026-11-15・AdSense の品質対応）。
+  assert.doesNotMatch(html, /戦力順位/);
   assert.match(html, /Discordでログイン/);
   assert.match(html, /APIキー/);
   assert.match(renderPublicKingdomPage(1524, data, { origin: "", signedIn: true }), /\/kingdom\?kid=1524/);
@@ -29,7 +30,8 @@ test("public kingdom page: SEO tags, escaped content, KvK link and a login call 
 test("pages without data still render helpful text", () => {
   const html = renderPublicKingdomPage(9, { catalog: null, players: [], alliances: [], matchup: null, score: null, growth: null }, {});
   assert.match(html, /集計データはまだありません/);
-  assert.match(html, /ウォッチリストに入ると自動で取得/);
+  // 個人ランキングが無い王国では、空の欄（「自動で取得されます」）を出さない（2026-11-15・AdSense の品質対応）。
+  assert.doesNotMatch(html, /ウォッチリストに入ると自動で取得|個人総力ランキング（上位10人）/);
 });
 
 test("index, robots and sitemap", () => {
@@ -86,15 +88,17 @@ test("SEO：タイムラインの全体表は専用ページへ（王国ペー�
   assert.match(portal, /renderKingdomTimelineSection\(timelineAge, \{ kid \}\)/);
 });
 
-test("SEO：関連する王国（戦力順位が近い・近い番号）へのリンク。読み取りは主キーと索引の範囲だけ", async () => {
-  const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11, power_rank: 9 }] }, { origin: "" });
+test("SEO：関連する王国（総力が近い・近い番号）へのリンク。読み取りは主キーの範囲と全王国の集計（キャッシュ）だけ", async () => {
+  const html = renderPublicKingdomPage(1524, { ...data, nearKids: [1520, 1523, 1525], similar: [{ kid: 1530, power: 1.2e11 }] }, { origin: "" });
   assert.match(html, /<h2>関連する王国<\/h2>/);
-  assert.match(html, /href="\/k\/1530">王国 1530<em>9位/);
+  assert.match(html, /<small>総力が近い王国<\/small><a href="\/k\/1530">王国 1530<em>120B<\/em>/);
+  assert.doesNotMatch(html, /戦力順位/);
   assert.match(html, /href="\/k\/1523">王国 1523<\/a>/);
   assert.doesNotMatch(renderPublicKingdomPage(1524, data, { origin: "" }), /関連する王国/);
   const src = readFileSync(new URL("../src/public-pages.js", import.meta.url), "utf8");
   assert.match(src, /FROM kingdom_catalog WHERE kid BETWEEN \? AND \? AND kid <> \?/);
-  assert.match(src, /FROM kingdom_stats_current WHERE power_rank BETWEEN \? AND \? AND kid <> \? ORDER BY power_rank ASC LIMIT 6/);
+  assert.doesNotMatch(src, /power_rank BETWEEN/, "power_rank は使わない");
+  assert.match(src, /loadAllKingdomStats\(db\)/);
   const mig = readFileSync(new URL("../migrations/0072_kingdom_stats_power_rank_index.sql", import.meta.url), "utf8");
   assert.match(mig, /CREATE INDEX IF NOT EXISTS idx_kingdom_stats_current_power_rank ON kingdom_stats_current \(power_rank\)/);
   const stats = readFileSync(new URL("../src/kingdom-stats.js", import.meta.url), "utf8");
@@ -106,8 +110,8 @@ test("robots.txt：ログイン必須のページはクローラーに来させ�
   const rules = robots.split("\n").filter(l => l.startsWith("Disallow: ")).map(l => l.slice(10));
   // Google の解釈：前方一致、末尾の $ は「ここで終わり」
   const blocked = path => rules.some(r => r.endsWith("$") ? path === r.slice(0, -1) : path.startsWith(r));
-  for (const p of ["/player?governor_id=1", "/players", "/player-watchlist", "/player/compare?governor_id=1", "/alliance?kid=1&tag=A", "/kingdom?kid=1524", "/kingdom/rankings", "/kingdom/alliances", "/kvk", "/kvk?kid=1", "/watchlist", "/news", "/kingdom-watchlist", "/kingdom-catalog"]) assert.ok(blocked(p), "blocked: " + p);
-  for (const p of ["/", "/k/1524", "/kingdoms", "/kingdom-timeline", "/kvk/s23", "/kvk/matchups", "/hero-catalog", "/heroes/amadeus", "/tools/gold", "/tools/hero-shards", "/about", "/privacy", "/terms", "/support", "/status"]) assert.ok(!blocked(p), "allowed: " + p);
+  for (const p of ["/player?governor_id=1", "/players", "/player-watchlist", "/player/compare?governor_id=1", "/alliance?kid=1&tag=A", "/kingdom?kid=1524", "/kingdom/rankings", "/kingdom/alliances", "/kvk", "/kvk?kid=1", "/watchlist", "/kingdom-watchlist", "/kingdom-catalog"]) assert.ok(blocked(p), "blocked: " + p);
+  for (const p of ["/", "/news", "/k/1524", "/kingdoms", "/kingdom-timeline", "/kvk/s23", "/kvk/matchups", "/hero-catalog", "/heroes/amadeus", "/tools/gold", "/tools/hero-shards", "/about", "/privacy", "/terms", "/support", "/status"]) assert.ok(!blocked(p), "allowed: " + p);
   const sitemap = renderSitemapXml("https://eagleeye-ks.com", [1, 1524], undefined, ["/kvk/s23"]);
   for (const loc of sitemap.match(/<loc>[^<]+<\/loc>/g)) assert.ok(!blocked(loc.slice(5, -6).replace("https://eagleeye-ks.com", "")), loc);
 });

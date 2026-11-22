@@ -1,6 +1,7 @@
 /**
  * EagleEye 日本語英雄スキル辞典
- * Source: Altema KingShot Japanese hero pages. Names/descriptions/values are source-derived.
+ * Names/descriptions/values are the in-game Japanese text (transcribed via Altema, which quotes the game;
+ * Altema is not shown as a source on the pages).
  * IMPORTANT: MightPulse skill IDs have not yet been mapped to these Japanese names.
  */
 export const HERO_SKILLS_JA = {

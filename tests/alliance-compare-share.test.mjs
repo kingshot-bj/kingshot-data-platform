@@ -39,7 +39,7 @@ test("配線：同盟比較のページに2つ以上の同盟があるときだ�
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   const route = index.slice(index.indexOf('if (url.pathname === "/alliance/compare") {'), index.indexOf('if (url.pathname === "/alliance") {'));
   assert.match(route, /const shareHtml = shareFound\.length >= 2 \? allianceShareEmbed\(shareFound,/);
-  assert.match(route, /renderAllianceComparePage\(\{ alliances, targets, top, shareHtml \}\)/);
+  assert.match(route, /renderAllianceComparePage\(\{ alliances, targets, top, shareHtml[,}]/);
   const page = readFileSync(new URL("../src/alliance-compare.js", import.meta.url), "utf8");
   assert.match(page, /<div id="acBody"><\/div>\$\{shareHtml\}/);
 });

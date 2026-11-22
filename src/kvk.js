@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 // KvK (Kingdom vs Kingdom) collection and page.
 //
 // Collection (Cron, every 5 minutes):
@@ -42,6 +43,8 @@ export async function ensureKvkSchema(db) {
       days_json TEXT, source_updated_at TEXT, payload_sha TEXT, fetched_at INTEGER NOT NULL, changed_at INTEGER)`).run();
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_scores_fetched ON kvk_scores(fetched_at)").run();
     await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_matchups_opponent ON kvk_matchups(season, opponent)").run();
+    // 王国ごとの「直近のKvKの相手」（WHERE kid = ? ORDER BY season DESC）用。主キーは season が先なので、無いと毎回全件を読む（2026-11-17）。
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_kvk_matchups_kid_season ON kvk_matchups(kid, season)").run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_state (
       key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)`).run();
     await db.prepare(`CREATE TABLE IF NOT EXISTS kvk_score_points (
@@ -157,7 +160,7 @@ export async function refreshKvkMatchups(env, { now = Math.floor(Date.now() / 10
   await setState(db, "matchups", { sha, season, stage, count: normalized.length, changedAt: now, checkedAt: now }, now);
   if (Number(previous?.season) !== season) {
     const own = ((await db.prepare(`SELECT DISTINCT ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL`).all()).results || []).map(r => Number(r.kid));
-    // 総戦力（カタログ巡回で保存済み）をカードに載せる。自国＋相手国だけ、bind上限内で。
+    // 総力（カタログ巡回で保存済み）をカードに載せる。自国＋相手国だけ、bind上限内で。
     const ownSet = new Set(own);
     const related = [...new Set(normalized.filter(m => ownSet.has(Number(m.kid)) || ownSet.has(Number(m.opponent))).flatMap(m => [Number(m.kid), Number(m.opponent)]).filter(Number.isFinite))].slice(0, 90);
     const powers = {};
@@ -395,7 +398,8 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   await ensureKvkSchema(db);
   const isVip = rank >= ROLE_RANK.VIP;
   const now = nowOverride ?? Math.floor(Date.now() / 1000);
-  const links = (await db.prepare(`SELECT l.kingdom_id AS registered, ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.user_id = ? AND l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.kingdom_id`).bind(auth.user_id).all()).results || [];
+  await ensureActiveGovernorSchema(db).catch(() => {});
+  const links = (await db.prepare(`SELECT l.kingdom_id AS registered, ${KVK_CURRENT_KINGDOM_SQL} AS kid FROM ${KVK_LINKS_FROM_SQL} WHERE l.user_id = ? AND l.status = 'ACTIVE' AND COALESCE(p.kid, l.kingdom_id) IS NOT NULL ORDER BY ${myGovernorOrderSql("l", { oldestFirst: false })}, l.kingdom_id`).bind(auth.user_id).all()).results || [];
   const mine = [...new Set(links.map(r => Number(r.kid)).filter(Number.isInteger))];
   const moved = links.filter(r => r.registered != null && Number(r.registered) !== Number(r.kid));
   const movedNote = moved.length ? `<div class="notice">移民を検知しました：${moved.map(r => `登録時 王国${Number(r.registered)} → 現在 王国${Number(r.kid)}`).join("、")}。KvKは現在の王国で表示します。</div>` : "";
@@ -435,6 +439,8 @@ export async function renderKvkPage(request, env, auth, { loginUrl = "/api/auth/
   let body = head + mineHtml + movedNote + finder + (fetchNote ? `<div class="notice">${esc(fetchNote)}</div>` : "");
   if (matchup) {
     body += `<h2>シーズン ${esc(season)} の対戦相手</h2><div class="vs"><div class="side"><small>あなたの王国</small><b><a href="/kingdom?kid=${kid}">${kid}</a></b><small>${esc(matchup.kingdom_name || "")}</small></div><div class="vs-mark">VS</div><div class="side opp"><small>対戦相手</small><b>${matchup.opponent != null ? `<a href="/kingdom?kid=${Number(matchup.opponent)}">${Number(matchup.opponent)}</a>` : "—"}</b><small>${esc(matchup.opponent_name || "")}</small></div></div>`;
+    // 相手王国との比較（総力・伸び・領主数など）を画像で共有できる王国比較へ（2026-11-17）。
+    if (matchup.opponent != null) body += `<p><a class="btn kvk-share" href="${kvkCompareHref(kid, matchup.opponent)}">📤 相手王国と比べて画像で共有</a></p>`;
   }
   body += renderCountdown(score, now);
   const mysticOpponent = matchup?.opponent ?? score?.opponent ?? null;
@@ -597,7 +603,12 @@ async function allMatchupsSection(db, season, url) {
     seen.add(key);
     pairs.push([k, o]);
   }
-  return `<h2 id="all">全体の対戦表（${esc(num(pairs.length))}組）</h2><input id="kvk-filter" class="find" style="width:100%;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit" inputmode="numeric" placeholder="王国番号で絞り込み">
+  return `<h2 id="all">全体の対戦表（${esc(num(pairs.filter(([, o]) => o != null).length))}組）</h2><input id="kvk-filter" class="find" style="width:100%;padding:11px;border:1px solid #2a4664;border-radius:10px;background:#0b192b;color:#e8f3ff;font:inherit" inputmode="numeric" placeholder="王国番号で絞り込み">
 <div class="table" id="kvk-table">${pairs.map(([k, o]) => `<a href="/kvk?kid=${k}" data-k="${k} ${o ?? ""}"><span>王国 ${k}</span><b>VS</b><span>${o == null ? "不戦" : "王国 " + o}</span></a>`).join("")}</div>
 <script>(function(){var f=document.getElementById("kvk-filter"),rows=[].slice.call(document.querySelectorAll("#kvk-table a"));f.addEventListener("input",function(){var q=f.value.trim();rows.forEach(function(r){r.style.display=!q||(" "+r.getAttribute("data-k")+" ").indexOf(" "+q)>=0?"":"none"})})})();</script>`;
+}
+
+// KvK の相手王国との王国比較（画像で共有できる）への URL。2026-11-17
+export function kvkCompareHref(kid, opponent) {
+  return "/kingdom/compare?kid=" + encodeURIComponent(Number(kid)) + "&kid=" + encodeURIComponent(Number(opponent));
 }

@@ -102,3 +102,47 @@ test("scheduled posts appear only when due; ADMIN posts wait for OWNER approval"
   assert.ok(!page.includes('class="news-approve'), "only OWNER gets approve buttons");
   assert.match(renderNewsPage([], { canPost: true, isOwner: true, queued: [{ ...pending, status: "PENDING" }], viewerId: "1" }), /news-approve/);
 });
+
+test("お知らせに画像・動画を付けられる（本文なしでも可・変なファイル名は捨てる）", async () => {
+  resetBadgeSchemaCache();
+  const db = d1();
+  const img = "12345678-1234-1234-1234-123456789abc.png", vid = "12345678-1234-1234-1234-123456789abd.mp4";
+  await assert.rejects(createAnnouncement(db, { title: "画像だけ", body: "", now: 60 }), /TITLE_AND_BODY_REQUIRED/);
+  const a = await createAnnouncement(db, { title: "画像だけ", body: "", role: "OWNER", media: [{ file: img }, { file: vid }, { file: "../x.png" }], now: 60 });
+  assert.deepEqual(a.media.map(m => m.file), [img, vid]);
+  const html = renderNewsPage(await listAnnouncements(db), { canPost: true });
+  assert.match(html, new RegExp(`<img src="/news/media/${img}"`));
+  assert.match(html, new RegExp(`<video src="/news/media/${vid}"`));
+  assert.match(html, /id="news-files"[^>]*multiple/);
+});
+
+test("お知らせを開いたときの既読の書き込みは、新しいお知らせがあるときだけ（2026-11-17）", async () => {
+  const { newsNeedsSeenWrite } = await import("../src/index.js");
+  assert.equal(newsNeedsSeenWrite(null, []), true, "初めては書く");
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, [{ created_at: 90 }, { publish_at: 100, created_at: 50 }]), false);
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, [{ created_at: 90 }, { publish_at: 120, created_at: 50 }]), true);
+  assert.equal(newsNeedsSeenWrite({ news_seen_at: 100 }, []), false);
+});
+
+test("聖剣：ふだんは保存済みの役職で登録欄を出し、メンバー表は「最新の役職で確かめる」と登録時だけ（2026-11-17）", () => {
+  const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
+  assert.match(src, /loadSwordlandState\(env, auth, \{ verifyOfficer: recheck \}\)/);
+  assert.match(src, /state\.canRegister = Number\(mine\.alliance_rank\) >= 4;/);
+  const sw = readFileSync(new URL("../src/swordland.js", import.meta.url), "utf8");
+  assert.match(sw, /p\.alliance_name, p\.alliance_rank FROM user_player_links/);
+  assert.match(sw, /\/swordland\?recheck=1/);
+});
+
+test("お知らせはログインなしでも読める公開ページ（2026-11-17）", async () => {
+  const worker = (await import("../src/index.js")).default;
+  resetBadgeSchemaCache();
+  const db = d1();
+  await createAnnouncement(db, { title: "公開テスト", body: "だれでも読める", role: "OWNER", now: 10 });
+  const res = await worker.fetch(new Request("https://eagleeye-ks.com/news"), { DB: db }, { waitUntil() {}, passThroughOnException() {} });
+  const html = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(html, /公開テスト/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/eagleeye-ks\.com\/news">/);
+  assert.match(html, /ログイン<\/a>すると/);
+  assert.ok(!html.includes("news-submit"), "投稿欄は出ない");
+});

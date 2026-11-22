@@ -1,0 +1,49 @@
+{
+  "name": "governor-duel",
+  "title": "領主対決（相手を下見）",
+  "output": "eagleeye-governor-duel.mp4",
+  "post": [
+    "領主対決はじまった⚔️",
+    "相手の総力が低くても油断は禁物。総力は兵士の数でも増えるから、強さとは別物。",
+    "EagleEye なら相手の英雄・部隊・秘境の試練まで並べて比べられる👀",
+    "{host}",
+    "",
+    "#キングショット #KingShot #領主対決"
+  ],
+  "scenes": [
+    {
+      "slide": "text",
+      "heading": "領主対決<br>はじまった⚔️",
+      "sub": "その相手、ほんとに強い？",
+      "seconds": 3
+    },
+    {
+      "slide": "text",
+      "heading": "総力が高い＝強い<br>…とは限らない",
+      "sub": "総力は兵士の数や建物でも増える",
+      "seconds": 3.5
+    },
+    {
+      "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
+      "caption": "相手と<b>並べて比べる</b><br>画像で共有もできる",
+      "seconds": 4.5,
+      "scroll": 350,
+      "login": true
+    },
+    {
+      "page": "/player/compare?governor_id=222916605&governor_id=227081160&me=0",
+      "caption": "<b>秘境の試練</b>をステージごとに<br>どこで差がついているか",
+      "seconds": 6,
+      "scroll": 2600,
+      "login": true
+    },
+    {
+      "slide": "signup",
+      "seconds": 5
+    },
+    {
+      "slide": "outro",
+      "seconds": 3
+    }
+  ]
+}

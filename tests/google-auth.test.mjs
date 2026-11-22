@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { isDiscordUserId, googleAuthorizeUrl, upsertGoogleUser, resetGoogleAuthSchemaCache, renderLoginChooserPage, fetchGoogleUser } from "../src/google-auth.js";
 
+// 本物のブラウザは必ず名前（User-Agent）を送る。無いものはクローラーとして数えない（2026-11-17）。
+const IPHONE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1";
+
 test("本物のDiscord番号と仮IDを見分ける", () => {
   assert.equal(isDiscordUserId("123456789012345678"), true);
   assert.equal(isDiscordUserId("google:1234567890"), false);
@@ -90,7 +93,7 @@ test("Worker全体：未設定なら今までどおりDiscordへ直行、設定�
   assert.match(r3.headers.get("location"), /\/login\?next=%2Fwatchlist$/, "まず選択画面へ");
   const r4 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/discord?direct=1"), env, ctx);
   assert.match(r4.headers.get("location"), /^https:\/\/discord\.com\//, "選んだ後はDiscordへ");
-  const r5 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist"), env, ctx);
+  const r5 = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist", { headers: { "user-agent": IPHONE_UA } }), env, ctx);
   const auth = new URL(r5.headers.get("location"));
   assert.equal(auth.host, "accounts.google.com");
   const state = auth.searchParams.get("state");
@@ -99,7 +102,8 @@ test("Worker全体：未設定なら今までどおりDiscordへ直行、設定�
   try {
     const r6 = await worker.fetch(new Request(`https://eagleeye-ks.com/api/auth/google/callback?code=c&state=${encodeURIComponent(state)}`, { headers: { cookie: "eagleeye_login_return=%2Fwatchlist" } }), env, ctx);
     assert.equal(r6.status, 302);
-    assert.equal(r6.headers.get("location"), "https://eagleeye-ks.com/watchlist");
+    // 新しい人で領主が未登録 → マイKingShotの登録欄へ（元のページは next に残す・2026-11-17）
+    assert.equal(r6.headers.get("location"), "https://eagleeye-ks.com/my-player?welcome=1&next=%2Fwatchlist");
     const cookies = r6.headers.getSetCookie().join("\n");
     assert.match(cookies, /eagleeye_session=/);
     assert.doesNotMatch(cookies, /gsecret|at;/);
@@ -139,7 +143,7 @@ test("公開中：Googleのボタンは押せる。閉じる（googleOpen:false�
   const page = await (await worker.fetch(new Request("https://eagleeye-ks.com/login?next=/watchlist"), env, ctx)).text();
   assert.doesNotMatch(page, /aria-disabled="true">Googleでログイン/);
   assert.match(page, /<a class="lg lg-g" href="\/api\/auth\/google\?x=1/);
-  const r = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist"), env, ctx);
+  const r = await worker.fetch(new Request("https://eagleeye-ks.com/api/auth/google?x=1&next=/watchlist", { headers: { "user-agent": IPHONE_UA } }), env, ctx);
   assert.equal(r.status, 302);
   assert.equal(new URL(r.headers.get("location")).host, "accounts.google.com");
   assert.ok(env.DB.funnel.includes("google_start"));

@@ -5,6 +5,7 @@
 
 import { HERO_SKILLS_JA } from "./hero-skills-ja.js";
 import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+import { heroShardExplainer } from "./tool-explainers.js";
 
 export const SHARD_STEP_COSTS = Object.freeze([
   Object.freeze([1, 1, 2, 2, 2, 2]),        // ★1 (10)
@@ -53,7 +54,8 @@ function esc(value) {
 // ---- Hero list for the free picker -------------------------------------
 // Names follow the in-game Japanese names used by the player data (HERO_NAME_JA
 // in index.js). The skill catalog spells a couple of them differently.
-export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "アイヴァ": "エヴァ", "セス": "スミス" });
+// 別の表記 → EagleEye での表記。2026-11-16：ゲーム内の表記は「アイヴァ」（「エヴァ」は英語名 Ava からの読み）。
+export const HERO_NAME_ALIASES = Object.freeze({ "マリン": "マーリン", "エヴァ": "アイヴァ", "セス": "スミス" });
 const EXTRA_HEROES = [];
 // Rarity decides which general shards a hero takes (gold / purple / blue). Every
 // rarity uses the same per-step table. Roster checked against kingshotmastery.com
@@ -72,6 +74,13 @@ export function canonicalHeroName(name) {
   return HERO_NAME_ALIASES[n] || n;
 }
 
+// アイコンなどを名前で探すときの候補（EagleEye の表記・元の表記・別の表記）。保存済みのデータが古い表記でも見つかる。
+export function heroNameVariants(name) {
+  const n = String(name ?? "").trim();
+  const c = canonicalHeroName(n);
+  return [...new Set([n, c, ...Object.keys(HERO_NAME_ALIASES).filter(a => HERO_NAME_ALIASES[a] === c)].filter(Boolean))];
+}
+
 export function isDedicatedShardHero(name) {
   return DEDICATED_SHARD_HEROES.includes(String(name ?? "")) || DEDICATED_SHARD_HEROES.includes(canonicalHeroName(name));
 }
@@ -86,7 +95,7 @@ export function shardHeroList(iconByName = {}) {
     const n = canonicalHeroName(raw);
     if (!n || seen.has(n)) continue;
     seen.add(n);
-    const file = [iconByName?.[n], iconByName?.[raw], iconByName?.[reverse[n]]].find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
+    const file = [...heroNameVariants(raw).map(k => iconByName?.[k]), iconByName?.[reverse[n]]].find(v => typeof v === "string" && ICON_FILE.test(v)) || "";
     out.push({ n, i: file, d: isDedicatedShardHero(n), r: heroRarity(n) });
   }
   return out;
@@ -249,6 +258,7 @@ ${account}
 <details class="picker" open><summary>＋ 英雄を追加 <small>（タップで追加・もう一度で外す）</small></summary><div id="pgrid" class="pgrid"></div><button type="button" id="clear" class="btn ghost">すべて外す</button></details></section>
 ${cta}
 <h2>段階ごとの必要数</h2><div class="tbl"><table><thead><tr><th></th><th>段階1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>合計</th></tr></thead><tbody>${table}</tbody></table></div>
+${heroShardExplainer()}
 <p class="note"><a href="/tools/gold" style="color:var(--ee-cyan)">黄金（G）の必要数計算</a>もあります。</p>
 <p class="note">★5まで合計1,065個。英雄の解放には別途10個（アマデウス20個・チェンコ40個との情報あり）。共通の欠片は同じレア度の英雄にだけ使えます（レジェンド＝金・エピック＝紫・レア＝青）。必要数の表はどのレア度も同じです。アマデウスとヘルガは専用の欠片のみ使用できます。数値とレア度はコミュニティ資料（kingshot.net・kingshotdata.com・kingshotguide.com・kingshotmastery.com）で照合し、ゲーム内で確認したものです。</p>
 <script>var __name=function(f){return f};(${shardClient.toString()})(${cfgJson});</script>`;

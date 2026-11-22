@@ -1,3 +1,4 @@
+import { myGovernorOrderSql, ensureActiveGovernorSchema } from "./active-governor.js";
 // Home page summary: the signed-in user's main governor, recent changes of the
 // players they watch, and their kingdom's KvK score. Cheap indexed reads only
 // (no MightPulse calls); every field respects the player visibility settings.
@@ -14,10 +15,12 @@ export async function buildHomeSummary(db, auth, deps) {
   const summary = { me: null, changes: [], kvk: null };
   if (!db || !auth?.user_id) return summary;
 
+  await ensureActiveGovernorSchema(db).catch(() => {});
   const link = await db.prepare(
-    "SELECT l.governor_id, l.kingdom_id, p.nick_name, p.kid, p.power, p.town_center_level, p.alliance_abbr, p.alliance_name, p.observed_at " +
+    "SELECT l.governor_id, l.kingdom_id, p.nick_name, p.kid, p.power, p.town_center_level, p.alliance_abbr, p.alliance_name, p.observed_at, " +
+    "(SELECT COUNT(*) FROM user_player_links x WHERE x.user_id = l.user_id AND x.status = 'ACTIVE') AS link_count " +
     "FROM user_player_links l LEFT JOIN players p ON p.governor_id = l.governor_id " +
-    "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY CASE l.account_type WHEN 'MAIN' THEN 0 ELSE 1 END, l.created_at ASC LIMIT 1"
+    "WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1"
   ).bind(auth.user_id).first();
   // 未登録・未昇格の人への最初の一歩（BASICのみ）。
   summary.onboarding = String(auth.role || "").toUpperCase() === "BASIC" ? (link ? "key" : "link") : null;
@@ -30,7 +33,8 @@ export async function buildHomeSummary(db, auth, deps) {
       power: visible("base_power") ? (link.power ?? null) : null,
       town_center_level: visible("base_power") ? (link.town_center_level ?? null) : null,
       alliance: visible("alliance_identity") ? (link.alliance_abbr || link.alliance_name || null) : null,
-      observed_at: link.observed_at ?? null
+      observed_at: link.observed_at ?? null,
+      link_count: Number(link.link_count) || 1
     };
     const rank = ROLE_RANK[String(auth.role || "BASIC").toUpperCase()] ?? 0;
     if (kid && rank >= ROLE_RANK.ADVANCED) {

@@ -63,6 +63,7 @@ const PRIVACY_SECTIONS = [
 <li>Googleなどの第三者配信事業者は、Cookieを使用して、利用者の本サービスや他のウェブサイトへの過去のアクセス情報に基づいて広告を配信します。</li>
 <li>Googleは広告Cookieを使用することにより、利用者の本サービスや他のサイトへのアクセス情報に基づいて、適切な広告を表示できます。</li>
 <li>パーソナライズ広告は、<a href="https://adssettings.google.com/" target="_blank" rel="noopener noreferrer">Googleの広告設定</a>で無効にできます。また、<a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener noreferrer">www.aboutads.info</a> にアクセスすると、第三者配信事業者のCookieを無効にできます。</li>
+<li>EEA（欧州経済領域）・英国・スイスの利用者には、Googleの同意管理プラットフォーム（CMP）により、Cookie等の使用についての同意を確認するメッセージが表示される場合があります。同意の選択は、表示されるメッセージから後で変更できます。</li>
 <li>Googleによる情報の取り扱いは、<a href="https://policies.google.com/technologies/ads?hl=ja" target="_blank" rel="noopener noreferrer">Googleの広告に関するポリシー</a>をご覧ください。</li>
 </ul>`
   },
@@ -168,11 +169,11 @@ const TERMS_SECTIONS = [
   }
 ];
 
-export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "" }) {
+export function renderLegalPage({ title, description, updatedAt, sections, related, canonical = "", jsonLd = null, lang = "ja", back = "← ホーム", updated = "最終更新日：" }) {
   const body = sections.map((section, i) =>
     `<section class="legal-section"><h2>${i + 1}. ${section.title}</h2>${section.body}</section>`
   ).join("");
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} | EagleEye</title><meta name="description" content="${description}">${canonical ? `<link rel="canonical" href="${canonical}">` : ""}${jsonLd ? `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>` : ""}
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -195,9 +196,9 @@ html[data-eagle-theme="light"] .legal-section h2{color:#0e7490}
 html[data-eagle-theme="light"] .legal-section code{background:#f1f5f9;color:#92400e}
 html[data-eagle-theme="light"] .legal-back,html[data-eagle-theme="light"] .legal-section a,html[data-eagle-theme="light"] .legal-related a{color:#0369a1}
 </style></head><body><main class="legal-wrap">
-<a class="legal-back" href="/">← ホーム</a>
+<a class="legal-back" href="/">${back}</a>
 <h1>${title}</h1>
-<p class="legal-updated">最終更新日：${updatedAt}</p>
+<p class="legal-updated">${updated}${updatedAt}</p>
 ${body}
 <p class="legal-related">${related}</p>
 </main></body></html>`;
@@ -226,7 +227,7 @@ export function renderTermsPage(origin = "") {
 }
 
 // 運営者情報（AdSense審査・利用者向けに、運営者と問い合わせ先を明記する）
-export const ABOUT_UPDATED_AT = "2026年11月8日";
+export const ABOUT_UPDATED_AT = "2026年11月16日";
 const ABOUT_SECTIONS = [
   {
     title: "EagleEyeについて",
@@ -256,11 +257,32 @@ const ABOUT_SECTIONS = [
   },
   {
     title: "お問い合わせ",
-    body: `<p>ご質問・不具合の報告・データの削除依頼などは、<a href="/support">お問い合わせ</a>ページからお送りください。お問い合わせはEagleEye SupportのDiscordサーバー内の専用チャンネルで対応します。</p>`
+    body: `<p>ご質問・不具合の報告・データの削除依頼などは、<a href="/support">お問い合わせ</a>ページからお送りください。お問い合わせページのフォームはログインなしで使えます。返事が必要な場合は返信先（メールアドレスやDiscordのユーザー名）を書いてください。ログインしている場合は、EagleEye SupportのDiscordサーバー内の専用チャンネルで対応します。</p>`
   },
   {
     title: "データの出典",
     body: `<p>ゲーム内の公開データは、<a href="https://www.mightpulse.com/" target="_blank" rel="noopener noreferrer">MightPulse</a>のAPIを通じて取得しています。王国タイムラインなど一部の情報は、出典を明記したうえでコミュニティ資料を参考にしています。表示するデータは最大で1時間程度前のものを含み、正確さを保証するものではありません。</p>`
+  },
+  {
+    title: "情報の正確性について",
+    body: `<ul>
+<li>数字はゲーム内の公開データをそのまま使い、EagleEye が手で書き換えることはしません。順位・比較・分析は、その数字から決まった計算で出しています。</li>
+<li>各ページの「データについて」に、取得元・更新の間隔・集計対象・算出方法を書いています。記録が取れていない項目は、推測で埋めずに表示しないか「データ待ち」と出します。</li>
+<li>総力は兵士の数や建物でも増えるため、強さとは比例しません。強さの目安には秘境の試練の記録をあわせて載せています。</li>
+<li>計算の誤りや表示の不具合に気付いたら、<a href="/support">お問い合わせ</a>からお知らせください。確認して直し、内容は下の更新履歴に載せます。</li>
+</ul>`
+  },
+  {
+    title: "更新履歴",
+    body: `<ul>
+<li><b>2026年11月16日</b>：KvK組み合わせの組数を修正（相手のいない王国を組に数えていたため、1,227組→1,219組）。英雄スキルの出典を「ゲーム内の表記」に整理。各ページに「データについて」を追加。</li>
+<li><b>2026年11月16日</b>：<a href="/reports">データレポート</a>を4本公開。王国ページに「この30日の動き」を追加。<a href="/guide">使い方</a>にページの見方・用語集・よくある質問を追加。</li>
+<li><b>2026年11月15日</b>：王国ページに全王国の中での順位・開設時期が近い王国との比較・秘境の試練（強さの目安）を追加。全王国の上位10人と秘境の試練を毎月取り直すように。表記を「総力」に統一。</li>
+<li><b>2026年11月15日</b>：ログインしていない人向けのトップページを追加。<a href="/support">お問い合わせ</a>をログインなしでも送れるように。</li>
+<li><b>2026年11月10日</b>：<a href="/guide">使い方</a>のページを追加。</li>
+<li><b>2026年11月9日</b>：プレイヤー比較を最大6人に。同盟比較で秘境の試練を上位3人どうしで比べられるように。</li>
+<li><b>2026年11月8日</b>：同盟比較を追加。</li>
+</ul>`
   },
   {
     title: "非公式サービスであること",
@@ -278,6 +300,11 @@ export function renderAboutPage(origin = "") {
     description: "EagleEye（KingShot非公式データサービス）の運営者情報とお問い合わせ先。",
     canonical: origin ? origin + "/about" : "",
     updatedAt: ABOUT_UPDATED_AT,
+    jsonLd: origin ? { "@context": "https://schema.org", "@graph": [
+      { "@type": "AboutPage", name: "運営者情報", url: origin + "/about", inLanguage: "ja", about: { "@id": origin + "/#org" } },
+      { "@type": "Organization", "@id": origin + "/#org", name: "EagleEye", alternateName: "イーグルアイ", url: origin + "/", logo: origin + "/apple-touch-icon.png", contactPoint: { "@type": "ContactPoint", contactType: "customer support", url: origin + "/support", availableLanguage: "ja" } },
+      { "@type": "BreadcrumbList", itemListElement: [{ "@type": "ListItem", position: 1, name: "EagleEye", item: origin + "/" }, { "@type": "ListItem", position: 2, name: "運営者情報", item: origin + "/about" }] }
+    ] } : null,
     sections: ABOUT_SECTIONS,
     related: '関連：<a href="/privacy">プライバシーポリシー</a>・<a href="/terms">利用規約</a>'
   });

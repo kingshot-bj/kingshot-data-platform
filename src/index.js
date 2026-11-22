@@ -1,10 +1,10 @@
 import { lockedAdvancedItems, renderLockedSection, lockedInlineValue, LOCKED_CSS, advancedBenefitsHtml, BENEFITS_CSS, onboardingStep, onboardingCopy } from "./role-upgrade.js";
 import { d1MonthlyQuota, runD1UsageAlert, getD1UsageState } from "./d1-usage-alert.js";
-import { recordFunnel, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
+import { recordFunnel, recordSignupSource, loadFunnel, CLIENT_FUNNEL_STEPS } from "./funnel.js";
 import { googleConfigured, googleLoginOpen, googleRedirectUri, googleAuthorizeUrl, fetchGoogleUser, upsertGoogleUser, renderLoginChooserPage, GOOGLE_CALLBACK_PATH } from "./google-auth.js";
 import { BACKGROUND_KEY_RESERVE, recordPoolPressure, runApiPoolUsageAlert, getApiPoolUsageState } from "./api-pool-pressure.js";
 import { handleAvatarProxy, compareShareScript } from "./compare-share.js";
-import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, loadCloudflareTopTraffic, renderOwnerTrafficPage } from "./traffic-stats.js";
+import { recordDailyActive, loadDailyActive, loadCloudflareTraffic, loadCloudflareTopTraffic, renderOwnerTrafficPage, loadPublicDataProgress } from "./traffic-stats.js";
 import { formatTownCenterLevel, townCenterBadgeHtml } from "./town-center-level.js";
 import { renderKingdomWatchlistPageReplacement } from "./kingdom-watchlist-page.js";
 import { RANKING_BOARD_LABELS } from "./kingdom-terminology.js";
@@ -63,11 +63,33 @@ import { renderHeroShardPage } from "./hero-shards.js";
 import { renderGoldCalculatorPage } from "./gold-calculator.js";
 import { renderGoldTechPage } from "./gold-tech.js";
 import { renderKvkMatchupsPage, loadSeasonMatchups, currentKvkSeason } from "./kvk-matchups-page.js";
-import { runKvkMysticCollection } from "./kvk-mystic.js";
+import { runKvkMysticCollection, ensureKingdomMysticCurrent, fetchAndStoreKingdomMystic } from "./kvk-mystic.js";
 import { renderHeroPage, heroNameBySlug, renderHeroNotFoundPage } from "./hero-pages.js";
-import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
+import { loadPublicKingdom, renderPublicKingdomPage, publicKingdomExists, shell as publicShell, renderPublicKingdomNotFound, renderNotFoundPage, renderPublicTimelinePage, loadPublicKingdomIds, renderPublicKingdomsIndex, renderRobotsTxt, renderSitemapXml, renderAdsTxt, publicOrigin, PUBLIC_CACHE_SECONDS, PUBLIC_CACHE_TTL } from "./public-pages.js";
 import { legacyHostRedirect, isPreviewEnv } from "./site-origin.js";
+import { previewReadOnlyEnv, installPreviewFetchGuard } from "./preview-readonly.js";
+import { renderPreviewLoginPage, applyPreviewRole, previewRoleOf, PREVIEW_ROLES, safeEqual, previewLoginLimited, notePreviewLoginFailure, PREVIEW_GATE_COOKIE, PREVIEW_GATE_MAX_AGE, GUEST, isPreviewGateOpenPath, safeNextPath } from "./preview-login.js";
+import { pageHasShareButton, shareFabScript } from "./share-fab.js";
+import { handleNewsMediaUpload, serveNewsMedia } from "./news-media.js";
+import { withSecurityHeaders } from "./security-headers.js";
+import { renderGuidesIndex, renderGuide } from "./guides.js";
+import { splitLang, canSeeEnglish } from "./i18n.js";
+import { renderPrivacyPolicyPageEn, renderTermsPageEn, renderAboutPageEn, renderGuidePageEn } from "./legal-pages-en.js";
+import { renderReportsIndexEn, renderReportEn } from "./reports-en.js";
+import { englishSummaryTitles } from "./home-en.js";
+import { translateHtmlToEnglish, enHref } from "./i18n-en.js";
+import { postLoginPath, welcomeBannerHtml } from "./login-onboarding.js";
+import { MY_PLAYER_PAGE_HTML } from "./my-player-page.js";
+import { ensureActiveGovernorSchema, myGovernorOrderSql, setActiveGovernor, getActiveGovernorId } from "./active-governor.js";
+import { runWeeklyReport, isWeeklyReportOn, setWeeklyReportOn } from "./weekly-report.js";
+import { loadActiveUsers, renderActiveUsersPage, normalizeDay as normalizeActiveDay } from "./owner-active-users.js";
+import { runUsageRollup, loadYear, loadDayUsage, renderUsageYearPage, jstDay as rollupJstDay } from "./usage-rollup.js";
+import { runSwordlandOfficerNotify, isSwordlandNotifyOff, setSwordlandNotifyOff, renderNotificationSettingsPage } from "./swordland-notify.js";
+import { renderSocialVideoPage, loadSavedVideoSets, loadVideos, saveVideoSet, deleteVideoSet, videoRunStatus, triggerVideoRun } from "./social-video.js";
 import { configureAdsense, injectAdsense } from "./adsense.js";
+import { renderVisitorHome, homeHighlights } from "./home-visitor.js";
+import { renderReportsIndex, renderReport } from "./reports.js";
+import { loadAllKingdomStats } from "./kingdom-insights.js";
 import { enhanceSeo, websiteJsonLd } from "./seo.js";
 import { runAnnouncementDiscordSync, enqueueApprovalRequestDms, enqueueReviewResultDm, ensureAnnouncementDiscordSchema } from "./announcement-discord.js";
 import { getBadgeCounts, markBadgeSeen, ensureBadgeSchema, listAnnouncements, listQueuedAnnouncements, createAnnouncement, reviewAnnouncement, deleteAnnouncement, renderNewsPage } from "./notification-badges.js";
@@ -81,32 +103,35 @@ import { recordServiceUsage } from "./service-usage.js";
 import { handleServiceUsageQueue } from "./service-usage-archive.js";
 import { getGoogleDriveOAuthAuthorizationUrl, exchangeGoogleDriveOAuthCode, createGoogleDriveArchiveFolder, getGoogleDriveConnectionStatus, verifyGoogleDriveRefreshToken, restoreR2ObjectFromGoogleDrive, restoreMissingR2ObjectsFromGoogleDrive, uploadR2ObjectToGoogleDrive } from "./google-drive.js";
 import { countStaleActivity, readStaleBackupManifest, runStaleActivityBackup, runStaleActivityPurge, stalePurgeBlocker } from "./stale-activity-cleanup.js";
-import { getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
+import { maxAccountsForRole, getUserPlayerLink, getUserPlayerLinks, getUserPlayerLinksWithPlayers, saveUserPlayerLink, disableUserPlayerLink, validateGovernorId, findActiveGovernorOwner, createOwnershipSupportRequest, verifyAndTransferPlayerLink } from "./user-player-link.js";
 import { registerUserMightPulseApiKey, normalizeMightPulseApiKey, getAdvancedEligibility, evaluateAdvancedEligibility, getVipEligibility, evaluateVipEligibility } from "./user-eligibility.js";
 import { joinDiscordSupportGuild, getDiscordConfigCheck } from "./discord-oauth.js";
-import { handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
+import { handleGuestSupportApi, renderGuestSupportPage, handleSupportApi, handleSupportContextApi, handleSupportMembershipApi, handleSupportInteraction, registerSupportCommands, SUPPORT_CATALOG } from "./discord-support.js";
 import { normalizeCompareGovernorIds, buildPlayerCompareSeries, extractOptionalPlayerAssets } from "./player-compare.js";
 import { handleApiRawDataApi, handleApiRawHistoryApi, renderApiRawDataPage } from "./api-raw-inspector.js";
 import { renderAdminDataCoveragePage } from "./admin-data-coverage.js";
 import { renderKingdomCatalogPage } from "./kingdom-catalog-page.js";
-import { agentTokenState, agentRateLimited, auditAgentRequest } from "./owner-agent.js";
-import { runSwordlandEventsRefresh, activeShowdown, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, ensureSwordlandSchema } from "./swordland.js";
+import { agentTokenState, agentRateLimited, auditAgentRequest, isQuietAgentRequest } from "./owner-agent.js";
+import { loadMatchupHistory, ensureSwordlandEventsFetched, allianceHasOfficerUser } from "./swordland.js";
+import { runSwordlandEventsRefresh, activeShowdown, activeSwordlandEvents, activeGovernorDuel, myAlliance, currentMatchup, canRegisterRole, isOfficer, saveMatchup, compareUrl, renderSwordlandPage, loadAllMatchupsForOwner, ensureSwordlandSchema } from "./swordland.js";
 import { allianceShareEmbed } from "./alliance-compare-share.js";
 import { renderGuidePage } from "./guide-page.js";
 import { renderAllianceComparePage, parseAllianceCompareTargets, canUseAllianceCompare, ALLIANCE_COMPARE_TOP_OPTIONS, ALLIANCE_COMPARE_DEFAULT_TOP, loadAllianceMystic, MYSTIC_COMPARE_BOARDS } from "./alliance-compare.js";
-import { loadAllianceForCompare } from "./kingdom-portal.js";
+import { loadAllianceForCompare, ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS } from "./kingdom-portal.js";
+import { allianceLabel, loadAllianceRosterIds, loadMemberVips } from "./kingdom-portal.js";
 import { renderKingdomDetailPage, renderKingdomRankingsPage, renderAllianceListPage, renderAlliancePage, renderKingdomComparePage, renderKingdomChangesPage, renderKingdomWatchlistAnalyticsPage, renderKingdomMightyPage, handleKingdomPortalApi } from "./kingdom-portal.js";
 import { handleOwnerKingdomLoadTestApi, handleOwnerKingdomLoadTestStatusApi, handleLoadTestNoticeStatusApi, handleOwnerKingdomLoadTestHistoryApi, handleOwnerKingdomLoadTestCancelApi, handleOwnerKingdomLoadTestExportApi, handleOwnerKingdomLoadTestSystemJsonApi, renderOwnerKingdomLoadTestPage, runKingdomLoadTestQueue } from "./admin-kingdom-load-test.js";
 import { handleAdminSystemLogApi, renderAdminSystemLogPage } from "./admin-system-log.js";
 import { handleAdminSystemLogExportApi, handleAdminSystemLogExportDownloadApi } from "./system-log-export.js";
 import { recordSystemEvent, systemTraceId, setSystemEventQueue } from "./system-log.js";
 import { handleClientTelemetry, clientTelemetryScript, isSameOriginRequest } from "./client-telemetry.js";
+import { socialRunStatus, triggerSocialRun } from "./social-run.js";
 import { playerShareEmbed } from "./player-share.js";
-import { readonlyTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe } from "./owner-snapshot.js";
+import { readonlyTokenOk, jarvisTokenOk, readonlyRateLimited, parseSections, scrubSecrets, loadSnapshotUsers, loadSnapshotAudit, loadSnapshotSystem, loadSnapshotCoverage, loadSnapshotProbe, loadSnapshotD1, loadSnapshotAnalyticsEngine } from "./owner-snapshot.js";
 import { runAllianceSweep, loadPublicAlliance, renderPublicAlliancePage, loadAllianceSitemapPaths, getAllianceSweepState } from "./alliance-directory.js";
 import { missionActionForPath, recordMissionAction, isMissionUser, loadMissions, loadMissionStats } from "./missions.js";
 import { loadSocialPack, renderSocialCard, renderSocialCover, renderSocialOwnerPage, loadSocialManifest, isSocialMediaKey } from "./social-pack.js";
-import { handlePageViewBeacon, pageViewBeaconScript, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween } from "./growth.js";
+import { handlePageViewBeacon, pageViewBeaconScript, isLikelyBot, loadGrowth, headline as growthHeadline, renderGrowthPage, saveBaseline, saveMeasuredRevenue, adPvBetween, SIGNUP_SOURCE_COOKIE, SIGNUP_SOURCES } from "./growth.js";
 import { handleSystemEventQueue } from "./system-event-queue.js";
 import { archiveSystemEventLog } from "./retention.js";
 import { runKingdomDiscordNotifications } from "./discord-notifications.js";
@@ -370,7 +395,8 @@ async function runDataRetentionJob(env, { now = Math.floor(Date.now() / 1000) } 
   // Stale, unfollowed kingdom rankings: same verified R2 + Drive backup
   // before D1 delete; pages read the R2 copy afterwards.
   try {
-    const kingdomArchive = await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now });
+    // 毎時の最初の回だけ（14日以上前のものを探すので5分ごとは要らない。2026-11-17 D1 の読み取りを減らす）。
+    const kingdomArchive = firstTickOfHour ? await archiveStaleKingdomRankings(env, drive, { maxKingdoms: 3, maxChecks: 10, now }) : { checked: 0, archivedKingdoms: 0, deletedRows: 0, batches: [], notThisTick: true };
     const failed = (kingdomArchive.batches || []).some(b => b.status === "FAILED");
     if (failed || kingdomArchive.archivedKingdoms > 0 || (kingdomArchive.skipped && firstTickOfHour)) {
       await recordDiagnostic(env.DB, {
@@ -1728,6 +1754,8 @@ async function handleMyAdvancedApi(request, env) {
   try {
     if (request.method === "GET") {
       const eligibility = await getAdvancedEligibility(env.DB, auth.user_id);
+      // プレビューの疑似ログインで「表示する権限」を選んだときは、その権限で返す（メニューの「オーナー管理」なども消える）。
+      if (isPreviewEnv(env) && eligibility && auth.role) eligibility.role = auth.role;
       return json({ ok: true, ...eligibility });
     }
 
@@ -1933,11 +1961,15 @@ async function handleMyPlayerApi(request, env) {
         const key = String(row.kingdom_id);
         byKingdom[key] = (byKingdom[key] || 0) + 1;
       }
+      const maxAccounts = maxAccountsForRole(auth.role);
       return json({
         ok: true,
         links,
         link: links.find(row => row.account_type === "MAIN" && row.status === "ACTIVE") || active[0] || null,
+        // 今使っている領主（切り替え・active-governor.js）
+        active_governor_id: active.length ? await getActiveGovernorId(env.DB, auth.user_id).catch(() => null) : null,
         limits: {
+          maxAccounts,
           freeKingdoms: 2,
           freeAccountsPerKingdom: 2,
           freeSubAccountsPerKingdom: 1,
@@ -1972,7 +2004,8 @@ async function handleMyPlayerApi(request, env) {
         }
 
         link = await saveUserPlayerLink(env.DB, auth.user_id, governorId, accountType, {
-          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true"
+          allowExtraAccounts: String(env.KINGSHOT_EXTRA_ACCOUNTS_ENABLED || "").toLowerCase() === "true",
+          maxAccounts: maxAccountsForRole(auth.role)
         });
       } catch (error) {
         if (error?.code === "GOVERNOR_ID_ALREADY_LINKED") {
@@ -2076,351 +2109,7 @@ async function renderMyPlayerPage(request, env) {
     return renderLoginRequiredPage(request, "マイKingShot", "マイKingShotを使うにはログインしてください。");
   }
 
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>マイKingShot | EagleEye</title><style>
-:root{color-scheme:dark;--ee-bg:#050b14;--ee-panel:#0a1728;--ee-panel2:#0d2035;--ee-line:#23415f;--ee-text:#eff8ff;--ee-sub:#8098b0;--ee-cyan:#20d7f2;--ee-blue:#4ea9ff;--ee-gold:#f6c84b;--ee-green:#49e69a}
-*{box-sizing:border-box}
-html{min-height:100%;background:var(--ee-bg)}
-body{margin:0;min-height:100%;background:radial-gradient(ellipse at 50% -180px,rgba(32,215,242,.11),transparent 65%),linear-gradient(180deg,#071321 0%,var(--ee-bg) 420px);color:var(--ee-text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-.wrap{width:min(100%,760px);margin:0 auto;padding:18px 16px calc(44px + env(safe-area-inset-bottom))}
-.back{display:inline-flex;align-items:center;gap:7px;color:#8fa9c1;text-decoration:none;font-size:12px;font-weight:850;letter-spacing:.04em;padding:8px 0}
-.back:hover{color:var(--ee-cyan)}
-.ee-benefits{margin:10px 0 12px;padding:12px 14px;border:1px solid rgba(250,204,21,.35);border-radius:14px;background:rgba(250,204,21,.06)}.ee-benefits b{display:block;font-size:13px;color:#fde68a;margin-bottom:6px}.ee-benefits ul{margin:0;padding-left:1.2em;font-size:13px;line-height:1.7}
-.eyebrow{margin-top:23px;color:var(--ee-cyan);font-size:10px;font-weight:950;letter-spacing:.22em}
-.title{font-size:clamp(28px,6vw,36px);line-height:1.12;letter-spacing:-.04em;margin:7px 0 10px;font-weight:900}
-.sub{color:#9cb1c7;line-height:1.75;font-size:13px;margin:0;max-width:620px}
-#app{margin-top:22px}
-.card{margin-top:15px;padding:18px;border:1px solid rgba(54,91,123,.7);border-radius:19px;background:linear-gradient(145deg,rgba(13,32,53,.98),rgba(7,19,33,.98));box-shadow:0 12px 30px rgba(0,0,0,.16);overflow:hidden}
-.card h2{font-size:17px;line-height:1.35;font-weight:900;letter-spacing:-.02em;color:#f0f8ff}
-.label{display:block;margin:16px 0 8px;color:#c6d8e8;font-size:12px;font-weight:850}
-.input,.select{width:100%;min-height:48px;padding:13px 14px;border-radius:12px;border:1px solid #2d4a66;background:#06111e;color:#f3f9ff;font-size:16px;box-sizing:border-box;outline:none}
-.input:focus,.select:focus{border-color:var(--ee-cyan);box-shadow:0 0 0 3px rgba(32,215,242,.12)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;width:100%;min-height:47px;padding:12px 14px;border:1px solid rgba(32,215,242,.4);border-radius:12px;background:linear-gradient(135deg,#16b9d4,#168dbd);color:#03121c;font-weight:900;font-size:14px;cursor:pointer;transition:filter .15s,transform .15s}
-.btn:hover{filter:brightness(1.08)}.btn:active{transform:scale(.99)}.btn:disabled{opacity:.55;cursor:wait}
-.btn.danger,.danger{background:#351b28;border:1px solid #71364b;color:#ffd8e2}
-.muted{color:#8fa8bf;font-size:12px;line-height:1.75}
-.ok{color:#6ff0ad}.warn{color:var(--ee-gold)}.error{margin-top:12px;color:#ff9cae;line-height:1.6}
-.row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:11px 0;border-bottom:1px solid rgba(54,82,109,.5);font-size:13px;color:#a9bfd3}
-.row:last-child{border-bottom:0}.value{font-weight:850;text-align:right;overflow-wrap:anywhere;color:#eaf5ff}
-.account{margin-top:13px;padding:14px;border:1px solid #24425e;border-radius:15px;background:rgba(4,15,27,.72)}
-.account-head{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#eff8ff}
-.badge{padding:5px 9px;border-radius:999px;background:#1b344b;color:#c5d9e9;font-size:10px;font-weight:900;white-space:nowrap}
-.badge.main{background:rgba(246,200,75,.15);color:#f9d66d;border:1px solid rgba(246,200,75,.3)}
-.badge.sub{background:rgba(78,169,255,.14);color:#8cc7ff;border:1px solid rgba(78,169,255,.28)}
-.check{display:flex;align-items:center;gap:10px;margin:11px 0;color:#d7e7f5;font-size:13px}
-.check-icon{flex:0 0 23px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#1a3045;color:#7893aa;font-size:12px;font-weight:900;border:1px solid #2d4b65}
-.check-icon.ok{background:rgba(73,230,154,.13);border-color:rgba(73,230,154,.35);color:var(--ee-green)}
-.vip-card{border-color:rgba(246,200,75,.35);background:linear-gradient(145deg,rgba(37,34,27,.65),rgba(9,20,32,.98))}
-.vip-card h2{color:var(--ee-gold)!important}
-#msg,#key-msg,#mighty-msg{font-size:12px;line-height:1.7}
-.key-guide{margin:4px 0 14px;padding:12px;border:1px solid rgba(32,215,242,.28);border-radius:12px;background:rgba(32,215,242,.06)}
-.key-guide-title{display:block;font-size:13px;margin-bottom:6px;color:var(--ee-cyan)}
-.key-guide-steps{margin:0 0 8px;padding-left:20px;font-size:12px;line-height:1.8;color:#d7e7f5}
-.key-guide-steps code{padding:1px 5px;border-radius:5px;background:#0b192b;color:var(--ee-gold)}
-.key-guide-note{font-size:11px;line-height:1.7;color:#f9d66d;margin-bottom:10px}
-.key-guide-open{display:flex;text-align:center;text-decoration:none;margin-top:4px}
-.btn.ghost{background:#132a40;color:var(--ee-text);border-color:var(--ee-line)}
-.key-input-row{display:flex;gap:8px;align-items:stretch}
-.key-input-row .input{flex:1;min-width:0}
-.key-input-row .btn{flex:0 0 auto;width:auto;margin:0;padding-left:14px;padding-right:14px}
-.key-format{min-height:18px;margin:6px 0 4px;font-size:11px}
-.key-format.warn{color:#f9d66d}
-button:focus-visible,a:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px}
-/* Compact mobile-first sizing aligned with the home dashboard */
-.wrap{width:min(100%,720px);padding:14px 12px calc(34px + env(safe-area-inset-bottom))}
-.back{font-size:11px;padding:5px 0}
-.eyebrow{margin-top:18px;font-size:9px;letter-spacing:.18em}
-.title{font-size:clamp(24px,7vw,30px);margin:5px 0 7px}
-.sub{font-size:12px;line-height:1.65}
-#app{margin-top:16px}
-.card{margin-top:12px;padding:14px;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.13)}
-.card h2{font-size:15px}
-.account{margin-top:10px;padding:11px;border-radius:13px}
-.account-head{font-size:13px}
-.row{gap:10px;padding:9px 0;font-size:12px}
-.value{max-width:65%;font-size:12px}
-.input,.select{min-height:44px;padding:11px 12px;font-size:15px}
-.btn{min-height:43px;padding:10px 12px;font-size:13px}
-.muted{font-size:11px;line-height:1.65}
-.check{font-size:12px;margin:9px 0}
-@media(min-width:600px){.wrap{padding:22px 18px 44px}.card{padding:18px}.account{padding:14px}.title{font-size:32px}.sub{font-size:13px}.row{font-size:13px}.value{font-size:13px}}
-
-/* Compact expandable API key list */
-.key-list-details{margin-top:10px;border:1px solid rgba(43,77,107,.55);border-radius:12px;background:rgba(4,15,27,.42);overflow:hidden}.key-list-details summary{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;list-style:none;color:#d6e7f5;font-size:11px;font-weight:850}.key-list-details summary::-webkit-details-marker{display:none}.key-list-details summary .muted{font-size:10px}.key-list-rows{padding:0 12px 4px}.key-list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid rgba(54,82,109,.35);font-size:11px;color:#a9bfd3}.key-list-row small{display:block;margin-top:3px;color:#728da5;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}.key-list-row strong{font-size:11px;white-space:nowrap}
-/* My Kingshot information hierarchy */
-.section-block{margin-top:22px}
-.section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 8px}
-.section-heading h2{margin:3px 0 0;font-size:17px;font-weight:900;letter-spacing:-.025em}
-.section-kicker{display:block;color:var(--ee-cyan);font-size:8px;font-weight:950;letter-spacing:.17em}
-.section-count,.role-pill{flex:0 0 auto;padding:5px 9px;border:1px solid rgba(32,215,242,.24);border-radius:999px;background:rgba(32,215,242,.07);color:#8ceaf6;font-size:10px;font-weight:900}
-.role-pill{border-color:rgba(143,168,191,.22);background:rgba(143,168,191,.07);color:#a9bfd3}
-.role-pill.role-active{border-color:rgba(73,230,154,.25);background:rgba(73,230,154,.08);color:#6ff0ad}
-.section-note{margin:0 2px 10px}
-.account-list{margin-top:0;padding:10px 12px}
-.account{margin-top:8px;padding:12px}
-.account .btn{margin-top:10px}
-.usage-line{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;padding:10px 2px 0;border-top:1px solid rgba(54,82,109,.45);color:#829bb2;font-size:10px}
-.usage-line strong{color:#c9dbea;font-size:10px;text-align:right}
-.usage-line i{font-style:normal;color:#57718a}
-.action-details{margin-top:10px;border:1px solid rgba(43,77,107,.7);border-radius:15px;background:rgba(8,22,37,.7);overflow:hidden}
-.action-details summary{display:flex;align-items:center;gap:11px;list-style:none;cursor:pointer;padding:12px}
-.action-details summary::-webkit-details-marker{display:none}
-.summary-icon{display:grid;place-items:center;flex:0 0 31px;width:31px;height:31px;border:1px solid rgba(32,215,242,.3);border-radius:10px;background:rgba(32,215,242,.08);color:var(--ee-cyan);font-size:20px}
-.action-details summary strong,.action-details summary small{display:block}
-.action-details summary strong{font-size:12px;color:#eaf5ff}
-.action-details summary small{margin-top:3px;color:#819ab1;font-size:10px}
-.summary-chevron{margin-left:auto;color:#7f9bb3;font-size:17px;transition:transform .15s}
-.action-details[open] .summary-chevron{transform:rotate(180deg)}
-.action-card{margin:0;border:0;border-top:1px solid rgba(43,77,107,.5);border-radius:0;box-shadow:none;background:rgba(4,15,27,.48)}
-.action-card .label:first-child{margin-top:2px}
-.form-help{margin-top:10px}
-.subsection-title{margin:0 0 5px;font-size:14px;font-weight:900}
-.section-block>.card{margin-top:0}
-.section-block .vip-card{margin-top:0}
-
-
-/* Collapsed account cards: keep the important identity visible, move details/actions behind a tap. */
-.account-details{padding:0;overflow:hidden}
-.account-summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px}
-.account-summary::-webkit-details-marker{display:none}
-.account-summary-main{min-width:0;flex:1}
-.account-summary-main strong,.account-summary-main small{display:block;overflow-wrap:anywhere}
-.account-summary-main strong{font-size:12px;color:#eff8ff}
-.account-summary-main small{margin-top:4px;color:#91a9bf;font-size:10px;line-height:1.5}
-.account-summary .badge{font-size:9px}
-.account-summary .summary-chevron{flex:0 0 auto;margin-left:0}
-.account-details[open] .account-summary{border-bottom:1px solid rgba(54,82,109,.5)}
-.account-detail-body{padding:2px 12px 12px}
-.account-detail-body .row:first-child{margin-top:2px}
-.account-link{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;max-width:70%;color:#8ceaf6;text-decoration:none;font-weight:850;text-align:right;overflow-wrap:anywhere}
-.account-link:hover{color:#d5fbff;text-decoration:underline;text-underline-offset:3px}
-.account-link:focus-visible{outline:2px solid var(--ee-cyan);outline-offset:3px;border-radius:4px}
-.account-link-icon{display:inline-grid;place-items:center;flex:0 0 19px;width:19px;height:19px;border:1px solid rgba(32,215,242,.25);border-radius:6px;background:rgba(32,215,242,.08);font-size:11px;line-height:1}
-.account-summary-main .account-summary-player{display:inline;color:#8ceaf6;text-decoration:none}
-.account-summary-main .account-summary-player:hover{text-decoration:underline;text-underline-offset:3px}
-.key-register-details{margin-top:14px;border:1px solid rgba(43,77,107,.6);border-radius:13px;background:rgba(4,15,27,.45);overflow:hidden}
-.key-register-details>summary{display:flex;align-items:center;gap:10px;list-style:none;cursor:pointer;padding:12px;color:#d8edf8;font-size:12px;font-weight:850}
-.key-register-details>summary::-webkit-details-marker{display:none}
-.key-register-details>summary:after{content:"＋";margin-left:auto;color:var(--ee-cyan);font-size:17px}
-.key-register-details[open]>summary:after{content:"−"}
-.key-register-body{padding:0 12px 12px;border-top:1px solid rgba(43,77,107,.45)}
-.key-register-body .label:first-child{margin-top:12px}
-
-@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
-</style></head><body><main class="wrap"><a class="back" href="/">← ホーム</a><div class="eyebrow">アカウント</div><h1 class="title">マイKingShot</h1><p class="sub">領主アカウント、APIキー、利用権限をここで管理できます。登録や確認の操作は、内容を確認してから実行してください。</p><div id="app"><div class="card">読み込み中…</div></div></main><script>
-(function(){
-  const app=document.getElementById("app");
-  function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-  let loadResponsesCompleted=0;
-  let loadProgressActive=false;
-  function showLoadProgress(completed){
-    if(!loadProgressActive) return;
-    const total=3;
-    const percent=Math.round(completed/total*100);
-    app.innerHTML='<section class="card" role="status" aria-live="polite"><h2 style="margin:0 0 8px">マイKingShotを読み込み中</h2><p class="muted" style="margin:0 0 14px">登録プレイヤー・権限・VIP情報の応答を確認しています。</p><div style="height:6px;border-radius:99px;overflow:hidden;background:#20384f"><div style="height:100%;width:'+percent+'%;border-radius:99px;background:linear-gradient(90deg,#20d7f2,#49e69a);transition:width .18s ease"></div></div><div style="display:flex;justify-content:space-between;gap:12px;margin-top:9px;font-size:12px"><span class="muted">API応答の処理</span><strong style="color:var(--ee-cyan)">'+completed+' / '+total+'</strong></div></section>';
-  }
-  async function fetchLoadPart(url){
-    const response=await fetch(url,{credentials:"same-origin",cache:"no-store"});
-    const data=await response.json().catch(()=>({}));
-    loadResponsesCompleted++;
-    showLoadProgress(loadResponsesCompleted);
-    return {response,data};
-  }
-  async function getData(){
-    loadResponsesCompleted=0;
-    loadProgressActive=true;
-    showLoadProgress(0);
-    let parts;
-    try{
-      parts=await Promise.all([
-        fetchLoadPart("/api/me/player"),
-        fetchLoadPart("/api/me/advanced"),
-        fetchLoadPart("/api/me/vip")
-      ]);
-    }catch(error){
-      loadProgressActive=false;
-      throw error;
-    }
-    loadProgressActive=false;
-    const [playerPart,advancedPart,vipPart]=parts;
-    const playerRes=playerPart.response, player=playerPart.data;
-    const advancedRes=advancedPart.response, advanced=advancedPart.data;
-    const vipRes=vipPart.response, vip=vipPart.data;
-    if(!playerRes.ok||!player.ok) throw new Error(player.message||player.error||("HTTP "+playerRes.status));
-    if(!advancedRes.ok||!advanced.ok) throw new Error(advanced.message||advanced.error||("HTTP "+advancedRes.status));
-    if(!vipRes.ok||!vip.ok) throw new Error(vip.message||vip.error||("HTTP "+vipRes.status));
-    return {player,advanced,vip};
-  }
-  async function load(){
-    try{
-      render(await getData());
-      return true;
-    }catch(error){
-      loadProgressActive=false;
-      app.innerHTML='<div class="card error">'+esc(error.message||String(error))+'</div>';
-      return false;
-    }
-  }
-  function render(d){
-    const rows=(d.player.links||[]).filter(x=>x.status==="ACTIVE");
-    const limits=d.player.limits||{};
-    let html='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">登録アカウント</span><h2>登録済みの領主</h2></div><span class="section-count">'+esc(rows.length)+'件</span></div><p class="muted section-note">無料枠：最大2王国・各王国メイン1＋サブ1</p><div class="card account-list">';
-    if(!rows.length) html+='<p class="muted">まだ登録されていません。</p>';
-    for(const l of rows){
-      const p=l.player||{};
-      const playerName=String(p.nick_name||"プレイヤー名未取得");
-      const allianceName=String(p.alliance_name||p.alliance_abbr||"");
-      const allianceLabel=String(p.alliance_abbr||p.alliance_name||"同盟未取得");
-      const playerUrl="/player?governor_id="+encodeURIComponent(l.governor_id);
-      const allianceUrl="/alliance?kid="+encodeURIComponent(p.kid??l.kingdom_id??"")+"&tag="+encodeURIComponent(p.alliance_abbr||p.alliance_name||"");
-      html+='<details class="account account-details"><summary class="account-summary"><span class="account-summary-main"><strong>王国 '+esc(l.kingdom_id)+' · '+(l.account_type==="MAIN"?"メイン":"サブ")+'</strong><small><a class="account-summary-player" href="'+playerUrl+'">♙ '+esc(playerName)+'</a>　・　戦力 '+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'<br>'+(allianceName?'<a class="account-summary-player" href="'+allianceUrl+'">⚑ '+esc(allianceLabel)+'</a>':'⚑ '+esc(allianceLabel))+'</small></span><span class="badge '+(l.account_type==="MAIN"?"main":"sub")+'">'+(l.account_type==="MAIN"?"メイン":"サブ")+'</span><span class="summary-chevron">⌄</span></summary><div class="account-detail-body">'+
-        '<div class="row"><span>領主ID</span><span class="value">'+esc(l.governor_id)+'</span></div>'+
-        '<div class="row"><span>プレイヤー名</span><a class="account-link" href="'+playerUrl+'"><span class="account-link-icon" aria-hidden="true">♙</span>'+esc(playerName)+'</a></div>'+
-        '<div class="row"><span>戦力</span><span class="value">'+esc(p.power!=null?Number(p.power).toLocaleString("ja-JP"):"未取得")+'</span></div>'+
-        '<div class="row"><span>同盟名</span>'+(allianceName?'<a class="account-link" href="'+allianceUrl+'"><span class="account-link-icon" aria-hidden="true">⚑</span>'+esc(allianceLabel)+'</a>':'<span class="value">未取得</span>')+'</div>'+
-        '<div class="row"><span>登録状態</span><span class="value ok">'+(l.official_verified_at?"✓ EagleEye公式認証":(l.verified?"管理者確認済み":"自己申告・未認証"))+'</span></div>'+
-        '<button class="btn danger remove" data-governor="'+esc(l.governor_id)+'">この登録を解除</button></div></details>';
-    }
-    html+='<div class="usage-line"><span>登録状況</span><strong>'+esc(limits.registeredKingdoms||0)+' / 2 王国 <i>・</i> '+esc(limits.activeAccounts||0)+' アカウント</strong></div></div></section>';
-    html+='<details class="action-details"><summary><span class="summary-icon">＋</span><span><strong>アカウントを追加</strong><small>領主IDを新しく登録する</small></span><span class="summary-chevron">⌄</span></summary><div class="card action-card"><label class="label" for="gid">領主ID</label><input id="gid" class="input" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="例: 123456789"><label class="label" for="atype">区分</label><select id="atype" class="select"><option value="MAIN">メイン</option><option value="SUB">サブ</option></select><button class="btn" id="save">登録する</button><div class="muted form-help">同じ王国ではメイン1件＋サブ1件まで登録できます。</div><div id="msg"></div></div></details>';
-    const a=d.advanced||{}; const role=String(d.vip?.role||a.role||"BASIC").toUpperCase(); const promoted=["ADVANCED","VIP","ADMIN","OWNER"].includes(role);
-    const keyCount=Number(a.mightPulseKeyCount||0);
-    const keyRows=Array.isArray(a.apiKeys)?a.apiKeys:[];
-    const vipKeyCount=Number(d.vip?.keyCount||keyCount);
-    const mightyKeyCount=Number(d.vip?.mightyKeyCount||0);
-    let keyHtml='<div class="muted" style="margin-top:12px">登録済みAPIキー：'+esc(keyCount)+'本　／　⚡ Mighty対応：'+esc(mightyKeyCount)+'本</div>';
-    if(keyRows.length) keyHtml+='<details class="key-list-details"><summary><span>登録済みキーの内訳</span><span class="muted">'+esc(keyRows.length)+'本を表示　⌄</span></summary><div class="key-list-rows">'+keyRows.map((k,i)=>{const vipKey=d.vip?.apiKeys?.[i]||{}; const prefix=String(k.api_key_prefix||"").trim(); const mighty=Boolean(vipKey.mighty_capable); return '<div class="key-list-row"><span>キー '+(i+1)+(prefix?'<small>'+esc(prefix)+'</small>':'')+'</span><strong class="'+(mighty?'warn':'ok')+'">'+(mighty?'⚡ Mighty':'✓ 提供済み')+'</strong></div>';}).join('')+'</div></details>';
-    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">利用権限</span><h2>利用権限・APIキー</h2></div><span class="role-pill '+(promoted?'role-active':'')+'">'+esc(role)+'</span></div><div class="card"><h3 class="subsection-title">Advanced昇格条件</h3><p class="muted section-note">以下の2つを満たすとBASICからAdvancedへ昇格します。</p>'+(promoted?'':'<div class="ee-benefits"><b>ADVANCEDになると増えること</b><ul><li>英雄スキル・英雄専用装備・英雄の装備</li><li>領主装備・宝石</li><li>プレイヤーの座標</li><li>KvK画面（対戦相手・スコア推移・秘境の試練のステージ別比較）</li><li>ウォッチリスト：プレイヤー3人 → 20人、王国1 → 3</li></ul></div>')+
-      '<div class="check"><span class="check-icon '+(a.hasPlayerLink?"ok":"")+'">'+(a.hasPlayerLink?"✓":"")+'</span><span>領主IDを1つ以上登録</span></div>'+
-      '<div class="check"><span class="check-icon '+(a.hasMightPulseKey?"ok":"")+'">'+(a.hasMightPulseKey?"✓":"")+'</span><span>MightPulse APIキーを1本以上Poolへ提供</span></div>'+
-      '<div class="row" style="margin-top:10px"><span>現在の権限</span><span class="value '+(promoted?"ok":"")+'">'+esc(role)+'</span></div>'+keyHtml+
-      '<details class="key-register-details"'+(a.hasMightPulseKey?'':' open')+'><summary>＋ MightPulse APIキーをPoolへ提供</summary><div class="key-register-body">'+
-      '<div class="key-guide"><strong class="key-guide-title">APIキーの作り方（無料・約1分）</strong><ol class="key-guide-steps">'+
-      '<li>下の「MightPulseを開く」をタップ（英語のサイトが開きます）</li>'+
-      '<li><b>Continue with Discord</b>（Discordで続ける）をタップし、Discordの画面で<b>認証</b></li>'+
-      '<li><b>Create API key</b>（APIキーを作成）をタップ</li>'+
-      '<li>表示された <code>kss_</code> で始まるキーをコピーして、EagleEyeに戻る</li>'+
-      '<li>下の「貼り付け」→「APIキーをPoolへ提供する」</li></ol>'+
-      '<div class="key-guide-note">⚠ キーは作成時に<b>1回だけ</b>表示されます。閉じてしまった場合は、もう一度 Create API key で作り直せば大丈夫です（料金はかかりません）。</div>'+
-      '<a class="btn key-guide-open" id="open-mightpulse" href="https://api.mightpulse.com/" target="_blank" rel="noopener noreferrer">MightPulseを開く ↗</a></div>'+
-      '<label class="label" for="mpkey">MightPulse APIキー</label><div class="key-input-row"><input id="mpkey" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="kss_ で始まるキーを貼り付け"><button type="button" class="btn ghost" id="paste-key">貼り付け</button></div><div id="key-format" class="muted key-format"></div><button class="btn" id="register-key">APIキーをPoolへ提供する</button><div class="muted" style="margin-top:12px">登録時に通常APIの有効性と⚡ Mighty対応を自動確認します（Mighty確認で1回APIを使用）。登録本数に上限はありません。同じAPIキーの重複登録はできません。提供したキーは暗号化してPoolへ保存され、画面には照合用の先頭部分のみ表示します。</div><div id="key-msg"></div></div></details></div></section>';
-    const v=d.vip||{};
-    const mightyConnected=Boolean(v.hasMightyKey);
-    const mightyStatus=mightyConnected?"CONFIRMED":String(v.mightyKeyStatus||"UNCONFIRMED").toUpperCase();
-    const isElevatedMightyRole=["ADMIN","OWNER"].includes(String(v.role||role).toUpperCase());
-    html+='<section class="section-block"><div class="section-heading"><div><span class="section-kicker">Mighty権限</span><h2>VIP・Mighty機能</h2></div><span class="role-pill '+(mightyConnected?'role-active':'')+'">'+(mightyConnected?'確認済み':'未確認')+'</span></div><div class="card vip-card"><h2 style="margin:0 0 6px;color:#f6d365">⚡ '+(isElevatedMightyRole?"Mighty機能の利用確認":"VIPロールへの昇格")+'</h2><p class="muted" style="margin:0 0 12px">'+(isElevatedMightyRole?"Mighty対応を確認すると、VIP向けMighty機能を利用できます。現在の管理者ロールは変更されません。":"Mighty対応のMightPulse APIキーを確認すると、VIPロールへ昇格できます。")+'</p>'+
-      '<div class="check"><span class="check-icon '+(mightyConnected?"ok":"")+'">'+(mightyConnected?"✓":"")+'</span><span>Mighty対応 '+(mightyConnected?"確認済み":"未確認")+'</span></div>'+
-      '<div class="row"><span>現在の権限</span><span class="value '+(String(v.role||"") === "VIP"?"ok":"")+'">'+esc(v.role||role)+'</span></div>'+
-      '<div id="mighty-check-area" style="margin-top:12px"><button class="btn" id="mighty-check">⚡ '+(mightyStatus==="CONFIRMED"?(isElevatedMightyRole?"Mighty機能を再確認":"VIPロールを再確認"):(isElevatedMightyRole?"Mighty機能の利用を確認":"VIPロールへの昇格を確認"))+'</button><div id="mighty-msg" class="muted" style="margin-top:10px"></div></div>'+
-      (mightyStatus==="CONFIRMED"?'<div class="muted" style="margin-top:10px;color:#86efac">⚡ Mighty対応確認済み。'+(isElevatedMightyRole?"Mighty機能を利用できます。":"VIPロール判定済みです。")+'</div>':"")+
-      '<div class="muted" style="margin-top:12px">登録済みのMightPulse APIキーを実際にMighty専用APIで確認した結果に基づいて判定を行います。</div></div></section>';
-    app.innerHTML=html;
-    document.getElementById("save").onclick=save;
-    document.querySelectorAll(".remove").forEach(b=>b.onclick=()=>remove(b.dataset.governor,b));
-    if(document.getElementById("register-key")) document.getElementById("register-key").onclick=registerKey;
-    setupKeyGuide();
-    const mightyButton=document.getElementById("mighty-check");
-    if(mightyButton) mightyButton.onclick=checkMighty;
-  }
-  async function save(){
-    const input=document.getElementById("gid"), type=document.getElementById("atype"), msg=document.getElementById("msg"), button=document.getElementById("save");
-    button.disabled=true; msg.textContent="";
-    try{
-      const r=await fetch("/api/me/player",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:input.value.trim(),account_type:type.value})});
-      const d=await r.json().catch(()=>({}));
-      if(r.status===409 && d.error==="GOVERNOR_ID_ALREADY_LINKED"){
-        app.innerHTML='<div class="card"><h2 style="margin-top:0">この領主IDは既に登録されています</h2><p class="muted">'+esc(d.message)+'</p><p class="muted">正当な所有者である場合は、KingShotゲーム内で本人しか表示できない情報が分かるスクリーンショットを用意してEagleEye専用サポートへ問い合わせてください。</p>'+('<a class="btn" href="/support?category=ACCOUNT&subcategory=GOVERNOR_ID&governor_id='+encodeURIComponent(input.value.trim())+'">この件について問い合わせる</a>')+'<div class="muted" style="margin-top:12px">問い合わせ番号: '+esc(d.support_request_id)+'</div><button class="btn danger" id="back">戻る</button></div>';
-        document.getElementById("back").onclick=load; return;
-      }
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      await load();
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
-    finally{button.disabled=false;}
-  }
-  async function remove(governorId,button){
-    if(!confirm("このKingShotアカウントの登録を解除しますか？")) return;
-    if(button){button.disabled=true;button.textContent="解除しています…";}
-    try{
-      const r=await fetch("/api/me/player",{method:"DELETE",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({governor_id:governorId})});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      await load();
-    }catch(error){
-      alert(error.message||"解除に失敗しました");
-    }finally{
-      if(button){button.disabled=false;button.textContent="この登録を解除";}
-    }
-  }
-  async function checkMighty(){
-    const button=document.getElementById("mighty-check"), msg=document.getElementById("mighty-msg");
-    button.disabled=true; button.textContent="確認中…"; msg.className="muted"; msg.textContent="登録済みのAPIキーを確認しています。";
-    try{
-      const r=await fetch("/api/me/vip/mighty-check",{method:"POST",credentials:"same-origin",cache:"no-store"});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      if(d.status==="CONFIRMED"){msg.className="ok";msg.textContent="⚡ Mighty対応を確認しました。"+(["ADMIN","OWNER"].includes(String(d.role||"").toUpperCase())?"管理者ロールは維持したまま、Mighty機能を利用できます。":"VIP権限を更新しました。");button.textContent=(["ADMIN","OWNER"].includes(String(d.role||"").toUpperCase())?"⚡ Mighty機能を再確認":"⚡ VIPロールを再確認");setTimeout(load,500);}
-      else if(d.status==="NOT_MIGHTY"){msg.className="warn";msg.textContent="登録済みのAPIキーではMighty対応を確認できませんでした。";setTimeout(load,500);}
-      else {msg.className="warn";msg.textContent=d.message||"一時的に判定できませんでした。時間を置いて再確認してください。";button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);button.disabled=false;button.textContent="⚡ Mighty対応を確認";}
-  }
-  function normalizeKeyInput(value){return String(value||"").replace(/^\\s*bearer\\s+/i,"").replace(/\\s+/g,"");}
-  function updateKeyFormat(){
-    const input=document.getElementById("mpkey"), out=document.getElementById("key-format");
-    if(!input||!out)return;
-    const key=normalizeKeyInput(input.value);
-    if(!key){out.className="muted key-format";out.textContent="";return;}
-    if(/^kss_[A-Za-z0-9_-]{8,}$/.test(key)){out.className="ok key-format";out.textContent="✓ MightPulse APIキーの形式です";}
-    else{out.className="warn key-format";out.textContent="kss_ で始まるキーではないようです。コピーした内容を確認してください。";}
-  }
-  function setupKeyGuide(){
-    const input=document.getElementById("mpkey"), paste=document.getElementById("paste-key"), open=document.getElementById("open-mightpulse"), msg=document.getElementById("key-msg");
-    if(!input)return;
-    input.addEventListener("input",updateKeyFormat);
-    if(paste)paste.onclick=async()=>{
-      try{
-        if(!navigator.clipboard||!navigator.clipboard.readText)throw new Error("clipboard unavailable");
-        const text=normalizeKeyInput(await navigator.clipboard.readText());
-        if(!text)throw new Error("empty");
-        input.value=text;updateKeyFormat();
-        if(msg){msg.className="muted";msg.textContent="貼り付けました。内容を確認して「APIキーをPoolへ提供する」をタップしてください。";}
-      }catch(e){
-        input.focus();
-        if(msg){msg.className="muted";msg.textContent="自動で貼り付けできませんでした。入力欄を長押しして「ペースト」を選んでください。";}
-      }
-    };
-    if(open)open.addEventListener("click",()=>{try{sessionStorage.setItem("ee-mp-key-guide","1")}catch{}});
-    if(!window.__eeKeyGuideReturn){
-      window.__eeKeyGuideReturn=true;
-      document.addEventListener("visibilitychange",()=>{
-        if(document.visibilityState!=="visible")return;
-        let pending=false;try{pending=sessionStorage.getItem("ee-mp-key-guide")==="1";sessionStorage.removeItem("ee-mp-key-guide")}catch{}
-        const box=document.getElementById("mpkey");
-        if(!pending||!box||box.value)return;
-        const details=box.closest("details");if(details)details.open=true;
-        box.scrollIntoView({block:"center",behavior:"smooth"});
-        const note=document.getElementById("key-msg");
-        if(note){note.className="ok";note.textContent="おかえりなさい。コピーしたキーを「貼り付け」で入力してください。";}
-      });
-    }
-  }
-  async function registerKey(){
-    const input=document.getElementById("mpkey"), msg=document.getElementById("key-msg"), button=document.getElementById("register-key");
-    const key=normalizeKeyInput(input?.value);
-    if(!key){msg.className="error";msg.textContent="MightPulse APIキーを入力してください。";return;}
-    if(!/^kss_/.test(key)&&!confirm("kss_ で始まらないキーです。このまま確認を続けますか？")) return;
-    if(!confirm("このAPIキーをEagleEyeのMightPulse API Poolへ提供しますか？")) return;
-    button.disabled=true; msg.className="muted"; msg.textContent="登録しています…";
-    try{
-      const r=await fetch("/api/me/mightpulse-key",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({api_key:key})});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok) throw new Error(d.message||d.error||("HTTP "+r.status));
-      msg.className="ok"; msg.textContent=d.promoted?"APIキーを登録しました。Advancedへ昇格しました。":"APIキーを登録しました。領主ID登録後にAdvanced昇格条件を満たします。";
-      input.value=""; setTimeout(load,500);
-    }catch(e){msg.className="error";msg.textContent=e.message||String(e);}
-    finally{button.disabled=false;}
-  }
-  load().catch(e=>{app.innerHTML='<div class="card error">'+esc(e.message||String(e))+'</div>';});
-}());
-</script></body></html>`;
+  return MY_PLAYER_PAGE_HTML;;
 }
 
 async function handlePlayerWatchlistApi(request, env) {
@@ -4622,14 +4311,14 @@ async function handleMightPulseProbeApi(request, env) {
 async function renderMightPulseProbePage(request, env) {
   const guard = await requireAdmin(request, env);
   if (guard.error) {
-    return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:#fff;font-family:system-ui;padding:32px'><h1>ADMIN権限が必要です</h1><a href='/' style='color:#f59e0b'>EagleEyeへ戻る</a></body></html>";
+    return "<!doctype html><html lang='ja'><body style='background:#0f172a;color:#fff;font-family:system-ui;padding:32px'><h1>ADMIN権限が必要です</h1><a href='/' style='color:var(--ee-cyan,#22d3ee)'>EagleEyeへ戻る</a></body></html>";
   }
 
   const boardOptions = KINGDOM_RANKING_BOARDS.map(board => "<option value='" + escapeHtml(board) + "'>" + escapeHtml(RANKING_BOARD_LABELS[board] || board) + "</option>").join("");
   const probeCatalogJson = JSON.stringify(MIGHTPULSE_PROBE_COMMANDS).replace(/</g, "\\u003c");
 
   return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='color-scheme' content='dark'><title>MightPulse Probe | EagleEye</title>" +
-  "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 50px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;font-size:12px;line-height:1.65}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field input,.field select,.field textarea{width:100%;min-width:0;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#fff;font-family:inherit;font-size:16px;line-height:1.4;-webkit-appearance:none;appearance:none}.field input:focus,.field select:focus,.field textarea:focus{font-size:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{padding:12px 15px;border:0;border-radius:10px;background:#f59e0b;color:#111827;font-weight:900}.btn.secondary{background:#334155;color:#e2e8f0}.btn.is-clicked{background:#38bdf8!important;color:#082f49!important;box-shadow:0 0 0 3px #38bdf855;transform:translateY(1px)}.btn.is-running{background:#facc15!important;color:#422006!important;cursor:progress}.btn.is-success{background:#22c55e!important;color:#052e16!important}.btn.is-error{background:#ef4444!important;color:#fff!important}.btn:focus-visible{outline:3px solid #7dd3fc;outline-offset:3px}.btn:disabled{opacity:.72;cursor:not-allowed;filter:saturate(.7)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}.kv{display:grid;grid-template-columns:180px minmax(0,1fr);gap:7px 10px}.kv b{color:#94a3b8;font-size:11px}.kv span{font-size:12px;word-break:break-word}.table-wrap{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:8px;border-bottom:1px solid #334155;text-align:left;font-size:11px;vertical-align:top}th{color:#94a3b8}.field-dictionary{display:grid;gap:6px;max-width:100%}.field-entry{border:1px solid #334155;border-radius:8px;background:#0b1220;min-width:0;overflow:hidden}.field-entry summary{display:flex;align-items:center;gap:8px;padding:9px;cursor:pointer;min-width:0;list-style:none}.field-entry summary::-webkit-details-marker{display:none}.field-entry summary:before{content:'＋';color:#7dd3fc;flex:none}.field-entry[open] summary:before{content:'−'}.field-path{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;word-break:break-word;min-width:0;flex:1}.field-type{font-size:10px;color:#93c5fd;flex:none;background:#172554;padding:3px 5px;border-radius:5px}.field-sample{padding:0 10px 10px;font-size:12px;line-height:1.55;overflow-wrap:anywhere;word-break:break-word}.field-sample>div{margin-top:4px;white-space:pre-wrap}.ok{color:#86efac}.error{color:#fca5a5}.pill{display:inline-block;padding:3px 6px;border-radius:7px;background:#0b1220;margin:2px}.small{font-size:10px;color:#94a3b8}.catalog-list{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.catalog-group{border:1px solid #334155;border-radius:12px;background:#0b1220;overflow:hidden}.catalog-group>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 12px;cursor:pointer;font-size:14px;font-weight:800;min-height:52px;background:#142238}.catalog-group>summary::-webkit-details-marker{display:none}.catalog-group>summary:before{content:'＋';color:#7dd3fc;font-size:16px;width:18px;flex:none}.catalog-group[open]>summary:before{content:'−'}.catalog-group .group-count{margin-left:auto;font-size:11px;color:#94a3b8;font-weight:600;white-space:nowrap}.catalog-group .group-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px}.catalog-item{border:1px solid #26364b;border-radius:10px;padding:11px;background:#101b2d;min-width:0;display:flex;flex-direction:column;gap:6px}.catalog-item h3{font-size:13px;line-height:1.4;margin:0}.catalog-item .purpose{font-size:11px;color:#cbd5e1;line-height:1.5;margin:0}.catalog-item .actions{margin-top:auto;display:grid;grid-template-columns:1fr;gap:6px;padding-top:4px}.catalog-item .btn{width:100%;padding:9px 8px;font-size:11px;white-space:normal;min-height:42px}.catalog-item .details{border-top:1px solid #26364b;padding-top:5px}.catalog-item .details summary{cursor:pointer;color:#93c5fd;font-size:11px;font-weight:700;padding:5px 0}.catalog-item .detail-body{font-size:11px;color:#cbd5e1;line-height:1.6;overflow-wrap:anywhere}.catalog-item .detail-body b{display:block;color:#94a3b8;font-size:10px;margin-top:6px}.catalog-tag{display:inline-block;align-self:flex-start;border-radius:6px;background:#1e293b;color:#cbd5e1;padding:3px 6px;font-size:9px}.catalog-tag.mighty{background:#3b2c12;color:#fcd34d}.catalog-tag.internal{background:#172554;color:#bfdbfe}.catalog-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:10px}.catalog-toolbar label{min-width:0}.catalog-toolbar select,.catalog-toolbar input{min-width:0}.section-help{border-left:3px solid #38bdf8;padding:8px 10px;background:#0b1220;border-radius:0 8px 8px 0}@media(max-width:600px){.catalog-group .group-items{grid-template-columns:1fr;gap:7px;padding:7px}.catalog-group>summary{padding:13px 11px}.catalog-item{padding:10px}.catalog-item .actions{grid-template-columns:1fr 1fr}.catalog-item .btn{min-height:44px;padding:9px 6px}.catalog-toolbar{grid-template-columns:1fr}.wrap{padding:18px 10px 40px}.form{grid-template-columns:1fr}.kv{grid-template-columns:1fr;gap:2px}.kv b{margin-top:8px}table{min-width:620px}}</style></head><body><main class='wrap'>" +
+  "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:980px;margin:auto;padding:24px 14px 50px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:11px;font-weight:900}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.hint{color:#94a3b8;font-size:12px;line-height:1.65}.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field input,.field select,.field textarea{width:100%;min-width:0;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#fff;font-family:inherit;font-size:16px;line-height:1.4;-webkit-appearance:none;appearance:none}.field input:focus,.field select:focus,.field textarea:focus{font-size:16px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{padding:12px 15px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900}.btn.secondary{background:#334155;color:#e2e8f0}.btn.is-clicked{background:#38bdf8!important;color:#082f49!important;box-shadow:0 0 0 3px #38bdf855;transform:translateY(1px)}.btn.is-running{background:#facc15!important;color:#422006!important;cursor:progress}.btn.is-success{background:#22c55e!important;color:#052e16!important}.btn.is-error{background:#ef4444!important;color:#fff!important}.btn:focus-visible{outline:3px solid #7dd3fc;outline-offset:3px}.btn:disabled{opacity:.72;cursor:not-allowed;filter:saturate(.7)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;word-break:break-all}.kv{display:grid;grid-template-columns:180px minmax(0,1fr);gap:7px 10px}.kv b{color:#94a3b8;font-size:11px}.kv span{font-size:12px;word-break:break-word}.table-wrap{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;min-width:720px}th,td{padding:8px;border-bottom:1px solid #334155;text-align:left;font-size:11px;vertical-align:top}th{color:#94a3b8}.field-dictionary{display:grid;gap:6px;max-width:100%}.field-entry{border:1px solid #334155;border-radius:8px;background:#0b1220;min-width:0;overflow:hidden}.field-entry summary{display:flex;align-items:center;gap:8px;padding:9px;cursor:pointer;min-width:0;list-style:none}.field-entry summary::-webkit-details-marker{display:none}.field-entry summary:before{content:'＋';color:#7dd3fc;flex:none}.field-entry[open] summary:before{content:'−'}.field-path{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;word-break:break-word;min-width:0;flex:1}.field-type{font-size:10px;color:#93c5fd;flex:none;background:#172554;padding:3px 5px;border-radius:5px}.field-sample{padding:0 10px 10px;font-size:12px;line-height:1.55;overflow-wrap:anywhere;word-break:break-word}.field-sample>div{margin-top:4px;white-space:pre-wrap}.ok{color:#86efac}.error{color:#fca5a5}.pill{display:inline-block;padding:3px 6px;border-radius:7px;background:#0b1220;margin:2px}.small{font-size:10px;color:#94a3b8}.catalog-list{display:grid;grid-template-columns:1fr;gap:8px;margin-top:12px}.catalog-group{border:1px solid #334155;border-radius:12px;background:#0b1220;overflow:hidden}.catalog-group>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:14px 12px;cursor:pointer;font-size:14px;font-weight:800;min-height:52px;background:#142238}.catalog-group>summary::-webkit-details-marker{display:none}.catalog-group>summary:before{content:'＋';color:#7dd3fc;font-size:16px;width:18px;flex:none}.catalog-group[open]>summary:before{content:'−'}.catalog-group .group-count{margin-left:auto;font-size:11px;color:#94a3b8;font-weight:600;white-space:nowrap}.catalog-group .group-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px}.catalog-item{border:1px solid #26364b;border-radius:10px;padding:11px;background:#101b2d;min-width:0;display:flex;flex-direction:column;gap:6px}.catalog-item h3{font-size:13px;line-height:1.4;margin:0}.catalog-item .purpose{font-size:11px;color:#cbd5e1;line-height:1.5;margin:0}.catalog-item .actions{margin-top:auto;display:grid;grid-template-columns:1fr;gap:6px;padding-top:4px}.catalog-item .btn{width:100%;padding:9px 8px;font-size:11px;white-space:normal;min-height:42px}.catalog-item .details{border-top:1px solid #26364b;padding-top:5px}.catalog-item .details summary{cursor:pointer;color:#93c5fd;font-size:11px;font-weight:700;padding:5px 0}.catalog-item .detail-body{font-size:11px;color:#cbd5e1;line-height:1.6;overflow-wrap:anywhere}.catalog-item .detail-body b{display:block;color:#94a3b8;font-size:10px;margin-top:6px}.catalog-tag{display:inline-block;align-self:flex-start;border-radius:6px;background:#1e293b;color:#cbd5e1;padding:3px 6px;font-size:9px}.catalog-tag.mighty{background:#3b2c12;color:#fcd34d}.catalog-tag.internal{background:#172554;color:#bfdbfe}.catalog-toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:10px}.catalog-toolbar label{min-width:0}.catalog-toolbar select,.catalog-toolbar input{min-width:0}.section-help{border-left:3px solid #38bdf8;padding:8px 10px;background:#0b1220;border-radius:0 8px 8px 0}@media(max-width:600px){.catalog-group .group-items{grid-template-columns:1fr;gap:7px;padding:7px}.catalog-group>summary{padding:13px 11px}.catalog-item{padding:10px}.catalog-item .actions{grid-template-columns:1fr 1fr}.catalog-item .btn{min-height:44px;padding:9px 6px}.catalog-toolbar{grid-template-columns:1fr}.wrap{padding:18px 10px 40px}.form{grid-template-columns:1fr}.kv{grid-template-columns:1fr;gap:2px}.kv b{margin-top:8px}table{min-width:620px}}</style></head><body><main class='wrap'>" +
   "<div class='top'><a class='back' href='/admin'>← 管理画面</a><div class='badge'>ADMIN / OWNER · PROBE</div></div>" +
   "<h1>MightPulse Probe</h1><p class='hint'>MightPulseのレスポンス時刻・HTTPキャッシュヘッダー・cached_at / age_seconds / fresh・タイムスタンプ候補を調べる画面です。APIキー本体は表示・保存せず、取得したレスポンスJSONは画面で確認しR2に保管します。</p>" +
   "<div class='card'><h2>1. 対象を指定</h2><div class='form'>" +
@@ -4836,7 +4525,7 @@ async function renderGoogleDriveSetupPage(request, env, message = null, error = 
   const authorizeReady = Boolean(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI);
   const esc = escapeHtml;
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google Drive設定 | EagleEye</title><style>
-body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0 10px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:16px;padding:17px;border:1px solid #334155;border-radius:16px;background:#162238}.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #334155}.row:last-child{border:0}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:12px 15px;border-radius:10px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900}.note{margin-top:14px;color:#94a3b8;font-size:12px;line-height:1.7}.message{margin-top:16px;padding:13px;border-radius:10px;background:#0f2a1c;color:#86efac}.error{margin-top:16px;padding:13px;border-radius:10px;background:#3a1418;color:#fca5a5}</style></head><body><main class="wrap"><a class="back" href="${isOwner ? "/owner" : "/admin"}">← ${isOwner ? "OWNER CONTROL" : "ADMIN CONTROL"}</a><div class="eyebrow">Google Drive</div><h1 class="title">Google Drive連携</h1><p class="sub">EagleEye専用の個人GoogleアカウントをOAuthで接続します。WorkspaceやService Accountは使用しません。</p>
+body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:760px;margin:auto;padding:28px 16px 48px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0 10px}.sub{color:#94a3b8;line-height:1.7}.card{margin-top:16px;padding:17px;border:1px solid #334155;border-radius:16px;background:#162238}.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid #334155}.row:last-child{border:0}.ok{color:#86efac}.bad{color:#fca5a5}.muted{color:#94a3b8}.btn{display:inline-flex;align-items:center;justify-content:center;margin-top:14px;padding:12px 15px;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#111827;text-decoration:none;font-weight:900}.note{margin-top:14px;color:#94a3b8;font-size:12px;line-height:1.7}.message{margin-top:16px;padding:13px;border-radius:10px;background:#0f2a1c;color:#86efac}.error{margin-top:16px;padding:13px;border-radius:10px;background:#3a1418;color:#fca5a5}</style></head><body><main class="wrap"><a class="back" href="${isOwner ? "/owner" : "/admin"}">← ${isOwner ? "OWNER CONTROL" : "ADMIN CONTROL"}</a><div class="eyebrow">Google Drive</div><h1 class="title">Google Drive連携</h1><p class="sub">EagleEye専用の個人GoogleアカウントをOAuthで接続します。WorkspaceやService Accountは使用しません。</p>
 ${message ? '<div class="message">'+esc(message)+'</div>' : ''}${error ? '<div class="error">'+esc(error)+'</div>' : ''}
 <div class="card"><div class="row"><span>OAuth設定</span><strong class="${authorizeReady ? "ok" : "bad"}">${authorizeReady ? "設定済み" : "未設定"}</strong></div><div class="row"><span>Refresh Token</span><strong class="${status.refreshConfigured ? "ok" : "bad"}">${status.refreshConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>DriveフォルダID</span><strong class="${status.folderConfigured ? "ok" : "bad"}">${status.folderConfigured ? "設定済み" : "未設定"}</strong></div><div class="row"><span>接続設定</span><strong class="${status.ready ? "ok" : "muted"}">${status.ready ? "設定済み" : "未設定"}</strong></div></div>
 ${isOwner ? `<div class="card"><b>DriveからR2へ復元</b><div class="note">R2のアーカイブが消えたときの復旧用です。Driveの退避ファイルとR2を照合し、R2に無いものだけを戻します（既存のR2ファイルは上書きしません。中身はMD5で照合します）。</div><button id="restore-scan" type="button" onclick="restoreScan()">照合して足りないものを復元</button><div style="margin-top:10px"><input id="restore-key" placeholder="R2キーを指定して1件だけ復元（archive/...）" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid #334155;background:#0b1220;color:#f8fafc"><button type="button" onclick="restoreOne()" style="margin-top:8px">このキーを復元</button></div><div id="restore-result" class="note"></div></div>
@@ -5005,8 +4694,10 @@ async function runApiPoolAutoRecovery(env, { limit = 4 } = {}) {
   return { checked, recovered, disabled, failed };
 }
 
-export default {
+const worker = {
   async fetch(request, env, executionContext) {
+    // プレビューは本番の D1・R2 を読むだけ（書き込み・Queue・外部 fetch を止める）。preview-readonly.js
+    if (isPreviewEnv(env)) { env = previewReadOnlyEnv(env); installPreviewFetchGuard(); }
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const url = new URL(request.url);
     const requestTraceId = request.headers.get("x-eagle-eye-trace-id") || systemTraceId("http");
@@ -5016,22 +4707,80 @@ export default {
     // 招待リンク（/?ref=コード）：コードを30日だけCookieに覚えて、きれいなURLへ。DBは読まない。
     { const ref = url.searchParams.get("ref"); if (request.method === "GET" && isReferralCode(ref) && !url.pathname.startsWith("/api/")) { const clean = new URL(url); clean.searchParams.delete("ref"); const h = new Headers({ Location: clean.pathname + clean.search, "Cache-Control": "no-store" }); h.append("Set-Cookie", serializeCookie(REF_COOKIE, ref, { maxAge: REF_COOKIE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" })); return new Response(null, { status: 302, headers: h }); } }
     try {
+      if (isPreviewEnv(env)) { const gated = await previewGate(request, env, url); if (gated) return gated; }
       if (url.pathname === "/kingdom-watchlist-lab.html" || url.pathname === "/kingdom-watchlist-lab") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/kingdom-watchlist-lab.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return new Response(await assetResponse.text(), { status: assetResponse.status, headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } }); }
       if (url.pathname === "/status-json-comparator" || url.pathname === "/status-json-comparator.html") { const assetResponse = await env.ASSETS.fetch(new Request(new URL("/status-json-comparator.html", request.url), request)); if (!assetResponse.ok) return assetResponse; return eagleEyeHtmlResponse(await assetResponse.text()); }
       if (url.pathname === "/robots.txt") return new Response(renderRobotsTxt(publicOrigin(request, env), { preview: isPreviewEnv(env) }), { headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } });
-      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, [...await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => []), ...await loadAllianceSitemapPaths(env.DB).catch(() => [])]), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 21600);
+      if (url.pathname === "/sitemap.xml") return await servePublicCached(request, executionContext, async () => new Response(renderSitemapXml(publicOrigin(request, env), await loadPublicKingdomIds(env.DB), undefined, [...await currentKvkSeason(env.DB).then(season => season ? ["/kvk/s" + season] : []).catch(() => [])]), { headers: { "content-type": "application/xml; charset=UTF-8" } }), 21600);
       if (url.pathname === "/tools/hero-shards") return await renderHeroShardRoute(request, env, executionContext);
       if (url.pathname === "/kvk/matchups") { const season = await currentKvkSeason(env.DB); return Response.redirect(new URL(season ? "/kvk/s" + season : "/kvk", url).toString(), 302); }
       { const m = url.pathname.match(/^\/kvk\/s(\d{1,4})\/?$/); if (m) { const season = Number(m[1]); return await servePublicCached(request, executionContext, async () => { const { pairs, observedAt } = await loadSeasonMatchups(env.DB, season); return eagleEyeHtmlResponse(renderKvkMatchupsPage({ season, pairs, observedAt, origin: publicOrigin(request, env) }), pairs.length ? 200 : 404); }, PUBLIC_CACHE_TTL.data); } }
       if (url.pathname === "/tools/gold-tech") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldTechPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/tools/gold") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGoldCalculatorPage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
-      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => renderPublicKingdomsIndex(await loadPublicKingdomIds(env.DB), { origin: publicOrigin(request, env) }), PUBLIC_CACHE_TTL.data);
+      // データレポート（読み物・静的）。2026-11-16。
+      // 英語版（i18n.js・2026-11-19）。公開前（EN_PUBLIC=false）はオーナー・アドミンだけ。ほかの人は日本語版へ。
+      // 英語版は共有キャッシュに入れない（見られる人が限られるため）。英語版がまだないページの /en/... も日本語版へ。
+      // 英語で書いた読み物ページの中身（englishProxy から呼ぶ内部用・英語版を見られる人だけ）。
+      if (url.pathname.startsWith("/__en-prose/")) {
+        const proseAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(proseAuth?.status === "ACTIVE" ? proseAuth.role : null)) return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+        const origin = publicOrigin(request, env);
+        const p = url.pathname.slice("/__en-prose".length).replace(/\/$/, "") || "/";
+        const prose = { "/privacy": renderPrivacyPolicyPageEn, "/terms": renderTermsPageEn, "/about": renderAboutPageEn, "/guide": renderGuidePageEn }[p];
+        if (prose) return eagleEyeHtmlResponse(prose(origin));
+        if (p === "/reports") return eagleEyeHtmlResponse(renderReportsIndexEn({ origin }));
+        if (p === "/guides") return eagleEyeHtmlResponse(renderGuidesIndex({ origin, lang: "en" }));
+        const gm = p.match(/^\/guides\/([a-z0-9-]{1,80})$/);
+        if (gm) { const g = renderGuide(gm[1], { origin, lang: "en" }); return g ? eagleEyeHtmlResponse(g) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); }
+        const rm = p.match(/^\/reports\/([a-z0-9-]{1,80})$/);
+        const html = rm ? renderReportEn(rm[1], { origin }) : null;
+        return html ? eagleEyeHtmlResponse(html) : eagleEyeHtmlResponse(renderNotFoundPage(), 404);
+      }
+      if (url.pathname === "/en" || url.pathname.startsWith("/en/")) {
+        const { path } = splitLang(url.pathname);
+        const toJa = () => Response.redirect(new URL(path + url.search, url).toString(), 302);
+        const enAuth = await getAuthenticatedUser(request, env).catch(() => null);
+        if (!canSeeEnglish(enAuth?.status === "ACTIVE" ? enAuth.role : null)) return toJa();
+        const origin = publicOrigin(request, env);
+        if (path === "/" && enAuth?.status !== "ACTIVE") {
+          const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
+          return eagleEyeHtmlResponse(renderVisitorHome({ origin, highlights: stats ? homeHighlights(stats) : null, kvkSeason, lang: "en" }));
+        }
+        // 読み物（利用規約・プライバシー・運営者情報・使い方・データレポート）は英語で書いたページ（legal-pages-en.js・reports-en.js）。
+        // ログイン中の案内やメニューも英語にするため、内部の /__en-prose/... で作ってから、ほかの英語ページと同じ englishProxy を通す。
+        if (/^\/(?:privacy|terms|about|guides?|reports)(?:\/[a-z0-9-]{0,80})?\/?$/.test(path)) return await englishProxy(request, env, executionContext, "/__en-prose" + path);
+        // そのほかのページ：日本語のページを作ってから英語に置き換える（i18n-en.js）。英語版を作らないページ（管理画面など）は日本語版へ。
+        if (enHref(path) === path) return toJa();
+        return await englishProxy(request, env, executionContext, path + url.search);
+      }
+      // 読み物：イベントの基本（guides.js・2026-11-19）
+      if (url.pathname === "/guides") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidesIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/guides\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderGuide(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
+      if (url.pathname === "/reports") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderReportsIndex({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
+      { const m = url.pathname.match(/^\/reports\/([a-z0-9-]{1,80})\/?$/); if (m) { const html = renderReport(m[1], { origin: publicOrigin(request, env) }); return html ? await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(html), PUBLIC_CACHE_TTL.static) : eagleEyeHtmlResponse(renderNotFoundPage(), 404); } }
+      if (url.pathname === "/kingdoms") return await servePublicPage(request, env, executionContext, async () => { const [kids, stats] = await Promise.all([loadPublicKingdomIds(env.DB), loadAllKingdomStats(env.DB).catch(() => null)]); return renderPublicKingdomsIndex(kids, { origin: publicOrigin(request, env), stats }); }, PUBLIC_CACHE_TTL.data);
       { const m = url.pathname.match(/^\/heroes\/([a-z-]{2,40})\/?$/); if (m) { const heroName = heroNameBySlug(m[1]); if (heroName) return await servePublicPage(request, env, executionContext, async signedIn => { let iconByName = {}; try { iconByName = await getSavedHeroIconMap(env.DB); } catch (error) { console.error("hero_page_icons_failed", error?.message || error); } return renderHeroPage(heroName, { origin: publicOrigin(request, env), iconByName, signedIn, loginHref: loginUrlFor(url.pathname) }); }, PUBLIC_CACHE_TTL.static); return eagleEyeHtmlResponse(renderHeroNotFoundPage(), 404); } }
-      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => { const data = await loadPublicAlliance(env.DB, kid, m[2]).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell }); }, PUBLIC_CACHE_TTL.data); } }
+      { const m = url.pathname.match(/^\/a\/(\d{1,6})\/(\d{1,20})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => { const data = await loadPublicAlliance(env.DB, kid, m[2], { archive: env.ARCHIVE }).catch(() => null); if (!data) return eagleEyeHtmlResponse(publicShell({ title: "同盟が見つかりません | EagleEye", description: "", canonical: "", body: `<nav class="crumbs"><a href="/">EagleEye</a> › <a href="/k/${kid}">王国 ${kid}</a></nav><h1>同盟が見つかりません</h1><p class="lead">この同盟はまだ記録されていません。</p><p><a href="/k/${kid}">王国${kid}のページへ →</a></p>`, noindex: true }), 404); return renderPublicAlliancePage(data, { origin: publicOrigin(request, env), signedIn, shell: publicShell }); }, PUBLIC_CACHE_TTL.data); } }
       // SNS投稿セット：実データから作るネタと、画像の元になるカード（検索には載せない。GitHub Actions が撮影する）。
       if (url.pathname === "/social/pack.json" || url.pathname === "/social/cover" || url.pathname.startsWith("/social/card/")) return await serveSocialRoute(request, env, executionContext, url);
       if (url.pathname === "/owner/social") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [pack, manifest] = await Promise.all([loadSocialPack(env, { origin: publicOrigin(request, env) }), loadSocialManifest(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialOwnerPage(pack, manifest)); }
-      if (url.pathname.startsWith("/owner/social/media/")) { const guard = await requireOwner(request, env); if (guard.error) return guard.error; const key = "social/" + url.pathname.slice("/owner/social/media/".length).split("/").map(decodeURIComponent).join("/"); if (!isSocialMediaKey(key) || !env.ARCHIVE) return json({ ok: false, error: "NOT_FOUND" }, 404); const obj = await env.ARCHIVE.get(key); if (!obj) return json({ ok: false, error: "NOT_FOUND" }, 404); const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".png") ? "image/png" : "application/json"; return new Response(obj.body, { headers: { "content-type": type, "cache-control": "private, max-age=300", "content-disposition": "inline; filename=\"" + key.split("/").pop() + "\"" } }); }
+      // 「今すぐ作る」：GET は作成中かどうか、POST で GitHub Actions を動かす（投稿はしない）。D1 は使わない。
+      if (url.pathname === "/owner/social/run") { const guard = await requireOwner(request, env); if (guard.error) return guard.error; if (request.method === "GET") return json(await socialRunStatus(env)); if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); const r = await triggerSocialRun(env); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : 502); }
+      // 動画（CM）を作る：台本の編集・保存（R2）と、GitHub Actions での作成。D1 は使わない。social-video.js
+      if (url.pathname === "/owner/social/video" || url.pathname.startsWith("/owner/social/video/")) {
+        const guard = await requireOwner(request, env);
+        if (url.pathname === "/owner/social/video") { if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const [saved, videos] = await Promise.all([loadSavedVideoSets(env.ARCHIVE), loadVideos(env.ARCHIVE)]); return eagleEyeHtmlResponse(renderSocialVideoPage({ saved, videos })); }
+        if (guard.error) return guard.error;
+        if (url.pathname === "/owner/social/video/run" && request.method === "GET") return json(await videoRunStatus(env));
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        if (url.pathname === "/owner/social/video/scenes") { const r = await saveVideoSet(env.ARCHIVE, body?.set); return json(r.ok ? r : { ok: false, error: "INVALID_SCENES", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/scenes/delete") { const r = await deleteVideoSet(env.ARCHIVE, String(body?.name || "")); return json(r.ok ? r : { ok: false, error: "INVALID", message: r.error }, r.ok ? 200 : 400); }
+        if (url.pathname === "/owner/social/video/run") { const r = await triggerVideoRun(env, body?.set, { bgm: body?.bgm !== false }); return json(r, r.ok ? 202 : r.error === "ALREADY_RUNNING" ? 409 : r.error === "NOT_CONFIGURED" ? 503 : r.error === "INVALID_SCENES" ? 400 : 502); }
+        return json({ ok: false, error: "NOT_FOUND" }, 404);
+      }
+      if (url.pathname.startsWith("/owner/social/media/")) { const guard = await requireOwner(request, env); if (guard.error) return guard.error; const key = "social/" + url.pathname.slice("/owner/social/media/".length).split("/").map(decodeURIComponent).join("/"); if (!isSocialMediaKey(key) || !env.ARCHIVE) return json({ ok: false, error: "NOT_FOUND" }, 404); const range = parseByteRange(request.headers.get("range")); const obj = await env.ARCHIVE.get(key, range ? { range } : undefined); if (!obj) return json({ ok: false, error: "NOT_FOUND" }, 404); const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".png") ? "image/png" : key.endsWith(".txt") ? "text/plain; charset=utf-8" : "application/json"; const h = { "content-type": type, "cache-control": "private, max-age=300", "accept-ranges": "bytes", "content-disposition": "inline; filename=\"" + key.split("/").pop() + "\"" }; if (range && obj.range) { const sfx = obj.range.suffix != null ? Math.min(obj.size, obj.range.suffix) : null; const start = sfx != null ? obj.size - sfx : (obj.range.offset ?? 0); const len = sfx != null ? sfx : Math.min(obj.range.length ?? (obj.size - start), obj.size - start); h["content-range"] = `bytes ${start}-${start + len - 1}/${obj.size}`; h["content-length"] = String(len); return new Response(obj.body, { status: 206, headers: h }); } h["content-length"] = String(obj.size); return new Response(obj.body, { headers: h }); }
       if (url.pathname === "/kingdom-timeline") return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderPublicTimelinePage({ origin: publicOrigin(request, env) })), PUBLIC_CACHE_TTL.static);
       { const m = url.pathname.match(/^\/k\/(\d{1,6})\/?$/); if (m) { const kid = Number(m[1]); return await servePublicPage(request, env, executionContext, async signedIn => (await publicKingdomExists(env.DB, kid)) ? renderPublicKingdomPage(kid, await loadPublicKingdom(env, kid), { origin: publicOrigin(request, env), signedIn }) : eagleEyeHtmlResponse(renderPublicKingdomNotFound(kid), 404), PUBLIC_CACHE_TTL.data); } }
       if (url.pathname === "/privacy" || url.pathname === "/privacy-policy") return eagleEyeHtmlResponse(renderPrivacyPolicyPage(publicOrigin(request, env)));
@@ -5039,6 +4788,29 @@ export default {
       if (url.pathname === "/guide") return servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderGuidePage(publicOrigin(request, env))), PUBLIC_CACHE_TTL.static);
       if (url.pathname === "/ads.txt") { const ads = renderAdsTxt(env.ADSENSE_PUBLISHER_ID); return new Response(ads || "Not Found\n", { status: ads ? 200 : 404, headers: { "content-type": "text/plain; charset=UTF-8", "cache-control": "public, max-age=3600" } }); }
       if (url.pathname === "/settings/theme") return eagleEyeHtmlResponse(renderThemePickerPage());
+      // 通知の設定（聖剣の登録のお知らせを止める・受け取る）。ログインが必要。
+      if (url.pathname === "/settings/notifications") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "通知の設定", "通知の設定を変えるにはログインしてください。"));
+        if (request.method === "POST") {
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const form = await request.formData().catch(() => null);
+          let message = "";
+          if (form?.has("weekly")) {
+            const on = String(form.get("weekly")) === "on";
+            await setWeeklyReportOn(env.DB, auth.user_id, on);
+            message = on ? "週1回の領主の変化を受け取るようにしました。" : "週1回の領主の変化を止めました。";
+          } else {
+            const off = String(form?.get("swordland") || "") === "off";
+            await setSwordlandNotifyOff(env.DB, auth.user_id, off);
+            message = off ? "聖剣の登録のお知らせを止めました。" : "聖剣の登録のお知らせを受け取るようにしました。";
+          }
+          const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+          return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn, message }));
+        }
+        const [off, weeklyOn] = await Promise.all([isSwordlandNotifyOff(env.DB, auth.user_id), isWeeklyReportOn(env.DB, auth.user_id)]);
+        return eagleEyeHtmlResponse(renderNotificationSettingsPage({ off, weeklyOn }));
+      }
       if (url.pathname === "/terms") return eagleEyeHtmlResponse(renderTermsPage(publicOrigin(request, env)));
       if (url.pathname === "/api/client-telemetry") return await handleClientTelemetry(request, env);
       if (url.pathname === "/api/funnel-event") {
@@ -5075,7 +4847,24 @@ export default {
       if (url.pathname === "/watchlist" || url.pathname === "/player-watchlist") await markWatchBadgeSeen(request, env);
       if (url.pathname === "/watchlist") return eagleEyeHtmlResponse(await renderWatchlistHubPage(request, env));
       if (url.pathname === "/player-watchlist") return eagleEyeHtmlResponse(await renderPlayerWatchlistPage(request, env));
-      if (url.pathname === "/news") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+      if (url.pathname === "/news") {
+        // ログインなしでも読める公開ページ（2026-11-17）。ログイン中は既読の印など今まで通り。公開版は5分キャッシュ。
+        const hasSession = Boolean(parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE]);
+        const auth = hasSession ? await getAuthenticatedUser(request, env).catch(() => null) : null;
+        if (auth?.status === "ACTIVE") return eagleEyeHtmlResponse(await renderNewsRoute(request, env));
+        return await servePublicCached(request, executionContext, async () => eagleEyeHtmlResponse(renderNewsPage(env.DB ? await listAnnouncements(env.DB, 50).catch(() => []) : [], { publicView: true, origin: publicOrigin(request, env) })), 300);
+      }
+      // お知らせの画像・動画（news-media.js）。表示はだれでも、アップロードは ADMIN・OWNER。
+      if (url.pathname.startsWith("/news/media/")) return await serveNewsMedia(request, env.ARCHIVE, url.pathname.slice("/news/media/".length));
+      if (url.pathname === "/api/admin/announcements/media") {
+        const guard = await requireAdmin(request, env);
+        if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const r = await handleNewsMediaUpload(request, env.ARCHIVE);
+        if (r.body.ok) await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_MEDIA_UPLOAD", null, null, { file: r.body.file }).catch(() => {});
+        return json(r.body, r.status);
+      }
       if (url.pathname === "/api/kingdom-watchlist/history") return await handleKingdomRankingHistoryApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist/data") return await handleKingdomWatchlistDataApi(request, env);
       if (url.pathname === "/api/kingdom-watchlist") return await handleKingdomWatchlistApi(request, env, requestTraceId);
@@ -5106,6 +4895,14 @@ export default {
       if (url.pathname === "/api/debug/player-icons") return await handleDebugPlayerIcons(request, env);
       if (url.pathname === "/api/discord/interactions") return await handleSupportInteraction(request, env);
       if (url.pathname === "/api/admin/discord-support/register-command") return await handleDiscordSupportCommandRegistrationApi(request, env);
+      if (url.pathname === "/api/support/guest") {
+        // ログインしていない人の問い合わせ。同じサイトからだけ。IP はハッシュにして回数の制限だけに使う（保存しない）。
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const ip = request.headers.get("cf-connecting-ip") || "-";
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(env.EAGLEEYE_SESSION_SECRET || "") + ":" + ip));
+        const ipHash = [...new Uint8Array(digest)].slice(0, 12).map(b => b.toString(16).padStart(2, "0")).join("");
+        return await handleGuestSupportApi(request, env, { ipHash });
+      }
       if (url.pathname === "/api/support") { const auth = await getAuthenticatedUser(request, env); return await handleSupportApi(request, env, auth); } if (url.pathname === "/api/support/context") { const auth = await getAuthenticatedUser(request, env); return await handleSupportContextApi(request, env, auth); } if (url.pathname === "/api/support/membership") { const auth = await getAuthenticatedUser(request, env); return await handleSupportMembershipApi(request, env, auth); }
       if (url.pathname === "/api/me") return await handleMe(request, env);
       if (url.pathname === "/api/admin/mightpulse/player") return await handleMightPulsePlayerTest(request, env);
@@ -5154,11 +4951,24 @@ export default {
       if (url.pathname === "/owner/discord-diagnostics") return eagleEyeHtmlResponse(await renderOwnerDiscordDiagnosticsPage(request, env));
       if (url.pathname === "/owner") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
       if (url.pathname === "/owner/users") return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env, { view: "users" }));
+      // その日に使ったログインユーザー（owner-active-users.js）。オーナーだけ。
+      if (url.pathname === "/owner/users/active") { const guard = await requireOwner(request, env); if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)); const day = normalizeActiveDay(url.searchParams.get("day")); const [data, usage] = await Promise.all([loadActiveUsers(env.DB, day), env.ARCHIVE ? loadDayUsage(env.ARCHIVE, day, rollupJstDay()).catch(() => ({})) : {}]); return eagleEyeHtmlResponse(renderActiveUsersPage({ ...data, usage })); }
+      // 利用の推移（月ごと・年間）。R2 の集計（usage-rollup.js）を読む。POST /owner/usage/run で集計を今すぐ（まだの日を最大30日）。
+      if (url.pathname === "/owner/usage" || url.pathname === "/owner/usage/run") {
+        const guard = await requireOwner(request, env);
+        if (guard.error) return url.pathname === "/owner/usage" ? eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env)) : guard.error;
+        if (url.pathname === "/owner/usage/run") { if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405); if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403); return json({ ok: true, ...(await runUsageRollup(env, { force: true, perRun: 30 })) }); }
+        const thisYear = Number(rollupJstDay().slice(0, 4));
+        const year = Math.min(thisYear, Math.max(2025, Number(url.searchParams.get("year")) || thisYear));
+        const [months, names] = await Promise.all([loadYear(env.ARCHIVE, year), env.DB.prepare("SELECT user_id, COALESCE(NULLIF(global_name, ''), username) AS name FROM users").all().then(r => Object.fromEntries((r?.results || []).map(x => [x.user_id, x.name]))).catch(() => ({}))]);
+        return eagleEyeHtmlResponse(renderUsageYearPage({ year, months, names, thisYear }));
+      }
       if (url.pathname === "/owner/traffic") {
         const guard = await requireOwner(request, env);
         if (guard.error) return eagleEyeHtmlResponse(await renderOwnerAdminPage(request, env));
         const [active, cf, d1, apiPool, funnel, top, sweep] = await Promise.all([loadDailyActive(env.DB, { days: 14 }), loadCloudflareTraffic(env, { days: 14 }), getD1UsageState(env.DB).catch(() => null), getApiPoolUsageState(env.DB).catch(() => null), loadFunnel(env.DB, { days: 14 }).catch(() => null), loadCloudflareTopTraffic(env).catch(() => null), getAllianceSweepState(env.DB).catch(() => null)]);
-        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top, sweep }));
+        const publicData = await loadPublicDataProgress(env.DB).catch(() => null);
+        return eagleEyeHtmlResponse(renderOwnerTrafficPage({ active, cf, d1, apiPool, funnel, top, sweep, publicData }));
       }
       if (url.pathname === "/owner/growth") {
         const guard = await requireOwner(request, env);
@@ -5224,17 +5034,35 @@ export default {
         await writeOwnerAuditLog(env, guard.auth, "SWORDLAND_EVENTS_REFRESH", null, null, r).catch(() => {});
         const msg = r.error ? "取得に失敗しました：" + r.error : "日程を取り直しました（" + (r.kingdoms || 0) + "王国・聖剣の日程 " + (r.saved || 0) + "件" + ((r.errors || []).length ? "・失敗 " + r.errors.map(e => "王国" + e.kid + " " + e.status).join("、") : "") + "）。";
         const state = await loadSwordlandState(env, guard.auth);
-        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true }));
+        return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: msg, isOwner: true, ownerMatchups: await loadAllMatchupsForOwner(env.DB).catch(() => []) }));
       }
       // 同盟比較（聖剣の下見）：ADVANCED以上。違う王国の同盟どうしも比べられる。
       if (url.pathname === "/alliance/compare") {
         const auth = await getAuthenticatedUser(request, env);
         if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "同盟比較", "同盟比較を使うにはログインしてください。"));
+        // 「最新を取得」（POST）：メンバー表は10分、秘境の試練は1時間より古いものだけ取り直して、同じページに戻る。
+        if (request.method === "POST") {
+          if (!canUseAllianceCompare(auth.role)) return json({ ok: false, error: "ADVANCED_REQUIRED" }, 403);
+          if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+          const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
+          const back = new URL(url); back.searchParams.delete("refreshed");
+          if (targets.length >= 2 && !isQuietAgentRequest(request, auth)) {
+            // オーナーは下限なし（毎回取り直す）。ほかの人はメンバー表10分・秘境の試練1時間。
+            const isOwner = String(auth.role || "").toUpperCase() === "OWNER";
+            const got = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true, maxAgeSeconds: isOwner ? 0 : ALLIANCE_COMPARE_REFRESH_MIN_AGE_SECONDS, force: isOwner }).catch(() => null)));
+            const kids = got.filter(a => a && !a.error).map(a => a.kid);
+            await scheduleKingdomRankingFetch(env, executionContext, kids, MYSTIC_COMPARE_BOARDS.map(b => b[0]), { staleSeconds: isOwner ? 0 : ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS, ignoreRecentAttempt: isOwner }).catch(() => []);
+            await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_REFRESH", { metadata: { count: targets.length, fetched: got.filter(a => a?.fetched).length } });
+            back.searchParams.set("refreshed", "1");
+          }
+          return new Response(null, { status: 303, headers: { Location: back.pathname + back.search, "Cache-Control": "no-store" } });
+        }
         if (!canUseAllianceCompare(auth.role)) return eagleEyeHtmlResponse(renderAllianceComparePage({ message: "同盟比較はADVANCED以上の機能です。マイKingShotで領主を登録し、MightPulseのAPIキーを登録するとADVANCEDになります（/my-player）。" }));
         const targets = parseAllianceCompareTargets(url.searchParams.getAll("a"));
         const topParam = Number(url.searchParams.get("top"));
         const top = ALLIANCE_COMPARE_TOP_OPTIONS.includes(topParam) && url.searchParams.has("top") ? topParam : ALLIANCE_COMPARE_DEFAULT_TOP;
-        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: true }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
+        const quiet = isQuietAgentRequest(request, auth);
+        const alliances = await Promise.all(targets.map(t => loadAllianceForCompare(env, t.kid, t.tag, { canFetch: !quiet }).catch(error => ({ kid: t.kid, tag: t.tag, error: String(error?.message || error).slice(0, 60) }))));
         // 秘境の試練（ステージごとの上位3人）：プレイヤー比較と同じ表示の権限。王国ランキングが古い・無いときは裏で取りに行く。
         const found = alliances.filter(a => a && !a.error);
         if (found.length >= 2 && visibilityEnabled(await getPlayerVisibilitySettings(env.DB), "ranks_leaderboards", auth.role)) {
@@ -5249,16 +5077,27 @@ export default {
             a.mystic = await loadAllianceMystic(env.DB, a, full ? (a.members || []).map(m => m.id) : a.me ? [a.me] : []).catch(() => null);
             if (a.mystic && full) a.mystic.full = true;
           }));
-          await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
+          if (!quiet) await scheduleKingdomRankingFetch(env, executionContext, found.map(a => a.kid), MYSTIC_COMPARE_BOARDS.map(b => b[0])).catch(() => []);
         }
         if (alliances.length) await trackServiceUsage(env, auth, "ALLIANCE_COMPARE_VIEW", { metadata: { count: alliances.length, kingdoms: [...new Set(targets.map(t => t.kid))].length } });
         // 画像で共有（スマホの中で作る。サーバー・D1の負担は増えない）
         const shareFound = alliances.filter(a => a && !a.error);
         const newestRoster = Math.max(0, ...shareFound.map(a => Number(a.observedAt) || 0));
         const shareHtml = shareFound.length >= 2 ? allianceShareEmbed(shareFound, newestRoster ? new Date((newestRoster + 9 * 3600) * 1000).toISOString().slice(0, 16).replace("T", " ") : "") : "";
-        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml }));
+        return eagleEyeHtmlResponse(renderAllianceComparePage({ alliances, targets, top, shareHtml, refreshed: url.searchParams.get("refreshed") === "1", ownerRefresh: String(auth.role || "").toUpperCase() === "OWNER" }));
       }
-      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const out = await renderAlliancePage(request, env, auth); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
+      // 同盟メンバー全員の VIP を MightPulse から取り直す（ADMIN・OWNER・2026-11-19）。メンバーは保存済みのメンバー表から（画面からは受け取らない）。
+      if (url.pathname === "/api/alliance/member-vips") {
+        const guard = await requireAdmin(request, env); if (guard.error) return guard.error;
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => ({}));
+        const r = await refreshAllianceMemberVips(env, Number(body?.kid), String(body?.tag || "").trim());
+        if (r.error) return json({ ok: false, error: r.error, message: r.message }, r.status || 400);
+        await writeOwnerAuditLog(env, guard.auth, "ALLIANCE_MEMBER_VIPS_REFRESH", null, null, { kid: Number(body?.kid), tag: String(body?.tag || ""), fetched: r.fetched, failed: r.failed }).catch(() => {});
+        return json({ ok: true, ...r });
+      }
+      if (url.pathname === "/alliance") { const auth = await getAuthenticatedUser(request, env); const vipSettings = auth ? await getPlayerVisibilitySettings(env.DB).catch(() => null) : null; const showVip = Boolean(auth && vipSettings && visibilityEnabled(vipSettings, "base_vip", auth.role)); const out = await renderAlliancePage(request, env, auth, { showVip, canFetchVip: showVip && ["ADMIN", "OWNER"].includes(String(auth?.role || "").toUpperCase()) }); return out instanceof Response ? out : eagleEyeHtmlResponse(out); }
       if (url.pathname === "/kingdom/compare") return eagleEyeHtmlResponse(await renderKingdomComparePage(request, env));
       if (url.pathname === "/kvk") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKvkPage(request, env, auth, { loginUrl: loginUrlFor(url.pathname + url.search) })); }
       if (url.pathname === "/kingdom/mighty") { const auth = await getAuthenticatedUser(request, env); return eagleEyeHtmlResponse(await renderKingdomMightyPage(request, env, auth)); }
@@ -5298,6 +5137,21 @@ export default {
       }
 
       if (url.pathname === "/api/me/player") return await handleMyPlayerApi(request, env);
+      // 使う領主の切り替え（active-governor.js）。自分が登録している領主だけ選べる。
+      if (url.pathname === "/api/me/active-governor") {
+        const auth = await getAuthenticatedUser(request, env);
+        if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: false, error: "LOGIN_REQUIRED" }, 401);
+        if (request.method !== "POST") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
+        if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
+        const body = await request.json().catch(() => null);
+        try {
+          const governorId = await setActiveGovernor(env.DB, auth.user_id, body?.governor_id);
+          return json({ ok: true, active_governor_id: governorId });
+        } catch (error) {
+          if (error?.code === "GOVERNOR_NOT_LINKED") return json({ ok: false, error: error.code, message: error.message }, 400);
+          throw error;
+        }
+      }
       if (url.pathname === "/api/me/advanced" || url.pathname === "/api/me/mightpulse-key") return await handleMyAdvancedApi(request, env);
       if (url.pathname === "/api/me/vip/mighty-check") return await handleMyMightyCheckApi(request, env);
       if (url.pathname === "/api/me/vip") return await handleMyVipApi(request, env);
@@ -5308,7 +5162,12 @@ export default {
       if (url.pathname === "/api/player/history") return await handlePlayerHistoryApi(request, env);
       if (url.pathname === "/api/player/rank-history") return await handlePlayerRankHistoryApi(request, env);
       if (url.pathname === "/api/player/changes") return await handlePlayerChangesApi(request, env);
-      if (url.pathname === "/my-player") return eagleEyeHtmlResponse(await renderMyPlayerPage(request, env));
+      if (url.pathname === "/my-player") {
+        // ログイン直後の案内（?welcome=1・login-onboarding.js）。next は自サイトのパスだけ。
+        const page = await renderMyPlayerPage(request, env);
+        const welcome = url.searchParams.get("welcome") === "1" && page.includes('<h1 class="title">マイKingShot</h1>') ? welcomeBannerHtml(sanitizeLoginReturnPath(url.searchParams.get("next"))) : "";
+        return eagleEyeHtmlResponse(welcome ? page.replace(/(<h1 class="title">マイKingShot<\/h1><p class="sub">[^<]*<\/p>)/, m => m + welcome) : page);
+      }
       if (url.pathname === "/players") return eagleEyeHtmlResponse(await renderPlayerSearchPage(request, env));
       if (url.pathname === "/api/player-compare/refresh-capacity") return await handlePlayerCompareRefreshCapacityApi(request, env);
       if (url.pathname === "/api/player-compare") return await handlePlayerCompareApi(request, env, executionContext);
@@ -5318,13 +5177,18 @@ export default {
       if (url.pathname === "/player/changes") return eagleEyeHtmlResponse(await renderPlayerChangesPage(request, env));
       if (url.pathname === "/player/compare") return await renderPlayerComparePage(request, env);
       if (url.pathname === "/player") return eagleEyeHtmlResponse(await renderPlayerPage(request, env, executionContext));
-      return eagleEyeHtmlResponse(await renderHome(request, env));
+      // トップページは "/" だけ。ほかの知らない URL は 404（ソフト404をやめる）。
+      // /account はメニューにあるがページが無く、今までトップページを出していたので、同じくトップへ送る。
+      if (url.pathname === "/") return eagleEyeHtmlResponse(await renderHome(request, env));
+      if (url.pathname === "/index.html" || url.pathname === "/account") return Response.redirect(new URL("/", url).toString(), 302);
+      return eagleEyeHtmlResponse(renderNotFoundPage(), 404);
     } catch (error) {
       console.error("EagleEye request error:", error);
       return json({ ok: false, error: "INTERNAL_ERROR" }, 500);
     }
   },
   async scheduled(event, env, executionContext) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     try {
       await runApiPoolAutoRecovery(env, { limit: 4 });
     } catch (error) {
@@ -5350,10 +5214,33 @@ export default {
     } catch (error) {
       console.error("swordland_events_refresh_failed", error?.message || error);
     }
+    // 利用の集計：毎晩（日本時間0時台）前日の分を R2 に（usage-rollup.js。D1 には書かない）
+    try {
+      await runUsageRollup(env);
+    } catch (error) {
+      console.error("usage_rollup_failed", error?.message || error);
+    }
+    // 聖剣：同盟の R4・R5 に「対戦相手を登録して」と個チャ（毎時・昼間だけ・1回の回につき1人1回）。swordland-notify.js
+    try {
+      await runSwordlandOfficerNotify(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("swordland_officer_notify_failed", error?.message || error);
+    }
+    // 週1回：希望した人に自分の領主の先週の変化を個チャ（月曜の日本時間11時台だけ）。weekly-report.js
+    try {
+      await runWeeklyReport(env, { origin: env.PUBLIC_ORIGIN || "https://eagleeye-ks.com" });
+    } catch (error) {
+      console.error("weekly_report_failed", error?.message || error);
+    }
     try {
       await runUserKingdomRankingRefresh(env);
     } catch (error) {
       console.error("user_kingdom_ranking_refresh_failed", error?.message || error);
+    }
+    try {
+      await runPublicKingdomMonthlyRanking(env);
+    } catch (error) {
+      console.error("public_kingdom_monthly_ranking_failed", error?.message || error);
     }
     try {
       await runKingdomDiscordNotifications(env, { lookbackSeconds: 600, maxEvents: 20 });
@@ -5421,6 +5308,7 @@ export default {
     }
   },
   async queue(batch, env) {
+    if (isPreviewEnv(env)) return; // プレビューは cron・Queue を処理しない
     setSystemEventQueue(env.SYSTEM_EVENT_QUEUE);
     const messages = batch?.messages || [];
     const systemEventMessages = messages.filter(message => message?.body?.type === "SYSTEM_EVENT");
@@ -5549,7 +5437,7 @@ const EAGLEEYE_THEME_SCRIPT = `
             if(document.body&&!document.querySelector(".eagle-preview-banner")){
               var banner=document.createElement("div");
               banner.className="eagle-preview-banner";
-              banner.textContent="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
+              banner.innerHTML="🧪 PREVIEW — 開発版 / 本番ユーザーには表示されません";
               document.body.appendChild(banner);
             }
           } catch(e) {}
@@ -5689,8 +5577,21 @@ const EAGLEEYE_THEME_SCRIPT = `
 })();
 </script>`;
 
-const EAGLEEYE_SITE_FOOTER = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="サイト情報"><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a><a href="/about">運営者情報</a><a href="/support">お問い合わせ</a></nav><p>EagleEye（KingShot非公式ファンサービス）</p></footer>'
+const EAGLEEYE_SITE_FOOTER = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="サイト情報"><a href="/guides">イベントの基本</a><a href="/reports">データレポート</a><a href="/terms">利用規約</a><a href="/privacy">プライバシーポリシー</a><a href="/about">運営者情報</a><a href="/support">お問い合わせ</a></nav><p>EagleEye（KingShot非公式ファンサービス）</p></footer>'
   + '<style id="ee-site-footer-css">.ee-site-footer{margin:28px auto 0;padding:14px 16px 8px;max-width:820px;text-align:center;font-size:12px;color:var(--ee-subtext,#94a3b8);border-top:1px solid var(--ee-border-soft,#1d344d)}.ee-site-footer nav{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px}.ee-site-footer a{color:var(--ee-subtext,#94a3b8);text-decoration:underline;text-underline-offset:2px}.ee-site-footer p{margin:6px 0 0;font-size:11px}</style>';
+
+// 英語版のページ（<html lang="en">）のフッター。下のメニュー（日本語）は出さない（英語版は各ページに自分の見出しがある）。2026-11-19
+const EAGLEEYE_SITE_FOOTER_EN = '<footer id="ee-site-footer" class="ee-site-footer"><nav aria-label="Site"><a href="/en/guides">Event basics</a><a href="/terms">Terms (Japanese)</a><a href="/privacy">Privacy (Japanese)</a><a href="/about">About (Japanese)</a><a href="/support">Contact</a></nav><p>EagleEye — an unofficial Kingshot fan service</p></footer>';
+// 言語の切り替え：hreflang があるページだけ、フッターにもう一方の言語へのリンクを足す。
+export function footerWithLanguageSwitch(html, footer) {
+  const isEn = /<html lang="en"/.test(html);
+  const m = html.match(new RegExp('<link rel="alternate" hreflang="' + (isEn ? "ja" : "en") + '" href="([^"]+)"')) || (isEn ? html.match(/<meta name="ee-alt-ja" content="([^"]+)"/) : null);
+  if (!m) return footer;
+  let path = m[1];
+  try { const u = new URL(m[1]); path = u.pathname + u.search; } catch {}
+  const link = isEn ? '<a href="' + path + '" lang="ja" hreflang="ja">日本語</a>' : '<a href="' + path + '" lang="en" hreflang="en">English</a>';
+  return footer.replace(/(<nav aria-label="[^"]+">)/, "$1" + link);
+}
 
 function applyEagleEyeTheme(html) {
   if (typeof html !== "string" || !html.includes("<html")) return html;
@@ -5712,11 +5613,13 @@ function applyEagleEyeTheme(html) {
   // Only the dedicated login screen hides the navigation; pages that merely offer a login link keep it.
   const isLoginRequiredPage = html.includes('<meta name="ee-page" content="login-required">');
   // Site footer: policy / operator / contact links on every page (visible without opening a menu).
+  const isEnglishPage = /<html lang="en"/.test(html);
   if (!html.includes('id="ee-site-footer"')) {
+    const footer = footerWithLanguageSwitch(html, isEnglishPage ? EAGLEEYE_SITE_FOOTER_EN + EAGLEEYE_SITE_FOOTER.slice(EAGLEEYE_SITE_FOOTER.indexOf("<style")) : EAGLEEYE_SITE_FOOTER);
     const lastMain = html.lastIndexOf("</main>");
-    html = lastMain >= 0 ? html.slice(0, lastMain) + EAGLEEYE_SITE_FOOTER + html.slice(lastMain) : html.replace("</body>", EAGLEEYE_SITE_FOOTER + "</body>");
+    html = lastMain >= 0 ? html.slice(0, lastMain) + footer + html.slice(lastMain) : html.replace("</body>", footer + "</body>");
   }
-  if (!isLoginRequiredPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
+  if (!isLoginRequiredPage && !isEnglishPage && !html.includes('class="ee-nav') && !html.includes('class="ee-global-nav')) {
     const sharedNav = `
 ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
 <div class="ee-global-nav-drawer" aria-hidden="true">
@@ -5733,8 +5636,8 @@ ${renderEagleEyeNavigation({ badgeId: "globalNavBadge" })}
   if (!html.includes('id="eagleeye-shared-drawer-init"')) html=html.replace("</body>", '<script id="eagleeye-shared-drawer-init">'+EAGLEEYE_DRAWER_INIT+'</script></body>');
   if (!html.includes('id="eagleeye-theme-script"')) html=html.replace("</body>",EAGLEEYE_THEME_SCRIPT+"</body>");
   // Global request progress UI: shared by every HTML page without changing API payloads.
-  if (!html.includes('id="eagleeye-global-progress-css"')) html=html.replace("</head>", '<style id="eagleeye-global-progress-css">#ee-global-progress{position:fixed;z-index:2147483000;top:calc(env(safe-area-inset-top,0px) + 7px);left:50%;transform:translate(-50%,-150%);width:min(92vw,520px);box-sizing:border-box;padding:10px 13px 9px;border:1px solid var(--ee-border,#2a4664);border-radius:13px;background:rgba(15,32,53,.97);color:var(--ee-text,#e8f3ff);box-shadow:0 8px 28px #0006;backdrop-filter:blur(12px);font:600 12px/1.4 system-ui,-apple-system,sans-serif;opacity:0;transition:transform .2s ease,opacity .2s ease;pointer-events:none}#ee-global-progress.visible{transform:translate(-50%,0);opacity:1}#ee-global-progress .ee-gp-row{display:flex;align-items:center;gap:9px}#ee-global-progress .ee-gp-spinner{width:14px;height:14px;flex:0 0 14px;border:2px solid #35516d;border-top-color:var(--ee-cyan,#22d3ee);border-radius:50%;animation:ee-gp-spin .8s linear infinite}#ee-global-progress .ee-gp-copy{min-width:0;flex:1}#ee-global-progress .ee-gp-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#ee-global-progress .ee-gp-time{font-variant-numeric:tabular-nums;color:var(--ee-subtext,#91a7bf);font-weight:500}#ee-global-progress .ee-gp-track{height:3px;margin-top:8px;overflow:hidden;border-radius:99px;background:#263b52}#ee-global-progress .ee-gp-bar{height:100%;width:35%;border-radius:99px;background:var(--ee-cyan,#22d3ee);animation:ee-gp-move 1.15s ease-in-out infinite alternate}@keyframes ee-gp-spin{to{transform:rotate(360deg)}}@keyframes ee-gp-move{from{transform:translateX(-15%)}to{transform:translateX(205%)}}@media(prefers-reduced-motion:reduce){#ee-global-progress *,#ee-global-progress:before{animation:none!important;transition:none!important}}</style></head>');
-  if (!html.includes('id="eagleeye-global-progress-init"')) html=html.replace("</body>", '<div id="ee-global-progress" role="status" aria-live="polite" aria-atomic="true"><div class="ee-gp-row"><span class="ee-gp-spinner" aria-hidden="true"></span><span class="ee-gp-copy"><span class="ee-gp-label">通信中…</span></span><span class="ee-gp-time">0秒</span></div><div class="ee-gp-track" aria-hidden="true"><div class="ee-gp-bar"></div></div></div><script id="eagleeye-global-progress-init">(function(){if(window.__eeGlobalProgressInstalled)return;window.__eeGlobalProgressInstalled=true;var el=document.getElementById("ee-global-progress");if(!el)return;var label=el.querySelector(".ee-gp-label"),time=el.querySelector(".ee-gp-time"),active=new Map(),seq=0,shownAt=0,showTimer=0,tickTimer=0,tickerStartedAt=0;function describe(input,init){try{var method=String(init&&init.method||input&&input.method||"GET").toUpperCase(),u=new URL(typeof input==="string"?input:input&&input.url||String(input),location.href),p=u.pathname;if(p==="/api/player"&&u.searchParams.get("rich")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player"&&u.searchParams.get("refresh")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player/refresh")return "プレイヤーの詳細情報を取得中…";if(p==="/api/me/vip/mighty-check")return "Mighty対応を確認中…";if(p==="/api/me/vip")return "VIP情報を取得中…";if(p==="/api/me/player"&&method==="POST")return "KingShot IDを登録中…";if(p==="/api/me/player"&&method==="DELETE")return "KingShot IDの登録を解除中…";if(p==="/api/me/player")return "マイKingShotのプレイヤー情報を取得中…";if(p==="/api/me/mightpulse-key"&&method==="POST")return "MightPulse APIキーを登録中…";if(p==="/api/me/advanced"||p==="/api/me/mightpulse-key")return "権限・APIキー情報を取得中…";if(p==="/api/owner/kingdom-load-test"&&method==="POST")return "王国負荷テストを実行中…";if(p==="/api/owner/kingdom-load-test/cancel")return "王国負荷テストを停止中…";if(p==="/api/owner/kingdom-load-test/status")return "王国負荷テストの進捗を確認中…";if(p==="/api/owner/kingdom-load-test/history")return "負荷テスト履歴を取得中…";if(p==="/api/owner/kingdom-load-test/system-json")return "負荷テストのシステムログを取得中…";if(p==="/api/owner/kingdom-load-test/export")return "負荷テスト結果をエクスポート中…";if(p==="/api/admin/kingdom-catalog-r2-backfill")return "王国カタログのR2移行を実行中…";if(p==="/api/admin/mightpulse-research")return "MightPulse API調査を実行中…";if(p==="/api/admin/mightpulse-probe")return "MightPulse接続を確認中…";if(p==="/api/admin/api-pool/health-check")return "API Poolの接続確認中…";if(p==="/api/admin/api-pool/mighty-check")return "API PoolのMighty判定中…";if(p==="/api/admin/api-pool/test-player")return "API Poolでプレイヤー取得をテスト中…";if(p==="/api/admin/api-pool/test-ranking")return "API Poolでランキング取得をテスト中…";if(p==="/api/admin/data-retention")return "データ保持処理を実行中…";if(p==="/api/admin/kingdom-ranking-export")return "王国ランキングをエクスポート中…";if(p==="/api/admin/player-export")return "プレイヤーデータをエクスポート中…";if(p==="/api/admin/system-log/export")return "System Logをエクスポート中…";if(p==="/api/kingdom-watchlist/data")return "王国ウォッチリストのデータを取得中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="refresh")return "王国ウォッチリストを更新中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="create")return "王国ウォッチリストを登録中…";if(p==="/api/kingdom-watchlist"&&method==="DELETE")return "王国ウォッチリストを削除中…";if(p==="/api/kingdom-watchlist"&&method==="POST")return "王国ウォッチリストを保存中…";if(p==="/api/player-watchlist"&&method==="DELETE")return "プレイヤーウォッチリストを削除中…";if(p==="/api/player-watchlist"&&method==="POST")return "プレイヤーウォッチリストを保存中…";if(p==="/api/player/history")return "プレイヤー履歴を取得中…";if(p==="/api/player/rank-history")return "ランキング履歴を取得中…";if(p==="/api/player/changes")return "プレイヤーの変更履歴を取得中…";if(p==="/api/player-compare")return "プレイヤー比較データを取得中…";if(p==="/api/kingdom-portal/ranking")return "王国ランキングを取得中…";if(p==="/api/kingdom-portal/status")return "王国状況を取得中…";if(p==="/api/kingdom-rankings/preferences"&&method!=="GET")return "ランキング表示設定を保存中…";if(p==="/api/admin/diagnostics")return "システム診断を取得中…";if(p==="/api/admin/system-log")return "System Logを取得中…";if(p==="/api/admin/api-raw-data")return "API生データを取得中…";if(p==="/api/admin/api-raw-history")return "API生データ履歴を取得中…";if(p==="/api/admin/r2-archive-objects")return "R2アーカイブ一覧を取得中…";if(p==="/api/admin/google-drive/verify")return "Google Drive接続を確認中…";if(p==="/api/admin/api-pool/add"&&method==="POST")return "API Poolへキーを登録中…";if(p==="/api/admin/api-pool/delete")return "API Poolのキーを削除中…";if(p==="/api/admin/api-pool/revoke")return "API Poolのキーを無効化中…";if(p==="/api/admin/api-pool/move")return "API Poolキーを移動中…";if(p==="/api/owner/users/role")return "ユーザー権限を更新中…";if(p==="/api/owner/users/status")return "ユーザー状態を更新中…";if(p==="/api/owner/api-pool/reassign")return "API Poolキーの担当を変更中…";if(p.indexOf("/api/")===0){var n=p.split("/").filter(Boolean).pop()||"データ";var names={"player-compare":"比較データ","player-watchlist":"プレイヤーウォッチリスト","kingdom-watchlist":"王国ウォッチリスト","player-search":"プレイヤー検索","player":"プレイヤーデータ","players":"プレイヤーデータ","kingdom":"王国データ","rankings":"ランキング","me":"ユーザー情報","advanced":"権限情報","status":"システム状況"};return (names[n]||"データ")+"を取得中…"}return "ページのデータを取得中…"}catch(e){return "データを取得中…"}}function paint(){var count=active.size;label.textContent=count>1?(active.values().next().value.label+" ("+count+"件)"):(active.size?active.values().next().value.label:"通信中…");var elapsedBase=tickerStartedAt||shownAt;time.textContent=Math.max(0,Math.floor((Date.now()-elapsedBase)/1000))+"秒";}function startTicker(){clearInterval(tickTimer);tickerStartedAt=Date.now();paint();tickTimer=setInterval(function(){if(!active.size){clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;return}paint()},250);}function begin(id,info){active.set(id,info);if(active.size===1){shownAt=Date.now();clearTimeout(showTimer);showTimer=setTimeout(function(){if(active.size){el.classList.add("visible");startTicker()}},350)}else if(el.classList.contains("visible"))paint()}function finish(id){active.delete(id);if(!active.size){clearTimeout(showTimer);clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;el.classList.remove("visible")}else paint()}var navId=0,navWatchdog=0;function showNavigation(text){if(navId)finish(navId);if(navWatchdog)clearTimeout(navWatchdog);navId=++seq;shownAt=Date.now();active.set(navId,{label:text});clearTimeout(showTimer);el.classList.add("visible");startTicker();navWatchdog=setTimeout(function(){clearNavigation();var notice=document.getElementById("ee-progress-timeout");if(!notice){notice=document.createElement("div");notice.id="ee-progress-timeout";notice.setAttribute("role","status");notice.style.cssText="position:fixed;z-index:10001;left:12px;right:12px;bottom:calc(86px + env(safe-area-inset-bottom));padding:12px 14px;border:1px solid #b45309;border-radius:12px;background:#1f2937;color:#fef3c7;font:600 13px/1.5 system-ui;box-shadow:0 8px 28px #0008";document.body.appendChild(notice)}notice.textContent="ページの読み込みに時間がかかっています。通信またはサーバー応答を確認してください。";notice.style.display="block";setTimeout(function(){if(notice&&notice.parentNode)notice.parentNode.removeChild(notice)},10000)},20000)}function clearNavigation(){if(navWatchdog){clearTimeout(navWatchdog);navWatchdog=0}if(navId){var id=navId;navId=0;finish(id)}}document.addEventListener("click",function(event){if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;var link=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!link||link.hasAttribute("download")||link.target&&link.target!=="_self")return;var href=link.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^javascript:/i.test(href)||/^mailto:/i.test(href)||/^tel:/i.test(href))return;try{var target=new URL(href,location.href);if(target.origin!==location.origin)return;if(target.href===location.href)return;var progressLabel="ページを読み込んでいます…";if(target.pathname==="/player/compare")progressLabel="プレイヤー比較データを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.get("refresh")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/player"&&target.searchParams.get("rich")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/players"&&target.searchParams.has("q"))progressLabel="プレイヤーを検索しています…";else if(target.pathname==="/players")progressLabel="プレイヤー検索を開いています…";else if(target.pathname==="/my-player")progressLabel="マイKingShotを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.has("governor_id"))progressLabel="プレイヤー詳細を読み込んでいます…";else if(target.pathname==="/status")progressLabel="システム状況を確認しています…";else if(target.pathname==="/admin/diagnostics")progressLabel="システム診断を読み込んでいます…";else if(target.pathname==="/admin/mightpulse-probe")progressLabel="MightPulse Probeを開いています…";else if(target.pathname==="/owner/kingdom-catalog-r2-backfill")progressLabel="王国カタログR2移行の状況を読み込んでいます…";else if(target.pathname==="/kingdom-catalog")progressLabel="王国カタログを読み込んでいます…";else if(target.pathname==="/kingdom/rankings")progressLabel="王国ランキングを読み込んでいます…";else if(target.pathname==="/kingdom/alliances")progressLabel="王国の同盟一覧を読み込んでいます…";else if(target.pathname==="/alliance")progressLabel="同盟情報を読み込んでいます…";else if(target.pathname==="/player/history")progressLabel="プレイヤー履歴を読み込んでいます…";else if(target.pathname==="/player/changes")progressLabel="プレイヤーの変更履歴を読み込んでいます…";showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)}catch(e){}},false);document.addEventListener("submit",function(event){var form=event.target;if(!form||form.tagName!=="FORM"||form.target&&form.target!=="_self")return;var method=String(form.method||"get").toUpperCase();var progressLabel=method==="GET"?"ページを更新しています…":"処理を送信しています…";try{var actionUrl=new URL(form.action||form.getAttribute("action")||location.href,location.href);if(actionUrl.pathname==="/owner/kingdom-catalog-r2-backfill"&&method!=="GET")progressLabel="王国カタログのR2移行を実行中…";else if(actionUrl.pathname==="/players"&&method==="GET")progressLabel="プレイヤー検索を実行中…";else if(actionUrl.pathname==="/player"&&actionUrl.searchParams.has("governor_id"))progressLabel="プレイヤー情報を取得しています…";else if(actionUrl.pathname.indexOf("/api/")===0)progressLabel=describe(actionUrl,{method:method});}catch(e){}showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)},false);window.addEventListener("pageshow",clearNavigation);if(typeof window.fetch==="function"){var original=window.fetch.bind(window);window.fetch=function(input,init){var id=++seq,info={label:describe(input,init)};begin(id,info);var result;try{result=original(input,init)}catch(e){finish(id);throw e}return Promise.resolve(result).then(function(response){setTimeout(function(){finish(id)},0);trackResponseBody(response,info.label);return response},function(error){finish(id);throw error})};function trackResponseBody(response,parentLabel){if(!response||response.__eeProgressBodyTracking)return response;try{response.__eeProgressBodyTracking=true;["arrayBuffer","blob","formData","json","text"].forEach(function(method){var originalMethod=response[method];if(typeof originalMethod!=="function")return;try{response[method]=function(){var bodyId=++seq;begin(bodyId,{label:parentLabel?parentLabel.replace(/…$/,"")+"（応答処理中）":"応答データを処理中…"});var bodyResult;try{bodyResult=originalMethod.apply(this,arguments)}catch(error){finish(bodyId);throw error}return Promise.resolve(bodyResult).then(function(value){finish(bodyId);return value},function(error){finish(bodyId);throw error})}}catch(e){}});var body=response.body;if(body&&typeof body.getReader==="function"&&!body.__eeProgressStreamTracking){var originalGetReader=body.getReader;try{body.getReader=function(){var reader=originalGetReader.apply(this,arguments);if(!reader||reader.__eeProgressReaderTracking)return reader;try{reader.__eeProgressReaderTracking=true;var originalRead=reader.read,originalCancel=reader.cancel,originalReleaseLock=reader.releaseLock,streamId=0;reader.read=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalRead.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};reader.cancel=function(){var result;try{result=originalCancel.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReleaseLock==="function")reader.releaseLock=function(){var result=originalReleaseLock.apply(this,arguments);if(streamId){finish(streamId);streamId=0}return result}}catch(e){}return reader};body.__eeProgressStreamTracking=true}catch(e){}}if(body&&typeof Symbol!=="undefined"&&Symbol.asyncIterator&&typeof body[Symbol.asyncIterator]==="function"&&!body.__eeProgressAsyncIteratorTracking){try{var originalAsyncIterator=body[Symbol.asyncIterator];body[Symbol.asyncIterator]=function(){var iterator=originalAsyncIterator.apply(this,arguments);if(!iterator||iterator.__eeProgressIteratorTracking)return iterator;try{iterator.__eeProgressIteratorTracking=true;var streamId=0,originalNext=iterator.next,originalReturn=iterator.return;iterator.next=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalNext.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReturn==="function")iterator.return=function(){var result;try{result=originalReturn.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})}}catch(e){}return iterator};body.__eeProgressAsyncIteratorTracking=true}catch(e){}}var originalClone=response.clone;if(typeof originalClone==="function"){response.clone=function(){var cloned=originalClone.apply(this,arguments);trackResponseBody(cloned,parentLabel);return cloned}}}catch(e){}return response}}if(typeof XMLHttpRequest!=="undefined"){var open=XMLHttpRequest.prototype.open,send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__eeProgressUrl=url;this.__eeProgressMethod=method;return open.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){var xhr=this,id=++seq;begin(id,{label:describe(xhr.__eeProgressUrl,{method:xhr.__eeProgressMethod})});var done=false;function finishOnce(){if(done)return;done=true;finish(id)}xhr.addEventListener("loadend",finishOnce,{once:true});try{return send.apply(this,arguments)}catch(e){finishOnce();throw e}}}})();</script></body>');
+  if (!isEnglishPage && !html.includes('id="eagleeye-global-progress-css"')) html=html.replace("</head>", '<style id="eagleeye-global-progress-css">#ee-global-progress{position:fixed;z-index:2147483000;top:calc(env(safe-area-inset-top,0px) + 7px);left:50%;transform:translate(-50%,-150%);width:min(92vw,520px);box-sizing:border-box;padding:10px 13px 9px;border:1px solid var(--ee-border,#2a4664);border-radius:13px;background:rgba(15,32,53,.97);color:var(--ee-text,#e8f3ff);box-shadow:0 8px 28px #0006;backdrop-filter:blur(12px);font:600 12px/1.4 system-ui,-apple-system,sans-serif;opacity:0;transition:transform .2s ease,opacity .2s ease;pointer-events:none}#ee-global-progress.visible{transform:translate(-50%,0);opacity:1}#ee-global-progress .ee-gp-row{display:flex;align-items:center;gap:9px}#ee-global-progress .ee-gp-spinner{width:14px;height:14px;flex:0 0 14px;border:2px solid #35516d;border-top-color:var(--ee-cyan,#22d3ee);border-radius:50%;animation:ee-gp-spin .8s linear infinite}#ee-global-progress .ee-gp-copy{min-width:0;flex:1}#ee-global-progress .ee-gp-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#ee-global-progress .ee-gp-time{font-variant-numeric:tabular-nums;color:var(--ee-subtext,#91a7bf);font-weight:500}#ee-global-progress .ee-gp-track{height:3px;margin-top:8px;overflow:hidden;border-radius:99px;background:#263b52}#ee-global-progress .ee-gp-bar{height:100%;width:35%;border-radius:99px;background:var(--ee-cyan,#22d3ee);animation:ee-gp-move 1.15s ease-in-out infinite alternate}@keyframes ee-gp-spin{to{transform:rotate(360deg)}}@keyframes ee-gp-move{from{transform:translateX(-15%)}to{transform:translateX(205%)}}@media(prefers-reduced-motion:reduce){#ee-global-progress *,#ee-global-progress:before{animation:none!important;transition:none!important}}</style></head>');
+  if (!isEnglishPage && !html.includes('id="eagleeye-global-progress-init"')) html=html.replace("</body>", '<div id="ee-global-progress" role="status" aria-live="polite" aria-atomic="true"><div class="ee-gp-row"><span class="ee-gp-spinner" aria-hidden="true"></span><span class="ee-gp-copy"><span class="ee-gp-label">通信中…</span></span><span class="ee-gp-time">0秒</span></div><div class="ee-gp-track" aria-hidden="true"><div class="ee-gp-bar"></div></div></div><script id="eagleeye-global-progress-init">(function(){if(window.__eeGlobalProgressInstalled)return;window.__eeGlobalProgressInstalled=true;var el=document.getElementById("ee-global-progress");if(!el)return;var label=el.querySelector(".ee-gp-label"),time=el.querySelector(".ee-gp-time"),active=new Map(),seq=0,shownAt=0,showTimer=0,tickTimer=0,tickerStartedAt=0;function describe(input,init){try{var method=String(init&&init.method||input&&input.method||"GET").toUpperCase(),u=new URL(typeof input==="string"?input:input&&input.url||String(input),location.href),p=u.pathname;if(p==="/api/player"&&u.searchParams.get("rich")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player"&&u.searchParams.get("refresh")==="1")return "プレイヤーの詳細情報を取得中…";if(p==="/api/player/refresh")return "プレイヤーの詳細情報を取得中…";if(p==="/api/me/vip/mighty-check")return "Mighty対応を確認中…";if(p==="/api/me/vip")return "VIP情報を取得中…";if(p==="/api/me/player"&&method==="POST")return "KingShot IDを登録中…";if(p==="/api/me/player"&&method==="DELETE")return "KingShot IDの登録を解除中…";if(p==="/api/me/player")return "マイKingShotのプレイヤー情報を取得中…";if(p==="/api/me/mightpulse-key"&&method==="POST")return "MightPulse APIキーを登録中…";if(p==="/api/me/advanced"||p==="/api/me/mightpulse-key")return "権限・APIキー情報を取得中…";if(p==="/api/owner/kingdom-load-test"&&method==="POST")return "王国負荷テストを実行中…";if(p==="/api/owner/kingdom-load-test/cancel")return "王国負荷テストを停止中…";if(p==="/api/owner/kingdom-load-test/status")return "王国負荷テストの進捗を確認中…";if(p==="/api/owner/kingdom-load-test/history")return "負荷テスト履歴を取得中…";if(p==="/api/owner/kingdom-load-test/system-json")return "負荷テストのシステムログを取得中…";if(p==="/api/owner/kingdom-load-test/export")return "負荷テスト結果をエクスポート中…";if(p==="/api/admin/kingdom-catalog-r2-backfill")return "王国カタログのR2移行を実行中…";if(p==="/api/admin/mightpulse-research")return "MightPulse API調査を実行中…";if(p==="/api/admin/mightpulse-probe")return "MightPulse接続を確認中…";if(p==="/api/admin/api-pool/health-check")return "API Poolの接続確認中…";if(p==="/api/admin/api-pool/mighty-check")return "API PoolのMighty判定中…";if(p==="/api/admin/api-pool/test-player")return "API Poolでプレイヤー取得をテスト中…";if(p==="/api/admin/api-pool/test-ranking")return "API Poolでランキング取得をテスト中…";if(p==="/api/admin/data-retention")return "データ保持処理を実行中…";if(p==="/api/admin/kingdom-ranking-export")return "王国ランキングをエクスポート中…";if(p==="/api/admin/player-export")return "プレイヤーデータをエクスポート中…";if(p==="/api/admin/system-log/export")return "System Logをエクスポート中…";if(p==="/api/kingdom-watchlist/data")return "王国ウォッチリストのデータを取得中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="refresh")return "王国ウォッチリストを更新中…";if(p==="/api/kingdom-watchlist"&&method==="POST"&&u.searchParams.get("action")==="create")return "王国ウォッチリストを登録中…";if(p==="/api/kingdom-watchlist"&&method==="DELETE")return "王国ウォッチリストを削除中…";if(p==="/api/kingdom-watchlist"&&method==="POST")return "王国ウォッチリストを保存中…";if(p==="/api/player-watchlist"&&method==="DELETE")return "プレイヤーウォッチリストを削除中…";if(p==="/api/player-watchlist"&&method==="POST")return "プレイヤーウォッチリストを保存中…";if(p==="/api/player/history")return "プレイヤー履歴を取得中…";if(p==="/api/player/rank-history")return "ランキング履歴を取得中…";if(p==="/api/player/changes")return "プレイヤーの変更履歴を取得中…";if(p==="/api/player-compare")return "プレイヤー比較データを取得中…";if(p==="/api/kingdom-portal/ranking")return "王国ランキングを取得中…";if(p==="/api/kingdom-portal/status")return "王国状況を取得中…";if(p==="/api/kingdom-rankings/preferences"&&method!=="GET")return "ランキング表示設定を保存中…";if(p==="/api/admin/diagnostics")return "システム診断を取得中…";if(p==="/api/admin/system-log")return "System Logを取得中…";if(p==="/api/admin/api-raw-data")return "API生データを取得中…";if(p==="/api/admin/api-raw-history")return "API生データ履歴を取得中…";if(p==="/api/admin/r2-archive-objects")return "R2アーカイブ一覧を取得中…";if(p==="/api/admin/google-drive/verify")return "Google Drive接続を確認中…";if(p==="/api/admin/api-pool/add"&&method==="POST")return "API Poolへキーを登録中…";if(p==="/api/admin/api-pool/delete")return "API Poolのキーを削除中…";if(p==="/api/admin/api-pool/revoke")return "API Poolのキーを無効化中…";if(p==="/api/admin/api-pool/move")return "API Poolキーを移動中…";if(p==="/api/owner/users/role")return "ユーザー権限を更新中…";if(p==="/api/owner/users/status")return "ユーザー状態を更新中…";if(p==="/api/owner/api-pool/reassign")return "API Poolキーの担当を変更中…";if(p.indexOf("/api/")===0){var n=p.split("/").filter(Boolean).pop()||"データ";var names={"player-compare":"比較データ","player-watchlist":"プレイヤーウォッチリスト","kingdom-watchlist":"王国ウォッチリスト","player-search":"プレイヤー検索","player":"プレイヤーデータ","players":"プレイヤーデータ","kingdom":"王国データ","rankings":"ランキング","me":"ユーザー情報","advanced":"権限情報","status":"システム状況"};return (names[n]||"データ")+"を取得中…"}return "ページのデータを取得中…"}catch(e){return "データを取得中…"}}function paint(){var count=active.size;label.textContent=count>1?(active.values().next().value.label+" ("+count+"件)"):(active.size?active.values().next().value.label:"通信中…");var elapsedBase=tickerStartedAt||shownAt;time.textContent=Math.max(0,Math.floor((Date.now()-elapsedBase)/1000))+"秒";}function startTicker(){clearInterval(tickTimer);tickerStartedAt=Date.now();paint();tickTimer=setInterval(function(){if(!active.size){clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;return}paint()},250);}function begin(id,info){active.set(id,info);if(active.size===1){shownAt=Date.now();clearTimeout(showTimer);showTimer=setTimeout(function(){if(active.size){el.classList.add("visible");startTicker()}},350)}else if(el.classList.contains("visible"))paint()}function finish(id){active.delete(id);if(!active.size){clearTimeout(showTimer);clearInterval(tickTimer);tickTimer=0;tickerStartedAt=0;el.classList.remove("visible")}else paint()}var navId=0,navWatchdog=0;function showNavigation(text){if(navId)finish(navId);if(navWatchdog)clearTimeout(navWatchdog);navId=++seq;shownAt=Date.now();active.set(navId,{label:text});clearTimeout(showTimer);el.classList.add("visible");startTicker();navWatchdog=setTimeout(function(){clearNavigation();var notice=document.getElementById("ee-progress-timeout");if(!notice){notice=document.createElement("div");notice.id="ee-progress-timeout";notice.setAttribute("role","status");notice.style.cssText="position:fixed;z-index:10001;left:12px;right:12px;bottom:calc(86px + env(safe-area-inset-bottom));padding:12px 14px;border:1px solid #b45309;border-radius:12px;background:#1f2937;color:#fef3c7;font:600 13px/1.5 system-ui;box-shadow:0 8px 28px #0008";document.body.appendChild(notice)}notice.textContent="ページの読み込みに時間がかかっています。通信またはサーバー応答を確認してください。";notice.style.display="block";setTimeout(function(){if(notice&&notice.parentNode)notice.parentNode.removeChild(notice)},10000)},20000)}function clearNavigation(){if(navWatchdog){clearTimeout(navWatchdog);navWatchdog=0}if(navId){var id=navId;navId=0;finish(id)}}document.addEventListener("click",function(event){if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;var link=event.target&&event.target.closest?event.target.closest("a[href]"):null;if(!link||link.hasAttribute("download")||link.target&&link.target!=="_self")return;var href=link.getAttribute("href")||"";if(!href||href.charAt(0)==="#"||/^javascript:/i.test(href)||/^mailto:/i.test(href)||/^tel:/i.test(href))return;try{var target=new URL(href,location.href);if(target.origin!==location.origin)return;if(target.href===location.href)return;var progressLabel="ページを読み込んでいます…";if(target.pathname==="/player/compare")progressLabel="プレイヤー比較データを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.get("refresh")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/player"&&target.searchParams.get("rich")==="1")progressLabel="プレイヤーの詳細情報を取得しています…";else if(target.pathname==="/players"&&target.searchParams.has("q"))progressLabel="プレイヤーを検索しています…";else if(target.pathname==="/players")progressLabel="プレイヤー検索を開いています…";else if(target.pathname==="/my-player")progressLabel="マイKingShotを読み込んでいます…";else if(target.pathname==="/player"&&target.searchParams.has("governor_id"))progressLabel="プレイヤー詳細を読み込んでいます…";else if(target.pathname==="/status")progressLabel="システム状況を確認しています…";else if(target.pathname==="/admin/diagnostics")progressLabel="システム診断を読み込んでいます…";else if(target.pathname==="/admin/mightpulse-probe")progressLabel="MightPulse Probeを開いています…";else if(target.pathname==="/owner/kingdom-catalog-r2-backfill")progressLabel="王国カタログR2移行の状況を読み込んでいます…";else if(target.pathname==="/kingdom-catalog")progressLabel="王国カタログを読み込んでいます…";else if(target.pathname==="/kingdom/rankings")progressLabel="王国ランキングを読み込んでいます…";else if(target.pathname==="/kingdom/alliances")progressLabel="王国の同盟一覧を読み込んでいます…";else if(target.pathname==="/alliance")progressLabel="同盟情報を読み込んでいます…";else if(target.pathname==="/player/history")progressLabel="プレイヤー履歴を読み込んでいます…";else if(target.pathname==="/player/changes")progressLabel="プレイヤーの変更履歴を読み込んでいます…";showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)}catch(e){}},false);document.addEventListener("submit",function(event){var form=event.target;if(!form||form.tagName!=="FORM"||form.target&&form.target!=="_self")return;var method=String(form.method||"get").toUpperCase();var progressLabel=method==="GET"?"ページを更新しています…":"処理を送信しています…";try{var actionUrl=new URL(form.action||form.getAttribute("action")||location.href,location.href);if(actionUrl.pathname==="/owner/kingdom-catalog-r2-backfill"&&method!=="GET")progressLabel="王国カタログのR2移行を実行中…";else if(actionUrl.pathname==="/players"&&method==="GET")progressLabel="プレイヤー検索を実行中…";else if(actionUrl.pathname==="/player"&&actionUrl.searchParams.has("governor_id"))progressLabel="プレイヤー情報を取得しています…";else if(actionUrl.pathname.indexOf("/api/")===0)progressLabel=describe(actionUrl,{method:method});}catch(e){}showNavigation(progressLabel);setTimeout(function(){if(event.defaultPrevented)clearNavigation()},0)},false);window.addEventListener("pageshow",clearNavigation);if(typeof window.fetch==="function"){var original=window.fetch.bind(window);window.fetch=function(input,init){var id=++seq,info={label:describe(input,init)};begin(id,info);var result;try{result=original(input,init)}catch(e){finish(id);throw e}return Promise.resolve(result).then(function(response){setTimeout(function(){finish(id)},0);trackResponseBody(response,info.label);return response},function(error){finish(id);throw error})};function trackResponseBody(response,parentLabel){if(!response||response.__eeProgressBodyTracking)return response;try{response.__eeProgressBodyTracking=true;["arrayBuffer","blob","formData","json","text"].forEach(function(method){var originalMethod=response[method];if(typeof originalMethod!=="function")return;try{response[method]=function(){var bodyId=++seq;begin(bodyId,{label:parentLabel?parentLabel.replace(/…$/,"")+"（応答処理中）":"応答データを処理中…"});var bodyResult;try{bodyResult=originalMethod.apply(this,arguments)}catch(error){finish(bodyId);throw error}return Promise.resolve(bodyResult).then(function(value){finish(bodyId);return value},function(error){finish(bodyId);throw error})}}catch(e){}});var body=response.body;if(body&&typeof body.getReader==="function"&&!body.__eeProgressStreamTracking){var originalGetReader=body.getReader;try{body.getReader=function(){var reader=originalGetReader.apply(this,arguments);if(!reader||reader.__eeProgressReaderTracking)return reader;try{reader.__eeProgressReaderTracking=true;var originalRead=reader.read,originalCancel=reader.cancel,originalReleaseLock=reader.releaseLock,streamId=0;reader.read=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalRead.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};reader.cancel=function(){var result;try{result=originalCancel.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReleaseLock==="function")reader.releaseLock=function(){var result=originalReleaseLock.apply(this,arguments);if(streamId){finish(streamId);streamId=0}return result}}catch(e){}return reader};body.__eeProgressStreamTracking=true}catch(e){}}if(body&&typeof Symbol!=="undefined"&&Symbol.asyncIterator&&typeof body[Symbol.asyncIterator]==="function"&&!body.__eeProgressAsyncIteratorTracking){try{var originalAsyncIterator=body[Symbol.asyncIterator];body[Symbol.asyncIterator]=function(){var iterator=originalAsyncIterator.apply(this,arguments);if(!iterator||iterator.__eeProgressIteratorTracking)return iterator;try{iterator.__eeProgressIteratorTracking=true;var streamId=0,originalNext=iterator.next,originalReturn=iterator.return;iterator.next=function(){if(!streamId){streamId=++seq;begin(streamId,{label:parentLabel||"ストリームデータを処理中…"})}var result;try{result=originalNext.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(value&&value.done&&streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})};if(typeof originalReturn==="function")iterator.return=function(){var result;try{result=originalReturn.apply(this,arguments)}catch(error){if(streamId){finish(streamId);streamId=0}throw error}return Promise.resolve(result).then(function(value){if(streamId){finish(streamId);streamId=0}return value},function(error){if(streamId){finish(streamId);streamId=0}throw error})}}catch(e){}return iterator};body.__eeProgressAsyncIteratorTracking=true}catch(e){}}var originalClone=response.clone;if(typeof originalClone==="function"){response.clone=function(){var cloned=originalClone.apply(this,arguments);trackResponseBody(cloned,parentLabel);return cloned}}}catch(e){}return response}}if(typeof XMLHttpRequest!=="undefined"){var open=XMLHttpRequest.prototype.open,send=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__eeProgressUrl=url;this.__eeProgressMethod=method;return open.apply(this,arguments)};XMLHttpRequest.prototype.send=function(){var xhr=this,id=++seq;begin(id,{label:describe(xhr.__eeProgressUrl,{method:xhr.__eeProgressMethod})});var done=false;function finishOnce(){if(done)return;done=true;finish(id)}xhr.addEventListener("loadend",finishOnce,{once:true});try{return send.apply(this,arguments)}catch(e){finishOnce();throw e}}}})();</script></body>');
   return html;
 }
 
@@ -5763,33 +5666,57 @@ async function handleSwordlandHomeApi(request, env) {
   if (!auth || auth.status !== "ACTIVE" || !env.DB) return json({ ok: true, active: false });
   await ensureSwordlandSchema(env.DB).catch(() => {});
   const mine = await myAlliance(env.DB, auth.user_id);
-  const showdown = mine?.kid ? await activeShowdown(env.DB, Number(mine.kid)) : null;
-  if (!showdown) return json({ ok: true, active: false });
-  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid) : null;
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
+  const [active, duel] = mine?.kid ? await Promise.all([activeSwordlandEvents(env.DB, Number(mine.kid)), activeGovernorDuel(env.DB, Number(mine.kid)).catch(() => null)]) : [[], null];
+  const duelInfo = duel ? { endTs: duel.end_ts } : null;
+  if (!active.length) return json({ ok: true, active: false, duel: duelInfo, events: [] });
+  // 聖剣争奪と頂上リーグが同時のときは両方のカードを出す（events）。下の active/label/matchup は1つ目（互換）。
+  const canCmp = canUseAllianceCompare(auth.role) && Boolean(mine.alliance_abbr);
+  const events = await Promise.all(active.map(async ev => {
+    const m = mine.alliance_aid ? await currentMatchup(env.DB, ev.season, Number(mine.kid), mine.alliance_aid) : null;
+    return { kind: ev.kind, label: ev.label, name: ev.name || null, endTs: ev.end_ts, matchup: m ? { kid: m.opp_kid, tag: m.opp_tag, count: m.count, disputed: m.disputed, memberReported: Boolean(m.memberReported), compareUrl: canCmp ? compareUrl(mine.kid, mine.alliance_abbr, m.opp_kid, m.opp_tag) : null } : null };
+  }));
+  const showdown = active[0];
+  const matchup = mine.alliance_aid ? await currentMatchup(env.DB, showdown.season, Number(mine.kid), mine.alliance_aid) : null;
   const canCompare = canUseAllianceCompare(auth.role);
-  return json({ ok: true, active: true, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
+  return json({ ok: true, active: true, events, label: showdown.label || "聖剣争奪", league: Boolean(showdown.league), duel: duelInfo, endTs: showdown.end_ts, mine: { kid: Number(mine.kid), abbr: mine.alliance_abbr || "" },
     matchup: matchup ? { kid: matchup.opp_kid, tag: matchup.opp_tag, count: matchup.count, disputed: matchup.disputed, compareUrl: canCompare && mine.alliance_abbr ? compareUrl(mine.kid, mine.alliance_abbr, matchup.opp_kid, matchup.opp_tag) : null } : null,
     canRegister: canRegisterRole(auth.role) && Boolean(mine.alliance_abbr) });
 }
 
-async function loadSwordlandState(env, auth, { checkOfficer = true } = {}) {
+// 役職の確かめ方（2026-11-17・速さのため）：
+// ・ふだん開くとき：保存済みの役職（players.alliance_rank）が R4・R5 なら登録欄を出す（メンバー表は読まない）。
+// ・登録するとき（POST）と「最新の役職で確かめる」（?recheck=1）：メンバー表で確かめる（従来どおり）。
+async function loadSwordlandState(env, auth, { checkOfficer = true, verifyOfficer = true } = {}) {
   await ensureSwordlandSchema(env.DB);
   const mine = await myAlliance(env.DB, auth.user_id);
-  const showdown = mine?.kid ? await activeShowdown(env.DB, Number(mine.kid)) : null;
-  const state = { mine, showdown, matchup: null, canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
-  if (!showdown || !mine?.alliance_aid) return state;
-  state.matchup = await currentMatchup(env.DB, showdown.begin_ts, Number(mine.kid), mine.alliance_aid);
-  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
+  // まだ一度も日程を取っていない王国なら、ここで1回だけ取る（新しく登録した人・2026-11-19）
+  if (mine?.kid) await ensureSwordlandEventsFetched(env, Number(mine.kid)).catch(() => false);
+  const active = mine?.kid ? await activeSwordlandEvents(env.DB, Number(mine.kid)) : [];
+  // 聖剣争奪と頂上リーグが同時のときは両方（それぞれ相手を登録する）。
+  const state = { mine, events: active.map(event => ({ event, matchup: null })), canRegister: false, canCompare: canUseAllianceCompare(auth.role) };
+  if (!active.length || !mine?.alliance_aid) return state;
+  for (const e of state.events) e.matchup = await currentMatchup(env.DB, e.event.season, Number(mine.kid), mine.alliance_aid);
+  if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr && !verifyOfficer) {
+    state.canRegister = Number(mine.alliance_rank) >= 4;
+    state.canRecheck = !state.canRegister;
+  } else if (checkOfficer && canRegisterRole(auth.role) && mine.alliance_abbr) {
     // メンバー表で R4・R5 かを確かめる（古ければ取り直す。同じ同盟は10分に1回まで）。
     const a = await loadAllianceForCompare(env, Number(mine.kid), mine.alliance_abbr, { canFetch: true }).catch(() => null);
     state.canRegister = Boolean(a && !a.error && isOfficer(a.members, mine.governor_id));
+  }
+  // 同盟に EagleEye を使っている R4・R5 がいなければ、ADVANCED 以上のメンバーも登録できる（「メンバーの報告」・2026-11-19）
+  if (checkOfficer && !state.canRegister && canRegisterRole(auth.role) && mine.alliance_abbr && !(await allianceHasOfficerUser(env.DB, Number(mine.kid), mine.alliance_aid))) {
+    state.canRegister = true;
+    state.memberMode = true;
+    state.canRecheck = false;
   }
   return state;
 }
 
 async function handleSwordlandPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪", "聖剣争奪の対戦相手を見るにはログインしてください。"));
+  if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "聖剣争奪・聖剣頂上リーグ", "聖剣争奪・聖剣頂上リーグの対戦相手を見るにはログインしてください。"));
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   if (request.method === "POST") {
     if (!isSameOriginRequest(request)) return json({ ok: false, error: "ORIGIN_NOT_ALLOWED" }, 403);
@@ -5801,11 +5728,18 @@ async function handleSwordlandPage(request, env) {
     if (!Number.isInteger(oppKid) || oppKid < 1 || oppKid > 999999 || !/^[^\s:：,<>"']{1,24}$/.test(oppTag)) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "相手の王国番号と同盟タグを正しく入れてください。" }), 400);
     const opp = await loadAllianceForCompare(env, oppKid, oppTag, { canFetch: true }).catch(() => ({ error: "FAILED" }));
     if (opp?.error) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "王国" + oppKid + "の「" + oppTag + "」が見つかりませんでした。王国番号と同盟タグを確かめてください。" }), 404);
-    await saveMatchup(env.DB, { season: state.showdown.begin_ts, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
+    const target = state.events.find(e => e.event.kind === String(form?.get("event") || "")) || state.events[0];
+    if (!target) return eagleEyeHtmlResponse(renderSwordlandPage({ state, message: "今は開催期間ではありません。" }), 400);
+    await saveMatchup(env.DB, { season: target.event.season, kid: Number(state.mine.kid), aid: state.mine.alliance_aid, userId: auth.user_id, oppKid, oppTag: opp.abbr || oppTag });
     await trackServiceUsage(env, auth, "SWORDLAND_MATCHUP_SAVE", { targetType: "ALLIANCE", targetId: String(oppKid) + ":" + (opp.abbr || oppTag) });
     return Response.redirect(new URL(compareUrl(state.mine.kid, state.mine.alliance_abbr, oppKid, opp.abbr || oppTag), request.url).toString(), 303);
   }
-  return eagleEyeHtmlResponse(renderSwordlandPage({ state: await loadSwordlandState(env, auth), isOwner: auth.role === "OWNER" }));
+  const isOwner = auth.role === "OWNER";
+  // オーナーだけ：全同盟の登録済みの対戦相手を下に出す。過去の対戦相手は自分の同盟の分（だれでも）。
+  const recheck = new URL(request.url).searchParams.get("recheck") === "1";
+  const [state, ownerMatchups] = await Promise.all([loadSwordlandState(env, auth, { verifyOfficer: recheck }), isOwner ? loadAllMatchupsForOwner(env.DB).catch(() => []) : null]);
+  if (state.mine?.alliance_aid) state.history = await loadMatchupHistory(env.DB, Number(state.mine.kid), state.mine.alliance_aid, { exclude: state.events.map(e => e.event.season) }).catch(() => []);
+  return eagleEyeHtmlResponse(renderSwordlandPage({ state, isOwner, ownerMatchups }));
 }
 
 async function servePublicCached(request, executionContext, build, maxAge = PUBLIC_CACHE_SECONDS) {
@@ -5841,7 +5775,7 @@ async function renderHeroShardRoute(request, env, executionContext) {
     if (!visibilityEnabled(settings, "heroes_list", auth.role)) {
       heroesNote = "現在の権限では英雄の一覧は表示されません。";
     } else {
-      const link = await env.DB.prepare("SELECT governor_id FROM user_player_links WHERE user_id = ? AND status = 'ACTIVE' ORDER BY CASE account_type WHEN 'MAIN' THEN 0 ELSE 1 END, created_at ASC LIMIT 1").bind(auth.user_id).first();
+      const link = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(auth.user_id).first();
       if (!link) heroesNote = "マイKingShotで領主IDを登録すると、あなたの英雄が表示されます。";
       else {
         const observation = await getLatestPlayerObservation(env.DB, link.governor_id);
@@ -5875,7 +5809,8 @@ async function servePublicPage(request, env, executionContext, render, maxAge = 
 
 function eagleEyeHtmlResponse(html, status = 200) {
   const themed = injectAdsense(enhanceSeo(applyEagleEyeTheme(html)));
-  const telemetry = clientTelemetryScript() + pageViewBeaconScript();
+  // 共有ボタンがあるページだけ、右下に浮かぶ「画像で共有」と1回だけの案内（share-fab.js）。
+  const telemetry = clientTelemetryScript() + pageViewBeaconScript() + (pageHasShareButton(themed) ? shareFabScript() : "");
   const instrumented = themed.includes("</body>")
     ? themed.replace("</body>", telemetry + "</body>")
     : themed + telemetry;
@@ -5908,7 +5843,8 @@ async function startDiscordLogin(request, env) {
   authorize.searchParams.set("scope", "identify guilds.join");
   authorize.searchParams.set("state", state);
 
-  if (env.DB) await recordFunnel(env.DB, "login_start");
+  // クローラーがログインのリンクをたどった分は数えない（2026-11-17：AdSense のクローラーで「Googleへ進んだ」が膨らんでいた）。
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "login_start");
   const headers = new Headers({ "Location": authorize.toString(), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(new URL(request.url).searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", {
@@ -6024,13 +5960,17 @@ async function handleDiscordCallback(request, env) {
     iat: now,
     exp: now + SESSION_MAX_AGE
   };
+  let loginUser = null;
   if (env.DB) {
     try {
       const userResult = await upsertUser(env.DB, discordUser, now);
+      loginUser = userResult;
       if (userResult?.status === "DISABLED") {
         return json({ ok: false, error: "USER_DISABLED" }, 403);
       }
       await recordFunnel(env.DB, userResult?.isNew ? "login_new" : "login_returning");
+      // SNSから来た人の新規登録を、SNSごとに数える（Cookie はこの後のレスポンスで消す）。
+      if (userResult?.isNew) await recordSignupSource(env.DB, parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
       // 招待リンクから来た人の初回ログインだけ、招待者と結びつける（失敗してもログインは止めない）。
       const refCode = parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE];
       if (refCode && userResult?.isNew) await attributeReferral(env.DB, { inviteeUserId: userResult.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
@@ -6050,12 +5990,15 @@ async function handleDiscordCallback(request, env) {
 
   let returnPath = null;
   try { returnPath = sanitizeLoginReturnPath(parseCookie(request.headers.get("Cookie") || "")[LOGIN_RETURN_COOKIE]); } catch {}
+  // 領主をまだ登録していない人は、マイKingShotの登録欄へ（login-onboarding.js）。
+  if (loginUser?.user_id) returnPath = await postLoginPath(env.DB, { userId: loginUser.user_id, isNew: Boolean(loginUser.isNew), returnPath }).catch(() => returnPath);
   const responseHeaders = new Headers({
     Location: new URL(returnPath || "/", request.url).toString(),
     "Cache-Control": "no-store"
   });
   responseHeaders.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   if (parseCookie(request.headers.get("Cookie") || "")[REF_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (parseCookie(request.headers.get("Cookie") || "")[SIGNUP_SOURCE_COOKIE]) responseHeaders.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
   responseHeaders.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, {
     maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/"
   }));
@@ -6074,7 +6017,7 @@ async function startGoogleLogin(request, env) {
     return Response.redirect(new URL("/login" + (next ? "?next=" + encodeURIComponent(next) : ""), url).toString(), 302);
   }
   const state = await createStateToken(env.EAGLEEYE_SESSION_SECRET);
-  if (env.DB) await recordFunnel(env.DB, "google_start");
+  if (env.DB && !isLikelyBot(request.headers.get("user-agent"))) await recordFunnel(env.DB, "google_start");
   const headers = new Headers({ Location: googleAuthorizeUrl(env, { state, redirectUri: googleRedirectUri(env, request.url) }), "Cache-Control": "no-store" });
   const returnPath = sanitizeLoginReturnPath(url.searchParams.get("next"));
   headers.append("Set-Cookie", serializeCookie(LOGIN_RETURN_COOKIE, returnPath || "", { maxAge: returnPath ? LOGIN_RETURN_MAX_AGE : 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
@@ -6117,12 +6060,15 @@ async function handleGoogleCallback(request, env) {
   if (result?.status === "DISABLED") return json({ ok: false, error: "USER_DISABLED" }, 403);
   await recordFunnel(env.DB, result.isNew ? "login_new" : "login_returning");
   await recordFunnel(env.DB, "google_done");
+  if (result.isNew) await recordSignupSource(env.DB, cookies[SIGNUP_SOURCE_COOKIE], SIGNUP_SOURCES);
   const refCode = cookies[REF_COOKIE];
   if (refCode && result.isNew) await attributeReferral(env.DB, { inviteeUserId: result.user_id, code: refCode, isNewUser: true, now }).catch(error => console.warn("referral_attribute_failed", error?.message || error));
   const session = await signPayload({ sub: String(result.discord_id), username: result.name, global_name: result.name, avatar: null, provider: "google", iat: now, exp: now + SESSION_MAX_AGE }, env.EAGLEEYE_SESSION_SECRET);
+  returnPath = await postLoginPath(env.DB, { userId: result.user_id, isNew: Boolean(result.isNew), returnPath }).catch(() => returnPath);
   const h = new Headers({ Location: new URL(returnPath || "/", request.url).toString(), "Cache-Control": "no-store" });
   clearReturn(h);
   if (refCode) h.append("Set-Cookie", serializeCookie(REF_COOKIE, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
+  if (cookies[SIGNUP_SOURCE_COOKIE]) h.append("Set-Cookie", serializeCookie(SIGNUP_SOURCE_COOKIE, "", { maxAge: 0, secure: true, sameSite: "Lax", path: "/" }));
   h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, { maxAge: SESSION_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" }));
   return new Response(null, { status: 302, headers: h });
 }
@@ -7210,7 +7156,7 @@ async function renderPlayerVisibilityPage(request, env) {
     "<title>データ公開設定 | EagleEye</title><style>" +
     ":root{color-scheme:dark}*{box-sizing:border-box}" +
     "body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}" +
-    ".badge{display:inline-block;margin:8px 0 0;padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;background:#241a08;color:#fbbf24;font-size:11px;font-weight:900;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".badge{display:inline-block;margin:8px 0 0;padding:7px 10px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;background:var(--ee-panel-raised,#172a40);color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
     ".wrap{max-width:1050px;margin:auto;padding:56px 14px 30px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:12px 0 6px}" +
     ".hint{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:16px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}" +
     ".card h2{margin:0 0 8px;font-size:19px}.scroll{width:100%;overflow:visible}@media(max-width:720px){table,thead,tbody,tr,th,td{display:block;width:100%}thead{display:none}tbody{display:grid;gap:10px}tr{border:1px solid #334155;border-radius:12px;background:#0b1220;padding:10px}td{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:7px 4px;border-bottom:1px solid #1e293b;white-space:normal;overflow-wrap:anywhere}td:last-child{border-bottom:0}.pool-actions{min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}.pool-actions:before{width:100%;flex:0 0 100%}.pool-actions form{margin:0}.pool-actions select{width:auto;margin:0}.pool-actions button{margin:0}.pool-error{max-width:none}.scroll{overflow:visible}}table{width:100%;border-collapse:collapse;min-width:0}" +
@@ -7344,7 +7290,7 @@ async function renderApiPoolAdminPage(request, env) {
   }).join("");
   const statText = stats.map(s => s.pool_type + ": " + s.status + "=" + s.count).join(" / ");
   return "<!DOCTYPE html><html lang='ja'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>API Pool管理 | EagleEye</title><style>" +
-    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 50px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:14px 0 4px}.hint{color:#94a3b8;font-size:13px;line-height:1.65}.card{padding:15px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.stats{font-size:12px;color:#cbd5e1;line-height:1.7}.key-list{display:grid;gap:8px;margin-top:12px}.key-row{width:100%;display:block;padding:0;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#f8fafc;overflow:hidden}.key-row:hover{border-color:#64748b}.actions button[data-busy='1']{opacity:.6;cursor:wait}.key-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;list-style:none}.key-summary::-webkit-details-marker{display:none}.key-summary::after{content:'›';font-size:22px;color:#64748b;transition:transform .15s ease}.key-row[open] .key-summary::after{transform:rotate(90deg)}.key-detail-panel{padding:0 13px 13px;border-top:1px solid #26364d}.key-detail-panel .detail-grid{margin-top:12px}.key-row.available{border-left:4px solid #22c55e}.key-row.leased{border-left:4px solid #3b82f6;background:#101f3b}.key-row.cooldown{border-left:4px solid #eab308}.key-row.error{border-left:4px solid #ef4444;background:#241419}.key-row.revoked{opacity:.55}.key-row.mighty-confirmed{border-left:4px solid #f59e0b;background:linear-gradient(90deg,#2a210d 0%,#101827 62%);box-shadow:inset 0 0 0 1px rgba(245,158,11,.18)}.key-row.mighty-confirmed .mighty-pill{color:#fbbf24;border-color:#a16207;background:rgba(245,158,11,.10);font-weight:900}.key-row.mighty-in-use{border-left-color:#facc15;background:linear-gradient(90deg,#46320a 0%,#171b24 68%);box-shadow:inset 0 0 0 1px rgba(250,204,21,.38),0 0 14px rgba(245,158,11,.12)}.key-row.mighty-in-use .mighty-pill{color:#fde68a;border-color:#d97706;background:rgba(245,158,11,.22);font-weight:1000;animation:mightyPulse 1.6s ease-in-out infinite}@keyframes mightyPulse{0%,100%{box-shadow:0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 10px rgba(245,158,11,.28)}}.key-main{min-width:0;display:flex;flex-direction:column;gap:3px}.key-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.key-main small{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.api-key-prefix{display:inline-block;margin-left:7px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}.key-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:10px;color:#cbd5e1}.key-meta span{padding:4px 6px;border:1px solid #334155;border-radius:999px}.detail{display:none}.detail.show{display:block}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.detail-item{padding:9px;border-radius:9px;background:#0b1220;border:1px solid #26364d}.detail-item small{display:block;color:#64748b;font-size:10px}.detail-item b{display:block;margin-top:3px;overflow-wrap:anywhere}.danger{background:#7f1d1d!important;color:#fff!important}.ok{background:#166534!important;color:#fff!important}select,input{width:100%;padding:10px;margin-top:6px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button.action{padding:9px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900;cursor:pointer}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.scroll{overflow:auto}@media(max-width:600px){.detail-grid{grid-template-columns:1fr}.key-summary{align-items:flex-start;flex-direction:column}.key-meta{justify-content:flex-start}.key-summary::after{position:absolute;right:28px;margin-top:0}.key-row{position:relative}}" +
+    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 50px}.back{color:#94a3b8;text-decoration:none}.title{font-size:28px;margin:14px 0 4px}.hint{color:#94a3b8;font-size:13px;line-height:1.65}.card{padding:15px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.stats{font-size:12px;color:#cbd5e1;line-height:1.7}.key-list{display:grid;gap:8px;margin-top:12px}.key-row{width:100%;display:block;padding:0;border:1px solid #334155;border-radius:12px;background:#0b1220;color:#f8fafc;overflow:hidden}.key-row:hover{border-color:#64748b}.actions button[data-busy='1']{opacity:.6;cursor:wait}.key-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;list-style:none}.key-summary::-webkit-details-marker{display:none}.key-summary::after{content:'›';font-size:22px;color:#64748b;transition:transform .15s ease}.key-row[open] .key-summary::after{transform:rotate(90deg)}.key-detail-panel{padding:0 13px 13px;border-top:1px solid #26364d}.key-detail-panel .detail-grid{margin-top:12px}.key-row.available{border-left:4px solid #22c55e}.key-row.leased{border-left:4px solid #3b82f6;background:#101f3b}.key-row.cooldown{border-left:4px solid #eab308}.key-row.error{border-left:4px solid #ef4444;background:#241419}.key-row.revoked{opacity:.55}.key-row.mighty-confirmed{border-left:4px solid var(--ee-cyan,#22d3ee);background:linear-gradient(90deg,#2a210d 0%,#101827 62%);box-shadow:inset 0 0 0 1px rgba(245,158,11,.18)}.key-row.mighty-confirmed .mighty-pill{color:var(--ee-cyan,#22d3ee);border-color:var(--ee-border-soft,#223b57);background:rgba(245,158,11,.10);font-weight:900}.key-row.mighty-in-use{border-left-color:#facc15;background:linear-gradient(90deg,#46320a 0%,#171b24 68%);box-shadow:inset 0 0 0 1px rgba(250,204,21,.38),0 0 14px rgba(245,158,11,.12)}.key-row.mighty-in-use .mighty-pill{color:#fde68a;border-color:#d97706;background:rgba(245,158,11,.22);font-weight:1000;animation:mightyPulse 1.6s ease-in-out infinite}@keyframes mightyPulse{0%,100%{box-shadow:0 0 0 rgba(245,158,11,0)}50%{box-shadow:0 0 10px rgba(245,158,11,.28)}}.key-main{min-width:0;display:flex;flex-direction:column;gap:3px}.key-main b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.key-main small{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.api-key-prefix{display:inline-block;margin-left:7px;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}.key-meta{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:10px;color:#cbd5e1}.key-meta span{padding:4px 6px;border:1px solid #334155;border-radius:999px}.detail{display:none}.detail.show{display:block}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.detail-item{padding:9px;border-radius:9px;background:#0b1220;border:1px solid #26364d}.detail-item small{display:block;color:#64748b;font-size:10px}.detail-item b{display:block;margin-top:3px;overflow-wrap:anywhere}.danger{background:#7f1d1d!important;color:#fff!important}.ok{background:#166534!important;color:#fff!important}select,input{width:100%;padding:10px;margin-top:6px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}button.action{padding:9px 12px;border:0;border-radius:9px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900;cursor:pointer}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.scroll{overflow:auto}@media(max-width:600px){.detail-grid{grid-template-columns:1fr}.key-summary{align-items:flex-start;flex-direction:column}.key-meta{justify-content:flex-start}.key-summary::after{position:absolute;right:28px;margin-top:0}.key-row{position:relative}}" +
     "</style></head><body><main class='wrap'><a class='back' href='/'>← ホーム</a><h1 class='title'>API Pool 管理</h1><div class='hint'>一覧はスマホでも横スクロール不要。キーをタップすると詳細を表示します。MightPulseキーは照合用の先頭部分のみ表示します。 残量は公開仕様に残量ヘッダーの記載がないため、EagleEyeが記録した直近60秒・24時間のリクエスト数から算出する推定値です。</div>" +
     "<div class='card'><b>Pool Status</b><div class='stats'>" + escapeHtml(statText || "登録キーなし") + "</div></div>" +
     "<div class='card'><b>登録済みキー</b><div class='key-list'>" + (rows || "<div class='hint'>登録キーなし</div>") + "</div></div>" +
@@ -7508,16 +7454,17 @@ async function fetchThroughWatchlistApiPool(env, {
 // 同じ王国・ボードは6時間に1回まで（D1の最終確認時刻）＋同じisolate内で10分に1回まで（失敗の連打防止）。
 const RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS = 6 * 3600;
 const rankingOnDemandAttempts = new Map();
-async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0 } = {}) {
+// minIntervalSeconds：これより新しければ取らない（ふだん6時間）。ignoreRecentAttempt：同じ isolate で10分以内に試していても取る（オーナーの「最新を取得」だけ）。
+async function refreshKingdomRankingOnDemand(env, kid, board, { nowMs = Date.now(), purpose = "KINGDOM_RANKING_ON_DEMAND", reserveApiKeys = 0, minIntervalSeconds = RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS, ignoreRecentAttempt = false } = {}) {
   if (!env?.DB || !Number.isInteger(kid) || kid < 1 || !KINGDOM_RANKING_BOARDS.includes(board)) return { skipped: true, reason: "INVALID" };
   const key = kid + ":" + board;
   const last = rankingOnDemandAttempts.get(key) || 0;
-  if (nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
+  if (!ignoreRecentAttempt && nowMs - last < 10 * 60 * 1000) return { skipped: true, reason: "RECENTLY_TRIED" };
   rankingOnDemandAttempts.set(key, nowMs);
   if (rankingOnDemandAttempts.size > 2000) rankingOnDemandAttempts.clear();
   const now = Math.floor(nowMs / 1000);
   const state = await env.DB.prepare("SELECT last_checked_at FROM kingdom_ranking_board_state WHERE kid = ? AND board = ?").bind(kid, board).first().catch(() => null);
-  if (state?.last_checked_at && now - Number(state.last_checked_at) < RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS) return { skipped: true, reason: "FRESH" };
+  if (state?.last_checked_at && now - Number(state.last_checked_at) < minIntervalSeconds) return { skipped: true, reason: "FRESH" };
   const fetched = await fetchKingdomRankingThroughApiPool(env, kid, board, WATCHLIST_RANKING_LIMIT, purpose, reserveApiKeys ? { reserveApiKeys } : {});
   const payload = fetched.result?.data;
   const entries = extractKingdomRankingEntries(payload).slice(0, WATCHLIST_RANKING_LIMIT);
@@ -7551,6 +7498,37 @@ async function fetchPlayerDetailThroughApiPool(env, governorId, purpose = "KINGD
     query: { include: "base,heroes,ranks,gov_gear" },
     ...correlation
   });
+}
+
+// 同盟メンバー全員の VIP を取り直す（1人につき MightPulse 1回）。同じ同盟は30分に1回まで。直近6時間以内に取った人は取らない。
+const ALLIANCE_VIP_REFRESH_GAP_SECONDS = 30 * 60;
+const allianceVipRefreshAt = new Map();
+async function refreshAllianceMemberVips(env, kid, tag, { concurrency = 4, freshSeconds = 6 * 3600 } = {}) {
+  if (!Number.isInteger(kid) || kid < 1 || !tag) return { error: "BAD_REQUEST", message: "王国と同盟を指定してください。" };
+  const { row, ids } = await loadAllianceRosterIds(env, kid, tag);
+  if (!ids.length) return { error: "NO_ROSTER", message: "メンバー表がまだ保存されていません。先に同盟のページで「最新にする」を押してください。", status: 404 };
+  const key = kid + ":" + String(row?.aid || tag);
+  const now = Math.floor(Date.now() / 1000);
+  if (now - (allianceVipRefreshAt.get(key) || 0) < ALLIANCE_VIP_REFRESH_GAP_SECONDS) return { error: "TOO_SOON", message: "この同盟は30分以内に取り直したばかりです。少し待ってからもう一度押してください。", status: 429 };
+  allianceVipRefreshAt.set(key, now);
+  const vips = await loadMemberVips(env.DB, ids);
+  const targets = ids.slice(0, 100).filter(id => !(vips.get(id)?.at > now - freshSeconds));
+  let fetched = 0, failed = 0, i = 0;
+  const worker = async () => {
+    while (i < targets.length) {
+      const id = targets[i++];
+      try {
+        const got = await fetchPlayerThroughApiPool(env, id, "ALLIANCE_MEMBER_VIP");
+        await materializePlayer(env.DB, got.observation, null, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
+        fetched++;
+      } catch (error) {
+        failed++;
+        if (/NO_API_POOL_KEY|RATE_LIMIT|429/i.test(String(error?.code || error?.message || ""))) { i = targets.length; }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, worker));
+  return { members: ids.length, skippedFresh: Math.min(ids.length, 100) - targets.length, fetched, failed };
 }
 
 async function fetchPlayerThroughApiPool(env, governorId, purpose = "PLAYER_LOOKUP", include = "base") {
@@ -7687,7 +7665,8 @@ async function handlePlayerApi(request, env) {
     const hasRichProfile = hasHeroesPayload && hasRanksPayload && hasGovGearPayload;
     const fetchRich = rich || refresh;
 
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
       player = await materializePlayer(env.DB, observation, player, env.ARCHIVE, env.HISTORY_STORAGE_MODE);
@@ -8005,28 +7984,32 @@ async function handlePlayerCompareRefreshCapacityApi(request, env) {
 // プレイヤー単体のデータには入っておらず、王国ランキング（各上位100人）からしか取れない項目。
 const COMPARE_KINGDOM_ONLY_BOARDS = Object.freeze(["rebel_conquest", "single_hero", "hero_total", "troop_power", "building_power", "research_power", "hero_no_equip", "hero_equip", "gov_gear", "gov_charm", "pet_power", "island_prosperity", "master_power"]);
 const COMPARE_RANKING_STALE_SECONDS = 24 * 3600;
+// 同盟比較の「最新を取得」：秘境の試練（王国ランキング）はこれより古ければ取り直す（API Pool を使いすぎない下限）。
+const ALLIANCE_COMPARE_RANKING_REFRESH_SECONDS = 3600;
 const COMPARE_RANKING_MAX_BOARDS = 26;
 // 画面を開いたときに、足りない／古い（24時間より前）王国ランキングだけ裏で順番に取る（王国ウォッチ中の王国は新しいので取らない）。
 // 実際の取得は refreshKingdomRankingOnDemand（6時間以内に取ったものは取り直さない・10分以内の再試行もしない）。
 // 戻り値は「取りに行った王国と種類の数」（画面で「取得中」を出す）。
-async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS } = {}) {
+async function scheduleKingdomRankingFetch(env, executionContext, kidList, boards, { nowMs = Date.now(), maxBoards = COMPARE_RANKING_MAX_BOARDS, staleSeconds = COMPARE_RANKING_STALE_SECONDS, ignoreRecentAttempt = false } = {}) {
   const kids = [...new Set((kidList || []).map(Number).filter(k => Number.isInteger(k) && k > 0))].slice(0, 6); // プレイヤー比較は最大6人＝最大6王国
   if (!kids.length || !boards?.length || !env?.DB || typeof executionContext?.waitUntil !== "function") return [];
-  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs);
+  const todo = await staleKingdomRankingBoards(env.DB, kids, boards, nowMs, staleSeconds);
   const jobs = todo.slice(0, maxBoards);
   if (!jobs.length) return [];
-  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs }));
+  // staleSeconds が6時間より短いとき（同盟比較の「最新を取得」）は、取りに行く側の「6時間以内なら取らない」もそれに合わせる。
+  const minIntervalSeconds = Math.min(staleSeconds, RANKING_ON_DEMAND_MIN_INTERVAL_SECONDS);
+  executionContext.waitUntil(runKingdomRankingJobs(env, jobs, { nowMs, minIntervalSeconds, ignoreRecentAttempt }));
   const byKid = new Map();
   for (const [kid] of jobs) byKid.set(kid, (byKid.get(kid) || 0) + 1);
   return [...byKid].map(([kid, n]) => ({ kid, boards: n }));
 }
-async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now()) {
+async function staleKingdomRankingBoards(db, kids, boards, nowMs = Date.now(), staleSeconds = COMPARE_RANKING_STALE_SECONDS) {
   const now = Math.floor(nowMs / 1000);
   const state = await db.prepare("SELECT kid, board, last_checked_at FROM kingdom_ranking_board_state WHERE kid IN (" + kids.map(() => "?").join(",") + ") AND board IN (" + boards.map(() => "?").join(",") + ")")
     .bind(...kids, ...boards).all().catch(() => ({ results: [] }));
   const checked = new Map((state.results || []).map(r => [r.kid + ":" + r.board, Number(r.last_checked_at) || 0]));
   const todo = [];
-  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > COMPARE_RANKING_STALE_SECONDS) todo.push([kid, board]);
+  for (const kid of kids) for (const board of boards) if (now - (checked.get(kid + ":" + board) || 0) > staleSeconds) todo.push([kid, board]);
   return todo;
 }
 async function runKingdomRankingJobs(env, jobs, options = {}) {
@@ -8035,7 +8018,7 @@ async function runKingdomRankingJobs(env, jobs, options = {}) {
     try { await refreshKingdomRankingOnDemand(env, kid, board, options); done++; }
     catch (error) {
       console.warn("kingdom_ranking_fetch_failed", kid, board, error?.code || error?.message || error);
-      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) break; // キーが空いていなければやめる
+      if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) { if (options.report) options.report.noKey = true; break; } // キーが空いていなければやめる
     }
   }
   return done;
@@ -8065,6 +8048,55 @@ async function runUserKingdomRankingRefresh(env, { nowMs = Date.now() } = {}) {
   for (let i = 0; i < kids.length; i += 10) todo.push(...await staleKingdomRankingBoards(env.DB, kids.slice(i, i + 10), USER_KINGDOM_RANKING_BOARDS, nowMs));
   const fetched = await runKingdomRankingJobs(env, todo.slice(0, USER_KINGDOM_RANKING_PER_RUN), { nowMs, purpose: "KINGDOM_RANKING_USER_KINGDOM", reserveApiKeys: BACKGROUND_KEY_RESERVE });
   return { kingdoms: kids.length, pending: todo.length, fetched };
+}
+
+// 公開の王国ページ用：全王国の「個人の総力」「同盟の総力」のランキングと「秘境の試練」を月1回取り直す（2026-11-15）。
+// ・5分ごとに、王国番号の順に30王国ずつ見て（位置は public_ranking_refresh_state に覚える）、30日より古いものだけ取る。
+//   1周（約2,600王国）は約7時間で回り、実際に取るのは各王国30日に1回だけ（AdSense の審査前に一気にそろえるため・オーナー了承）。
+// ・ランキングは2種類（個人の総力・同盟の総力）を王国ごとに1回ずつ、秘境の試練は1回の呼び出しで6種類の上位10人。5件ずつ並べて取る。
+// ・取ったランキングも14日で R2 に移る（kingdom-ranking-archive.js）。公開ページは R2 の写しも読む。
+// ・API Pool はユーザー用に BACKGROUND_KEY_RESERVE 本を残す。キーが空いていなければその回はやめ、同じ位置からやり直す。
+const PUBLIC_MONTHLY_RANKING_BOARDS = Object.freeze(["personal_power", "alliance_power"]);
+const PUBLIC_MONTHLY_RANKING_SECONDS = 30 * 86400;
+const PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN = 30;
+const PUBLIC_MONTHLY_PARALLEL = 5;
+async function runPublicKingdomMonthlyRanking(env, { nowMs = Date.now() } = {}) {
+  if (!env?.DB) return { skipped: "NO_DB" };
+  const db = env.DB, now = Math.floor(nowMs / 1000);
+  await db.prepare("CREATE TABLE IF NOT EXISTS public_ranking_refresh_state (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER NOT NULL)").run();
+  await ensureKingdomMysticCurrent(db);
+  const cursorRow = await db.prepare("SELECT value FROM public_ranking_refresh_state WHERE key = 'cursor'").first().catch(() => null);
+  const cursor = Number(cursorRow?.value) || 0;
+  let rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > ? ORDER BY kid LIMIT ?").bind(cursor, PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  if (!rows.length && cursor > 0) rows = (await db.prepare("SELECT kid FROM kingdom_stats_current WHERE kid > 0 ORDER BY kid LIMIT ?").bind(PUBLIC_MONTHLY_RANKING_KINGDOMS_PER_RUN).all())?.results || [];
+  const kids = rows.map(r => Number(r.kid)).filter(k => Number.isInteger(k) && k > 0);
+  if (!kids.length) return { kingdoms: 0, fetched: 0 };
+  const report = {};
+  // ランキング（2種類）
+  const todo = await staleKingdomRankingBoards(db, kids, PUBLIC_MONTHLY_RANKING_BOARDS, nowMs, PUBLIC_MONTHLY_RANKING_SECONDS);
+  let fetched = 0;
+  for (let i = 0; i < todo.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+    const done = await Promise.all(todo.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(job => runKingdomRankingJobs(env, [job], { nowMs, purpose: "KINGDOM_RANKING_PUBLIC_MONTHLY", reserveApiKeys: BACKGROUND_KEY_RESERVE, minIntervalSeconds: PUBLIC_MONTHLY_RANKING_SECONDS, report })));
+    fetched += done.reduce((a, b) => a + b, 0);
+  }
+  // 秘境の試練：KvK 用（シーズンごと）か月1回の取り直しのどちらかが30日以内なら取らない。
+  let mystic = 0;
+  if (!report.noKey) {
+    const ph = kids.map(() => "?").join(",");
+    const fresh = new Set(((await db.prepare(`SELECT kid FROM kingdom_mystic_current WHERE kid IN (${ph}) AND fetched_at > ? UNION SELECT kid FROM kvk_mystic_summary WHERE kid IN (${ph}) AND status = 'OK' AND fetched_at > ?`).bind(...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS, ...kids, now - PUBLIC_MONTHLY_RANKING_SECONDS).all().catch(() => ({ results: [] })))?.results || []).map(r => Number(r.kid)));
+    const need = kids.filter(k => !fresh.has(k));
+    for (let i = 0; i < need.length && !report.noKey; i += PUBLIC_MONTHLY_PARALLEL) {
+      const res = await Promise.all(need.slice(i, i + PUBLIC_MONTHLY_PARALLEL).map(kid => fetchAndStoreKingdomMystic(env, kid, { now }).then(() => 1).catch(error => {
+        if (String(error?.message || error?.code || "").includes("NO_API_POOL_KEY_AVAILABLE")) report.noKey = true;
+        else console.warn("public_kingdom_mystic_failed", kid, error?.code || error?.message || error);
+        return 0;
+      })));
+      mystic += res.reduce((a, b) => a + b, 0);
+    }
+  }
+  // キーが空いていなくて止まったときだけ、同じ王国から次の回にやり直す（ほかの失敗では先へ進む＝1つの王国で止まり続けない）。
+  if (!report.noKey) await db.prepare("INSERT INTO public_ranking_refresh_state (key, value, updated_at) VALUES ('cursor', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").bind(String(kids[kids.length - 1]), now).run();
+  return { kingdoms: kids.length, pending: todo.length, fetched, mystic, noKey: Boolean(report.noKey) };
 }
 
 async function handlePlayerCompareApi(request, env, executionContext = null) {
@@ -8200,7 +8232,7 @@ async function handlePlayerCompareApi(request, env, executionContext = null) {
       return {governor_id:id,player,profile,profileNeedsRich,rankings,rankingsExpected:canReadCoreRanks||canReadLeaderboardRanks,history,rankHistory:[],period:{powerDelta:first&&last?last.power-first.power:null,observations:history.length}};
     }));
     // 比較に出す項目のうち、王国ランキングからしか取れないもの（領主宝石・英雄総力など）が無い／古い王国は、裏で取りに行く。
-    const rankingPending = await scheduleCompareRankingFetch(env, executionContext, compareKids);
+    const rankingPending = isQuietAgentRequest(request, auth) ? [] : await scheduleCompareRankingFetch(env, executionContext, compareKids);
     // その王国で取得済み（7日以内）のランキングの種類。表に値が無いとき「100位圏外」か「取得中」かを分ける。
     const checkedKids = [...new Set([...compareKidById.values()].filter(k => Number.isInteger(k) && k > 0))];
     const checkedByKid = new Map();
@@ -8221,14 +8253,29 @@ async function handlePlayerCompareApi(request, env, executionContext = null) {
 async function renderPlayerComparePage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return eagleEyeHtmlResponse(renderLoginRequiredPage(request, "プレイヤー比較", "プレイヤー比較を使うにはログインしてください。"));
-  const ids = normalizeCompareGovernorIds(new URL(request.url).searchParams.getAll("governor_id"));
+  const pageUrl = new URL(request.url);
+  let ids = normalizeCompareGovernorIds(pageUrl.searchParams.getAll("governor_id"));
+  // 自分の領主（マイKingShot のメイン）を最初に入れる（ウォッチリストに入れなくても自分と比べられる・2026-11-16）。me=0 で外す。
+  let meNote = "";
+  if (pageUrl.searchParams.get("me") !== "0" && env.DB && auth.user_id) {
+    const mine = await env.DB.prepare("SELECT l.governor_id FROM user_player_links l WHERE l.user_id = ? AND l.status = 'ACTIVE' ORDER BY " + myGovernorOrderSql("l") + " LIMIT 1").bind(String(auth.user_id)).first().catch(() => null);
+    const own = normalizeCompareGovernorIds([String(mine?.governor_id || "")])[0];
+    if (own) {
+      const others = ids.filter(id => id !== own);
+      ids = normalizeCompareGovernorIds([own, ...others]);
+      const off = new URL(pageUrl); off.searchParams.set("me", "0"); off.searchParams.delete("governor_id"); others.forEach(id => off.searchParams.append("governor_id", id));
+      // アドレスは「入っている全員＋me=0」に書き換える（共有したリンクを開いた人の領主が勝手に入らないように）。
+      const fixed = new URL(pageUrl); fixed.searchParams.delete("governor_id"); ids.forEach(id => fixed.searchParams.append("governor_id", id)); fixed.searchParams.set("me", "0");
+      meNote = '<p class="sub" id="meNote">あなたの領主（ID ' + own + '）を自動で入れています。' + (others.length ? '<a href="' + escapeHtml(off.pathname + off.search) + '">外す</a>' : '') + '</p><script>try{history.replaceState(null,"",' + JSON.stringify(fixed.pathname + fixed.search).replace(/</g, "\\u003c") + ')}catch(e){}</script>';
+    }
+  }
   const initial = JSON.stringify(ids);
   const escSkill = value => String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const html = '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>プレイヤー比較 | EagleEye</title><style>'+
   ':root{color-scheme:dark;--bg:var(--ee-bg,#0a1424);--panel:var(--ee-panel,#0f2035);--raised:var(--ee-panel-raised,#172a40);--border:var(--ee-border-soft,#1d344d);--text:var(--ee-text,#e8f3ff);--sub:var(--ee-subtext,#91a7bf);--cyan:var(--ee-cyan,#22d3ee);--ring-1:var(--ee-cyan,#22d3ee);--ring-2:var(--ee-blue,#60a5fa);--ring-3:var(--ee-gold,#f0c75e);--ring-4:var(--ee-success,#22c55e)}:root[data-eagle-theme="light"]{--ring-1:var(--accent,var(--ee-cyan,#22d3ee));--ring-2:var(--accent-strong,var(--ee-blue,#60a5fa));--ring-3:var(--warning,var(--ee-gold,#f0c75e));--ring-4:var(--ok,var(--ee-success,#22c55e))}*{box-sizing:border-box}body{margin:0;padding:16px 12px 40px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:1100px;margin:auto}.back{display:inline-block;color:var(--cyan);text-decoration:none;font-weight:800;margin-bottom:14px}.head h1{font-size:24px;margin:0 0 6px}.sub,.count,.metric,.footnote{font-size:12px;color:var(--sub);line-height:1.6}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:18px 0}button{border:1px solid var(--border);border-radius:10px;background:var(--raised);color:var(--text);padding:11px 14px;font:inherit;font-size:13px;font-weight:800}.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:14px;margin:12px 0}.status{padding:22px;text-align:center;color:var(--sub)}.error{color:#ff8d96}.power-showcase{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;margin:12px 0 18px}.power-card{display:flex;align-items:center;gap:14px;min-width:0;padding:14px;border:1px solid var(--border);border-radius:16px;background:linear-gradient(145deg,var(--panel),var(--raised));overflow:hidden}.power-ring{width:112px;height:112px;flex:0 0 112px;position:relative}.power-ring svg{display:block;width:100%;height:100%;overflow:visible}.ring-base,.ring-value{fill:none;stroke-width:8}.ring-base{stroke:var(--border)}.ring-value{stroke:var(--ring-color,var(--cyan));stroke-linecap:round;stroke-dasharray:263.9;stroke-dashoffset:263.9;transform:rotate(-90deg);transform-origin:50% 50%;transition:stroke-dashoffset 950ms cubic-bezier(.2,.7,.2,1),stroke .25s ease;filter:drop-shadow(0 0 4px color-mix(in srgb,var(--ring-color,var(--cyan)) 45%,transparent))}.power-ring.ready .ring-value{stroke-dashoffset:var(--ring-offset,0)}.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center}.ring-number{font-size:17px;font-weight:900;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.ring-caption{font-size:9px;color:var(--sub)}.power-info{min-width:0;flex:1}.power-info .pname{font-size:14px;overflow-wrap:anywhere}.power-info .pid{font-size:11px;overflow-wrap:anywhere}.power-label{font-size:10px;color:var(--sub);margin-top:7px}.power-value{font-size:18px;font-weight:900;overflow-wrap:anywhere}.power-ratio{font-size:11px;color:var(--sub);margin-top:3px}.table-wrap{overflow:visible;border:0;border-radius:14px}.compare-table{width:100%;min-width:0;border-collapse:collapse;font-size:13px;table-layout:fixed}.compare-table th,.compare-table td{overflow-wrap:anywhere}.compare-table th:first-child{width:118px}.compare-controls{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 12px}.compare-controls label{display:flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--raised);font-size:12px}.compare-controls input{accent-color:var(--cyan)}.compare-table th,.compare-table td{padding:12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}.compare-table th{background:var(--raised);min-width:0}.player-head{display:flex;align-items:center;gap:8px}.avatar{width:38px;height:38px;border-radius:9px;object-fit:cover;background:var(--raised)}.pname{font-weight:900}.pid{font-size:10px;color:var(--sub);margin-top:3px}.value{font-size:14px;font-weight:850;overflow-wrap:anywhere}.section-title{font-size:15px}.chart{display:flex;align-items:end;gap:4px;height:115px;padding:10px 2px 20px;border-bottom:1px solid var(--border)}.bar-group{flex:1;min-width:5px;height:100%;display:flex;align-items:end;position:relative}.bar{width:100%;min-height:2px;border-radius:3px 3px 0 0;background:var(--cyan)}.bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--sub);white-space:nowrap}.compare-item-selector{margin:10px 0;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}.compare-item-selector summary{cursor:pointer;font-weight:800}.compare-item-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.compare-item-actions button{padding:6px 9px;font-size:11px}.compare-item-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:6px;max-height:260px;overflow:auto}.compare-item-list label{display:flex;align-items:flex-start;gap:6px;font-size:11px;color:var(--sub);padding:5px;border:1px solid var(--border);border-radius:8px;overflow-wrap:anywhere}.compare-player-cards{display:none}.compare-player-card{border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:12px;min-width:0}.compare-player-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.compare-player-card-head img{width:34px;height:34px;border-radius:8px;object-fit:cover}.compare-player-metrics{display:grid;gap:0}.compare-metric{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}.compare-metric span{color:var(--sub);overflow-wrap:anywhere}.compare-metric strong{font-size:12px;text-align:right;overflow-wrap:anywhere}.compare-metric small{grid-column:1/-1;color:var(--sub);font-size:10px}@media(max-width:480px){.power-card{padding:11px;gap:10px}.power-ring{width:94px;height:94px;flex-basis:94px}.ring-number{font-size:15px}.power-value{font-size:16px}.table-wrap{display:none}#hero-skill-catalog .table-wrap{display:block;overflow-x:auto}#hero-skill-catalog .compare-table{min-width:600px}.compare-player-cards{display:grid;grid-template-columns:1fr;gap:10px}.compare-player-card{padding:10px}.compare-metric{font-size:11px;gap:6px}.compare-metric strong{font-size:11px}}.mystic-section{isolation:isolate;position:relative;overflow:hidden;margin:14px 0 18px;padding:16px;border:1px solid #22d3ee55;border-radius:20px;background:radial-gradient(520px 200px at 50% 0%,#22d3ee1c,transparent 70%),linear-gradient(150deg,var(--panel),var(--raised));box-shadow:0 0 28px #22d3ee17}.mystic-title{text-align:center;font-size:15px;letter-spacing:.08em;font-weight:900;margin:0 0 12px}.mystic-card{--a:var(--ring-1);--b:var(--ring-2);position:relative;min-width:0;border:1px solid #22d3ee44;border-radius:16px;background:var(--panel);padding:12px 8px;text-align:center;overflow:hidden}.mystic-card.is-main{width:100%;max-width:460px;padding:16px 12px 14px;--a:#ffd166;--b:#ff5b35;border-color:#ff9a4277;box-shadow:0 0 30px #ff8a2422,inset 0 0 28px #ff8a2410}.mystic-card.is-sub{--a:#42d9ff;--b:#a18aff;padding:10px 6px}.mystic-name{font-size:13px;font-weight:900;line-height:1.3}.mystic-card.is-main .mystic-name{font-size:18px}.mystic-ring{position:relative;width:clamp(142px,45vw,190px);aspect-ratio:1;margin:6px auto 2px}.mystic-card.is-main .mystic-ring{width:clamp(205px,64vw,280px);margin:8px auto 4px}.mystic-ring svg{width:100%;height:100%;display:block;overflow:visible}.mystic-track,.mystic-arc{fill:none;stroke-width:7}.mystic-track{stroke:var(--border);opacity:.85}.mystic-arc{stroke-linecap:round;stroke-dasharray:565.49;stroke-dashoffset:565.49;transform:rotate(-90deg);transform-origin:50% 50%;filter:drop-shadow(0 0 5px currentColor);transition:stroke-dashoffset 1300ms cubic-bezier(.14,.8,.2,1)}.mystic-arc.a{stroke:var(--a);color:var(--a)}.mystic-arc.b{stroke:var(--b);color:var(--b);stroke-width:5}.mystic-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;pointer-events:none}.mystic-delta{font-size:clamp(20px,6vw,29px);font-weight:950;letter-spacing:-.05em;font-variant-numeric:tabular-nums}.mystic-card.is-main .mystic-delta{font-size:clamp(27px,8vw,38px)}.mystic-delta-label{font-size:10px;color:var(--sub)}.mystic-values{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:5px}.mystic-value{font-size:clamp(13px,3.7vw,17px);font-weight:900;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.mystic-value small{display:block;font-size:10px;font-weight:800;color:var(--sub);margin-bottom:2px}.mystic-value.a small{color:var(--a)}.mystic-value.b small{color:var(--b)}.mystic-ranks{font-size:10px;color:var(--sub);margin-top:3px}.mystic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px}.mystic-card.is-sub .mystic-ring{width:clamp(104px,30vw,142px);margin:4px auto 0}.mystic-card.is-sub .mystic-track,.mystic-card.is-sub .mystic-arc{stroke-width:6}.mystic-card.is-sub .mystic-arc.b{stroke-width:4}.mystic-card.is-sub .mystic-delta{font-size:clamp(14px,4vw,20px)}.mystic-card.is-sub .mystic-delta-label,.mystic-card.is-sub .mystic-value small,.mystic-card.is-sub .mystic-ranks{font-size:9px}.mystic-card.is-sub .mystic-value{font-size:12px}.mystic-sparks{position:absolute;inset:0;pointer-events:none;overflow:hidden}.mystic-spark{position:absolute;left:50%;top:50%;width:3px;height:3px;border-radius:50%;background:var(--spark,#ffe29a);box-shadow:0 0 8px 2px var(--spark,#ffe29a);opacity:0;animation:mystic-spark-burst 850ms ease-out both;animation-delay:var(--delay,0ms)}.mystic-card.is-main .mystic-spark{width:4px;height:4px}.mystic-card.ignite.is-main{animation:mystic-impact 700ms cubic-bezier(.2,.8,.2,1) both}.mystic-card.ignite.is-main:after{content:\"\";position:absolute;inset:8%;border:1px solid #ffbd5a88;border-radius:50%;pointer-events:none;animation:mystic-shockwave 850ms ease-out both}.mystic-card.is-sub.ignite{animation:mystic-sub-impact 500ms ease-out both}@keyframes mystic-spark-burst{0%{transform:translate(-50%,-50%) rotate(var(--angle)) translateY(0) scale(1);opacity:0}12%{opacity:1}100%{transform:translate(-50%,-50%) rotate(var(--angle)) translateY(calc(-1 * var(--distance))) scale(.1);opacity:0}}@keyframes mystic-impact{0%{filter:brightness(1);transform:scale(.985)}24%{filter:brightness(1.65);transform:scale(1.012)}52%{filter:brightness(1.1);transform:scale(.998)}100%{filter:brightness(1);transform:scale(1)}}@keyframes mystic-sub-impact{0%{filter:brightness(1)}35%{filter:brightness(1.5)}100%{filter:brightness(1)}}@keyframes mystic-shockwave{0%{transform:scale(.72);opacity:.9}100%{transform:scale(1.18);opacity:0}}@media(min-width:620px){.mystic-section{padding:20px}.mystic-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.mystic-card.is-sub .mystic-ring{width:clamp(110px,15vw,145px)}}@media(prefers-reduced-motion:reduce){.mystic-spark,.mystic-card,.mystic-card:after{animation:none!important}.mystic-arc{transition:none}}@media(prefers-reduced-motion:reduce){.ring-value{transition:none}}@media(min-width:760px){body{padding:26px}.panel{padding:20px}}'+
-  '</style></head><body><main class="wrap"><a class="back" href="/watchlist">← プレイヤーウォッチリストへ戻る</a><header class="head"><h1>プレイヤー比較</h1><div class="sub">2〜6人を横並びで比較します。推移は保存済みの過去30日データのみを使用します。</div></header><div class="toolbar"><span class="count" id="count"></span><button id="retry">再読み込み</button><button id="refresh">最新データで比較</button></div><div id="content" class="panel"><div class="status">比較データを読み込み中…</div></div></main><script>(function(){var startedAt=Date.now();var timer=setInterval(function(){var box=document.getElementById("content");if(!box){clearInterval(timer);return}var status=box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){if(Date.now()-startedAt>=5000){status.className="status error";status.textContent="比較画面の初期化が完了しませんでした。JavaScriptエラーまたは古い画面データの可能性があります。再読み込みしてください。";clearInterval(timer)}}else{clearInterval(timer)}},1000);window.addEventListener("error",function(){var box=document.getElementById("content");var status=box&&box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){status.className="status error";status.textContent="比較画面のJavaScript初期化エラーを検出しました。再読み込みしてください。";clearInterval(timer)}})})();</script><script>(function(){const ids='+initial+';const box=document.getElementById("content"),count=document.getElementById("count"),retry=document.getElementById("retry");'+
+  '</style></head><body><main class="wrap"><a class="back" href="/watchlist">← プレイヤーウォッチリストへ戻る</a><header class="head"><h1>プレイヤー比較</h1>'+meNote+'<div class="sub">2〜6人を横並びで比較します。推移は保存済みの過去30日データのみを使用します。</div></header><div class="toolbar"><span class="count" id="count"></span><button id="retry">再読み込み</button><button id="refresh">最新データで比較</button></div><div id="content" class="panel"><div class="status">比較データを読み込み中…</div></div></main><script>(function(){var startedAt=Date.now();var timer=setInterval(function(){var box=document.getElementById("content");if(!box){clearInterval(timer);return}var status=box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){if(Date.now()-startedAt>=5000){status.className="status error";status.textContent="比較画面の初期化が完了しませんでした。JavaScriptエラーまたは古い画面データの可能性があります。再読み込みしてください。";clearInterval(timer)}}else{clearInterval(timer)}},1000);window.addEventListener("error",function(){var box=document.getElementById("content");var status=box&&box.querySelector(".status");if(status&&status.textContent.trim()==="比較データを読み込み中…"){status.className="status error";status.textContent="比較画面のJavaScript初期化エラーを検出しました。再読み込みしてください。";clearInterval(timer)}})})();</script><script>(function(){const ids='+initial+';const box=document.getElementById("content"),count=document.getElementById("count"),retry=document.getElementById("retry");'+
   'const esc=v=>String(v==null?"—":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(new RegExp(String.fromCharCode(34),"g"),"&quot;").split(String.fromCharCode(39)).join("&#39;");const num=v=>v==null||v===""||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("ja-JP");const compact=v=>{if(v==null||!Number.isFinite(Number(v)))return "—";const n=Number(v),a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(1)+"B":a>=1e6?(n/1e6).toFixed(1)+"M":a>=1e3?(n/1e3).toFixed(1)+"K":num(n)};const date=v=>v?new Date(Number(v)*1000).toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"}):"";'+
-  "function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());const ps=d.players||[];const observed=ps.filter(p=>!p.missing&&Number(p.player&&p.player.observed_at)>0).map(p=>Number(p.player.observed_at));const oldest=observed.length?Math.min.apply(null,observed):0;count.textContent=ps.length+\"人を比較中 · 過去30日 · 最終取得 \"+(oldest?new Date(oldest*1000).toLocaleString(\"ja-JP\"):\"日時不明\");const fields=[[\"戦力\",\"power\",compact],[\"役場レベル\",\"town_center_level\",num],[\"VIP\",\"vip\",num],[\"撃破数\",\"kills\",compact],[\"王国\",\"kid\",num],[\"同盟略称\",\"alliance_abbr\",v=>v||\"—\"],[\"同盟名\",\"alliance_name\",v=>v||\"—\"],[\"同盟役職\",\"alliance_rank_label\",v=>v||\"—\"],[\"座標 X\",\"x\",num],[\"座標 Y\",\"y\",num]];let h=\"<div class=\\\"table-wrap\\\"><table class=\\\"compare-table\\\"><thead><tr><th>比較項目</th>\"+ps.map(p=>\"<th><div class=\\\"player-head\\\">\"+(p.player&&p.player.avatar_url?\"<img class=\\\"avatar\\\" src=\\\"\"+esc(p.player.avatar_url)+\"\\\" alt=\\\"\\\" loading=\\\"lazy\\\">\":\"<div class=\\\"avatar\\\"></div>\")+\"<div><div class=\\\"pname\\\">\"+esc(p.player&&p.player.nick_name||\"データなし\")+\"</div><div class=\\\"pid\\\">ID \"+esc(p.governor_id)+\"</div></div></div></th>\").join(\"\")+\"</tr></thead><tbody>\";fields.forEach(f=>{h+=\"<tr><th>\"+f[0]+\"</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+esc(p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]))+\"</span></td>\").join(\"\")+\"</tr>\"});const coreRankRows=[];const coreRankScoreRows=[];const rankTypeBoardKeys={3:\"personal_power\",4:\"kills\",5:\"town_center\",19:\"migrant_score\",20:\"mystic_trial\",21:\"coliseum\",22:\"forest_of_life\",23:\"crystal_cave\",24:\"knowledge_nexus\",25:\"molten_fort\",26:\"radiant_spire\"};const boardNameAliases={personalpower:\"personal_power\",killcount:\"kills\",towncenterlevel:\"town_center\",migrantscore:\"migrant_score\",mystictrial:\"mystic_trial\"};const leaderboardRows=new Map();ps.forEach(p=>{const lists=[p.rankings&&p.rankings.leaderboards,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];lists.forEach(list=>{if(!Array.isArray(list))return;list.forEach(board=>{if(!board||typeof board!==\"object\")return;const label=String(board.label??board.name??board.board_name??board.key??board.board??board.id??\"\").trim();if(!label)return;const rawScore=board.value??board.score??board.rank_value??board.points;if(rawScore==null||rawScore===\"\")return;const numericScore=Number(rawScore);const displayScore=Number.isFinite(numericScore)?numericScore:String(rawScore);const rawBoardKey=String(board.key??board.board??board.id??board.name??label).toLowerCase().replace(/[^a-z0-9]/g,\"\");const key=rankTypeBoardKeys[Number(board.rank_type)]||boardNameAliases[rawBoardKey]||rawBoardKey||label;if(!leaderboardRows.has(key))leaderboardRows.set(key,{key,label,byId:{}});leaderboardRows.get(key).byId[p.governor_id]={...board,value:displayScore};})})});leaderboardRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"ランキング：\"+row.label)+\"</th>\"+ps.map(p=>{const board=row.byId[p.governor_id];if(!board){const rk=String(row.key||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");const checked=Array.isArray(p.rankingChecked)&&rk!==\"\"&&p.rankingChecked.some(function(b){return String(b).toLowerCase().replace(/[^a-z0-9]/g,\"\")===rk});return checked?\"<td class=\\\"rank-out\\\">100位圏外</td>\":p.rankingPending?\"<td>取得中</td>\":\"<td>—</td>\"};const score=board.value??board.score??board.rank_value;const rank=board.kingdom_rank??board.rank??board.ranking;const rankLabel=rank!=null?num(rank):(board.kingdom_rank_label||\"\");const meta=[];if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board.value_label||formattedScore;const apiNote=board.value_label&&score!=null?\"<div class=\\\"metric\\\">API値 \"+esc(formattedScore)+\"</div>\":\"\";return \"<td><span class=\\\"value\\\">\"+esc(display)+\"</span>\"+apiNote+(meta.length?\"<div class=\\\"metric\\\">\"+esc(meta.join(\" · \"))+\"</div>\":\"\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;if(!heroRows.has(key))heroRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroRows.get(key).byId[p.governor_id]=hero})});heroRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"闘技場防衛編成：\"+row.label)+\"</th>\"+ps.map(p=>{const hero=row.byId[p.governor_id];if(!hero)return \"<td>—</td>\";const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroGearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&& (hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.gear)?hero.gear:[]).forEach(item=>{const slot=String(item&&(item.slot??item.sid??item.name)||\"\").trim();if(!slot)return;const key=heroKey+\"::\"+slot;if(!heroGearRows.has(key))heroGearRows.set(key,{label:heroLabel+\" / \"+slot,byId:{}});heroGearRows.get(key).byId[p.governor_id]=item;});});});heroGearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"防衛編成装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>装備情報なし</td>\";const parts=[];if(item.name)parts.push(String(item.name));if(item.quality_label||item.quality)parts.push(String(item.quality_label||item.quality));if(item.enhancement_level!=null)parts.push(\"強化 +\"+item.enhancement_level);if(item.refine_level!=null)parts.push(\"精錬 \"+item.refine_level);if(item.gear_level!=null)parts.push(\"装備Lv. \"+item.gear_level);if(item.red===true)parts.push(\"赤装備\");if(item.troop_label||item.troop)parts.push(String(item.troop_label||item.troop));return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\";}).join(\"\")+\"</tr>\"});const heroSkillRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&&(hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.skill_levels)?hero.skill_levels:[]).forEach(skill=>{const skillKey=String(skill&&(skill.id??skill.name)||\"\").trim();if(!skillKey)return;const key=heroKey+\"::\"+skillKey;if(!heroSkillRows.has(key))heroSkillRows.set(key,{label:heroLabel+\" / \"+skillKey,byId:{}});heroSkillRows.get(key).byId[p.governor_id]=skill;});});});heroSkillRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"英雄スキル：\"+row.label)+\"</th>\"+ps.map(p=>{const skill=row.byId[p.governor_id];if(!skill)return \"<td>スキル情報なし</td>\";return \"<td>\"+esc(skill.level==null?\"データなし\":\"Lv. \"+skill.level)+\"</td>\"}).join(\"\")+\"</tr>\"});const heroExclusiveRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;const gear=hero.exclusive_gear;const level=hero.exclusive_gear_level;if((gear==null)&&(level==null))return;if(!heroExclusiveRows.has(key))heroExclusiveRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroExclusiveRows.get(key).byId[p.governor_id]={gear,level};});});heroExclusiveRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"専用装備：\"+row.label)+\"</th>\"+ps.map(p=>{const entry=row.byId[p.governor_id];if(!entry)return \"<td>専用装備情報なし</td>\";const gear=entry.gear;const parts=[];if(gear&&gear.name)parts.push(String(gear.name));const level=gear&&gear.level!=null?gear.level:entry.level;if(level!=null)parts.push(\"Lv. \"+level);if(gear&&gear.slot!=null)parts.push(\"スロット \"+gear.slot);if(gear&&gear.atk_ratio!=null)parts.push(\"攻撃補正 \"+gear.atk_ratio);if(gear&&gear.hp_ratio!=null)parts.push(\"HP補正 \"+gear.hp_ratio);if(gear&&gear.def_ratio!=null)parts.push(\"防御補正 \"+gear.def_ratio);if(gear&&gear.power_ratio!=null)parts.push(\"戦力補正 \"+gear.power_ratio);if(gear&&Array.isArray(gear.slg_attr)&&gear.slg_attr.length)parts.push(\"SLG属性 \"+gear.slg_attr.length+\"件\");if(gear==null&&level!=null)parts.push(\"詳細未提供\");return \"<td>\"+esc(parts.join(\" · \")||\"未取得\")+\"</td>\";}).join(\"\")+\"</tr>\"});const gearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const key=String(item&&(item.slot??item.id??item.name)||\"\").trim();if(!key)return;if(!gearRows.has(key))gearRows.set(key,{label:key,byId:{}});gearRows.get(key).byId[p.governor_id]=item})});gearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"領主装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>—</td>\";const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});h+=\"<tr><th>30日間の戦力変化</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+(p.period&&p.period.powerDelta!=null?((p.period.powerDelta>0?\"+\":\"\")+esc(compact(p.period.powerDelta))):\"—\")+\"</span><div class=\\\"metric\\\">\"+esc(p.period&&p.period.observations||0)+\"件の履歴</div></td>\").join(\"\")+\"</tr></tbody></table></div><section class=\\\"panel\\\"><h2 class=\\\"section-title\\\">戦力推移（30日）</h2>\";const active=ps.filter(p=>!p.missing&&(p.history||[]).length>1);if(!active.length)h+=\"<div class=\\\"status\\\">比較できる履歴がまだありません。履歴が蓄積するとここに推移を表示します。</div>\";else{const vals=active.flatMap(p=>p.history.map(x=>Number(x.power))).filter(Number.isFinite),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),range=hi-lo||1;active.forEach(p=>{h+=\"<div class=\\\"metric\\\">\"+esc(p.player.nick_name||p.governor_id)+\" · \"+p.history.length+\"件</div><div class=\\\"chart\\\">\"+p.history.slice(-30).map((x,i,a)=>\"<div class=\\\"bar-group\\\"><div class=\\\"bar\\\" title=\\\"\"+esc(date(x.observed_at)+\" · \"+compact(x.power))+\"\\\" style=\\\"height:\"+Math.max(3,(Number(x.power)-lo)/range*100)+\"%\\\"></div>\"+(i===0||i===a.length-1?\"<span class=\\\"bar-label\\\">\"+esc(date(x.observed_at))+\"</span>\":\"\")+\"</div>\").join(\"\")+\"</div>\"})}h+=\"<div class=\\\"footnote\\\">保存済みデータを使用し、比較のための外部API追加取得は行いません。未取得の項目は「—」で表示します。</div></section>\";function addMysticTrialComparison(players){const boards=[[\"mystic_trial\",\"秘境の試練\"],[\"coliseum\",\"闘技場\"],[\"forest_of_life\",\"生命の森\"],[\"crystal_cave\",\"水晶鉱山\"],[\"knowledge_nexus\",\"知識の枢軸\"],[\"molten_fort\",\"溶岩要塞\"],[\"radiant_spire\",\"輝光の塔\"]];const entry=(p,k)=>{const srcs=[p.rankings,p.profile&&p.profile.ranks,p.player&&p.player.ranks,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];for(const s of srcs){if(!s)continue;if(s[k]!=null)return k===\"mystic_trial\"&&s.mystic_rank!=null?{score:s[k],kingdom_rank:s.mystic_rank}:s[k];const arr=Array.isArray(s)?s:Array.isArray(s.leaderboards)?s.leaderboards:[];const x=arr.find(x=>{const id=String(x&&(x.board??x.key??x.id??x.type??x.name??x.slug)||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");return id===k.replace(/_/g,\"\")||String(x&&x.label||\"\").includes(boards.find(b=>b[0]===k)[1])});if(x)return x}return null};const unpack=e=>{if(e==null)return{score:null,rank:null,label:null,rankType:null};if(typeof e===\"number\"||(typeof e===\"string\"&&e.trim()!==\"\"&&Number.isFinite(Number(e))))return{score:Number(e),rank:null,label:null,rankType:null};if(typeof e!==\"object\")return{score:null,rank:null,label:null,rankType:null};const pick=ks=>{for(const k of ks)if(e[k]!=null&&e[k]!==\"\"&&Number.isFinite(Number(e[k])))return Number(e[k]);return null};return{score:pick([\"value\",\"score\",\"rank_value\",\"points\",\"power\",\"current_value\",\"total\"]),rank:pick([\"kingdom_rank\",\"rank\",\"position\",\"ranking\",\"leaderboard_rank\",\"rank_no\"]),rankLabel:e.kingdom_rank_label==null?null:String(e.kingdom_rank_label),label:e.value_label==null?null:String(e.value_label),rankType:e.rank_type==null?null:String(e.rank_type)}};const vals=players.map(p=>({id:String(p.governor_id),name:String(p.player&&p.player.nick_name||p.governor_id),data:Object.fromEntries(boards.map(([k])=>[k,unpack(entry(p,k))]))}));const sec=document.createElement(\"section\");sec.className=\"mystic-section\";const title=document.createElement(\"h2\");title.className=\"mystic-title\";title.textContent=\"秘境の試練\";sec.appendChild(title);const colors=[\"#ffd166\",\"#42d9ff\",\"#a18aff\",\"#5ee6a8\",\"#fb923c\",\"#f472b6\"];const card=(key,label,main)=>{const c=document.createElement(\"article\");c.className=\"mystic-card \"+(main?\"is-main\":\"is-sub\");const n=document.createElement(\"div\");n.className=\"mystic-name\";n.textContent=label;c.appendChild(n);const values=document.createElement(\"div\");values.className=\"mystic-values\";const entries=vals.map(p=>({player:p,value:p.data[key]}));entries.forEach((entry,i)=>{const cell=document.createElement(\"div\");cell.className=\"mystic-value\";cell.style.color=colors[i%colors.length];const name=document.createElement(\"small\");name.textContent=entry.player.name;name.style.color=colors[i%colors.length];cell.appendChild(name);const score=document.createElement(\"span\");score.className=\"counter\";score.dataset.target=(entry.value.label||entry.value.score==null)?\"\":String(entry.value.score);score.dataset.stageValue=entry.value.label?\"1\":\"\";score.textContent=entry.value.label||(entry.value.score==null?\"未取得\":num(entry.value.score));cell.appendChild(score);if(entry.value.label){const stage=document.createElement(\"small\");stage.textContent=\"ゲーム表示値\";stage.style.display=\"block\";stage.style.marginTop=\"2px\";stage.style.color=\"var(--text,#e8f3ff)\";cell.appendChild(stage)}const rawLabel=document.createElement(\"small\");rawLabel.textContent=\"API値: \"+(entry.value.score==null?\"未取得\":num(entry.value.score));rawLabel.style.display=\"block\";rawLabel.style.marginTop=\"4px\";cell.appendChild(rawLabel);const rank=document.createElement(\"small\");rank.textContent=\"王国内順位: \"+(entry.value.rank!=null?num(entry.value.rank):entry.value.rankLabel||\"未取得\");rank.style.display=\"block\";rank.style.marginTop=\"3px\";cell.appendChild(rank);if(entry.value.rankType){const type=document.createElement(\"small\");type.textContent=\"rank_type: \"+entry.value.rankType;type.style.display=\"block\";type.style.marginTop=\"2px\";cell.appendChild(type)}values.appendChild(cell)});c.appendChild(values);const note=document.createElement(\"div\");note.className=\"mystic-ranks\";note.textContent=\"API値はステージ表記を符号化した生データです。強さのスコアではないため、差分や割合を強さとして表示していません。\";c.appendChild(note);return c};const big=card(\"mystic_trial\",\"秘境の試練\",true);sec.appendChild(big);const grid=document.createElement(\"div\");grid.className=\"mystic-grid\";boards.slice(1).forEach(([k,l])=>grid.appendChild(card(k,l,false)));sec.appendChild(grid);const old=box.querySelector(\".mystic-section\");if(old)old.remove();const table=box.querySelector(\".table-wrap\");if(table)table.before(sec);else box.insertBefore(sec,box.firstChild);}addMysticTrialComparison(ps);const controls=document.createElement(\"div\");controls.className=\"compare-controls\";controls.innerHTML=\"<label><input type=checkbox data-compare-group=basic checked>基本</label><label><input type=checkbox data-compare-group=combat checked>戦闘</label><label><input type=checkbox data-compare-group=affiliation checked>所属・位置</label>\";box.insertBefore(controls,box.firstChild);const tableData=document.createElement(\"template\");tableData.id=\"eeCompareTableData\";tableData.innerHTML=h;box.appendChild(tableData);const itemLabels=[...new Set([...fields.map(f=>f[0]),...coreRankRows.map(f=>f[0]),...coreRankScoreRows.map(f=>f[0]),...[...leaderboardRows.values()].map(row=>\"ランキング：\"+row.label),...[...heroRows.values()].map(row=>\"闘技場防衛編成：\"+row.label),...[...heroGearRows.values()].map(row=>\"防衛編成装備：\"+row.label),...[...heroSkillRows.values()].map(row=>\"英雄スキル：\"+row.label),...[...heroExclusiveRows.values()].map(row=>\"専用装備：\"+row.label),...[...gearRows.values()].map(row=>\"領主装備：\"+row.label),\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"])];const recommendedItems=new Set([\"戦力\",\"役場レベル\",\"VIP\",\"撃破数\",\"王国\",\"同盟略称\",\"ランキングスコア：秘境の試練\",\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"]);const isHeroItem=label=>label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\");const selectedCompareItems=new Set(itemLabels.filter(label=>recommendedItems.has(label)));try{let saved=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v2\")||\"null\");if(!Array.isArray(saved)){const old=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v1\")||\"null\");if(Array.isArray(old))saved=old.filter(label=>!isHeroItem(label))}if(Array.isArray(saved)){selectedCompareItems.clear();saved.filter(label=>itemLabels.includes(label)).forEach(label=>selectedCompareItems.add(label));if(!selectedCompareItems.size){recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});}}}catch{}const itemSelector=document.createElement(\"details\");itemSelector.className=\"compare-item-selector\";const itemSummary=document.createElement(\"summary\");itemSummary.textContent=\"比較項目を選択（おすすめ項目を初期表示）\";itemSelector.appendChild(itemSummary);const itemActions=document.createElement(\"div\");itemActions.className=\"compare-item-actions\";const resetItems=document.createElement(\"button\");resetItems.type=\"button\";resetItems.textContent=\"おすすめに戻す\";const showAllItems=document.createElement(\"button\");showAllItems.type=\"button\";showAllItems.textContent=\"すべて表示\";itemActions.appendChild(resetItems);itemActions.appendChild(showAllItems);itemSelector.appendChild(itemActions);const itemList=document.createElement(\"div\");itemList.className=\"compare-item-list\";const itemCheckboxes=[];itemLabels.forEach(label=>{const wrapper=document.createElement(\"label\");const input=document.createElement(\"input\");input.type=\"checkbox\";input.checked=selectedCompareItems.has(label);const textNode=document.createElement(\"span\");textNode.textContent=label;wrapper.appendChild(input);wrapper.appendChild(textNode);itemList.appendChild(wrapper);itemCheckboxes.push({label,input})});itemSelector.appendChild(itemList);box.insertBefore(itemSelector,controls.nextSibling);resetItems.addEventListener(\"click\",()=>{selectedCompareItems.clear();recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});itemCheckboxes.forEach(x=>x.input.checked=selectedCompareItems.has(x.label));try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});showAllItems.addEventListener(\"click\",()=>{itemLabels.forEach(label=>selectedCompareItems.add(label));itemCheckboxes.forEach(x=>x.input.checked=true);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});itemCheckboxes.forEach(x=>x.input.addEventListener(\"change\",()=>{if(x.input.checked)selectedCompareItems.add(x.label);else selectedCompareItems.delete(x.label);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()}));const compareGroupForLabel=label=>[\"戦力\",\"役場レベル\",\"VIP\",\"王国\"].includes(label)?\"basic\":label===\"撃破数\"||label===\"30日間の戦力変化\"||label.startsWith(\"王国内順位：\")||label.startsWith(\"ランキング：\")||label.startsWith(\"ランキングスコア：\")||label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\")||label.startsWith(\"領主装備：\")?\"combat\":\"affiliation\";function applyCompareGroups(){const enabled={basic:controls.querySelector(\"[data-compare-group=basic]\").checked,combat:controls.querySelector(\"[data-compare-group=combat]\").checked,affiliation:controls.querySelector(\"[data-compare-group=affiliation]\").checked};box.querySelectorAll(\".compare-table tbody tr\").forEach(function(row){const th=row.querySelector(\"th\");const label=th?th.textContent.trim():\"\";const group=compareGroupForLabel(label);row.hidden=!enabled[group]||!selectedCompareItems.has(label)});box.querySelectorAll(\".compare-metric\").forEach(function(row){const label=row.getAttribute(\"data-compare-label\");row.hidden=!enabled[row.getAttribute(\"data-compare-group\")]||(label&&!selectedCompareItems.has(label))})}controls.querySelectorAll(\"input\").forEach(function(input){input.addEventListener(\"change\",applyCompareGroups)});window.__eeCompareShown=function(label){const g=compareGroupForLabel(label);const c=controls.querySelector(\"[data-compare-group=\"+g+\"]\");return Boolean(c&&c.checked)&&selectedCompareItems.has(label)};applyCompareGroups();\n\nconst mobileCards=document.createElement(\"div\");mobileCards.className=\"compare-player-cards\";\nps.forEach(p=>{const card=document.createElement(\"article\");card.className=\"compare-player-card\";const head=document.createElement(\"div\");head.className=\"compare-player-card-head\";if(p.player&&p.player.avatar_url){const img=document.createElement(\"img\");img.src=String(p.player.avatar_url);img.alt=\"\";img.loading=\"lazy\";head.appendChild(img)}const heading=document.createElement(\"div\");const playerName=document.createElement(\"div\");playerName.className=\"pname\";playerName.textContent=String(p.player&&p.player.nick_name||\"データなし\");const playerMeta=document.createElement(\"div\");playerMeta.className=\"pid\";playerMeta.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");heading.appendChild(playerName);heading.appendChild(playerMeta);head.appendChild(heading);card.appendChild(head);const metrics=document.createElement(\"div\");metrics.className=\"compare-player-metrics\";const addMetric=(label,value,group,detail)=>{const row=document.createElement(\"div\");row.className=\"compare-metric\";row.setAttribute(\"data-compare-group\",group);row.setAttribute(\"data-compare-label\",label);const labelNode=document.createElement(\"span\");labelNode.textContent=label;const valueNode=document.createElement(\"strong\");valueNode.textContent=String(value==null?\"—\":value);row.appendChild(labelNode);row.appendChild(valueNode);if(detail){const detailNode=document.createElement(\"small\");detailNode.textContent=detail;row.appendChild(detailNode)}metrics.appendChild(row)};fields.forEach(f=>addMetric(f[0],p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]),compareGroupForLabel(f[0])));coreRankRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":\"#\"+num(v),\"combat\")});coreRankScoreRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":compact(v),\"combat\")});leaderboardRows.forEach(row=>{const board=row.byId[p.governor_id];const score=board&&(board.value??board.score??board.rank_value);const rank=board&&(board.kingdom_rank??board.rank??board.ranking);const rankLabel=rank!=null?num(rank):(board&&board.kingdom_rank_label||\"\");const meta=[];if(board&&board.value_label&&score!=null)meta.push(\"API値 \"+compact(score));if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board&&board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board&&board.value_label?board.value_label:formattedScore;addMetric(\"ランキング：\"+row.label,display,\"combat\",meta.join(\" · \"));const metric=metrics.lastElementChild;if(metric&&score!=null&&Number.isFinite(Number(score))&&!(board&&board.value_label))metric.dataset.rankScore=String(score)});(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);addMetric(\"英雄：\"+String(hero.name||hero.id||\"英雄\"),parts.join(\" · \")||\"データなし\",\"combat\")});(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);addMetric(\"領主装備：\"+String(item.slot||item.id||item.name||\"装備\"),parts.join(\" · \")||\"データなし\",\"combat\")});const delta=p.period&&p.period.powerDelta;addMetric(\"30日間の戦力変化\",delta==null?\"—\":(delta>0?\"+\":\"\")+compact(delta),\"combat\",String(p.period&&p.period.observations||0)+\"件の履歴\");const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);addMetric(\"EagleEye取得\",eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\"):\"不明\",\"affiliation\");addMetric(\"元データ時刻\",sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\")+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\",\"affiliation\");card.appendChild(metrics);mobileCards.appendChild(card)});box.insertBefore(mobileCards,itemSelector.nextSibling);applyCompareGroups();\nconst validPowers=ps.map(p=>({p,value:Number(p.player&&p.player.power)})).filter(x=>!x.p.missing&&Number.isFinite(x.value)&&x.value>=0);const maxPower=validPowers.length?Math.max.apply(null,validPowers.map(x=>x.value)):0;const ns=\"http://www.w3.org/2000/svg\";const showcase=document.createElement(\"section\");showcase.className=\"power-showcase-wrap\";const title=document.createElement(\"h2\");title.className=\"section-title\";title.textContent=\"戦力バランス\";showcase.appendChild(title);const note=document.createElement(\"div\");note.className=\"sub\";note.textContent=\"円の長さは比較対象内の最大戦力を100%とした目安です。中央の数値は実際の戦力です。\";showcase.appendChild(note);const grid=document.createElement(\"div\");grid.className=\"power-showcase\";showcase.appendChild(grid);const ringColors=[\"var(--ring-1)\",\"var(--ring-2)\",\"var(--ring-3)\",\"var(--ring-4)\"];const ringNodes=[];const counterNodes=[];\nps.forEach((p,i)=>{const power=Number(p.player&&p.player.power);const valid=!p.missing&&Number.isFinite(power)&&power>=0;const ratio=valid&&maxPower>0?Math.min(1,power/maxPower):0;const card=document.createElement(\"article\");card.className=\"power-card\";const ring=document.createElement(\"div\");ring.className=\"power-ring\";const svg=document.createElementNS(ns,\"svg\");svg.setAttribute(\"viewBox\",\"0 0 100 100\");svg.setAttribute(\"role\",\"img\");svg.setAttribute(\"aria-label\",String(p.player&&p.player.nick_name||\"プレイヤー\")+\"の戦力比較ゲージ\");const base=document.createElementNS(ns,\"circle\");base.setAttribute(\"class\",\"ring-base\");base.setAttribute(\"cx\",\"50\");base.setAttribute(\"cy\",\"50\");base.setAttribute(\"r\",\"42\");const valueCircle=document.createElementNS(ns,\"circle\");valueCircle.setAttribute(\"class\",\"ring-value\");valueCircle.setAttribute(\"cx\",\"50\");valueCircle.setAttribute(\"cy\",\"50\");valueCircle.setAttribute(\"r\",\"42\");valueCircle.style.setProperty(\"--ring-color\",ringColors[i%ringColors.length]);valueCircle.style.strokeDashoffset=\"263.9\";svg.appendChild(base);svg.appendChild(valueCircle);ring.appendChild(svg);const center=document.createElement(\"div\");center.className=\"ring-center\";const number=document.createElement(\"span\");number.className=\"ring-number\";number.textContent=valid?\"0\":\"—\";const caption=document.createElement(\"span\");caption.className=\"ring-caption\";caption.textContent=\"戦力\";center.appendChild(number);center.appendChild(caption);ring.appendChild(center);card.appendChild(ring);const info=document.createElement(\"div\");info.className=\"power-info\";const name=document.createElement(\"div\");name.className=\"pname\";name.textContent=String(p.player&&p.player.nick_name||\"データなし\");const id=document.createElement(\"div\");id.className=\"pid\";id.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");const label=document.createElement(\"div\");label.className=\"power-label\";label.textContent=\"取得した元の数値\";const raw=document.createElement(\"div\");raw.className=\"power-value\";raw.textContent=valid?compact(power):\"データなし\";const relative=document.createElement(\"div\");relative.className=\"power-ratio\";relative.textContent=valid&&maxPower>0?Math.round(ratio*100)+\"%（比較対象内）\":\"比較不可\";info.appendChild(name);info.appendChild(id);const freshness=document.createElement(\"div\");freshness.className=\"pid\";const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);freshness.textContent=\"EagleEye: \"+(eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"不明\")+\" · 元データ: \"+(sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(freshness);const rankFreshness=document.createElement(\"div\");rankFreshness.className=\"pid\";const rankAt=Number(p.rankings&&p.rankings.observed_at);const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at);rankFreshness.textContent=\"ランキング EE: \"+(rankAt?new Date(rankAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"未取得\")+\" · 元データ: \"+(rankSourceAt?new Date(rankSourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-rankSourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(rankFreshness);info.appendChild(label);info.appendChild(raw);info.appendChild(relative);card.appendChild(info);grid.appendChild(card);if(valid){ringNodes.push({ring,valueCircle,offset:263.9*(1-ratio)});counterNodes.push({node:number,target:power})}});\nbox.insertBefore(showcase,box.firstChild);requestAnimationFrame(()=>{ringNodes.forEach(x=>{x.valueCircle.style.strokeDashoffset=String(x.offset);x.ring.classList.add(\"ready\")});const duration=900;const started=performance.now();function tick(now){const progress=Math.min(1,(now-started)/duration);const eased=1-Math.pow(1-progress,3);counterNodes.forEach(x=>{x.node.textContent=compact(x.target*eased)});if(progress<1)requestAnimationFrame(tick);else counterNodes.forEach(x=>{x.node.textContent=compact(x.target)})}if(counterNodes.length)requestAnimationFrame(tick)})}" + "async function fetchJsonWithTimeout(url,options,timeoutMs){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs||15000);try{const response=await fetch(url,{...(options||{}),signal:controller.signal,cache:\"no-store\"});const data=await response.json();return {response,data}}finally{clearTimeout(timer)}}async function runCompareRefreshBatch(items,concurrency,worker,onProgress){let cursor=0,completed=0;const results=new Array(items.length);async function run(){while(true){const index=cursor++;if(index>=items.length)return;try{results[index]=await worker(items[index],index)}catch(error){results[index]={error}}completed++;if(onProgress)onProgress(completed,items.length)}}await Promise.all(Array.from({length:Math.min(concurrency,items.length)},()=>run()));return results}let staleRefreshAttempted=false;async function load(){if(ids.length<2){count.textContent=\"2〜6人必要です\";box.innerHTML=\"<div class=\\\"status error\\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>\";return}retry.disabled=true;box.innerHTML=\"<div class=status id=compareLoadStatus>比較データを読み込み中…（0秒）</div>\";let loadPhase=\"比較データを読み込み中\";const loadStartedAt=Date.now();const loadTimer=setInterval(function(){const status=document.getElementById(\"compareLoadStatus\");if(status)status.textContent=loadPhase+\"…（経過 \"+Math.floor((Date.now()-loadStartedAt)/1000)+\"秒）\";},1000);try{const q=new URLSearchParams();ids.forEach(id=>q.append(\"governor_id\",id));const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);let r,d;try{r=await fetch(\"/api/player-compare?\"+q.toString(),{cache:\"no-store\",signal:controller.signal});d=await r.json()}finally{clearTimeout(timeout)}if(!r.ok||!d.ok)throw new Error(d.message||\"比較データの取得に失敗しました。\");let autoRefreshFailures=[];if(!staleRefreshAttempted){const now=Math.floor(Date.now()/1000);const stale=(d.players||[]).filter(p=>{const eeAt=Number(p.player&&p.player.observed_at)||0;const sourceAt=Number(p.player&&p.player.source_observed_at)||0;const rankAt=Number(p.rankings&&p.rankings.observed_at)||0;const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at)||0;return !p.missing&&(!eeAt||now-eeAt>900||(sourceAt>0&&now-sourceAt>900)||(p.rankingsExpected&&(!rankAt||now-rankAt>900||(rankSourceAt>0&&now-rankSourceAt>900)))||p.profileNeedsRich);});if(stale.length){staleRefreshAttempted=true;loadPhase=\"古いデータを自動更新中\";count.textContent=\"古いデータを自動更新中… \"+stale.length+\"人\";const capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);const capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");const refreshConcurrency=Math.min(stale.length,Math.max(0,Number(capacityData.usable)||0));const refreshResults=refreshConcurrency>0?await runCompareRefreshBatch(stale,refreshConcurrency,async p=>{for(let attempt=0;attempt<3;attempt++){try{const refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(p.governor_id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);const rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}if(!rr.ok||!rd.ok||(rd.rank_refresh_expected&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},(completed,total)=>{count.textContent=\"古いデータを自動更新中… \"+completed+\"/\"+total+\"人\"}):[];refreshResults.forEach((result,index)=>{if(!result||!result.ok){autoRefreshFailures.push(stale[index].governor_id);console.warn(\"compare_auto_refresh_failed\",stale[index].governor_id,result&&result.error&&result.error.message||\"refresh_failed\")}});loadPhase=\"比較データを再取得中\";const refreshedResult=await fetchJsonWithTimeout(\"/api/player-compare?\"+q.toString(),null,12000);const refreshed=refreshedResult.response,refreshedData=refreshedResult.data;if(refreshed.ok&&refreshedData.ok)d=refreshedData;}}render(d);if(autoRefreshFailures.length)count.textContent+=\" · 自動更新失敗 \"+autoRefreshFailures.length+\"人\";if(d.rankingPending&&d.rankingPending.length&&!window.__eeRankRetry){window.__eeRankRetry=1;var rp=document.createElement('div');rp.className='status';rp.id='compareRankingPending';rp.textContent='⏳ 王国'+d.rankingPending.map(function(x){return x.kid}).join('・')+'のランキング（領主宝石・英雄総力など）を取得しています。10秒ほどで自動で更新します。';box.insertBefore(rp,box.firstChild);setTimeout(async function(){try{var again=await fetchJsonWithTimeout('/api/player-compare?'+q.toString(),null,12000);if(again.response.ok&&again.data.ok)render(again.data)}catch(e){}var el=document.getElementById('compareRankingPending');if(el)el.remove()},10000)}}catch(e){const message=e&&e.name===\"AbortError\"?\"取得が12秒以内に完了しませんでした。サーバー側の処理が遅延しています。再読み込みするか、時間をおいて再試行してください。\":(e.message||\"比較データの取得に失敗しました。\");box.innerHTML=\"<div class=\\\"status error\\\">\"+esc(message)+\"</div>\"}finally{clearInterval(loadTimer);retry.disabled=false}}retry.addEventListener(\"click\",load);document.getElementById(\"refresh\").addEventListener(\"click\",async function(){if(!confirm(\"比較対象のプレイヤーを順番に最新データへ更新します。API Poolを使用します。続けますか？\"))return;var btn=this;btn.disabled=true;retry.disabled=true;var status=document.getElementById(\"count\");try{var failures=[];var refreshStartedAt=Date.now();var refreshIndex=0;var refreshTimer=setInterval(function(){status.textContent=\"最新データを取得中… \"+refreshIndex+\"/\"+ids.length+\"人 · 残り \"+(ids.length-refreshIndex)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"},1000);var capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);var capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");var refreshConcurrency=Math.min(ids.length,Math.max(0,Number(capacityData.usable)||0));if(refreshConcurrency<1)throw new Error(\"通常利用向けAPIキーを確保するため、最新データを取得できません。少し待ってから再試行してください。\");var refreshResults=await runCompareRefreshBatch(ids,refreshConcurrency,async function(id){for(var attempt=0;attempt<3;attempt++){try{var refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);var rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}if(!rr.ok||!rd.ok||(String(rd.requested_include||\"\").includes(\"ranks\")&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},function(completed,total){refreshIndex=completed;status.textContent=\"最新データを取得中… \"+completed+\"/\"+total+\"人 · 残り \"+(total-completed)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"});refreshResults.forEach(function(result,index){if(!result||!result.ok)failures.push(ids[index])});await load();if(failures.length)count.textContent+=\" · 更新失敗 \"+failures.length+\"人\"}catch(e){alert(e.message||\"最新データを取得できませんでした\")}finally{clearInterval(refreshTimer);btn.disabled=false;retry.disabled=false}});load()})();</script></body></html>";
+  "function render(d){box.querySelectorAll('.status').forEach(el=>el.remove());const ps=d.players||[];const observed=ps.filter(p=>!p.missing&&Number(p.player&&p.player.observed_at)>0).map(p=>Number(p.player.observed_at));const oldest=observed.length?Math.min.apply(null,observed):0;count.textContent=ps.length+\"人を比較中 · 過去30日 · 最終取得 \"+(oldest?new Date(oldest*1000).toLocaleString(\"ja-JP\"):\"日時不明\");const fields=[[\"戦力\",\"power\",compact],[\"役場レベル\",\"town_center_level\",num],[\"VIP\",\"vip\",num],[\"撃破数\",\"kills\",compact],[\"王国\",\"kid\",num],[\"同盟略称\",\"alliance_abbr\",v=>v||\"—\"],[\"同盟名\",\"alliance_name\",v=>v||\"—\"],[\"同盟役職\",\"alliance_rank_label\",v=>v||\"—\"],[\"座標 X\",\"x\",num],[\"座標 Y\",\"y\",num]];let h=\"<div class=\\\"table-wrap\\\"><table class=\\\"compare-table\\\"><thead><tr><th>比較項目</th>\"+ps.map(p=>\"<th><div class=\\\"player-head\\\">\"+(p.player&&p.player.avatar_url?\"<img class=\\\"avatar\\\" src=\\\"\"+esc(p.player.avatar_url)+\"\\\" alt=\\\"\\\" loading=\\\"lazy\\\">\":\"<div class=\\\"avatar\\\"></div>\")+\"<div><div class=\\\"pname\\\">\"+esc(p.player&&p.player.nick_name||\"データなし\")+\"</div><div class=\\\"pid\\\">ID \"+esc(p.governor_id)+\"</div></div></div></th>\").join(\"\")+\"</tr></thead><tbody>\";fields.forEach(f=>{h+=\"<tr><th>\"+f[0]+\"</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+esc(p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]))+\"</span></td>\").join(\"\")+\"</tr>\"});const coreRankRows=[];const coreRankScoreRows=[];const rankTypeBoardKeys={3:\"personal_power\",4:\"kills\",5:\"town_center\",19:\"migrant_score\",20:\"mystic_trial\",21:\"coliseum\",22:\"forest_of_life\",23:\"crystal_cave\",24:\"knowledge_nexus\",25:\"molten_fort\",26:\"radiant_spire\"};const boardNameAliases={personalpower:\"personal_power\",killcount:\"kills\",towncenterlevel:\"town_center\",migrantscore:\"migrant_score\",mystictrial:\"mystic_trial\"};const leaderboardRows=new Map();ps.forEach(p=>{const lists=[p.rankings&&p.rankings.leaderboards,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];lists.forEach(list=>{if(!Array.isArray(list))return;list.forEach(board=>{if(!board||typeof board!==\"object\")return;const label=String(board.label??board.name??board.board_name??board.key??board.board??board.id??\"\").trim();if(!label)return;const rawScore=board.value??board.score??board.rank_value??board.points;if(rawScore==null||rawScore===\"\")return;const numericScore=Number(rawScore);const displayScore=Number.isFinite(numericScore)?numericScore:String(rawScore);const rawBoardKey=String(board.key??board.board??board.id??board.name??label).toLowerCase().replace(/[^a-z0-9]/g,\"\");const key=rankTypeBoardKeys[Number(board.rank_type)]||boardNameAliases[rawBoardKey]||rawBoardKey||label;if(!leaderboardRows.has(key))leaderboardRows.set(key,{key,label,byId:{}});leaderboardRows.get(key).byId[p.governor_id]={...board,value:displayScore};})})});leaderboardRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"ランキング：\"+row.label)+\"</th>\"+ps.map(p=>{const board=row.byId[p.governor_id];if(!board){const rk=String(row.key||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");const checked=Array.isArray(p.rankingChecked)&&rk!==\"\"&&p.rankingChecked.some(function(b){return String(b).toLowerCase().replace(/[^a-z0-9]/g,\"\")===rk});return checked?\"<td class=\\\"rank-out\\\">100位圏外</td>\":p.rankingPending?\"<td>取得中</td>\":\"<td>—</td>\"};const score=board.value??board.score??board.rank_value;const rank=board.kingdom_rank??board.rank??board.ranking;const rankLabel=rank!=null?num(rank):(board.kingdom_rank_label||\"\");const meta=[];if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board.value_label||formattedScore;const apiNote=board.value_label&&score!=null?\"<div class=\\\"metric\\\">API値 \"+esc(formattedScore)+\"</div>\":\"\";return \"<td><span class=\\\"value\\\">\"+esc(display)+\"</span>\"+apiNote+(meta.length?\"<div class=\\\"metric\\\">\"+esc(meta.join(\" · \"))+\"</div>\":\"\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;if(!heroRows.has(key))heroRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroRows.get(key).byId[p.governor_id]=hero})});heroRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"闘技場防衛編成：\"+row.label)+\"</th>\"+ps.map(p=>{const hero=row.byId[p.governor_id];if(!hero)return \"<td>—</td>\";const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});const heroGearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&& (hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.gear)?hero.gear:[]).forEach(item=>{const slot=String(item&&(item.slot??item.sid??item.name)||\"\").trim();if(!slot)return;const key=heroKey+\"::\"+slot;if(!heroGearRows.has(key))heroGearRows.set(key,{label:heroLabel+\" / \"+slot,byId:{}});heroGearRows.get(key).byId[p.governor_id]=item;});});});heroGearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"防衛編成装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>装備情報なし</td>\";const parts=[];if(item.name)parts.push(String(item.name));if(item.quality_label||item.quality)parts.push(String(item.quality_label||item.quality));if(item.enhancement_level!=null)parts.push(\"強化 +\"+item.enhancement_level);if(item.refine_level!=null)parts.push(\"精錬 \"+item.refine_level);if(item.gear_level!=null)parts.push(\"装備Lv. \"+item.gear_level);if(item.red===true)parts.push(\"赤装備\");if(item.troop_label||item.troop)parts.push(String(item.troop_label||item.troop));return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\";}).join(\"\")+\"</tr>\"});const heroSkillRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const heroKey=String(hero&&(hero.id??hero.name)||\"\").trim();const heroLabel=String(hero&&(hero.name||hero.id)||heroKey);(Array.isArray(hero&&hero.skill_levels)?hero.skill_levels:[]).forEach(skill=>{const skillKey=String(skill&&(skill.id??skill.name)||\"\").trim();if(!skillKey)return;const key=heroKey+\"::\"+skillKey;if(!heroSkillRows.has(key))heroSkillRows.set(key,{label:heroLabel+\" / \"+skillKey,byId:{}});heroSkillRows.get(key).byId[p.governor_id]=skill;});});});heroSkillRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"英雄スキル：\"+row.label)+\"</th>\"+ps.map(p=>{const skill=row.byId[p.governor_id];if(!skill)return \"<td>スキル情報なし</td>\";return \"<td>\"+esc(skill.level==null?\"データなし\":\"Lv. \"+skill.level)+\"</td>\"}).join(\"\")+\"</tr>\"});const heroExclusiveRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const key=String(hero&&(hero.id??hero.name)||\"\").trim();if(!key)return;const gear=hero.exclusive_gear;const level=hero.exclusive_gear_level;if((gear==null)&&(level==null))return;if(!heroExclusiveRows.has(key))heroExclusiveRows.set(key,{label:String(hero.name||hero.id||key),byId:{}});heroExclusiveRows.get(key).byId[p.governor_id]={gear,level};});});heroExclusiveRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"専用装備：\"+row.label)+\"</th>\"+ps.map(p=>{const entry=row.byId[p.governor_id];if(!entry)return \"<td>専用装備情報なし</td>\";const gear=entry.gear;const parts=[];if(gear&&gear.name)parts.push(String(gear.name));const level=gear&&gear.level!=null?gear.level:entry.level;if(level!=null)parts.push(\"Lv. \"+level);if(gear&&gear.slot!=null)parts.push(\"スロット \"+gear.slot);if(gear&&gear.atk_ratio!=null)parts.push(\"攻撃補正 \"+gear.atk_ratio);if(gear&&gear.hp_ratio!=null)parts.push(\"HP補正 \"+gear.hp_ratio);if(gear&&gear.def_ratio!=null)parts.push(\"防御補正 \"+gear.def_ratio);if(gear&&gear.power_ratio!=null)parts.push(\"戦力補正 \"+gear.power_ratio);if(gear&&Array.isArray(gear.slg_attr)&&gear.slg_attr.length)parts.push(\"SLG属性 \"+gear.slg_attr.length+\"件\");if(gear==null&&level!=null)parts.push(\"詳細未提供\");return \"<td>\"+esc(parts.join(\" · \")||\"未取得\")+\"</td>\";}).join(\"\")+\"</tr>\"});const gearRows=new Map();ps.forEach(p=>{(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const key=String(item&&(item.slot??item.id??item.name)||\"\").trim();if(!key)return;if(!gearRows.has(key))gearRows.set(key,{label:key,byId:{}});gearRows.get(key).byId[p.governor_id]=item})});gearRows.forEach(row=>{h+=\"<tr><th>\"+esc(\"領主装備：\"+row.label)+\"</th>\"+ps.map(p=>{const item=row.byId[p.governor_id];if(!item)return \"<td>—</td>\";const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);return \"<td>\"+esc(parts.join(\" · \")||\"データなし\")+\"</td>\"}).join(\"\")+\"</tr>\"});h+=\"<tr><th>30日間の戦力変化</th>\"+ps.map(p=>\"<td><span class=\\\"value\\\">\"+(p.period&&p.period.powerDelta!=null?((p.period.powerDelta>0?\"+\":\"\")+esc(compact(p.period.powerDelta))):\"—\")+\"</span><div class=\\\"metric\\\">\"+esc(p.period&&p.period.observations||0)+\"件の履歴</div></td>\").join(\"\")+\"</tr></tbody></table></div><section class=\\\"panel\\\"><h2 class=\\\"section-title\\\">戦力推移（30日）</h2>\";const active=ps.filter(p=>!p.missing&&(p.history||[]).length>1);if(!active.length)h+=\"<div class=\\\"status\\\">比較できる履歴がまだありません。履歴が蓄積するとここに推移を表示します。</div>\";else{const vals=active.flatMap(p=>p.history.map(x=>Number(x.power))).filter(Number.isFinite),lo=Math.min.apply(null,vals),hi=Math.max.apply(null,vals),range=hi-lo||1;active.forEach(p=>{h+=\"<div class=\\\"metric\\\">\"+esc(p.player.nick_name||p.governor_id)+\" · \"+p.history.length+\"件</div><div class=\\\"chart\\\">\"+p.history.slice(-30).map((x,i,a)=>\"<div class=\\\"bar-group\\\"><div class=\\\"bar\\\" title=\\\"\"+esc(date(x.observed_at)+\" · \"+compact(x.power))+\"\\\" style=\\\"height:\"+Math.max(3,(Number(x.power)-lo)/range*100)+\"%\\\"></div>\"+(i===0||i===a.length-1?\"<span class=\\\"bar-label\\\">\"+esc(date(x.observed_at))+\"</span>\":\"\")+\"</div>\").join(\"\")+\"</div>\"})}h+=\"<div class=\\\"footnote\\\">保存済みデータを使用し、比較のための外部API追加取得は行いません。未取得の項目は「—」で表示します。</div></section>\";function addMysticTrialComparison(players){const boards=[[\"mystic_trial\",\"秘境の試練\"],[\"coliseum\",\"闘技場\"],[\"forest_of_life\",\"生命の森\"],[\"crystal_cave\",\"水晶鉱山\"],[\"knowledge_nexus\",\"知識の枢軸\"],[\"molten_fort\",\"溶岩要塞\"],[\"radiant_spire\",\"輝光の塔\"]];const entry=(p,k)=>{const srcs=[p.rankings,p.profile&&p.profile.ranks,p.player&&p.player.ranks,p.profile&&p.profile.leaderboards,p.player&&p.player.leaderboards];for(const s of srcs){if(!s)continue;if(s[k]!=null)return k===\"mystic_trial\"&&s.mystic_rank!=null?{score:s[k],kingdom_rank:s.mystic_rank}:s[k];const arr=Array.isArray(s)?s:Array.isArray(s.leaderboards)?s.leaderboards:[];const x=arr.find(x=>{const id=String(x&&(x.board??x.key??x.id??x.type??x.name??x.slug)||\"\").toLowerCase().replace(/[^a-z0-9]/g,\"\");return id===k.replace(/_/g,\"\")||String(x&&x.label||\"\").includes(boards.find(b=>b[0]===k)[1])});if(x)return x}return null};const unpack=e=>{if(e==null)return{score:null,rank:null,label:null,rankType:null};if(typeof e===\"number\"||(typeof e===\"string\"&&e.trim()!==\"\"&&Number.isFinite(Number(e))))return{score:Number(e),rank:null,label:null,rankType:null};if(typeof e!==\"object\")return{score:null,rank:null,label:null,rankType:null};const pick=ks=>{for(const k of ks)if(e[k]!=null&&e[k]!==\"\"&&Number.isFinite(Number(e[k])))return Number(e[k]);return null};return{score:pick([\"value\",\"score\",\"rank_value\",\"points\",\"power\",\"current_value\",\"total\"]),rank:pick([\"kingdom_rank\",\"rank\",\"position\",\"ranking\",\"leaderboard_rank\",\"rank_no\"]),rankLabel:e.kingdom_rank_label==null?null:String(e.kingdom_rank_label),label:e.value_label==null?null:String(e.value_label),rankType:e.rank_type==null?null:String(e.rank_type)}};const vals=players.map(p=>({id:String(p.governor_id),name:String(p.player&&p.player.nick_name||p.governor_id),data:Object.fromEntries(boards.map(([k])=>[k,unpack(entry(p,k))]))}));const sec=document.createElement(\"section\");sec.className=\"mystic-section\";const title=document.createElement(\"h2\");title.className=\"mystic-title\";title.textContent=\"秘境の試練\";sec.appendChild(title);const colors=[\"#ffd166\",\"#42d9ff\",\"#a18aff\",\"#5ee6a8\",\"#fb923c\",\"#f472b6\"];const card=(key,label,main)=>{const c=document.createElement(\"article\");c.className=\"mystic-card \"+(main?\"is-main\":\"is-sub\");const n=document.createElement(\"div\");n.className=\"mystic-name\";n.textContent=label;c.appendChild(n);const values=document.createElement(\"div\");values.className=\"mystic-values\";const entries=vals.map(p=>({player:p,value:p.data[key]}));entries.forEach((entry,i)=>{const cell=document.createElement(\"div\");cell.className=\"mystic-value\";cell.style.color=colors[i%colors.length];const name=document.createElement(\"small\");name.textContent=entry.player.name;name.style.color=colors[i%colors.length];cell.appendChild(name);const score=document.createElement(\"span\");score.className=\"counter\";score.dataset.target=(entry.value.label||entry.value.score==null)?\"\":String(entry.value.score);score.dataset.stageValue=entry.value.label?\"1\":\"\";score.dataset.api=entry.value.score==null?\"\":String(entry.value.score);score.textContent=entry.value.label||(entry.value.score==null?\"未取得\":num(entry.value.score));cell.appendChild(score);if(entry.value.label){const stage=document.createElement(\"small\");stage.textContent=\"ゲーム表示値\";stage.style.display=\"block\";stage.style.marginTop=\"2px\";stage.style.color=\"var(--text,#e8f3ff)\";cell.appendChild(stage)}const rank=document.createElement(\"small\");rank.textContent=\"王国内順位: \"+(entry.value.rank!=null?num(entry.value.rank):entry.value.rankLabel||\"未取得\");rank.style.display=\"block\";rank.style.marginTop=\"3px\";cell.appendChild(rank);values.appendChild(cell)});c.appendChild(values);return c};const big=card(\"mystic_trial\",\"秘境の試練\",true);sec.appendChild(big);const grid=document.createElement(\"div\");grid.className=\"mystic-grid\";boards.slice(1).forEach(([k,l])=>grid.appendChild(card(k,l,false)));sec.appendChild(grid);const old=box.querySelector(\".mystic-section\");if(old)old.remove();const table=box.querySelector(\".table-wrap\");if(table)table.before(sec);else box.insertBefore(sec,box.firstChild);}addMysticTrialComparison(ps);const controls=document.createElement(\"div\");controls.className=\"compare-controls\";controls.innerHTML=\"<label><input type=checkbox data-compare-group=basic checked>基本</label><label><input type=checkbox data-compare-group=combat checked>戦闘</label><label><input type=checkbox data-compare-group=affiliation checked>所属・位置</label>\";box.insertBefore(controls,box.firstChild);const tableData=document.createElement(\"template\");tableData.id=\"eeCompareTableData\";tableData.innerHTML=h;box.appendChild(tableData);const itemLabels=[...new Set([...fields.map(f=>f[0]),...coreRankRows.map(f=>f[0]),...coreRankScoreRows.map(f=>f[0]),...[...leaderboardRows.values()].map(row=>\"ランキング：\"+row.label),...[...heroRows.values()].map(row=>\"闘技場防衛編成：\"+row.label),...[...heroGearRows.values()].map(row=>\"防衛編成装備：\"+row.label),...[...heroSkillRows.values()].map(row=>\"英雄スキル：\"+row.label),...[...heroExclusiveRows.values()].map(row=>\"専用装備：\"+row.label),...[...gearRows.values()].map(row=>\"領主装備：\"+row.label),\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"])];const recommendedItems=new Set([\"戦力\",\"役場レベル\",\"VIP\",\"撃破数\",\"王国\",\"同盟略称\",\"ランキングスコア：秘境の試練\",\"30日間の戦力変化\",\"EagleEye取得\",\"元データ時刻\"]);const isHeroItem=label=>label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\");const selectedCompareItems=new Set(itemLabels.filter(label=>recommendedItems.has(label)));try{let saved=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v2\")||\"null\");if(!Array.isArray(saved)){const old=JSON.parse(localStorage.getItem(\"eagleeye-player-compare-items-v1\")||\"null\");if(Array.isArray(old))saved=old.filter(label=>!isHeroItem(label))}if(Array.isArray(saved)){selectedCompareItems.clear();saved.filter(label=>itemLabels.includes(label)).forEach(label=>selectedCompareItems.add(label));if(!selectedCompareItems.size){recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});}}}catch{}const itemSelector=document.createElement(\"details\");itemSelector.className=\"compare-item-selector\";const itemSummary=document.createElement(\"summary\");itemSummary.textContent=\"比較項目を選択（おすすめ項目を初期表示）\";itemSelector.appendChild(itemSummary);const itemActions=document.createElement(\"div\");itemActions.className=\"compare-item-actions\";const resetItems=document.createElement(\"button\");resetItems.type=\"button\";resetItems.textContent=\"おすすめに戻す\";const showAllItems=document.createElement(\"button\");showAllItems.type=\"button\";showAllItems.textContent=\"すべて表示\";itemActions.appendChild(resetItems);itemActions.appendChild(showAllItems);itemSelector.appendChild(itemActions);const itemList=document.createElement(\"div\");itemList.className=\"compare-item-list\";const itemCheckboxes=[];itemLabels.forEach(label=>{const wrapper=document.createElement(\"label\");const input=document.createElement(\"input\");input.type=\"checkbox\";input.checked=selectedCompareItems.has(label);const textNode=document.createElement(\"span\");textNode.textContent=label;wrapper.appendChild(input);wrapper.appendChild(textNode);itemList.appendChild(wrapper);itemCheckboxes.push({label,input})});itemSelector.appendChild(itemList);box.insertBefore(itemSelector,controls.nextSibling);resetItems.addEventListener(\"click\",()=>{selectedCompareItems.clear();recommendedItems.forEach(label=>{if(itemLabels.includes(label))selectedCompareItems.add(label)});itemCheckboxes.forEach(x=>x.input.checked=selectedCompareItems.has(x.label));try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});showAllItems.addEventListener(\"click\",()=>{itemLabels.forEach(label=>selectedCompareItems.add(label));itemCheckboxes.forEach(x=>x.input.checked=true);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()});itemCheckboxes.forEach(x=>x.input.addEventListener(\"change\",()=>{if(x.input.checked)selectedCompareItems.add(x.label);else selectedCompareItems.delete(x.label);try{localStorage.setItem(\"eagleeye-player-compare-items-v2\",JSON.stringify([...selectedCompareItems]));}catch{}applyCompareGroups()}));const compareGroupForLabel=label=>[\"戦力\",\"役場レベル\",\"VIP\",\"王国\"].includes(label)?\"basic\":label===\"撃破数\"||label===\"30日間の戦力変化\"||label.startsWith(\"王国内順位：\")||label.startsWith(\"ランキング：\")||label.startsWith(\"ランキングスコア：\")||label.startsWith(\"闘技場防衛編成：\")||label.startsWith(\"防衛編成装備：\")||label.startsWith(\"英雄スキル：\")||label.startsWith(\"専用装備：\")||label.startsWith(\"領主装備：\")?\"combat\":\"affiliation\";function applyCompareGroups(){const enabled={basic:controls.querySelector(\"[data-compare-group=basic]\").checked,combat:controls.querySelector(\"[data-compare-group=combat]\").checked,affiliation:controls.querySelector(\"[data-compare-group=affiliation]\").checked};box.querySelectorAll(\".compare-table tbody tr\").forEach(function(row){const th=row.querySelector(\"th\");const label=th?th.textContent.trim():\"\";const group=compareGroupForLabel(label);row.hidden=!enabled[group]||!selectedCompareItems.has(label)});box.querySelectorAll(\".compare-metric\").forEach(function(row){const label=row.getAttribute(\"data-compare-label\");row.hidden=!enabled[row.getAttribute(\"data-compare-group\")]||(label&&!selectedCompareItems.has(label))})}controls.querySelectorAll(\"input\").forEach(function(input){input.addEventListener(\"change\",applyCompareGroups)});window.__eeCompareShown=function(label){const g=compareGroupForLabel(label);const c=controls.querySelector(\"[data-compare-group=\"+g+\"]\");return Boolean(c&&c.checked)&&selectedCompareItems.has(label)};applyCompareGroups();\n\nbox.querySelectorAll(\".compare-player-cards\").forEach(el=>el.remove());const mobileCards=document.createElement(\"div\");mobileCards.className=\"compare-player-cards\";\nps.forEach(p=>{const card=document.createElement(\"article\");card.className=\"compare-player-card\";card.dataset.governorId=String(p.governor_id||\"\");const head=document.createElement(\"div\");head.className=\"compare-player-card-head\";if(p.player&&p.player.avatar_url){const img=document.createElement(\"img\");img.src=String(p.player.avatar_url);img.alt=\"\";img.loading=\"lazy\";head.appendChild(img)}const heading=document.createElement(\"div\");const playerName=document.createElement(\"div\");playerName.className=\"pname\";playerName.textContent=String(p.player&&p.player.nick_name||\"データなし\");const playerMeta=document.createElement(\"div\");playerMeta.className=\"pid\";playerMeta.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");heading.appendChild(playerName);heading.appendChild(playerMeta);head.appendChild(heading);card.appendChild(head);const metrics=document.createElement(\"div\");metrics.className=\"compare-player-metrics\";const addMetric=(label,value,group,detail)=>{const row=document.createElement(\"div\");row.className=\"compare-metric\";row.setAttribute(\"data-compare-group\",group);row.setAttribute(\"data-compare-label\",label);const labelNode=document.createElement(\"span\");labelNode.textContent=label;const valueNode=document.createElement(\"strong\");valueNode.textContent=String(value==null?\"—\":value);row.appendChild(labelNode);row.appendChild(valueNode);if(detail){const detailNode=document.createElement(\"small\");detailNode.textContent=detail;row.appendChild(detailNode)}metrics.appendChild(row)};fields.forEach(f=>addMetric(f[0],p.missing?\"データなし\":f[2](p.player&&p.player[f[1]]),compareGroupForLabel(f[0])));coreRankRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":\"#\"+num(v),\"combat\")});coreRankScoreRows.forEach(f=>{const v=p.rankings&&p.rankings[f[1]];addMetric(f[0],v==null||v===\"\"?\"—\":compact(v),\"combat\")});leaderboardRows.forEach(row=>{const board=row.byId[p.governor_id];const score=board&&(board.value??board.score??board.rank_value);const rank=board&&(board.kingdom_rank??board.rank??board.ranking);const rankLabel=rank!=null?num(rank):(board&&board.kingdom_rank_label||\"\");const meta=[];if(board&&board.value_label&&score!=null)meta.push(\"API値 \"+compact(score));if(rankLabel)meta.push(\"王国内順位 \"+rankLabel+(p.player&&p.player.kid!=null?\"（王国 \"+num(p.player.kid)+\"）\":\"\"));if(board&&board.observed_at)meta.push(\"EagleEye保存 \"+new Date(Number(board.observed_at)*1000).toLocaleString(\"ja-JP\"));const formattedScore=score==null?\"—\":Number.isFinite(Number(score))?compact(score):String(score);const display=board&&board.value_label?board.value_label:formattedScore;addMetric(\"ランキング：\"+row.label,display,\"combat\",meta.join(\" · \"));const metric=metrics.lastElementChild;if(metric&&score!=null&&Number.isFinite(Number(score))&&!(board&&board.value_label))metric.dataset.rankScore=String(score)});(Array.isArray(p.profile&&p.profile.heroes)?p.profile.heroes:[]).forEach(hero=>{const parts=[];if(hero.level!=null)parts.push(\"Lv.\"+hero.level);if(hero.star!=null||hero.stars!=null)parts.push(\"★\"+(hero.star??hero.stars));if(hero.exclusive_gear_level!=null)parts.push(\"専用装備 \"+hero.exclusive_gear_level);addMetric(\"英雄：\"+String(hero.name||hero.id||\"英雄\"),parts.join(\" · \")||\"データなし\",\"combat\")});(Array.isArray(p.profile&&p.profile.gov_gear&&p.profile.gov_gear.items)?p.profile.gov_gear.items:[]).forEach(item=>{const parts=[];if(item.quality!=null)parts.push(String(item.quality));if(item.tier!=null)parts.push(\"T\"+item.tier);if(item.star!=null)parts.push(\"★\"+item.star);if(item.strength_level!=null)parts.push(\"強化 \"+item.strength_level);if(item.score!=null)parts.push(\"スコア \"+compact(item.score));if(item.combat!=null)parts.push(\"戦闘力 \"+compact(item.combat));if(Array.isArray(item.gems)&&item.gems.length)parts.push(\"宝石 \"+item.gems.length);addMetric(\"領主装備：\"+String(item.slot||item.id||item.name||\"装備\"),parts.join(\" · \")||\"データなし\",\"combat\")});const delta=p.period&&p.period.powerDelta;addMetric(\"30日間の戦力変化\",delta==null?\"—\":(delta>0?\"+\":\"\")+compact(delta),\"combat\",String(p.period&&p.period.observations||0)+\"件の履歴\");const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);addMetric(\"EagleEye取得\",eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\"):\"不明\",\"affiliation\");addMetric(\"元データ時刻\",sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\")+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\",\"affiliation\");card.appendChild(metrics);mobileCards.appendChild(card)});box.insertBefore(mobileCards,itemSelector.nextSibling);applyCompareGroups();\nconst validPowers=ps.map(p=>({p,value:Number(p.player&&p.player.power)})).filter(x=>!x.p.missing&&Number.isFinite(x.value)&&x.value>=0);const maxPower=validPowers.length?Math.max.apply(null,validPowers.map(x=>x.value)):0;const ns=\"http://www.w3.org/2000/svg\";const showcase=document.createElement(\"section\");showcase.className=\"power-showcase-wrap\";const title=document.createElement(\"h2\");title.className=\"section-title\";title.textContent=\"戦力バランス\";showcase.appendChild(title);const note=document.createElement(\"div\");note.className=\"sub\";note.textContent=\"円の長さは比較対象内の最大戦力を100%とした目安です。中央の数値は実際の戦力です。\";showcase.appendChild(note);const grid=document.createElement(\"div\");grid.className=\"power-showcase\";showcase.appendChild(grid);const ringColors=[\"var(--ring-1)\",\"var(--ring-2)\",\"var(--ring-3)\",\"var(--ring-4)\"];const ringNodes=[];const counterNodes=[];\nps.forEach((p,i)=>{const power=Number(p.player&&p.player.power);const valid=!p.missing&&Number.isFinite(power)&&power>=0;const ratio=valid&&maxPower>0?Math.min(1,power/maxPower):0;const card=document.createElement(\"article\");card.className=\"power-card\";const ring=document.createElement(\"div\");ring.className=\"power-ring\";const svg=document.createElementNS(ns,\"svg\");svg.setAttribute(\"viewBox\",\"0 0 100 100\");svg.setAttribute(\"role\",\"img\");svg.setAttribute(\"aria-label\",String(p.player&&p.player.nick_name||\"プレイヤー\")+\"の戦力比較ゲージ\");const base=document.createElementNS(ns,\"circle\");base.setAttribute(\"class\",\"ring-base\");base.setAttribute(\"cx\",\"50\");base.setAttribute(\"cy\",\"50\");base.setAttribute(\"r\",\"42\");const valueCircle=document.createElementNS(ns,\"circle\");valueCircle.setAttribute(\"class\",\"ring-value\");valueCircle.setAttribute(\"cx\",\"50\");valueCircle.setAttribute(\"cy\",\"50\");valueCircle.setAttribute(\"r\",\"42\");valueCircle.style.setProperty(\"--ring-color\",ringColors[i%ringColors.length]);valueCircle.style.strokeDashoffset=\"263.9\";svg.appendChild(base);svg.appendChild(valueCircle);ring.appendChild(svg);const center=document.createElement(\"div\");center.className=\"ring-center\";const number=document.createElement(\"span\");number.className=\"ring-number\";number.textContent=valid?\"0\":\"—\";const caption=document.createElement(\"span\");caption.className=\"ring-caption\";caption.textContent=\"戦力\";center.appendChild(number);center.appendChild(caption);ring.appendChild(center);card.appendChild(ring);const info=document.createElement(\"div\");info.className=\"power-info\";const name=document.createElement(\"div\");name.className=\"pname\";name.textContent=String(p.player&&p.player.nick_name||\"データなし\");const id=document.createElement(\"div\");id.className=\"pid\";id.textContent=\"ID \"+String(p.governor_id||\"—\")+\" · 王国 \"+String(p.player&&p.player.kid||\"—\");const label=document.createElement(\"div\");label.className=\"power-label\";label.textContent=\"取得した元の数値\";const raw=document.createElement(\"div\");raw.className=\"power-value\";raw.textContent=valid?compact(power):\"データなし\";const relative=document.createElement(\"div\");relative.className=\"power-ratio\";relative.textContent=valid&&maxPower>0?Math.round(ratio*100)+\"%（比較対象内）\":\"比較不可\";info.appendChild(name);info.appendChild(id);const freshness=document.createElement(\"div\");freshness.className=\"pid\";const eeAt=Number(p.player&&p.player.observed_at);const sourceAt=Number(p.player&&p.player.source_observed_at);freshness.textContent=\"EagleEye: \"+(eeAt?new Date(eeAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"不明\")+\" · 元データ: \"+(sourceAt?new Date(sourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-sourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(freshness);const rankFreshness=document.createElement(\"div\");rankFreshness.className=\"pid\";const rankAt=Number(p.rankings&&p.rankings.observed_at);const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at);rankFreshness.textContent=\"ランキング EE: \"+(rankAt?new Date(rankAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"}):\"未取得\")+\" · 元データ: \"+(rankSourceAt?new Date(rankSourceAt*1000).toLocaleString(\"ja-JP\",{month:\"numeric\",day:\"numeric\",hour:\"2-digit\",minute:\"2-digit\"})+(Math.floor(Date.now()/1000)-rankSourceAt>900?\"（15分以上前）\":\"\"):\"時刻不明\");info.appendChild(rankFreshness);info.appendChild(label);info.appendChild(raw);info.appendChild(relative);card.appendChild(info);grid.appendChild(card);if(valid){ringNodes.push({ring,valueCircle,offset:263.9*(1-ratio)});counterNodes.push({node:number,target:power})}});\nbox.insertBefore(showcase,box.firstChild);requestAnimationFrame(()=>{ringNodes.forEach(x=>{x.valueCircle.style.strokeDashoffset=String(x.offset);x.ring.classList.add(\"ready\")});const duration=900;const started=performance.now();function tick(now){const progress=Math.min(1,(now-started)/duration);const eased=1-Math.pow(1-progress,3);counterNodes.forEach(x=>{x.node.textContent=compact(x.target*eased)});if(progress<1)requestAnimationFrame(tick);else counterNodes.forEach(x=>{x.node.textContent=compact(x.target)})}if(counterNodes.length)requestAnimationFrame(tick)})}" + "async function fetchJsonWithTimeout(url,options,timeoutMs){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs||15000);try{const response=await fetch(url,{...(options||{}),signal:controller.signal,cache:\"no-store\"});const data=await response.json();return {response,data}}finally{clearTimeout(timer)}}async function runCompareRefreshBatch(items,concurrency,worker,onProgress){let cursor=0,completed=0;const results=new Array(items.length);async function run(){while(true){const index=cursor++;if(index>=items.length)return;try{results[index]=await worker(items[index],index)}catch(error){results[index]={error}}completed++;if(onProgress)onProgress(completed,items.length)}}await Promise.all(Array.from({length:Math.min(concurrency,items.length)},()=>run()));return results}let staleRefreshAttempted=false;async function load(){if(ids.length<2){count.textContent=\"2〜6人必要です\";box.innerHTML=\"<div class=\\\"status error\\\">比較対象が不足しています。ウォッチリストで2人以上を選択してください。</div>\";return}retry.disabled=true;box.innerHTML=\"<div class=status id=compareLoadStatus>比較データを読み込み中…（0秒）</div>\";let loadPhase=\"比較データを読み込み中\";const loadStartedAt=Date.now();const loadTimer=setInterval(function(){const status=document.getElementById(\"compareLoadStatus\");if(status)status.textContent=loadPhase+\"…（経過 \"+Math.floor((Date.now()-loadStartedAt)/1000)+\"秒）\";},1000);try{const q=new URLSearchParams();ids.forEach(id=>q.append(\"governor_id\",id));const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),12000);let r,d;try{r=await fetch(\"/api/player-compare?\"+q.toString(),{cache:\"no-store\",signal:controller.signal});d=await r.json()}finally{clearTimeout(timeout)}if(!r.ok||!d.ok)throw new Error(d.message||\"比較データの取得に失敗しました。\");let autoRefreshFailures=[];if(!staleRefreshAttempted){const now=Math.floor(Date.now()/1000);const stale=(d.players||[]).filter(p=>{const eeAt=Number(p.player&&p.player.observed_at)||0;const sourceAt=Number(p.player&&p.player.source_observed_at)||0;const rankAt=Number(p.rankings&&p.rankings.observed_at)||0;const rankSourceAt=Number(p.rankings&&p.rankings.source_observed_at)||0;return !p.missing&&(!eeAt||now-eeAt>900||(sourceAt>0&&now-sourceAt>900)||(p.rankingsExpected&&(!rankAt||now-rankAt>900||(rankSourceAt>0&&now-rankSourceAt>900)))||p.profileNeedsRich);});if(stale.length){staleRefreshAttempted=true;loadPhase=\"古いデータを自動更新中\";count.textContent=\"古いデータを自動更新中… \"+stale.length+\"人\";const capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);const capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");const refreshConcurrency=Math.min(stale.length,Math.max(0,Number(capacityData.usable)||0));const refreshResults=refreshConcurrency>0?await runCompareRefreshBatch(stale,refreshConcurrency,async p=>{for(let attempt=0;attempt<3;attempt++){try{const refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(p.governor_id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);const rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}if(!rr.ok||!rd.ok||(rd.rank_refresh_expected&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(resolve=>setTimeout(resolve,2000));continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},(completed,total)=>{count.textContent=\"古いデータを自動更新中… \"+completed+\"/\"+total+\"人\"}):[];refreshResults.forEach((result,index)=>{if(!result||!result.ok){autoRefreshFailures.push(stale[index].governor_id);console.warn(\"compare_auto_refresh_failed\",stale[index].governor_id,result&&result.error&&result.error.message||\"refresh_failed\")}});loadPhase=\"比較データを再取得中\";const refreshedResult=await fetchJsonWithTimeout(\"/api/player-compare?\"+q.toString(),null,12000);const refreshed=refreshedResult.response,refreshedData=refreshedResult.data;if(refreshed.ok&&refreshedData.ok)d=refreshedData;}}render(d);if(autoRefreshFailures.length)count.textContent+=\" · 自動更新失敗 \"+autoRefreshFailures.length+\"人\";if(d.rankingPending&&d.rankingPending.length&&!window.__eeRankRetry){window.__eeRankRetry=1;var rp=document.createElement('div');rp.className='status';rp.id='compareRankingPending';rp.textContent='⏳ 王国'+d.rankingPending.map(function(x){return x.kid}).join('・')+'のランキング（領主宝石・英雄総力など）を取得しています。10秒ほどで自動で更新します。';box.insertBefore(rp,box.firstChild);setTimeout(async function(){try{var again=await fetchJsonWithTimeout('/api/player-compare?'+q.toString(),null,12000);if(again.response.ok&&again.data.ok)render(again.data)}catch(e){}var el=document.getElementById('compareRankingPending');if(el)el.remove()},10000)}}catch(e){const message=e&&e.name===\"AbortError\"?\"取得が12秒以内に完了しませんでした。サーバー側の処理が遅延しています。再読み込みするか、時間をおいて再試行してください。\":(e.message||\"比較データの取得に失敗しました。\");box.innerHTML=\"<div class=\\\"status error\\\">\"+esc(message)+\"</div>\"}finally{clearInterval(loadTimer);retry.disabled=false}}retry.addEventListener(\"click\",load);document.getElementById(\"refresh\").addEventListener(\"click\",async function(){if(!confirm(\"比較対象のプレイヤーを順番に最新データへ更新します。API Poolを使用します。続けますか？\"))return;var btn=this;btn.disabled=true;retry.disabled=true;var status=document.getElementById(\"count\");try{var failures=[];var refreshStartedAt=Date.now();var refreshIndex=0;var refreshTimer=setInterval(function(){status.textContent=\"最新データを取得中… \"+refreshIndex+\"/\"+ids.length+\"人 · 残り \"+(ids.length-refreshIndex)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"},1000);var capacityResponse=await fetchJsonWithTimeout(\"/api/player-compare/refresh-capacity\",null,5000);var capacityData=capacityResponse.data;if(!capacityResponse.response.ok||!capacityData.ok)throw new Error(\"API Poolの空き状況を確認できません\");var refreshConcurrency=Math.min(ids.length,Math.max(0,Number(capacityData.usable)||0));if(refreshConcurrency<1)throw new Error(\"通常利用向けAPIキーを確保するため、最新データを取得できません。少し待ってから再試行してください。\");var refreshResults=await runCompareRefreshBatch(ids,refreshConcurrency,async function(id){for(var attempt=0;attempt<3;attempt++){try{var refreshResult=await fetchJsonWithTimeout(\"/api/player/refresh?governor_id=\"+encodeURIComponent(id)+\"&include=base%2Cheroes%2Cranks%2Cgov_gear\",null,15000);var rr=refreshResult.response,rd=refreshResult.data;if(rr.status===503&&rd.error===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}if(!rr.ok||!rd.ok||(String(rd.requested_include||\"\").includes(\"ranks\")&&!rd.rank_snapshot_saved))throw new Error(rd.error||String(rr.status));return {ok:true}}catch(error){if(error&&error.message===\"NO_API_POOL_KEY_AVAILABLE\"&&attempt<2){await new Promise(function(resolve){setTimeout(resolve,2000)});continue}throw error}}throw new Error(\"NO_API_POOL_KEY_AVAILABLE\")},function(completed,total){refreshIndex=completed;status.textContent=\"最新データを取得中… \"+completed+\"/\"+total+\"人 · 残り \"+(total-completed)+\"人 · 経過 \"+Math.floor((Date.now()-refreshStartedAt)/1000)+\"秒\"});refreshResults.forEach(function(result,index){if(!result||!result.ok)failures.push(ids[index])});await load();if(failures.length)count.textContent+=\" · 更新失敗 \"+failures.length+\"人\"}catch(e){alert(e.message||\"最新データを取得できませんでした\")}finally{clearInterval(refreshTimer);btn.disabled=false;retry.disabled=false}});load()})();</script></body></html>";
   return eagleEyeHtmlResponse(html.replace("</body>", PLAYER_COMPARE_ENHANCEMENTS + compareShareScript() + "</body>"));
 }
 
@@ -8604,7 +8651,8 @@ async function renderPlayerPage(request, env, executionContext = null) {
     if (!observation && !refresh && !rich) {
       return renderPlayerFetchingPage(governorId);
     }
-    if (!observation || refresh || (rich && needsRichProfile)) {
+    if (!observation && isQuietAgentRequest(request, auth)) return json({ ok: false, error: "PLAYER_NOT_STORED" }, 404);
+    if ((!observation || refresh || (rich && needsRichProfile)) && !isQuietAgentRequest(request, auth)) {
       const fetched = await fetchPlayerThroughApiPool(env, governorId, refresh ? "PLAYER_REFRESH" : (rich ? "PLAYER_RICH_LOOKUP" : "PLAYER_LOOKUP"), fetchRich ? "base,heroes,ranks,gov_gear" : "base");
       observation = fetched.observation;
     }
@@ -8664,7 +8712,7 @@ async function renderPlayerPage(request, env, executionContext = null) {
     const nameHistoryPromise = visibilityEnabled(visibilitySettings, "base_identity", auth.role) ? getPlayerNameHistory(env.DB, governorId) : null;
     const heroRankingsPromise = visibilityEnabled(visibilitySettings, "hero_rankings", auth.role) ? getLatestPlayerHeroRankings(env, heroKid, governorId) : null;
     // 王国ランキングから出す項目（英雄ランキング・秘境のステージ順位）が無い／古い王国は、裏で取りに行く（画面は1回だけ読み直す）。
-    visibleProfile.ranking_pending = await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
+    visibleProfile.ranking_pending = isQuietAgentRequest(request, auth) ? [] : await scheduleKingdomRankingFetch(env, executionContext, [heroKid], PLAYER_PAGE_RANKING_BOARDS, { maxBoards: PLAYER_PAGE_RANKING_BOARDS.length }).catch(() => []);
     let buildHistoryHtml = "";
     const buildVisible = {
       heroList: visibilityEnabled(visibilitySettings, "heroes_list", auth.role),
@@ -8984,7 +9032,7 @@ const HERO_NAME_JA = {
   Amadeus: "アマデウス", Marlin: "マーリン", Hilde: "ヒルデ", Petra: "ペーラ",
   Jaeger: "イェーガー", Eric: "エリック", Alcar: "アルカ", Margot: "マーゴ",
   Vivian: "ビビアン", "Long Fei": "龍飛", Thrud: "スルード", Yang: "ヤン",
-  Triton: "トリトン", Sophia: "ソフィア", Ava: "エヴァ", Charles: "チャールズ",
+  Triton: "トリトン", Sophia: "ソフィア", Ava: "アイヴァ", Charles: "チャールズ",
   "Wee & Woo": "レン&ロン", Yeonwoo: "インウー", Amane: "あまね",
   Helga: "ヘルガ", Saul: "サロ", Gordon: "ゴードン", Quinn: "クイン",
   Fahd: "ファハド", Diana: "ダイアナ", Olive: "オリーブ", Forrest: "フォルスト",
@@ -9425,7 +9473,7 @@ function translateLastLogin(value) {
     .replace(/^Last active (just now)$/i, "直近");
 }
 
-function formatCompactNumber(value) {
+export function formatCompactNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
@@ -9439,7 +9487,9 @@ function formatCompactNumber(value) {
 function formatCompactUnit(value, divisor, suffix) {
   const scaled = value / divisor;
   const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
-  return scaled.toFixed(decimals).replace(/\.?0+$|\.$/, "") + suffix;
+  // 小数点の後ろの0だけ消す（「330M」の0を消して「33M」にしていた・2026-11-19）
+  const text = scaled.toFixed(decimals);
+  return (text.includes(".") ? text.replace(/\.?0+$/, "") : text) + suffix;
 }
 
 function formatNumber(value) {
@@ -9477,12 +9527,74 @@ async function handleKingdomRankingPreferencesApi(request, env) {
   return json({ ok: true, kid, boards, primary_board: primary });
 }
 
+// プレビュー専用の合言葉ゲートと疑似ログイン（preview-login.js）。本番では呼ばれない（isPreviewEnv を見ている）。
+async function previewGate(request, env, url) {
+  if (url.pathname === "/preview/login" || url.pathname === "/preview/logout") return handlePreviewLogin(request, env, url);
+  if (isPreviewGateOpenPath(url.pathname)) return null;
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const gate = parseCookie(request.headers.get("Cookie") || "")[PREVIEW_GATE_COOKIE];
+  if (gate && secret && (await verifyPayload(gate, secret))?.gate === true) return null;
+  if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "PREVIEW_LOGIN_REQUIRED" }, 401);
+  return new Response(null, { status: 302, headers: { Location: "/preview/login?next=" + encodeURIComponent(url.pathname + url.search), "Cache-Control": "no-store" } });
+}
+
+async function handlePreviewLogin(request, env, url) {
+  const html = (body, status = 200) => new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  const secret = env.EAGLEEYE_SESSION_SECRET;
+  const clear = name => serializeCookie(name, "", { maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax", path: "/" });
+  if (url.pathname === "/preview/logout") {
+    const h = new Headers({ Location: "/preview/login", "Cache-Control": "no-store" });
+    h.append("Set-Cookie", clear(SESSION_COOKIE));
+    h.append("Set-Cookie", clear(PREVIEW_GATE_COOKIE));
+    return new Response(null, { status: 302, headers: h });
+  }
+  const configured = Boolean(env.PREVIEW_LOGIN_KEY && secret);
+  const cookies = parseCookie(request.headers.get("Cookie") || "");
+  let current = null;
+  try {
+    const session = cookies[SESSION_COOKIE] && secret ? await verifyPayload(cookies[SESSION_COOKIE], secret) : null;
+    const gate = cookies[PREVIEW_GATE_COOKIE] && secret ? await verifyPayload(cookies[PREVIEW_GATE_COOKIE], secret) : null;
+    if (session) current = (PREVIEW_ROLES.find(([v]) => v === previewRoleOf(session)) || PREVIEW_ROLES[0])[1];
+    else if (gate?.gate === true) current = PREVIEW_ROLES.find(([v]) => v === GUEST)[1];
+  } catch {}
+  if (request.method !== "POST") return html(renderPreviewLoginPage({ configured, current, next: url.searchParams.get("next") || "/" }));
+  if (!configured) return html(renderPreviewLoginPage({ configured }), 503);
+  if (previewLoginLimited()) return html(renderPreviewLoginPage({ configured, message: "しばらく待ってからやり直してください。" }), 429);
+  const form = await request.formData().catch(() => null);
+  const next = safeNextPath(form?.get("next"));
+  if (!safeEqual(form?.get("key"), env.PREVIEW_LOGIN_KEY)) { notePreviewLoginFailure(); return html(renderPreviewLoginPage({ configured, next, message: "合言葉が違います。" }), 401); }
+  const now = Math.floor(Date.now() / 1000);
+  const cookieOpts = { maxAge: PREVIEW_GATE_MAX_AGE, httpOnly: true, secure: true, sameSite: "Lax", path: "/" };
+  const h = new Headers({ Location: next, "Cache-Control": "no-store" });
+  h.append("Set-Cookie", serializeCookie(PREVIEW_GATE_COOKIE, await signPayload({ gate: true, iat: now, exp: now + PREVIEW_GATE_MAX_AGE }, secret), cookieOpts));
+  if (String(form.get("role") || "") === GUEST) {
+    h.append("Set-Cookie", clear(SESSION_COOKIE));
+    return new Response(null, { status: 302, headers: h });
+  }
+  const owner = env.DB ? await env.DB.prepare("SELECT discord_id, username, global_name FROM users WHERE role = 'OWNER' ORDER BY user_id LIMIT 1").first().catch(() => null) : null;
+  if (!owner?.discord_id) return html(renderPreviewLoginPage({ configured, next, message: "オーナーのアカウントが見つかりません。" }), 500);
+  const role = previewRoleOf({ preview_role: form.get("role") });
+  const session = await signPayload({ sub: String(owner.discord_id), username: owner.username || null, global_name: owner.global_name || null, avatar: null, iat: now, exp: now + PREVIEW_GATE_MAX_AGE, preview: true, ...(role ? { preview_role: role } : {}) }, secret);
+  h.append("Set-Cookie", serializeCookie(SESSION_COOKIE, session, cookieOpts));
+  return new Response(null, { status: 302, headers: h });
+}
+
+// 「Range: bytes=a-b」を R2 の range に（iPhone の Safari は動画を部分ごとに読みに来る）。suffix（bytes=-N）にも対応。
+function parseByteRange(header) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || "").trim());
+  if (!m || (m[1] === "" && m[2] === "")) return null;
+  if (m[1] === "") return { suffix: Number(m[2]) };
+  const offset = Number(m[1]);
+  return m[2] === "" ? { offset } : { offset, length: Math.max(1, Number(m[2]) - offset + 1) };
+}
+
 async function getAuthenticatedUser(request, env) {
   // 作業用の鍵（X-EagleEye-Agent-Token）：決められた操作だけオーナーとして通す。鍵が付いていればCookieは見ない。
   const agent = agentTokenState(request, env);
   if (agent !== undefined) {
     if (!agent || agentRateLimited() || !env.DB) return null;
-    await auditAgentRequest(request, env, writeOwnerAuditLog);
+    await auditAgentRequest(request, env, writeOwnerAuditLog, agent);
+    await ensureActiveGovernorSchema(env.DB).catch(() => {});
     return agent;
   }
   const secret = env.EAGLEEYE_SESSION_SECRET;
@@ -9500,7 +9612,9 @@ async function getAuthenticatedUser(request, env) {
     ).bind(session.sub).first();
     // ログインユーザーの1日の利用者数（1人1日1行、同じisolate内は2回目以降書かない）。
     if (user) await recordDailyActive(env.DB, user);
-    return user || null;
+    // 使う領主の切り替え（active-governor.js）の表を、ログイン中の人の最初の1回だけ用意する（同じ isolate では2回目以降しない）。
+    if (user) await ensureActiveGovernorSchema(env.DB).catch(() => {});
+    return applyPreviewRole(user, session, isPreviewEnv(env)) || null;
   } catch (error) {
     // D1 outage must not turn the public/home page into a 500.
     // Protected routes still fail closed because they require a DB-backed user.
@@ -9511,6 +9625,7 @@ async function getAuthenticatedUser(request, env) {
 
 async function trackServiceUsage(env, auth, operation, { targetType = null, targetId = null, metadata = {} } = {}) {
   if (!auth?.user_id) return;
+  if (auth.agent) return; // Claude 用の鍵は利用者ではないので、利用の記録に数えない
   try {
     await recordServiceUsage(env, {
       operation,
@@ -9674,7 +9789,7 @@ function adminKingdomRankingName(row) {
   if (row?.target_type === "ALLIANCE") {
     const abbr = String(row.abbr || "").trim();
     const name = String(row.name || "").trim();
-    return abbr && name ? "[" + abbr + "] " + name : abbr || name || row.target_id || "-";
+    return abbr && name ? "[" + abbr + "] " + name : abbr || name || (row.target_id ? allianceLabel(row) : "-");
   }
   return String(row?.nick_name || row?.governor_id || row?.uid || row?.target_id || "-");
 }
@@ -9865,7 +9980,7 @@ async function renderAdminKingdomRankingsPage(request, env) {
   const errorHtml=state.error ? "<div class='error'>"+esc(state.error)+"</div>" : "";
 
   return "<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>王国ランキング | EagleEye</title><style>"+
-    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 48px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:11px;font-weight:900}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0}.sub{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.form{display:grid;grid-template-columns:1fr 1.6fr 110px auto;gap:9px;align-items:end}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:10px;border:0;background:#f59e0b;color:#111827;text-decoration:none;font-weight:900;cursor:pointer;white-space:nowrap}.btn.secondary{background:#334155;color:#e2e8f0}.status{margin-top:12px;padding:11px;border-radius:10px;background:#0f2a1c;color:#86efac;font-size:12px;line-height:1.7}.error{margin-top:12px;padding:11px;border-radius:10px;background:#3a1418;color:#fca5a5;font-size:12px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #334155;border-radius:12px}table{width:100%;border-collapse:collapse;min-width:520px}th,td{padding:10px 9px;border-bottom:1px solid #334155;text-align:left;font-size:12px}th{color:#94a3b8;font-size:11px}td:first-child{width:58px;color:#f59e0b;font-weight:900}td:last-child{text-align:right;font-weight:900;white-space:nowrap}td small{display:block;color:#94a3b8;margin-top:3px}.empty{text-align:center!important;color:#94a3b8!important;line-height:1.7;padding:24px!important;font-weight:400!important}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .field:nth-child(2){grid-column:1 / -1}.form .btn{grid-column:1 / -1;width:100%}}@media(max-width:430px){.form{grid-template-columns:1fr}.form .field:nth-child(2){grid-column:auto}}"+
+    ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.wrap{max-width:900px;margin:auto;padding:28px 14px 48px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px}.back{color:#94a3b8;text-decoration:none}.badge{padding:6px 9px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:11px;font-weight:900}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{font-size:29px;margin:5px 0}.sub{color:#94a3b8;font-size:13px;line-height:1.7}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:16px;background:#162238}.form{display:grid;grid-template-columns:1fr 1.6fr 110px auto;gap:9px;align-items:end}.field{display:grid;gap:6px}.field label{font-size:12px;font-weight:800;color:#cbd5e1}.field input,.field select{width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#0b1220;color:#f8fafc}.btn{display:inline-flex;align-items:center;justify-content:center;padding:12px 14px;border-radius:10px;border:0;background:var(--ee-cyan,#22d3ee);color:#111827;text-decoration:none;font-weight:900;cursor:pointer;white-space:nowrap}.btn.secondary{background:#334155;color:#e2e8f0}.status{margin-top:12px;padding:11px;border-radius:10px;background:#0f2a1c;color:#86efac;font-size:12px;line-height:1.7}.error{margin-top:12px;padding:11px;border-radius:10px;background:#3a1418;color:#fca5a5;font-size:12px}.table-wrap{margin-top:14px;overflow:auto;border:1px solid #334155;border-radius:12px}table{width:100%;border-collapse:collapse;min-width:520px}th,td{padding:10px 9px;border-bottom:1px solid #334155;text-align:left;font-size:12px}th{color:#94a3b8;font-size:11px}td:first-child{width:58px;color:var(--ee-cyan,#22d3ee);font-weight:900}td:last-child{text-align:right;font-weight:900;white-space:nowrap}td small{display:block;color:#94a3b8;margin-top:3px}.empty{text-align:center!important;color:#94a3b8!important;line-height:1.7;padding:24px!important;font-weight:400!important}@media(max-width:700px){.form{grid-template-columns:1fr 1fr}.form .field:nth-child(2){grid-column:1 / -1}.form .btn{grid-column:1 / -1;width:100%}}@media(max-width:430px){.form{grid-template-columns:1fr}.form .field:nth-child(2){grid-column:auto}}"+
     "</style></head><body><main class='wrap'><div class='top'><a class='back' href='/admin'>← 管理画面</a><div class='badge'>ADMIN / OWNER</div></div><div class='eyebrow'>王国ランキング</div><h1 class='title'>王国ランキング</h1><p class='sub'>必要なランキングだけを選択して取得・閲覧します。ウォッチリストの全ランキング監視とは分離しています。</p>"+
     "<div class='card'><form class='form' method='get' action='/admin/kingdom-rankings'><div class='field'><label>王国番号（鯖番号）</label><input name='kid' inputmode='numeric' pattern='[0-9]+' value='"+esc(kid)+"' placeholder='例: 1524' required></div><div class='field'><label>ランキング</label><select name='board'>"+options+"</select></div><div class='field'><label>表示件数</label><select name='limit'><option value='10'"+(limit===10?" selected":"")+">10位</option><option value='50'"+(limit===50?" selected":"")+">50位</option><option value='100'"+(limit===100?" selected":"")+">100位</option></select></div><button class='btn' name='refresh' value='1'>最新データを取得</button></form></div>"+
     "<div class='card'><div>"+(state.rows.length ? "<a class='btn secondary' href='"+exportLink+"'>スプレッドシートへ出力</a>" : "")+"</div>"+errorHtml+statusHtml+"<div class='table-wrap'><table><thead><tr><th>順位</th><th>プレイヤー / 同盟</th><th>スコア</th></tr></thead><tbody>"+rowsHtml+"</tbody></table></div></div></main></body></html>";
@@ -9878,7 +9993,7 @@ async function renderAdminControlPage(request, env) {
   const ownerLink = isOwner ? "<div class=\"section\"><a class=\"card\" href=\"/owner\"><b>OWNER CONTROLへ</b><span>OWNER専用のユーザー・監査管理</span></a></div>" : "";
   const visibilityLink = isOwner ? "<a class=\"card\" href=\"/admin/player-visibility\"><b>データ公開設定</b><span>ロール別公開範囲を管理</span></a>" : "";
   return "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>管理画面 | EagleEye</title>" +
-    "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:820px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24;background:#241a08;font-size:12px;font-weight:900}.grid{display:grid;gap:12px;margin-top:22px}.card{display:block;padding:18px;border:1px solid #334155;border-radius:14px;background:#162238;color:#f8fafc;text-decoration:none}.card:hover{border-color:#64748b;background:#1b2a42}.card b{display:block;font-size:16px}.card span{display:block;margin-top:5px;color:#94a3b8;font-size:13px}.section{margin-top:28px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.notice{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#cbd5e1;font-size:13px;line-height:1.6}</style></head><body><main class=\"wrap\"><a class=\"back\" href=\"/\">← ホーム</a><div class=\"eyebrow\">管理コンソール</div><h1 class=\"title\">管理画面</h1><p class=\"sub\">EagleEyeの運用・データ管理をまとめて操作できます。</p><div class=\"badge\">ROLE: " + escapeHtml(guard.auth.role) + "</div>" +
+    "<style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:820px;margin:auto;padding:28px 18px}.back{color:#94a3b8;text-decoration:none}.eyebrow{margin-top:24px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:900;letter-spacing:2px}.title{margin:5px 0 8px;font-size:30px}.sub{color:#94a3b8;line-height:1.6}.badge{display:inline-block;margin-top:12px;padding:6px 10px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);background:var(--ee-panel-raised,#172a40);font-size:12px;font-weight:900}.grid{display:grid;gap:12px;margin-top:22px}.card{display:block;padding:18px;border:1px solid #334155;border-radius:14px;background:#162238;color:#f8fafc;text-decoration:none}.card:hover{border-color:#64748b;background:#1b2a42}.card b{display:block;font-size:16px}.card span{display:block;margin-top:5px;color:#94a3b8;font-size:13px}.section{margin-top:28px}.section h2{font-size:15px;color:#cbd5e1;margin:0 0 10px}.notice{padding:14px;border:1px solid #334155;border-radius:12px;background:#111c30;color:#cbd5e1;font-size:13px;line-height:1.6}</style></head><body><main class=\"wrap\"><a class=\"back\" href=\"/\">← ホーム</a><div class=\"eyebrow\">管理コンソール</div><h1 class=\"title\">管理画面</h1><p class=\"sub\">EagleEyeの運用・データ管理をまとめて操作できます。</p><div class=\"badge\">ROLE: " + escapeHtml(guard.auth.role) + "</div>" +
     "<div class=\"grid\"><a class=\"card\" href=\"/admin/api-pool\"><b>API Pool管理</b><span>APIキー・Pool状態・利用状況・テスト</span></a><a class=\"card\" href=\"/admin/google-drive\"><b>Google Drive連携</b><span>接続状態・OAuth設定・Driveアーカイブ設定（操作はOWNERのみ）</span></a><a class=\"card\" href=\"/admin/diagnostics\"><b>システムログ</b><span>サービス状態・診断イベント・障害詳細を確認</span></a><a class=\"card\" href=\"/admin/mightpulse-probe\"><b>MightPulse Probe</b><span>cached_at・age_seconds・HTTPヘッダー・時刻候補を比較</span></a><a class=\"card\" href=\"/admin/data-retention\"><b>データ保存期間</b><span>D1履歴の保持期間とR2アーカイブ対象を管理</span></a>" + visibilityLink + "<a class=\"card\" href=\"/players\"><b>プレイヤーDB</b><span>検索・詳細・履歴・変更イベント・必要なデータ更新</span></a><a class=\"card\" href=\"/kingdom-watchlist\"><b>王国ウォッチリスト</b><span>監視対象・ランキング監視・進捗を確認</span></a></div>" +
     "<div class=\"section\"><h2>権限について</h2><div class=\"notice\">ADMINは運用・データ管理を担当します。ユーザーのロール変更、ユーザー停止、ログイン履歴、OWNER監査ログなどのアカウント管理はOWNER CONTROLからOWNERのみが行います。</div></div>" + ownerLink +
     "</main></body></html>";
@@ -9928,7 +10043,7 @@ async function writeOwnerAuditLog(env, actor, action, targetUserId, targetDiscor
 // ?sections=overview,traffic,growth,users（既定）/ all / audit,system,coverage など。
 async function handleOwnerSnapshotApi(request, env) {
   if (request.method !== "GET") return json({ ok: false, error: "METHOD_NOT_ALLOWED" }, 405);
-  if (!readonlyTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+  if (!readonlyTokenOk(request, env) && !jarvisTokenOk(request, env)) return json({ ok: false, error: "UNAUTHORIZED" }, 401);
   if (!env.DB) return json({ ok: false, error: "DB_NOT_CONFIGURED" }, 503);
   if (readonlyRateLimited()) return json({ ok: false, error: "RATE_LIMITED" }, 429);
   const sections = parseSections(new URL(request.url).searchParams.get("sections"));
@@ -9943,6 +10058,8 @@ async function handleOwnerSnapshotApi(request, env) {
   if (want("audit")) jobs.push(settle(loadSnapshotAudit(env.DB)).then(v => { out.audit = v; }));
   if (want("system")) jobs.push(settle(loadSnapshotSystem(env.DB)).then(v => { out.system = v; }));
   if (want("coverage")) jobs.push(settle(loadSnapshotCoverage(env.DB)).then(v => { out.coverage = v; }));
+  if (want("d1")) jobs.push(settle(loadSnapshotD1(env)).then(v => { out.d1 = v; }));
+  if (want("ae")) jobs.push(settle(loadSnapshotAnalyticsEngine(env)).then(v => { out.ae = v; }));
   if (want("probe")) jobs.push(settle(loadSnapshotProbe(env.DB, env.ARCHIVE, { probeId: new URL(request.url).searchParams.get("probe_id") || "" })).then(v => { out.probe = v; }));
   await Promise.all(jobs);
   await writeOwnerAuditLog(env, { user_id: "readonly-token", discord_id: "readonly-token" }, "READONLY_SNAPSHOT", null, null, { sections }).catch(() => {});
@@ -10092,7 +10209,7 @@ async function renderOwnerPlayerLinkSupportPage(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return eagleEyeHtmlResponse(guard.error);
   return eagleEyeHtmlResponse(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KingShot所有権サポート | EagleEye</title><style>
-  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.item{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30;margin-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.btn{padding:10px 12px;border:0;border-radius:9px;background:#f59e0b;color:#111827;font-weight:900}.danger{background:#7f1d1d;color:white}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}textarea{width:100%;min-height:70px;background:#0b1220;color:white;border:1px solid #334155;border-radius:9px;padding:9px}</style></head><body><main class="wrap"><a class="back" href="/owner">← OWNER CONTROL</a><h1>KingShot所有権サポート</h1><p class="muted">ゲーム内スクリーンショット等で本人確認した案件をここで処理します。移管時には旧リンクを解除し、申請者をADMIN_VERIFIEDとして公式認証します。不正利用が疑われる旧アカウントへの警告・停止判断は証拠を確認した上で別途行ってください。</p><div id="list" class="card">読み込み中…</div></main><script>
+  :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:24px 16px}.back{color:#94a3b8}.card{margin-top:14px;padding:16px;border:1px solid #334155;border-radius:14px;background:#162238}.item{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30;margin-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.muted{color:#94a3b8;font-size:12px;line-height:1.6}.btn{padding:10px 12px;border:0;border-radius:9px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:900}.danger{background:#7f1d1d;color:white}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}textarea{width:100%;min-height:70px;background:#0b1220;color:white;border:1px solid #334155;border-radius:9px;padding:9px}</style></head><body><main class="wrap"><a class="back" href="/owner">← OWNER CONTROL</a><h1>KingShot所有権サポート</h1><p class="muted">ゲーム内スクリーンショット等で本人確認した案件をここで処理します。移管時には旧リンクを解除し、申請者をADMIN_VERIFIEDとして公式認証します。不正利用が疑われる旧アカウントへの警告・停止判断は証拠を確認した上で別途行ってください。</p><div id="list" class="card">読み込み中…</div></main><script>
 (async function(){
  const list=document.getElementById("list");
  const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -10148,7 +10265,7 @@ async function renderOwnerDiscordDiagnosticsPage(request, env) {
   const guard = await requireOwner(request, env);
   if (guard.error) return "<!doctype html><html lang='ja'><body>OWNER権限が必要です</body></html>";
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Discord連携調査 | EagleEye</title>
-  <style>*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 12px 48px}.card{background:#162238;border:1px solid #334155;border-radius:14px;padding:15px;margin:12px 0}.muted{color:#94a3b8;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.item{background:#0b1220;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item b{display:block;margin-top:5px}.event{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}.status{font-weight:800}.FAILED{color:#fca5a5}.SUCCESS{color:#86efac}button,a{display:inline-block;border:0;border-radius:8px;padding:10px 12px;background:#f59e0b;color:#111827;font-weight:800;text-decoration:none;cursor:pointer;margin-right:6px}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style></head><body><main class="wrap"><a href="/owner">← Owner管理へ戻る</a><h1>Discord連携調査</h1><p class="muted">秘密情報の値は表示しません。ログインし直すと新しい自動参加診断が記録されます。</p><div class="card"><h2>設定状態</h2><div id="config" class="grid">読み込み中…</div></div><div class="card"><h2>接続チェック</h2><p class="muted">Cloudflareの設定とDiscordアプリの実際の設定を照合します。すべて「OK」なら、ログイン時の自動参加と /close・/reopen が動作する状態です。</p><div id="checks" class="grid">読み込み中…</div><div style="margin-top:12px"><button id="registerCommands">/close・/reopen コマンドを登録</button><div id="registerMsg" class="muted" style="margin-top:6px"></div></div></div><div class="card"><h2>自動参加の診断履歴</h2><button id="refresh">再読み込み</button><button id="copy">結果をコピー</button><div id="msg" class="muted"></div><div id="events"></div></div></main><script>
+  <style>*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font:15px system-ui,-apple-system,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px 12px 48px}.card{background:#162238;border:1px solid #334155;border-radius:14px;padding:15px;margin:12px 0}.muted{color:#94a3b8;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.item{background:#0b1220;padding:10px;border-radius:9px;overflow-wrap:anywhere}.item b{display:block;margin-top:5px}.event{border-top:1px solid #334155;padding:12px 0;overflow-wrap:anywhere}.status{font-weight:800}.FAILED{color:#fca5a5}.SUCCESS{color:#86efac}button,a{display:inline-block;border:0;border-radius:8px;padding:10px 12px;background:var(--ee-cyan,#22d3ee);color:#111827;font-weight:800;text-decoration:none;cursor:pointer;margin-right:6px}@media(max-width:500px){.grid{grid-template-columns:1fr}}</style></head><body><main class="wrap"><a href="/owner">← Owner管理へ戻る</a><h1>Discord連携調査</h1><p class="muted">秘密情報の値は表示しません。ログインし直すと新しい自動参加診断が記録されます。</p><div class="card"><h2>設定状態</h2><div id="config" class="grid">読み込み中…</div></div><div class="card"><h2>接続チェック</h2><p class="muted">Cloudflareの設定とDiscordアプリの実際の設定を照合します。すべて「OK」なら、ログイン時の自動参加と /close・/reopen が動作する状態です。</p><div id="checks" class="grid">読み込み中…</div><div style="margin-top:12px"><button id="registerCommands">/close・/reopen コマンドを登録</button><div id="registerMsg" class="muted" style="margin-top:6px"></div></div></div><div class="card"><h2>自動参加の診断履歴</h2><button id="refresh">再読み込み</button><button id="copy">結果をコピー</button><div id="msg" class="muted"></div><div id="events"></div></div></main><script>
 let snapshot=null;const esc=s=>String(s??"-").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function load(){document.getElementById("msg").textContent="取得中…";try{const r=await fetch("/api/owner/discord-diagnostics",{credentials:"same-origin"});snapshot=await r.json();if(!r.ok||!snapshot.ok)throw Error(snapshot.message||snapshot.error||"取得失敗");const c=snapshot.config;document.getElementById("config").innerHTML=[["OAuth Client ID",c.clientId||"未設定"],["Client Secret",c.hasClientSecret?"設定済み":"未設定"],["Bot Token",c.hasBotToken?"設定済み":"未設定"],["Support Guild ID",c.supportGuildId||"未設定"],["D1 Database",c.hasDatabase?"接続設定あり":"未設定"]].map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("");renderChecks(snapshot.checks);document.getElementById("events").innerHTML=snapshot.events.length?snapshot.events.map(e=>'<div class="event"><div class="status '+esc(e.status)+'">'+esc(e.status)+' · '+esc(new Date(Number(e.created_at)*1000).toLocaleString("ja-JP"))+'</div><b>'+esc(e.error_code||"エラーコードなし")+'</b><div>'+esc(e.message||"メッセージなし")+'</div><div class="muted">HTTP: '+esc(e.metadata?.httpStatus??e.metadata?.discordHttpStatus??"-")+' / OAuth App: '+esc(e.metadata?.oauthApplicationId||"-")+' / OAuth照会HTTP: '+esc(e.metadata?.oauthInfoHttpStatus??"-")+' / Bot App ID: '+esc(e.metadata?.botApplicationId||e.metadata?.botUserId||"-")+' / 参加HTTP: '+esc(e.metadata?.joinHttpStatus??"-")+' / 参加確認HTTP: '+esc(e.metadata?.membershipVerifyHttpStatus??"-")+' / 結果: '+esc(e.metadata?.result||"-")+'</div><div class="muted">Trace: '+esc(e.trace_id||"-")+' / '+esc(e.target_id||"-")+'</div></div>').join(""):"診断履歴がありません。Discordログインをやり直してから再読み込みしてください。";document.getElementById("msg").textContent="更新済み · "+snapshot.events.length+"件";}catch(e){document.getElementById("msg").textContent="取得失敗: "+e.message}}
 function renderChecks(k){const box=document.getElementById("checks");if(!k||k.error){box.innerHTML='<div class="item">照合できませんでした: '+esc(k&&k.error||"不明")+'</div>';return}const ok=v=>v?'<span class="SUCCESS">OK</span>':'<span class="FAILED">NG</span>';const rows=[["Bot所属アプリ",(k.botApplication&&k.botApplication.id)||("取得失敗 "+((k.botApplication&&(k.botApplication.error||k.botApplication.httpStatus))||"")),null],["Client IDとBotのアプリが一致",k.clientIdMatchesBotApplication?"一致":"不一致",k.clientIdMatchesBotApplication],["DISCORD_PUBLIC_KEY",k.publicKeyConfigured?(k.publicKeyMatches?"Discordアプリと一致":"Discordアプリと不一致"):"未設定",k.publicKeyMatches],["Interactions Endpoint URL",k.interactionsEndpointUrl||"未設定",k.interactionsEndpointMatches],["期待するEndpoint URL",k.expectedInteractionsEndpointUrl||"-",null],["/close コマンド",k.commands&&k.commands.close?"登録済み":"未登録",k.commands&&k.commands.close],["/reopen コマンド",k.commands&&k.commands.reopen?"登録済み":"未登録",k.commands&&k.commands.reopen]];box.innerHTML=rows.map(x=>'<div class="item"><span class="muted">'+esc(x[0])+'</span><b>'+(x[2]===null?"":ok(x[2])+' ')+esc(x[1])+'</b></div>').join("")}
@@ -10164,7 +10281,15 @@ document.getElementById("kvkRelogin").onclick=async()=>{const b=document.getElem
 
 // オーナー管理の入口：機能をまとめて並べる（各ページの中身・URL・権限チェックは変えない）。
 // ユーザー・権限管理と監査ログは /owner/users に分けた（入口では重いユーザー一覧を読まない）。
-const OWNER_PAGE_CSS = ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.wrap{max-width:1100px;margin:auto;padding:28px 16px 48px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:#94a3b8}.badge{padding:7px 10px;border:1px solid #f59e0b;border-radius:999px;color:#fbbf24}.card{padding:16px;margin-top:14px;border:1px solid #334155;border-radius:14px;background:#162238}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid #334155;border-radius:10px;background:#0f1b30;color:#e2e8f0;text-decoration:none}.link b,.link span{display:block}.link span,.sub,.muted{color:#94a3b8;font-size:12px}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;padding:11px;border-radius:9px;border:1px solid #334155;background:#0b1220;color:white}.toolbar button,.actions button{padding:9px 11px;border:0;border-radius:8px;background:#f59e0b;color:#111827;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:#86efac;font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid #334155;border-radius:12px;background:#0f1b30}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:15px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:5px;color:#94a3b8;font-size:11px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:4px 7px;border-radius:7px;background:#0b1220;font-size:11px;font-weight:800}.user-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px;border-radius:9px;background:#162238;border:1px solid #334155}.stat span{display:block;color:#94a3b8;font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:#334155;color:#e2e8f0}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid #334155;border-radius:10px;background:#0b1220}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:9px;background:#162238;border:1px solid #334155}.watchlist-meta{min-width:0;color:#e2e8f0;font-size:12px}.watchlist-meta small{display:block;color:#94a3b8;margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;gap:8px}.audit-item{padding:10px;border-radius:9px;background:#0b1220;border:1px solid #334155}.audit-item small{color:#94a3b8}@media(max-width:600px){.wrap{padding:18px 10px 40px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}";
+// オーナー画面の日時（秒）。日付だけ（登録）か、月日と時刻（最終ログイン）。日本時間。
+function ownerDate(sec, withTime) {
+  const n = Number(sec);
+  if (!n) return "-";
+  const d = new Date(n * 1000 + 9 * 3600 * 1000), p2 = v => String(v).padStart(2, "0");
+  return withTime ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}` : `${d.getUTCFullYear()}/${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+// 2026-11-17：今のデザイン（着せ替えの色・ライトモード）にそろえる。オレンジの旧デザインをやめ、アクセントは --ee-cyan（着せ替えで変わる）。
+const OWNER_PAGE_CSS = ":root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-family:system-ui,-apple-system,BlinkMacSystemFont,\"Hiragino Sans\",\"Segoe UI\",sans-serif}.wrap{max-width:1100px;margin:auto;padding:24px 16px 110px}a{color:var(--ee-cyan,#22d3ee)}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.back{color:var(--ee-subtext,#91a7bf);text-decoration:none;font-size:14px}.badge{padding:5px 11px;border:1px solid var(--ee-cyan,#22d3ee);border-radius:999px;color:var(--ee-cyan,#22d3ee);font-size:11px;font-weight:800;letter-spacing:.08em}h1{font-size:24px;margin:14px 0 4px}h2{font-size:16px;margin:0 0 12px}.card{padding:16px;margin-top:14px;border:1px solid var(--ee-border-soft,#223b57);border-radius:16px;background:var(--ee-panel,#0f2035)}.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.link{padding:13px;border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;background:var(--ee-panel-raised,#172a40);color:var(--ee-text,#e8f3ff);text-decoration:none}.link b,.link span{display:block}.link b{margin-bottom:3px}.link span,.sub,.muted{color:var(--ee-subtext,#91a7bf);font-size:12px}.sub{margin:0 0 6px}.sub a{color:var(--ee-cyan,#22d3ee)}.toolbar{display:flex;gap:8px;margin-bottom:12px}.toolbar input{flex:1;min-width:0;padding:11px 12px;border-radius:10px;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-bg,#0a1424);color:var(--ee-text,#e8f3ff);font-size:15px}.toolbar button,.actions button{padding:9px 13px;border:0;border-radius:10px;background:var(--ee-cyan,#22d3ee);color:#04202a;font-weight:800;cursor:pointer}.toolbar button:disabled,.actions button:disabled{opacity:.55;cursor:default}.msg{color:var(--ee-success,#4ade80);font-size:13px;min-height:18px}.user-list{display:grid;gap:10px}.user-card{padding:14px;border:1px solid var(--ee-border-soft,#223b57);border-radius:14px;background:var(--ee-panel-raised,#172a40)}.user-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.user-name{min-width:0}.user-name b{display:block;font-size:16px;overflow-wrap:anywhere}.user-name .muted{display:block;margin-top:2px}.user-id{margin-top:4px;color:var(--ee-muted,#7d93ab);font-size:10px;word-break:break-all}.badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.role,.status{padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;border:1px solid var(--ee-border-soft,#223b57);background:var(--ee-panel,#0f2035)}.role-OWNER,.role-ADMIN{border-color:var(--ee-cyan,#22d3ee);color:var(--ee-cyan,#22d3ee)}.role-VIP{border-color:#a78bfa;color:#c4b5fd}.role-ADVANCED{border-color:#38bdf8;color:#7dd3fc}.st-ACTIVE{color:#4ade80;border-color:#16653488}.st-DISABLED{color:#fca5a5;border-color:#7f1d1d}.user-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.stat{padding:9px 10px;border-radius:10px;background:var(--ee-panel,#0f2035);border:1px solid var(--ee-border-soft,#223b57)}.stat span{display:block;color:var(--ee-subtext,#91a7bf);font-size:10px}.stat b{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.actions button.secondary{background:var(--ee-panel,#0f2035);color:var(--ee-text,#e8f3ff);border:1px solid var(--ee-border-soft,#223b57)}.actions button.danger{background:#7f1d1d;color:#fff}.watchlist-panel{margin-top:12px;padding:12px;border:1px solid var(--ee-border-soft,#223b57);border-radius:12px;background:var(--ee-bg,#0a1424)}.watchlist-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.watchlist-list{display:grid;gap:8px;margin-top:10px}.watchlist-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-radius:10px;background:var(--ee-panel,#0f2035);border:1px solid var(--ee-border-soft,#223b57)}.watchlist-meta{min-width:0;color:var(--ee-text,#e8f3ff);font-size:12px}.watchlist-meta small{display:block;color:var(--ee-subtext,#91a7bf);margin-top:3px;overflow-wrap:anywhere}.audit{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.audit-item{min-width:0;padding:10px;border-radius:10px;background:var(--ee-panel-raised,#172a40);border:1px solid var(--ee-border-soft,#223b57);overflow-wrap:anywhere;word-break:break-word;font-size:13px}.audit-item small{color:var(--ee-subtext,#91a7bf)}@media(max-width:600px){.wrap{padding:16px 12px 110px}.top{align-items:flex-start}.user-head{display:block}.badges{justify-content:flex-start;margin-top:8px}.user-stats{grid-template-columns:1fr 1fr}.actions button{min-height:42px;padding:10px 12px}.watchlist-item{align-items:flex-start;flex-direction:column}.watchlist-item button{width:100%}}";
 const OWNER_MENU_GROUPS = Object.freeze([
   {
     "title": "成長・集客",
@@ -10281,7 +10406,7 @@ async function renderOwnerMenuPage(env){
   const group=g=>g.open
     ? '<div class="card"><h2>'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'</span></h2><div class="links">'+g.links.map(link).join("")+'</div></div>'
     : '<details class="card"><summary style="cursor:pointer;font-weight:800;font-size:1.1em">'+escapeHtml(g.title)+'<span class="sub" style="font-weight:400;margin-left:8px">'+escapeHtml(g.note)+'（'+g.links.length+'）</span></summary><div class="links" style="margin-top:12px">'+g.links.map(link).join("")+'</div></details>';
-  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a></div></div>';
+  const users='<div class="card"><h2>ユーザー・権限管理</h2><div class="links"><a class="link" href="/owner/users"><b>ユーザー・権限管理</b><span>'+(counts?escapeHtml(counts.n)+'人・':'')+'ロール変更・状態・ウォッチ件数・OWNER監査ログ</span></a><a class="link" href="/owner/users/active"><b>使ったユーザー</b><span>今日（日ごと）EagleEye を開いた人・新規・領主・ログイン回数</span></a></div></div>';
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OWNER管理 | EagleEye</title>
 <style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>EagleEye オーナー管理</h1><p class="sub">OWNER権限で操作できる機能を集約</p>
 ${OWNER_MENU_GROUPS.map(group).join("")}${users}</main></body></html>`;
@@ -10313,21 +10438,20 @@ async function renderOwnerAdminPage(request,env,{ view = "menu" } = {}){
       escapeHtml(user.global_name || user.username || "Discord User") +
       '</b><span class="muted">@' + escapeHtml(user.username || "") +
       '</span><div class="user-id">' + escapeHtml(user.discord_id) +
-      '</div></div><div class="badges"><span class="role">' + escapeHtml(user.role) +
-      '</span><span class="status">' + escapeHtml(user.status) +
+      '</div></div><div class="badges"><span class="role role-' + escapeHtml(user.role) + '">' + escapeHtml(user.role) +
+      '</span><span class="status st-' + escapeHtml(user.status) + '">' + escapeHtml(user.status) +
       '</span></div></div><div class="user-stats">' +
-      '<div class="stat"><span>登録</span><b>' + (user.created_at ? new Date(Number(user.created_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
-      '<div class="stat"><span>最終ログイン</span><b>' + (user.last_login_at ? new Date(Number(user.last_login_at) * 1000).toLocaleString("ja-JP") : "-") + '</b></div>' +
-      '<div class="stat"><span>ログイン回数</span><b>' + escapeHtml(user.login_count || 0) + '</b></div>' +
-      '<div class="stat"><span>王国ウォッチ</span><b>' + escapeHtml(user.kingdom_watchlist_count || 0) + '件</b></div>' +
-      '<div class="stat"><span>プレイヤーウォッチ</span><b>' + escapeHtml(user.player_watchlist_count || 0) + '件</b></div>' +
+      '<div class="stat"><span>登録</span><b>' + ownerDate(user.created_at, false) + '</b></div>' +
+      '<div class="stat"><span>最終ログイン</span><b>' + ownerDate(user.last_login_at, true) + '</b></div>' +
+      '<div class="stat"><span>ログイン回数</span><b>' + escapeHtml(user.login_count || 0) + '回</b></div>' +
+      '<div class="stat"><span>ウォッチ</span><b>王国 ' + escapeHtml(user.kingdom_watchlist_count || 0) + '・プレイヤー ' + escapeHtml(user.player_watchlist_count || 0) + '</b></div>' +
       '</div><div class="actions">' + watchAction + '</div></article>';
   }).join("") || '<div class="muted">ユーザーが登録されていません</div>';
   const usersJson=JSON.stringify(ownerUsers).replace(/</g,"\\u003c"), logsJson=JSON.stringify(logs.results||[]).replace(/</g,"\\u003c"), ownerId=JSON.stringify(guard.auth.user_id);
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ユーザー・権限管理 | EagleEye</title>
 <style>${OWNER_PAGE_CSS}</style></head><body><main class="wrap"><div class="top"><a class="back" href="/">← ホーム</a><div class="badge">OWNER CONTROL</div></div><h1>ユーザー・権限管理</h1><p class="sub">ユーザーのロール・状態・ウォッチ件数とOWNER監査ログ</p>
-<p class="sub"><a href="/owner" style="color:#7dd3fc">← オーナー管理メニューへ</a></p>
-<div class="card"><h2>ユーザー・権限管理</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
+<p class="sub"><a href="/owner">← オーナー管理メニューへ</a>・<a href="/owner/users/active">今日使ったユーザー →</a>・<a href="/owner/usage">利用の推移 →</a></p>
+<div class="card"><h2>ユーザー一覧</h2><div class="toolbar"><input id="search" placeholder="Discord ID / ユーザー名"><button id="reload" type="button">更新</button></div><div id="msg" class="msg"></div><div id="users" class="user-list">${initialUsersHtml}</div></div>
 <div class="card"><h2>OWNER監査ログ</h2><div id="audit" class="audit"></div></div></main>
 <script>
 (function(){
@@ -10341,7 +10465,11 @@ function esc(s){
   });
 }
 function fmt(t){
-  return t ? new Date(Number(t)*1000).toLocaleString("ja-JP") : "-";
+  if(!t)return "-";var d=new Date(Number(t)*1000),p=function(v){return String(v).padStart(2,"0")};
+  return (d.getMonth()+1)+"/"+d.getDate()+" "+p(d.getHours())+":"+p(d.getMinutes());
+}
+function fmtDay(t){
+  if(!t)return "-";var d=new Date(Number(t)*1000);return d.getFullYear()+"/"+(d.getMonth()+1)+"/"+d.getDate();
 }
 function button(label, action, id, extra, disabled, value){
   var attr=value ? (action==="role" ? ' data-role="'+esc(value)+'"' : ' data-status="'+esc(value)+'"') : "";
@@ -10359,7 +10487,7 @@ function draw(){
     var self=u.user_id===ownerId;
     var actions=button("履歴","history",u.user_id,"secondary",false);
     ["BASIC","ADVANCED","VIP","ADMIN","OWNER"].forEach(function(role){
-      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"",self&&role!=="OWNER",role);
+      if(role!==u.role) actions+=button(role+"へ","role",u.user_id,"secondary",self&&role!=="OWNER",role); // 権限の変更はたまにしか使わないので目立たせない（2026-11-17）
     });
     if(u.status==="ACTIVE"){
       actions+=button("無効化","status",u.user_id,"danger",self||u.role==="OWNER","DISABLED");
@@ -10378,14 +10506,13 @@ function draw(){
       esc(u.global_name||u.username||"Discord User")+
       '</b><span class="muted">@'+esc(u.username||"")+
       '</span><div class="user-id">'+esc(u.discord_id)+
-      '</div></div><div class="badges"><span class="role">'+esc(u.role)+
-      '</span><span class="status">'+esc(u.status)+
+      '</div></div><div class="badges"><span class="role role-'+esc(u.role)+'">'+esc(u.role)+
+      '</span><span class="status st-'+esc(u.status)+'">'+esc(u.status)+
       '</span></div></div><div class="user-stats">'+
-      '<div class="stat"><span>登録</span><b>'+fmt(u.created_at)+'</b></div>'+
+      '<div class="stat"><span>登録</span><b>'+fmtDay(u.created_at)+'</b></div>'+
       '<div class="stat"><span>最終ログイン</span><b>'+fmt(u.last_login_at)+'</b></div>'+
-      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'</b></div>'+
-      '<div class="stat"><span>王国ウォッチ</span><b>'+esc(u.kingdom_watchlist_count||0)+'件</b></div>'+
-      '<div class="stat"><span>プレイヤーウォッチ</span><b>'+esc(u.player_watchlist_count||0)+'件</b></div>'+
+      '<div class="stat"><span>ログイン回数</span><b>'+esc(u.login_count||0)+'回</b></div>'+
+      '<div class="stat"><span>ウォッチ</span><b>王国 '+esc(u.kingdom_watchlist_count||0)+'・プレイヤー '+esc(u.player_watchlist_count||0)+'</b></div>'+
       '</div><div class="actions">'+actions+'</div>'+panel+'</article>';
   }).join("") || '<div class="muted">該当ユーザーなし</div>';
 }
@@ -10555,11 +10682,11 @@ async function handleMe(request, env) {
   const session = await verifyPayload(token, secret);
   if (!session || await isSessionRevoked(env.DB, session)) return json({ ok: true, authenticated: false });
 
-  const dbUser = env.DB
+  const dbUser = applyPreviewRole(env.DB
     ? await env.DB.prepare(
         "SELECT user_id, discord_id, role, status FROM users WHERE discord_id = ? LIMIT 1"
       ).bind(session.sub).first()
-    : null;
+    : null, session, isPreviewEnv(env));
 
   return json({
     ok: true,
@@ -10763,12 +10890,19 @@ async function renderPublicStatusPage(request, env) {
     Number(operational.apiPool.activeLeases || 0) === 0 &&
     terminalKeyStates >= Number(operational.apiPool.totalKeys || 0);
   const watchlistWarning = operational.watchlist.enabled > 0 && operational.watchlist.enabledErrors > 0;
-  const usageCritical = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
-  const usageWarning = usage.status === "WARNING";
+  // Workers Paid（$5枠）では込み枠を超えても止まらず従量課金になるだけなので「障害」にしない（2026-11-16）。
+  // 請求サイクル（月）の合計で判定するため、すでに直った急増でもサイクル末まで残る。Free枠は上限で止まるので従来どおり障害。
+  const paidProfile = String(monitoringProfileSetting.profile || "").toUpperCase().startsWith("PAID");
+  const usageOver = ["CRITICAL", "EXHAUSTED"].includes(usage.status);
+  const usageCritical = usageOver && !paidProfile;
+  const usageOverage = usageOver && paidProfile;
+  const usageWarning = usage.status === "WARNING" || usageOverage;
   const state = usageCritical || data.overall === "CRITICAL" || apiPoolCritical
     ? {label:"障害が発生しています",tone:"bad",icon:"!",desc:"主要サービス、API Pool、またはCloudflareリソースの一部で障害・上限到達が検知されています。"}
     : data.overall === "WAITING" && !usageWarning && !watchlistWarning
       ? {label:"空き待ち",tone:"neutral",icon:"…",desc:"API Poolの空き待ちです。収集処理は自動再試行の対象で、障害とは区別されています。"}
+      : usageOverage && data.overall !== "DEGRADED" && !watchlistWarning
+        ? {label:"正常に稼働中（込み枠を超過）",tone:"warn",icon:"i",desc:"サービスは正常に動いています。Cloudflareの今月の込み枠を超えたため、超えた分は従量課金になります（下のサーバーの状態に内訳）。"}
       : usageWarning || data.overall === "DEGRADED" || watchlistWarning
         ? {label:"一部注意",tone:"warn",icon:"i",desc:"一部のサービス（データ取得・ウォッチリスト・サーバー）で注意が必要です。"}
         : {label:"正常に稼働中",tone:"good",icon:"✓",desc:"EagleEyeのサービス（データ取得・ウォッチリスト・サーバー）は正常範囲です。"};
@@ -10778,7 +10912,7 @@ async function renderPublicStatusPage(request, env) {
     return `<div class="row"><span class="dot ${st.tone}">${st.icon}</span><span class="name">${escapeHtml(s.label)}</span><span class="state ${st.tone}">${st.label}</span></div>`;
   }).join("");
 
-  const usageLabel = cloudflareUsageLabel(usage.status);
+  const usageLabel = cloudflareUsageLabel(usage.status, { paid: paidProfile });
   const formatInt = value => Number(value || 0).toLocaleString("ja-JP");
   const formatBytes = value => {
     const bytes = Number(value || 0);
@@ -10817,7 +10951,7 @@ async function renderPublicStatusPage(request, env) {
     ? "最大使用率（CPU推定を含む）"
     : "Freeプラン現行監視の最大使用率";
   const resourceRow = (label, used, limit, percentValue, stateValue) => {
-    const item = cloudflareUsageLabel(stateValue);
+    const item = cloudflareUsageLabel(stateValue, { paid: paidProfile });
     return `<div class="resource-row"><div><b>${escapeHtml(label)}</b><small>${formatInt(used)} / ${formatInt(limit)}</small></div><strong class="${item.tone}">${formatPercent(percentValue)} · ${item.label}</strong></div>`;
   };
 
@@ -11245,7 +11379,8 @@ ${canViewDetailedUsage ? `<script>
 
 async function renderSupportPage(request, env) {
   const auth = await getAuthenticatedUser(request, env);
-  if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お問い合わせ", "お問い合わせにはDiscordでのログインが必要です（運営とのやり取りにDiscordを使うため）。");
+  // ログインしていない人も送れるフォーム（届け先は同じ Discord のサポートサーバー・2026-11-15）。
+  if (!auth || auth.status !== "ACTIVE") return renderGuestSupportPage();
   const supportCatalogJson = JSON.stringify(SUPPORT_CATALOG).replace(/</g, "\\u003c");
   return `<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>お問い合わせ | EagleEye</title><style>
   *{box-sizing:border-box}body{margin:0;background:#0f172a;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:680px;margin:auto;padding:22px 16px 45px}.nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.nav a{color:#f59e0b;text-decoration:none;font-weight:800}.card{background:#111c30;border:1px solid #334155;border-radius:22px;padding:22px}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;line-height:1.7}.choices{display:grid;gap:9px;margin-top:10px}.choice{width:100%;padding:14px;text-align:left;border:1px solid #334155;border-radius:13px;background:#0b1424;color:#f8fafc;font:inherit;cursor:pointer}.choice:hover{border-color:#f59e0b}.back{margin-top:10px;background:transparent;color:#94a3b8;border:0;padding:8px 0;cursor:pointer}.qa{margin-top:14px;padding:14px;border:1px solid #365314;border-radius:14px;background:#14210f;color:#d9f99d}.incident{margin-top:14px;padding:14px;border:1px solid #7f1d1d;border-radius:14px;background:#2a1114;color:#fecaca}.field{margin-top:14px}.field label{display:block;font-size:12px;font-weight:800;color:#cbd5e1;margin-bottom:7px}.field input,.field textarea{width:100%;border:1px solid #334155;border-radius:12px;background:#0b1424;color:#f8fafc;padding:12px;font:inherit;outline:none}.field textarea{min-height:100px;resize:vertical}.submit{width:100%;margin-top:18px;border:0;border-radius:13px;padding:14px;background:#f59e0b;color:#172033;font-weight:900;font-size:15px}.result{display:none;margin-top:18px;border-radius:14px;padding:14px;line-height:1.6;font-size:13px}.result.ok{display:block;background:#12301f;border:1px solid #245b3a;color:#bbf7d0}.result.error{display:block;background:#32171b;border:1px solid #6b2730;color:#fecaca}.ticket{font-size:18px;font-weight:900;margin-bottom:6px}.muted{font-size:12px;color:#94a3b8}
@@ -11289,14 +11424,24 @@ async function markWatchBadgeSeen(request, env) {
   }
 }
 
+export function newsNeedsSeenWrite(state, items) {
+  if (!state || state.news_seen_at == null) return true;
+  const newest = Math.max(0, ...(items || []).map(i => Number(i.publish_at ?? i.created_at) || 0));
+  return newest > Number(state.news_seen_at);
+}
+
 async function renderNewsRoute(request, env) {
   const auth = await getAuthenticatedUser(request, env);
   if (!auth || auth.status !== "ACTIVE") return renderLoginRequiredPage(request, "お知らせ", "お知らせを見るにはログインしてください。");
   await ensureBadgeSchema(env.DB);
-  const state = await env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null);
   const canPost = auth.role === "OWNER" || auth.role === "ADMIN";
-  const [items, queued] = await Promise.all([listAnnouncements(env.DB, 50), canPost ? listQueuedAnnouncements(env.DB, auth) : []]);
-  await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
+  // まとめて読む。既読の書き込みは「前に見た後に新しいお知らせが出たとき」だけ（2026-11-17・速さと D1 の書き込みを減らす）。
+  const [state, items, queued] = await Promise.all([
+    env.DB.prepare("SELECT news_seen_at FROM user_badge_state WHERE discord_id = ?").bind(String(auth.discord_id)).first().catch(() => null),
+    listAnnouncements(env.DB, 50),
+    canPost ? listQueuedAnnouncements(env.DB, auth) : []
+  ]);
+  if (newsNeedsSeenWrite(state, items)) await markBadgeSeen(env.DB, auth.discord_id, "news").catch(() => {});
   return renderNewsPage(items, { canPost, isOwner: auth.role === "OWNER", queued, viewerId: auth.discord_id, unreadSince: state?.news_seen_at ?? null });
 }
 
@@ -11309,7 +11454,7 @@ async function handleAnnouncementsApi(request, env) {
   try {
     if (body?.action === "create") {
       await ensureAnnouncementDiscordSchema(env.DB);
-      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null });
+      const item = await createAnnouncement(env.DB, { title: body.title, body: body.body, createdBy: guard.auth?.discord_id || null, role: guard.auth?.role, publishAt: body.publish_at ?? null, media: body.media });
       await writeOwnerAuditLog(env, guard.auth, "ANNOUNCEMENT_CREATE", null, null, { id: item.id, title: item.title, status: item.status, publish_at: item.publish_at }).catch(() => {});
       // ADMIN post → DM every OWNER (sent from the cron queue).
       if (item.status === "PENDING") await enqueueApprovalRequestDms(env, { ...item, created_by: guard.auth?.discord_id || null }).catch(error => console.error("announcement_dm_enqueue_failed", error?.message || error));
@@ -11407,6 +11552,8 @@ async function handleHomeSummary(request, env, executionContext) {
         }
       })());
     }
+    // 英語のホーム（/en）から：ミッション・マイルストーンの名前を英語に（home-en.js）
+    if (new URL(request.url).searchParams.get("lang") === "en") englishSummaryTitles(summary);
     return json({ ok: true, ...summary });
   } catch (error) {
     console.error("home_summary_failed", error?.message || error);
@@ -11419,12 +11566,16 @@ const TC_BADGE_CLIENT_SOURCE = "(function(){var __name=function(f){return f};ret
 
 const INVITE_BANNER_CSS = "<style>.ee-invited{display:grid;gap:4px;margin:12px 0 0;padding:14px 16px;border:1px solid rgba(250,204,21,.5);border-radius:16px;background:linear-gradient(110deg,rgba(250,204,21,.16),var(--ee-panel,#0f2035));color:var(--ee-text,#e8f3ff);text-decoration:none}.ee-invited b{font-size:15px}.ee-invited span{font-size:12px;color:var(--ee-subtext,#94a3b8)}.ee-invited em{font-style:normal;font-weight:900;color:#facc15;font-size:13px}.ee-invited-special{border-color:rgba(251,191,36,.9);background:linear-gradient(110deg,#5a410c,#2a1e07)!important;color:#fff8e6!important;box-shadow:0 0 22px rgba(251,191,36,.3)}.ee-invited-special b{color:#fde68a}.ee-invited-special span{color:#f3e2b3!important}.ee-invited-special em{color:#fbbf24!important}</style>";
 
-async function renderHome(request, env) {
+export async function renderHome(request, env) {
   const configured = Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.EAGLEEYE_SESSION_SECRET);
   const token = parseCookie(request.headers.get("Cookie") || "")[SESSION_COOKIE];
   const verifiedSession = configured && token ? await verifyPayload(token, env.EAGLEEYE_SESSION_SECRET) : null;
-  const session = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;
-  const auth = session ? await getAuthenticatedUser(request, env) : null;
+  const cookieSession = verifiedSession && !(await isSessionRevoked(env.DB, verifiedSession)) ? verifiedSession : null;
+  // 作業用の鍵（Claude・動画の撮影）が付いているときは、ログイン後のホームを見せる（2026-11-16 着せ替えの撮影用）。
+  // 鍵が無い普通の人には関係しない。ホームは共有キャッシュに載せていない。
+  const agent = !cookieSession ? agentTokenState(request, env) : undefined;
+  const session = cookieSession || (agent ? { sub: agent.discord_id, username: agent.username, global_name: agent.global_name, agent: true } : null);
+  const auth = cookieSession ? await getAuthenticatedUser(request, env) : (agent || null);
   // Only an ACTIVE database-backed user may receive role-gated drawer links.
   const menuAuth = auth?.status === "ACTIVE" ? auth : (session ? { role: "BASIC" } : null);
   const role = menuAuth?.role || "BASIC";
@@ -11434,6 +11585,12 @@ async function renderHome(request, env) {
   const inviteBanner = !inviter ? "" : inviter.special
     ? '<a class="ee-invited ee-invited-special" href="/api/auth/discord"><b>👑 EagleEye運営からの特別招待</b><span>ログインするとウォッチ枠 +' + OWNER_INVITE_BONUS.invitedSignup + '・限定の着せ替え「ゴールド」・運営招待バッジ。ADVANCEDになるとさらにウォッチ枠 +' + OWNER_INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS
     : '<a class="ee-invited" href="/api/auth/discord"><b>🎁 ' + (inviter.name ? escapeHtml(inviter.name) + ' さんから招待が届いています' : '招待が届いています') + '</b><span>Discordでログインするとウォッチ枠 +' + INVITE_BONUS.invitedSignup + '、ADVANCEDになるとさらに +' + INVITE_BONUS.invitedAdvanced + '</span><em>ログインして受け取る →</em></a>' + INVITE_BANNER_CSS;
+  // ログインしていない人（と検索エンジン・AdSense の審査）には、何のサイトか分かるトップを見せる（2026-11-15）。
+  // 数字は王国ページの分析と同じ全王国の一覧（isolate で1時間覚える）から。MightPulse は呼ばない。
+  if (!session) {
+    const [stats, kvkSeason] = await Promise.all([loadAllKingdomStats(env.DB).catch(() => null), currentKvkSeason(env.DB).catch(() => null)]);
+    return renderVisitorHome({ origin: publicOrigin(request, env), highlights: stats ? homeHighlights(stats) : null, kvkSeason, inviteBanner });
+  }
   const roleLabel = role === "OWNER" ? "OWNER" : role === "ADMIN" ? "ADMIN" : role === "VIP" ? "VIP" : role === "ADVANCED" ? "ADVANCED" : "BASIC";
   const userName = escapeHtml(session?.global_name || session?.username || "ゲスト");
   const avatar = session?.avatar
@@ -11718,6 +11875,7 @@ async function renderHome(request, env) {
 .ee-me-label{display:flex;justify-content:space-between;gap:8px;font-size:11px;font-weight:900;letter-spacing:.06em;color:var(--ee-cyan)}
 .ee-me-label small{font-weight:600;letter-spacing:0;color:var(--ee-subtext)}
 .ee-me-name{font-size:17px;font-weight:900;line-height:1.35}
+.ee-kvk-share{display:block;margin:6px 2px 0;font-size:13px;font-weight:800;color:var(--ee-cyan);text-decoration:none}.ee-kvk-share[hidden]{display:none}
 .ee-me-cta .ee-me-name{font-size:13px;font-weight:700;color:var(--ee-subtext)}
 .ee-me-go{font-size:12px;font-weight:800;color:var(--ee-cyan)}
 .ee-me-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:6px}
@@ -11755,7 +11913,7 @@ ${EAGLEEYE_NAV_CSS}
   <img class="ee-welcome-bj" src="/assets/eagleeye/bjnyan/hero_bjnyan.png" alt="BJにゃん">
 </section></a>
 ${inviteBanner}<a class="ee-onboard" id="homeOnboard" href="/my-player" hidden><b id="homeOnboardTitle"></b><span id="homeOnboardBody"></span><em id="homeOnboardCta"></em></a>
-${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(!d||!d.active)return;var a=document.getElementById('homeSword'),b=document.getElementById('homeSwordBody');if(d.matchup){b.textContent='今回の相手：王国'+d.matchup.kid+'の '+d.matchup.tag+'（'+d.matchup.count+'人が登録）';if(d.matchup.compareUrl)a.href=d.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'R4以上の人が対戦相手を登録すると、ここに表示されます'}a.hidden=false}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
+${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id="homeSwordTitle">⚔️ 聖剣争奪</b><span id="homeSwordBody"></span><em>開く →</em></a><a class="ee-onboard" id="homeDuel" href="/players" hidden><b>⚔️ 領主対決 開催中</b><span id="homeDuelBody">相手を検索して、英雄・部隊・秘境の試練を比べよう</span><em>相手を探す →</em></a><script>(function(){fetch('/api/swordland/home',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(d){if(d&&d.duel){var du=document.getElementById('homeDuel');if(du){var t=new Date((d.duel.endTs-1)*1000+9*3600*1000);document.getElementById('homeDuelBody').textContent='〜'+(t.getUTCMonth()+1)+'/'+t.getUTCDate()+'・相手を検索して、英雄・部隊・秘境の試練を比べよう';du.hidden=false}}if(!d||!d.active)return;var base=document.getElementById('homeSword');var evs=(d.events&&d.events.length)?d.events:[{label:d.label,matchup:d.matchup}];evs.forEach(function(ev,i){var a=i?base.cloneNode(true):base;if(i){a.removeAttribute('id');base.parentNode.insertBefore(a,base.nextSibling)}var b=a.querySelector('span');a.querySelector('b').textContent='⚔️ '+(ev.label||'聖剣争奪');a.href='/swordland';if(ev.matchup){b.textContent='今回の相手：王国'+ev.matchup.kid+'の '+ev.matchup.tag+'（'+ev.matchup.count+'人が登録'+(ev.matchup.memberReported?'・メンバーの報告':'')+'）';if(ev.matchup.compareUrl)a.href=ev.matchup.compareUrl}else{b.textContent=d.canRegister?'今回の対戦相手を登録しよう（R4・R5）':'対戦相手が登録されると、ここに表示されます（R4・R5 が使っていない同盟はメンバーも登録できます）'}a.hidden=false})}).catch(function(){})})();</script>` : ""}${session ? `<section class="ee-home-me" id="homeMe">${session ? '<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">読み込み中…</b></a>' : '<a class="ee-me-card ee-me-cta" href="/api/auth/discord"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">ログインすると自分の戦力やウォッチ中の変化がここに出ます</b><span class="ee-me-go">Discordでログイン →</span></a><a class="ee-me-card ee-public-link" href="/kingdoms"><span class="ee-me-label">ログインなしで見る</span><b class="ee-me-name">王国の戦力・ランキング・KvK情報（全王国）</b><span class="ee-me-go">王国一覧へ →</span></a>'}</section>
 <div class="ee-menu-title"><h2 class="ee-h"><b>主要メニュー</b></h2><span>ランキング・検索・ウォッチは下のバーから</span></div>
 <section class="ee-mainmenu" data-menu="signed-in">
   <a class="ee-tile primary" href="/my-player"><img src="/assets/eagleeye/bjnyan/15_search_complete.png" alt=""><h3 class="ee-h"><strong>マイKingShot</strong></h3><small>自分のデータ・登録</small></a>
@@ -11783,6 +11941,7 @@ ${session ? `<a class="ee-onboard" id="homeSword" href="/swordland" hidden><b id
   <span class="ee-milestone-copy"><strong>KvK</strong><small id="homeKvkText">対戦相手・スコア・日ごとの推移</small></span>
   <span class="ee-milestone-status" id="homeKvkStatus">ADVANCED以上</span>
 </a>
+<a class="ee-kvk-share" id="homeKvkShare" href="/kvk" hidden>📤 相手王国と比べて画像で共有 →</a>
 ${session ? '<a class="ee-milestone-card ee-milestone-live ee-invite-card" href="/invite"><span class="ee-milestone-icon" aria-hidden="true">📨</span><span class="ee-milestone-copy"><strong>友だち招待</strong><small>あなた専用のリンクで仲間を招待・月間ランキング</small></span><span class="ee-milestone-status">招待する</span></a>' : ''}
 ${session ? '<section class="ee-changes"><div class="ee-menu-title"><h2 class="ee-h"><b>最近の変化</b></h2><span>ウォッチ中のプレイヤー・7日間</span></div><div class="ee-change-list" id="homeChanges"><div class="ee-change-empty">読み込み中…</div></div></section>' : ''}
 ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live ee-mission-card" href="/milestones#missions" id="homeMissions">
@@ -11794,11 +11953,7 @@ ${milestonesAvailableFor(role) ? `<a class="ee-milestone-card ee-milestone-live"
   <span class="ee-milestone-icon" aria-hidden="true">✦</span>
   <span class="ee-milestone-copy"><strong>マイルストーン</strong><small id="homeMilestoneText">使い方と成長でバッジが増えていきます</small></span>
   <span class="ee-milestone-status" id="homeMilestoneStatus">NEW</span>
-</a>` : `<button class="ee-milestone-card" type="button" disabled aria-disabled="true">
-  <span class="ee-milestone-icon" aria-hidden="true">✦</span>
-  <span class="ee-milestone-copy"><strong>マイルストーン</strong><small>使い方と成長でバッジが増えていきます</small></span>
-  <span class="ee-milestone-status">準備中</span>
-</button>`}
+</a>` : ''}
 
 </div></main>
 ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
@@ -11860,7 +12015,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(!d||!d.ok){list.innerHTML='<div class="ee-change-empty">変化を読み込めませんでした。</div>';if(me)me.innerHTML='<a class="ee-me-card" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">マイKingShotを開く</b></a>';return}
     if(me){
       if(d.me){var m=d.me,stats=[];if(m.kid)stats.push("<span><i>王国</i><b>"+esc(m.kid)+"</b></span>");if(m.power!=null)stats.push("<span><i>戦力</i><b>"+esc(compact(m.power))+"</b></span>");if(m.town_center_level!=null)stats.push("<span><i>役場</i><b>"+tcBadge(m.town_center_level)+"</b></span>");if(m.alliance)stats.push("<span><i>同盟</i><b>"+esc(m.alliance)+"</b></span>");
-        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'}
+        me.innerHTML='<a class="ee-me-card" href="/player?governor_id='+encodeURIComponent(m.governor_id)+'"><span class="ee-me-label">あなたの領主'+(m.refreshing?'<small>最新を取得中…</small>':m.observed_at?'<small>'+esc(ago(m.observed_at))+'の取得</small>':'')+'</span><b class="ee-me-name">'+esc(m.nick_name||("領主ID "+m.governor_id))+'</b><span class="ee-me-stats">'+stats.join("")+'</span></a>'+(m.link_count>1?'<a class="ee-kvk-share" href="/my-player">⇄ 使う領主を切り替える（'+esc(m.link_count)+'件登録中）</a>':'')}
       else me.innerHTML='<a class="ee-me-card ee-me-cta" href="/my-player"><span class="ee-me-label">あなたの領主</span><b class="ee-me-name">領主IDを登録すると、自分の戦力や育成の推移がここに出ます</b><span class="ee-me-go">マイKingShotで登録 →</span></a>'
     }
     if(d.me&&d.me.refreshing&&!homeMeRetried){homeMeRetried=true;setTimeout(loadSummary,8000)}
@@ -11870,6 +12025,7 @@ ${renderEagleEyeNavigation({ active: "home", badgeId: "navBadge", home: true })}
     if(d.milestones){var mt=document.getElementById("homeMilestoneText"),ms=document.getElementById("homeMilestoneStatus"),mu=d.milestones.unseen||[];if(ms)ms.textContent=d.milestones.achieved+" / "+d.milestones.total+" 達成";if(mt&&mu.length)mt.textContent="🎉 達成："+mu.slice(0,2).map(function(u){return u.title}).join("、")+(mu.length>2?" ほか"+(mu.length-2)+"件":"")}
     if(d.kvk){var k=d.kvk,t=document.getElementById("homeKvkText"),st=document.getElementById("homeKvkStatus"),card=document.getElementById("homeKvk");var w=Number(k.score),l=Number(k.opponent_score),has=isFinite(w)&&isFinite(l)&&(w||l);
       // KvK終了から3日より後はカードを隠す（主要メニューの「KvK」からは見られる）。3日以内は結果だけ。
+      var ks=document.getElementById("homeKvkShare");if(ks&&k.opponent!=null&&!(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400)){ks.href="/kingdom/compare?kid="+encodeURIComponent(k.kid)+"&kid="+encodeURIComponent(k.opponent);ks.hidden=false}
       if(k.ended&&k.ended_at&&Date.now()/1000-Number(k.ended_at)>3*86400){if(card)card.hidden=true}
       else if(k.ended){if(t)t.textContent="シーズン"+(k.season||"")+" 終了 · 王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"勝利":w<l?"敗北":"引き分け"):"終了"}
       else{if(t)t.textContent="王国 "+k.kid+" vs 王国 "+k.opponent+"　"+(k.score!=null?compact(k.score):"-")+" : "+(k.opponent_score!=null?compact(k.opponent_score):"-");if(st)st.textContent=has?(w>l?"リード中":w<l?"追う展開":"互角"):"シーズン"+(k.season||"")}}
@@ -11992,3 +12148,22 @@ function constantTimeEqual(a, b) {
   for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
   return diff === 0;
 }
+
+// 英語版（/en/...）：日本語のページを作ってから英語に置き換える。共有キャッシュには入れない。2026-11-20
+async function englishProxy(request, env, executionContext, jaPathWithQuery) {
+  const inner = new Request(new URL(jaPathWithQuery, request.url).toString(), request);
+  const res = await worker.fetch(inner, env, executionContext);
+  const location = res.headers.get("location");
+  if (location && res.status >= 300 && res.status < 400) {
+    let to = location;
+    try { const u = new URL(location, request.url); if (u.origin === new URL(request.url).origin) to = enHref(u.pathname) + u.search; } catch {}
+    const headers = new Headers(res.headers); headers.set("location", to); headers.set("cache-control", "no-store");
+    return new Response(null, { status: res.status, headers });
+  }
+  if (!String(res.headers.get("content-type") || "").includes("text/html")) return res;
+  const headers = new Headers(res.headers); headers.set("cache-control", "no-store"); headers.delete("content-length");
+  return new Response(translateHtmlToEnglish(await res.text()), { status: res.status, headers });
+}
+
+// すべての応答に安全のための設定を付ける（security-headers.js）。
+export default { ...worker, async fetch(request, env, executionContext) { return withSecurityHeaders(await worker.fetch(request, env, executionContext)); } };

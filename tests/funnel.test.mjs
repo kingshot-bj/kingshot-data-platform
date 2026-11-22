@@ -41,14 +41,14 @@ test("日本時間の日ごとに数え、知らない段階は数えない", as
 
 test("配線：ログイン開始・取消・新規/再ログインを数える、取消はエラー画面でなく元のページへ", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /if \(env\.DB\) await recordFunnel\(env\.DB, "login_start"\);/);
+  assert.match(index, /if \(env\.DB && !isLikelyBot\(request\.headers\.get\("user-agent"\)\)\) await recordFunnel\(env\.DB, "login_start"\);/, "クローラーは数えない");
   assert.match(index, /await recordFunnel\(env\.DB, userResult\?\.isNew \? "login_new" : "login_returning"\);/);
   const cb = index.slice(index.indexOf("async function handleDiscordCallback"), index.indexOf("async function upsertUser"));
   const cancel = cb.slice(cb.indexOf('if (url.searchParams.get("error") && !code)'), cb.indexOf('if (!code || !state)'));
   assert.match(cancel, /recordFunnel\(env\.DB, "login_cancelled"\)/);
   assert.match(cancel, /status: 302/);
   assert.doesNotMatch(cancel, /SESSION_COOKIE/, "取消ではセッションを出さない");
-  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep \}\)/);
+  assert.match(index, /renderOwnerTrafficPage\(\{ active, cf, d1, apiPool, funnel, top, sweep[,} ]/);
 });
 
 test("どこで離れたか：Discord・Googleの画面から戻った回数、Googleで完了、戻ってきて失敗を数える", () => {
@@ -64,4 +64,17 @@ test("どこで離れたか：Discord・Googleの画面から戻った回数、G
   assert.match(html, /<th>Discordの画面から戻ってきた<\/th><td>4<\/td><td class="muted">40%<\/td>/);
   assert.match(html, /<th>Googleの画面から戻ってきた<\/th><td>1<\/td><td class="muted">20%<\/td>/);
   assert.match(html, /<th>戻ってきたがログイン失敗<\/th><td>1<\/td><td class="muted">20%<\/td>/);
+});
+
+// 2026-11-14：スマホで日ごとの表（12列）が横にはみ出し、ページ全体が横にずれていた。
+test("日ごとの表：横スクロールの箱に入れ、見出しは短く（折り返さない）・日付の列は固定", async () => {
+  const { renderFunnelCard, FUNNEL_STEPS } = await import("../src/funnel.js");
+  const daily = [{ day: "2026-11-14", ...Object.fromEntries(FUNNEL_STEPS.map(s => [s.key, 1])) }];
+  const html = renderFunnelCard({ days: 14, daily, totals: Object.fromEntries(FUNNEL_STEPS.map(s => [s.key, 1])), cohort: { users: 1, linked: 0, keyed: 0, advanced: 0 } });
+  assert.match(html, /<div class="ee-funnel-scroll" style="overflow-x:auto/);
+  assert.match(html, /white-space:nowrap/);
+  assert.match(html, /<th style="position:sticky;left:0/);
+  const heads = [...html.matchAll(/<th title="[^"]*">([^<]*)<\/th>/g)].map(m => m[1]);
+  assert.equal(heads.length, FUNNEL_STEPS.length);
+  assert.ok(heads.every(h => h.length <= 9), "見出しは短く: " + heads.join(","));
 });

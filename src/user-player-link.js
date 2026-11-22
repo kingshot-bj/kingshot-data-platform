@@ -1,9 +1,17 @@
 import { runSystemOperation, createSystemTrace } from "./system-log.js";
 let userPlayerLinkSchemaPromise = null;
+// テスト用：表の準備をやり直す（別の D1 で試すとき）。
+export function resetUserPlayerLinkSchemaCache() { userPlayerLinkSchemaPromise = null; }
 
 export const KINGSHOT_FREE_KINGDOM_LIMIT = 2;
 export const KINGSHOT_FREE_ACCOUNTS_PER_KINGDOM = 2;
 export const KINGSHOT_FREE_SUB_ACCOUNTS_PER_KINGDOM = 1;
+// ADMIN・OWNER：王国の数・王国ごとの数を問わず、合わせて4つまで（2026-11-18）。各王国のメインは1つ（2つ目からはサブ）。
+export const KINGSHOT_ADMIN_MAX_ACCOUNTS = 4;
+export function maxAccountsForRole(role) {
+  const r = String(role || "").toUpperCase();
+  return r === "ADMIN" || r === "OWNER" ? KINGSHOT_ADMIN_MAX_ACCOUNTS : null;
+}
 
 export async function ensureSchema(db) {
   if (userPlayerLinkSchemaPromise) return userPlayerLinkSchemaPromise;
@@ -133,7 +141,7 @@ export async function findActiveGovernorOwner(db, governorId) {
   `).bind(normalizeGovernorId(governorId)).first();
 }
 
-async function saveUserPlayerLinkInternal(db, userId, governorId, accountType = "MAIN", { allowExtraAccounts = false } = {}) {
+async function saveUserPlayerLinkInternal(db, userId, governorId, accountType = "MAIN", { allowExtraAccounts = false, maxAccounts = null } = {}) {
   await ensureSchema(db);
   const normalized = normalizeGovernorId(governorId);
   if (!normalized) {
@@ -169,19 +177,25 @@ async function saveUserPlayerLinkInternal(db, userId, governorId, accountType = 
   const kingdomRows = active.filter(row => Number(row.kingdom_id) === kingdomId);
   const kingdomIds = new Set(active.map(row => Number(row.kingdom_id)));
 
-  if (!allowExtraAccounts && !kingdomIds.has(kingdomId) && kingdomIds.size >= KINGSHOT_FREE_KINGDOM_LIMIT) {
+  // ADMIN・OWNER（maxAccounts）：合わせて maxAccounts 件まで。王国の数・王国ごとの数は問わない。メインは各王国1つ。
+  if (maxAccounts != null && !allowExtraAccounts) {
+    if (active.length >= maxAccounts) throw limitError("ACCOUNT_LIMIT_REACHED", `領主IDは合わせて${maxAccounts}件まで登録できます。`);
+    if (normalizedType === "MAIN" && kingdomRows.some(row => row.account_type === "MAIN")) {
+      throw limitError("MAIN_ACCOUNT_ALREADY_EXISTS", "この王国にはすでにメインアカウントが登録されています。サブとして登録してください。");
+    }
+  } else if (!allowExtraAccounts && !kingdomIds.has(kingdomId) && kingdomIds.size >= KINGSHOT_FREE_KINGDOM_LIMIT) {
     throw limitError("KINGDOM_LIMIT_REACHED", "無料プランでは2王国まで登録できます。");
   }
 
-  if (!allowExtraAccounts && normalizedType === "MAIN" && kingdomRows.some(row => row.account_type === "MAIN")) {
+  if (!allowExtraAccounts && maxAccounts == null && normalizedType === "MAIN" && kingdomRows.some(row => row.account_type === "MAIN")) {
     throw limitError("MAIN_ACCOUNT_ALREADY_EXISTS", "この王国にはすでにメインアカウントが登録されています。");
   }
 
-  if (!allowExtraAccounts && normalizedType === "SUB" && kingdomRows.filter(row => row.account_type === "SUB").length >= KINGSHOT_FREE_SUB_ACCOUNTS_PER_KINGDOM) {
+  if (!allowExtraAccounts && maxAccounts == null && normalizedType === "SUB" && kingdomRows.filter(row => row.account_type === "SUB").length >= KINGSHOT_FREE_SUB_ACCOUNTS_PER_KINGDOM) {
     throw limitError("SUB_ACCOUNT_LIMIT_REACHED", "この王国の無料サブアカウントは1件までです。追加サブアカウントは将来の有料機能として提供予定です。");
   }
 
-  if (!allowExtraAccounts && kingdomRows.length >= KINGSHOT_FREE_ACCOUNTS_PER_KINGDOM) {
+  if (!allowExtraAccounts && maxAccounts == null && kingdomRows.length >= KINGSHOT_FREE_ACCOUNTS_PER_KINGDOM) {
     throw limitError("ACCOUNT_LIMIT_REACHED", "この王国では無料でメイン1件＋サブ1件まで登録できます。");
   }
 

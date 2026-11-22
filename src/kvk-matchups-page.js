@@ -7,6 +7,7 @@
 import { ensureKingdomStatsSchema } from "./kingdom-stats.js";
 import { loadMysticSummaries, compareMystic } from "./kvk-mystic.js";
 import { webAppJsonLd, breadcrumbJsonLd } from "./seo.js";
+import { kvkDataNote } from "./data-note.js";
 
 function esc(v) { return String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 export function compactPower(v) {
@@ -70,9 +71,9 @@ export function kvkPairHtml(r) {
   var has = r[8] > 0, aUp = has && r[6] > r[7], bUp = has && r[7] > r[6];
   var side = function (kid, pow, age, up) {
     if (kid == null) return '<div class="sd bye">不戦（対戦相手なし）</div>';
-    return '<a class="sd' + (up ? " up" : "") + '" href="/k/' + e(kid) + '"><b>王国 ' + e(kid) + '</b><small>総戦力 ' + e(pow || "—") + '（参考）・開設' + (age != null ? e(age) + "日" : "—") + '</small></a>';
+    return '<a class="sd' + (up ? " up" : "") + '" href="/k/' + e(kid) + '"><b>王国 ' + e(kid) + '</b><small>総力 ' + e(pow || "—") + '（参考）・開設' + (age != null ? e(age) + "日" : "—") + '</small></a>';
   };
-  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>' + e(r[8]) + 'ステージ中</small><a class="more" href="/kvk?kid=' + e(r[0]) + '" rel="nofollow">2位以降を見る</a>' : '<small>集計中</small>';
+  var mid = r[3] == null ? "—" : has ? '<b class="tally"><span class="' + (aUp ? "w" : "") + '">' + e(r[6]) + '</span>-<span class="' + (bUp ? "w" : "") + '">' + e(r[7]) + '</span></b><small>秘境の試練<br>' + e(r[8]) + '種類の1位で比較</small><a class="more" href="/kvk?kid=' + e(r[0]) + '" rel="nofollow">スコアと詳細を見る</a>' : '<small>集計中</small>';
   return '<li class="pair">' + side(r[0], r[1], r[2], aUp) + '<div class="vs"><span>VS</span>' + mid + '</div>' + side(r[3], r[4], r[5], bUp) + '</li>';
 }
 
@@ -108,6 +109,9 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
   const rank = p => { const l = lead(p); return l == null ? -1 : Math.abs(l); };
   const sorted = [...pairs].sort((x, y) => rank(y) - rank(x));
   const ready = pairs.filter(p => p.mystic && p.mystic.stages.length).length;
+  // 相手のいない王国（その期は対戦なし）は「組」に数えない。以前は 1,227組 と出ていたが実際の組数は 1,219組。
+  const matched = pairs.filter(p => p.b).length;
+  const solo = pairs.length - matched;
   const even = pairs.filter(p => p.mystic && p.mystic.stages.length && p.mystic.wins === p.mystic.losses).length;
   const asOf = observedAt ? new Date(observedAt * 1000).toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric" }) : "";
   // 最初の60組だけHTMLで出し、残りは小さなデータ（1組 約40バイト）で渡して、検索・並べ替え・「もっと見る」のときに画面側で表示する。
@@ -119,7 +123,7 @@ export function renderKvkMatchupsPage({ season, pairs = [], observedAt = 0, orig
   });
   const cards = rows.slice(0, KVK_INITIAL_ROWS).map(kvkPairHtml).join("");
   const title = `キングショット KvK S${season} 組み合わせ一覧（秘境の試練で比較） | EagleEye`;
-  const description = `キングショット（KingShot）KvK シーズン${season}の全${pairs.length}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の1位の記録で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
+  const description = `キングショット（KingShot）KvK シーズン${season}の全${matched}組の組み合わせ。秘境の試練（輝光の塔・水晶鉱山など6ステージ）の1位の記録で両王国を比べ、何ステージで上回っているかを表示。王国番号で検索できます。`;
   return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="${esc(canonical)}">
 ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み合わせ`, `/kvk/s${season}`]]) : ""}
@@ -131,11 +135,12 @@ ${origin ? breadcrumbJsonLd(origin, [["EagleEye", "/"], [`KvK S${season} 組み�
 .note{font-size:11px;color:var(--ee-subtext);line-height:1.6;margin-top:12px}.more-btn{display:block;width:100%;margin:10px 0 0;padding:12px;border:1px solid var(--ee-border);border-radius:12px;background:var(--ee-panel);color:var(--ee-text);font:inherit;font-weight:800}.empty{padding:20px;text-align:center;color:var(--ee-subtext)}</style></head><body><main class="wrap">
 <nav class="crumbs"><a href="/">EagleEye</a> › KvK 組み合わせ</nav>
 <h1>KvK シーズン${esc(season)} 組み合わせ</h1>
-<p class="lead">キングショットのKvK（王国対抗戦）シーズン${esc(season)}の全組み合わせです。総戦力は兵士の数で大きく変わり、実際の戦闘力とは一致しないため、秘境の試練の6ステージ（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）の1位の記録で比べています。KvKは集結を主催するトップ層の強さで決まりやすいためです。真ん中の「4-2」は、それぞれが上回っているステージの数です。</p>
-<div class="facts"><span>組み合わせ <b>${pairs.length}</b>組</span><span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
+<p class="lead">キングショットのKvK（王国対抗戦）シーズン${esc(season)}の全組み合わせです。総力は兵士の数で大きく変わり、実際の戦闘力とは一致しないため、秘境の試練の6ステージ（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）の1位の記録で比べています。KvKは集結を主催するトップ層の強さで決まりやすいためです。真ん中の「4-2」は、それぞれが上回っているステージの数です。</p>
+<div class="facts"><span>組み合わせ <b>${matched}</b>組</span>${solo ? `<span>相手なし <b>${solo}</b>王国</span>` : ""}<span>比較済み <b>${ready}</b>組</span><span>互角 <b>${even}</b>組</span></div>
 <div class="bar"><input id="q" inputmode="numeric" placeholder="王国番号で探す（例：1524）" aria-label="王国番号で探す"><select id="sort" aria-label="並び順"><option value="gap">差がついている順</option><option value="even">互角な順</option><option value="kid">王国番号順</option></select></div>
 ${pairs.length ? `<ul class="list" id="list">${cards}</ul>${rows.length > KVK_INITIAL_ROWS ? `<button type="button" class="more-btn" id="moreBtn">残り${rows.length - KVK_INITIAL_ROWS}組を表示</button>` : ""}` : '<div class="empty">組み合わせはまだ発表されていません。</div>'}
-<p class="note">ステージごとの1位の記録と上位10人の平均、KvKのスコアや日ごとの戦況は、ログインすると<a href="/kvk">KvKページ</a>（各組み合わせの「2位以降を見る」）で見られます。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総戦力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+<p class="note">真ん中の数字は、秘境の試練の6種類（闘技場・生命の森・水晶鉱山・知識の枢軸・溶岩要塞・輝光の塔）それぞれで、両王国の1位の記録を比べて勝った種類の数です（KvKの日程とは関係ありません）。KvKのスコア・準備フェーズの日ごとのスコア・秘境の試練の2〜10位の記録は、<a href="/kvk">KvKページ</a>（各組み合わせの「スコアと詳細を見る」）で見られます（自分の王国はADVANCED以上、ほかの王国はVIP以上）。秘境の試練のデータはシーズン中に王国ごとに1回取得し、順次そろっていきます（「集計中」はまだ取得していない組み合わせです）。比較は目安で、勝敗の予想ではありません。総力・開設日数はMightPulseの王国データ（毎日更新）${asOf ? "、" + esc(asOf) + "時点" : ""}です。</p>
+${kvkDataNote({ season, matched, solo, ready })}
 <script type="application/json" id="kvkRows">${JSON.stringify(rows).replace(/</g, "\\u003c")}</script>
 <script>var __name=function(f){return f};(${kvkMatchupsClient.toString()})(${KVK_INITIAL_ROWS},${kvkPairHtml.toString()});</script>
 </main></body></html>`;

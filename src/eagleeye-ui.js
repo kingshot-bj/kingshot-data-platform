@@ -125,13 +125,14 @@ export const EAGLEEYE_OTHER_MENU = Object.freeze([
   Object.freeze({ key: "news", href: "/news", label: "お知らせ", image: EAGLEEYE_BJNYAN.success, badge: "news" }),
   Object.freeze({ key: "kingdomWatch", href: "/kingdom-watchlist", label: "王国ウォッチ", image: EAGLEEYE_BJNYAN.watchlist }),
   Object.freeze({ key: "kingdomCatalog", href: "/kingdom-catalog", label: "王国カタログ", image: EAGLEEYE_BJNYAN.kingdom }),
-  Object.freeze({ key: "swordland", href: "/swordland", label: "聖剣争奪", image: EAGLEEYE_BJNYAN.kingdom }),
+  Object.freeze({ key: "swordland", href: "/swordland", label: "聖剣（争奪・リーグ）", image: EAGLEEYE_BJNYAN.kingdom }),
   Object.freeze({ key: "allianceCompare", href: "/alliance/compare", label: "同盟比較", image: EAGLEEYE_BJNYAN.kingdom }),
   Object.freeze({ key: "heroCatalog", href: "/hero-catalog", label: "英雄カタログ", image: EAGLEEYE_BJNYAN.player }),
   Object.freeze({ key: "heroShards", href: "/tools/hero-shards", label: "欠片計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "goldCalc", href: "/tools/gold", label: "黄金計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "goldTech", href: "/tools/gold-tech", label: "黄金研究計算", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "myKingshot", href: "/my-player", label: "マイKingShot", image: EAGLEEYE_BJNYAN.dashboard }),
+  Object.freeze({ key: "notifySettings", href: "/settings/notifications", label: "通知の設定", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "invite", href: "/invite", label: "友だち招待", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "guide", href: "/guide", label: "使い方", image: EAGLEEYE_BJNYAN.success }),
   Object.freeze({ key: "support", href: "/support", label: "サポート", image: EAGLEEYE_BJNYAN.error }),
@@ -175,9 +176,7 @@ export function renderEagleEyeOtherMenu({ auth = null, includeAccount = true, co
     ? (compact
       ? '<a href="/milestones" data-other-key="milestones">マイルストーン</a>'
       : '<a href="/milestones" data-other-key="milestones"><img src="' + EAGLEEYE_BJNYAN.success + '" alt=""><span>マイルストーン</span></a>')
-    : (compact
-      ? '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>マイルストーン</span><small>準備中</small></button>'
-      : '<button class="ee-drawer-milestone" type="button" disabled aria-disabled="true"><span>✦</span><span>マイルストーン<small>準備中</small></span></button>'));
+    : "");
 }
 
 
