@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { rankPercentText, renderKingdomTrend } from "../src/kingdom-insights.js";
-import { allianceNameText } from "../src/public-pages.js";
+import { allianceNameText, isAllianceFetchError } from "../src/public-pages.js";
 
 test("プレビューのバナーに /preview/login へのリンクを出さない", () => {
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
@@ -25,8 +25,15 @@ test("基数が極端に小さいときは%を出さない", () => {
   assert.match(ok, /\+10%/);
 });
 
-test("取得エラーの仮の名前は「取得できず」と出す", () => {
-  assert.equal(allianceNameText("ERROR [404]"), "取得できず");
+test("取得エラーの仮の名前は平易な文言で出す", () => {
+  assert.equal(allianceNameText("ERROR [404]"), "同盟情報を取得できませんでした");
   assert.equal(allianceNameText("Eagles"), "Eagles");
   assert.equal(allianceNameText(null), "");
+});
+
+test("実際の同盟タグ「404」は取得失敗と区別する（Issue #426）", () => {
+  assert.equal(isAllianceFetchError("404"), false);
+  assert.equal(allianceNameText("404"), "404");
+  assert.equal(isAllianceFetchError("ERROR [404]"), true);
+  assert.equal(isAllianceFetchError(null), false);
 });
